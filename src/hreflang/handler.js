@@ -13,9 +13,15 @@
 import { JSDOM } from 'jsdom';
 import { isLangCode } from 'is-language-code';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
+
+const auditType = Audit.AUDIT_TYPES.HREFLANG;
 
 export const HREFLANG_CHECKS = Object.freeze({
   HREFLANG_EXISTS: {
@@ -251,7 +257,125 @@ export async function hreflangAuditRunner(baseURL, context, site) {
   }
 }
 
+/**
+ * Generates suggestions based on hreflang audit results.
+ * Transforms the audit result object into a format suitable for the suggestions system.
+ *
+ * @param {string} auditUrl - The URL that was audited.
+ * @param {Object} auditData - The audit data containing results.
+ * @param {Object} context - The context object containing log and other utilities.
+ * @returns {Object} The audit data with suggestions added.
+ */
+export function generateSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
+
+  // if audit succeeded or failed with no specific issues, skip suggestions generation
+  if (auditData.auditResult?.status === 'success' || auditData.auditResult?.error) {
+    log.info(`Hreflang audit for ${auditUrl} has no issues or failed, skipping suggestions generation`);
+    return { ...auditData };
+  }
+
+  // transform audit results into suggestions
+  const suggestions = [];
+
+  // Iterate through each check type in the audit results
+  Object.entries(auditData.auditResult).forEach(([checkType, checkResult]) => {
+    if (checkResult.success === false && Array.isArray(checkResult.urls)) {
+      checkResult.urls.forEach((url) => {
+        suggestions.push({
+          type: 'CODE_CHANGE',
+          checkType,
+          explanation: checkResult.explanation,
+          url,
+          // eslint-disable-next-line no-use-before-define
+          recommendedAction: generateRecommendedAction(checkType),
+        });
+      });
+    }
+  });
+
+  log.info(`Generated ${suggestions.length} hreflang suggestions for ${auditUrl}`);
+  return { ...auditData, suggestions };
+}
+
+/**
+ * Generates recommended actions based on the check type.
+ *
+ * @param {string} checkType - The type of hreflang check that failed.
+ * @returns {string} The recommended action for fixing the issue.
+ */
+function generateRecommendedAction(checkType) {
+  switch (checkType) {
+    case HREFLANG_CHECKS.HREFLANG_EXISTS.check:
+      return 'Add hreflang tags to the <head> section to specify language and region targeting.';
+    case HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_CODE.check:
+      return 'Update hreflang attribute to use valid ISO 639-1 language codes and ISO 3166-1 Alpha 2 country codes.';
+    case HREFLANG_CHECKS.HREFLANG_SELF_REFERENCE_MISSING.check:
+      return 'Add a self-referencing hreflang tag that points to the current page with its own language/region.';
+    case HREFLANG_CHECKS.HREFLANG_NOT_IN_HEAD.check:
+      return 'Move hreflang tags from the body to the <head> section of the HTML document.';
+    case HREFLANG_CHECKS.FETCH_ERROR.check:
+      return 'Ensure the page is accessible and fix any server or network issues preventing content retrieval.';
+    default:
+      return 'Review and fix hreflang implementation according to international SEO best practices.';
+  }
+}
+
+/**
+ * Creates opportunities and syncs suggestions for hreflang issues.
+ *
+ * @param {string} auditUrl - The URL that was audited.
+ * @param {Object} auditData - The audit data containing results and suggestions.
+ * @param {Object} context - The context object containing log, dataAccess, etc.
+ * @returns {Object} The audit data unchanged (opportunities created as side effect).
+ */
+export async function opportunityAndSuggestions(auditUrl, auditData, context) {
+  const { log } = context;
+
+  // if audit has no suggestions, skip opportunity creation
+  if (!auditData.suggestions?.length) {
+    log.info('Hreflang audit has no issues, skipping opportunity creation');
+    return { ...auditData };
+  }
+
+  // create opportunity
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    auditType,
+  );
+
+  const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
+
+  // sync suggestions with opportunity
+  await syncSuggestions({
+    opportunity,
+    newData: auditData.suggestions,
+    context,
+    buildKey,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: suggestion.type,
+      rank: 0, // all suggestions are ranked equally
+      data: {
+        type: 'url',
+        url: suggestion.url,
+        checkType: suggestion.checkType,
+        explanation: suggestion.explanation,
+        recommendedAction: suggestion.recommendedAction,
+      },
+    }),
+    log,
+  });
+
+  log.info(`Hreflang opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
+  return { ...auditData };
+}
+
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(hreflangAuditRunner)
+  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();

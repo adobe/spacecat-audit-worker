@@ -19,8 +19,11 @@ import nock from 'nock';
 import {
   validatePageHreflang,
   hreflangAuditRunner,
+  generateSuggestions,
+  opportunityAndSuggestions,
   HREFLANG_CHECKS,
 } from '../../src/hreflang/handler.js';
+import { createOpportunityData } from '../../src/hreflang/opportunity-data-mapper.js';
 import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
@@ -418,6 +421,307 @@ describe('Hreflang Audit', () => {
 
       expect(result.auditResult).to.have.property(HREFLANG_CHECKS.HREFLANG_EXISTS.check);
       expect(result.auditResult[HREFLANG_CHECKS.HREFLANG_EXISTS.check].urls).to.have.length(2);
+    });
+  });
+
+  describe('createOpportunityData', () => {
+    it('should return hreflang opportunity data with correct structure', () => {
+      const result = createOpportunityData();
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('runbook', '');
+      expect(result).to.have.property('origin', 'AUTOMATION');
+      expect(result).to.have.property('title', 'Hreflang implementation issues affecting international SEO');
+      expect(result).to.have.property('description').that.is.a('string');
+      expect(result).to.have.property('guidance').that.is.an('object');
+      expect(result.guidance).to.have.property('steps').that.is.an('array');
+      expect(result.guidance.steps).to.have.length.above(0);
+      expect(result).to.have.property('tags').that.is.an('array');
+      expect(result.tags).to.include('Traffic Acquisition');
+      expect(result).to.have.property('data').that.is.an('object');
+      expect(result.data).to.have.property('dataSources').that.is.an('array');
+    });
+  });
+
+  describe('generateSuggestions', () => {
+    const auditUrl = 'https://example.com';
+    let mockContext;
+    // eslint-disable-next-line no-shadow
+    let sandbox;
+
+    beforeEach(() => {
+      sandbox = sinon.createSandbox();
+      mockContext = new MockContextBuilder().withSandbox(sandbox).build();
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('should generate suggestions for hreflang issues', () => {
+      const auditData = {
+        auditResult: {
+          'hreflang-exists': {
+            success: false,
+            explanation: 'No hreflang tags found',
+            urls: ['https://example.com/page1', 'https://example.com/page2'],
+          },
+          'hreflang-invalid-language-code': {
+            success: false,
+            explanation: 'Invalid language code found',
+            urls: ['https://example.com/page3'],
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result.suggestions).to.be.an('array');
+      expect(result.suggestions).to.have.length(3);
+
+      // Check first suggestion
+      expect(result.suggestions[0]).to.deep.include({
+        type: 'CODE_CHANGE',
+        checkType: 'hreflang-exists',
+        explanation: 'No hreflang tags found',
+        url: 'https://example.com/page1',
+        recommendedAction: 'Add hreflang tags to the <head> section to specify language and region targeting.',
+      });
+
+      // Check last suggestion
+      expect(result.suggestions[2]).to.deep.include({
+        type: 'CODE_CHANGE',
+        checkType: 'hreflang-invalid-language-code',
+        explanation: 'Invalid language code found',
+        url: 'https://example.com/page3',
+        recommendedAction: 'Update hreflang attribute to use valid ISO 639-1 language codes and ISO 3166-1 Alpha 2 country codes.',
+      });
+    });
+
+    it('should skip suggestions generation when audit succeeded', () => {
+      const auditData = {
+        auditResult: {
+          status: 'success',
+          message: 'No hreflang issues detected',
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(result.suggestions).to.be.undefined;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        'Hreflang audit for https://example.com has no issues or failed, skipping suggestions generation',
+      );
+    });
+
+    it('should skip suggestions generation when audit failed with error', () => {
+      const auditData = {
+        auditResult: {
+          error: 'Audit failed with error: Database error',
+          success: false,
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(result.suggestions).to.be.undefined;
+    });
+
+    it('should generate suggestions for all check types', () => {
+      const auditData = {
+        auditResult: {
+          'hreflang-exists': {
+            success: false,
+            explanation: 'No hreflang tags found',
+            urls: ['https://example.com/page1'],
+          },
+          'hreflang-invalid-language-code': {
+            success: false,
+            explanation: 'Invalid language code found',
+            urls: ['https://example.com/page2'],
+          },
+          'hreflang-self-reference-missing': {
+            success: false,
+            explanation: 'Missing self-referencing hreflang tag',
+            urls: ['https://example.com/page3'],
+          },
+          'hreflang-not-in-head': {
+            success: false,
+            explanation: 'Hreflang tags found outside the head section',
+            urls: ['https://example.com/page4'],
+          },
+          'hreflang-fetch-error': {
+            success: false,
+            explanation: 'Error fetching the page content',
+            urls: ['https://example.com/page5'],
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result.suggestions).to.have.length(5);
+
+      const actions = result.suggestions.map((s) => s.recommendedAction);
+      expect(actions).to.include('Add hreflang tags to the <head> section to specify language and region targeting.');
+      expect(actions).to.include('Update hreflang attribute to use valid ISO 639-1 language codes and ISO 3166-1 Alpha 2 country codes.');
+      expect(actions).to.include('Add a self-referencing hreflang tag that points to the current page with its own language/region.');
+      expect(actions).to.include('Move hreflang tags from the body to the <head> section of the HTML document.');
+      expect(actions).to.include('Ensure the page is accessible and fix any server or network issues preventing content retrieval.');
+    });
+
+    it('should return empty suggestions array when no failed checks', () => {
+      const auditData = {
+        auditResult: {
+          'some-other-field': 'value',
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result.suggestions).to.be.an('array').that.is.empty;
+    });
+
+    it('should generate default recommended action for unknown check types', () => {
+      const auditData = {
+        auditResult: {
+          'unknown-check-type': {
+            success: false,
+            explanation: 'Unknown issue found',
+            urls: ['https://example.com/page1'],
+          },
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result.suggestions).to.have.length(1);
+      expect(result.suggestions[0]).to.deep.include({
+        type: 'CODE_CHANGE',
+        checkType: 'unknown-check-type',
+        explanation: 'Unknown issue found',
+        url: 'https://example.com/page1',
+        recommendedAction: 'Review and fix hreflang implementation according to international SEO best practices.',
+      });
+    });
+  });
+
+  describe('opportunityAndSuggestions', () => {
+    const auditUrl = 'https://example.com';
+    const mockContext = {
+      log: {
+        info: sinon.stub(),
+        error: sinon.stub(),
+      },
+      dataAccess: {
+        Opportunity: {
+          allBySiteIdAndStatus: sinon.stub(),
+          create: sinon.stub(),
+          getId: sinon.stub().returns('opportunity-123'),
+          getSuggestions: sinon.stub(),
+          addSuggestions: sinon.stub(),
+        },
+        Suggestion: {
+          create: sinon.stub(),
+        },
+      },
+    };
+
+    beforeEach(() => {
+      mockContext.log.info.reset();
+      mockContext.log.error.reset();
+      mockContext.dataAccess.Opportunity.allBySiteIdAndStatus.reset();
+      mockContext.dataAccess.Opportunity.create.reset();
+      mockContext.dataAccess.Opportunity.getSuggestions.reset();
+      mockContext.dataAccess.Opportunity.addSuggestions.reset();
+      mockContext.dataAccess.Suggestion.create.reset();
+    });
+
+    it('should skip opportunity creation when no suggestions', async () => {
+      const auditData = {
+        auditResult: {
+          'hreflang-exists': {
+            success: false,
+            explanation: 'No hreflang tags found',
+            urls: ['https://example.com/page1'],
+          },
+        },
+        suggestions: [],
+      };
+
+      const result = await opportunityAndSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(mockContext.log.info).to.have.been.calledWith(
+        'Hreflang audit has no issues, skipping opportunity creation',
+      );
+    });
+
+    it('should create opportunity and sync suggestions when issues exist', async () => {
+      const auditData = {
+        siteId: 'site-123',
+        auditResult: {
+          'hreflang-exists': {
+            success: false,
+            explanation: 'No hreflang tags found',
+            urls: ['https://example.com/page1'],
+          },
+        },
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'hreflang-exists',
+            explanation: 'No hreflang tags found',
+            url: 'https://example.com/page1',
+            recommendedAction: 'Add hreflang tags to the <head> section',
+          },
+        ],
+      };
+
+      // Create a comprehensive mock context that allows the external functions to work
+      const mockOpportunity = {
+        getId: sinon.stub().returns('opportunity-123'),
+        getSuggestions: sinon.stub().resolves([]),
+        addSuggestions: sinon.stub().resolves({ createdItems: [], errors: [] }),
+        save: sinon.stub().resolves(),
+        getType: sinon.stub().returns('hreflang'),
+        getStatus: sinon.stub().returns('NEW'),
+        getData: sinon.stub().returns({}),
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+      };
+
+      const fullMockContext = {
+        ...mockContext,
+        siteId: 'site-123',
+        dataAccess: {
+          Site: {
+            findById: sinon.stub().resolves({ getId: () => 'site-123' }),
+          },
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([]),
+            create: sinon.stub().resolves(mockOpportunity),
+          },
+          Suggestion: {
+            allByOpportunityId: sinon.stub().resolves([]),
+            bulkCreate: sinon.stub().resolves({ createdItems: [], errors: [] }),
+          },
+        },
+      };
+
+      // Mock opportunity creation
+      fullMockContext.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      fullMockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
+
+      const result = await opportunityAndSuggestions(auditUrl, auditData, fullMockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(fullMockContext.log.info).to.have.been.calledWith(
+        'Hreflang opportunity created and 1 suggestions synced for https://example.com',
+      );
     });
   });
 });
