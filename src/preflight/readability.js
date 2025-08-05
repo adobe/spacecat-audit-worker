@@ -122,6 +122,7 @@ export default async function readability(context, auditContext) {
                 check: 'poor-readability',
                 issue: issueText,
                 seoImpact,
+                fleschReadingEase: readabilityScore,
                 seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
               });
             }
