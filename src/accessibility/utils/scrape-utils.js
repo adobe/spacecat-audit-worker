@@ -120,7 +120,12 @@ export function filterAccessibilityOpportunities(opportunities) {
  * Result of the operation
  * @returns {Promise<{success: boolean, updatedCount: number, error?: string}>}
  */
-export async function updateStatusToIgnored(dataAccess, siteId, log, filterOpportunities) {
+export async function updateStatusToIgnored(
+  dataAccess,
+  siteId,
+  log,
+  filterOpportunities = filterAccessibilityOpportunities,
+) {
   try {
     const { Opportunity } = dataAccess;
     const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
