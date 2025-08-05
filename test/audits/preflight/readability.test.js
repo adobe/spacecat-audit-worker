@@ -389,5 +389,29 @@ describe('Preflight Readability Audit', () => {
       expect(log.info).to.have.been.calledWithMatch('Processed 1 text element(s)');
       expect(log.info).to.have.been.calledWithMatch('found 0 with poor readability');
     });
+
+    it('should not truncate text when it is shorter than MAX_CHARACTERS_DISPLAY', async () => {
+      // Create text that is poor readability but shorter than 200 characters
+      const shortPoorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions making it extremely difficult to comprehend without considerable concentration.';
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${shortPoorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      expect(audit.opportunities).to.have.lengthOf(1);
+
+      // The issue text should contain the full text without truncation
+      const opportunity = audit.opportunities[0];
+      expect(opportunity.issue).to.include(shortPoorText);
+      expect(opportunity.issue).not.to.include('...');
+    });
   });
 });
