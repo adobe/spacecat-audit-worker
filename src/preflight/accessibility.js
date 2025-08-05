@@ -231,7 +231,7 @@ async function processAccessibilityOpportunities(context, auditContext) {
               });
             }
 
-            log.info(`[preflight-audit] Processed ${accessibilityAudit.opportunities.length} opportunities for ${url}`);
+            log.info(`[preflight-audit] Accessibility audit details for ${url}:`, JSON.stringify(accessibilityAudit, null, 2));
           } else {
             log.warn(`[preflight-audit] No accessibility audit found for URL: ${url}`);
           }
