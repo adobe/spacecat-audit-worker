@@ -11,6 +11,7 @@
  */
 
 import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
+import { Site } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getUrlWithoutPath } from '../support/utils.js';
 import { requestSaaS } from '../utils/saas.js';
@@ -120,6 +121,18 @@ async function getAllSkus(params, log) {
 }
 
 async function sitemapProductCoverageAudit(inputUrl, context, site) {
+  if (site.getDeliveryType() !== Site.DELIVERY_TYPES.AEM_EDGE) {
+    return {
+      success: false,
+      reasons: [{
+        value: 'Now we support only AEM Edge sites.',
+        error: ERROR_CODES.UNSUPPORTED_DELIVERY_TYPE,
+      }],
+      url: inputUrl,
+      details: {},
+    };
+  }
+
   const customConfig = site.getConfig().getHandlers()?.['sitemap-product-coverage'];
   if (!customConfig?.productUrlTemplate) {
     return {
