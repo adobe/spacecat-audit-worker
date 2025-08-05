@@ -20,7 +20,6 @@ import {
   getExistingUrlsFromFailedAudits,
   updateStatusToIgnored,
   saveA11yMetricsToS3,
-  filterAccessibilityOpportunities,
 } from './utils/scrape-utils.js';
 import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
 
@@ -164,7 +163,7 @@ export async function processAccessibilityOpportunities(context) {
   }
 
   // change status to IGNORED for older opportunities
-  await updateStatusToIgnored(dataAccess, siteId, log, filterAccessibilityOpportunities);
+  await updateStatusToIgnored(dataAccess, siteId, log);
 
   try {
     await generateReportOpportunities(
