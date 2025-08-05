@@ -115,13 +115,17 @@ export default async function readability(context, auditContext) {
 
               const issueText = `Text element is difficult to read: "${displayText}"`;
 
-              // Determine SEO impact based on readability score
-              const seoImpact = readabilityScore < (TARGET_READABILITY_SCORE / 2) ? 'High' : 'Moderate';
+              // // Determine SEO impact based on readability score
+              // const seoImpact = readabilityScore < (TARGET_READABILITY_SCORE / 2)
+              //   ? 'High'
+              //   : readabilityScore < TARGET_READABILITY_SCORE
+              //     ? 'Moderate'
+              //     : 'Low';
 
               audit.opportunities.push({
                 check: 'poor-readability',
                 issue: issueText,
-                seoImpact,
+                seoImpact: 'Moderate',
                 fleschReadingEase: readabilityScore,
                 seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
               });
