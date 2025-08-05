@@ -339,7 +339,7 @@ describe('Preflight Readability Audit', () => {
       await readability(context, auditContext);
 
       // Should log warning for the failed element but continue processing
-      expect(log.warn).to.have.been.calledWithMatch('Error calculating readability for element');
+      expect(log.error).to.have.been.calledWithMatch('Error calculating readability for element');
 
       // Restore the original function
       textReadability.default.fleschReadingEase = originalFleschReadingEase;
