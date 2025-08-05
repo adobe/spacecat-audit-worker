@@ -135,7 +135,7 @@ describe('Preflight Readability Audit', () => {
 
       const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
       expect(audit.opportunities).to.have.lengthOf(0);
-      expect(log.info).to.have.been.calledWithMatch('Processed 0 text elements');
+      expect(log.info).to.have.been.calledWithMatch('Processed 0 text element(s)');
     });
 
     it('should process both paragraphs and divs', async () => {
@@ -155,7 +155,7 @@ describe('Preflight Readability Audit', () => {
 
       const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
       expect(audit.opportunities).to.have.lengthOf(1); // Only the poor text should be flagged
-      expect(log.info).to.have.been.calledWithMatch('Processed 2 text elements');
+      expect(log.info).to.have.been.calledWithMatch('Processed 2 text element(s)');
     });
 
     it('should handle DOM parsing errors gracefully', async () => {
@@ -309,6 +309,27 @@ describe('Preflight Readability Audit', () => {
       expect(log.warn).to.have.been.calledWithMatch('No page result found for');
     });
 
+    it('should handle case when readability audit entry is missing for a page', async () => {
+      // Create a page result but manually remove the readability audit entry
+      const pageResult = audits.get('https://example.com/page1');
+      pageResult.audits = []; // Remove all audits, including readability
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: '<html><body><p>Some test content that is long enough to process</p></body></html>',
+          },
+        },
+      }];
+
+      // Run readability - this should trigger the missing audit warning
+      await readability(context, auditContext);
+
+      // Should log a warning about missing readability audit
+      expect(log.warn).to.have.been.calledWithMatch('No readability audit found for');
+    });
+
     it('should handle readability calculation error for individual elements', async () => {
       // We'll use sinon to stub the text-readability module
       const textReadability = await import('text-readability');
@@ -343,6 +364,30 @@ describe('Preflight Readability Audit', () => {
 
       // Restore the original function
       textReadability.default.fleschReadingEase = originalFleschReadingEase;
+    });
+
+    it('should skip non-English content (German)', async () => {
+      // Create German text that is long enough to be processed
+      const germanText = 'Dies ist ein sehr komplexer deutscher Text, der zahlreiche mehrsilbige Wörter und komplizierte grammatikalische Konstruktionen verwendet, was es für den durchschnittlichen Leser äußerst schwierig macht, ohne beträchtliche Anstrengung und Konzentration zu verstehen.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${germanText}</p></body></html>`,
+          },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      // Should not create any opportunities since German content is skipped
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      expect(audit.opportunities).to.have.lengthOf(0);
+
+      // Should log that content was processed but no poor readability found
+      expect(log.info).to.have.been.calledWithMatch('Processed 1 text element(s)');
+      expect(log.info).to.have.been.calledWithMatch('found 0 with poor readability');
     });
   });
 });

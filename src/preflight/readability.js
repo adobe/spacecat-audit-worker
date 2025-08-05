@@ -175,7 +175,7 @@ export default async function readability(context, auditContext) {
           }
         });
 
-        log.info(`[preflight-audit] readability: Processed ${processedElements} text elements on ${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability`);
+        log.info(`[preflight-audit] readability: Processed ${processedElements} text element(s) on ${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability`);
       } catch (error) {
         log.warn(`[preflight-audit] readability: Error processing ${normalizedFinalUrl}: ${error.message}`);
       }
