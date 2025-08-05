@@ -10,9 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import {
-  updateStatusToIgnored,
-} from '../accessibility/utils/scrape-utils.js';
 import { saveIntermediateResults } from './utils.js';
 import { sleep } from '../support/utils.js';
 import { accessibilityOpportunitiesMap } from '../accessibility/utils/constants.js';
@@ -134,7 +131,7 @@ async function scrapeAccessibilityData(context, auditContext) {
  */
 async function processAccessibilityOpportunities(context, auditContext) {
   const {
-    site, job, log, env, s3Client, dataAccess,
+    site, job, log, env, s3Client,
   } = context;
   const jobId = job?.getId();
   const {
@@ -159,9 +156,6 @@ async function processAccessibilityOpportunities(context, auditContext) {
   log.info(`[preflight-audit] Processing individual accessibility result files for ${site.getBaseURL()}`);
 
   try {
-    // Update existing opportunities status
-    await updateStatusToIgnored(dataAccess, siteId, log);
-
     // Process each preview URL's accessibility result file
     for (const url of previewUrls) {
       try {
@@ -224,7 +218,10 @@ async function processAccessibilityOpportunities(context, auditContext) {
                     wcagLevel: violationData.level || '',
                     severity: impact,
                     occurrences: violationData.count || '',
-                    htmlWithIssues: violationData.htmlWithIssues || [],
+                    htmlWithIssues: violationData.htmlWithIssues?.map((html, index) => ({
+                      target_selector: violationData.target?.[index] || '',
+                      update_from: html || '',
+                    })) || [],
                     failureSummary: violationData.failureSummary || '',
                     wcagRule: violationData.successCriteriaNumber || '',
                     description: violationData.description || '',
