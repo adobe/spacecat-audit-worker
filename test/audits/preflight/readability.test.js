@@ -366,7 +366,7 @@ describe('Preflight Readability Audit', () => {
       textReadability.default.fleschReadingEase = originalFleschReadingEase;
     });
 
-    it('should skip non-English content (German)', async () => {
+    it('should skip non-English content (e.g. German)', async () => {
       // Create German text that is long enough to be processed
       const germanText = 'Dies ist ein sehr komplexer deutscher Text, der zahlreiche mehrsilbige Wörter und komplizierte grammatikalische Konstruktionen verwendet, was es für den durchschnittlichen Leser äußerst schwierig macht, ohne beträchtliche Anstrengung und Konzentration zu verstehen.'.repeat(3);
 
@@ -470,6 +470,53 @@ describe('Preflight Readability Audit', () => {
 
       // Should log that 2 elements were processed (one for each paragraph)
       expect(log.info).to.have.been.calledWithMatch('Processed 2 text element(s)');
+    });
+
+    it('should handle readability calculation error for specific paragraph with proper error context', async () => {
+      // We'll use sinon to stub the text-readability module to throw an error on specific calls
+      const textReadability = await import('text-readability');
+      const originalFleschReadingEase = textReadability.default.fleschReadingEase;
+
+      // Stub to throw error on second call (second paragraph), succeed on others
+      let callCount = 0;
+      textReadability.default.fleschReadingEase = sinon.stub().callsFake((text) => {
+        callCount += 1;
+        if (callCount === 2) {
+          throw new Error('Readability calculation failed for specific paragraph');
+        }
+        return originalFleschReadingEase(text);
+      });
+
+      // Create text that will be split into multiple paragraphs by <br> tags
+      const poorText1 = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(2);
+      const poorText2 = 'This text will cause an error during readability calculation.'.repeat(2);
+      const poorText3 = 'This paragraph should process normally without any issues.'.repeat(2);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body>
+              <p>${poorText1}<br>${poorText2}<br>${poorText3}</p>
+            </body></html>`,
+          },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      // Should log warning for the failed paragraph with proper error context
+      expect(log.warn).to.have.been.calledWithMatch('Error calculating readability for paragraph 2 in element 0');
+
+      // Should still process other paragraphs successfully
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      expect(audit.opportunities).to.have.lengthOf(2); // 2 successful opportunities
+
+      // Should log that 3 elements were processed (3 paragraphs total)
+      expect(log.info).to.have.been.calledWithMatch('Processed 3 text element(s)');
+
+      // Restore the original function
+      textReadability.default.fleschReadingEase = originalFleschReadingEase;
     });
 
     it('should not truncate text when it is shorter than MAX_CHARACTERS_DISPLAY', async () => {
