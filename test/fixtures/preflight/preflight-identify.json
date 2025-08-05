@@ -54,32 +54,8 @@
       {
         "name": "metatags",
         "type": "seo",
-        "opportunities": [
-          {
-            "seoImpact": "High",
-            "issue": "Missing H1",
-            "issueDetails": "H1 tag is missing",
-            "seoRecommendation": "Should be present",
-            "tagName": "h1"
-          },
-          {
-            "seoImpact": "Moderate",
-            "issue": "Title too short",
-            "issueDetails": "28 chars below limit",
-            "seoRecommendation": "40-60 characters long",
-            "tagContent": "Page 1 Title",
-            "tagName": "title"
-          },
-          {
-            "seoImpact": "Moderate",
-            "issue": "Description too short",
-            "issueDetails": "122 chars below limit",
-            "seoRecommendation": "140-160 characters long",
-            "tagContent": "Page 1 Description",
-            "tagName": "description"
-          }
-        ]
-      },
+        "opportunities": [] 
+      }, 
       {
         "name": "links",
         "type": "seo",
