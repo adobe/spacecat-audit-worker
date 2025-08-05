@@ -196,10 +196,10 @@ export async function createAccessibilityOpportunity(auditData, context) {
     const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `forms-accessibility/${siteId}/`, log, 10, '-final-result.json');
     log.info(`[Form Opportunity] Found ${lastWeekObjectKeys.length} final-result files in the forms-accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
 
-    await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
+    // await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
 
-    // Create opportunity
-    const opportunity = await createOrUpdateOpportunity(auditId, siteId, a11yData, context);
+    // // Create opportunity
+    // const opportunity = await createOrUpdateOpportunity(auditId, siteId, a11yData, context);
 
     // Send message to mystique for detection
     const mystiqueMessage = {
