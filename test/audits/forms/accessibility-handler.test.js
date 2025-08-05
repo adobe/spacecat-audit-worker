@@ -81,14 +81,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
             Opportunity: {
               // Return existing opportunities when queried for NEW status
               allBySiteIdAndStatus: sandbox.stub().callsFake(async (siteId, status) => {
-                // Simulate the behavior of updateStatusToIgnored: when opportunities are found,
-                // they get updated to IGNORED status as a side effect
                 if (status === 'NEW') {
-                  // Simulate updating the status of opportunities that match the filter
-                  if (existingOpportunity.getTags().includes('Forms Accessibility')) {
-                    existingOpportunity.setStatus('IGNORED');
-                    await existingOpportunity.save();
-                  }
                   return [existingOpportunity];
                 }
                 return [];

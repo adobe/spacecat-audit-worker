@@ -120,7 +120,7 @@ export function filterAccessibilityOpportunities(opportunities) {
  * Result of the operation
  * @returns {Promise<{success: boolean, updatedCount: number, error?: string}>}
  */
-export async function updateStatusToIgnored(dataAccess, siteId, log, a11yOpportunityFilter) {
+export async function updateStatusToIgnored(dataAccess, siteId, log, filterOpportunities) {
   try {
     const { Opportunity } = dataAccess;
     const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
@@ -130,7 +130,7 @@ export async function updateStatusToIgnored(dataAccess, siteId, log, a11yOpportu
       return { success: true, updatedCount: 0 };
     }
 
-    const accessibilityOppties = a11yOpportunityFilter(opportunities);
+    const accessibilityOppties = filterOpportunities(opportunities);
     log.info(`[A11yAudit] Found ${accessibilityOppties.length} opportunities to update to IGNORED for site ${siteId}`);
 
     if (accessibilityOppties.length === 0) {
