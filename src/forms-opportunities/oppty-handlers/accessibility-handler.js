@@ -200,8 +200,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
     // await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
 
     // // Create opportunity
-    // const opportunity = await createOrUpdateOpportunity(auditId, siteId, a11yData, context);
-    const opportunity = {};
+    const opportunity = await createOrUpdateOpportunity(auditId, siteId, a11yData, context);
 
     // Send message to mystique for detection
     const mystiqueMessage = {
