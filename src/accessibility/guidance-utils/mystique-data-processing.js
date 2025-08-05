@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { issueTypesForMystique } from '../utils/constants.js';
 
 /**
@@ -19,50 +20,49 @@ import { issueTypesForMystique } from '../utils/constants.js';
  * @returns {Array} Array of message data objects ready for SQS sending
  */
 export function processSuggestionsForMystique(suggestions) {
-  // Handle null/undefined inputs safely
   if (!suggestions || !Array.isArray(suggestions)) {
     return [];
   }
 
-  const messageData = [];
-
+  // Group suggestions by url
+  const suggestionsByUrl = {};
   for (const suggestion of suggestions) {
     const suggestionData = suggestion.getData();
-    if (suggestionData.issues && Array.isArray(suggestionData.issues)) {
-      // Group issues by type for this suggestion
-      const issuesByType = {};
-
-      for (const issue of suggestionData.issues) {
-        // Only process issues that have htmlWithIssues with content
-        if (Array.isArray(issue.htmlWithIssues) && issue.htmlWithIssues.length > 0) {
-          if (!issuesByType[issue.type]) {
-            issuesByType[issue.type] = [];
-          }
-
-          for (const htmlIssueItem of issue.htmlWithIssues) {
-            issuesByType[issue.type].push({
-              issue_name: issue.type,
-              faulty_line: htmlIssueItem.update_from || '',
-              target_selector: htmlIssueItem.target_selector || issue.targetSelector || '',
-              issue_description: issue.description || '',
-              issue_id: htmlIssueItem.issue_id || '',
-            });
-          }
-        }
+    const suggestionId = suggestion.getId();
+    if (suggestionData.issues && isNonEmptyArray(suggestionData.issues)
+      && issueTypesForMystique.includes(suggestionData.issues[0].type)) {
+      const { url } = suggestionData;
+      if (!suggestionsByUrl[url]) {
+        suggestionsByUrl[url] = [];
       }
+      suggestionsByUrl[url].push({ ...suggestionData, suggestionId });
+    }
+  }
 
-      // Create message data for each issue type
-      for (const [issueType, issuesList] of Object.entries(issuesByType)) {
-        if (issueTypesForMystique.includes(issueType)) {
-          messageData.push({
-            suggestion,
-            suggestionData,
-            issueType,
-            issuesList,
+  const messageData = [];
+  for (const [url, suggestionsForUrl] of Object.entries(suggestionsByUrl)) {
+    const issuesList = [];
+    for (const suggestion of suggestionsForUrl) {
+      if (isNonEmptyArray(suggestion.issues)) {
+        // Starting with SITES-33832, a suggestion corresponds to a single granular issue,
+        // i.e. target selector and faulty HTML line
+        const singleIssue = suggestion.issues[0];
+        if (isNonEmptyArray(singleIssue.htmlWithIssues)) {
+          const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
+          issuesList.push({
+            issueName: singleIssue.type,
+            faultyLine: singleHtmlWithIssue.update_from || singleHtmlWithIssue.updateFrom || '',
+            targetSelector: singleHtmlWithIssue.target_selector || singleHtmlWithIssue.targetSelector || '',
+            issueDescription: singleIssue.description || '',
+            suggestionId: suggestion.suggestionId,
           });
         }
       }
     }
+    messageData.push({
+      url,
+      issuesList,
+    });
   }
 
   return messageData;
