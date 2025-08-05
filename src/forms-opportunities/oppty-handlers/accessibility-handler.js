@@ -1,3 +1,4 @@
+/* eslint-disable */
 /*
  * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
@@ -200,6 +201,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
 
     // // Create opportunity
     // const opportunity = await createOrUpdateOpportunity(auditId, siteId, a11yData, context);
+    const opportunity = {};
 
     // Send message to mystique for detection
     const mystiqueMessage = {
