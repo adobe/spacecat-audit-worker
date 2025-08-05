@@ -78,14 +78,8 @@ export default async function readability(context, auditContext) {
 
         // Helper function to detect if text is in English
         const isEnglishContent = (text) => {
-          try {
-            const detectedLanguage = franc(text);
-            return detectedLanguage === 'eng';
-          } catch (error) {
-            log.warn(`[preflight-audit] readability: Error detecting language: ${error.message}`);
-            // Default to true if language detection fails
-            return true;
-          }
+          const detectedLanguage = franc(text);
+          return detectedLanguage === 'eng';
         };
 
         // Helper function to calculate readability score and create audit opportunity
