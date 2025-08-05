@@ -73,7 +73,13 @@ describe('Image Alt Text Handler', () => {
           },
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
-            create: sandbox.stub().resolves({}),
+            create: sandbox.stub().resolves({
+              getId: sandbox.stub().returns('opportunity-id'),
+              getData: sandbox.stub().returns({}),
+              setData: sandbox.stub(),
+              save: sandbox.stub().resolves(),
+              getType: sandbox.stub().returns('alt-text'),
+            }),
           },
         },
         imsHost: 'test-ims-host',
@@ -682,6 +688,325 @@ describe('Image Alt Text Handler', () => {
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/Identified 0 images \(after filtering\)/),
       );
+    });
+  });
+
+  describe('processAltTextWithMystique', () => {
+    let sendAltTextOpportunityToMystiqueStub;
+    let clearAltTextSuggestionsStub;
+
+    beforeEach(async () => {
+      sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
+      clearAltTextSuggestionsStub = sandbox.stub().resolves();
+      // Mock the module with our stubs
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
+        '../../../src/image-alt-text/opportunityHandler.js': {
+          default: sandbox.stub(),
+          sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+          clearAltTextSuggestions: clearAltTextSuggestionsStub,
+        },
+      });
+    });
+
+    it('should process alt-text with Mystique successfully', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Processing alt-text with Mystique for site site-id',
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Sent 2 pages to Mystique for generating alt-text suggestions',
+      );
+    });
+
+    it('should handle case when no top pages found', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('No top pages found for site site-id');
+
+      expect(context.log.error).to.have.been.calledWith(
+        '[alt-text]: Failed to process with Mystique: No top pages found for site site-id',
+      );
+    });
+
+    it('should handle errors when sending to Mystique fails', async () => {
+      const error = new Error('Mystique send failed');
+      sendAltTextOpportunityToMystiqueStub.rejects(error);
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('Mystique send failed');
+
+      expect(context.log.error).to.have.been.calledWith(
+        '[alt-text]: Failed to process with Mystique: Mystique send failed',
+      );
+    });
+
+    it('should call clearAltTextSuggestions when existing opportunity is found', async () => {
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: () => ({}),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      // Override the default empty array with our mock opportunity
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(clearAltTextSuggestionsStub).to.have.been.calledWith({
+        opportunity: mockOpportunity,
+        log: context.log,
+      });
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Clearing existing suggestions before sending to Mystique',
+      );
+    });
+
+    it('should not call clearAltTextSuggestions when no existing opportunity is found', async () => {
+      // Ensure no existing opportunities are returned
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(clearAltTextSuggestionsStub).to.not.have.been.called;
+      expect(context.log.info).to.not.have.been.calledWith(
+        '[alt-text]: Clearing existing suggestions before sending to Mystique',
+      );
+    });
+
+    it('should handle includedURLs when site.getConfig is available', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns(['https://example.com/included']),
+        }),
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2', 'https://example.com/included'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+    });
+
+    it('should handle when site.getConfig is null', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => null,
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+    });
+
+    it('should handle when site.getConfig is undefined', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: undefined,
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+    });
+
+    it('should handle when getIncludedURLs returns null', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns(null),
+        }),
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+    });
+
+    it('should handle case when no top pages and no included URLs found', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns([]),
+        }),
+      };
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('No top pages found for site site-id');
+    });
+  });
+
+  describe('configuration-based handler selection', () => {
+    function createMockAuditBuilder(runStub) {
+      return function MockAuditBuilder() {
+        return {
+          withUrlResolver() { return this; },
+          addStep() { return this; },
+          build() {
+            return {
+              run: runStub,
+              steps: { /* mock steps */ },
+            };
+          },
+        };
+      };
+    }
+
+    it('should use Mystique flow when alt-text-mystique is enabled for site', async () => {
+      const mockSite = {
+        getId: sandbox.stub().returns('test-site-id'),
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+      };
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(true), // Mystique enabled
+      };
+
+      const mockDataAccess = {
+        Site: {
+          findById: sandbox.stub().resolves(mockSite),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves(mockConfiguration),
+        },
+      };
+
+      const mockContext = {
+        dataAccess: mockDataAccess,
+        log: console,
+      };
+
+      const mockMessage = {
+        siteId: 'test-site-id',
+        type: 'alt-text',
+      };
+
+      // Mock the audit builder's run method
+      const mockAuditResult = { success: true };
+      const runStub = sandbox.stub().resolves(mockAuditResult);
+
+      // Import the handler and mock the audit builders
+      const altTextHandlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/common/audit-builder.js': {
+          AuditBuilder: createMockAuditBuilder(runStub),
+        },
+      });
+
+      const result = await altTextHandlerModule.default(mockMessage, mockContext);
+
+      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('alt-text-auto-suggest-mystique', mockSite);
+      expect(runStub).to.have.been.calledWith(mockMessage, mockContext);
+      expect(result).to.equal(mockAuditResult);
+    });
+
+    it('should use Firefall flow when alt-text-mystique is disabled for site', async () => {
+      const mockSite = {
+        getId: sandbox.stub().returns('test-site-id'),
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+      };
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(false), // Mystique disabled
+      };
+
+      const mockDataAccess = {
+        Site: {
+          findById: sandbox.stub().resolves(mockSite),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves(mockConfiguration),
+        },
+      };
+
+      const mockContext = {
+        dataAccess: mockDataAccess,
+        log: console,
+      };
+
+      const mockMessage = {
+        siteId: 'test-site-id',
+        type: 'alt-text',
+      };
+
+      // Mock the audit builder's run method
+      const mockAuditResult = { success: true };
+      const runStub = sandbox.stub().resolves(mockAuditResult);
+
+      // Import the handler and mock the audit builders
+      const altTextHandlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/common/audit-builder.js': {
+          AuditBuilder: createMockAuditBuilder(runStub),
+        },
+      });
+
+      const result = await altTextHandlerModule.default(mockMessage, mockContext);
+
+      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('alt-text-auto-suggest-mystique', mockSite);
+      expect(runStub).to.have.been.calledWith(mockMessage, mockContext);
+      expect(result).to.equal(mockAuditResult);
     });
   });
 });

@@ -1,3 +1,45 @@
+## [1.136.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.136.0...v1.136.1) (2025-08-04)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1085](https://github.com/adobe/spacecat-audit-worker/issues/1085)) ([a206da1](https://github.com/adobe/spacecat-audit-worker/commit/a206da160d605512065b83f8d121f613989f81a2))
+
+# [1.136.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.135.1...v1.136.0) (2025-08-04)
+
+
+### Features
+
+* canonical suggestions ([#1073](https://github.com/adobe/spacecat-audit-worker/issues/1073)) ([70ec3a7](https://github.com/adobe/spacecat-audit-worker/commit/70ec3a77c78f22f7398f29081f97e8e07ab72e61))
+
+## [1.135.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.135.0...v1.135.1) (2025-08-04)
+
+
+### Bug Fixes
+
+* change-a11y-suggestion-data-structure-granularity ([#1082](https://github.com/adobe/spacecat-audit-worker/issues/1082)) ([dcace6f](https://github.com/adobe/spacecat-audit-worker/commit/dcace6f9b7d908c566b6220bf05e1c2d7ca55c63))
+
+# [1.135.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.5...v1.135.0) (2025-07-31)
+
+
+### Features
+
+* support agentic traffic reports for new UI ([#1079](https://github.com/adobe/spacecat-audit-worker/issues/1079)) ([f3c82ef](https://github.com/adobe/spacecat-audit-worker/commit/f3c82efd12c5336f3467588b3b71c8d29eb786ed))
+
+## [1.134.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.4...v1.134.5) (2025-07-31)
+
+
+### Bug Fixes
+
+* Upgrade @adobe/structured-data-validator to version 1.2.4 ([#1083](https://github.com/adobe/spacecat-audit-worker/issues/1083)) ([6b88ff8](https://github.com/adobe/spacecat-audit-worker/commit/6b88ff8bd8afa47452d027351452c0ba714d6afa))
+
+## [1.134.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.3...v1.134.4) (2025-07-31)
+
+
+### Bug Fixes
+
+* Suggestion error IDs are not unique in Structured Data Audit ([#1077](https://github.com/adobe/spacecat-audit-worker/issues/1077)) ([932cc48](https://github.com/adobe/spacecat-audit-worker/commit/932cc48a3e89cb03d66554e9d44602b14e96f6b8))
+
 ## [1.134.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.134.2...v1.134.3) (2025-07-30)
 
 

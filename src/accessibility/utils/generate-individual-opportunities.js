@@ -31,8 +31,7 @@ import { isAuditEnabledForSite } from '../../common/audit-utils.js';
  * @returns {Object} The message object ready for SQS
  */
 function createMystiqueMessage({
-  suggestion,
-  suggestionData,
+  url,
   issuesList,
   opportunity,
   siteId,
@@ -46,10 +45,9 @@ function createMystiqueMessage({
     deliveryType,
     time: new Date().toISOString(),
     data: {
-      url: suggestionData.url,
-      opportunity_id: opportunity.getId(),
-      suggestion_id: suggestion.getId ? suggestion.getId() : '',
-      issues_list: issuesList,
+      url,
+      opportunityId: opportunity.getId(),
+      issuesList,
     },
   };
 }
@@ -72,9 +70,7 @@ function createMystiqueMessage({
  * @returns {Promise<Object>} Result object with success status and details
  */
 async function sendMystiqueMessage({
-  suggestion,
-  suggestionData,
-  issueType,
+  url,
   issuesList,
   opportunity,
   siteId,
@@ -85,8 +81,7 @@ async function sendMystiqueMessage({
   log,
 }) {
   const message = createMystiqueMessage({
-    suggestion,
-    suggestionData,
+    url,
     issuesList,
     opportunity,
     siteId,
@@ -97,36 +92,22 @@ async function sendMystiqueMessage({
   try {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(
-      `[A11yIndividual] Sent message to Mystique for suggestion ${
-        suggestion.getId ? suggestion.getId() : ''
-      } and issue type ${issueType} with ${issuesList.length} issues`,
+      `[A11yIndividual] Sent message to Mystique for url ${url}: ${JSON.stringify(message, null, 2)}`,
     );
     return {
       success: true,
-      issueType,
-      suggestionId: suggestion.getId ? suggestion.getId() : '',
+      url,
     };
   } catch (error) {
     log.error(
-      `[A11yIndividual] Failed to send message to Mystique for suggestion ${
-        suggestion.getId ? suggestion.getId() : ''
-      } and issue type ${issueType}: ${error.message}`,
+      `[A11yIndividual] Failed to send message to Mystique for url ${url}, message: ${JSON.stringify(message, null, 2)} with error: ${error.message}`,
     );
     return {
       success: false,
-      issueType,
-      suggestionId: suggestion.getId ? suggestion.getId() : '',
+      url,
       error: error.message,
     };
   }
-}
-
-/**
- * Generates a UUID for issue identification
- * @returns {string} A unique identifier
- */
-function generateUUID() {
-  return crypto.randomUUID();
 }
 
 /**
@@ -191,8 +172,10 @@ export function formatIssue(type, issueData, severity) {
 
   // Extract target selector from the target field
   let targetSelector = '';
-  if (isNonEmptyArray(issueData.target)) {
+  if (Array.isArray(issueData.target) && issueData.target.length > 0) {
     [targetSelector] = issueData.target;
+  } else if (typeof issueData.target === 'string') {
+    targetSelector = issueData.target;
   }
 
   // Use htmlWithIssues directly from issueData if available, otherwise create minimal structure
@@ -215,7 +198,6 @@ export function formatIssue(type, issueData, severity) {
       return {
         update_from: updateFrom,
         target_selector: targetSelector,
-        issue_id: (isString(item) ? generateUUID() : (item && item.issue_id)) || generateUUID(),
       };
     });
   } else {
@@ -223,7 +205,6 @@ export function formatIssue(type, issueData, severity) {
     htmlWithIssues = [{
       update_from: '',
       target_selector: targetSelector,
-      issue_id: generateUUID(),
     }];
   }
 
@@ -233,7 +214,7 @@ export function formatIssue(type, issueData, severity) {
     wcagRule,
     wcagLevel: issueData.level || '', // AA, AAA, etc.
     severity,
-    occurrences: issueData.count || 0,
+    occurrences: (issueData.htmlWithIssues && issueData.htmlWithIssues.length) || 0,
     htmlWithIssues,
     failureSummary: issueData.failureSummary || '',
   };
@@ -256,8 +237,7 @@ export function aggregateAccessibilityIssues(accessibilityData) {
     return { data: [] };
   }
 
-  // Create reverse mapping from issueType to opportunityType
-  // This eliminates the O(n³) complexity by converting the innermost loop to O(1) lookup
+  // Create reverse mapping (unchanged)
   const issueTypeToOpportunityMap = {};
   for (const [opportunityType, issuesList] of Object.entries(accessibilityOpportunitiesMap)) {
     for (const issueType of issuesList) {
@@ -265,62 +245,54 @@ export function aggregateAccessibilityIssues(accessibilityData) {
     }
   }
 
-  // Initialize grouped data structure by opportunity type
+  // Initialize grouped data structure (unchanged)
   const groupedData = {};
   for (const [opportunityType] of Object.entries(accessibilityOpportunitiesMap)) {
     groupedData[opportunityType] = [];
   }
 
-  // Helper function to process issues for a given severity level
-  const processIssuesForSeverity = (items, severity, pageIssuesByType) => {
+  // NEW: Process individual HTML elements directly
+  const processIssuesForSeverity = (items, severity, url, data) => {
     for (const [issueType, issueData] of Object.entries(items)) {
-      // O(1) lookup instead of O(n) search through all opportunity types
       const opportunityType = issueTypeToOpportunityMap[issueType];
-      if (opportunityType) {
-        pageIssuesByType[opportunityType].issues.push(
-          formatIssue(issueType, issueData, severity),
-        );
+      if (opportunityType && issueData.htmlWithIssues) {
+        issueData.htmlWithIssues.forEach((htmlElement, index) => {
+          const singleElementIssueData = {
+            ...issueData,
+            htmlWithIssues: [htmlElement],
+            target: issueData.target ? issueData.target[index] : '',
+          };
+
+          const urlObject = {
+            type: 'url',
+            url,
+            issues: [formatIssue(issueType, singleElementIssueData, severity)],
+          };
+
+          data[opportunityType].push(urlObject);
+        });
       }
     }
   };
 
-  // Process each page (skip 'overall' summary which contains site-wide data)
+  // Simplified main processing loop
   for (const [url, pageData] of Object.entries(accessibilityData)) {
     if (url !== 'overall' && pageData.violations) {
-      // Initialize page issues for each opportunity type
-      const pageIssuesByType = {};
-      for (const [opportunityType] of Object.entries(accessibilityOpportunitiesMap)) {
-        pageIssuesByType[opportunityType] = {
-          type: 'url', // Indicates this is a URL-based suggestion
-          url,
-          issues: [], // Will contain accessibility issues for this opportunity type
-        };
-      }
-
       const { violations } = pageData;
 
-      // Process critical issues (only those in our tracked categories)
       if (violations.critical?.items) {
-        processIssuesForSeverity(violations.critical.items, 'critical', pageIssuesByType);
+        processIssuesForSeverity(violations.critical.items, 'critical', url, groupedData);
       }
 
-      // Process serious issues (only those in our tracked categories)
       if (violations.serious?.items) {
-        processIssuesForSeverity(violations.serious.items, 'serious', pageIssuesByType);
-      }
-
-      // Add URLs with issues directly to their respective opportunity type groups
-      for (const [opportunityType, urlData] of Object.entries(pageIssuesByType)) {
-        if (urlData.issues.length > 0) {
-          groupedData[opportunityType].push(urlData);
-        }
+        processIssuesForSeverity(violations.serious.items, 'serious', url, groupedData);
       }
     }
   }
 
-  // Convert grouped data to the desired format
+  // Convert to final format (unchanged)
   const formattedData = Object.entries(groupedData)
-    .filter(([, urls]) => urls.length > 0) // Only include types that have URLs with issues
+    .filter(([, urls]) => urls.length > 0)
     .map(([opportunityType, urls]) => ({
       [opportunityType]: urls,
     }));
@@ -464,11 +436,9 @@ export async function createIndividualOpportunitySuggestions(
     log.info(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
 
     const messagePromises = mystiqueData.map(({
-      suggestion, suggestionData, issueType, issuesList,
+      url, issuesList,
     }) => sendMystiqueMessage({
-      suggestion,
-      suggestionData,
-      issueType,
+      url,
       issuesList,
       opportunity: refreshedOpportunity,
       siteId,
@@ -586,6 +556,7 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
 
   // Step 1: Aggregate accessibility issues by URL
   const aggregatedData = aggregateAccessibilityIssues(accessibilityData);
+  log.info(`[A11yIndividual] Aggregated data: ${JSON.stringify(aggregatedData, null, 2)}`);
 
   // Early return if no actionable issues found
   if (!aggregatedData || !aggregatedData.data || aggregatedData.data.length === 0) {
@@ -755,100 +726,146 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
   const { log, dataAccess } = context;
   const { auditId, siteId, data } = message;
   const {
-    opportunityId, suggestionId, pageUrl, remediations, totalIssues,
+    opportunityId, pageUrl, remediations, totalIssues,
   } = data;
 
-  log.info(`[A11yRemediationGuidance] Received accessibility remediation guidance for opportunity ${opportunityId}, suggestion ${suggestionId}`);
-  log.debug(`[A11yRemediationGuidance] Processing ${totalIssues} issues for page: ${pageUrl}`);
+  log.info(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Received accessibility remediation guidance with ${remediations.length} remediations and ${totalIssues} total issues`);
 
   try {
     const { Opportunity } = dataAccess;
     const opportunity = await Opportunity.findById(opportunityId);
 
     if (!opportunity) {
-      log.error(`[A11yRemediationGuidance] Opportunity not found for ID: ${opportunityId}`);
+      log.error(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Opportunity not found`);
       return { success: false, error: 'Opportunity not found' };
     }
 
     // Verify the opportunity belongs to the correct site
     if (opportunity.getSiteId() !== siteId) {
-      const errorMsg = `[A11yRemediationGuidance] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
-      log.error(errorMsg);
+      log.error(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`);
       return { success: false, error: 'Site ID mismatch' };
     }
 
-    // Get the current suggestions
-    const suggestions = await opportunity.getSuggestions();
-    const targetSuggestion = suggestions.find((suggestion) => suggestion.getId() === suggestionId);
-
-    if (!targetSuggestion) {
-      log.error(`[A11yRemediationGuidance] Suggestion not found for ID: ${suggestionId}`);
-      return { success: false, error: 'Suggestion not found' };
+    if (!remediations || remediations.length === 0) {
+      log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: No remediations provided`);
+      return {
+        success: true,
+        totalIssues: 0,
+        pageUrl,
+        notFoundSuggestionIds: [],
+        invalidRemediations: [],
+        failedSuggestionIds: [],
+      };
     }
 
-    // Process the remediations and match them to specific issues and HTML elements
-    const suggestionData = targetSuggestion.getData();
-    const updatedIssues = suggestionData.issues.map((issue) => {
-      if (isNonEmptyArray(issue.htmlWithIssues)) {
-        // Enhanced htmlWithIssues structure - match remediations directly by issue_id
-        const enhancedHtmlWithIssues = issue.htmlWithIssues.map((htmlIssueObj) => {
-          // Find the specific remediation that matches this HTML element by issue_id
-          const specificRemediation = remediations.find(
-            (remediation) => remediation.issue_id === htmlIssueObj.issue_id,
-          );
+    const suggestions = await opportunity.getSuggestions();
 
-          if (specificRemediation) {
-            // Return enhanced structure with specific remediation guidance
-            return {
+    const notFoundSuggestionIds = [];
+    const invalidRemediations = [];
+
+    // Separate valid and invalid remediations
+    const validRemediations = [];
+    for (const remediation of remediations) {
+      const { suggestionId } = remediation;
+      if (!suggestionId) {
+        invalidRemediations.push(remediation);
+      } else {
+        validRemediations.push(remediation);
+      }
+    }
+
+    // Process only valid remediations
+    const processingPromises = [];
+
+    for (const remediation of validRemediations) {
+      const { suggestionId } = remediation;
+
+      const targetSuggestion = suggestions.find(
+        (suggestion) => suggestion.getId() === suggestionId,
+      );
+
+      if (targetSuggestion) {
+        // Process this specific remediation for this specific suggestion
+        const suggestionData = targetSuggestion.getData();
+        const updatedIssues = suggestionData.issues.map((issue) => {
+          if (isNonEmptyArray(issue.htmlWithIssues)) {
+            const enhancedHtmlWithIssues = issue.htmlWithIssues.map((htmlIssueObj) => ({
               ...htmlIssueObj,
               guidance: {
-                general_suggestion: specificRemediation.general_suggestion,
-                update_to: specificRemediation.update_to,
-                user_impact: specificRemediation.user_impact,
+                generalSuggestion: remediation.generalSuggestion || remediation.general_suggestion,
+                updateTo: remediation.updateTo || remediation.update_to,
+                userImpact: remediation.userImpact || remediation.user_impact,
               },
+            }));
+
+            return {
+              ...issue,
+              htmlWithIssues: enhancedHtmlWithIssues,
             };
           }
-
-          // Return unchanged if no specific remediation found
-          return htmlIssueObj;
+          return issue;
         });
 
-        // Return enhanced issue with improved htmlWithIssues structure
-        return {
-          ...issue,
-          htmlWithIssues: enhancedHtmlWithIssues,
+        // Update the suggestion with enhanced issues containing remediation details
+        const updatedSuggestionData = {
+          ...suggestionData,
+          issues: updatedIssues,
         };
+
+        // Update the suggestion
+        targetSuggestion.setData(updatedSuggestionData);
+        processingPromises.push({
+          promise: targetSuggestion.save(),
+          suggestionId,
+        });
+      } else {
+        notFoundSuggestionIds.push(suggestionId);
       }
+    }
 
-      // Return issue unchanged if no matching remediation found
-      return issue;
+    // Wait for all suggestion updates to complete using allSettled
+    const saveResults = await Promise.allSettled(processingPromises.map((item) => item.promise));
+
+    // Process the results to track successful and failed saves
+    const failedSuggestionIds = [];
+    let successfulSaves = 0;
+
+    saveResults.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        failedSuggestionIds.push(processingPromises[index].suggestionId);
+        log.error(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Failed to save suggestion ${processingPromises[index].suggestionId}: ${result.reason}`);
+      } else {
+        successfulSaves += 1;
+      }
     });
-
-    // Update the suggestion with enhanced issues containing remediation details
-    const updatedSuggestionData = {
-      ...suggestionData,
-      issues: updatedIssues,
-    };
-
-    // Update the suggestion
-    targetSuggestion.setData(updatedSuggestionData);
-    await targetSuggestion.save();
 
     // Update the opportunity with new audit ID
     opportunity.setAuditId(auditId);
     opportunity.setUpdatedBy('system');
     await opportunity.save();
 
-    const logMsg = `Successfully updated suggestion ${suggestionId} with remediations`;
-    log.info(`[A11yRemediationGuidance] ${logMsg} for opportunity ${opportunityId}`);
+    if (invalidRemediations.length > 0) {
+      log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: ${invalidRemediations.length} remediations missing suggestionId`);
+    }
+    if (notFoundSuggestionIds.length > 0) {
+      log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: ${notFoundSuggestionIds.length} suggestions not found: ${notFoundSuggestionIds.join(', ')}`);
+    }
+    if (failedSuggestionIds.length > 0) {
+      log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: ${failedSuggestionIds.length} suggestions failed to save: ${failedSuggestionIds.join(', ')}`);
+    }
+
+    log.info(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Successfully processed ${successfulSaves} remediations`);
 
     return {
       success: true,
       totalIssues,
       pageUrl,
+      notFoundSuggestionIds,
+      invalidRemediations,
+      failedSuggestionIds,
     };
   } catch (error) {
-    log.error(`[A11yRemediationGuidance] Failed to process accessibility remediation guidance: ${error.message}`);
+    log.error(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Failed to process accessibility remediation guidance: ${error.message}`);
     return { success: false, error: error.message };
   }
 }
