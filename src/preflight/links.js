@@ -60,11 +60,14 @@ export default async function links(context, auditContext) {
       pageAuthToken,
     });
 
+    const brokenInternalLinksByPage = new Map();
+    const brokenExternalLinksByPage = new Map();
+
     // Process internal links
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
       if (step === 'suggest') {
         const brokenLinks = auditResult.brokenInternalLinks.map((link) => ({
-          urlTo: new URL(site.getBaseURL()).origin + new URL(link.urlTo).pathname.replace(/\/$/, ''),
+          urlTo: new URL(previewBaseURL).origin + new URL(link.urlTo).pathname.replace(/\/$/, ''),
           href: link.href,
           status: link.status,
         }));
@@ -76,31 +79,29 @@ export default async function links(context, auditContext) {
         brokenInternalLinks.forEach(({
           urlTo, href, status, urlsSuggested, aiRationale,
         }) => {
-          const audit = linksAuditMap.get(href);
+          if (!brokenInternalLinksByPage.has(href)) {
+            brokenInternalLinksByPage.set(href, []);
+          }
           const aiUrls = urlsSuggested?.map((url) => (baseURLOrigin + new URL(url).pathname.replace(/\/$/, '')));
-          audit.opportunities.push({
-            check: 'broken-internal-links',
-            issue: {
-              url: urlTo,
-              issue: `Status ${status}`,
-              seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-              urlsSuggested: aiUrls,
-              aiRationale,
-            },
+          brokenInternalLinksByPage.get(href).push({
+            url: urlTo,
+            issue: `Status ${status}`,
+            seoImpact: 'High',
+            seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+            urlsSuggested: aiUrls,
+            aiRationale,
           });
         });
       } else {
         auditResult.brokenInternalLinks.forEach(({ urlTo, href, status }) => {
-          const audit = linksAuditMap.get(href);
-          audit.opportunities.push({
-            check: 'broken-internal-links',
-            issue: {
-              url: urlTo,
-              issue: `Status ${status}`,
-              seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-            },
+          if (!brokenInternalLinksByPage.has(href)) {
+            brokenInternalLinksByPage.set(href, []);
+          }
+          brokenInternalLinksByPage.get(href).push({
+            url: urlTo,
+            issue: `Status ${status}`,
+            seoImpact: 'High',
+            seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
           });
         });
       }
@@ -109,18 +110,37 @@ export default async function links(context, auditContext) {
     // Process external links from the same audit auditsResult
     if (isNonEmptyArray(auditResult.brokenExternalLinks)) {
       auditResult.brokenExternalLinks.forEach(({ urlTo, href, status }) => {
-        const audit = linksAuditMap.get(href);
-        audit.opportunities.push({
-          check: 'broken-external-links',
-          issue: {
-            url: urlTo,
-            issue: `Status ${status}`,
-            seoImpact: 'High',
-            seoRecommendation: 'Fix or remove broken links to improve user experience',
-          },
+        if (!brokenExternalLinksByPage.has(href)) {
+          brokenExternalLinksByPage.set(href, []);
+        }
+        brokenExternalLinksByPage.get(href).push({
+          url: urlTo,
+          issue: `Status ${status}`,
+          seoImpact: 'High',
+          seoRecommendation: 'Fix or remove broken links to improve user experience',
         });
       });
     }
+
+    brokenInternalLinksByPage.forEach((issues, href) => {
+      const audit = linksAuditMap.get(href);
+      if (audit && issues.length > 0) {
+        audit.opportunities.push({
+          check: 'broken-internal-links',
+          issue: issues,
+        });
+      }
+    });
+
+    brokenExternalLinksByPage.forEach((issues, href) => {
+      const audit = linksAuditMap.get(href);
+      if (audit && issues.length > 0) {
+        audit.opportunities.push({
+          check: 'broken-external-links',
+          issue: issues,
+        });
+      }
+    });
 
     const linksEndTime = Date.now();
     const linksEndTimestamp = new Date().toISOString();
