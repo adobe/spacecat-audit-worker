@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { Site } from '@adobe/spacecat-shared-data-access';
 import {
   sitemapProductCoverageAuditRunner,
   generateSuggestions,
@@ -40,6 +41,7 @@ describe('Sitemap Product Coverage Audit', () => {
 
   const baseURL = 'https://example.com';
   const mockSite = {
+    getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
     getConfig: () => ({
       getHandlers: () => ({
         'sitemap-product-coverage': {
@@ -267,8 +269,123 @@ describe('Sitemap Product Coverage Audit', () => {
   });
 
   describe('sitemapProductCoverageAuditRunner', () => {
+    it('should fail for non-AEM Edge sites', async () => {
+      const nonEdgeSite = {
+        getDeliveryType: () => Site.DELIVERY_TYPES.AEM_CS,
+        getConfig: () => ({
+          getHandlers: () => ({
+            'sitemap-product-coverage': {
+              productUrlTemplate: '%baseUrl/%locale/products/%urlKey/%skuLowerCase',
+              locales: 'en,fr',
+              config: {
+                en: {
+                  'commerce-customer-group': 'test-group',
+                  'commerce-environment-id': 'test-env',
+                  'commerce-store-code': 'en_store',
+                  'commerce-store-view-code': 'en_view',
+                  'commerce-website-code': 'en_website',
+                  'commerce-x-api-key': 'test-key',
+                  'commerce-endpoint': `${baseURL}/graphql`,
+                },
+              },
+            },
+          }),
+        }),
+      };
+
+      const result = await sitemapProductCoverageAuditRunnerMocked(
+        baseURL,
+        context,
+        nonEdgeSite,
+      );
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.reasons[0].error).to.equal(
+        ERROR_CODES.UNSUPPORTED_DELIVERY_TYPE,
+      );
+      expect(result.auditResult.reasons[0].value).to.equal(
+        'Now we support only AEM Edge sites.',
+      );
+      expect(result.auditResult.url).to.equal(baseURL);
+      expect(result.auditResult.details).to.deep.equal({});
+    });
+
+    it('should fail for AEM AMS sites', async () => {
+      const amsSite = {
+        getDeliveryType: () => Site.DELIVERY_TYPES.AEM_AMS,
+        getConfig: () => ({
+          getHandlers: () => ({
+            'sitemap-product-coverage': {
+              productUrlTemplate: '%baseUrl/%locale/products/%urlKey/%skuLowerCase',
+              locales: 'en',
+              config: {
+                en: {
+                  'commerce-customer-group': 'test-group',
+                  'commerce-environment-id': 'test-env',
+                  'commerce-store-code': 'en_store',
+                  'commerce-store-view-code': 'en_view',
+                  'commerce-website-code': 'en_website',
+                  'commerce-x-api-key': 'test-key',
+                  'commerce-endpoint': `${baseURL}/graphql`,
+                },
+              },
+            },
+          }),
+        }),
+      };
+
+      const result = await sitemapProductCoverageAuditRunnerMocked(
+        baseURL,
+        context,
+        amsSite,
+      );
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.reasons[0].error).to.equal(
+        ERROR_CODES.UNSUPPORTED_DELIVERY_TYPE,
+      );
+      expect(result.auditResult.reasons[0].value).to.equal(
+        'Now we support only AEM Edge sites.',
+      );
+    });
+
+    it('should succeed for AEM Edge sites', async () => {
+      const edgeSite = {
+        getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
+        getConfig: () => ({
+          getHandlers: () => ({
+            'sitemap-product-coverage': {
+              productUrlTemplate: '%baseUrl/%locale/products/%urlKey/%skuLowerCase',
+              locales: 'en',
+              config: {
+                en: {
+                  'commerce-customer-group': 'test-group',
+                  'commerce-environment-id': 'test-env',
+                  'commerce-store-code': 'en_store',
+                  'commerce-store-view-code': 'en_view',
+                  'commerce-website-code': 'en_website',
+                  'commerce-x-api-key': 'test-key',
+                  'commerce-endpoint': `${baseURL}/graphql`,
+                },
+              },
+            },
+          }),
+        }),
+      };
+
+      const result = await sitemapProductCoverageAuditRunnerMocked(
+        baseURL,
+        context,
+        edgeSite,
+      );
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.details.issues).to.be.an('object');
+    });
+
     it('should handle missing product URL template configuration', async () => {
       const siteWithoutConfig = {
+        getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
         getConfig: () => ({
           getHandlers: () => ({
             'sitemap-product-coverage': {},
@@ -329,6 +446,7 @@ describe('Sitemap Product Coverage Audit', () => {
 
     it('should handle unknown product count error', async () => {
       const siteWithDefaultLocale = {
+        getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
         getConfig: () => ({
           getHandlers: () => ({
             'sitemap-product-coverage': {
@@ -406,6 +524,7 @@ describe('Sitemap Product Coverage Audit', () => {
 
     it('should handle empty sitemap paths with NO_VALID_PATHS_EXTRACTED (lines 199-208)', async () => {
       const siteWithEmptyExtraction = {
+        getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
         getConfig: () => ({
           getHandlers: () => ({
             'sitemap-product-coverage': {
@@ -594,6 +713,7 @@ describe('Sitemap Product Coverage Audit', () => {
 
     it('should handle configuration edge cases', async () => {
       const siteWithMinimalConfig = {
+        getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
         getConfig: () => ({
           getHandlers: () => ({
             'sitemap-product-coverage': {
