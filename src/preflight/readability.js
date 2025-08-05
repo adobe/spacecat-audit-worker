@@ -150,8 +150,12 @@ export default async function readability(context, auditContext) {
         const hasLineBreaks = element.innerHTML.includes('<br');
 
         if (hasLineBreaks) {
-          // Split text by line breaks and analyze each paragraph separately
-          const paragraphs = textContent.split(/\s*\n\s*/).filter((p) => p.trim().length >= MIN_TEXT_LENGTH);
+          // Split text by <br> tags and analyze each paragraph separately
+          const paragraphs = element.innerHTML
+            .split(/<br\s*\/?>/gi)
+            .map((p) => p.replace(/<[^>]*>/g, '')) // Remove other HTML tags
+            .map((p) => p.trim())
+            .filter((p) => p.length >= MIN_TEXT_LENGTH);
 
           paragraphs.forEach((paragraph, paragraphIndex) => {
             analyzeReadability(paragraph, element, index, paragraphIndex);

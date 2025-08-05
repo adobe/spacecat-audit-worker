@@ -390,6 +390,88 @@ describe('Preflight Readability Audit', () => {
       expect(log.info).to.have.been.calledWithMatch('found 0 with poor readability');
     });
 
+    it('should skip elements with block-level children to avoid duplicate analysis', async () => {
+      // Create text with poor readability
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body>
+              <div>
+                <p>${poorText}</p>
+                <div>Another block element that should cause the parent to be skipped</div>
+              </div>
+            </body></html>`,
+          },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      // Should not create any opportunities since the div has block-level children
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      expect(audit.opportunities).to.have.lengthOf(0);
+
+      // Should log that no elements were processed
+      expect(log.info).to.have.been.calledWithMatch('Processed 0 text element(s)');
+    });
+
+    it('should process elements with only inline formatting children', async () => {
+      // Create text with poor readability
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body>
+              <div>
+                <strong>Bold text</strong> and <em>italic text</em> with <span>inline formatting</span> and <a href="#">links</a>.
+                ${poorText}
+              </div>
+            </body></html>`,
+          },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      // Should create opportunities since the div only has inline children
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      expect(audit.opportunities).to.have.lengthOf(1);
+
+      // Should log that elements were processed
+      expect(log.info).to.have.been.calledWithMatch('Processed 1 text element(s)');
+    });
+
+    it('should properly handle text with <br> tags by splitting into paragraphs', async () => {
+      // Create text with poor readability that will be split by <br> tags
+      const poorText1 = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(2);
+      const poorText2 = 'Another paragraph with similarly complex sentence structures that contain numerous multisyllabic words and intricate grammatical constructions, making it extremely challenging for readers to understand without significant cognitive effort.'.repeat(2);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body>
+              <p>${poorText1}<br>${poorText2}</p>
+            </body></html>`,
+          },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      // Should create opportunities for each paragraph separated by <br>
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      expect(audit.opportunities).to.have.lengthOf(2);
+
+      // Should log that 2 elements were processed (one for each paragraph)
+      expect(log.info).to.have.been.calledWithMatch('Processed 2 text element(s)');
+    });
+
     it('should not truncate text when it is shorter than MAX_CHARACTERS_DISPLAY', async () => {
       // Create text that is poor readability but shorter than 200 characters
       const shortPoorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions making it extremely difficult to comprehend without considerable concentration.';
