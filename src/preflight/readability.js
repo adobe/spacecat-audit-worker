@@ -117,10 +117,7 @@ export default async function readability(context, auditContext) {
 
               // // Determine SEO impact based on readability score
               // const seoImpact = readabilityScore < (TARGET_READABILITY_SCORE / 2)
-              //   ? 'High'
-              //   : readabilityScore < TARGET_READABILITY_SCORE
-              //     ? 'Moderate'
-              //     : 'Low';
+              //   ? 'High' : 'Moderate';
 
               audit.opportunities.push({
                 check: 'poor-readability',
