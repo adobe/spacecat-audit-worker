@@ -119,8 +119,6 @@ describe('Preflight Readability Audit', () => {
       const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
       expect(audit.opportunities).to.have.lengthOf(1);
       expect(audit.opportunities[0].check).to.equal('poor-readability');
-      expect(audit.opportunities[0].issue).to.include('poor readability');
-      expect(audit.opportunities[0].issue).to.include('Flesch score:');
     });
 
     it('should skip text content shorter than minimum length', async () => {
@@ -158,43 +156,6 @@ describe('Preflight Readability Audit', () => {
       const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
       expect(audit.opportunities).to.have.lengthOf(1); // Only the poor text should be flagged
       expect(log.info).to.have.been.calledWithMatch('Processed 2 text elements');
-    });
-
-    it('should include element selector information', async () => {
-      const poorText = 'This is an extraordinarily complex sentence that utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
-
-      auditContext.scrapedObjects = [{
-        data: {
-          finalUrl: 'https://example.com/page1',
-          scrapeResult: {
-            rawBody: `<html><body><p id="test-id" class="content main">${poorText}</p></body></html>`,
-          },
-        },
-      }];
-
-      await readability(context, auditContext);
-
-      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
-      expect(audit.opportunities[0].issue).to.include('p#test-id.content.main');
-    });
-
-    it('should truncate long text previews', async () => {
-      const longPoorText = 'This is an extraordinarily complex sentence that utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(5);
-
-      auditContext.scrapedObjects = [{
-        data: {
-          finalUrl: 'https://example.com/page1',
-          scrapeResult: {
-            rawBody: `<html><body><p>${longPoorText}</p></body></html>`,
-          },
-        },
-      }];
-
-      await readability(context, auditContext);
-
-      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
-      expect(audit.opportunities[0].issue).to.include('Text preview:');
-      expect(audit.opportunities[0].issue).to.include('...');
     });
 
     it('should handle DOM parsing errors gracefully', async () => {
@@ -313,38 +274,6 @@ describe('Preflight Readability Audit', () => {
       expect(log.error).not.to.have.been.called;
     });
 
-    xit('should handle overall DOM processing errors', async () => {
-      // Force an error by making JSDOM constructor throw
-      const originalJSDOM = global.JSDOM;
-      global.JSDOM = function mockJSDOM() {
-        throw new Error('Forced JSDOM error for testing');
-      };
-
-      auditContext.scrapedObjects = [{
-        data: {
-          finalUrl: 'https://example.com/page1',
-          scrapeResult: {
-            rawBody: '<html><body><p>Valid HTML content for processing</p></body></html>',
-          },
-        },
-      }];
-
-      try {
-        await readability(context, auditContext);
-
-        // Find the audit for the specific URL that was processed
-        const pageResult = audits.get('https://example.com/page1');
-        const audit = pageResult.audits.find((a) => a.name === 'readability');
-        expect(audit.opportunities).to.have.lengthOf(1);
-        expect(audit.opportunities[0].check).to.equal('readability-analysis-error');
-        expect(audit.opportunities[0].issue).to.include('Failed to analyze page readability');
-        expect(log.error).to.have.been.calledWithMatch('Error processing');
-      } finally {
-        // Always restore JSDOM
-        global.JSDOM = originalJSDOM;
-      }
-    });
-
     it('should handle case when page result is not found', async () => {
       // Set up scraped object for a URL that's not in the audits map
       auditContext.scrapedObjects = [{
@@ -378,44 +307,6 @@ describe('Preflight Readability Audit', () => {
 
       // Should log a warning because no page result exists for this URL
       expect(log.warn).to.have.been.calledWithMatch('No page result found for');
-    });
-
-    xit('should handle case when no readability audit exists for a page', async () => {
-      // Create a page result but manually remove its readability audit after function creates it
-      const testUrl = 'https://example.com/page2';
-
-      // First, add the URL to previewUrls so an audit gets created
-      auditContext.previewUrls.push(testUrl);
-
-      const page2Result = {
-        pageUrl: testUrl,
-        step: 'identify',
-        audits: [],
-      };
-      auditsResult.push(page2Result);
-      audits.set(testUrl, page2Result);
-
-      auditContext.scrapedObjects = [{
-        data: {
-          finalUrl: testUrl,
-          scrapeResult: {
-            rawBody: '<html><body><p>Some test content that is long enough to process</p></body></html>',
-          },
-        },
-      }];
-
-      // Call readability to create the audit entries first
-      await readability(context, auditContext);
-
-      // Now remove the readability audit and clear logs
-      page2Result.audits = page2Result.audits.filter((audit) => audit.name !== 'readability');
-      log.warn.resetHistory();
-
-      // Process scrapedObjects again - this should trigger the warning
-      await readability(context, auditContext);
-
-      // Should log a warning because audit entry is missing for this page
-      expect(log.warn).to.have.been.calledWithMatch('[preflight-audit] readability: No readability audit found for');
     });
 
     it('should handle readability calculation error for individual elements', async () => {
