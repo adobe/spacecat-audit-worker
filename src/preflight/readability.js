@@ -138,9 +138,22 @@ export default async function readability(context, auditContext) {
 
         if (hasLineBreaks) {
           // Split text by <br> tags and analyze each paragraph separately
-          const paragraphs = element.innerHTML
-            .split(/<br\s*\/?>/gi)
-            .map((p) => p.replace(/<[^>]*>/g, '')) // Remove other HTML tags
+          // Create a temporary clone to manipulate
+          const tempElement = element.cloneNode(true);
+
+          // Replace <br> tags with a unique delimiter
+          const brRegex = /<br\s*\/?>/gi;
+          tempElement.innerHTML = tempElement.innerHTML.replace(brRegex, '<!--BR_DELIMITER-->');
+
+          // Split by the delimiter and extract text content
+          const paragraphs = tempElement.innerHTML
+            .split('<!--BR_DELIMITER-->')
+            .map((p) => {
+              // Create a temporary div to extract text content safely
+              const tempDiv = doc.createElement('div');
+              tempDiv.innerHTML = p;
+              return tempDiv.textContent;
+            })
             .map((p) => p.trim())
             .filter((p) => p.length >= MIN_TEXT_LENGTH);
 
