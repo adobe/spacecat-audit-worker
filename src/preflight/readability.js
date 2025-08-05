@@ -62,118 +62,110 @@ export default async function readability(context, auditContext) {
       }
 
       const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
-      if (!audit) {
-        log.warn(`[preflight-audit] readability: No readability audit found for ${normalizedFinalUrl}`);
-        return;
-      }
 
-      try {
-        const doc = new JSDOM(rawBody).window.document;
+      const doc = new JSDOM(rawBody).window.document;
 
-        // Get all paragraph and div elements
-        const textElements = Array.from(doc.querySelectorAll('p, div'));
+      // Get all paragraph and div elements
+      const textElements = Array.from(doc.querySelectorAll('p, div'));
 
-        let processedElements = 0;
-        let poorReadabilityCount = 0;
+      let processedElements = 0;
+      let poorReadabilityCount = 0;
 
-        // Helper function to detect if text is in English
-        const isEnglishContent = (text) => {
-          const detectedLanguage = franc(text);
-          return detectedLanguage === 'eng';
-        };
+      // Helper function to detect if text is in English
+      const isEnglishContent = (text) => {
+        const detectedLanguage = franc(text);
+        return detectedLanguage === 'eng';
+      };
 
-        // Helper function to calculate readability score and create audit opportunity
-        const analyzeReadability = (text, element, elementIndex, paragraphIndex = null) => {
-          try {
-            // Check if text is in English before analyzing readability
-            if (!isEnglishContent(text)) {
-              return; // Skip non-English content
-            }
-
-            const readabilityScore = rs.fleschReadingEase(text.trim());
-
-            if (readabilityScore < TARGET_READABILITY_SCORE) {
-              poorReadabilityCount += 1;
-
-              // Get element selector for identification
-              // const elementTag = element.tagName.toLowerCase();
-              // const elementId = element.id ? `#${element.id}` : '';
-              // const elementClass = element.className
-              //   ? `.${element.className.split(' ').join('.')}` : '';
-              // const selector = `${elementTag}${elementId}${elementClass}`;
-
-              // Truncate text for display
-              const displayText = text.length > MAX_CHARACTERS_DISPLAY
-                ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
-                : text;
-
-              const issueText = `Text element is difficult to read: "${displayText}"`;
-
-              // // Determine SEO impact based on readability score
-              // const seoImpact = readabilityScore < (TARGET_READABILITY_SCORE / 2)
-              //   ? 'High' : 'Moderate';
-
-              audit.opportunities.push({
-                check: 'poor-readability',
-                issue: issueText,
-                seoImpact: 'Moderate',
-                fleschReadingEase: readabilityScore,
-                seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
-              });
-            }
-          } catch (error) {
-            const errorContext = paragraphIndex !== null
-              ? `paragraph ${paragraphIndex + 1} in element ${elementIndex}`
-              : `element ${elementIndex}`;
-            log.warn(`[preflight-audit] readability: Error calculating readability for ${errorContext} on ${normalizedFinalUrl}: ${error.message}`);
+      // Helper function to calculate readability score and create audit opportunity
+      const analyzeReadability = (text, element, elementIndex, paragraphIndex = null) => {
+        try {
+          // Check if text is in English before analyzing readability
+          if (!isEnglishContent(text)) {
+            return; // Skip non-English content
           }
-        };
 
-        textElements.forEach((element, index) => {
-          // Check if element has child elements
-          if (element.children.length > 0) {
-            // If it has children, check if they are only inline formatting elements
-            const hasOnlyInlineChildren = Array.from(element.children).every((child) => {
-              const inlineTags = ['strong', 'b', 'em', 'i', 'span', 'a', 'mark', 'small', 'sub', 'sup', 'u', 'code', 'br'];
-              return inlineTags.includes(child.tagName.toLowerCase());
+          const readabilityScore = rs.fleschReadingEase(text.trim());
+
+          if (readabilityScore < TARGET_READABILITY_SCORE) {
+            poorReadabilityCount += 1;
+
+            // Get element selector for identification
+            // const elementTag = element.tagName.toLowerCase();
+            // const elementId = element.id ? `#${element.id}` : '';
+            // const elementClass = element.className
+            //   ? `.${element.className.split(' ').join('.')}` : '';
+            // const selector = `${elementTag}${elementId}${elementClass}`;
+
+            // Truncate text for display
+            const displayText = text.length > MAX_CHARACTERS_DISPLAY
+              ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
+              : text;
+
+            const issueText = `Text element is difficult to read: "${displayText}"`;
+
+            // // Determine SEO impact based on readability score
+            // const seoImpact = readabilityScore < (TARGET_READABILITY_SCORE / 2)
+            //   ? 'High' : 'Moderate';
+
+            audit.opportunities.push({
+              check: 'poor-readability',
+              issue: issueText,
+              seoImpact: 'Moderate',
+              fleschReadingEase: readabilityScore,
+              seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
             });
-
-            // Skip if it has block-level children (to avoid duplicate analysis)
-            if (!hasOnlyInlineChildren) {
-              return;
-            }
           }
+        } catch (error) {
+          const errorContext = paragraphIndex !== null
+            ? `paragraph ${paragraphIndex + 1} in element ${elementIndex}`
+            : `element ${elementIndex}`;
+          log.warn(`[preflight-audit] readability: Error calculating readability for ${errorContext} on ${normalizedFinalUrl}: ${error.message}`);
+        }
+      };
 
-          const textContent = element.textContent?.trim();
+      textElements.forEach((element, index) => {
+        // Check if element has child elements
+        if (element.children.length > 0) {
+          // If it has children, check if they are only inline formatting elements
+          const hasOnlyInlineChildren = Array.from(element.children).every((child) => {
+            const inlineTags = ['strong', 'b', 'em', 'i', 'span', 'a', 'mark', 'small', 'sub', 'sup', 'u', 'code', 'br'];
+            return inlineTags.includes(child.tagName.toLowerCase());
+          });
 
-          // Skip elements with insufficient text content
-          if (!textContent || textContent.length < MIN_TEXT_LENGTH) {
+          // Skip if it has block-level children (to avoid duplicate analysis)
+          if (!hasOnlyInlineChildren) {
             return;
           }
+        }
 
-          // Check if element contains <br> or <br /> tags
-          const hasLineBreaks = element.innerHTML.includes('<br');
+        const textContent = element.textContent?.trim();
 
-          if (hasLineBreaks) {
-            // Split text by line breaks and analyze each paragraph separately
-            const paragraphs = textContent.split(/\s*\n\s*/).filter((p) => p.trim().length >= MIN_TEXT_LENGTH);
+        // Skip elements with insufficient text content
+        if (!textContent || textContent.length < MIN_TEXT_LENGTH) {
+          return;
+        }
 
-            paragraphs.forEach((paragraph, paragraphIndex) => {
-              analyzeReadability(paragraph, element, index, paragraphIndex);
-            });
+        // Check if element contains <br> or <br /> tags
+        const hasLineBreaks = element.innerHTML.includes('<br');
 
-            processedElements += paragraphs.length;
-          } else {
-            // Analyze as a single text block
-            processedElements += 1;
-            analyzeReadability(textContent, element, index);
-          }
-        });
+        if (hasLineBreaks) {
+          // Split text by line breaks and analyze each paragraph separately
+          const paragraphs = textContent.split(/\s*\n\s*/).filter((p) => p.trim().length >= MIN_TEXT_LENGTH);
 
-        log.info(`[preflight-audit] readability: Processed ${processedElements} text element(s) on ${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability`);
-      } catch (error) {
-        log.warn(`[preflight-audit] readability: Error processing ${normalizedFinalUrl}: ${error.message}`);
-      }
+          paragraphs.forEach((paragraph, paragraphIndex) => {
+            analyzeReadability(paragraph, element, index, paragraphIndex);
+          });
+
+          processedElements += paragraphs.length;
+        } else {
+          // Analyze as a single text block
+          processedElements += 1;
+          analyzeReadability(textContent, element, index);
+        }
+      });
+
+      log.info(`[preflight-audit] readability: Processed ${processedElements} text element(s) on ${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability`);
     });
 
     const readabilityEndTime = Date.now();
