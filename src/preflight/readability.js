@@ -90,23 +90,12 @@ export default async function readability(context, auditContext) {
           if (readabilityScore < TARGET_READABILITY_SCORE) {
             poorReadabilityCount += 1;
 
-            // Get element selector for identification
-            // const elementTag = element.tagName.toLowerCase();
-            // const elementId = element.id ? `#${element.id}` : '';
-            // const elementClass = element.className
-            //   ? `.${element.className.split(' ').join('.')}` : '';
-            // const selector = `${elementTag}${elementId}${elementClass}`;
-
             // Truncate text for display
             const displayText = text.length > MAX_CHARACTERS_DISPLAY
               ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
               : text;
 
             const issueText = `Text element is difficult to read: "${displayText}"`;
-
-            // // Determine SEO impact based on readability score
-            // const seoImpact = readabilityScore < (TARGET_READABILITY_SCORE / 2)
-            //   ? 'High' : 'Moderate';
 
             audit.opportunities.push({
               check: 'poor-readability',
@@ -118,10 +107,7 @@ export default async function readability(context, auditContext) {
           }
         } catch (error) {
           const errorContext = `element with index ${elementIndex}`;
-          // const errorContext = paragraphIndex !== null
-          //   ? `paragraph ${paragraphIndex + 1} in element ${elementIndex}`
-          //   : `element ${elementIndex}`;
-          log.warn(`[preflight-audit] readability: Error calculating readability for ${errorContext} on ${normalizedFinalUrl}: ${error.message}`);
+          log.error(`[preflight-audit] readability: Error calculating readability for ${errorContext} on ${normalizedFinalUrl}: ${error.message}`);
         }
       };
 
