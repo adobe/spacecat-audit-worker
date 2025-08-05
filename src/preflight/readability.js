@@ -78,7 +78,7 @@ export default async function readability(context, auditContext) {
       };
 
       // Helper function to calculate readability score and create audit opportunity
-      const analyzeReadability = (text, element, elementIndex, paragraphIndex = null) => {
+      const analyzeReadability = (text, element, elementIndex) => {
         try {
           // Check if text is in English before analyzing readability
           if (!isEnglishContent(text)) {
@@ -117,9 +117,10 @@ export default async function readability(context, auditContext) {
             });
           }
         } catch (error) {
-          const errorContext = paragraphIndex !== null
-            ? `paragraph ${paragraphIndex + 1} in element ${elementIndex}`
-            : `element ${elementIndex}`;
+          const errorContext = `element with index ${elementIndex}`;
+          // const errorContext = paragraphIndex !== null
+          //   ? `paragraph ${paragraphIndex + 1} in element ${elementIndex}`
+          //   : `element ${elementIndex}`;
           log.warn(`[preflight-audit] readability: Error calculating readability for ${errorContext} on ${normalizedFinalUrl}: ${error.message}`);
         }
       };
@@ -157,8 +158,8 @@ export default async function readability(context, auditContext) {
             .map((p) => p.trim())
             .filter((p) => p.length >= MIN_TEXT_LENGTH);
 
-          paragraphs.forEach((paragraph, paragraphIndex) => {
-            analyzeReadability(paragraph, element, index, paragraphIndex);
+          paragraphs.forEach((paragraph) => {
+            analyzeReadability(paragraph, element, index);
           });
 
           processedElements += paragraphs.length;
