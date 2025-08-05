@@ -408,7 +408,7 @@ describe('Scrape Utils', () => {
     });
 
     it('successfully updates opportunities to IGNORED status', async () => {
-      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog, filterAccessibilityOpportunities);
 
       expect(result).to.deep.equal({
         success: true,
@@ -423,7 +423,7 @@ describe('Scrape Utils', () => {
 
     it('handles case when no opportunities are found', async () => {
       mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog, filterAccessibilityOpportunities);
 
       expect(result).to.deep.equal({
         success: true,
@@ -443,7 +443,7 @@ describe('Scrape Utils', () => {
       };
 
       mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([nonMatchingOpportunity]);
-      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog, filterAccessibilityOpportunities);
 
       expect(result).to.deep.equal({
         success: true,
@@ -455,7 +455,7 @@ describe('Scrape Utils', () => {
 
     it('handles errors during opportunity update', async () => {
       mockOpportunity.save.rejects(new Error('Save failed'));
-      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog, filterAccessibilityOpportunities);
 
       expect(result).to.deep.equal({
         success: false,
@@ -469,7 +469,7 @@ describe('Scrape Utils', () => {
 
     it('handles errors during opportunity fetch', async () => {
       mockDataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('Fetch failed'));
-      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog);
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog, filterAccessibilityOpportunities);
 
       expect(result).to.deep.equal({
         success: false,

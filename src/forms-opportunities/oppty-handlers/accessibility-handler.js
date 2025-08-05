@@ -16,6 +16,9 @@ import { cleanupS3Files, getObjectKeysFromSubfolders, processFilesWithRetry } fr
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { getSuccessCriteriaDetails } from '../utils.js';
 import { getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
+import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
+
+const a11yOpportunityFilter = (opportunity) => opportunity.getTags().includes('Forms Accessibility');
 
 /**
  * Create a11y opportunity for the given siteId and auditId
@@ -100,6 +103,9 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
 
     // If no existing opportunity, create new opportunity
     if (!opportunity) {
+      // change status to IGNORED for older opportunities
+      await updateStatusToIgnored(dataAccess, siteId, log, a11yOpportunityFilter);
+
       const opportunityData = {
         siteId,
         auditId,
