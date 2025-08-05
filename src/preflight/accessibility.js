@@ -13,6 +13,7 @@
 import { saveIntermediateResults } from './utils.js';
 import { sleep } from '../support/utils.js';
 import { accessibilityOpportunitiesMap } from '../accessibility/utils/constants.js';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 
 export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
 
@@ -165,80 +166,75 @@ async function processAccessibilityOpportunities(context, auditContext) {
         const fileKey = `accessibility-preflight/${siteId}/${filename}`;
         log.info(`[preflight-audit] Processing accessibility file: ${fileKey}`);
 
-        // Get the accessibility result file from S3
+        // Get the accessibility result file from S3 using existing utility
         // eslint-disable-next-line no-await-in-loop
-        const { GetObjectCommand } = await import('@aws-sdk/client-s3');
-        const getCommand = new GetObjectCommand({
-          Bucket: bucketName,
-          Key: fileKey,
-        });
+        const accessibilityData = await getObjectFromKey(s3Client, bucketName, fileKey, log);
 
-        // eslint-disable-next-line no-await-in-loop
-        const response = await s3Client.send(getCommand);
-        // eslint-disable-next-line no-await-in-loop
-        const fileContent = await response.Body.transformToString();
-        const accessibilityData = JSON.parse(fileContent);
-
-        log.info(`[preflight-audit] Successfully loaded accessibility data for ${url}`);
-
-        // Get the page result for this URL
-        const pageResult = audits.get(url);
-        const accessibilityAudit = pageResult.audits.find(
-          (a) => a.name === PREFLIGHT_ACCESSIBILITY,
-        );
-
-        if (accessibilityAudit) {
-          // Process violations and map them to opportunity types
-          if (accessibilityData.violations) {
-            Object.entries(accessibilityData.violations).forEach(([impact, impactData]) => {
-              if (impact === 'total') return; // Skip the total count
-
-              if (impactData.items) {
-                Object.entries(impactData.items).forEach(([violationId, violationData]) => {
-                  // Map violation to opportunity type based on accessibilityOpportunitiesMap
-                  let opportunityType = null;
-                  let checkType = violationId;
-
-                  // Check if this violation belongs to any defined opportunity type
-                  for (const [type, checks] of Object.entries(accessibilityOpportunitiesMap)) {
-                    if (checks.includes(violationId)) {
-                      opportunityType = type;
-                      checkType = violationId;
-                      break;
-                    }
-                  }
-
-                  // Skip violations that don't belong to any defined opportunity type
-                  if (!opportunityType) {
-                    return;
-                  }
-
-                  // Create opportunity object matching the accessibility audit format
-                  const opportunity = {
-                    wcagLevel: violationData.level || '',
-                    severity: impact,
-                    occurrences: violationData.count || '',
-                    htmlWithIssues: violationData.htmlWithIssues?.map((html, index) => ({
-                      target_selector: violationData.target?.[index] || '',
-                      update_from: html || '',
-                    })) || [],
-                    failureSummary: violationData.failureSummary || '',
-                    wcagRule: violationData.successCriteriaNumber || '',
-                    description: violationData.description || '',
-                    check: opportunityType,
-                    type: checkType,
-                    understandingUrl: violationData.understandingUrl || '',
-                  };
-
-                  accessibilityAudit.opportunities.push(opportunity);
-                });
-              }
-            });
-          }
-
-          log.info(`[preflight-audit] Processed ${accessibilityAudit.opportunities.length} opportunities for ${url}`);
+        if (!accessibilityData) {
+          log.warn(`[preflight-audit] No accessibility data found for ${url} at key: ${fileKey}`);
+          // Skip to next URL if no data found
         } else {
-          log.warn(`[preflight-audit] No accessibility audit found for URL: ${url}`);
+          log.info(`[preflight-audit] Successfully loaded accessibility data for ${url}`);
+
+          // Get the page result for this URL
+          const pageResult = audits.get(url);
+          const accessibilityAudit = pageResult.audits.find(
+            (a) => a.name === PREFLIGHT_ACCESSIBILITY,
+          );
+
+          if (accessibilityAudit) {
+            // Process violations and map them to opportunity types
+            if (accessibilityData.violations) {
+              Object.entries(accessibilityData.violations).forEach(([impact, impactData]) => {
+                if (impact === 'total') return; // Skip the total count
+
+                if (impactData.items) {
+                  Object.entries(impactData.items).forEach(([violationId, violationData]) => {
+                    // Map violation to opportunity type based on accessibilityOpportunitiesMap
+                    let opportunityType = null;
+                    let checkType = violationId;
+
+                    // Check if this violation belongs to any defined opportunity type
+                    for (const [type, checks] of Object.entries(accessibilityOpportunitiesMap)) {
+                      if (checks.includes(violationId)) {
+                        opportunityType = type;
+                        checkType = violationId;
+                        break;
+                      }
+                    }
+
+                    // Skip violations that don't belong to any defined opportunity type
+                    if (!opportunityType) {
+                      return;
+                    }
+
+                    // Create opportunity object matching the accessibility audit format
+                    const opportunity = {
+                      wcagLevel: violationData.level || '',
+                      severity: impact,
+                      occurrences: violationData.count || '',
+                      htmlWithIssues: violationData.htmlWithIssues?.map((html, index) => ({
+                        target_selector: violationData.target?.[index] || '',
+                        update_from: html || '',
+                      })) || [],
+                      failureSummary: violationData.failureSummary || '',
+                      wcagRule: violationData.successCriteriaNumber || '',
+                      description: violationData.description || '',
+                      check: opportunityType,
+                      type: checkType,
+                      understandingUrl: violationData.understandingUrl || '',
+                    };
+
+                    accessibilityAudit.opportunities.push(opportunity);
+                  });
+                }
+              });
+            }
+
+            log.info(`[preflight-audit] Processed ${accessibilityAudit.opportunities.length} opportunities for ${url}`);
+          } else {
+            log.warn(`[preflight-audit] No accessibility audit found for URL: ${url}`);
+          }
         }
       } catch (error) {
         log.error(`[preflight-audit] Error processing accessibility file for ${url}: ${error.message}`, error);
