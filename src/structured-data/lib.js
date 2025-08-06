@@ -58,7 +58,7 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
   try {
     google = await GoogleClient.createFrom(context, finalUrl);
   } catch (error) {
-    log.warn('SDA: Failed to create Google client. Site was probably not onboarded to GSC yet. Continue without data from GSC.', error);
+    log.warn(`SDA: Failed to create Google client for site with ID ${context.site.getId()}. Site was probably not onboarded to GSC yet. Continue without data from GSC.`, error);
     return [];
   }
 
