@@ -39,20 +39,21 @@ export default async function handler(message, context) {
     await opportunity.save();
     log.info(`Updated opportunity: ${JSON.stringify(opportunity, null, 2)}`);
 
+    const opptyData = JSON.parse(JSON.stringify(opportunity));
     // sending message to mystique for guidance
     log.info('sending message to mystique');
     const mystiqueMessage = {
-      type: `guidance:${opportunity.getType()}`,
-      siteId: opportunity.getSiteId(),
-      auditId: opportunity.getAuditId(),
+      type: `guidance:${opptyData.type}`,
+      siteId: opptyData.siteId,
+      auditId: opptyData.auditId,
       time: new Date().toISOString(),
       data: {
-        url: opportunity.data?.form || '',
-        cr: opportunity.data?.trackedFormKPIValue || 0,
-        metrics: opportunity.data?.metrics || {},
-        cta_source: opportunity.data?.formNavigation?.source || '',
-        cta_text: opportunity.data?.formNavigation?.text || '',
-        form_source: opportunity.data?.formsource || '',
+        url: opptyData.data?.form || '',
+        cr: opptyData.data?.trackedFormKPIValue || 0,
+        metrics: opptyData.data?.metrics || {},
+        cta_source: opptyData.data?.formNavigation?.source || '',
+        cta_text: opptyData.data?.formNavigation?.text || '',
+        form_source: opptyData.data?.formsource || '',
       },
     };
 
