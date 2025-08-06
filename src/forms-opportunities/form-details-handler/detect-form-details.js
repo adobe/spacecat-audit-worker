@@ -14,7 +14,7 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 
 export default async function handler(message, context) {
   const {
-    log, dataAccess, sqs, env,
+    log, dataAccess, sqs, env, site,
   } = context;
   const { Opportunity } = dataAccess;
   const { siteId, data } = message;
@@ -45,7 +45,7 @@ export default async function handler(message, context) {
       type: `guidance:${opportunity.getType()}`,
       siteId: opportunity.getSiteId(),
       auditId: opportunity.getAuditId(),
-      deliveryType: opportunity.getDeliveryType(),
+      deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
         url: opportunity.data?.form || '',
