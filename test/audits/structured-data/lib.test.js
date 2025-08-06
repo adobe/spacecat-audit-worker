@@ -115,6 +115,9 @@ describe('Structured Data Libs', () => {
             error: sinon.stub(),
             debug: sinon.spy(),
           },
+          site: {
+            getId: sinon.stub().returns('site-123'),
+          },
         })
         .build(message);
     });

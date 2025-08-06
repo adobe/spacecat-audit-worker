@@ -74,7 +74,11 @@ describe('Sitemap Audit', () => {
     + '</sitemapindex>';
 
   beforeEach('setup', () => {
-    context = new MockContextBuilder().withSandbox(sandbox).build(message);
+    context = new MockContextBuilder().withSandbox(sandbox).withOverrides({
+      site: {
+        getId: sinon.stub().returns('site-123'),
+      },
+    }).build(message);
     nock(url).get('/sitemap_foo.xml').reply(200, sampleSitemap);
     nock(url).get('/sitemap_bar.xml').reply(200, sampleSitemapTwo);
   });
@@ -954,6 +958,8 @@ describe('Sitemap Audit', () => {
         },
         suggestions: [],
       };
+
+      context.site = { getId: sinon.stub().returns('site-123') };
     });
 
     afterEach(() => {
@@ -986,7 +992,6 @@ describe('Sitemap Audit', () => {
       context.dataAccess.Opportunity.create.rejects(
         new Error('Creation failed'),
       );
-      context.site.getId = sinon.stub().returns('site-123');
 
       await expect(
         opportunityAndSuggestions(
