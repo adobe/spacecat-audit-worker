@@ -30,10 +30,10 @@
         "type": "seo",
         "opportunities": [
           {
-            "check": "canonical-url-fetch-error",
-            "issue": "There was an error fetching the canonical URL, which prevents validation of the canonical tag.",
+            "check": "canonical-tag-exists",
+            "issue": "The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings.",
             "seoImpact": "Moderate",
-            "seoRecommendation": "There was an error fetching the canonical URL, which prevents validation of the canonical tag."
+            "seoRecommendation": "The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings."
           }
         ]
       },
@@ -62,4 +62,4 @@
       }
     ]
   }
-] 
+]

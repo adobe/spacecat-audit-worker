@@ -1017,7 +1017,7 @@ describe('Preflight Audit', () => {
       })));
     });
 
-    it('completes successfully on the happy path for the identify step with readability check', async function () {
+    it('completes successfully on the happy path for the identify step with readability check', async () => {
       this.timeout(10000); // Increase timeout to 10 seconds
       const head = '<head><title>Readability Test Page</title></head>';
       const body = '<body><p>The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience.</p></body>';
@@ -1050,6 +1050,9 @@ describe('Preflight Audit', () => {
           });
         }
       });
+      nock('https://main--example--page.aem.page')
+        .get('/readability-test')
+        .reply(200, html, { 'Content-Type': 'text/html' });
 
       job.getMetadata = () => ({
         payload: {

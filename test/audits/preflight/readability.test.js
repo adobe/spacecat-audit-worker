@@ -59,7 +59,7 @@ describe('Preflight Readability Audit', () => {
     audits.set('https://example.com/page1', auditsResult[0]);
 
     auditContext = {
-      checks: undefined, // Run all checks
+      checks: ['readability'],
       previewUrls: ['https://example.com/page1'],
       step: 'identify',
       audits,
