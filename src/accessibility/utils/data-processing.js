@@ -419,7 +419,7 @@ export async function aggregateAccessibilityData(
       log.info(`[A11yAudit] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
     }
 
-    await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
+    // await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
 
     return {
       success: true,
