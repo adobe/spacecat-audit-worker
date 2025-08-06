@@ -28,11 +28,15 @@ describe('Detect Form Details Handler', () => {
   let sqsStub;
   let context;
   let message;
+  let siteStub;
 
   beforeEach(() => {
     logStub = {
       info: sinon.stub(),
       error: sinon.stub(),
+    };
+    siteStub = {
+      getDeliveryType: sinon.stub().returns('testDeliveryType'),
     };
     dataAccessStub = {
       Opportunity: {
@@ -58,6 +62,7 @@ describe('Detect Form Details Handler', () => {
       log: logStub,
       dataAccess: dataAccessStub,
       sqs: sqsStub,
+      site: siteStub,
       env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'mockQueue' },
     };
     message = {
