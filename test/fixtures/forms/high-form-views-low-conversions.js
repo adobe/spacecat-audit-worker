@@ -898,7 +898,7 @@ const testData = {
     },
   },
   mystiqueMessageForFormDetails: {
-    form_source: undefined,
+    form_source: '',
     url: 'https://www.surest.com/newsletter',
   },
   opportunityData: {
