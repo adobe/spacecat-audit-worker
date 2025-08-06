@@ -50,6 +50,7 @@ import { suggestionsInternalLinksHandler } from './internal-links/suggestions-in
 import geoBrandPresence from './geo-brand-presence/handler.js';
 import guidanceGeoBrandPresence from './geo-brand-presence/guidance-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
+import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 import accessibilityRemediationGuidance from './accessibility/guidance-handlers/guidance-accessibility-remediation.js';
 import cdnAnalysis from './cdn-analysis/handler.js';
@@ -97,6 +98,7 @@ const HANDLERS = {
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
   'detect:page-intent': detectPageIntent,
+  'detect:form-details': detectFormDetails,
   'llmo-referral-traffic': llmoReferralTraffic,
   dummy: (message) => ok(message),
 };

@@ -502,11 +502,11 @@ export async function sendMessageToFormsQualityAgent(auditDataObject, context, o
     time: new Date().toISOString(),
     data: {
       url: opportunityData.data.form,
-      form_source: opportunityData.data.formSource,
+      form_source: opportunityData.data.formsource,
     },
   };
 
   // eslint-disable-next-line no-await-in-loop
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueFormsQualityAgentMessage);
-  log.info(`forms quality agent message sent to mystique 3: ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
+  log.info(`forms quality agent message sent to mystique 4: ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
 }
