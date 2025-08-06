@@ -95,6 +95,9 @@ describe('LHS Audit', () => {
         func: {
           version: 'v1',
         },
+        site: {
+          getId: () => sinon.stub().returns('site-123'),
+        },
       })
       .build(message);
 

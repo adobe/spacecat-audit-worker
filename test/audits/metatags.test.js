@@ -551,6 +551,9 @@ describe('Meta Tags', () => {
           env: {
             S3_SCRAPER_BUCKET_NAME: 'test-bucket',
           },
+          site: {
+            getId: () => 'site-123',
+          },
         };
         auditData = testData.auditData;
       });

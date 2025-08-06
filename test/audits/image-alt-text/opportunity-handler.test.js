@@ -87,6 +87,9 @@ describe('Image Alt Text Opportunity Handler', () => {
       env: {
         RUM_ADMIN_KEY: 'test-key',
       },
+      site: {
+        getId: () => 'site-id',
+      },
     };
 
     auditData = {
