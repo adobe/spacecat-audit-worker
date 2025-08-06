@@ -986,7 +986,7 @@ describe('Sitemap Audit', () => {
       context.dataAccess.Opportunity.create.rejects(
         new Error('Creation failed'),
       );
-      context.site.getId = sinon.stub().returns('site-id');
+      context.site.getId = sinon.stub().returns('site-123');
 
       await expect(
         opportunityAndSuggestions(
