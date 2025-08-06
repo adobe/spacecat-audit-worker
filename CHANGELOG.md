@@ -1,3 +1,10 @@
+# [1.137.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.136.3...v1.137.0) (2025-08-06)
+
+
+### Features
+
+* introduce preflight readability audit ([#1091](https://github.com/adobe/spacecat-audit-worker/issues/1091)) ([54dff35](https://github.com/adobe/spacecat-audit-worker/commit/54dff353095980341ffe860c41c406b85396212d))
+
 ## [1.136.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.136.2...v1.136.3) (2025-08-06)
 
 
