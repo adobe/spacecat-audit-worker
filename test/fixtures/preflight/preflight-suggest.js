@@ -92,6 +92,11 @@ export const suggestionData = [
           },
         ],
       },
+      {
+        name: 'readability',
+        type: 'seo',
+        opportunities: [],
+      },
     ],
   },
 ];

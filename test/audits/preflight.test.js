@@ -28,6 +28,7 @@ import { runLinksChecks } from '../../src/preflight/links-checks.js';
 import { MockContextBuilder } from '../shared.js';
 import { suggestionData } from '../fixtures/preflight/preflight-suggest.js';
 import identifyData from '../fixtures/preflight/preflight-identify.json' with { type: 'json' };
+import readabilityData from '../fixtures/preflight/preflight-identify-readability.json' with { type: 'json' };
 import { getPrefixedPageAuthToken, isValidUrls } from '../../src/preflight/utils.js';
 
 use(sinonChai);
@@ -1016,6 +1017,78 @@ describe('Preflight Audit', () => {
       })));
     });
 
+    it('completes successfully on the happy path for the identify step with readability check', async () => {
+      const head = '<head><title>Readability Test Page</title></head>';
+      const body = '<body><p>The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience.</p></body>';
+      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/readability-test/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        } else {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify({
+                scrapeResult: {
+                  rawBody: html,
+                  tags: {
+                    title: 'Readability Test Page',
+                    description: 'Test page for readability',
+                    h1: [],
+                  },
+                },
+                finalUrl: 'https://main--example--page.aem.page/readability-test',
+              })),
+            },
+          });
+        }
+      });
+      nock('https://main--example--page.aem.page')
+        .get('/readability-test')
+        .reply(200, html, { 'Content-Type': 'text/html' });
+
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_IDENTIFY,
+          urls: ['https://main--example--page.aem.page/readability-test'],
+          enableAuthentication: false,
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      await preflightAudit(context);
+
+      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
+      expect(genvarClient.generateSuggestions).not.to.have.been.called;
+
+      // Verify that AsyncJob.findById was called for the final save
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+
+      // Get the last call to AsyncJob.findById (which is the final save)
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(finalJobEntity.setResultType).to.have.been.called;
+      expect(finalJobEntity.setEndedAt).to.have.been.called;
+      expect(finalJobEntity.save).to.have.been.called;
+
+      // Verify that setResult was called with the expected data structure
+      expect(finalJobEntity.setResult).to.have.been.called;
+      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+      // Verify the structure matches the expected data (excluding profiling which is dynamic)
+      expect(actualResult).to.deep.equal(readabilityData.map((expected) => ({
+        ...expected,
+        profiling: actualResult[0].profiling, // Use actual profiling data
+      })));
+    });
+
     it('throws if job is not in progress', async () => {
       job.getStatus.returns('COMPLETED');
       await expect(preflightAudit(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
@@ -1078,7 +1151,7 @@ describe('Preflight Audit', () => {
 
         // Verify breakdown structure
         const { breakdown } = pageResult.profiling;
-        const expectedChecks = ['dom', 'canonical', 'metatags', 'links'];
+        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'readability'];
 
         expect(breakdown).to.be.an('array');
         expect(breakdown).to.have.lengthOf(expectedChecks.length);
@@ -1096,9 +1169,9 @@ describe('Preflight Audit', () => {
       await preflightAudit(context);
 
       // Verify that AsyncJob.findById was called for each intermediate save and final save
-      // (total of 5 times: 4 intermediate + 1 final)
+      // (total of 6 times: 5 intermediate + 1 final)
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(5);
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(6);
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
