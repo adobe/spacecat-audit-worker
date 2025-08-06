@@ -67,7 +67,7 @@ export default async function links(context, auditContext) {
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
       if (step === 'suggest') {
         const brokenLinks = auditResult.brokenInternalLinks.map((link) => ({
-          urlTo: new URL(previewBaseURL).origin + new URL(link.urlTo).pathname.replace(/\/$/, ''),
+          urlTo: link.urlTo,
           href: link.href,
           status: link.status,
         }));
@@ -82,7 +82,13 @@ export default async function links(context, auditContext) {
           if (!brokenInternalLinksByPage.has(href)) {
             brokenInternalLinksByPage.set(href, []);
           }
-          const aiUrls = urlsSuggested?.map((url) => (baseURLOrigin + new URL(url).pathname.replace(/\/$/, '')));
+          const aiUrls = urlsSuggested?.map((url) => {
+            const fullUrl = new URL(url, baseURLOrigin);
+            // Convert the domain to use the preview domain instead of the original domain
+            const previewUrl = new URL(previewBaseURL);
+            fullUrl.hostname = previewUrl.hostname;
+            return fullUrl.toString();
+          });
           brokenInternalLinksByPage.get(href).push({
             url: urlTo,
             issue: `Status ${status}`,
