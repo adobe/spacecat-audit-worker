@@ -1,0 +1,65 @@
+[
+  {
+    "pageUrl": "https://main--example--page.aem.page/readability-test",
+    "step": "identify",
+    "audits": [
+      {
+        "name": "body-size",
+        "type": "seo",
+        "opportunities": []
+      },
+      {
+        "name": "lorem-ipsum",
+        "type": "seo",
+        "opportunities": []
+      },
+      {
+        "name": "h1-count",
+        "type": "seo",
+        "opportunities": [
+          {
+            "check": "missing-h1",
+            "issue": "No H1 tag found on the page",
+            "seoImpact": "High",
+            "seoRecommendation": "Use exactly one H1 tag per page for better SEO structure"
+          }
+        ]
+      },
+      {
+        "name": "canonical",
+        "type": "seo",
+        "opportunities": [
+          {
+            "check": "canonical-url-fetch-error",
+            "issue": "There was an error fetching the canonical URL, which prevents validation of the canonical tag.",
+            "seoImpact": "Moderate",
+            "seoRecommendation": "There was an error fetching the canonical URL, which prevents validation of the canonical tag."
+          }
+        ]
+      },
+      {
+        "name": "metatags",
+        "type": "seo",
+        "opportunities": []
+      },
+      {
+        "name": "links",
+        "type": "seo",
+        "opportunities": []
+      },
+      {
+        "name": "readability",
+        "type": "seo",
+        "opportunities": [
+          {
+            "check": "poor-readability",
+            "seoRecommendation": "Improve readability by using shorter sentences, simpler words, and clearer structure",
+            "issue": "Text element is difficult to read: \"The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience.\"",
+            "seoImpact": "Moderate",
+            "fleschReadingEase": 10.23
+          }
+        ]
+      }
+    ]
+  }
+] 
