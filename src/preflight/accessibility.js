@@ -20,7 +20,7 @@ export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
 /**
  * Generate normalized filename from URL
  */
-function generateAccessibilityFilename(url) {
+export function generateAccessibilityFilename(url) {
   try {
     const parsedUrl = new URL(url);
     let filename = parsedUrl.hostname + parsedUrl.pathname;
@@ -36,7 +36,7 @@ function generateAccessibilityFilename(url) {
 /**
  * Step 1: Send URLs to content scraper for accessibility-specific processing
  */
-async function scrapeAccessibilityData(context, auditContext) {
+export async function scrapeAccessibilityData(context, auditContext) {
   const {
     site, job, log, env, sqs,
   } = context;
@@ -130,7 +130,7 @@ async function scrapeAccessibilityData(context, auditContext) {
 /**
  * Step 2: Process scraped accessibility data and create opportunities
  */
-async function processAccessibilityOpportunities(context, auditContext) {
+export async function processAccessibilityOpportunities(context, auditContext) {
   const {
     site, job, log, env, s3Client,
   } = context;
