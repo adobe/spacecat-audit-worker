@@ -226,6 +226,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.log = {
       info: sandbox.stub(),
       error: sandbox.stub(),
+      warn: sandbox.stub(),
     };
     context.sqs.sendMessage.resolves();
 
