@@ -13,10 +13,11 @@
 import { isNonEmptyArray, isString } from '@adobe/spacecat-shared-utils';
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import { syncSuggestions } from '../../utils/data-access.js';
-import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
+import { successCriteriaLinks, accessibilityOpportunitiesMap, issueTypesForMystique } from './constants.js';
 import { getAuditData } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
+import { saveA11yValidationMetricsToS3 } from './scrape-utils.js';
 
 /**
  * Creates a Mystique message object
@@ -774,6 +775,26 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
       }
     }
 
+    // Orphan detection: Find the number of suggestions sent to Mystique but not received back
+    // because of validation filtering
+    const sentToMystiqueSuggestionIds = suggestions
+      .filter((suggestion) => {
+        const suggestionData = suggestion.getData();
+        return suggestionData.issues && isNonEmptyArray(suggestionData.issues)
+          && issueTypesForMystique.includes(suggestionData.issues[0].type);
+      })
+      .map((suggestion) => suggestion.getId());
+    const receivedFromMystiqueSuggestionIds = validRemediations.map((r) => r.suggestionId);
+    const orphanedSuggestionIds = sentToMystiqueSuggestionIds.filter(
+      (sentId) => !receivedFromMystiqueSuggestionIds.includes(sentId),
+    );
+
+    if (orphanedSuggestionIds.length > 0) {
+      orphanedSuggestionIds.forEach((orphanedId) => {
+        log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, opportunity ${opportunityId}: Orphaned suggestion ID ${orphanedId} - sent to Mystique but the remediation fix did not pass the validation and got filtered out`);
+      });
+    }
+
     // Process only valid remediations
     const processingPromises = [];
 
@@ -855,6 +876,23 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
     }
 
     log.info(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Successfully processed ${successfulSaves} remediations`);
+
+    // Save complete Mystique metrics to S3 (sent + received + orphaned)
+    try {
+      await saveA11yValidationMetricsToS3(
+        {
+          sentToMystiqueCount: sentToMystiqueSuggestionIds.length,
+          receivedFromMystiqueCount: validRemediations.length,
+          orphanedSuggestionsCount: orphanedSuggestionIds.length,
+        },
+        context,
+        opportunityId,
+        opportunity.getType(),
+      );
+      log.info(`[A11yRemediationGuidance] Saved complete A11yValidation metrics for opportunity ${opportunityId}: sent=${sentToMystiqueSuggestionIds.length}, received=${validRemediations.length}, orphaned=${orphanedSuggestionIds.length}`);
+    } catch (error) {
+      log.error(`[A11yRemediationGuidance] Failed to save complete A11yValidation metrics for opportunity ${opportunityId}: ${error.message}`);
+    }
 
     return {
       success: true,
