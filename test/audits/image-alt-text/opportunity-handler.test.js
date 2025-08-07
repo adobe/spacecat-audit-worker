@@ -63,7 +63,6 @@ describe('Image Alt Text Opportunity Handler', () => {
       info: sinon.stub(),
       debug: sinon.stub(),
       error: sinon.stub(),
-      warn: sinon.stub(),
     };
 
     dataAccessStub = {
@@ -89,7 +88,7 @@ describe('Image Alt Text Opportunity Handler', () => {
         RUM_ADMIN_KEY: 'test-key',
       },
       site: {
-        getId: () => 'site-123',
+        getId: () => 'site-id',
       },
     };
 

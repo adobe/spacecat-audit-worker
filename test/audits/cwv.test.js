@@ -47,7 +47,7 @@ describe('CWVRunner Tests', () => {
   const site = {
     getBaseURL: sandbox.stub().returns(baseURL),
     getConfig: () => siteConfig,
-    site: { getId: sinon.stub().returns('site-123') },
+    getId: sinon.stub().returns('site-123'),
   };
 
   const context = {
