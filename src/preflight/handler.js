@@ -22,6 +22,7 @@ import {
 import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
+import readability from './readability.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const PREFLIGHT_STEP_IDENTIFY = 'identify';
@@ -42,6 +43,7 @@ export const PREFLIGHT_HANDLERS = {
   canonical,
   metatags,
   links,
+  readability,
 };
 
 export async function scrapePages(context) {
