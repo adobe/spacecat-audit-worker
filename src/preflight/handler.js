@@ -31,6 +31,7 @@ export const PREFLIGHT_STEP_SUGGEST = 'suggest';
 export const AUDIT_BODY_SIZE = 'body-size';
 export const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
 export const AUDIT_H1_COUNT = 'h1-count';
+export const AUDIT_ACCESSIBILITY = 'accessibility';
 
 /**
  * NOTE: When adding a new audit check:
