@@ -1,3 +1,31 @@
+## [1.137.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.137.0...v1.137.1) (2025-08-07)
+
+
+### Bug Fixes
+
+* send unique page url ([#1094](https://github.com/adobe/spacecat-audit-worker/issues/1094)) ([8dc9e91](https://github.com/adobe/spacecat-audit-worker/commit/8dc9e9120de10b459a4844db941c6bbb2d630c77))
+
+# [1.137.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.136.3...v1.137.0) (2025-08-06)
+
+
+### Features
+
+* introduce preflight readability audit ([#1091](https://github.com/adobe/spacecat-audit-worker/issues/1091)) ([54dff35](https://github.com/adobe/spacecat-audit-worker/commit/54dff353095980341ffe860c41c406b85396212d))
+
+## [1.136.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.136.2...v1.136.3) (2025-08-06)
+
+
+### Bug Fixes
+
+* brand presence only uses data from the last import. ([#1080](https://github.com/adobe/spacecat-audit-worker/issues/1080)) ([3744c62](https://github.com/adobe/spacecat-audit-worker/commit/3744c62ce71b98435151447fa308279fba3d806d))
+
+## [1.136.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.136.1...v1.136.2) (2025-08-06)
+
+
+### Bug Fixes
+
+* ignore old a11y opportunity ([#1089](https://github.com/adobe/spacecat-audit-worker/issues/1089)) ([1953626](https://github.com/adobe/spacecat-audit-worker/commit/1953626f76f1f6527d46d1684d2480f083d2a668))
+
 ## [1.136.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.136.0...v1.136.1) (2025-08-04)
 
 

@@ -291,7 +291,7 @@ export async function processAltTextWithMystique(context) {
     const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
 
     // Get ALL page URLs to send to Mystique
-    const pageUrls = [...topPages.map((page) => page.getUrl()), ...includedURLs];
+    const pageUrls = [...new Set([...topPages.map((page) => page.getUrl()), ...includedURLs])];
     if (pageUrls.length === 0) {
       throw new Error(`No top pages found for site ${site.getId()}`);
     }
