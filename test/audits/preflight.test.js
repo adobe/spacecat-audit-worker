@@ -29,6 +29,7 @@ import { runLinksChecks } from '../../src/preflight/links-checks.js';
 import { MockContextBuilder } from '../shared.js';
 import { suggestionData } from '../fixtures/preflight/preflight-suggest.js';
 import identifyData from '../fixtures/preflight/preflight-identify.json' with { type: 'json' };
+import readabilityData from '../fixtures/preflight/preflight-identify-readability.json' with { type: 'json' };
 import { getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults } from '../../src/preflight/utils.js';
 
 use(sinonChai);
@@ -715,7 +716,7 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links'],
+          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
         },
       });
 
@@ -988,7 +989,7 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links'],
+          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
           enableAuthentication: false,
         },
       });
@@ -1016,6 +1017,78 @@ describe('Preflight Audit', () => {
       const actualResult = finalJobEntity.setResult.getCall(0).args[0];
       // Verify the structure matches the expected data (excluding profiling which is dynamic)
       expect(actualResult).to.deep.equal(identifyData.map((expected) => ({
+        ...expected,
+        profiling: actualResult[0].profiling, // Use actual profiling data
+      })));
+    });
+
+    it('completes successfully on the happy path for the identify step with readability check', async () => {
+      const head = '<head><title>Readability Test Page</title></head>';
+      const body = '<body><p>The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience.</p></body>';
+      const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/readability-test/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        } else {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify({
+                scrapeResult: {
+                  rawBody: html,
+                  tags: {
+                    title: 'Readability Test Page',
+                    description: 'Test page for readability',
+                    h1: [],
+                  },
+                },
+                finalUrl: 'https://main--example--page.aem.page/readability-test',
+              })),
+            },
+          });
+        }
+      });
+      nock('https://main--example--page.aem.page')
+        .get('/readability-test')
+        .reply(200, html, { 'Content-Type': 'text/html' });
+
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_IDENTIFY,
+          urls: ['https://main--example--page.aem.page/readability-test'],
+          enableAuthentication: false,
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      await preflightAudit(context);
+
+      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
+      expect(genvarClient.generateSuggestions).not.to.have.been.called;
+
+      // Verify that AsyncJob.findById was called for the final save
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+
+      // Get the last call to AsyncJob.findById (which is the final save)
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(finalJobEntity.setResultType).to.have.been.called;
+      expect(finalJobEntity.setEndedAt).to.have.been.called;
+      expect(finalJobEntity.save).to.have.been.called;
+
+      // Verify that setResult was called with the expected data structure
+      expect(finalJobEntity.setResult).to.have.been.called;
+      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+      // Verify the structure matches the expected data (excluding profiling which is dynamic)
+      expect(actualResult).to.deep.equal(readabilityData.map((expected) => ({
         ...expected,
         profiling: actualResult[0].profiling, // Use actual profiling data
       })));
@@ -1057,6 +1130,142 @@ describe('Preflight Audit', () => {
 
       expect(finalJobEntity.setStatus).to.have.been.calledWith('FAILED');
       expect(finalJobEntity.save).to.have.been.called;
+    });
+
+    it('logs timing information for each sub-audit', async () => {
+      await preflightAudit(context);
+
+      // Verify that AsyncJob.findById was called for the final save
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+
+      // Get the last call to AsyncJob.findById (which is the final save)
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      // Get the result that was set on the job entity
+      expect(finalJobEntity.setResult).to.have.been.called;
+      const result = finalJobEntity.setResult.getCall(0).args[0];
+
+      // Verify that each page result has profiling data
+      result.forEach((pageResult) => {
+        expect(pageResult).to.have.property('profiling');
+        expect(pageResult.profiling).to.have.property('total');
+        expect(pageResult.profiling).to.have.property('startTime');
+        expect(pageResult.profiling).to.have.property('endTime');
+        expect(pageResult.profiling).to.have.property('breakdown');
+
+        // Verify breakdown structure
+        const { breakdown } = pageResult.profiling;
+        const expectedChecks = ['dom', 'canonical', 'metatags', 'links', 'readability'];
+
+        expect(breakdown).to.be.an('array');
+        expect(breakdown).to.have.lengthOf(expectedChecks.length);
+
+        breakdown.forEach((check, index) => {
+          expect(check).to.have.property('name', expectedChecks[index]);
+          expect(check).to.have.property('duration');
+          expect(check).to.have.property('startTime');
+          expect(check).to.have.property('endTime');
+        });
+      });
+    });
+
+    it('saves intermediate results after each audit step', async () => {
+      await preflightAudit(context);
+
+      // Verify that AsyncJob.findById was called for each intermediate save and final save
+      // (total of 6 times: 5 intermediate + 1 final)
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(6);
+    });
+
+    it('handles errors during intermediate saves gracefully', async () => {
+      // Mock AsyncJob.findById to return job entities that fail on save for intermediate saves
+      let findByIdCallCount = 0;
+
+      context.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => {
+        findByIdCallCount += 1;
+        return Promise.resolve({
+          getId: () => 'job-123',
+          setResult: sinon.stub(),
+          setStatus: sinon.stub(),
+          setResultType: sinon.stub(),
+          setEndedAt: sinon.stub(),
+          setError: sinon.stub(),
+          save: sinon.stub().callsFake(async () => {
+            // Only fail intermediate saves (first 4 calls are intermediate saves)
+            if (findByIdCallCount <= 4) {
+              throw new Error('Connection timeout to database');
+            }
+            return Promise.resolve();
+          }),
+        });
+      });
+
+      await preflightAudit(context);
+
+      // Verify that warn was called for failed intermediate saves
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to save intermediate results: Connection timeout to database/),
+      );
+
+      // Verify that the audit completed successfully despite intermediate save failures
+      // The final save should have been successful (call #5)
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.be.greaterThan(4);
+    });
+
+    it('handles individual AUDIT_BODY_SIZE check', async () => {
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_IDENTIFY,
+          urls: ['https://main--example--page.aem.page/page1'],
+          checks: [AUDIT_BODY_SIZE], // Only test body size check
+        },
+      });
+
+      // Mock S3 response with content that would trigger body size check
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [
+              { Key: 'scrapes/site-123/page1/scrape.json' },
+            ],
+            IsTruncated: false,
+          });
+        } else {
+          return Promise.resolve({
+            ContentType: 'application/json',
+            Body: {
+              transformToString: sinon.stub().resolves(JSON.stringify({
+                scrapeResult: {
+                  rawBody: '<body>Short content</body>',
+                },
+                finalUrl: 'https://main--example--page.aem.page/page1',
+              })),
+            },
+          });
+        }
+      });
+
+      await preflightAudit(context);
+
+      // Get the final result
+      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      const result = finalJobEntity.setResult.getCall(0).args[0];
+
+      // Verify that only body size check was performed
+      const { audits } = result[0];
+
+      // Check body size audit
+      const bodySizeAudit = audits.find((a) => a.name === AUDIT_BODY_SIZE);
+      expect(bodySizeAudit).to.exist;
+      expect(bodySizeAudit.opportunities).to.have.lengthOf(1);
+      expect(bodySizeAudit.opportunities[0].check).to.equal('content-length');
+
+      // Verify other checks were not performed
+      expect(audits.find((a) => a.name === AUDIT_LOREM_IPSUM)).to.not.exist;
+      expect(audits.find((a) => a.name === AUDIT_H1_COUNT)).to.not.exist;
     });
 
     it('handles individual AUDIT_LOREM_IPSUM check', async () => {
