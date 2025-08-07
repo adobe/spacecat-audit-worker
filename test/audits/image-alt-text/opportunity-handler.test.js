@@ -89,7 +89,7 @@ describe('Image Alt Text Opportunity Handler', () => {
         RUM_ADMIN_KEY: 'test-key',
       },
       site: {
-        getId: sinon.stub().returns('site-123'),
+        getId: () => 'site-123',
       },
     };
 

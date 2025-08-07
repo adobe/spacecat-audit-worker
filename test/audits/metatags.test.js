@@ -553,7 +553,7 @@ describe('Meta Tags', () => {
             S3_SCRAPER_BUCKET_NAME: 'test-bucket',
           },
           site: {
-            getId: sinon.stub().returns('site-123'),
+            getId: () => 'site-123',
           },
         };
         auditData = testData.auditData;
