@@ -22,7 +22,6 @@ import {
   formatIssue,
   aggregateAccessibilityIssues,
   createIndividualOpportunity,
-  deleteExistingAccessibilityOpportunities,
   calculateAccessibilityMetrics,
 } from '../../../src/accessibility/utils/generate-individual-opportunities.js';
 import * as constants from '../../../src/accessibility/utils/constants.js';
@@ -1530,81 +1529,6 @@ describe('createIndividualOpportunitySuggestions', () => {
   });
 });
 
-describe('deleteExistingAccessibilityOpportunities', () => {
-  let sandbox;
-  let mockLog;
-  let mockDataAccess;
-
-  beforeEach(() => {
-    sandbox = sinon.createSandbox();
-    mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-    mockDataAccess = {
-      Opportunity: {
-        allBySiteId: sandbox.stub(),
-      },
-    };
-  });
-
-  afterEach(() => {
-    sandbox.restore();
-  });
-
-  it('should delete existing opportunities of specified type', async () => {
-    const mockOpportunity = {
-      getId: sandbox.stub().returns('test-id'),
-      remove: sandbox.stub().resolves(),
-      getType: sandbox.stub().returns('test-type'),
-    };
-    mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-
-    const result = await deleteExistingAccessibilityOpportunities(
-      mockDataAccess,
-      'test-site',
-      'test-type',
-      mockLog,
-    );
-
-    expect(result).to.equal(1);
-    expect(mockOpportunity.remove).to.have.been.calledOnce;
-    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Found 1 existing opportunities of type test-type - deleting');
-  });
-
-  it('should handle no existing opportunities', async () => {
-    mockDataAccess.Opportunity.allBySiteId.resolves([]);
-
-    const result = await deleteExistingAccessibilityOpportunities(
-      mockDataAccess,
-      'test-site',
-      'test-type',
-      mockLog,
-    );
-
-    expect(result).to.equal(0);
-    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] No existing opportunities of type test-type found - proceeding with creation');
-  });
-
-  it('should handle errors during deletion', async () => {
-    const mockOpportunity = {
-      getId: sandbox.stub().returns('test-id'),
-      remove: sandbox.stub().rejects(new Error('Test error')),
-      getType: sandbox.stub().returns('test-type'),
-    };
-    mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-
-    const errorMessage = 'Failed to delete existing opportunities: Test error';
-    await expect(deleteExistingAccessibilityOpportunities(
-      mockDataAccess,
-      'test-site',
-      'test-type',
-      mockLog,
-    )).to.be.rejectedWith(errorMessage);
-  });
-});
-
 describe('calculateAccessibilityMetrics', () => {
   it('should calculate correct metrics from aggregated data', () => {
     const aggregatedData = {
@@ -1911,117 +1835,6 @@ describe('createAccessibilityIndividualOpportunities', () => {
 
     expect(result.status).to.equal('OPPORTUNITIES_FAILED');
     expect(result.error).to.include('Audit Error');
-  });
-
-  // it('should handle multiple pages with issues', async () => {
-  //   const accessibilityData = {
-  //     'https://example.com/page1': {
-  //       violations: {
-  //         critical: {
-  //           items: {
-  //             'aria-hidden-focus': {
-  //               description: 'Page 1 issue',
-  //               successCriteriaTags: ['wcag412'],
-  //               count: 2,
-  //             },
-  //           },
-  //         },
-  //       },
-  //     },
-  //     'https://example.com/page2': {
-  //       violations: {
-  //         critical: {
-  //           items: {
-  //             'aria-hidden-focus': {
-  //               description: 'Page 2 issue',
-  //               successCriteriaTags: ['wcag412'],
-  //               count: 3,
-  //             },
-  //           },
-  //         },
-  //       },
-  //     },
-  //   };
-
-  //   const result = await createAccessibilityIndividualOpportunities(
-  //     accessibilityData,
-  //     mockContext,
-  //   );
-
-  //   expect(result).to.exist;
-  //   if (result.status === 'OPPORTUNITIES_FAILED') {
-  //     expect.fail(`Function failed with error: ${result.error}`);
-  //   }
-  //   expect(result.opportunities).to.have.lengthOf(1);
-  //   expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-  //   expect(result.opportunities[0].suggestionsCount).to.equal(2);
-  //   expect(result.opportunities[0].totalIssues).to.equal(5);
-  //   expect(result.opportunities[0].pagesWithIssues).to.equal(2);
-  // });
-
-  it('should handle errors during opportunity deletion', async () => {
-    const accessibilityData = {
-      'https://example.com/page1': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                description: 'Test issue',
-                successCriteriaTags: ['wcag412'],
-                count: 1,
-                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
-                target: ['div[aria-hidden] button'],
-              },
-            },
-          },
-        },
-      },
-    };
-
-    mockContext.dataAccess.Opportunity.allBySiteId.rejects(new Error('Delete Error'));
-
-    const result = await createAccessibilityIndividualOpportunities(
-      accessibilityData,
-      mockContext,
-    );
-
-    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
-    expect(result.error).to.include('Delete Error');
-  });
-
-  it('should handle errors during opportunity removal', async () => {
-    const accessibilityData = {
-      'https://example.com/page1': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                description: 'Test issue',
-                successCriteriaTags: ['wcag412'],
-                count: 1,
-                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
-                target: ['div[aria-hidden] button'],
-              },
-            },
-          },
-        },
-      },
-    };
-
-    const mockExistingOpportunity = {
-      getId: sandbox.stub().returns('existing-id'),
-      remove: sandbox.stub().rejects(new Error('Remove Error')),
-      getType: sandbox.stub().returns('a11y-assistive'),
-    };
-    mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
-
-    const result = await createAccessibilityIndividualOpportunities(
-      accessibilityData,
-      mockContext,
-    );
-
-    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
-    expect(result.error).to.include('Remove Error');
   });
 
   it('should handle errors during opportunity creation with existing opportunities', async () => {
