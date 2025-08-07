@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 import readability, { PREFLIGHT_READABILITY } from '../../../src/preflight/readability.js';
+import { PREFLIGHT_STEP_IDENTIFY } from '../../../src/preflight/handler.js';
 
 use(sinonChai);
 
@@ -37,15 +38,21 @@ describe('Preflight Readability Audit', () => {
       site: { getId: () => 'test-site' },
       jobId: 'test-job',
       log,
-      dataAccess: {
-        AsyncJob: {
-          findById: sinon.stub().resolves({
-            setResult: sinon.stub(),
-            setStatus: sinon.stub(),
-            setResultType: sinon.stub(),
-            save: sinon.stub().resolves(),
-          }),
-        },
+      job: {
+        getMetadata: () => ({
+          payload: {
+            step: PREFLIGHT_STEP_IDENTIFY,
+            urls: ['https://main--example--page.aem.page/page1'],
+          },
+        }),
+        getStatus: sinon.stub().returns('IN_PROGRESS'),
+        getId: () => 'job-123',
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setResult: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        save: sinon.stub().resolves(),
       },
     };
 
