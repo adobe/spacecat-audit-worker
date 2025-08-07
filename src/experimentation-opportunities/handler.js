@@ -15,7 +15,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { getCountryCodeFromLang } from '../utils/url-utils.js';
+import { getCountryCodeFromLang, parseCustomUrls } from '../utils/url-utils.js';
 import {
   getObjectFromKey,
 } from '../utils/s3-utils.js';
@@ -74,7 +74,7 @@ export async function generateOpportunityAndSuggestions(context) {
     },
   }));
 
-  for (const message of messages) {
+  for (const message of messages || []) {
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
@@ -88,14 +88,32 @@ function getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities) {
 }
 
 /**
+ * Creates empty experimentation opportunities for URLs that don't have RUM data
+ * @param {string[]} urlsWithoutData - Array of URLs missing real analytics
+ * @returns {Array} Array of empty experimentation opportunities
+ */
+function createEmptyOpportunitiesForMissingUrls(urlsWithoutRUMData) {
+  return urlsWithoutRUMData.map((url) => ({
+    type: HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
+    page: url,
+    screenshot: '',
+    trackedPageKPIName: 'Click Through Rate',
+    trackedKPISiteAverage: '',
+    trackedPageKPIValue: '',
+    pageViews: null,
+    samples: null,
+    metrics: null,
+  }));
+}
+
+/**
  * Audit handler container for all the opportunities
  * @param {*} auditUrl
  * @param {*} context
  * @param {*} site
  * @returns
  */
-
-export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
+export async function experimentOpportunitiesAuditRunner(auditUrl, context, customUrls = null) {
   const { log } = context;
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -107,6 +125,36 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   processRageClickOpportunities(experimentationOpportunities);
+
+  if (customUrls && customUrls.length > 0) {
+    log.info(`Processing ${customUrls.length} custom URLs for experimentation opportunities`);
+
+    const highOrganicLowCtrOpportunities = experimentationOpportunities.filter(
+      (oppty) => oppty.type === HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
+    );
+    const realDataOpportunities = highOrganicLowCtrOpportunities.filter(
+      (oppty) => customUrls.includes(oppty.page),
+    );
+    const urlsWithRUMData = realDataOpportunities.map((oppty) => oppty.page);
+    const urlsWithoutRUMData = customUrls.filter((url) => !urlsWithRUMData.includes(url));
+    const emptyOpportunities = createEmptyOpportunitiesForMissingUrls(urlsWithoutRUMData);
+    const finalExperimentationOpportunities = [...realDataOpportunities, ...emptyOpportunities];
+
+    if (realDataOpportunities.length > 0) {
+      log.info(`Found real RUM data for ${realDataOpportunities.length} high-organic-low-ctr URLs: ${urlsWithRUMData.join(', ')}`);
+    }
+    if (emptyOpportunities.length > 0) {
+      log.info(`No RUM data found for ${emptyOpportunities.length} URLs: ${urlsWithoutRUMData.join(', ')} - returning empty values`);
+    }
+
+    return {
+      auditResult: {
+        experimentationOpportunities: finalExperimentationOpportunities,
+      },
+      fullAuditRef: auditUrl,
+    };
+  }
+
   log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   return {
@@ -119,7 +167,10 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
 
 export async function runAuditAndScrapeStep(context) {
   const { site, finalUrl } = context;
-  const result = await experimentOpportunitiesAuditRunner(finalUrl, context);
+  const additionalData = context.auditContext?.additionalData;
+  const customUrls = parseCustomUrls(additionalData, finalUrl);
+
+  const result = await experimentOpportunitiesAuditRunner(finalUrl, context, customUrls);
 
   return {
     auditResult: result.auditResult,
