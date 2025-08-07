@@ -47,6 +47,7 @@ describe('CWVRunner Tests', () => {
   const site = {
     getBaseURL: sandbox.stub().returns(baseURL),
     getConfig: () => siteConfig,
+    site: { getId: sinon.stub().returns('site-123') },
   };
 
   const context = {
@@ -57,7 +58,6 @@ describe('CWVRunner Tests', () => {
     },
     dataAccess: {},
     env: {},
-    site: { getId: sinon.stub().returns('site-123') },
   };
 
   afterEach(() => {
@@ -100,7 +100,6 @@ describe('CWVRunner Tests', () => {
       context.log = {
         info: sandbox.stub(),
         error: sandbox.stub(),
-        warn: sandbox.stub(),
       };
 
       context.dataAccess.Opportunity = {
