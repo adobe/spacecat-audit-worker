@@ -65,9 +65,10 @@ export default async function links(context, auditContext) {
 
     // Process internal links
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
+      const baseURLOrigin = new URL(previewBaseURL).origin;
       if (step === 'suggest') {
         const brokenLinks = auditResult.brokenInternalLinks.map((link) => ({
-          urlTo: link.urlTo,
+          urlTo: new URL(site.getBaseURL()).origin + new URL(link.urlTo).pathname.replace(/\/$/, ''),
           href: link.href,
           status: link.status,
         }));
@@ -75,22 +76,15 @@ export default async function links(context, auditContext) {
         const brokenInternalLinks = await
         generateSuggestionData(previewBaseURL, brokenLinks, context, site);
         log.debug(`[preflight-audit] Generated suggestions for broken internal links: ${JSON.stringify(brokenInternalLinks)}`);
-        const baseURLOrigin = new URL(previewBaseURL).origin;
         brokenInternalLinks.forEach(({
           urlTo, href, status, urlsSuggested, aiRationale,
         }) => {
           if (!brokenInternalLinksByPage.has(href)) {
             brokenInternalLinksByPage.set(href, []);
           }
-          const aiUrls = urlsSuggested?.map((url) => {
-            const fullUrl = new URL(url, baseURLOrigin);
-            // Convert the domain to use the preview domain instead of the original domain
-            const previewUrl = new URL(previewBaseURL);
-            fullUrl.hostname = previewUrl.hostname;
-            return fullUrl.toString();
-          });
+          const aiUrls = urlsSuggested?.map((url) => (baseURLOrigin + new URL(url).pathname.replace(/\/$/, '')));
           brokenInternalLinksByPage.get(href).push({
-            url: urlTo,
+            url: baseURLOrigin + new URL(urlTo).pathname.replace(/\/$/, ''),
             issue: `Status ${status}`,
             seoImpact: 'High',
             seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
@@ -104,7 +98,7 @@ export default async function links(context, auditContext) {
             brokenInternalLinksByPage.set(href, []);
           }
           brokenInternalLinksByPage.get(href).push({
-            url: urlTo,
+            url: baseURLOrigin + new URL(urlTo).pathname.replace(/\/$/, ''),
             issue: `Status ${status}`,
             seoImpact: 'High',
             seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
@@ -164,7 +158,8 @@ export default async function links(context, auditContext) {
     scrapedObjects.forEach(({ data }) => {
       const { finalUrl, scrapeResult: { rawBody } } = data;
       const doc = new JSDOM(rawBody).window.document;
-      const audit = linksAuditMap.get(finalUrl);
+      const auditUrl = new URL(finalUrl).origin + new URL(finalUrl).pathname.replace(/\/$/, '');
+      const audit = linksAuditMap.get(auditUrl);
       const insecureLinks = Array.from(doc.querySelectorAll('a'))
         .filter((anchor) => anchor.href.startsWith('http://'))
         .map((anchor) => ({
