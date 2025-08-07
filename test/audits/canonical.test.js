@@ -946,7 +946,6 @@ describe('Canonical URL Tests', () => {
       log: {
         info: sinon.stub(),
         error: sinon.stub(),
-        warn: sinon.stub(),
       },
       dataAccess: {
         Opportunity: {
@@ -959,9 +958,6 @@ describe('Canonical URL Tests', () => {
         Suggestion: {
           create: sinon.stub(),
         },
-      },
-      site: {
-        getId: sinon.stub().returns('site-123'),
       },
     };
 
