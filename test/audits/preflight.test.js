@@ -632,17 +632,6 @@ describe('Preflight Audit', () => {
         })
         .build();
 
-      // Mock AsyncJob.findById to return a fresh job entity for intermediate saves and final save
-      context.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
-        getId: () => 'job-123',
-        setResult: sinon.stub(),
-        setStatus: sinon.stub(),
-        setResultType: sinon.stub(),
-        setEndedAt: sinon.stub(),
-        setError: sinon.stub(),
-        save: sinon.stub().resolves(),
-      }));
-
       configuration = {
         isHandlerEnabledForSite: sinon.stub(),
       };
@@ -747,21 +736,14 @@ describe('Preflight Audit', () => {
 
       expect(genvarClient.generateSuggestions).to.have.been.called;
 
-      // Verify that AsyncJob.findById was called for the final save
-      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-
-      // Get the last call to AsyncJob.findById (which is the final save)
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
-
-      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
-      expect(finalJobEntity.setResultType).to.have.been.called;
-      expect(finalJobEntity.setEndedAt).to.have.been.called;
-      expect(finalJobEntity.save).to.have.been.called;
+      expect(job.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(job.setResultType).to.have.been.called;
+      expect(job.setEndedAt).to.have.been.called;
+      expect(job.save).to.have.been.called;
 
       // Verify that setResult was called with the expected data structure
-      expect(finalJobEntity.setResult).to.have.been.called;
-      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+      expect(job.setResult).to.have.been.called;
+      const actualResult = job.setResult.getCall(-1).args[0];
       // Verify the structure matches the expected data (excluding profiling which is dynamic)
       expect(actualResult).to.deep.equal(suggestionData.map((expected) => ({
         ...expected,
@@ -852,15 +834,12 @@ describe('Preflight Audit', () => {
       await preflightAudit(context);
 
       expect(genvarClient.generateSuggestions).to.have.been.called;
-      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
 
-      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
-      expect(finalJobEntity.setResultType).to.have.been.called;
-      expect(finalJobEntity.setEndedAt).to.have.been.called;
-      expect(finalJobEntity.save).to.have.been.called;
-      expect(finalJobEntity.setResult).to.have.been.called;
+      expect(job.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(job.setResultType).to.have.been.called;
+      expect(job.setEndedAt).to.have.been.called;
+      expect(job.save).to.have.been.called;
+      expect(job.setResult).to.have.been.called;
     });
 
     it('completes successfully when finalUrl has trailing slash but input URL gets normalized', async () => {
@@ -910,18 +889,14 @@ describe('Preflight Audit', () => {
 
       await preflightAudit(context);
 
-      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
-
-      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
-      expect(finalJobEntity.setResultType).to.have.been.called;
-      expect(finalJobEntity.setEndedAt).to.have.been.called;
-      expect(finalJobEntity.save).to.have.been.called;
-      expect(finalJobEntity.setResult).to.have.been.called;
+      expect(job.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(job.setResultType).to.have.been.called;
+      expect(job.setEndedAt).to.have.been.called;
+      expect(job.save).to.have.been.called;
+      expect(job.setResult).to.have.been.called;
 
       // Verify that the result contains the expected audit data
-      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+      const actualResult = job.setResult.getCall(0).args[0];
       expect(actualResult).to.be.an('array');
       expect(actualResult).to.have.lengthOf(1);
       expect(actualResult[0]).to.have.property('pageUrl', 'https://main--example--page.aem.page');
@@ -995,21 +970,14 @@ describe('Preflight Audit', () => {
       expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
       expect(genvarClient.generateSuggestions).not.to.have.been.called;
 
-      // Verify that AsyncJob.findById was called for the final save
-      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-
-      // Get the last call to AsyncJob.findById (which is the final save)
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
-
-      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
-      expect(finalJobEntity.setResultType).to.have.been.called;
-      expect(finalJobEntity.setEndedAt).to.have.been.called;
-      expect(finalJobEntity.save).to.have.been.called;
+      expect(job.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(job.setResultType).to.have.been.called;
+      expect(job.setEndedAt).to.have.been.called;
+      expect(job.save).to.have.been.called;
 
       // Verify that setResult was called with the expected data structure
-      expect(finalJobEntity.setResult).to.have.been.called;
-      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+      expect(job.setResult).to.have.been.called;
+      const actualResult = job.setResult.getCall(-1).args[0];
       // Verify the structure matches the expected data (excluding profiling which is dynamic)
       expect(actualResult).to.deep.equal(identifyData.map((expected) => ({
         ...expected,
@@ -1067,21 +1035,14 @@ describe('Preflight Audit', () => {
       expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
       expect(genvarClient.generateSuggestions).not.to.have.been.called;
 
-      // Verify that AsyncJob.findById was called for the final save
-      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-
-      // Get the last call to AsyncJob.findById (which is the final save)
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
-
-      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
-      expect(finalJobEntity.setResultType).to.have.been.called;
-      expect(finalJobEntity.setEndedAt).to.have.been.called;
-      expect(finalJobEntity.save).to.have.been.called;
+      expect(job.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(job.setResultType).to.have.been.called;
+      expect(job.setEndedAt).to.have.been.called;
+      expect(job.save).to.have.been.called;
 
       // Verify that setResult was called with the expected data structure
-      expect(finalJobEntity.setResult).to.have.been.called;
-      const actualResult = finalJobEntity.setResult.getCall(0).args[0];
+      expect(job.setResult).to.have.been.called;
+      const actualResult = job.setResult.getCall(-1).args[0];
       // Verify the structure matches the expected data (excluding profiling which is dynamic)
       expect(actualResult).to.deep.equal(readabilityData.map((expected) => ({
         ...expected,
@@ -1116,30 +1077,16 @@ describe('Preflight Audit', () => {
 
       await expect(preflightAudit(context)).to.be.rejectedWith('S3 error');
 
-      // Verify that AsyncJob.findById was called for the error handling
-      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-
-      // Get the last call to AsyncJob.findById (which is the final save)
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
-
-      expect(finalJobEntity.setStatus).to.have.been.calledWith('FAILED');
-      expect(finalJobEntity.save).to.have.been.called;
+      expect(job.setStatus).to.have.been.calledWith('FAILED');
+      expect(job.save).to.have.been.called;
     });
 
     it('logs timing information for each sub-audit', async () => {
       await preflightAudit(context);
 
-      // Verify that AsyncJob.findById was called for the final save
-      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-
-      // Get the last call to AsyncJob.findById (which is the final save)
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
-
       // Get the result that was set on the job entity
-      expect(finalJobEntity.setResult).to.have.been.called;
-      const result = finalJobEntity.setResult.getCall(0).args[0];
+      expect(job.setResult).to.have.been.called;
+      const result = job.setResult.getCall(-1).args[0];
 
       // Verify that each page result has profiling data
       result.forEach((pageResult) => {
@@ -1168,34 +1115,35 @@ describe('Preflight Audit', () => {
     it('saves intermediate results after each audit step', async () => {
       await preflightAudit(context);
 
-      // Verify that AsyncJob.findById was called for each intermediate save and final save
-      // (total of 6 times: 5 intermediate + 1 final)
-      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(6);
+      expect(job.setResult).to.have.been.called;
+      expect(job.setResult.callCount).to.equal(6);
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
-      // Mock AsyncJob.findById to return job entities that fail on save for intermediate saves
-      let findByIdCallCount = 0;
-
-      context.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => {
-        findByIdCallCount += 1;
-        return Promise.resolve({
-          getId: () => 'job-123',
-          setResult: sinon.stub(),
-          setStatus: sinon.stub(),
-          setResultType: sinon.stub(),
-          setEndedAt: sinon.stub(),
-          setError: sinon.stub(),
-          save: sinon.stub().callsFake(async () => {
-            // Only fail intermediate saves (first 4 calls are intermediate saves)
-            if (findByIdCallCount <= 4) {
-              throw new Error('Connection timeout to database');
-            }
-            return Promise.resolve();
-          }),
-        });
-      });
+      let saveCallCount = 0;
+      context.job = {
+        getId: () => 'job-123',
+        setResult: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        getStatus: () => 'IN_PROGRESS',
+        getMetadata: () => ({
+          payload: {
+            step: PREFLIGHT_STEP_IDENTIFY,
+            urls: ['https://main--example--page.aem.page/page1'],
+          },
+        }),
+        save: sinon.stub().callsFake(async () => {
+          // Only fail intermediate saves (first 4 calls are intermediate saves)
+          if (saveCallCount <= 4) {
+            saveCallCount += 1;
+            throw new Error('Connection timeout to database');
+          }
+          return Promise.resolve();
+        }),
+      };
 
       await preflightAudit(context);
 
@@ -1203,10 +1151,6 @@ describe('Preflight Audit', () => {
       expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/Failed to save intermediate results: Connection timeout to database/),
       );
-
-      // Verify that the audit completed successfully despite intermediate save failures
-      // The final save should have been successful (call #5)
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.be.greaterThan(4);
     });
 
     it('handles individual AUDIT_BODY_SIZE check', async () => {
@@ -1245,9 +1189,7 @@ describe('Preflight Audit', () => {
       await preflightAudit(context);
 
       // Get the final result
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
-      const result = finalJobEntity.setResult.getCall(0).args[0];
+      const result = job.setResult.getCall(-1).args[0];
 
       // Verify that only body size check was performed
       const { audits } = result[0];
@@ -1299,9 +1241,7 @@ describe('Preflight Audit', () => {
       await preflightAudit(context);
 
       // Get the final result
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
-      const result = finalJobEntity.setResult.getCall(0).args[0];
+      const result = job.setResult.getCall(-1).args[0];
 
       // Verify that only lorem ipsum check was performed
       const { audits } = result[0];
@@ -1353,9 +1293,7 @@ describe('Preflight Audit', () => {
       await preflightAudit(context);
 
       // Get the final result
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
-      const result = finalJobEntity.setResult.getCall(0).args[0];
+      const result = job.setResult.getCall(-1).args[0];
 
       // Verify that only h1 count check was performed
       const { audits } = result[0];

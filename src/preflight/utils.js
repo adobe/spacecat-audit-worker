@@ -14,19 +14,17 @@ import { isNonEmptyArray, isValidUrl } from '@adobe/spacecat-shared-utils';
 
 export async function saveIntermediateResults(context, result, auditName) {
   const {
-    site, jobId, normalizedStep, dataAccess, log,
+    site, job, normalizedStep, log,
   } = context;
-  const { AsyncJob: AsyncJobEntity } = dataAccess;
   try {
-    const jobEntity = await AsyncJobEntity.findById(jobId);
-    jobEntity.setStatus(AsyncJob.Status.IN_PROGRESS);
-    jobEntity.setResultType(AsyncJob.ResultType.INLINE);
-    jobEntity.setResult(result);
-    await jobEntity.save();
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. ${auditName}: Intermediate results saved successfully`);
+    job.setStatus(AsyncJob.Status.IN_PROGRESS);
+    job.setResultType(AsyncJob.ResultType.INLINE);
+    job.setResult(result);
+    await job.save();
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. ${auditName}: Intermediate results saved successfully`);
   } catch (error) {
     // ignore any intermediate errors
-    log.warn(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${normalizedStep}. ${auditName}: Failed to save intermediate results: ${error.message}`);
+    log.warn(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${normalizedStep}. ${auditName}: Failed to save intermediate results: ${error.message}`);
   }
 }
 

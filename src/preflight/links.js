@@ -19,7 +19,7 @@ export const PREFLIGHT_LINKS = 'links';
 
 export default async function links(context, auditContext) {
   const {
-    site, jobId, log,
+    site, job, log,
   } = context;
   const {
     checks,
@@ -125,7 +125,7 @@ export default async function links(context, auditContext) {
     const linksEndTime = Date.now();
     const linksEndTimestamp = new Date().toISOString();
     const linksElapsed = ((linksEndTime - linksStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Links audit completed in ${linksElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Links audit completed in ${linksElapsed} seconds`);
 
     timeExecutionBreakdown.push({
       name: 'links',

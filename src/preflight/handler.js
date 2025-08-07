@@ -80,9 +80,8 @@ export const preflightAudit = async (context) => {
   const startTimestamp = new Date().toISOString();
 
   const {
-    site, job, s3Client, log, dataAccess,
+    site, job, s3Client, log,
   } = context;
-  const { AsyncJob: AsyncJobEntity } = dataAccess;
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
   const jobId = job.getId();
 
@@ -267,23 +266,21 @@ export const preflightAudit = async (context) => {
 
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. ${JSON.stringify(resultWithProfiling)}`);
 
-    const jobEntity = await AsyncJobEntity.findById(jobId);
-    jobEntity.setStatus(AsyncJob.Status.COMPLETED);
-    jobEntity.setResultType(AsyncJob.ResultType.INLINE);
-    jobEntity.setResult(resultWithProfiling);
-    jobEntity.setEndedAt(new Date().toISOString());
-    await jobEntity.save();
+    job.setStatus(AsyncJob.Status.COMPLETED);
+    job.setResultType(AsyncJob.ResultType.INLINE);
+    job.setResult(resultWithProfiling);
+    job.setEndedAt(new Date().toISOString());
+    await job.save();
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Error during preflight audit.`, error);
-    const jobEntity = await AsyncJobEntity.findById(jobId);
-    jobEntity.setStatus(AsyncJob.Status.FAILED);
-    jobEntity.setError({
+    job.setStatus(AsyncJob.Status.FAILED);
+    job.setError({
       code: 'EXCEPTION',
       message: error.message,
       details: error.stack,
     });
-    jobEntity.setEndedAt(new Date().toISOString());
-    await jobEntity.save();
+    job.setEndedAt(new Date().toISOString());
+    await job.save();
     throw error;
   }
 
