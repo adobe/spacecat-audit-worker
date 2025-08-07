@@ -1,3 +1,17 @@
+## [1.137.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.137.2...v1.137.3) (2025-08-07)
+
+
+### Bug Fixes
+
+* grouped broken link response  ([#1090](https://github.com/adobe/spacecat-audit-worker/issues/1090)) ([8404ed4](https://github.com/adobe/spacecat-audit-worker/commit/8404ed412f27594ca9e8abfbb418620239dfddd6))
+
+## [1.137.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.137.1...v1.137.2) (2025-08-07)
+
+
+### Bug Fixes
+
+* Google Client Error ([#1093](https://github.com/adobe/spacecat-audit-worker/issues/1093)) ([2304af2](https://github.com/adobe/spacecat-audit-worker/commit/2304af25777d36cb72bf2f75c6d67b8c5f49b174))
+
 ## [1.137.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.137.0...v1.137.1) (2025-08-07)
 
 

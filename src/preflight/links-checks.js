@@ -11,7 +11,7 @@
  */
 
 import { JSDOM } from 'jsdom';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { stripTrailingSlash, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
 /**
  * Helper function to check if a link is broken
@@ -95,7 +95,7 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 
   await Promise.all(
     scrapedObjects
-      .filter(({ data }) => urlSet.has(data.finalUrl))
+      .filter(({ data }) => urlSet.has(stripTrailingSlash(data.finalUrl)))
       .map(async ({ data }) => {
         const html = data.scrapeResult.rawBody;
         const pageUrl = data.finalUrl;
