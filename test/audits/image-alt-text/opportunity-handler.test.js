@@ -63,6 +63,7 @@ describe('Image Alt Text Opportunity Handler', () => {
       info: sinon.stub(),
       debug: sinon.stub(),
       error: sinon.stub(),
+      warn: sinon.stub(),
     };
 
     dataAccessStub = {
