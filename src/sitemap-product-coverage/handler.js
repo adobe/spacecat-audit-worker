@@ -26,6 +26,21 @@ import {
 
 const auditType = 'sitemap-product-coverage';
 
+/**
+ * Maximum number of products per category.
+ * CS can return up to 10000 products.
+ * @type {number}
+ */
+const MAX_PRODUCTS_PER_CATEGORY = 10000;
+
+/**
+ * Maximum number of pages to fetch for a category.
+ * One query can return up to 500 products,
+ * so we can fetch up to 20 pages to cover 10000 products.
+ * @type {number}
+ */
+const MAX_PAGES = 20;
+
 function fillUrlTemplate(template, params) {
   return template
     .replace(/%baseUrl/g, params.baseUrl)
@@ -46,9 +61,9 @@ async function getSkus(categoryPath, params, log) {
   ))];
   let maxPage = productsResp.data.productSearch.page_info.total_pages;
 
-  if (maxPage > 20) {
-    log.warn(`Category ${categoryPath} has more than 10000 products.`);
-    maxPage = 20;
+  if (maxPage > MAX_PAGES) {
+    log.warn(`Category ${categoryPath} has more than ${MAX_PRODUCTS_PER_CATEGORY} products.`);
+    maxPage = MAX_PAGES;
   }
 
   for (let currentPage = 2; currentPage <= maxPage; currentPage += 1) {
@@ -85,7 +100,7 @@ async function getAllSkus(params, log) {
     throw new Error('Unknown product count.');
   }
 
-  if (productCount <= 10000) {
+  if (productCount <= MAX_PRODUCTS_PER_CATEGORY) {
     // we can get everything from the default category
     return getSkus('', params, log);
   }
