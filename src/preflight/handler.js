@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isValidUrl, retrievePageAuthentication } from '@adobe/spacecat-shared-utils';
+import { isValidUrl, retrievePageAuthentication, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
 import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -104,8 +104,7 @@ export const preflightAudit = async (context) => {
     if (!isValidUrl(url)) {
       throw new Error(`[preflight-audit] site: ${site.getId()}. Invalid URL provided: ${url}`);
     }
-    const urlObj = new URL(url);
-    return `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`;
+    return stripTrailingSlash(url);
   });
 
   log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit started.`);
@@ -170,8 +169,7 @@ export const preflightAudit = async (context) => {
 
       scrapedObjects.forEach(({ data }) => {
         const { finalUrl, scrapeResult: { rawBody } } = data;
-        const normalizedFinalUrl = new URL(finalUrl).origin + new URL(finalUrl).pathname.replace(/\/$/, '');
-        const pageResult = audits.get(normalizedFinalUrl);
+        const pageResult = audits.get(stripTrailingSlash(finalUrl));
         const doc = new JSDOM(rawBody).window.document;
 
         const auditsByName = Object.fromEntries(

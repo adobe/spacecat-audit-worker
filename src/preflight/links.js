@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { JSDOM } from 'jsdom';
 import { saveIntermediateResults } from './utils.js';
 import { runLinksChecks } from './links-checks.js';
@@ -55,8 +55,8 @@ export default async function links(context, auditContext) {
     // Link checks (both internal and external)
     const linksStartTime = Date.now();
     const linksStartTimestamp = new Date().toISOString();
-
-    const { auditResult } = await runLinksChecks(urls, scrapedObjects, context, {
+    const auditUrls = urls.map((url) => stripTrailingSlash(url));
+    const { auditResult } = await runLinksChecks(auditUrls, scrapedObjects, context, {
       pageAuthToken,
     });
 
@@ -68,7 +68,9 @@ export default async function links(context, auditContext) {
       const baseURLOrigin = new URL(previewBaseURL).origin;
       if (step === 'suggest') {
         const brokenLinks = auditResult.brokenInternalLinks.map((link) => ({
-          urlTo: new URL(site.getBaseURL()).origin + new URL(link.urlTo).pathname.replace(/\/$/, ''),
+          urlTo: stripTrailingSlash(
+            link.urlTo.replace(new URL(link.urlTo).origin, site.getBaseURL()),
+          ),
           href: link.href,
           status: link.status,
         }));
@@ -82,9 +84,11 @@ export default async function links(context, auditContext) {
           if (!brokenInternalLinksByPage.has(href)) {
             brokenInternalLinksByPage.set(href, []);
           }
-          const aiUrls = urlsSuggested?.map((url) => (baseURLOrigin + new URL(url).pathname.replace(/\/$/, '')));
+          const aiUrls = urlsSuggested?.map((url) => stripTrailingSlash(
+            url.replace(new URL(url).origin, baseURLOrigin),
+          ));
           brokenInternalLinksByPage.get(href).push({
-            url: baseURLOrigin + new URL(urlTo).pathname.replace(/\/$/, ''),
+            url: stripTrailingSlash(urlTo.replace(new URL(urlTo).origin, baseURLOrigin)),
             issue: `Status ${status}`,
             seoImpact: 'High',
             seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
@@ -98,7 +102,7 @@ export default async function links(context, auditContext) {
             brokenInternalLinksByPage.set(href, []);
           }
           brokenInternalLinksByPage.get(href).push({
-            url: baseURLOrigin + new URL(urlTo).pathname.replace(/\/$/, ''),
+            url: urlTo.replace(new URL(urlTo).origin, baseURLOrigin),
             issue: `Status ${status}`,
             seoImpact: 'High',
             seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
@@ -123,7 +127,7 @@ export default async function links(context, auditContext) {
     }
 
     brokenInternalLinksByPage.forEach((issues, href) => {
-      const audit = linksAuditMap.get(href);
+      const audit = linksAuditMap.get(stripTrailingSlash(href));
       if (audit && issues.length > 0) {
         audit.opportunities.push({
           check: 'broken-internal-links',
@@ -133,7 +137,7 @@ export default async function links(context, auditContext) {
     });
 
     brokenExternalLinksByPage.forEach((issues, href) => {
-      const audit = linksAuditMap.get(href);
+      const audit = linksAuditMap.get(stripTrailingSlash(href));
       if (audit && issues.length > 0) {
         audit.opportunities.push({
           check: 'broken-external-links',
@@ -158,7 +162,7 @@ export default async function links(context, auditContext) {
     scrapedObjects.forEach(({ data }) => {
       const { finalUrl, scrapeResult: { rawBody } } = data;
       const doc = new JSDOM(rawBody).window.document;
-      const auditUrl = new URL(finalUrl).origin + new URL(finalUrl).pathname.replace(/\/$/, '');
+      const auditUrl = stripTrailingSlash(finalUrl);
       const audit = linksAuditMap.get(auditUrl);
       const insecureLinks = Array.from(doc.querySelectorAll('a'))
         .filter((anchor) => anchor.href.startsWith('http://'))
