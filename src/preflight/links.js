@@ -92,7 +92,7 @@ export default async function links(context, auditContext) {
             issue: `Status ${status}`,
             seoImpact: 'High',
             seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-            urlsSuggested: aiUrls,
+            aiSuggestion: aiUrls[0],
             aiRationale,
           });
         });
