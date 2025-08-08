@@ -213,6 +213,7 @@ export async function processAccessibilityOpportunities(context) {
   // Extract key metrics for the audit result summary
   const totalIssues = aggregationResult.finalResultFiles.current.overall.violations.total;
   // Subtract 1 for the 'overall' key to get actual URL count
+  // TODO: Since forms are not included in the finalResultFiles.current, this count is not accurate
   const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length - 1;
 
   log.info(`[A11yAudit] Found ${totalIssues} issues across ${urlsProcessed} URLs for site ${siteId} (${site.getBaseURL()})`);
