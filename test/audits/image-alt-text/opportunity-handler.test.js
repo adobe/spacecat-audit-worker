@@ -1160,6 +1160,10 @@ describe('sendAltTextOpportunityToMystique', () => {
     await sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context);
 
     expect(mockOpportunity.setData).to.have.been.calledWith({
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
+      decorativeImagesCount: 0,
+      dataSources: undefined,
       mystiqueResponsesExpected: 1,
     });
     expect(mockOpportunity.save).to.have.been.called;

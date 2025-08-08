@@ -303,10 +303,14 @@ export async function sendAltTextOpportunityToMystique(
     const altTextOppty = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
     if (altTextOppty) {
       const existingData = altTextOppty.getData() || {};
-      altTextOppty.setData({
-        ...existingData,
+      const updatedOpportunityData = {
+        projectedTrafficLost: (existingData.projectedTrafficLost || 0),
+        projectedTrafficValue: (existingData.projectedTrafficValue || 0),
+        decorativeImagesCount: (existingData.decorativeImagesCount || 0),
+        dataSources: existingData.dataSources,
         mystiqueResponsesExpected: urlBatches.length,
-      });
+      };
+      altTextOppty.setData(updatedOpportunityData);
       await altTextOppty.save();
     }
 
