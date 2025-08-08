@@ -14,11 +14,14 @@ import { isNonEmptyArray, isValidUrl } from '@adobe/spacecat-shared-utils';
 
 export async function saveIntermediateResults(context, result, auditName) {
   const {
-    site, job, step, log,
+    site, job, step, dataAccess, log,
   } = context;
+  const { AsyncJob } = dataAccess;
+
   try {
-    job.setResult(result);
-    await job.save();
+    const jobEntity = await AsyncJob.findById(job.getId());
+    jobEntity.setResult(result);
+    await jobEntity.save();
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. ${auditName}: Intermediate results saved successfully`);
   } catch (error) {
     log.warn(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. ${auditName}: Failed to save intermediate results: ${error.message}`);

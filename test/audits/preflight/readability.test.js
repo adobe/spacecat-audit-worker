@@ -38,6 +38,16 @@ describe('Preflight Readability Audit', () => {
       site: { getId: () => 'test-site' },
       jobId: 'test-job',
       log,
+      dataAccess: {
+        AsyncJob: {
+          findById: sinon.stub().resolves({
+            setResult: sinon.stub(),
+            setStatus: sinon.stub(),
+            setResultType: sinon.stub(),
+            save: sinon.stub().resolves(),
+          }),
+        },
+      },
       job: {
         getMetadata: () => ({
           payload: {

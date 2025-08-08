@@ -1115,35 +1115,31 @@ describe('Preflight Audit', () => {
     it('saves intermediate results after each audit step', async () => {
       await preflightAudit(context);
 
-      expect(job.setResult).to.have.been.called;
-      expect(job.setResult.callCount).to.equal(6);
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(5);
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
-      let saveCallCount = 0;
-      context.job = {
-        getId: () => 'job-123',
-        setResult: sinon.stub(),
-        setStatus: sinon.stub(),
-        setResultType: sinon.stub(),
-        setEndedAt: sinon.stub(),
-        setError: sinon.stub(),
-        getStatus: () => 'IN_PROGRESS',
-        getMetadata: () => ({
-          payload: {
-            step: PREFLIGHT_STEP_IDENTIFY,
-            urls: ['https://main--example--page.aem.page/page1'],
-          },
-        }),
-        save: sinon.stub().callsFake(async () => {
-          // Only fail intermediate saves (first 4 calls are intermediate saves)
-          if (saveCallCount <= 4) {
-            saveCallCount += 1;
-            throw new Error('Connection timeout to database');
-          }
-          return Promise.resolve();
-        }),
-      };
+      let findByIdCallCount = 0;
+
+      context.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => {
+        findByIdCallCount += 1;
+        return Promise.resolve({
+          getId: () => 'job-123',
+          setResult: sinon.stub(),
+          setStatus: sinon.stub(),
+          setResultType: sinon.stub(),
+          setEndedAt: sinon.stub(),
+          setError: sinon.stub(),
+          save: sinon.stub().callsFake(async () => {
+            // Only fail intermediate saves (first 4 calls are intermediate saves)
+            if (findByIdCallCount <= 4) {
+              throw new Error('Connection timeout to database');
+            }
+            return Promise.resolve();
+          }),
+        });
+      });
 
       await preflightAudit(context);
 
