@@ -1019,6 +1019,14 @@ describe('sendAltTextOpportunityToMystique', () => {
           getDeliveryType: () => 'aem_edge',
         }),
       },
+      Opportunity: {
+        allBySiteIdAndStatus: sinon.stub().resolves([{
+          getType: () => 'alt-text',
+          getData: () => ({ existingData: 'test' }),
+          setData: sinon.stub(),
+          save: sinon.stub().resolves(),
+        }]),
+      },
     };
 
     context = {
@@ -1131,5 +1139,30 @@ describe('sendAltTextOpportunityToMystique', () => {
     expect(logStub.error).to.have.been.calledWith(
       '[alt-text]: Failed to send alt-text opportunity to Mystique: Site not found',
     );
+  });
+
+  it('should handle opportunity with null getData', async () => {
+    const auditUrl = 'https://example.com';
+    const pageUrls = ['https://example.com/page1'];
+    const siteId = 'site-id';
+    const auditId = 'audit-id';
+
+    // Mock opportunity with getData returning null
+    const mockOpportunity = {
+      getType: () => 'alt-text',
+      getData: () => null,
+      setData: sinon.stub(),
+      save: sinon.stub().resolves(),
+    };
+
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+    await sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context);
+
+    expect(mockOpportunity.setData).to.have.been.calledWith({
+      mystiqueResponsesExpected: 1,
+    });
+    expect(mockOpportunity.save).to.have.been.called;
+    expect(sqsStub.sendMessage).to.have.been.calledOnce;
   });
 });

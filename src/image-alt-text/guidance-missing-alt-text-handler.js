@@ -101,7 +101,10 @@ export default async function handler(message, context) {
     + batchProjectedMetrics.projectedTrafficValue,
     decorativeImagesCount: (existingData.decorativeImagesCount || 0) + batchDecorativeImagesCount,
     dataSources: existingData.dataSources,
+    mystiqueResponsesReceived: (existingData.mystiqueResponsesReceived || 0) + 1,
+    mystiqueResponsesExpected: existingData.mystiqueResponsesExpected || 0,
   };
+  log.info(`[${AUDIT_TYPE}]: Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
 
   // Update opportunity with accumulated metrics
   try {

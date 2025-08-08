@@ -298,6 +298,18 @@ export async function sendAltTextOpportunityToMystique(
     // Batch the URLs to avoid sending too many at once
     const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
 
+    // Update opportunity with expected batch count
+    const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+    const altTextOppty = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
+    if (altTextOppty) {
+      const existingData = altTextOppty.getData() || {};
+      altTextOppty.setData({
+        ...existingData,
+        mystiqueResponsesExpected: urlBatches.length,
+      });
+      await altTextOppty.save();
+    }
+
     log.info(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es)`);
 
     // Send each batch as a separate message
