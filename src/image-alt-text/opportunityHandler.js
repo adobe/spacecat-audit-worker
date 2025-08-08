@@ -302,15 +302,16 @@ export async function sendAltTextOpportunityToMystique(
     const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
     const altTextOppty = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
     if (altTextOppty) {
-      // Add a small delay to avoid potential ElectroDB timing issues
-      await new Promise((resolve) => {
-        setTimeout(resolve, 5000); // 5 second delay
-      });
-
-      altTextOppty.setData({
-        ...altTextOppty.getData(),
+      const existingData = altTextOppty.getData() || {};
+      const updatedOpportunityData = {
+        projectedTrafficLost: (existingData.projectedTrafficLost || 0),
+        projectedTrafficValue: (existingData.projectedTrafficValue || 0),
+        decorativeImagesCount: (existingData.decorativeImagesCount || 0),
+        dataSources: existingData.dataSources || [],
+        mystiqueResponsesReceived: (existingData.mystiqueResponsesReceived || 0),
         mystiqueResponsesExpected: urlBatches.length,
-      });
+      };
+      altTextOppty.setData(updatedOpportunityData);
       await altTextOppty.save();
     }
 
