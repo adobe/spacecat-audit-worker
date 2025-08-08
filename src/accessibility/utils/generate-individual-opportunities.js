@@ -11,6 +11,7 @@
  */
 
 import { isNonEmptyArray, isString } from '@adobe/spacecat-shared-utils';
+import { Opportunity as OpportunityDataAccess } from '@adobe/spacecat-shared-data-access';
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import { syncSuggestions, markSuggestionsNotFoundAnymoreAsFixed } from '../../utils/data-access.js';
 import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
@@ -508,8 +509,8 @@ export async function findOrCreateAccessibilityOpportunity(
 
   // Find opportunity with NEW or IN_PROGRESS status
   const activeOpportunity = existingOpportunities.find(
-    (opportunity) => opportunity.getStatus() === Opportunity.STATUSES.NEW
-      || opportunity.getStatus() === Opportunity.STATUSES.IN_PROGRESS,
+    (opportunity) => opportunity.getStatus() === OpportunityDataAccess.STATUSES.NEW
+      || opportunity.getStatus() === OpportunityDataAccess.STATUSES.IN_PROGRESS,
   );
 
   if (activeOpportunity) {
