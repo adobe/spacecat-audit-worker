@@ -169,3 +169,34 @@ export async function syncSuggestions({
     }
   }
 }
+
+export async function markSuggestionsNotFoundAnymoreAsFixed({
+  opportunity,
+  newData,
+  buildKey,
+  context,
+  log,
+}) {
+  const { Suggestion } = context.dataAccess;
+
+  const newDataKeys = new Set(newData.map(buildKey));
+  const existingSuggestions = await opportunity.getSuggestions();
+
+  // Identify suggestions to mark as FIXED (no longer found in new data)
+  const suggestionsToMarkAsFixed = existingSuggestions.filter((existing) => {
+    const existingKey = buildKey(existing.getData());
+    return !newDataKeys.has(existingKey)
+           && existing.getStatus() !== SuggestionDataAccess.STATUSES.FIXED;
+  });
+
+  // Bulk update suggestions to FIXED status
+  if (suggestionsToMarkAsFixed.length > 0) {
+    const suggestionIds = suggestionsToMarkAsFixed.map((s) => s.getId());
+    log.info(`Marking ${suggestionIds.length} suggestions as FIXED - no longer found in audit`);
+
+    await Suggestion.bulkUpdateStatus(
+      suggestionIds,
+      SuggestionDataAccess.STATUSES.FIXED,
+    );
+  }
+}
