@@ -302,6 +302,11 @@ export async function sendAltTextOpportunityToMystique(
     const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
     const altTextOppty = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
     if (altTextOppty) {
+      // Add a small delay to avoid potential ElectroDB timing issues
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1000); // 1 second delay
+      });
+
       altTextOppty.setData({
         ...altTextOppty.getData(),
         mystiqueResponsesExpected: urlBatches.length,
