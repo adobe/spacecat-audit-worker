@@ -72,9 +72,7 @@ export const suggestionData = [
                 issue: 'Status 404',
                 seoImpact: 'High',
                 seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-                urlsSuggested: [
-                  'https://main--example--page.aem.page/fix',
-                ],
+                aiSuggestion: 'https://main--example--page.aem.page/fix',
                 aiRationale: 'Rationale',
               },
               {
@@ -82,9 +80,7 @@ export const suggestionData = [
                 issue: 'Status 404',
                 seoImpact: 'High',
                 seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-                urlsSuggested: [
-                  'https://main--example--page.aem.page/fix',
-                ],
+                aiSuggestion: 'https://main--example--page.aem.page/fix',
                 aiRationale: 'Rationale',
               },
             ],
