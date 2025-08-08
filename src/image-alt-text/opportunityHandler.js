@@ -304,7 +304,7 @@ export async function sendAltTextOpportunityToMystique(
     if (altTextOppty) {
       // Add a small delay to avoid potential ElectroDB timing issues
       await new Promise((resolve) => {
-        setTimeout(resolve, 1000); // 1 second delay
+        setTimeout(resolve, 5000); // 5 second delay
       });
 
       altTextOppty.setData({
