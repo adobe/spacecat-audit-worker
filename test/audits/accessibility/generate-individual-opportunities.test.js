@@ -1252,6 +1252,9 @@ describe('createIndividualOpportunitySuggestions', () => {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
         },
+        Suggestion: {
+          bulkUpdateStatus: sandbox.stub().resolves(),
+        },
         Configuration: {
           findLatest: sandbox.stub().resolves({
             isHandlerEnabledForSite: mockIsAuditEnabledForSite,
@@ -1442,12 +1445,16 @@ describe('createIndividualOpportunitySuggestions', () => {
           url: 'https://example.com/page1',
           issues: null, // This will trigger the else branch in the ternary operator
         }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-1',
       },
       {
         getData: () => ({
           url: 'https://example.com/page2',
           // no issues property at all - should be undefined
         }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-2',
       },
     ]);
 
@@ -1608,6 +1615,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
           allBySiteId: sandbox.stub().resolves([]),
+        },
+        Suggestion: {
+          bulkUpdateStatus: sandbox.stub().resolves(),
         },
         Configuration: {
           findLatest: sandbox.stub().resolves({
@@ -1858,11 +1868,13 @@ describe('createAccessibilityIndividualOpportunities', () => {
 
     const mockExistingOpportunity = {
       getId: sandbox.stub().returns('existing-id'),
-      remove: sandbox.stub().resolves(),
       getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('NEW'),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().rejects(new Error('Create Error')),
     };
     mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
-    mockContext.dataAccess.Opportunity.create.rejects(new Error('Create Error'));
 
     const result = await createAccessibilityIndividualOpportunities(
       accessibilityData,
@@ -1894,8 +1906,12 @@ describe('createAccessibilityIndividualOpportunities', () => {
 
     const mockExistingOpportunity = {
       getId: sandbox.stub().returns('existing-id'),
-      remove: sandbox.stub().resolves(),
       getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('NEW'),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([]),
     };
     mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
     mockSyncSuggestions.rejects(new Error('Sync Error'));
@@ -2548,6 +2564,8 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
               { type: 'button-name' },
             ],
           }),
+          getStatus: () => 'NEW',
+          getId: () => 'suggestion-1',
         },
         {
           getData: () => ({
@@ -2556,6 +2574,8 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
               { type: 'color-contrast' },
             ],
           }),
+          getStatus: () => 'NEW',
+          getId: () => 'suggestion-2',
         },
       ]),
     };
@@ -2576,6 +2596,9 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
         Opportunity: {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
+        },
+        Suggestion: {
+          bulkUpdateStatus: sandbox.stub().resolves(),
         },
         Configuration: {
           findLatest: sandbox.stub().resolves({
