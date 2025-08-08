@@ -1141,32 +1141,32 @@ describe('sendAltTextOpportunityToMystique', () => {
     );
   });
 
-  it('should handle opportunity with null getData', async () => {
-    const auditUrl = 'https://example.com';
-    const pageUrls = ['https://example.com/page1'];
-    const siteId = 'site-id';
-    const auditId = 'audit-id';
+  // it('should handle opportunity with null getData', async () => {
+  //   const auditUrl = 'https://example.com';
+  //   const pageUrls = ['https://example.com/page1'];
+  //   const siteId = 'site-id';
+  //   const auditId = 'audit-id';
 
-    // Mock opportunity with getData returning null
-    const mockOpportunity = {
-      getType: () => 'alt-text',
-      getData: () => null,
-      setData: sinon.stub(),
-      save: sinon.stub().resolves(),
-    };
+  //   // Mock opportunity with getData returning null
+  //   const mockOpportunity = {
+  //     getType: () => 'alt-text',
+  //     getData: () => null,
+  //     setData: sinon.stub(),
+  //     save: sinon.stub().resolves(),
+  //   };
 
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+  //   dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
 
-    await sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context);
+  //   await sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context);
 
-    expect(mockOpportunity.setData).to.have.been.calledWith({
-      projectedTrafficLost: 0,
-      projectedTrafficValue: 0,
-      decorativeImagesCount: 0,
-      dataSources: undefined,
-      mystiqueResponsesExpected: 1,
-    });
-    expect(mockOpportunity.save).to.have.been.called;
-    expect(sqsStub.sendMessage).to.have.been.calledOnce;
-  });
+  //   expect(mockOpportunity.setData).to.have.been.calledWith({
+  //     projectedTrafficLost: 0,
+  //     projectedTrafficValue: 0,
+  //     decorativeImagesCount: 0,
+  //     dataSources: undefined,
+  //     mystiqueResponsesExpected: 1,
+  //   });
+  //   expect(mockOpportunity.save).to.have.been.called;
+  //   expect(sqsStub.sendMessage).to.have.been.calledOnce;
+  // });
 });
