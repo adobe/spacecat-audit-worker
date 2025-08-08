@@ -20,13 +20,14 @@ import {
 } from '../utils/s3-utils.js';
 import AuditEngine from './auditEngine.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import convertToOpportunity, { sendAltTextOpportunityToMystique, clearAltTextSuggestions } from './opportunityHandler.js';
+import convertToOpportunity, { sendAltTextOpportunityToMystique, clearAltTextSuggestions, chunkArray } from './opportunityHandler.js';
 import {
   shouldShowImageAsSuggestion,
   isImageDecorative,
 } from './utils.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { checkGoogleConnection } from '../common/opportunity-utils.js';
+import { MYSTIQUE_BATCH_SIZE } from './constants.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -221,6 +222,19 @@ export async function processAltTextWithMystique(context) {
     const siteId = site.getId();
     const auditUrl = site.getBaseURL();
 
+    // Get top pages and included URLs
+    const { SiteTopPage } = dataAccess;
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
+
+    // Get ALL page URLs to send to Mystique
+    const pageUrls = [...new Set([...topPages.map((page) => page.getUrl()), ...includedURLs])];
+    if (pageUrls.length === 0) {
+      throw new Error(`No top pages found for site ${site.getId()}`);
+    }
+
+    const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
+
     // First, find or create the opportunity and clear existing suggestions
     const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
     let altTextOppty = opportunities.find(
@@ -238,7 +252,7 @@ export async function processAltTextWithMystique(context) {
         decorativeImagesCount: 0,
         dataSources: altTextOppty.getData()?.dataSources || [], // Preserve data sources
         mystiqueResponsesReceived: 0,
-        mystiqueResponsesExpected: 0,
+        mystiqueResponsesExpected: urlBatches.length,
       };
       altTextOppty.setData(resetData);
       await altTextOppty.save();
@@ -274,7 +288,7 @@ export async function processAltTextWithMystique(context) {
             DATA_SOURCES.GSC,
           ],
           mystiqueResponsesReceived: 0,
-          mystiqueResponsesExpected: 0,
+          mystiqueResponsesExpected: urlBatches.length,
         },
         tags: ['seo', 'accessibility'],
       };
@@ -287,17 +301,6 @@ export async function processAltTextWithMystique(context) {
 
       altTextOppty = await Opportunity.create(opportunityDTO);
       log.info(`[${AUDIT_TYPE}]: Created new opportunity with ID ${altTextOppty.getId()}`);
-    }
-
-    // Get top pages and included URLs
-    const { SiteTopPage } = dataAccess;
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-    const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
-
-    // Get ALL page URLs to send to Mystique
-    const pageUrls = [...new Set([...topPages.map((page) => page.getUrl()), ...includedURLs])];
-    if (pageUrls.length === 0) {
-      throw new Error(`No top pages found for site ${site.getId()}`);
     }
 
     await sendAltTextOpportunityToMystique(

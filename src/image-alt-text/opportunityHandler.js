@@ -264,7 +264,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${siteId} and alt-text audit type.`);
 }
 
-const chunkArray = (array, chunkSize) => {
+export const chunkArray = (array, chunkSize) => {
   const chunks = [];
   for (let i = 0; i < array.length; i += chunkSize) {
     chunks.push(array.slice(i, i + chunkSize));
@@ -297,23 +297,6 @@ export async function sendAltTextOpportunityToMystique(
 
     // Batch the URLs to avoid sending too many at once
     const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
-
-    // Update opportunity with expected batch count
-    const opportunities = await dataAccess.Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    const altTextOppty = opportunities.find((oppty) => oppty.getType() === AUDIT_TYPE);
-    if (altTextOppty) {
-      const existingData = altTextOppty.getData() || {};
-      const updatedOpportunityData = {
-        projectedTrafficLost: (existingData.projectedTrafficLost || 0),
-        projectedTrafficValue: (existingData.projectedTrafficValue || 0),
-        decorativeImagesCount: (existingData.decorativeImagesCount || 0),
-        dataSources: existingData.dataSources || [],
-        mystiqueResponsesReceived: (existingData.mystiqueResponsesReceived || 0),
-        mystiqueResponsesExpected: urlBatches.length,
-      };
-      altTextOppty.setData(updatedOpportunityData);
-      await altTextOppty.save();
-    }
 
     log.info(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es)`);
 
