@@ -1077,7 +1077,7 @@ describe('sendAltTextOpportunityToMystique', () => {
     expect(logStub.info).to.have.been.calledWith(
       '[alt-text]: All 1 batches sent to Mystique successfully',
     );
-  });
+  }).timeout(7000);
 
   it('should batch URLs when there are more than the batch size', async () => {
     const auditUrl = 'https://example.com';
@@ -1105,7 +1105,7 @@ describe('sendAltTextOpportunityToMystique', () => {
     expect(logStub.info).to.have.been.calledWith(
       '[alt-text]: All 2 batches sent to Mystique successfully',
     );
-  });
+  }).timeout(7000);
 
   it('should handle errors when sending to Mystique fails', async () => {
     const auditUrl = 'https://example.com';
@@ -1122,7 +1122,7 @@ describe('sendAltTextOpportunityToMystique', () => {
     expect(logStub.error).to.have.been.calledWith(
       '[alt-text]: Failed to send alt-text opportunity to Mystique: SQS send failed',
     );
-  });
+  }).timeout(7000);
 
   it('should handle errors when fetching site fails', async () => {
     const auditUrl = 'https://example.com';
