@@ -1615,6 +1615,12 @@ describe('createAccessibilityIndividualOpportunities', () => {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
           allBySiteId: sandbox.stub().resolves([]),
+          STATUSES: {
+            NEW: 'NEW',
+            IN_PROGRESS: 'IN_PROGRESS',
+            IGNORED: 'IGNORED',
+            RESOLVED: 'RESOLVED',
+          },
         },
         Suggestion: {
           bulkUpdateStatus: sandbox.stub().resolves(),
@@ -2210,6 +2216,183 @@ describe('createAccessibilityIndividualOpportunities', () => {
     expect(mockContext.log.error).to.have.been.calledWith(
       sinon.match.string,
     );
+  });
+
+  it('should update existing opportunity with IN_PROGRESS status', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const mockExistingOpportunity = {
+      getId: sandbox.stub().returns('existing-id'),
+      getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('IN_PROGRESS'), // Key difference - tests line 512
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+
+    mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
+    mockSyncSuggestions.resolves();
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
+    expect(result.opportunities).to.have.lengthOf(1);
+    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_UPDATED'); // Tests line 674
+    expect(result.opportunities[0].opportunityId).to.equal('existing-id');
+    expect(mockExistingOpportunity.setAuditId).to.have.been.called;
+    expect(mockExistingOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+    expect(mockExistingOpportunity.save).to.have.been.called;
+    // Verify the log message contains "Updated" (tests line 667-670)
+    expect(mockContext.log.info).to.have.been.calledWith(
+      sinon.match(/Updated opportunity for a11y-assistive/),
+    );
+  });
+
+  it('should successfully update existing opportunity with NEW status and return OPPORTUNITY_UPDATED', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const mockExistingOpportunity = {
+      getId: sandbox.stub().returns('existing-id'),
+      getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('NEW'),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(), // Key: this succeeds
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+
+    mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
+    // Ensure syncSuggestions succeeds
+    mockSyncSuggestions.resolves();
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
+    expect(result.opportunities).to.have.lengthOf(1);
+    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_UPDATED'); // Tests line 674
+    expect(result.opportunities[0].opportunityType).to.equal('a11y-assistive');
+    expect(result.opportunities[0].opportunityId).to.equal('existing-id');
+    // Verify the log message contains "Updated" (tests line 667)
+    expect(mockContext.log.info).to.have.been.calledWith(
+      sinon.match(/Updated opportunity for a11y-assistive/),
+    );
+  });
+
+  it('should update first active opportunity found when multiple exist', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const mockFirstOpportunity = {
+      getId: sandbox.stub().returns('first-id'),
+      getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('NEW'),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+
+    const mockSecondOpportunity = {
+      getId: sandbox.stub().returns('second-id'),
+      getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('IN_PROGRESS'),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+
+    const mockIgnoredOpportunity = {
+      getId: sandbox.stub().returns('ignored-id'),
+      getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('IGNORED'),
+    };
+
+    // Return multiple opportunities - should pick the first active one (NEW or IN_PROGRESS)
+    mockContext.dataAccess.Opportunity.allBySiteId.resolves([
+      mockIgnoredOpportunity, // This should be skipped (IGNORED status)
+      mockFirstOpportunity, // This should be selected (first active one)
+      mockSecondOpportunity, // This should be ignored (not first)
+    ]);
+    mockSyncSuggestions.resolves();
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
+    expect(result.opportunities).to.have.lengthOf(1);
+    expect(result.opportunities[0].opportunityId).to.equal('first-id');
+    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_UPDATED');
+    // Verify that first active opportunity was updated
+    expect(mockFirstOpportunity.setAuditId).to.have.been.called;
+    expect(mockFirstOpportunity.save).to.have.been.called;
+    // Verify second opportunity was not touched
+    expect(mockSecondOpportunity.setAuditId).to.not.have.been.called;
   });
 });
 
