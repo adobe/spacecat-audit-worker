@@ -12,6 +12,7 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { cspAutoSuggest } from './csp-auto-suggest.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_CSP;
 
@@ -54,6 +55,11 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   const { dataAccess, log } = context;
   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Classifying CSP suggestions for ${JSON.stringify(auditData)}`);
 
+  if (auditData.auditResult.success === false) {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`);
+    return { ...auditData };
+  }
+
   // this opportunity is only relevant for aem_edge delivery type at the moment
   if (site.getDeliveryType() !== 'aem_edge') {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping CSP opportunity as it is of delivery type ${site.getDeliveryType()}`);
@@ -74,16 +80,20 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   csp = flattenCSP(csp);
   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] CSP information from lighthouse report: ${JSON.stringify(csp)}`);
 
-  /*
-    all modern browsers support the `strict-dynamic` directive,
-    so we don't need backward compatible suggestions
-  */
-  csp = csp.filter((item) => !item.description?.includes('backward compatible'));
+  csp.forEach((item) => {
+    if (item.description && item.description.includes('nonces or hashes')) {
+      // eslint-disable-next-line no-param-reassign
+      item.description = item.description.replace(/nonces or hashes/g, 'nonces').trim();
+    }
+  });
 
   if (!csp.length) {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No CSP information found for ${site.getId()}`);
     return { ...auditData };
   }
+
+  // CSP auto-suggestion
+  csp = await cspAutoSuggest(auditUrl, csp, context, site);
 
   // determine dynamic opportunity properties, used when creating + updating the opportunity
   const props = {

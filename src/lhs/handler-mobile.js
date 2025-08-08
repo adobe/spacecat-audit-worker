@@ -13,7 +13,7 @@
 import { AuditBuilder } from '../common/audit-builder.js';
 import { PSI_STRATEGY_MOBILE } from '../support/psi-client.js';
 import createLHSAuditRunner from './lib.js';
-import { cspOpportunityAndSuggestions } from './csp.js';
+import { cspOpportunityAndSuggestions } from '../csp/csp.js';
 
 export default new AuditBuilder()
   .withRunner(createLHSAuditRunner(PSI_STRATEGY_MOBILE))
