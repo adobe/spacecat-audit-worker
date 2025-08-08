@@ -1019,6 +1019,14 @@ describe('sendAltTextOpportunityToMystique', () => {
           getDeliveryType: () => 'aem_edge',
         }),
       },
+      Opportunity: {
+        allBySiteIdAndStatus: sinon.stub().resolves([{
+          getType: () => 'alt-text',
+          getData: () => ({ existingData: 'test' }),
+          setData: sinon.stub(),
+          save: sinon.stub().resolves(),
+        }]),
+      },
     };
 
     context = {

@@ -52,6 +52,7 @@ describe('Missing Alt Text Guidance Handler', () => {
         info: sandbox.stub(),
         debug: sandbox.stub(),
         error: sandbox.stub(),
+        warn: sandbox.stub(),
       },
       dataAccess: {
         Opportunity: {
@@ -60,6 +61,9 @@ describe('Missing Alt Text Guidance Handler', () => {
         },
         Site: {
           findById: sandbox.stub().resolves(mockSite),
+        },
+        Audit: {
+          findById: sandbox.stub().resolves({ getId: () => 'test-audit-id' }),
         },
       },
       env: {
@@ -309,5 +313,27 @@ describe('Missing Alt Text Guidance Handler', () => {
         dataSources: undefined,
       }),
     );
+  });
+
+  it('should return notFound when audit does not exist', async () => {
+    context.dataAccess.Audit.findById.resolves(null);
+
+    const result = await guidanceHandler(mockMessage, context);
+
+    expect(result.status).to.equal(404);
+    expect(context.log.warn).to.have.been.calledWith(
+      '[alt-text]: No audit found for auditId: test-audit-id',
+    );
+    expect(context.dataAccess.Audit.findById).to.have.been.calledWith('test-audit-id');
+  });
+
+  it('should proceed when audit exists', async () => {
+    const mockAudit = { getId: () => 'test-audit-id' };
+    context.dataAccess.Audit.findById.resolves(mockAudit);
+
+    const result = await guidanceHandler(mockMessage, context);
+
+    expect(result.status).to.equal(200);
+    expect(context.dataAccess.Audit.findById).to.have.been.calledWith('test-audit-id');
   });
 });
