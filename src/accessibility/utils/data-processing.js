@@ -179,6 +179,7 @@ export async function getObjectKeysFromSubfolders(
 
   // filter subfolders to match the current date because the name of the subfolder is a timestamp
   // we do this in case there are leftover subfolders from previous runs that fail to be deleted
+  // TODO: Since form-accessiblity doesn't run simultaneously with accessibility yet, we need to take those folders also into account
   const getCurrentSubfolders = subfolders.filter((timestamp) => {
     const timestampValue = timestamp.split('/').filter((item) => item !== '').pop();
     return new Date(parseInt(timestampValue, 10)).toISOString().split('T')[0] === version;
@@ -343,7 +344,7 @@ export async function aggregateAccessibilityData(
 
   try {
     // Get object keys from subfolders
-    const objectKeysResult = await getObjectKeysFromSubfolders(
+    const accessibilityKeysResult = await getObjectKeysFromSubfolders(
       s3Client,
       bucketName,
       'accessibility',
@@ -351,10 +352,30 @@ export async function aggregateAccessibilityData(
       version,
       log,
     );
-    if (!objectKeysResult.success) {
-      return { success: false, aggregatedData: null, message: objectKeysResult.message };
+
+    const formsAccessibilityKeysResult = await getObjectKeysFromSubfolders(
+      s3Client,
+      bucketName,
+      'forms-accessibility',
+      siteId,
+      version,
+      log,
+    );
+
+    // Check if at least one of the calls succeeded
+    if (!accessibilityKeysResult.success && !formsAccessibilityKeysResult.success) {
+      return {
+        success: false,
+        aggregatedData: null,
+        message: `Failed to retrieve keys from both accessibility and forms-accessibility folders. Accessibility: ${accessibilityKeysResult.message}, Forms: ${formsAccessibilityKeysResult.message}`,
+      };
     }
-    const { objectKeys } = objectKeysResult;
+
+    // Combine object keys from both sources
+    const objectKeys = [
+      ...(accessibilityKeysResult.success ? accessibilityKeysResult.objectKeys : []),
+      ...(formsAccessibilityKeysResult.success ? formsAccessibilityKeysResult.objectKeys : []),
+    ];
 
     // Process files with retry logic
     const { results } = await processFilesWithRetry(
@@ -375,15 +396,25 @@ export async function aggregateAccessibilityData(
     // Process the results
     results.forEach((result) => {
       const { data } = result;
-      const { violations, traffic, url: siteUrl } = data;
+      const {
+        violations, traffic, url: siteUrl, formSource,
+      } = data;
 
-      // Store the url specific data
-      aggregatedData[siteUrl] = {
-        violations,
-        traffic,
-      };
+      // Store the url specific data only for page-level data (no form level data yet)
+      if (!formSource) {
+        aggregatedData[siteUrl] = {
+          violations,
+          traffic,
+        };
+      } else {
+        const compositeKey = `${siteUrl}---${formSource}`;
+        aggregatedData[compositeKey] = {
+          violations,
+          traffic,
+        };
+    }
 
-      // Update overall data
+      // Update overall data for all entries (both page and form data)
       aggregatedData = updateViolationData(aggregatedData, violations, 'critical');
       aggregatedData = updateViolationData(aggregatedData, violations, 'serious');
       if (violations.total) {
