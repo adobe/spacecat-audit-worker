@@ -195,6 +195,9 @@ describe('Broken internal links audit ', () => {
     context.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
     };
+    context.site.getConfig = sandbox.stub().returns({
+      getIncludedURLs: sandbox.stub().returns([]),
+    });
 
     const result = await prepareScrapingStep(context);
     expect(result).to.deep.equal({
@@ -202,6 +205,175 @@ describe('Broken internal links audit ', () => {
       type: 'broken-internal-links',
       urls: topPages.map((page) => ({ url: page.getUrl() })),
     });
+  }).timeout(5000);
+
+  it('prepareScrapingStep should combine top pages and included URLs', async () => {
+    const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
+    const includedURLs = ['https://example.com/page3', 'https://example.com/page4'];
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+    context.site.getConfig = sandbox.stub().returns({
+      getIncludedURLs: sandbox.stub().withArgs('broken-internal-links').returns(includedURLs),
+    });
+
+    const result = await prepareScrapingStep(context);
+
+    const expectedUrls = [
+      { url: 'https://example.com/page1' },
+      { url: 'https://example.com/page2' },
+      { url: 'https://example.com/page3' },
+      { url: 'https://example.com/page4' },
+    ];
+
+    expect(result).to.deep.equal({
+      siteId: site.getId(),
+      type: 'broken-internal-links',
+      urls: expectedUrls,
+    });
+  }).timeout(5000);
+
+  it('prepareScrapingStep should deduplicate URLs from top pages and included URLs', async () => {
+    const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
+    const includedURLs = ['https://example.com/page2', 'https://example.com/page3']; // page2 is duplicate
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+    context.site.getConfig = sandbox.stub().returns({
+      getIncludedURLs: sandbox.stub().withArgs('broken-internal-links').returns(includedURLs),
+    });
+
+    const result = await prepareScrapingStep(context);
+
+    const expectedUrls = [
+      { url: 'https://example.com/page1' },
+      { url: 'https://example.com/page2' },
+      { url: 'https://example.com/page3' },
+    ];
+
+    expect(result).to.deep.equal({
+      siteId: site.getId(),
+      type: 'broken-internal-links',
+      urls: expectedUrls,
+    });
+  }).timeout(5000);
+
+  it('prepareScrapingStep should work with included URLs only when no top pages', async () => {
+    const topPages = [];
+    const includedURLs = ['https://example.com/page1', 'https://example.com/page2'];
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+    context.site.getConfig = sandbox.stub().returns({
+      getIncludedURLs: sandbox.stub().withArgs('broken-internal-links').returns(includedURLs),
+    });
+
+    const result = await prepareScrapingStep(context);
+
+    const expectedUrls = [
+      { url: 'https://example.com/page1' },
+      { url: 'https://example.com/page2' },
+    ];
+
+    expect(result).to.deep.equal({
+      siteId: site.getId(),
+      type: 'broken-internal-links',
+      urls: expectedUrls,
+    });
+  }).timeout(5000);
+
+  it('prepareScrapingStep should handle when site.getConfig() is undefined', async () => {
+    const topPages = [{ getUrl: () => 'https://example.com/page1' }];
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+    context.site.getConfig = undefined;
+
+    const result = await prepareScrapingStep(context);
+
+    expect(result).to.deep.equal({
+      siteId: site.getId(),
+      type: 'broken-internal-links',
+      urls: [{ url: 'https://example.com/page1' }],
+    });
+  }).timeout(5000);
+
+  it('prepareScrapingStep should handle when site.getConfig() returns null', async () => {
+    const topPages = [{ getUrl: () => 'https://example.com/page1' }];
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+    context.site.getConfig = sandbox.stub().returns(null);
+
+    const result = await prepareScrapingStep(context);
+
+    expect(result).to.deep.equal({
+      siteId: site.getId(),
+      type: 'broken-internal-links',
+      urls: [{ url: 'https://example.com/page1' }],
+    });
+  }).timeout(5000);
+
+  it('prepareScrapingStep should handle when getIncludedURLs returns null', async () => {
+    const topPages = [{ getUrl: () => 'https://example.com/page1' }];
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+    context.site.getConfig = sandbox.stub().returns({
+      getIncludedURLs: sandbox.stub().returns(null),
+    });
+
+    const result = await prepareScrapingStep(context);
+
+    expect(result).to.deep.equal({
+      siteId: site.getId(),
+      type: 'broken-internal-links',
+      urls: [{ url: 'https://example.com/page1' }],
+    });
+  }).timeout(5000);
+
+  it('prepareScrapingStep should handle when getIncludedURLs method is undefined', async () => {
+    const topPages = [{ getUrl: () => 'https://example.com/page1' }];
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+    context.site.getConfig = sandbox.stub().returns({
+      // getIncludedURLs method is not defined
+    });
+
+    const result = await prepareScrapingStep(context);
+
+    expect(result).to.deep.equal({
+      siteId: site.getId(),
+      type: 'broken-internal-links',
+      urls: [{ url: 'https://example.com/page1' }],
+    });
+  }).timeout(5000);
+
+  it('prepareScrapingStep should throw error when no URLs found', async () => {
+    const topPages = [];
+    const includedURLs = [];
+
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+    context.site.getConfig = sandbox.stub().returns({
+      getIncludedURLs: sandbox.stub().returns(includedURLs),
+    });
+
+    try {
+      await prepareScrapingStep(context);
+      expect.fail('Should have thrown an error');
+    } catch (error) {
+      expect(error.message).to.equal('No URLs found for site neither top pages nor included URLs');
+    }
   }).timeout(5000);
 });
 
