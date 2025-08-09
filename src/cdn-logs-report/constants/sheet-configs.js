@@ -77,6 +77,7 @@ export const SHEET_CONFIGS = {
       'Avg TTFB (ms)',
     ],
     headerColor: SHEET_COLORS.DEFAULT,
+    // columns to be formatted as numbers
     numberColumns: [3, 4],
     processData: (data) => data?.map((row) => [
       /* c8 ignore next 4 */
@@ -91,9 +92,7 @@ export const SHEET_CONFIGS = {
   country: {
     getHeaders: (periods) => ['Country Code', 'Agent Type', ...periods.columns],
     headerColor: SHEET_COLORS.DEFAULT,
-    getNumberColumns: (periods) => (
-      Array.from({ length: periods.columns.length }, (_, i) => i + 2)
-    ),
+    numberColumns: [2],
     processData: (data, reportPeriods) => {
       const aggregatedData = processCountryWeekData(data, reportPeriods);
       return processWeekData(
