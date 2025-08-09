@@ -493,6 +493,7 @@ describe('Preflight Audit', () => {
         options: {
           enableAuthentication: true,
           screenshotTypes: [],
+          recordHar: true,
         },
       });
     });
