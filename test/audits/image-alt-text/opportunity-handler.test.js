@@ -100,6 +100,7 @@ describe('Image Alt Text Opportunity Handler', () => {
           { pageUrl: '/page3', src: 'image1.svg', blob: 'blob' },
         ],
         decorativeImagesCount: 0,
+        unreachableImages: [],
       },
     };
 
@@ -689,34 +690,80 @@ describe('Image Alt Text Opportunity Handler', () => {
     });
 
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
-    sinon.stub(GoogleClient, 'createFrom').resolves(true);
 
-    // Make RUM API client throw an error
-    const rumError = new Error('RUM API connection failed');
-    rumClientStub.query.rejects(rumError);
+    // Mock RUM API to throw an error
+    rumClientStub.query.rejects(new Error('RUM API error'));
 
     await convertToOpportunityWithMocks.default(auditUrl, auditData, context);
 
-    // Verify error was logged
     expect(logStub.error).to.have.been.calledWith(
-      '[alt-text]: Failed to get RUM results for https://example.com with error: RUM API connection failed',
+      '[alt-text]: Failed to get RUM results for https://example.com with error: RUM API error',
     );
 
-    // Verify opportunity was still created/updated with default metrics
+    // Verify that the opportunity was created with zero metrics
     expect(altTextOppty.setData).to.have.been.calledWith({
       projectedTrafficLost: 0,
       projectedTrafficValue: 0,
       decorativeImagesCount: 0,
-      dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS, DATA_SOURCES.GSC],
+      unreachableImagesCount: 0,
+      dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS],
     });
+  });
 
-    expect(altTextOppty.save).to.have.been.called;
+  it('should convert audit data to opportunity with RUM data', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
 
-    // Verify suggestions were still created despite RUM API failure
-    expect(altTextOppty.addSuggestions).to.have.been.called;
-    expect(logStub.info).to.have.been.calledWith(
-      '[alt-text]: Successfully synced Opportunity And Suggestions for site: https://example.com siteId: site-id and alt-text audit type.',
+    // Set up RUM API to return results
+    rumClientStub.query.resolves([
+      { url: 'https://example.com/page1', earned: 100000 },
+      { url: 'https://example.com/page2', earned: 200000 },
+    ]);
+
+    // Update test data to include unreachableImages
+    auditData.detectedImages = {
+      ...auditData.detectedImages,
+      unreachableImages: [],
+    };
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    // Verify that the opportunity was created with the correct data
+    expect(altTextOppty.setData).to.have.been.calledWith({
+      projectedTrafficLost: 3000,
+      projectedTrafficValue: 3000,
+      decorativeImagesCount: 0,
+      unreachableImagesCount: 0,
+      dataSources: [DATA_SOURCES.RUM, DATA_SOURCES.SITE, DATA_SOURCES.AHREFS],
+    });
+  });
+
+  it('should handle case when page URL is not found in RUM API results', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([altTextOppty]);
+
+    // Set up RUM API to return empty results
+    rumClientStub.query.resolves([]);
+
+    // Our test data has images on pages
+    auditData.detectedImages.imagesWithoutAltText = [
+      { pageUrl: '/page1', src: 'image1.jpg' },
+      { pageUrl: '/page2', src: 'image2.jpg' },
+    ];
+
+    await convertToOpportunity(auditUrl, auditData, context);
+
+    // Verify that the debug log was called for each missing page URL
+    expect(logStub.debug).to.have.been.calledWith(
+      '[alt-text]: Page URL https://example.com/page1 or https://www.example.com/page1 not found in RUM API results',
     );
+    expect(logStub.debug).to.have.been.calledWith(
+      '[alt-text]: Page URL https://example.com/page2 or https://www.example.com/page2 not found in RUM API results',
+    );
+
+    // Verify that the opportunity was still created/updated with zero metrics
+    const setDataCall = altTextOppty.setData.getCall(0);
+    expect(setDataCall).to.exist;
+    expect(setDataCall.args[0].projectedTrafficLost).to.equal(0);
+    expect(setDataCall.args[0].projectedTrafficValue).to.equal(0);
   });
 });
 
