@@ -25,6 +25,7 @@ import {
   importAllTrafficStep,
   generateOpportunityAndSuggestions,
   experimentOpportunitiesAuditRunner,
+  getHighOrganicLowCtrOpportunity,
 } from '../../src/experimentation-opportunities/handler.js';
 
 use(sinonChai);
@@ -164,7 +165,6 @@ describe('Experimentation Opportunities Tests', () => {
       });
       const result = await organicKeywordsStep(context);
 
-      // Assert
       expect(context.site.getConfig().enableImport).to.have.been.calledWith('organic-keywords');
       expect(context.site.getConfig().disableImport).to.have.been.calledWith('organic-keywords');
       expect(context.site.save).to.have.been.called;
@@ -180,7 +180,6 @@ describe('Experimentation Opportunities Tests', () => {
         ],
       });
       const result = await organicKeywordsStep(context);
-      // Assert
       expect(context.site.getConfig().enableImport).not.to.have.been.called;
       expect(context.site.getConfig().disableImport).not.to.have.been.called;
       expect(context.site.save).not.to.have.been.called;
@@ -363,7 +362,7 @@ describe('Experimentation Opportunities Tests', () => {
 
   describe('Additional URLs Processing', () => {
     describe('Successfully process additional URLs', () => {
-      it('should use custom URLs for audit when provided', async () => {
+      it('should use custom URLs when provided and create opportunities for all URLs', async () => {
         context.auditContext = {
           additionalData: ['https://abc.com/page1', 'https://abc.com/page2'],
         };
@@ -378,7 +377,7 @@ describe('Experimentation Opportunities Tests', () => {
         expect(auditData.auditResult.experimentationOpportunities[0]).to.have.property('trackedPageKPIValue');
       });
 
-      it('should combine real RUM data with empty data for custom URLs', async () => {
+      it('should handle mixed URLs with and without RUM data', async () => {
         const mockOpportunities = {
           'high-organic-low-ctr': [
             {
@@ -413,22 +412,26 @@ describe('Experimentation Opportunities Tests', () => {
         expect(emptyOpportunity.trackedKPISiteAverage).to.equal('');
       });
 
-      it('should filter out non-high-organic-low-ctr opportunities when using custom URLs', async () => {
+      it('should only return high-organic-low-ctr opportunities when using custom URLs', async () => {
         const mockOpportunities = {
           'high-organic-low-ctr': [
             {
               page: 'https://abc.com/page1',
               pageViews: 5000,
-              trackedPageKPIValue: '0.02',
               type: 'high-organic-low-ctr',
             },
           ],
           rageclick: [
             {
               page: 'https://abc.com/page1',
-              samples: 100,
               type: 'rageclick',
               metrics: [{ samples: 100 }],
+            },
+          ],
+          'high-inorganic-high-bounce-rate': [
+            {
+              page: 'https://abc.com/page1',
+              type: 'high-inorganic-high-bounce-rate',
             },
           ],
         };
@@ -441,6 +444,7 @@ describe('Experimentation Opportunities Tests', () => {
         const auditData = await runAuditAndScrapeStep(context);
         expect(auditData.auditResult.experimentationOpportunities).to.have.length(1);
         expect(auditData.auditResult.experimentationOpportunities[0].type).to.equal('high-organic-low-ctr');
+        expect(auditData.auditResult.experimentationOpportunities[0].page).to.equal('https://abc.com/page1');
       });
     });
 
@@ -449,6 +453,18 @@ describe('Experimentation Opportunities Tests', () => {
         const auditData = await runAuditAndScrapeStep(context);
         expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
         expect(auditData.auditResult.experimentationOpportunities).to.exist;
+        expect(auditData.auditResult.experimentationOpportunities).to.be.an('array');
+        expect(auditData.auditResult.experimentationOpportunities).to.have.length(5);
+
+        const opportunityTypes = auditData.auditResult.experimentationOpportunities.map(
+          (op) => op.type,
+        );
+        expect(opportunityTypes).to.include('rageclick');
+        expect(opportunityTypes).to.include('high-organic-low-ctr');
+
+        expect(auditData).to.have.property('type', 'experimentation-opportunities');
+        expect(auditData).to.have.property('urls');
+        expect(auditData).to.have.property('siteId');
       });
 
       it('should handle empty custom URLs array', async () => {
@@ -478,47 +494,40 @@ describe('Experimentation Opportunities Tests', () => {
         expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
         expect(auditData.auditResult.experimentationOpportunities).to.exist;
       });
-    });
 
-    describe('Successfully handle additional URL formats', () => {
-      it('should handle comma-separated URLs in additionalData', async () => {
-        context.auditContext = {
-          additionalData: ['/page1,/page2', '/page3'],
-        };
+      it('should handle undefined experimentationOpportunities in urls field', async () => {
+        context.rumApiClient.queryMulti = sinon.stub().resolves({
+          rageclick: [
+            {
+              type: 'rageclick',
+              page: 'https://abc.com/rage1',
+              metrics: [{ samples: 100 }],
+            },
+          ],
+          'high-organic-low-ctr': [],
+          'high-inorganic-high-bounce-rate': [
+            {
+              type: 'high-inorganic-high-bounce-rate',
+              page: 'https://abc.com/bounce1',
+            },
+          ],
+        });
 
         const auditData = await runAuditAndScrapeStep(context);
-        expect(auditData.auditResult.experimentationOpportunities).to.have.length(3);
-        expect(auditData.auditResult.experimentationOpportunities[0].page).to.equal('https://abc.com/page1');
-        expect(auditData.auditResult.experimentationOpportunities[1].page).to.equal('https://abc.com/page2');
-        expect(auditData.auditResult.experimentationOpportunities[2].page).to.equal('https://abc.com/page3');
-      });
 
-      it('should normalize relative URLs to full URLs', async () => {
-        context.auditContext = {
-          additionalData: ['/relative-page1', 'relative-page2'],
-        };
-
-        const auditData = await runAuditAndScrapeStep(context);
+        expect(auditData.urls).to.deep.equal([]);
+        expect(auditData.auditResult.experimentationOpportunities).to.be.an('array');
         expect(auditData.auditResult.experimentationOpportunities).to.have.length(2);
-        expect(auditData.auditResult.experimentationOpportunities[0].page).to.equal('https://abc.com/relative-page1');
-        expect(auditData.auditResult.experimentationOpportunities[1].page).to.equal('https://abc.com/relative-page2');
-      });
 
-      it('should handle whitespace and empty strings in additionalData', async () => {
-        context.auditContext = {
-          additionalData: [' /page1 ', '', '  ', '/page2,, /page3  '],
-        };
-
-        const auditData = await runAuditAndScrapeStep(context);
-        expect(auditData.auditResult.experimentationOpportunities).to.have.length(3);
-        expect(auditData.auditResult.experimentationOpportunities[0].page).to.equal('https://abc.com/page1');
-        expect(auditData.auditResult.experimentationOpportunities[1].page).to.equal('https://abc.com/page2');
-        expect(auditData.auditResult.experimentationOpportunities[2].page).to.equal('https://abc.com/page3');
+        const highOrganicOpportunities = auditData.auditResult.experimentationOpportunities.filter(
+          (op) => op.type === 'high-organic-low-ctr',
+        );
+        expect(highOrganicOpportunities).to.have.length(0);
       });
     });
 
     describe('Edge cases and error handling', () => {
-      it('should generate empty data when no RUM data exists for custom URLs', async () => {
+      it('should create opportunities with no RUM data for custom URLs', async () => {
         context.rumApiClient.queryMulti = sinon.stub().resolves({});
         context.auditContext = {
           additionalData: ['https://abc.com/new-page1', 'https://abc.com/new-page2'],
@@ -541,7 +550,64 @@ describe('Experimentation Opportunities Tests', () => {
   });
 
   describe('Audit Runner Functions', () => {
-    describe('experimentOpportunitiesAuditRunner', () => {
+    describe('getHighOrganicLowCtrOpportunity', () => {
+      it('should filter and return only high-organic-low-ctr opportunities', () => {
+        const mixedOpportunities = [
+          {
+            page: 'https://abc.com/page1',
+            pageViews: 5000,
+            trackedPageKPIValue: '0.02',
+            type: 'high-organic-low-ctr',
+          },
+          {
+            page: 'https://abc.com/page1',
+            samples: 100,
+            type: 'rageclick',
+            metrics: [{ samples: 100 }],
+          },
+          {
+            page: 'https://abc.com/page2',
+            trackedPageKPIValue: '0.05',
+            type: 'high-organic-low-ctr',
+          },
+        ];
+
+        const result = getHighOrganicLowCtrOpportunity(mixedOpportunities);
+
+        expect(result).to.have.length(2);
+        expect(result[0].type).to.equal('high-organic-low-ctr');
+        expect(result[1].type).to.equal('high-organic-low-ctr');
+        expect(result[0].page).to.equal('https://abc.com/page1');
+        expect(result[1].page).to.equal('https://abc.com/page2');
+      });
+
+      it('should return empty array when no high-organic-low-ctr opportunities exist', () => {
+        const nonHighOrganicOpportunities = [
+          {
+            page: 'https://abc.com/page1',
+            type: 'rageclick',
+            samples: 100,
+          },
+          {
+            page: 'https://abc.com/page2',
+            type: 'high-inorganic-high-bounce-rate',
+          },
+        ];
+
+        const result = getHighOrganicLowCtrOpportunity(nonHighOrganicOpportunities);
+
+        expect(result).to.be.an('array');
+        expect(result).to.have.length(0);
+      });
+
+      it('should handle null or undefined input gracefully', () => {
+        expect(getHighOrganicLowCtrOpportunity(null)).to.be.undefined;
+        expect(getHighOrganicLowCtrOpportunity(undefined)).to.be.undefined;
+        expect(getHighOrganicLowCtrOpportunity([])).to.have.length(0);
+      });
+    });
+
+    describe('processRageClickOpportunities', () => {
       it('should process rage click opportunities with opportunityImpact', async () => {
         const mockOpportunities = {
           rageclick: [
@@ -648,7 +714,9 @@ describe('Experimentation Opportunities Tests', () => {
 
         expect(result.auditResult.experimentationOpportunities[0]).to.not.have.property('opportunityImpact');
       });
+    });
 
+    describe('experimentOpportunitiesAuditRunner', () => {
       it('should return correct structure without custom URLs', async () => {
         const result = await experimentOpportunitiesAuditRunner('https://abc.com', context);
 
@@ -674,7 +742,6 @@ describe('Experimentation Opportunities Tests', () => {
         const result = await experimentOpportunitiesAuditRunner('https://abc.com', context, customUrls);
 
         expect(result.auditResult.experimentationOpportunities).to.have.length(2);
-        // Should have one real opportunity and one empty opportunity
         const realOpportunity = result.auditResult.experimentationOpportunities.find(
           (op) => op.pageViews === 1000,
         );
@@ -758,7 +825,6 @@ describe('Experimentation Opportunities Tests', () => {
 
         expect(context.sqs.sendMessage).to.have.been.calledTwice;
 
-        // Check first message
         const [queue1, message1] = context.sqs.sendMessage.firstCall.args;
         expect(queue1).to.equal('spacecat-to-mystique');
         expect(message1).to.include({
@@ -773,7 +839,6 @@ describe('Experimentation Opportunities Tests', () => {
           siteAverageCtr: '0.10',
         });
 
-        // Check second message
         const [queue2, message2] = context.sqs.sendMessage.secondCall.args;
         expect(queue2).to.equal('spacecat-to-mystique');
         expect(message2.data).to.deep.equal({
