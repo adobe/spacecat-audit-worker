@@ -305,7 +305,6 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
     // Add error to audit results
     previewUrls.forEach((url) => {
       const pageResult = audits.get(url);
-      // eslint-disable-next-line max-len
       const accessibilityAudit = pageResult.audits.find((a) => a.name === PREFLIGHT_ACCESSIBILITY);
 
       if (accessibilityAudit) {
@@ -329,8 +328,11 @@ export default async function accessibility(context, auditContext) {
 
   if (!checks || checks.includes(PREFLIGHT_ACCESSIBILITY)) {
     // Check if we have URLs to process
-    // eslint-disable-next-line max-len
-    if (!auditContext.previewUrls || !Array.isArray(auditContext.previewUrls) || auditContext.previewUrls.length === 0) {
+    if (
+      !auditContext.previewUrls
+      || !Array.isArray(auditContext.previewUrls)
+      || auditContext.previewUrls.length === 0
+    ) {
       log.warn('[preflight-audit] No URLs to process for accessibility audit, skipping');
       return;
     }
@@ -358,7 +360,6 @@ export default async function accessibility(context, auditContext) {
     const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
 
     // Generate expected filenames based on preview URLs
-    // eslint-disable-next-line max-len
     const expectedFiles = auditContext.previewUrls.map((url) => generateAccessibilityFilename(url));
 
     log.info(`[preflight-audit] Expected files: ${JSON.stringify(expectedFiles)}`);

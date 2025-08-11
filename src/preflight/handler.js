@@ -23,6 +23,7 @@ import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
 import readability from './readability.js';
+import accessibility from './accessibility.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const PREFLIGHT_STEP_IDENTIFY = 'identify';
@@ -31,7 +32,6 @@ export const PREFLIGHT_STEP_SUGGEST = 'suggest';
 export const AUDIT_BODY_SIZE = 'body-size';
 export const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
 export const AUDIT_H1_COUNT = 'h1-count';
-export const AUDIT_ACCESSIBILITY = 'accessibility';
 
 /**
  * NOTE: When adding a new audit check:
@@ -45,6 +45,7 @@ export const PREFLIGHT_HANDLERS = {
   metatags,
   links,
   readability,
+  accessibility,
 };
 
 export async function scrapePages(context) {
