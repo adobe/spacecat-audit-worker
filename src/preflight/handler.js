@@ -100,6 +100,7 @@ export const preflightAudit = async (context) => {
     enableAuthentication = true,
   } = jobMetadata.payload;
   const step = rawStep.toLowerCase();
+  context.step = step;
   const previewUrls = urls.map((url) => {
     if (!isValidUrl(url)) {
       throw new Error(`[preflight-audit] site: ${site.getId()}. Invalid URL provided: ${url}`);
