@@ -32,7 +32,7 @@ export default async function handler(message, context) {
     opportunity.setUpdatedBy('system');
     opportunity.setData({
       ...opportunity.getData(),
-      ...formDetails,
+      formDetails,
     });
 
     // eslint-disable-next-line no-await-in-loop
@@ -54,6 +54,7 @@ export default async function handler(message, context) {
         cta_source: opptyData.data?.formNavigation?.source || '',
         cta_text: opptyData.data?.formNavigation?.text || '',
         form_source: opptyData.data?.formsource || '',
+        form_details: opptyData.data?.formDetails,
       },
     };
 
