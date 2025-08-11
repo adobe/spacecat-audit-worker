@@ -32,7 +32,7 @@ export default async function handler(message, context) {
     opportunity.setUpdatedBy('system');
     opportunity.setData({
       ...opportunity.getData(),
-      formDetails,
+      form_details: formDetails,
     });
 
     // eslint-disable-next-line no-await-in-loop
@@ -47,6 +47,7 @@ export default async function handler(message, context) {
       siteId: opptyData.siteId,
       auditId: opptyData.auditId,
       time: new Date().toISOString(),
+      // keys inside data should follow snake case and outside should follow camel case
       data: {
         url: opptyData.data?.form || '',
         cr: opptyData.data?.trackedFormKPIValue || 0,
