@@ -1,3 +1,10 @@
+## [1.137.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.137.4...v1.137.5) (2025-08-11)
+
+
+### Bug Fixes
+
+* Process alt-text suggestions from Mystique with valid audit ID ([#1100](https://github.com/adobe/spacecat-audit-worker/issues/1100)) ([02601be](https://github.com/adobe/spacecat-audit-worker/commit/02601be5a10655362d7791508a010832f1280e77))
+
 ## [1.137.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.137.3...v1.137.4) (2025-08-09)
 
 
