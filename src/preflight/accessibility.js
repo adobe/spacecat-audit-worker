@@ -323,15 +323,15 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
  * Accessibility preflight handler
  */
 export default async function accessibility(context, auditContext) {
-  const { checks } = auditContext;
+  const { checks, previewUrls } = auditContext;
   const { log } = context;
 
   if (!checks || checks.includes(PREFLIGHT_ACCESSIBILITY)) {
     // Check if we have URLs to process
     if (
-      !auditContext.previewUrls
-      || !Array.isArray(auditContext.previewUrls)
-      || auditContext.previewUrls.length === 0
+      !previewUrls
+      || !Array.isArray(previewUrls)
+      || previewUrls.length === 0
     ) {
       log.warn('[preflight-audit] No URLs to process for accessibility audit, skipping');
       return;
@@ -360,7 +360,7 @@ export default async function accessibility(context, auditContext) {
     const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
 
     // Generate expected filenames based on preview URLs
-    const expectedFiles = auditContext.previewUrls.map((url) => generateAccessibilityFilename(url));
+    const expectedFiles = previewUrls.map((url) => generateAccessibilityFilename(url));
 
     log.info(`[preflight-audit] Expected files: ${JSON.stringify(expectedFiles)}`);
 

@@ -22,7 +22,7 @@ import AWSXray from 'aws-xray-sdk';
 import { FirefallClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import { Site } from '@adobe/spacecat-shared-data-access';
 import {
-  preflightAudit, scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
+  scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
   AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
 } from '../../src/preflight/handler.js';
 import { runLinksChecks } from '../../src/preflight/links-checks.js';
@@ -577,10 +577,11 @@ describe('Preflight Audit', () => {
     let configuration;
     let firefallClient;
     let genvarClient;
+    let preflightAuditFunction;
 
     const sandbox = sinon.createSandbox();
 
-    beforeEach(() => {
+    beforeEach(async () => {
       site = {
         getId: () => 'site-123',
         getBaseURL: () => 'https://example.com',
@@ -621,6 +622,14 @@ describe('Preflight Audit', () => {
       sinon.stub(AWSXray, 'captureAWSv3Client').returns(secretsClient);
       sandbox.stub(FirefallClient, 'createFrom').returns(firefallClient);
       sandbox.stub(GenvarClient, 'createFrom').returns(genvarClient);
+
+      // Mock the accessibility handler to prevent timeouts
+      const { preflightAudit: mockedPreflightAudit } = await esmock('../../src/preflight/handler.js', {
+        '../../src/preflight/accessibility.js': {
+          default: sinon.stub().resolves(), // Mock accessibility handler as no-op
+        },
+      });
+      preflightAuditFunction = mockedPreflightAudit;
       context = new MockContextBuilder()
         .withSandbox(sinon.createSandbox())
         .withOverrides({
@@ -745,7 +754,7 @@ describe('Preflight Audit', () => {
         },
       });
 
-      await preflightAudit(context);
+      await preflightAuditFunction(context);
 
       expect(genvarClient.generateSuggestions).to.have.been.called;
 
@@ -852,7 +861,7 @@ describe('Preflight Audit', () => {
         },
       });
 
-      await preflightAudit(context);
+      await preflightAuditFunction(context);
 
       expect(genvarClient.generateSuggestions).to.have.been.called;
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
@@ -912,7 +921,7 @@ describe('Preflight Audit', () => {
 
       configuration.isHandlerEnabledForSite.returns(false);
 
-      await preflightAudit(context);
+      await preflightAuditFunction(context);
 
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
       const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
@@ -995,7 +1004,7 @@ describe('Preflight Audit', () => {
       });
       configuration.isHandlerEnabledForSite.returns(false);
 
-      await preflightAudit(context);
+      await preflightAuditFunction(context);
 
       expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
       expect(genvarClient.generateSuggestions).not.to.have.been.called;
@@ -1067,7 +1076,7 @@ describe('Preflight Audit', () => {
       });
       configuration.isHandlerEnabledForSite.returns(false);
 
-      await preflightAudit(context);
+      await preflightAuditFunction(context);
 
       expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
       expect(genvarClient.generateSuggestions).not.to.have.been.called;
@@ -1096,7 +1105,7 @@ describe('Preflight Audit', () => {
 
     it('throws if job is not in progress', async () => {
       job.getStatus.returns('COMPLETED');
-      await expect(preflightAudit(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Job not in progress for jobId: job-123. Status: COMPLETED');
     });
 
     it('throws if the provided urls are invalid', async () => {
@@ -1107,7 +1116,7 @@ describe('Preflight Audit', () => {
         },
       });
 
-      await expect(preflightAudit(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Invalid URL provided: not-a-url');
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('[preflight-audit] site: site-123. Invalid URL provided: not-a-url');
     });
 
     it('sets status to FAILED if an error occurs', async () => {
@@ -1119,7 +1128,7 @@ describe('Preflight Audit', () => {
       });
       s3Client.send.onCall(0).rejects(new Error('S3 error'));
 
-      await expect(preflightAudit(context)).to.be.rejectedWith('S3 error');
+      await expect(preflightAuditFunction(context)).to.be.rejectedWith('S3 error');
 
       // Verify that AsyncJob.findById was called for the error handling
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
@@ -1133,7 +1142,7 @@ describe('Preflight Audit', () => {
     });
 
     it('logs timing information for each sub-audit', async () => {
-      await preflightAudit(context);
+      await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for the final save
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
@@ -1171,7 +1180,7 @@ describe('Preflight Audit', () => {
     });
 
     it('saves intermediate results after each audit step', async () => {
-      await preflightAudit(context);
+      await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for each intermediate save and final save
       // (total of 6 times: 5 intermediate + 1 final)
@@ -1202,7 +1211,7 @@ describe('Preflight Audit', () => {
         });
       });
 
-      await preflightAudit(context);
+      await preflightAuditFunction(context);
 
       // Verify that warn was called for failed intermediate saves
       expect(context.log.warn).to.have.been.calledWith(
@@ -1247,7 +1256,7 @@ describe('Preflight Audit', () => {
         }
       });
 
-      await preflightAudit(context);
+      await preflightAuditFunction(context);
 
       // Get the final result
       const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
@@ -1301,7 +1310,7 @@ describe('Preflight Audit', () => {
         }
       });
 
-      await preflightAudit(context);
+      await preflightAuditFunction(context);
 
       // Get the final result
       const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
@@ -1355,7 +1364,7 @@ describe('Preflight Audit', () => {
         }
       });
 
-      await preflightAudit(context);
+      await preflightAuditFunction(context);
 
       // Get the final result
       const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
