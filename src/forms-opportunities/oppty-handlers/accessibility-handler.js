@@ -12,7 +12,7 @@
 
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { cleanupS3Files, getObjectKeysFromSubfolders, processFilesWithRetry } from '../../accessibility/utils/data-processing.js';
+import { getObjectKeysFromSubfolders, processFilesWithRetry } from '../../accessibility/utils/data-processing.js';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { getSuccessCriteriaDetails } from '../utils.js';
 import { getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
@@ -195,8 +195,6 @@ export async function createAccessibilityOpportunity(auditData, context) {
 
     const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `forms-accessibility/${siteId}/`, log, 10, '-final-result.json');
     log.info(`[Form Opportunity] Found ${lastWeekObjectKeys.length} final-result files in the forms-accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
-
-    await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
 
     // Create opportunity
     const opportunity = await createOrUpdateOpportunity(auditId, siteId, a11yData, context);

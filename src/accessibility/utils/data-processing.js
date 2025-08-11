@@ -179,7 +179,7 @@ export async function getObjectKeysFromSubfolders(
 
   // filter subfolders to match the current date because the name of the subfolder is a timestamp
   // we do this in case there are leftover subfolders from previous runs that fail to be deleted
-  // TODO: Since form-accessiblity doesn't run simultaneously with accessibility yet, we need to take those folders also into account
+  // TODO: Also include form-accessibility folders until both audits run together
   const getCurrentSubfolders = subfolders.filter((timestamp) => {
     const timestampValue = timestamp.split('/').filter((item) => item !== '').pop();
     return new Date(parseInt(timestampValue, 10)).toISOString().split('T')[0] === version;
@@ -412,7 +412,7 @@ export async function aggregateAccessibilityData(
           violations,
           traffic,
         };
-    }
+      }
 
       // Update overall data for all entries (both page and form data)
       aggregatedData = updateViolationData(aggregatedData, violations, 'critical');
