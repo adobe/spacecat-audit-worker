@@ -1,3 +1,10 @@
+# [1.138.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.137.5...v1.138.0) (2025-08-11)
+
+
+### Features
+
+* **a11y:** send more issue types to M for remediation guidance ([#1102](https://github.com/adobe/spacecat-audit-worker/issues/1102)) ([4d8de77](https://github.com/adobe/spacecat-audit-worker/commit/4d8de77d4cefa94736706aed007e99b200cb0631))
+
 ## [1.137.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.137.4...v1.137.5) (2025-08-11)
 
 
