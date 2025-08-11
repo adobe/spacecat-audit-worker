@@ -13,7 +13,7 @@
 import { isNonEmptyArray, isString } from '@adobe/spacecat-shared-utils';
 import { Opportunity as OpportunityDataAccess } from '@adobe/spacecat-shared-data-access';
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
-import { syncSuggestions, markSuggestionsNotFoundAnymoreAsFixed } from '../../utils/data-access.js';
+import { syncSuggestions, markSuggestionsNotFoundAnymoreAsFixed, deepMergeDataFunction } from '../../utils/data-access.js';
 import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
 import { getAuditData } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
@@ -390,6 +390,7 @@ export async function createIndividualOpportunitySuggestions(
         },
       }),
       log,
+      mergeDataFunction: deepMergeDataFunction,
     });
 
     await markSuggestionsNotFoundAnymoreAsFixed({

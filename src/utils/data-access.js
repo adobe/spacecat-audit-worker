@@ -95,6 +95,74 @@ const handleOutdatedSuggestions = async ({
 };
 
 /**
+ * Deep merge function that recursively merges nested objects and arrays.
+ * This preserves deeply nested data instead of overriding entire objects.
+ *
+ * @param {*} target - The target value (existing data)
+ * @param {*} source - The source value (new data)
+ * @returns {*} - The deeply merged result
+ */
+function deepMerge(target, source) {
+  // Handle null/undefined cases
+  if (source === null || source === undefined) {
+    return target;
+  }
+  if (target === null || target === undefined) {
+    return source;
+  }
+
+  // Handle arrays - merge by concatenating unique items or replacing based on preference
+  if (Array.isArray(target) && Array.isArray(source)) {
+    // For arrays, we'll replace with source to maintain consistency with expected behavior
+    // but you could implement array merging logic here if needed
+    return source;
+  }
+
+  // Handle objects - recursively merge properties
+  if (typeof target === 'object' && typeof source === 'object' && !Array.isArray(target) && !Array.isArray(source)) {
+    const result = { ...target };
+
+    Object.keys(source).forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(result, key)) {
+        // Recursively merge nested objects
+        result[key] = deepMerge(result[key], source[key]);
+      } else {
+        // Add new property
+        result[key] = source[key];
+      }
+    });
+
+    return result;
+  }
+
+  // For primitive values, source overrides target
+  return source;
+}
+
+/**
+ * Deep merge function for combining existing and new data.
+ * This performs a deep merge that preserves nested data structures.
+ *
+ * @param {Object} existingData - The existing suggestion data.
+ * @param {Object} newData - The new data to merge.
+ * @returns {Object} - The deeply merged data object.
+ */
+export const deepMergeDataFunction = (existingData, newData) => deepMerge(existingData, newData);
+
+/**
+ * Default merge function for combining existing and new data.
+ * This performs a shallow merge where new data overrides existing data.
+ *
+ * @param {Object} existingData - The existing suggestion data.
+ * @param {Object} newData - The new data to merge.
+ * @returns {Object} - The merged data object.
+ */
+const defaultMergeDataFunction = (existingData, newData) => ({
+  ...existingData,
+  ...newData,
+});
+
+/**
  * Synchronizes existing suggestions with new data by removing outdated suggestions
  * and adding new ones.
  *
@@ -103,6 +171,8 @@ const handleOutdatedSuggestions = async ({
  * @param {Array} params.newData - Array of new data objects to sync.
  * @param {Function} params.buildKey - Function to generate a unique key for each item.
  * @param {Function} params.mapNewSuggestion - Function to map new data to suggestion objects.
+ * @param {Function} [params.mergeDataFunction] - Function to merge existing and new data.
+ *   Defaults to shallow merge.
  * @param {Object} params.log - Logger object for error reporting.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
@@ -112,6 +182,7 @@ export async function syncSuggestions({
   context,
   buildKey,
   mapNewSuggestion,
+  mergeDataFunction = defaultMergeDataFunction,
   log,
 }) {
   const newDataKeys = new Set(newData.map(buildKey));
@@ -133,10 +204,7 @@ export async function syncSuggestions({
       })
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
-        existing.setData({
-          ...existing.getData(),
-          ...newDataItem,
-        });
+        existing.setData(mergeDataFunction(existing.getData(), newDataItem));
         if ([SuggestionDataAccess.STATUSES.OUTDATED].includes(existing.getStatus())) {
           log.warn('Resolved suggestion found in audit. Possible regression.');
           existing.setStatus(SuggestionDataAccess.STATUSES.NEW);
