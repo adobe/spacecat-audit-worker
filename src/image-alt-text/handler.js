@@ -20,11 +20,14 @@ import {
 } from '../utils/s3-utils.js';
 import AuditEngine from './auditEngine.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-import convertToOpportunity from './opportunityHandler.js';
+import convertToOpportunity, { sendAltTextOpportunityToMystique, clearAltTextSuggestions, chunkArray } from './opportunityHandler.js';
 import {
   shouldShowImageAsSuggestion,
   isImageDecorative,
 } from './utils.js';
+import { DATA_SOURCES } from '../common/constants.js';
+import { checkGoogleConnection } from '../common/opportunity-utils.js';
+import { MYSTIQUE_BATCH_SIZE } from './constants.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
@@ -207,9 +210,137 @@ export async function processAltTextAuditStep(context) {
   };
 }
 
-export default new AuditBuilder()
+export async function processAltTextWithMystique(context) {
+  const {
+    log, site, audit, dataAccess,
+  } = context;
+
+  log.info(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for site ${site.getId()}`);
+
+  try {
+    const { Opportunity } = dataAccess;
+    const siteId = site.getId();
+    const auditUrl = site.getBaseURL();
+
+    // Get top pages and included URLs
+    const { SiteTopPage } = dataAccess;
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    const includedURLs = await site?.getConfig?.()?.getIncludedURLs('alt-text') || [];
+
+    // Get ALL page URLs to send to Mystique
+    const pageUrls = [...new Set([...topPages.map((page) => page.getUrl()), ...includedURLs])];
+    if (pageUrls.length === 0) {
+      throw new Error(`No top pages found for site ${site.getId()}`);
+    }
+
+    const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
+
+    // First, find or create the opportunity and clear existing suggestions
+    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
+    let altTextOppty = opportunities.find(
+      (oppty) => oppty.getType() === AUDIT_TYPE,
+    );
+
+    if (altTextOppty) {
+      log.info(`[${AUDIT_TYPE}]: Clearing existing suggestions before sending to Mystique`);
+      await clearAltTextSuggestions({ opportunity: altTextOppty, log });
+
+      // Reset opportunity data to start fresh for new audit run
+      const resetData = {
+        projectedTrafficLost: 0,
+        projectedTrafficValue: 0,
+        decorativeImagesCount: 0,
+        dataSources: altTextOppty.getData()?.dataSources || [], // Preserve data sources
+        mystiqueResponsesReceived: 0,
+        mystiqueResponsesExpected: urlBatches.length,
+      };
+      altTextOppty.setData(resetData);
+      await altTextOppty.save();
+      log.info(`[${AUDIT_TYPE}]: Reset opportunity data for fresh audit run`);
+    } else {
+      log.info(`[${AUDIT_TYPE}]: Creating new opportunity for site ${siteId}`);
+      const opportunityDTO = {
+        siteId,
+        auditId: audit.getId(),
+        runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
+        type: AUDIT_TYPE,
+        origin: 'AUTOMATION',
+        title: 'Missing alt text for images decreases accessibility and discoverability of content',
+        description: 'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',
+        guidance: {
+          recommendations: [
+            {
+              insight: 'Alt text for images decreases accessibility and limits discoverability',
+              recommendation: 'Add meaningful alt text on images that clearly articulate the subject matter of the image',
+              type: null,
+              rationale: 'Alt text for images is vital to ensure your content is discoverable and usable for many people as possible',
+            },
+          ],
+        },
+        data: {
+          projectedTrafficLost: 0,
+          projectedTrafficValue: 0,
+          decorativeImagesCount: 0,
+          dataSources: [
+            DATA_SOURCES.RUM,
+            DATA_SOURCES.SITE,
+            DATA_SOURCES.AHREFS,
+            DATA_SOURCES.GSC,
+          ],
+          mystiqueResponsesReceived: 0,
+          mystiqueResponsesExpected: urlBatches.length,
+        },
+        tags: ['seo', 'accessibility'],
+      };
+
+      const isGoogleConnected = await checkGoogleConnection(auditUrl, context);
+      if (!isGoogleConnected) {
+        opportunityDTO.data.dataSources = opportunityDTO.data.dataSources
+          .filter((source) => source !== DATA_SOURCES.GSC);
+      }
+
+      altTextOppty = await Opportunity.create(opportunityDTO);
+      log.info(`[${AUDIT_TYPE}]: Created new opportunity with ID ${altTextOppty.getId()}`);
+    }
+
+    await sendAltTextOpportunityToMystique(
+      site.getBaseURL(),
+      pageUrls,
+      site.getId(),
+      audit.getId(),
+      context,
+    );
+
+    log.info(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
+    throw error;
+  }
+}
+
+// Create two separate audit builders
+const auditBuilderWithMystique = new AuditBuilder()
+  .withUrlResolver((site) => site.getBaseURL())
+  .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('processAltTextWithMystique', processAltTextWithMystique)
+  .build();
+
+const auditBuilderWithFirefall = new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('prepareScraping', prepareScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processAltTextAudit', processAltTextAuditStep)
   .build();
+
+export default async function createAltTextHandler(message, context) {
+  const { siteId } = message;
+  const { dataAccess, log } = context;
+
+  const site = await dataAccess.Site.findById(siteId);
+  const configuration = await dataAccess.Configuration.findLatest();
+
+  const useMystique = configuration.isHandlerEnabledForSite('alt-text-auto-suggest-mystique', site);
+  log.info(`[${AUDIT_TYPE}]: Using Mystique for site ${siteId}: ${useMystique}`);
+  const builder = useMystique ? auditBuilderWithMystique : auditBuilderWithFirefall;
+  return builder.run(message, context);
+}
