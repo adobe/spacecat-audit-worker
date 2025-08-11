@@ -1,3 +1,10 @@
+## [1.138.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.138.0...v1.138.1) (2025-08-11)
+
+
+### Bug Fixes
+
+* preflight intermediate result persistence ([#1096](https://github.com/adobe/spacecat-audit-worker/issues/1096)) ([842fdb5](https://github.com/adobe/spacecat-audit-worker/commit/842fdb549336519e3930aa2582cb5f8bbd83d05e))
+
 # [1.138.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.137.5...v1.138.0) (2025-08-11)
 
 
