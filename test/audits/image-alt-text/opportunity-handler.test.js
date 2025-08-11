@@ -63,6 +63,7 @@ describe('Image Alt Text Opportunity Handler', () => {
       info: sinon.stub(),
       debug: sinon.stub(),
       error: sinon.stub(),
+      warn: sinon.stub(),
     };
 
     dataAccessStub = {
@@ -1017,6 +1018,14 @@ describe('sendAltTextOpportunityToMystique', () => {
         findById: sinon.stub().resolves({
           getDeliveryType: () => 'aem_edge',
         }),
+      },
+      Opportunity: {
+        allBySiteIdAndStatus: sinon.stub().resolves([{
+          getType: () => 'alt-text',
+          getData: () => ({ existingData: 'test' }),
+          setData: sinon.stub(),
+          save: sinon.stub().resolves(),
+        }]),
       },
     };
 
