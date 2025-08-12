@@ -16,7 +16,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { keywordQuestionsImportStep, sendToMystique } from '../../src/geo-brand-presence/handler.js';
+import { keywordPromptsImportStep, sendToMystique } from '../../src/geo-brand-presence/handler.js';
 
 use(sinonChai);
 
@@ -74,10 +74,11 @@ describe('Geo Brand Presence Handler', () => {
   it('should run the keywordQuestions Import step', async () => {
     const finalUrl = 'https://adobe.com';
     const ctx = { ...context, finalUrl };
-    const result = await keywordQuestionsImportStep(ctx);
+    const result = await keywordPromptsImportStep(ctx);
     expect(result).to.deep.equal({
-      type: 'organic-keywords-questions',
+      type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
+      endDate: undefined,
       auditResult: { keywordQuestions: [] },
       fullAuditRef: finalUrl,
     });

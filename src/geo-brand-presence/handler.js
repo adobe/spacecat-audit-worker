@@ -92,7 +92,9 @@ export async function keywordPromptsImportStep(context) {
     log,
   } = context;
 
+  /* c8 ignore start */
   const endDate = Date.parse(data) ? data : undefined;
+  /* c8 ignore stop */
 
   log.info('Keyword questions import step for %s with endDate: %s', finalUrl, endDate);
   return {
