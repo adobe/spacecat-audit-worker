@@ -82,18 +82,20 @@ export async function sendToMystique(context) {
 
 export async function keywordQuestionsImportStep(context) {
   const {
-    site,
+    // site,
+    data,
     finalUrl,
     log,
   } = context;
-  log.info(`Keyword questions import step for ${finalUrl}`);
-  return {
-    type: ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE,
-    siteId: site.getId(),
-    // auditResult can't be empty, so sending empty array
-    auditResult: { keywordQuestions: [] },
-    fullAuditRef: finalUrl,
-  };
+  log.info(`Keyword questions import step for ${finalUrl} with data ${data}`);
+  throw new Error('this failed');
+  // return {
+  //   type: ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE,
+  //   siteId: site.getId(),
+  //   // auditResult can't be empty, so sending empty array
+  //   auditResult: { keywordQuestions: [] },
+  //   fullAuditRef: finalUrl,
+  // };
 }
 
 export default new AuditBuilder()
