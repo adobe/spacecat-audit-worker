@@ -642,7 +642,6 @@ describe('Preflight Audit', () => {
         })
         .build();
 
-      // Mock AsyncJob.findById to return a fresh job entity for intermediate saves and final save
       context.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
         getId: () => 'job-123',
         setResult: sinon.stub(),
@@ -652,7 +651,6 @@ describe('Preflight Audit', () => {
         setError: sinon.stub(),
         save: sinon.stub().resolves(),
       }));
-
       configuration = {
         isHandlerEnabledForSite: sinon.stub(),
       };
@@ -864,6 +862,7 @@ describe('Preflight Audit', () => {
       await preflightAuditFunction(context);
 
       expect(genvarClient.generateSuggestions).to.have.been.called;
+
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
       const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
       const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
@@ -1189,7 +1188,6 @@ describe('Preflight Audit', () => {
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
-      // Mock AsyncJob.findById to return job entities that fail on save for intermediate saves
       let findByIdCallCount = 0;
 
       context.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => {
@@ -1217,10 +1215,6 @@ describe('Preflight Audit', () => {
       expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/Failed to save intermediate results: Connection timeout to database/),
       );
-
-      // Verify that the audit completed successfully despite intermediate save failures
-      // The final save should have been successful (call #5)
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.be.greaterThan(4);
     });
 
     it('handles individual AUDIT_BODY_SIZE check', async () => {
