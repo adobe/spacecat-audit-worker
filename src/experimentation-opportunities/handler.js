@@ -15,7 +15,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { getCountryCodeFromLang } from '../utils/url-utils.js';
+import { getCountryCodeFromLang, parseCustomUrls } from '../utils/url-utils.js';
 import {
   getObjectFromKey,
 } from '../utils/s3-utils.js';
@@ -74,6 +74,11 @@ export async function generateOpportunityAndSuggestions(context) {
     },
   }));
 
+  if (!messages) {
+    log.info('No experimentation opportunities found or audit result is undefined.');
+    return;
+  }
+
   for (const message of messages) {
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
@@ -81,10 +86,29 @@ export async function generateOpportunityAndSuggestions(context) {
   }
 }
 
-function getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities) {
+export function getHighOrganicLowCtrOpportunity(experimentationOpportunities) {
   return experimentationOpportunities?.filter(
     (oppty) => oppty.type === HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
-  )?.map((oppty) => oppty.page);
+  );
+}
+
+/**
+ * Maps URLs to opportunity data format for consistency
+ * @param {string[]} urls - Array of URLs to normalize
+ * @returns {Array} Array of opportunity objects with consistent structure
+ */
+function mapToOpportunities(urls) {
+  return urls.map((url) => ({
+    type: HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
+    page: url,
+    screenshot: '',
+    trackedPageKPIName: 'Click Through Rate',
+    trackedKPISiteAverage: '',
+    trackedPageKPIValue: '',
+    pageViews: null,
+    samples: null,
+    metrics: null,
+  }));
 }
 
 /**
@@ -94,7 +118,6 @@ function getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities) {
  * @param {*} site
  * @returns
  */
-
 export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
   const { log } = context;
 
@@ -107,6 +130,50 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   processRageClickOpportunities(experimentationOpportunities);
+
+  // Handle custom URLs if provided via audit context
+  const additionalData = context.auditContext?.additionalData;
+  const customUrls = additionalData ? parseCustomUrls(additionalData, auditUrl) : null;
+
+  if (customUrls && customUrls.length > 0) {
+    log.info(`Processing ${customUrls.length} custom URLs for experimentation opportunities`);
+
+    const highOrganicLowCtrOpportunities = getHighOrganicLowCtrOpportunity(
+      experimentationOpportunities,
+    );
+
+    const customUrlSet = new Set(customUrls);
+    const opptiesWithRumData = highOrganicLowCtrOpportunities.reduce(
+      (accumulator, currentValue) => {
+        if (customUrlSet.has(currentValue.page)) {
+          accumulator.push(currentValue);
+          customUrlSet.delete(currentValue.page);
+        }
+        return accumulator;
+      },
+      [],
+    );
+
+    const customUrlsWithoutRumData = [...customUrlSet];
+    const opptiesWithoutRumData = mapToOpportunities(customUrlsWithoutRumData);
+    const finalExperimentationOpportunities = [...opptiesWithRumData, ...opptiesWithoutRumData];
+
+    if (opptiesWithRumData.length > 0) {
+      const urlsWithRUMData = opptiesWithRumData.map((oppty) => oppty.page);
+      log.info(`Found real RUM data for ${opptiesWithRumData.length} high-organic-low-ctr URLs: ${urlsWithRUMData.join(', ')}`);
+    }
+    if (opptiesWithoutRumData.length > 0) {
+      log.info(`No RUM data found for ${opptiesWithoutRumData.length} URLs: ${customUrlsWithoutRumData.join(', ')} - returning empty values`);
+    }
+
+    return {
+      auditResult: {
+        experimentationOpportunities: finalExperimentationOpportunities,
+      },
+      fullAuditRef: auditUrl,
+    };
+  }
+
   log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   return {
@@ -119,6 +186,7 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
 
 export async function runAuditAndScrapeStep(context) {
   const { site, finalUrl } = context;
+
   const result = await experimentOpportunitiesAuditRunner(finalUrl, context);
 
   return {
@@ -127,9 +195,9 @@ export async function runAuditAndScrapeStep(context) {
     type: 'experimentation-opportunities',
     processingType: 'default',
     jobId: site.getId(),
-    urls: getHighOrganicLowCtrOpportunityUrls(
+    urls: getHighOrganicLowCtrOpportunity(
       result.auditResult?.experimentationOpportunities,
-    ).map((url) => ({ url })),
+    )?.map((oppty) => ({ url: oppty.page })),
     siteId: site.getId(),
   };
 }
@@ -170,7 +238,8 @@ export async function organicKeywordsStep(context) {
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const s3BucketPrefix = `scrapes/${site.getId()}`;
   const auditResult = audit.getAuditResult();
-  const urls = getHighOrganicLowCtrOpportunityUrls(auditResult.experimentationOpportunities);
+  const urls = getHighOrganicLowCtrOpportunity(auditResult.experimentationOpportunities)
+    .map((oppty) => oppty.page);
   log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
   const imports = site.getConfig().getImports();
   if (!isImportEnabled(IMPORT_ORGANIC_KEYWORDS, imports)) {

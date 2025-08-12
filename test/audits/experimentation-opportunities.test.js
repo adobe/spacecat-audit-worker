@@ -24,6 +24,8 @@ import {
   organicKeywordsStep,
   importAllTrafficStep,
   generateOpportunityAndSuggestions,
+  experimentOpportunitiesAuditRunner,
+  getHighOrganicLowCtrOpportunity,
 } from '../../src/experimentation-opportunities/handler.js';
 
 use(sinonChai);
@@ -132,223 +134,805 @@ describe('Experimentation Opportunities Tests', () => {
     sinon.restore();
   });
 
-  it('should run the audit and scrape step', async () => {
-    const auditData = await runAuditAndScrapeStep(context);
-    expect(context.rumApiClient.queryMulti).calledWith(
-      [
-        'rageclick',
-        'high-inorganic-high-bounce-rate',
-        'high-organic-low-ctr',
-      ],
-      {
-        domain: 'https://abc.com',
-        interval: 7,
-        granularity: 'hourly',
-      },
-    );
-
-    expect(
-      auditData.auditResult.experimentationOpportunities,
-    ).to.deep.equal(auditDataMock.auditResult.experimentationOpportunities);
-  });
-
-  it('should enable the imports if organic-keywords import is not enabled', async () => {
-    context.audit.getAuditResult.returns({
-      experimentationOpportunities: [
-        { type: 'high-organic-low-ctr', page: 'https://abc.com/page1' },
-      ],
-    });
-    const result = await organicKeywordsStep(context);
-
-    // Assert
-    expect(context.site.getConfig().enableImport).to.have.been.calledWith('organic-keywords');
-    expect(context.site.getConfig().disableImport).to.have.been.calledWith('organic-keywords');
-    expect(context.site.save).to.have.been.called;
-    expect(result).to.have.property('urlConfigs');
-    expect(result.urlConfigs[0]).to.deep.include({ url: 'https://abc.com/page1', geo: 'us' });
-  });
-
-  it('should NOT enable the imports if organic-keywords import is already enabled', async () => {
-    context.site.getConfig().getImports = () => [{ type: 'organic-keywords', enabled: true }];
-    context.audit.getAuditResult.returns({
-      experimentationOpportunities: [
-        { type: 'high-organic-low-ctr', page: 'https://abc.com/page2' },
-      ],
-    });
-    const result = await organicKeywordsStep(context);
-    // Assert
-    expect(context.site.getConfig().enableImport).not.to.have.been.called;
-    expect(context.site.getConfig().disableImport).not.to.have.been.called;
-    expect(context.site.save).not.to.have.been.called;
-    expect(result).to.have.property('urlConfigs');
-    expect(result.urlConfigs[0]).to.deep.include({ url: 'https://abc.com/page2', geo: 'us' });
-  });
-
-  it('organic keywords step should handle failures in saving the site config', async () => {
-    context.audit.getAuditResult.returns(auditDataMock.auditResult);
-    context.site.save.rejects(new Error('Failed to save site config'));
-    const stepResult = await organicKeywordsStep(context);
-    expect(
-      stepResult,
-    ).to.deep.equal({
-      type: 'organic-keywords',
-      siteId: site.getId(),
-      urlConfigs: [{ url: 'https://abc.com/abc-adoption/account', geo: 'us' }],
-    });
-  });
-
-  it('organic keywords step should handle invalid urls in the audit result', async () => {
-    context.audit.getAuditResult.returns({
-      experimentationOpportunities: [
-        { type: 'high-organic-low-ctr', page: 'invalid-url' },
-      ],
-    });
-    const stepResult = await organicKeywordsStep(context);
-    expect(
-      stepResult,
-    ).to.deep.equal({
-      type: 'organic-keywords',
-      siteId: site.getId(),
-      urlConfigs: [],
-    });
-  });
-
-  it('organic keywords step should use default geo if scrape not found', async () => {
-    context.audit.getAuditResult.returns({
-      experimentationOpportunities: [
-        { type: 'high-organic-low-ctr', page: 'https://abc.com/page3' },
-      ],
-    });
-    context.s3Client.send.resolves({
-      Body: {
-        transformToString: sinon.stub().resolves(null),
-      },
-    });
-    const stepResult = await organicKeywordsStep(context);
-    expect(
-      stepResult,
-    ).to.deep.equal({
-      type: 'organic-keywords',
-      siteId: site.getId(),
-      urlConfigs: [{ url: 'https://abc.com/page3', geo: 'us' }],
-    });
-  });
-
-  it('organic keywords step should use default geo if lang tag not found in scrape', async () => {
-    context.audit.getAuditResult.returns({
-      experimentationOpportunities: [
-        { type: 'high-organic-low-ctr', page: 'https://abc.com/page3' },
-      ],
-    });
-    context.s3Client.send.resolves({
-      Body: {
-        transformToString: sinon.stub().resolves({ scrapeResult: { tags: {} } }),
-      },
-    });
-    let stepResult = await organicKeywordsStep(context);
-    expect(
-      stepResult,
-    ).to.deep.equal({
-      type: 'organic-keywords',
-      siteId: site.getId(),
-      urlConfigs: [{ url: 'https://abc.com/page3', geo: 'us' }],
-    });
-    context.s3Client.send.resolves({
-      Body: {
-        transformToString: sinon.stub().resolves({ scrapeResult: {} }),
-      },
-    });
-    stepResult = await organicKeywordsStep(context);
-    expect(
-      stepResult,
-    ).to.deep.equal({
-      type: 'organic-keywords',
-      siteId: site.getId(),
-      urlConfigs: [{ url: 'https://abc.com/page3', geo: 'us' }],
-    });
-  });
-
-  it('should run the import all traffic step', async () => {
-    const stepResult = importAllTrafficStep(context);
-    expect(stepResult).to.deep.equal({
-      type: 'all-traffic',
-      siteId: site.getId(),
-    });
-  });
-
-  it('sends messages for each high-organic-low-ctr opportunity to mystique', async () => {
-    context.audit.getAuditResult.returns({
-      experimentationOpportunities: [
+  describe('Basic Audit Functionality', () => {
+    it('should run the audit and scrape step', async () => {
+      const auditData = await runAuditAndScrapeStep(context);
+      expect(context.rumApiClient.queryMulti).calledWith(
+        [
+          'rageclick',
+          'high-inorganic-high-bounce-rate',
+          'high-organic-low-ctr',
+        ],
         {
-          type: 'high-organic-low-ctr',
-          page: 'https://abc.com/oppty-one',
-          trackedPageKPIValue: '0.12',
-          trackedKPISiteAverage: '0.25',
+          domain: 'https://abc.com',
+          interval: 7,
+          granularity: 'hourly',
         },
-        {
-          type: 'rageclick',
-          page: 'https://abc.com/rageclick-page',
-        },
-        {
-          type: 'high-organic-low-ctr',
-          page: 'https://abc.com/oppty-two',
-          trackedPageKPIValue: '0.08',
-          trackedKPISiteAverage: '0.22',
-        },
-      ],
-    });
-    await generateOpportunityAndSuggestions(context);
+      );
 
-    expect(context.sqs.sendMessage).to.have.been.calledTwice;
-
-    const [queueArg1, messageArg1] = context.sqs.sendMessage.firstCall.args;
-    expect(queueArg1).to.equal('spacecat-to-mystique');
-    expect(messageArg1).to.include({
-      type: 'guidance:high-organic-low-ctr',
-      siteId: site.getId(),
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-    });
-    expect(messageArg1.data).to.deep.equal({
-      url: 'https://abc.com/oppty-one',
-      ctr: '0.12',
-      siteAverageCtr: '0.25',
-    });
-
-    const [queueArg2, messageArg2] = context.sqs.sendMessage.secondCall.args;
-    expect(queueArg2).to.equal('spacecat-to-mystique');
-    expect(messageArg2).to.include({
-      type: 'guidance:high-organic-low-ctr',
-      siteId: site.getId(),
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-    });
-    expect(messageArg2.data).to.deep.equal({
-      url: 'https://abc.com/oppty-two',
-      ctr: '0.08',
-      siteAverageCtr: '0.22',
+      expect(
+        auditData.auditResult.experimentationOpportunities,
+      ).to.deep.equal(auditDataMock.auditResult.experimentationOpportunities);
     });
   });
 
-  it('not sends SQS messages if no high-organic-low-ctr opportunities exist', async () => {
-    context.audit.getAuditResult.returns({
-      experimentationOpportunities: [
-        { type: 'rageclick', page: 'https://abc.com/rageclick-page' },
-        { type: 'high-inorganic-high-bounce-rate', page: 'https://abc.com/bounce-page' },
-      ],
+  describe('Organic Keywords Step', () => {
+    it('should enable the imports if organic-keywords import is not enabled', async () => {
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          { type: 'high-organic-low-ctr', page: 'https://abc.com/page1' },
+        ],
+      });
+      const result = await organicKeywordsStep(context);
+
+      expect(context.site.getConfig().enableImport).to.have.been.calledWith('organic-keywords');
+      expect(context.site.getConfig().disableImport).to.have.been.calledWith('organic-keywords');
+      expect(context.site.save).to.have.been.called;
+      expect(result).to.have.property('urlConfigs');
+      expect(result.urlConfigs[0]).to.deep.include({ url: 'https://abc.com/page1', geo: 'us' });
     });
 
-    await generateOpportunityAndSuggestions(context);
+    it('should NOT enable the imports if organic-keywords import is already enabled', async () => {
+      context.site.getConfig().getImports = () => [{ type: 'organic-keywords', enabled: true }];
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          { type: 'high-organic-low-ctr', page: 'https://abc.com/page2' },
+        ],
+      });
+      const result = await organicKeywordsStep(context);
+      expect(context.site.getConfig().enableImport).not.to.have.been.called;
+      expect(context.site.getConfig().disableImport).not.to.have.been.called;
+      expect(context.site.save).not.to.have.been.called;
+      expect(result).to.have.property('urlConfigs');
+      expect(result.urlConfigs[0]).to.deep.include({ url: 'https://abc.com/page2', geo: 'us' });
+    });
 
-    expect(context.sqs.sendMessage).to.not.have.been.called;
+    it('organic keywords step should handle failures in saving the site config', async () => {
+      context.audit.getAuditResult.returns(auditDataMock.auditResult);
+      context.site.save.rejects(new Error('Failed to save site config'));
+      const stepResult = await organicKeywordsStep(context);
+      expect(
+        stepResult,
+      ).to.deep.equal({
+        type: 'organic-keywords',
+        siteId: site.getId(),
+        urlConfigs: [{ url: 'https://abc.com/abc-adoption/account', geo: 'us' }],
+      });
+    });
+
+    it('organic keywords step should handle invalid urls in the audit result', async () => {
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          { type: 'high-organic-low-ctr', page: 'invalid-url' },
+        ],
+      });
+      const stepResult = await organicKeywordsStep(context);
+      expect(
+        stepResult,
+      ).to.deep.equal({
+        type: 'organic-keywords',
+        siteId: site.getId(),
+        urlConfigs: [],
+      });
+    });
+
+    it('organic keywords step should use default geo if scrape not found', async () => {
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          { type: 'high-organic-low-ctr', page: 'https://abc.com/page3' },
+        ],
+      });
+      context.s3Client.send.resolves({
+        Body: {
+          transformToString: sinon.stub().resolves(null),
+        },
+      });
+      const stepResult = await organicKeywordsStep(context);
+      expect(
+        stepResult,
+      ).to.deep.equal({
+        type: 'organic-keywords',
+        siteId: site.getId(),
+        urlConfigs: [{ url: 'https://abc.com/page3', geo: 'us' }],
+      });
+    });
+
+    it('organic keywords step should use default geo if lang tag not found in scrape', async () => {
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          { type: 'high-organic-low-ctr', page: 'https://abc.com/page3' },
+        ],
+      });
+      context.s3Client.send.resolves({
+        Body: {
+          transformToString: sinon.stub().resolves({ scrapeResult: { tags: {} } }),
+        },
+      });
+      let stepResult = await organicKeywordsStep(context);
+      expect(
+        stepResult,
+      ).to.deep.equal({
+        type: 'organic-keywords',
+        siteId: site.getId(),
+        urlConfigs: [{ url: 'https://abc.com/page3', geo: 'us' }],
+      });
+      context.s3Client.send.resolves({
+        Body: {
+          transformToString: sinon.stub().resolves({ scrapeResult: {} }),
+        },
+      });
+      stepResult = await organicKeywordsStep(context);
+      expect(
+        stepResult,
+      ).to.deep.equal({
+        type: 'organic-keywords',
+        siteId: site.getId(),
+        urlConfigs: [{ url: 'https://abc.com/page3', geo: 'us' }],
+      });
+    });
   });
 
-  it('should not send SQS messages if audit failed', async () => {
-    context.audit.getAuditResult.returns({
-      experimentationOpportunities: [],
+  describe('Import All Traffic Step', () => {
+    it('should run the import all traffic step', async () => {
+      const stepResult = importAllTrafficStep(context);
+      expect(stepResult).to.deep.equal({
+        type: 'all-traffic',
+        siteId: site.getId(),
+      });
     });
-    context.audit.isError = true;
-    await generateOpportunityAndSuggestions(context);
-    expect(context.sqs.sendMessage).to.not.have.been.called;
+  });
+
+  describe('Message Generation', () => {
+    it('sends messages for each high-organic-low-ctr opportunity to mystique', async () => {
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          {
+            type: 'high-organic-low-ctr',
+            page: 'https://abc.com/oppty-one',
+            trackedPageKPIValue: '0.12',
+            trackedKPISiteAverage: '0.25',
+          },
+          {
+            type: 'rageclick',
+            page: 'https://abc.com/rageclick-page',
+          },
+          {
+            type: 'high-organic-low-ctr',
+            page: 'https://abc.com/oppty-two',
+            trackedPageKPIValue: '0.08',
+            trackedKPISiteAverage: '0.22',
+          },
+        ],
+      });
+      await generateOpportunityAndSuggestions(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
+
+      const [queueArg1, messageArg1] = context.sqs.sendMessage.firstCall.args;
+      expect(queueArg1).to.equal('spacecat-to-mystique');
+      expect(messageArg1).to.include({
+        type: 'guidance:high-organic-low-ctr',
+        siteId: site.getId(),
+        auditId: audit.getId(),
+        deliveryType: site.getDeliveryType(),
+      });
+      expect(messageArg1.data).to.deep.equal({
+        url: 'https://abc.com/oppty-one',
+        ctr: '0.12',
+        siteAverageCtr: '0.25',
+      });
+
+      const [queueArg2, messageArg2] = context.sqs.sendMessage.secondCall.args;
+      expect(queueArg2).to.equal('spacecat-to-mystique');
+      expect(messageArg2).to.include({
+        type: 'guidance:high-organic-low-ctr',
+        siteId: site.getId(),
+        auditId: audit.getId(),
+        deliveryType: site.getDeliveryType(),
+      });
+      expect(messageArg2.data).to.deep.equal({
+        url: 'https://abc.com/oppty-two',
+        ctr: '0.08',
+        siteAverageCtr: '0.22',
+      });
+    });
+
+    it('not sends SQS messages if no high-organic-low-ctr opportunities exist', async () => {
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          { type: 'rageclick', page: 'https://abc.com/rageclick-page' },
+          { type: 'high-inorganic-high-bounce-rate', page: 'https://abc.com/bounce-page' },
+        ],
+      });
+
+      await generateOpportunityAndSuggestions(context);
+
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('should not send SQS messages if audit failed', async () => {
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [],
+      });
+      context.audit.isError = true;
+      await generateOpportunityAndSuggestions(context);
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+  });
+
+  describe('Additional URLs Processing', () => {
+    describe('Successfully process additional URLs', () => {
+      it('should use custom URLs when provided and create opportunities for all URLs', async () => {
+        const domain = 'https://abc.com';
+        const customUrl1 = 'https://abc.com/page1';
+        const customUrl2 = 'https://abc.com/page2';
+
+        context.auditContext = {
+          additionalData: [customUrl1, customUrl2],
+        };
+
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
+
+        expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
+        expect(result.auditResult.experimentationOpportunities).to.have.length(2);
+
+        const opptyUrls = result.auditResult.experimentationOpportunities.map(
+          (oppty) => oppty.page,
+        );
+        expect(opptyUrls).to.include(customUrl1);
+        expect(opptyUrls).to.include(customUrl2);
+
+        result.auditResult.experimentationOpportunities.forEach((oppty) => {
+          expect(oppty).to.have.property('pageViews');
+          expect(oppty).to.have.property('trackedPageKPIValue');
+          expect(oppty.type).to.equal('high-organic-low-ctr');
+        });
+      });
+
+      it('should handle mixed URLs with and without RUM data', async () => {
+        const domain = 'https://abc.com';
+        const urlWithRumData = 'https://abc.com/page1';
+        const urlWithoutRumData = 'https://abc.com/page2';
+
+        const mockOpportunities = {
+          'high-organic-low-ctr': [
+            {
+              page: urlWithRumData,
+              pageViews: 5000,
+              trackedPageKPIValue: '0.02',
+              trackedKPISiteAverage: '0.035',
+              type: 'high-organic-low-ctr',
+            },
+          ],
+          rageclick: [],
+          'high-inorganic-high-bounce-rate': [],
+        };
+
+        context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
+        context.auditContext = {
+          additionalData: [urlWithRumData, urlWithoutRumData],
+        };
+
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
+
+        expect(result.auditResult.experimentationOpportunities).to.have.length(2);
+
+        const opptyUrls = result.auditResult.experimentationOpportunities.map(
+          (oppty) => oppty.page,
+        );
+        expect(opptyUrls).to.include(urlWithRumData);
+        expect(opptyUrls).to.include(urlWithoutRumData);
+
+        const realOpportunity = result.auditResult.experimentationOpportunities.find(
+          (op) => op.page === urlWithRumData,
+        );
+        expect(realOpportunity.pageViews).to.equal(5000);
+        expect(realOpportunity.trackedPageKPIValue).to.equal('0.02');
+
+        const emptyOpportunity = result.auditResult.experimentationOpportunities.find(
+          (op) => op.page === urlWithoutRumData,
+        );
+        expect(emptyOpportunity.pageViews).to.be.null;
+        expect(emptyOpportunity.trackedPageKPIValue).to.equal('');
+        expect(emptyOpportunity.trackedKPISiteAverage).to.equal('');
+      });
+
+      it('should only return high-organic-low-ctr opportunities when using custom URLs', async () => {
+        const domain = 'https://abc.com';
+        const customUrl = 'https://abc.com/page1';
+
+        const mockOpportunities = {
+          'high-organic-low-ctr': [
+            {
+              page: customUrl,
+              pageViews: 5000,
+              type: 'high-organic-low-ctr',
+            },
+          ],
+          rageclick: [
+            {
+              page: customUrl,
+              type: 'rageclick',
+              metrics: [{ samples: 100 }],
+            },
+          ],
+          'high-inorganic-high-bounce-rate': [
+            {
+              page: customUrl,
+              type: 'high-inorganic-high-bounce-rate',
+            },
+          ],
+        };
+
+        context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
+        context.auditContext = {
+          additionalData: [customUrl],
+        };
+
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
+
+        expect(result.auditResult.experimentationOpportunities).to.have.length(1);
+        expect(result.auditResult.experimentationOpportunities[0].type).to.equal('high-organic-low-ctr');
+        expect(result.auditResult.experimentationOpportunities[0].page).to.equal(customUrl);
+      });
+    });
+
+    describe('Successfully process without additional URLs', () => {
+      // Integration test - tests full runAuditAndScrapeStep flow
+      it('should work normally when no custom URLs provided', async () => {
+        const auditData = await runAuditAndScrapeStep(context);
+        expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
+        expect(auditData.auditResult.experimentationOpportunities).to.exist;
+        expect(auditData.auditResult.experimentationOpportunities).to.be.an('array');
+        expect(auditData.auditResult.experimentationOpportunities).to.have.length(5);
+
+        const opportunityTypes = auditData.auditResult.experimentationOpportunities.map(
+          (op) => op.type,
+        );
+        expect(opportunityTypes).to.include('rageclick');
+        expect(opportunityTypes).to.include('high-organic-low-ctr');
+
+        expect(auditData).to.have.property('type', 'experimentation-opportunities');
+        expect(auditData).to.have.property('urls');
+        expect(auditData).to.have.property('siteId');
+      });
+
+      // Unit tests for edge cases
+      it('should handle empty custom URLs array', async () => {
+        const domain = 'https://abc.com';
+
+        context.auditContext = {
+          additionalData: [],
+        };
+
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
+        expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
+        expect(result.auditResult.experimentationOpportunities).to.exist;
+      });
+
+      it('should handle null additionalData', async () => {
+        const domain = 'https://abc.com';
+
+        context.auditContext = {
+          additionalData: null,
+        };
+
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
+        expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
+        expect(result.auditResult.experimentationOpportunities).to.exist;
+      });
+
+      it('should handle undefined auditContext', async () => {
+        const domain = 'https://abc.com';
+
+        context.auditContext = undefined;
+
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
+        expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
+        expect(result.auditResult.experimentationOpportunities).to.exist;
+      });
+
+      it('should handle undefined experimentationOpportunities in urls field', async () => {
+        context.rumApiClient.queryMulti = sinon.stub().resolves({
+          rageclick: [
+            {
+              type: 'rageclick',
+              page: 'https://abc.com/rage1',
+              metrics: [{ samples: 100 }],
+            },
+          ],
+          'high-organic-low-ctr': [],
+          'high-inorganic-high-bounce-rate': [
+            {
+              type: 'high-inorganic-high-bounce-rate',
+              page: 'https://abc.com/bounce1',
+            },
+          ],
+        });
+
+        const auditData = await runAuditAndScrapeStep(context);
+
+        expect(auditData.urls).to.deep.equal([]);
+        expect(auditData.auditResult.experimentationOpportunities).to.be.an('array');
+        expect(auditData.auditResult.experimentationOpportunities).to.have.length(2);
+
+        const highOrganicOpportunities = auditData.auditResult.experimentationOpportunities.filter(
+          (op) => op.type === 'high-organic-low-ctr',
+        );
+        expect(highOrganicOpportunities).to.have.length(0);
+      });
+    });
+
+    describe('Edge cases and error handling', () => {
+      it('should create opportunities with no RUM data for custom URLs', async () => {
+        const domain = 'https://abc.com';
+        const customUrl1 = 'https://abc.com/new-page1';
+        const customUrl2 = 'https://abc.com/new-page2';
+
+        context.rumApiClient.queryMulti = sinon.stub().resolves({
+          rageclick: [],
+          'high-organic-low-ctr': [],
+          'high-inorganic-high-bounce-rate': [],
+        });
+        context.auditContext = {
+          additionalData: [customUrl1, customUrl2],
+        };
+
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
+
+        expect(result.auditResult.experimentationOpportunities).to.have.length(2);
+
+        const opptyUrls = result.auditResult.experimentationOpportunities.map(
+          (oppty) => oppty.page,
+        );
+        expect(opptyUrls).to.include(customUrl1);
+        expect(opptyUrls).to.include(customUrl2);
+
+        result.auditResult.experimentationOpportunities.forEach((op) => {
+          expect(op.type).to.equal('high-organic-low-ctr');
+          expect(op.pageViews).to.be.null;
+          expect(op.trackedPageKPIValue).to.equal('');
+          expect(op.trackedKPISiteAverage).to.equal('');
+          expect(op.samples).to.be.null;
+          expect(op.metrics).to.be.null;
+          expect(op.screenshot).to.equal('');
+          expect(op.trackedPageKPIName).to.equal('Click Through Rate');
+        });
+      });
+    });
+  });
+
+  describe('Audit Runner Functions', () => {
+    describe('getHighOrganicLowCtrOpportunity', () => {
+      it('should filter and return only high-organic-low-ctr opportunities', () => {
+        const mixedOpportunities = [
+          {
+            page: 'https://abc.com/page1',
+            pageViews: 5000,
+            trackedPageKPIValue: '0.02',
+            type: 'high-organic-low-ctr',
+          },
+          {
+            page: 'https://abc.com/page1',
+            samples: 100,
+            type: 'rageclick',
+            metrics: [{ samples: 100 }],
+          },
+          {
+            page: 'https://abc.com/page2',
+            trackedPageKPIValue: '0.05',
+            type: 'high-organic-low-ctr',
+          },
+        ];
+
+        const result = getHighOrganicLowCtrOpportunity(mixedOpportunities);
+
+        expect(result).to.have.length(2);
+        expect(result[0].type).to.equal('high-organic-low-ctr');
+        expect(result[1].type).to.equal('high-organic-low-ctr');
+        expect(result[0].page).to.equal('https://abc.com/page1');
+        expect(result[1].page).to.equal('https://abc.com/page2');
+      });
+
+      it('should return empty array when no high-organic-low-ctr opportunities exist', () => {
+        const nonHighOrganicOpportunities = [
+          {
+            page: 'https://abc.com/page1',
+            type: 'rageclick',
+            samples: 100,
+          },
+          {
+            page: 'https://abc.com/page2',
+            type: 'high-inorganic-high-bounce-rate',
+          },
+        ];
+
+        const result = getHighOrganicLowCtrOpportunity(nonHighOrganicOpportunities);
+
+        expect(result).to.be.an('array');
+        expect(result).to.have.length(0);
+      });
+
+      it('should handle null or undefined input gracefully', () => {
+        expect(getHighOrganicLowCtrOpportunity(null)).to.be.undefined;
+        expect(getHighOrganicLowCtrOpportunity(undefined)).to.be.undefined;
+        expect(getHighOrganicLowCtrOpportunity([])).to.have.length(0);
+      });
+    });
+
+    describe('processRageClickOpportunities', () => {
+      it('should process rage click opportunities with opportunityImpact', async () => {
+        const mockOpportunities = {
+          rageclick: [
+            {
+              type: 'rageclick',
+              page: 'https://abc.com/rage-page',
+              metrics: [
+                { samples: 50 },
+                { samples: 75 },
+                { samples: 25 },
+              ],
+            },
+          ],
+          'high-organic-low-ctr': [],
+        };
+
+        context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
+
+        const result = await experimentOpportunitiesAuditRunner('https://abc.com', context);
+
+        expect(result.auditResult.experimentationOpportunities).to.have.length(1);
+        expect(result.auditResult.experimentationOpportunities[0]).to.have.property('opportunityImpact', 75);
+      });
+
+      it('should handle rage click opportunities with missing samples', async () => {
+        const mockOpportunities = {
+          rageclick: [
+            {
+              type: 'rageclick',
+              page: 'https://abc.com/rage-page',
+              metrics: [
+                { samples: 50 },
+                {}, // no samples property
+                { samples: null },
+              ],
+            },
+          ],
+        };
+
+        context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
+
+        const result = await experimentOpportunitiesAuditRunner('https://abc.com', context);
+
+        expect(result.auditResult.experimentationOpportunities[0]).to.have.property('opportunityImpact', 50);
+      });
+
+      it('should handle empty metrics array for rage click', async () => {
+        const mockOpportunities = {
+          rageclick: [
+            {
+              type: 'rageclick',
+              page: 'https://abc.com/rage-page',
+              metrics: [],
+            },
+          ],
+        };
+
+        context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
+
+        const result = await experimentOpportunitiesAuditRunner('https://abc.com', context);
+
+        expect(result.auditResult.experimentationOpportunities[0]).to.have.property('opportunityImpact', 0);
+      });
+
+      it('should handle multiple rage click opportunities', async () => {
+        const mockOpportunities = {
+          rageclick: [
+            {
+              type: 'rageclick',
+              page: 'https://abc.com/rage-page1',
+              metrics: [{ samples: 100 }],
+            },
+            {
+              type: 'rageclick',
+              page: 'https://abc.com/rage-page2',
+              metrics: [{ samples: 200 }],
+            },
+          ],
+        };
+
+        context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
+
+        const result = await experimentOpportunitiesAuditRunner('https://abc.com', context);
+
+        expect(result.auditResult.experimentationOpportunities).to.have.length(2);
+        expect(result.auditResult.experimentationOpportunities[0]).to.have.property('opportunityImpact', 100);
+        expect(result.auditResult.experimentationOpportunities[1]).to.have.property('opportunityImpact', 200);
+      });
+
+      it('should not process non-rage-click opportunities for opportunityImpact', async () => {
+        const mockOpportunities = {
+          'high-organic-low-ctr': [
+            {
+              type: 'high-organic-low-ctr',
+              page: 'https://abc.com/organic-page',
+              metrics: [{ samples: 100 }],
+            },
+          ],
+        };
+
+        context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
+
+        const result = await experimentOpportunitiesAuditRunner('https://abc.com', context);
+
+        expect(result.auditResult.experimentationOpportunities[0]).to.not.have.property('opportunityImpact');
+      });
+    });
+
+    describe('experimentOpportunitiesAuditRunner', () => {
+      it('should return correct structure without custom URLs', async () => {
+        const result = await experimentOpportunitiesAuditRunner('https://abc.com', context);
+
+        expect(result).to.have.property('auditResult');
+        expect(result).to.have.property('fullAuditRef', 'https://abc.com');
+        expect(result.auditResult).to.have.property('experimentationOpportunities');
+      });
+
+      it('should log correct messages for custom URLs with mixed data', async () => {
+        const domain = 'https://abc.com';
+        const urlWithRumData = 'https://abc.com/page1';
+        const urlWithoutRumData = 'https://abc.com/page2';
+
+        const mockOpportunities = {
+          'high-organic-low-ctr': [
+            {
+              page: urlWithRumData,
+              type: 'high-organic-low-ctr',
+              pageViews: 1000,
+            },
+          ],
+          rageclick: [],
+          'high-inorganic-high-bounce-rate': [],
+        };
+
+        context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
+        context.auditContext = {
+          additionalData: [urlWithRumData, urlWithoutRumData],
+        };
+
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
+
+        expect(result.auditResult.experimentationOpportunities).to.have.length(2);
+        const realOpportunity = result.auditResult.experimentationOpportunities.find(
+          (op) => op.pageViews === 1000,
+        );
+        const emptyOpportunity = result.auditResult.experimentationOpportunities.find(
+          (op) => op.pageViews === null,
+        );
+
+        expect(realOpportunity).to.exist;
+        expect(emptyOpportunity).to.exist;
+        expect(emptyOpportunity.page).to.equal(urlWithoutRumData);
+      });
+    });
+
+    describe('generateOpportunityAndSuggestions Edge Cases', () => {
+      it('should handle audit result with undefined experimentationOpportunities', async () => {
+        context.audit.getAuditResult.returns({
+          experimentationOpportunities: undefined,
+        });
+
+        await generateOpportunityAndSuggestions(context);
+
+        expect(context.sqs.sendMessage).to.not.have.been.called;
+      });
+
+      it('should handle audit result with empty experimentation opportunities', async () => {
+        context.audit.getAuditResult.returns({
+          experimentationOpportunities: [],
+        });
+
+        await generateOpportunityAndSuggestions(context);
+
+        expect(context.sqs.sendMessage).to.not.have.been.called;
+      });
+
+      it('should handle audit result with no high-organic-low-ctr opportunities', async () => {
+        context.audit.getAuditResult.returns({
+          experimentationOpportunities: [
+            {
+              type: 'rageclick',
+              page: 'https://abc.com/rage1',
+            },
+            {
+              type: 'high-inorganic-high-bounce-rate',
+              page: 'https://abc.com/bounce1',
+            },
+          ],
+        });
+
+        await generateOpportunityAndSuggestions(context);
+
+        expect(context.sqs.sendMessage).to.not.have.been.called;
+      });
+
+      it('should filter and process only high-organic-low-ctr opportunities', async () => {
+        context.audit.getAuditResult.returns({
+          experimentationOpportunities: [
+            {
+              type: 'high-organic-low-ctr',
+              page: 'https://abc.com/organic1',
+              trackedPageKPIValue: '0.05',
+              trackedKPISiteAverage: '0.10',
+            },
+            {
+              type: 'rageclick',
+              page: 'https://abc.com/rage1',
+            },
+            {
+              type: 'high-organic-low-ctr',
+              page: 'https://abc.com/organic2',
+              trackedPageKPIValue: '0.03',
+              trackedKPISiteAverage: '0.08',
+            },
+            {
+              type: 'high-inorganic-high-bounce-rate',
+              page: 'https://abc.com/bounce1',
+            },
+          ],
+        });
+
+        await generateOpportunityAndSuggestions(context);
+
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+
+        const [queue1, message1] = context.sqs.sendMessage.firstCall.args;
+        expect(queue1).to.equal('spacecat-to-mystique');
+        expect(message1).to.include({
+          type: 'guidance:high-organic-low-ctr',
+          siteId: site.getId(),
+          auditId: audit.getId(),
+          deliveryType: site.getDeliveryType(),
+        });
+        expect(message1.data).to.deep.equal({
+          url: 'https://abc.com/organic1',
+          ctr: '0.05',
+          siteAverageCtr: '0.10',
+        });
+
+        const [queue2, message2] = context.sqs.sendMessage.secondCall.args;
+        expect(queue2).to.equal('spacecat-to-mystique');
+        expect(message2.data).to.deep.equal({
+          url: 'https://abc.com/organic2',
+          ctr: '0.03',
+          siteAverageCtr: '0.08',
+        });
+      });
+
+      it('should include timestamp in messages', async () => {
+        const beforeTime = Date.now();
+
+        context.audit.getAuditResult.returns({
+          experimentationOpportunities: [
+            {
+              type: 'high-organic-low-ctr',
+              page: 'https://abc.com/page1',
+              trackedPageKPIValue: '0.02',
+              trackedKPISiteAverage: '0.05',
+            },
+          ],
+        });
+
+        await generateOpportunityAndSuggestions(context);
+
+        const afterTime = Date.now();
+        const [, message] = context.sqs.sendMessage.firstCall.args;
+
+        expect(message.time).to.be.a('string');
+        const messageTime = new Date(message.time).getTime();
+        expect(messageTime).to.be.at.least(beforeTime);
+        expect(messageTime).to.be.at.most(afterTime);
+      });
+    });
   });
 });
