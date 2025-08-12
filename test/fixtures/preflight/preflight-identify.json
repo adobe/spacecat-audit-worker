@@ -54,29 +54,33 @@
       {
         "name": "metatags",
         "type": "seo",
-        "opportunities": [] 
-      }, 
+        "opportunities": []
+      },
       {
         "name": "links",
         "type": "seo",
         "opportunities": [
           {
             "check": "broken-internal-links",
-            "issue": {
+            "issue": [
+              {
               "url": "https://main--example--page.aem.page/broken",
               "issue": "Status 404",
               "seoImpact": "High",
               "seoRecommendation": "Fix or remove broken links to improve user experience and SEO"
-            }
+              }
+            ]
           },
           {
             "check": "broken-external-links",
-            "issue": {
-              "url": "http://test.com/",
-              "issue": "Status 404",
-              "seoImpact": "High",
-              "seoRecommendation": "Fix or remove broken links to improve user experience"
-            }
+            "issue": [
+              {
+                "url": "http://test.com/",
+                "issue": "Status 404",
+                "seoImpact": "High",
+                "seoRecommendation": "Fix or remove broken links to improve user experience"
+              }
+            ]
           },
           {
             "check": "bad-links",
