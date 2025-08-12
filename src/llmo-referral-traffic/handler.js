@@ -19,7 +19,7 @@ import ExcelJS from 'exceljs';
 import { createFrom } from '@adobe/spacecat-helix-content-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { getPreviousWeekYear, getTemporalCondition } from './date-utils.js';
+import { getPreviousWeekYear, getTemporalCondition } from '../utils/date-utils.js';
 import { saveExcelReport } from '../utils/report-uploader.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../cdn-logs-report/constants/country-patterns.js';
 
@@ -65,7 +65,6 @@ export async function referralTrafficRunner(auditUrl, context, site) {
   const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
   const databaseName = 'rum_metrics';
   const tableName = 'compact_metrics';
-
   const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
 
   // query build-up
@@ -79,11 +78,25 @@ export async function referralTrafficRunner(auditUrl, context, site) {
   const query = await getStaticContent(variables, './src/llmo-referral-traffic/sql/referral-traffic.sql');
   const description = `[Athena Query] Fetching referral traffic data for ${site.getBaseURL()}`;
   const results = await athenaClient.query(query, databaseName, description);
+  const pageIntents = await site.getPageIntents();
+  const baseURL = site.getBaseURL();
+  const memo = {};
+
+  const findPageIntentByPath = (path) => {
+    if (memo[path]) {
+      return memo[path];
+    }
+
+    const url = `${baseURL}${path}`;
+    const pageIntent = pageIntents.find((pi) => pi.getUrl() === url) || '';
+    memo[path] = pageIntent;
+    return pageIntent;
+  };
 
   // enrich with extra fields
   results.forEach((result) => {
+    result.page_intent = findPageIntentByPath(result.path);
     result.region = extractCountryCode(result.path);
-    result.user_intent = '';
   });
 
   // upload to sharepoint & publish via hlx admin api

@@ -48,7 +48,8 @@
       "static/schemaorg-current-https.jsonld",
       "src/cdn-analysis/sql",
       "src/cdn-logs-report/sql",
-      "src/llmo-referral-traffic/sql"
+      "src/llmo-referral-traffic/sql",
+      "src/page-intent/sql"
     ]
   },
   "repository": {
