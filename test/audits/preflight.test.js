@@ -1387,8 +1387,6 @@ describe('Preflight Audit', () => {
 
     beforeEach(() => {
       mockJobEntity = {
-        setStatus: sinon.stub(),
-        setResultType: sinon.stub(),
         setResult: sinon.stub(),
         save: sinon.stub().resolves(),
       };
@@ -1403,8 +1401,10 @@ describe('Preflight Audit', () => {
         site: {
           getId: sinon.stub().returns('site-123'),
         },
-        jobId: 'job-456',
-        normalizedStep: 'test-step',
+        job: {
+          getId: sinon.stub().returns('job-456'),
+        },
+        step: 'test-step',
         dataAccess: mockDataAccess,
         log: {
           info: sinon.stub(),
@@ -1420,8 +1420,6 @@ describe('Preflight Audit', () => {
       await saveIntermediateResults(context, result, auditName);
 
       expect(mockDataAccess.AsyncJob.findById).to.have.been.calledWith('job-456');
-      expect(mockJobEntity.setStatus).to.have.been.calledWith('IN_PROGRESS');
-      expect(mockJobEntity.setResultType).to.have.been.calledWith('INLINE');
       expect(mockJobEntity.setResult).to.have.been.calledWith(result);
       expect(mockJobEntity.save).to.have.been.calledOnce;
       expect(context.log.info).to.have.been.calledWith(
@@ -1460,14 +1458,14 @@ describe('Preflight Audit', () => {
     it('should handle setter method errors', async () => {
       const result = { test: 'data' };
       const auditName = 'test-audit';
-      const error = new Error('Invalid status');
+      const error = new Error('Invalid result');
 
-      mockJobEntity.setStatus.throws(error);
+      mockJobEntity.setResult.throws(error);
 
       await saveIntermediateResults(context, result, auditName);
 
       expect(context.log.warn).to.have.been.calledWith(
-        '[preflight-audit] site: site-123, job: job-456, step: test-step. test-audit: Failed to save intermediate results: Invalid status',
+        '[preflight-audit] site: site-123, job: job-456, step: test-step. test-audit: Failed to save intermediate results: Invalid result',
       );
     });
   });
