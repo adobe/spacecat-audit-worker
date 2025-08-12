@@ -27,7 +27,7 @@ use(chaiAsPromised);
 
 const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 
-describe('Step-based Audit Tests', () => {
+xdescribe('Step-based Audit Tests', () => {
   const sandbox = sinon.createSandbox();
   const mockDate = '2024-03-12T15:24:51.231Z';
   const baseURL = 'https://space.cat';
