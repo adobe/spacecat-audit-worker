@@ -89,8 +89,6 @@ export class StepAudit extends BaseAudit {
       type, data, siteId, auditContext = {},
     } = message;
 
-    log.info(`Running ${type} audit for site ${siteId} with`, message, context);
-
     try {
       const site = await this.siteProvider(siteId, context);
 
