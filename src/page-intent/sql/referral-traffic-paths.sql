@@ -1,4 +1,4 @@
-SELECT 
+SELECT DISTINCT
     path
 FROM {{tableName}}
 WHERE siteid = '{{siteId}}'

@@ -37,9 +37,20 @@ async function getPathsOfLastWeek(auditUrl, context, site) {
   const query = await getStaticContent(variables, './src/page-intent/sql/referral-traffic-paths.sql');
   const description = `[Athena Query] Fetching referral traffic data for ${site.getBaseURL()}`;
   const paths = await athenaClient.query(query, databaseName, description);
+  const pageIntents = await site.getPageIntents();
+  const baseURL = site.getBaseURL();
+
+  const hasPageIntent = (path) => {
+    const url = `${baseURL}${path}`;
+    const pageIntent = pageIntents.find((pi) => pi.getUrl() === url);
+    if (!pageIntent) return false;
+    return true;
+  };
+
+  const missingPageIntents = paths.filter(({ path }) => !hasPageIntent(path));
 
   return {
-    auditResult: paths,
+    auditResult: missingPageIntents,
     fullAuditRef: auditUrl,
   };
 }
@@ -51,24 +62,8 @@ async function updatePageIntent(auditUrl, auditData, context, site) {
   const { auditResult, id } = auditData;
   const baseUrl = site.getBaseURL();
   const siteId = site.getSiteId();
-  const pageIntents = await site.getPageIntents();
-  const baseURL = site.getBaseURL();
-  const memo = {};
-
-  const findPageIntentByPath = (path) => {
-    const url = `${baseURL}${path}`;
-    const pageIntent = pageIntents.find((pi) => pi.getUrl() === url) || '';
-    if (!pageIntent) return false;
-    memo[path] = true;
-    return true;
-  };
 
   for (const { path } of auditResult) {
-    // eslint-disable-next-line no-continue
-    if (memo[path] || findPageIntentByPath(path)) continue;
-
-    memo[path] = true;
-
     const mystiqueMessage = {
       type: DETECT_PAGE_INTENT_FLOW,
       siteId,

@@ -100,7 +100,7 @@ const HANDLERS = {
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
   'detect:page-intent': detectPageIntent,
-  'update-page-intent': updatePageIntent,
+  'page-intent': updatePageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
   dummy: (message) => ok(message),
 };
