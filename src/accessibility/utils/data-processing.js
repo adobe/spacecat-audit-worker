@@ -407,6 +407,7 @@ export async function aggregateAccessibilityData(
           traffic,
         };
       } else {
+        // Creating a composite key to identify various forms on the same page
         const compositeKey = `${siteUrl}---${formSource}`;
         aggregatedData[compositeKey] = {
           violations,

@@ -57,6 +57,40 @@ describe('data-processing utility functions', () => {
     sandbox.restore();
   });
 
+  /**
+   * Helper function to setup S3 folder mocks for accessibility and forms-accessibility folders.
+   * This approach checks command parameters instead of relying on call order.
+   *
+   * @param {Object} s3Client - The mock S3 client
+   * @param {string} siteId - The site ID being tested
+   * @param {Object} accessibilityResponse - Response for accessibility folder queries
+   * @param {Object} formsAccessibilityResponse - Response for forms-accessibility folder queries
+   */
+  function setupS3FolderMocks(
+    s3Client,
+    siteId,
+    accessibilityResponse = null,
+    formsAccessibilityResponse = null,
+  ) {
+    s3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+      .callsFake((command) => {
+        const prefix = command.input.Prefix || '';
+
+        // Check if querying accessibility folder
+        if (prefix.startsWith(`accessibility/${siteId}/`)) {
+          return Promise.resolve(accessibilityResponse || { CommonPrefixes: [] });
+        }
+
+        // Check if querying forms-accessibility folder
+        if (prefix.startsWith(`forms-accessibility/${siteId}/`)) {
+          return Promise.resolve(formsAccessibilityResponse || { CommonPrefixes: [] });
+        }
+
+        // Default response for any other prefix
+        return Promise.resolve({ CommonPrefixes: [] });
+      });
+  }
+
   describe('deleteOriginalFiles', () => {
     it('should return 0 when objectKeys is null', async () => {
       const result = await deleteOriginalFiles(mockS3Client, 'test-bucket', null, mockLog);
@@ -1457,11 +1491,13 @@ describe('data-processing utility functions', () => {
         traffic: 100,
       };
 
-      // For real getObjectKeysFromSubfolders to succeed:
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
+      // Setup S3 mock responses for both folders using helper function
+      setupS3FolderMocks(
+        mockS3Client,
+        'test-site',
+        { CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }] }, // accessibility folder has data
+        { CommonPrefixes: [] }, // forms-accessibility folder is empty
+      );
 
       // For S3 PutObject to save aggregated data
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
@@ -1472,7 +1508,7 @@ describe('data-processing utility functions', () => {
       const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
         '../../../src/utils/s3-utils.js': {
           getObjectKeysUsingPrefix: sandbox.stub()
-            // For getObjectKeysFromSubfolders's internal call
+            // For getObjectKeysFromSubfolders's internal call (accessibility folder)
             .onFirstCall().resolves(['file1.json'])
             // For aggregateAccessibilityData's direct call (last week files)
             .onSecondCall()
@@ -1503,6 +1539,174 @@ describe('data-processing utility functions', () => {
       expect(result.finalResultFiles.current['https://example.com/page1'].traffic).to.equal(100);
       expect(result.message).to.equal('Successfully aggregated 1 files into output-key');
       expect(mockLog.info.calledWith('Saved aggregated accessibility data to output-key')).to.be.true;
+    });
+
+    it('should fetch from both accessibility and forms-accessibility folders', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+
+      const mockSiteData = {
+        url: 'https://example.com/page1',
+        violations: {
+          total: 5,
+          critical: { count: 3, items: { issue1: { count: 3 } } },
+          serious: { count: 2, items: { issue2: { count: 2 } } },
+        },
+        traffic: 100,
+      };
+
+      const mockFormData = {
+        url: 'https://example.com/page1',
+        formSource: 'contact-form',
+        violations: {
+          total: 3,
+          critical: { count: 2, items: { form_issue1: { count: 2 } } },
+          serious: { count: 1, items: { form_issue2: { count: 1 } } },
+        },
+        traffic: 50,
+      };
+
+      // Setup S3 mock responses for both folders using helper function
+      setupS3FolderMocks(
+        mockS3Client,
+        'test-site',
+        { CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }] }, // accessibility folder has data
+        { CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }] }, // forms-accessibility folder also has data
+      );
+
+      // Setup successful PutObject and Delete commands
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
+      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectsCommand)).resolves({});
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            // First call for accessibility folder files
+            .onCall(0).resolves(['accessibility/test-site/file1.json'])
+            // Second call for forms-accessibility folder files
+            .onCall(1)
+            .resolves(['forms-accessibility/test-site/form1.json'])
+            // Third call for last week files
+            .onCall(2)
+            .resolves([]),
+          getObjectFromKey: sandbox.stub()
+            // First file (site data)
+            .onCall(0).resolves(mockSiteData)
+            // Second file (form data)
+            .onCall(1)
+            .resolves(mockFormData),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.true;
+      expect(result.finalResultFiles.current).to.have.property('overall');
+      // Should have the direct site URL
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/page1');
+      // Should have the composite form key
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/page1---contact-form');
+
+      // Verify site data
+      expect(result.finalResultFiles.current['https://example.com/page1'].violations.total).to.equal(5);
+      expect(result.finalResultFiles.current['https://example.com/page1'].traffic).to.equal(100);
+
+      // Verify form data with composite key
+      expect(result.finalResultFiles.current['https://example.com/page1---contact-form'].violations.total).to.equal(3);
+      expect(result.finalResultFiles.current['https://example.com/page1---contact-form'].traffic).to.equal(50);
+
+      // Verify overall aggregation includes both
+      expect(result.finalResultFiles.current.overall.violations.total).to.equal(8); // 5 + 3
+
+      expect(mockLog.info).to.have.been.calledWith('Saved aggregated accessibility data to output-key');
+    });
+
+    it('should handle when only forms-accessibility folder has data', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+
+      const mockFormData = {
+        url: 'https://example.com/page1',
+        formSource: 'newsletter-form',
+        violations: {
+          total: 4,
+          critical: { count: 2, items: { form_error: { count: 2 } } },
+          serious: { count: 2, items: { form_warning: { count: 2 } } },
+        },
+        traffic: 75,
+      };
+
+      // Setup S3 mock responses using helper function
+      setupS3FolderMocks(
+        mockS3Client,
+        'test-site',
+        { CommonPrefixes: [] }, // accessibility folder is empty
+        { CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }] }, // forms-accessibility folder has data
+      );
+
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            // First call for forms-accessibility folder files
+            .onCall(0).resolves(['forms-accessibility/test-site/form1.json'])
+            // Second call for last week files
+            .onCall(1)
+            .resolves([]),
+          getObjectFromKey: sandbox.stub()
+            .onCall(0).resolves(mockFormData),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.true;
+      expect(result.finalResultFiles.current).to.have.property('overall');
+      // Should have the composite form key
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/page1---newsletter-form');
+      expect(result.finalResultFiles.current['https://example.com/page1---newsletter-form'].violations.total).to.equal(4);
+      expect(result.finalResultFiles.current['https://example.com/page1---newsletter-form'].traffic).to.equal(75);
+    });
+
+    it('should return error when both accessibility and forms-accessibility folders fail', async () => {
+      const targetDate = '2024-01-01';
+
+      // Setup S3 mock to return empty for both folders
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({ CommonPrefixes: [] });
+
+      const result = await aggregateAccessibilityData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.false;
+      expect(result.aggregatedData).to.be.null;
+      expect(result.message).to.include('Failed to retrieve keys from both accessibility and forms-accessibility folders');
     });
 
     it('should handle multiple files and aggregate violations correctly', async () => {
@@ -1536,11 +1740,13 @@ describe('data-processing utility functions', () => {
       ];
       const lastWeekContent = { overall: { violations: { total: 10 } } };
 
-      // S3 ListObjectsV2 mock (for getSubfoldersUsingPrefixAndDelimiter)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
+      // S3 ListObjectsV2 mock for both accessibility and forms-accessibility folders
+      setupS3FolderMocks(
+        mockS3Client,
+        'test-site',
+        { CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }] }, // accessibility folder has data
+        { CommonPrefixes: [] }, // forms-accessibility folder is empty
+      );
       // S3 PutObject mock (saving aggregated data)
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
       // S3 DeleteObjects/DeleteObject mocks (for cleanupS3Files)
@@ -1597,11 +1803,13 @@ describe('data-processing utility functions', () => {
         traffic: 100,
       };
 
-      // S3 ListObjectsV2 mock (for getSubfoldersUsingPrefixAndDelimiter)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
+      // S3 ListObjectsV2 mock for both accessibility and forms-accessibility folders
+      setupS3FolderMocks(
+        mockS3Client,
+        'test-site',
+        { CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }] }, // accessibility folder has data
+        { CommonPrefixes: [] }, // forms-accessibility folder is empty
+      );
       // S3 PutObject mock
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
       // S3 DeleteObject mock (for cleanupS3Files)
@@ -1700,11 +1908,13 @@ describe('data-processing utility functions', () => {
       const mockLastWeekObjectKeys = [lastWeekFileKey1, lastWeekFileKey2];
       const mockLastWeekContent = { overall: { violations: { total: 8 } } };
 
-      // S3 ListObjectsV2 mock
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({
-          CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }],
-        });
+      // S3 ListObjectsV2 mock for both accessibility and forms-accessibility folders
+      setupS3FolderMocks(
+        mockS3Client,
+        'test-site',
+        { CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }] }, // accessibility folder has data
+        { CommonPrefixes: [] }, // forms-accessibility folder is empty
+      );
       // S3 PutObject mock
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
       // S3 DeleteObject/DeleteObjects mock (for cleanupS3Files)
@@ -1755,10 +1965,13 @@ describe('data-processing utility functions', () => {
       const prevDate = new Date(dt.setDate(dt.getDate() - 7));
       const lastWeekFileKey = `accessibility/test-site/${prevDate.toISOString().split('T')[0]}-final-result.json`;
 
-      // S3 Mocks
-      // For getSubfolders (via getObjectKeysFromSubfolders)
-      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({ CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }] });
+      // S3 Mocks for both accessibility and forms-accessibility folders using helper function
+      setupS3FolderMocks(
+        mockS3Client,
+        'test-site',
+        { CommonPrefixes: [{ Prefix: `accessibility/test-site/${timestampToday}/` }] }, // accessibility folder has data
+        { CommonPrefixes: [] }, // forms-accessibility folder is empty
+      );
       mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({}); // For save
       mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
 
@@ -1796,7 +2009,7 @@ describe('data-processing utility functions', () => {
       expect(getObjectKeysUsingPrefixStub.calledTwice).to.be.true;
       expect(getObjectFromKeyStub.calledOnce).to.be.true;
 
-      // Assertions for S3 commands
+      // Assertions for S3 commands (now expects 2 ListObjectsV2Command calls)
       expect(mockS3Client.send.calledWith(sinon.match.instanceOf(ListObjectsV2Command))).to.be.true;
       expect(mockS3Client.send.calledWith(sinon.match.instanceOf(PutObjectCommand))).to.be.true;
 
@@ -1805,11 +2018,14 @@ describe('data-processing utility functions', () => {
     });
 
     it('should return error and specific message when getObjectKeysFromSubfolders returns success false', async () => {
-      // eslint-disable-next-line max-len
-      const expectedMessage = 'No accessibility data found in bucket test-bucket at prefix accessibility/test-site/ for site test-site with delimiter /';
+      // Now that we fetch from both folders, the error message will include both
+      const accessibilityError = 'No accessibility data found in bucket test-bucket at prefix accessibility/test-site/ for site test-site with delimiter /';
+      const formsAccessibilityError = 'No accessibility data found in bucket test-bucket at prefix forms-accessibility/test-site/ for site test-site with delimiter /';
+      const expectedMessage = `Failed to retrieve keys from both accessibility and forms-accessibility folders. Accessibility: ${accessibilityError}, Forms: ${formsAccessibilityError}`;
 
+      // Both calls return empty (no subfolders found)
       mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-        .resolves({ CommonPrefixes: [] }); // No subfolders found
+        .resolves({ CommonPrefixes: [] }); // No subfolders found in either folder
 
       const result = await aggregateAccessibilityData(
         mockS3Client,
@@ -1824,8 +2040,9 @@ describe('data-processing utility functions', () => {
       expect(result.success).to.be.false;
       expect(result.aggregatedData).to.be.null;
       expect(result.message).to.equal(expectedMessage);
-      expect(mockS3Client.send
-        .calledOnceWith(sinon.match.instanceOf(ListObjectsV2Command))).to.be.true;
+      // Should be called twice now (once for each folder)
+      expect(mockS3Client.send.callCount).to.be.at.least(2);
+      expect(mockS3Client.send.calledWith(sinon.match.instanceOf(ListObjectsV2Command))).to.be.true;
     });
   });
 

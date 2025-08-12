@@ -26,6 +26,52 @@ import { createAccessibilityIndividualOpportunities } from './utils/generate-ind
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
 
+/**
+ * Filters out form accessibility entries from the aggregated data.
+ * Form entries are identified by URLs containing '---'.
+ *
+ * @param {Object} data - The aggregated accessibility data
+ * @returns {Object} Filtered data without form entries
+ */
+export function filterOutFormEntries(data) {
+  if (!data) return data;
+
+  const filteredData = {};
+
+  Object.keys(data).forEach((key) => {
+    // Keep the 'overall' key and any URL that doesn't contain '---'
+    if (key === 'overall' || !key.includes('---')) {
+      filteredData[key] = data[key];
+    }
+  });
+
+  return filteredData;
+}
+
+/**
+ * Extracts unique URLs from aggregated data, handling both direct site URLs
+ * and composite form keys (url---formSource).
+ *
+ * @param {Object} data - The aggregated accessibility data
+ * @returns {number} Count of unique URLs processed
+ */
+export function getUniqueUrlCount(data) {
+  if (!data) return 0;
+
+  const uniqueUrls = Object.keys(data).reduce((urlSet, key) => {
+    // Skip the 'overall' key as it's not a URL
+    if (key === 'overall') return urlSet;
+
+    // Extract base URL from composite key if it's a form entry, otherwise use the key as-is
+    const url = key.includes('---') ? key.split('---')[0] : key;
+    urlSet.add(url);
+
+    return urlSet;
+  }, new Set());
+
+  return uniqueUrls.size;
+}
+
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
 
@@ -165,10 +211,29 @@ export async function processAccessibilityOpportunities(context) {
   // change status to IGNORED for older opportunities
   await updateStatusToIgnored(dataAccess, siteId, log);
 
+  // Create a filtered version of aggregationResult for reports and opportunities
+  // This excludes form entries (URLs containing '---')
+  const allKeys = Object.keys(aggregationResult.finalResultFiles.current).filter((k) => k !== 'overall');
+  const siteUrlCount = allKeys.filter((k) => !k.includes('---')).length;
+  const formEntryCount = allKeys.filter((k) => k.includes('---')).length;
+  const uniqueUrlCount = getUniqueUrlCount(aggregationResult.finalResultFiles.current);
+
+  const filteredAggregationResult = {
+    ...aggregationResult,
+    finalResultFiles: {
+      current: filterOutFormEntries(aggregationResult.finalResultFiles.current),
+      lastWeek: aggregationResult.finalResultFiles.lastWeek
+        ? filterOutFormEntries(aggregationResult.finalResultFiles.lastWeek)
+        : null,
+    },
+  };
+
+  log.info(`[A11yAudit] URL Processing Stats - Site URLs: ${siteUrlCount}, Form entries: ${formEntryCount}, Total entries: ${allKeys.length}, Unique URLs: ${uniqueUrlCount}`);
+
   try {
     await generateReportOpportunities(
       site,
-      aggregationResult,
+      filteredAggregationResult,
       context,
       AUDIT_TYPE_ACCESSIBILITY,
     );
@@ -181,9 +246,10 @@ export async function processAccessibilityOpportunities(context) {
   }
 
   // Step 2c: Create individual opportunities (URL-specific accessibility issues)
+  // Use filtered data to exclude form entries
   try {
     await createAccessibilityIndividualOpportunities(
-      aggregationResult.finalResultFiles.current,
+      filteredAggregationResult.finalResultFiles.current,
       context,
     );
     log.debug(`[A11yAudit] Individual opportunities created successfully for site ${siteId} (${site.getBaseURL()})`);
@@ -196,6 +262,7 @@ export async function processAccessibilityOpportunities(context) {
   }
 
   // step 3 save a11y metrics to s3
+  // Use original aggregationResult with all data (including forms) for metrics
   try {
     const metricsResult = await saveA11yMetricsToS3(
       aggregationResult.finalResultFiles.current,
@@ -212,11 +279,10 @@ export async function processAccessibilityOpportunities(context) {
 
   // Extract key metrics for the audit result summary
   const totalIssues = aggregationResult.finalResultFiles.current.overall.violations.total;
-  // Subtract 1 for the 'overall' key to get actual URL count
-  // TODO: Since forms are not included in the finalResultFiles.current, this count is not accurate
-  const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length - 1;
+  // Get the actual count of unique URLs processed (handles both site and form URLs)
+  const urlsProcessed = getUniqueUrlCount(aggregationResult.finalResultFiles.current);
 
-  log.info(`[A11yAudit] Found ${totalIssues} issues across ${urlsProcessed} URLs for site ${siteId} (${site.getBaseURL()})`);
+  log.info(`[A11yAudit] Found ${totalIssues} issues across ${urlsProcessed} unique URLs for site ${siteId} (${site.getBaseURL()})`);
 
   // Return the final audit result with metrics and status
   return {
