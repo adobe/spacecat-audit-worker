@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.138.2",
+  "version": "1.140.0",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -48,7 +48,8 @@
       "static/schemaorg-current-https.jsonld",
       "src/cdn-analysis/sql",
       "src/cdn-logs-report/sql",
-      "src/llmo-referral-traffic/sql"
+      "src/llmo-referral-traffic/sql",
+      "src/page-intent/sql"
     ]
   },
   "repository": {
