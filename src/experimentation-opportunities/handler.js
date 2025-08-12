@@ -118,7 +118,7 @@ function mapToOpportunities(urls) {
  * @param {*} site
  * @returns
  */
-export async function experimentOpportunitiesAuditRunner(auditUrl, context, customUrls = null) {
+export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
   const { log } = context;
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -130,6 +130,10 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context, cust
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   processRageClickOpportunities(experimentationOpportunities);
+
+  // Handle custom URLs if provided via audit context
+  const additionalData = context.auditContext?.additionalData;
+  const customUrls = additionalData ? parseCustomUrls(additionalData, auditUrl) : null;
 
   if (customUrls && customUrls.length > 0) {
     log.info(`Processing ${customUrls.length} custom URLs for experimentation opportunities`);
@@ -182,10 +186,8 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context, cust
 
 export async function runAuditAndScrapeStep(context) {
   const { site, finalUrl } = context;
-  const additionalData = context.auditContext?.additionalData;
-  const customUrls = parseCustomUrls(additionalData, finalUrl);
 
-  const result = await experimentOpportunitiesAuditRunner(finalUrl, context, customUrls);
+  const result = await experimentOpportunitiesAuditRunner(finalUrl, context);
 
   return {
     auditResult: result.auditResult,

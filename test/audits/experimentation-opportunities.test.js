@@ -363,49 +363,74 @@ describe('Experimentation Opportunities Tests', () => {
   describe('Additional URLs Processing', () => {
     describe('Successfully process additional URLs', () => {
       it('should use custom URLs when provided and create opportunities for all URLs', async () => {
+        const domain = 'https://abc.com';
+        const customUrl1 = 'https://abc.com/page1';
+        const customUrl2 = 'https://abc.com/page2';
+
         context.auditContext = {
-          additionalData: ['https://abc.com/page1', 'https://abc.com/page2'],
+          additionalData: [customUrl1, customUrl2],
         };
 
-        const auditData = await runAuditAndScrapeStep(context);
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
 
         expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
-        expect(auditData.auditResult.experimentationOpportunities).to.have.length(2);
-        expect(auditData.auditResult.experimentationOpportunities[0].page).to.equal('https://abc.com/page1');
-        expect(auditData.auditResult.experimentationOpportunities[1].page).to.equal('https://abc.com/page2');
-        expect(auditData.auditResult.experimentationOpportunities[0]).to.have.property('pageViews');
-        expect(auditData.auditResult.experimentationOpportunities[0]).to.have.property('trackedPageKPIValue');
+        expect(result.auditResult.experimentationOpportunities).to.have.length(2);
+
+        const opptyUrls = result.auditResult.experimentationOpportunities.map(
+          (oppty) => oppty.page,
+        );
+        expect(opptyUrls).to.include(customUrl1);
+        expect(opptyUrls).to.include(customUrl2);
+
+        result.auditResult.experimentationOpportunities.forEach((oppty) => {
+          expect(oppty).to.have.property('pageViews');
+          expect(oppty).to.have.property('trackedPageKPIValue');
+          expect(oppty.type).to.equal('high-organic-low-ctr');
+        });
       });
 
       it('should handle mixed URLs with and without RUM data', async () => {
+        const domain = 'https://abc.com';
+        const urlWithRumData = 'https://abc.com/page1';
+        const urlWithoutRumData = 'https://abc.com/page2';
+
         const mockOpportunities = {
           'high-organic-low-ctr': [
             {
-              page: 'https://abc.com/page1',
+              page: urlWithRumData,
               pageViews: 5000,
               trackedPageKPIValue: '0.02',
               trackedKPISiteAverage: '0.035',
               type: 'high-organic-low-ctr',
             },
           ],
+          rageclick: [],
+          'high-inorganic-high-bounce-rate': [],
         };
 
         context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
         context.auditContext = {
-          additionalData: ['https://abc.com/page1', 'https://abc.com/page2'],
+          additionalData: [urlWithRumData, urlWithoutRumData],
         };
 
-        const auditData = await runAuditAndScrapeStep(context);
-        expect(auditData.auditResult.experimentationOpportunities).to.have.length(2);
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
 
-        const realOpportunity = auditData.auditResult.experimentationOpportunities.find(
-          (op) => op.page === 'https://abc.com/page1',
+        expect(result.auditResult.experimentationOpportunities).to.have.length(2);
+
+        const opptyUrls = result.auditResult.experimentationOpportunities.map(
+          (oppty) => oppty.page,
+        );
+        expect(opptyUrls).to.include(urlWithRumData);
+        expect(opptyUrls).to.include(urlWithoutRumData);
+
+        const realOpportunity = result.auditResult.experimentationOpportunities.find(
+          (op) => op.page === urlWithRumData,
         );
         expect(realOpportunity.pageViews).to.equal(5000);
         expect(realOpportunity.trackedPageKPIValue).to.equal('0.02');
 
-        const emptyOpportunity = auditData.auditResult.experimentationOpportunities.find(
-          (op) => op.page === 'https://abc.com/page2',
+        const emptyOpportunity = result.auditResult.experimentationOpportunities.find(
+          (op) => op.page === urlWithoutRumData,
         );
         expect(emptyOpportunity.pageViews).to.be.null;
         expect(emptyOpportunity.trackedPageKPIValue).to.equal('');
@@ -413,24 +438,27 @@ describe('Experimentation Opportunities Tests', () => {
       });
 
       it('should only return high-organic-low-ctr opportunities when using custom URLs', async () => {
+        const domain = 'https://abc.com';
+        const customUrl = 'https://abc.com/page1';
+
         const mockOpportunities = {
           'high-organic-low-ctr': [
             {
-              page: 'https://abc.com/page1',
+              page: customUrl,
               pageViews: 5000,
               type: 'high-organic-low-ctr',
             },
           ],
           rageclick: [
             {
-              page: 'https://abc.com/page1',
+              page: customUrl,
               type: 'rageclick',
               metrics: [{ samples: 100 }],
             },
           ],
           'high-inorganic-high-bounce-rate': [
             {
-              page: 'https://abc.com/page1',
+              page: customUrl,
               type: 'high-inorganic-high-bounce-rate',
             },
           ],
@@ -438,17 +466,19 @@ describe('Experimentation Opportunities Tests', () => {
 
         context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
         context.auditContext = {
-          additionalData: ['https://abc.com/page1'],
+          additionalData: [customUrl],
         };
 
-        const auditData = await runAuditAndScrapeStep(context);
-        expect(auditData.auditResult.experimentationOpportunities).to.have.length(1);
-        expect(auditData.auditResult.experimentationOpportunities[0].type).to.equal('high-organic-low-ctr');
-        expect(auditData.auditResult.experimentationOpportunities[0].page).to.equal('https://abc.com/page1');
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
+
+        expect(result.auditResult.experimentationOpportunities).to.have.length(1);
+        expect(result.auditResult.experimentationOpportunities[0].type).to.equal('high-organic-low-ctr');
+        expect(result.auditResult.experimentationOpportunities[0].page).to.equal(customUrl);
       });
     });
 
     describe('Successfully process without additional URLs', () => {
+      // Integration test - tests full runAuditAndScrapeStep flow
       it('should work normally when no custom URLs provided', async () => {
         const auditData = await runAuditAndScrapeStep(context);
         expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
@@ -467,32 +497,39 @@ describe('Experimentation Opportunities Tests', () => {
         expect(auditData).to.have.property('siteId');
       });
 
+      // Unit tests for edge cases
       it('should handle empty custom URLs array', async () => {
+        const domain = 'https://abc.com';
+
         context.auditContext = {
           additionalData: [],
         };
 
-        const auditData = await runAuditAndScrapeStep(context);
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
         expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
-        expect(auditData.auditResult.experimentationOpportunities).to.exist;
+        expect(result.auditResult.experimentationOpportunities).to.exist;
       });
 
       it('should handle null additionalData', async () => {
+        const domain = 'https://abc.com';
+
         context.auditContext = {
           additionalData: null,
         };
 
-        const auditData = await runAuditAndScrapeStep(context);
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
         expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
-        expect(auditData.auditResult.experimentationOpportunities).to.exist;
+        expect(result.auditResult.experimentationOpportunities).to.exist;
       });
 
       it('should handle undefined auditContext', async () => {
+        const domain = 'https://abc.com';
+
         context.auditContext = undefined;
 
-        const auditData = await runAuditAndScrapeStep(context);
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
         expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
-        expect(auditData.auditResult.experimentationOpportunities).to.exist;
+        expect(result.auditResult.experimentationOpportunities).to.exist;
       });
 
       it('should handle undefined experimentationOpportunities in urls field', async () => {
@@ -528,14 +565,30 @@ describe('Experimentation Opportunities Tests', () => {
 
     describe('Edge cases and error handling', () => {
       it('should create opportunities with no RUM data for custom URLs', async () => {
-        context.rumApiClient.queryMulti = sinon.stub().resolves({});
+        const domain = 'https://abc.com';
+        const customUrl1 = 'https://abc.com/new-page1';
+        const customUrl2 = 'https://abc.com/new-page2';
+
+        context.rumApiClient.queryMulti = sinon.stub().resolves({
+          rageclick: [],
+          'high-organic-low-ctr': [],
+          'high-inorganic-high-bounce-rate': [],
+        });
         context.auditContext = {
-          additionalData: ['https://abc.com/new-page1', 'https://abc.com/new-page2'],
+          additionalData: [customUrl1, customUrl2],
         };
 
-        const auditData = await runAuditAndScrapeStep(context);
-        expect(auditData.auditResult.experimentationOpportunities).to.have.length(2);
-        auditData.auditResult.experimentationOpportunities.forEach((op) => {
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
+
+        expect(result.auditResult.experimentationOpportunities).to.have.length(2);
+
+        const opptyUrls = result.auditResult.experimentationOpportunities.map(
+          (oppty) => oppty.page,
+        );
+        expect(opptyUrls).to.include(customUrl1);
+        expect(opptyUrls).to.include(customUrl2);
+
+        result.auditResult.experimentationOpportunities.forEach((op) => {
           expect(op.type).to.equal('high-organic-low-ctr');
           expect(op.pageViews).to.be.null;
           expect(op.trackedPageKPIValue).to.equal('');
@@ -726,20 +779,28 @@ describe('Experimentation Opportunities Tests', () => {
       });
 
       it('should log correct messages for custom URLs with mixed data', async () => {
+        const domain = 'https://abc.com';
+        const urlWithRumData = 'https://abc.com/page1';
+        const urlWithoutRumData = 'https://abc.com/page2';
+
         const mockOpportunities = {
           'high-organic-low-ctr': [
             {
-              page: 'https://abc.com/page1',
+              page: urlWithRumData,
               type: 'high-organic-low-ctr',
               pageViews: 1000,
             },
           ],
+          rageclick: [],
+          'high-inorganic-high-bounce-rate': [],
         };
 
         context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
-        const customUrls = ['https://abc.com/page1', 'https://abc.com/page2'];
+        context.auditContext = {
+          additionalData: [urlWithRumData, urlWithoutRumData],
+        };
 
-        const result = await experimentOpportunitiesAuditRunner('https://abc.com', context, customUrls);
+        const result = await experimentOpportunitiesAuditRunner(domain, context);
 
         expect(result.auditResult.experimentationOpportunities).to.have.length(2);
         const realOpportunity = result.auditResult.experimentationOpportunities.find(
@@ -751,7 +812,7 @@ describe('Experimentation Opportunities Tests', () => {
 
         expect(realOpportunity).to.exist;
         expect(emptyOpportunity).to.exist;
-        expect(emptyOpportunity.page).to.equal('https://abc.com/page2');
+        expect(emptyOpportunity.page).to.equal(urlWithoutRumData);
       });
     });
 
