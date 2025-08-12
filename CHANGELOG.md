@@ -1,3 +1,15 @@
+# [1.139.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.138.2...v1.139.0) (2025-08-12)
+
+
+### Bug Fixes
+
+* avoid duplicate messages in alt-text handler ([#1105](https://github.com/adobe/spacecat-audit-worker/issues/1105)) ([335bdc5](https://github.com/adobe/spacecat-audit-worker/commit/335bdc53152004542abc2166051dba986241b826))
+
+
+### Features
+
+* support to send imported form url for a11y detection ([#1067](https://github.com/adobe/spacecat-audit-worker/issues/1067)) ([d8a8116](https://github.com/adobe/spacecat-audit-worker/commit/d8a81164af319246cb4d5d9370d5031c968bc59c))
+
 ## [1.138.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.138.1...v1.138.2) (2025-08-12)
 
 
