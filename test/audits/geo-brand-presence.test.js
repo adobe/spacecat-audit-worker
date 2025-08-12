@@ -20,7 +20,7 @@ import { keywordQuestionsImportStep, sendToMystique } from '../../src/geo-brand-
 
 use(sinonChai);
 
-xdescribe('Geo Brand Presence Handler', () => {
+describe('Geo Brand Presence Handler', () => {
   let context;
   let sandbox;
   let site;
