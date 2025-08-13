@@ -1,3 +1,10 @@
+## [1.141.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.141.2...v1.141.3) (2025-08-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/structured-data-validator to v1.4.1 ([#1115](https://github.com/adobe/spacecat-audit-worker/issues/1115)) ([e55d2ec](https://github.com/adobe/spacecat-audit-worker/commit/e55d2ec88b153ef712baf72bdf5e1d2d24fffd5b))
+
 ## [1.141.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.141.1...v1.141.2) (2025-08-13)
 
 
