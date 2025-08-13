@@ -32,7 +32,7 @@ export async function sendToMystique(context) {
     auditContext, log, sqs, env, site, audit, s3Client,
   } = context;
 
-  log.info('sending data to mystique', auditContext);
+  log.info('sending data to mystique');
   const { parquetFiles } = auditContext ?? /* c8 ignore next */ {};
   /* c8 ignore start */
   if (!Array.isArray(parquetFiles) || !parquetFiles.every((x) => typeof x === 'string')) {
