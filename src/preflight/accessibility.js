@@ -10,6 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+
 import { saveIntermediateResults } from './utils.js';
 import { sleep } from '../support/utils.js';
 import { accessibilityOpportunitiesMap } from '../accessibility/utils/constants.js';
@@ -59,7 +62,7 @@ export async function scrapeAccessibilityData(context, auditContext) {
   }
 
   // Check if we have URLs to scrape
-  if (!previewUrls || !Array.isArray(previewUrls) || previewUrls.length === 0) {
+  if (!isNonEmptyArray(previewUrls)) {
     log.warn('[preflight-audit] No URLs to scrape for accessibility audit');
     return;
   }
@@ -105,10 +108,10 @@ export async function scrapeAccessibilityData(context, auditContext) {
         },
       };
 
-      log.info(`[preflight-audit] Scrape message being sent: ${JSON.stringify(scrapeMessage, null, 2)}`);
-      log.info(`[preflight-audit] Processing type: ${scrapeMessage.processingType}`);
-      log.info(`[preflight-audit] S3 bucket: ${scrapeMessage.s3BucketName}`);
-      log.info(`[preflight-audit] Completion queue: ${scrapeMessage.completionQueueUrl}`);
+      log.debug(`[preflight-audit] Scrape message being sent: ${JSON.stringify(scrapeMessage, null, 2)}`);
+      log.debug(`[preflight-audit] Processing type: ${scrapeMessage.processingType}`);
+      log.debug(`[preflight-audit] S3 bucket: ${scrapeMessage.s3BucketName}`);
+      log.debug(`[preflight-audit] Completion queue: ${scrapeMessage.completionQueueUrl}`);
 
       // Send to content scraper queue
       log.info(`[preflight-audit] Sending to queue: ${env.CONTENT_SCRAPER_QUEUE_URL}`);
@@ -284,7 +287,6 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
 
       log.info(`[preflight-audit] Cleaning up ${filesToDelete.length} individual accessibility files`);
 
-      const { DeleteObjectsCommand } = await import('@aws-sdk/client-s3');
       const deleteCommand = new DeleteObjectsCommand({
         Bucket: bucketName,
         Delete: {
@@ -328,11 +330,7 @@ export default async function accessibility(context, auditContext) {
 
   if (!checks || checks.includes(PREFLIGHT_ACCESSIBILITY)) {
     // Check if we have URLs to process
-    if (
-      !previewUrls
-      || !Array.isArray(previewUrls)
-      || previewUrls.length === 0
-    ) {
+    if (!isNonEmptyArray(previewUrls)) {
       log.warn('[preflight-audit] No URLs to process for accessibility audit, skipping');
       return;
     }
@@ -346,18 +344,15 @@ export default async function accessibility(context, auditContext) {
     const siteId = context.site.getId();
     const jobId = context.job?.getId();
 
-    log.info('[preflight-audit] Starting to poll for accessibility data');
-    log.info(`[preflight-audit] S3 Bucket: ${bucketName}`);
-    log.info(`[preflight-audit] Site ID: ${siteId}`);
-    log.info(`[preflight-audit] Job ID: ${jobId}`);
-    log.info(`[preflight-audit] Looking for data in path: accessibility-preflight/${siteId}/`);
+    log.debug('[preflight-audit] Starting to poll for accessibility data');
+    log.debug(`[preflight-audit] S3 Bucket: ${bucketName}`);
+    log.debug(`[preflight-audit] Site ID: ${siteId}`);
+    log.debug(`[preflight-audit] Job ID: ${jobId}`);
+    log.debug(`[preflight-audit] Looking for data in path: accessibility-preflight/${siteId}/`);
 
     const maxWaitTime = 10 * 60 * 1000;
     const pollInterval = 30 * 1000;
     const startTime = Date.now();
-
-    // Import ListObjectsV2Command outside the loop
-    const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
 
     // Generate expected filenames based on preview URLs
     const expectedFiles = previewUrls.map((url) => generateAccessibilityFilename(url));
@@ -398,7 +393,7 @@ export default async function accessibility(context, auditContext) {
 
           // Log the found files for debugging
           foundFiles.forEach((file) => {
-            log.info(`[preflight-audit] Accessibility file: ${file.Key} (created: ${file.LastModified})`);
+            log.debug(`[preflight-audit] Accessibility file: ${file.Key} (created: ${file.LastModified})`);
           });
           break;
         } else {

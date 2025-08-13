@@ -1518,6 +1518,7 @@ describe('Preflight Audit', () => {
         info: sinon.stub(),
         warn: sinon.stub(),
         error: sinon.stub(),
+        debug: sinon.stub(),
       };
 
       context = {
@@ -1765,16 +1766,16 @@ describe('Preflight Audit', () => {
 
         await scrapeAccessibilityData(context, auditContext);
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           sinon.match(/Scrape message being sent:/),
         );
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Processing type: accessibility',
         );
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] S3 bucket: test-bucket',
         );
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Completion queue: https://sqs.test.com/audit',
         );
         expect(log.info).to.have.been.calledWith(
@@ -2062,7 +2063,7 @@ describe('Preflight Audit', () => {
 
         // Verify that the workflow was executed
         expect(sqs.sendMessage).to.have.been.called;
-        expect(log.info).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
+        expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
       });
 
       it('should execute accessibility workflow when checks is undefined', async () => {
@@ -2097,7 +2098,7 @@ describe('Preflight Audit', () => {
 
         // Verify that the workflow was executed
         expect(sqs.sendMessage).to.have.been.called;
-        expect(log.info).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
+        expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
       });
     });
 
@@ -2645,6 +2646,7 @@ describe('Preflight Audit', () => {
           info: sinon.stub(),
           warn: sinon.stub(),
           error: sinon.stub(),
+          debug: sinon.stub(),
         };
 
         pollingContext = {
@@ -2725,11 +2727,11 @@ describe('Preflight Audit', () => {
         await accessibility(pollingContext, pollingAuditContext);
 
         // Verify that the workflow was executed
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] S3 Bucket: test-bucket');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Site ID: site-123');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Job ID: job-123');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Looking for data in path: accessibility-preflight/site-123/');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] S3 Bucket: test-bucket');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Site ID: site-123');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Job ID: job-123');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Looking for data in path: accessibility-preflight/site-123/');
         expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Expected files: ["example_com_page1.json","example_com_page2.json"]');
         expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
         expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
@@ -3148,7 +3150,7 @@ describe('Preflight Audit', () => {
       await accessibility(context, auditContext);
 
       // Verify that polling was attempted and succeeded
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
@@ -3196,7 +3198,7 @@ describe('Preflight Audit', () => {
       );
 
       // Verify that the function completed without throwing an error
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
     });
 
@@ -3242,7 +3244,7 @@ describe('Preflight Audit', () => {
       );
 
       // Verify that the function completed without throwing an error
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
     });
 
@@ -3289,7 +3291,7 @@ describe('Preflight Audit', () => {
       );
 
       // Verify that the function completed without throwing an error
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
     });
 
@@ -3336,7 +3338,7 @@ describe('Preflight Audit', () => {
       );
 
       // Verify that the function completed without throwing an error
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
     });
 
