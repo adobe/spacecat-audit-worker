@@ -73,7 +73,7 @@ describe('sqs', () => {
 
     await expect(action({}, context)).to.be.rejectedWith(errorResponse.message);
 
-    const errorMessage = `Message sent failed. Type: ${errorResponse.type}, Code: ${errorResponse.code}, Message: ${errorResponse.message}`;
+    const errorMessage = `Message send failed. Type: ${errorResponse.type}, Code: ${errorResponse.code}, Message: ${errorResponse.message}`;
     expect(errorSpy).to.have.been.calledWith(errorMessage);
   });
 
