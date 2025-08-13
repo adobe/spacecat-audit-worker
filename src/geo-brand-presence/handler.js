@@ -74,7 +74,7 @@ export async function sendToMystique(context) {
       data: { prompts },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`${opptyType} Message sent to Mystique: ${JSON.stringify(message)}`);
+    log.info('%s Message sent to Mystique:', opptyType, message);
   }));
 }
 
