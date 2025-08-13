@@ -1,3 +1,10 @@
+## [1.140.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.140.1...v1.140.2) (2025-08-13)
+
+
+### Bug Fixes
+
+* migrate auto-suggest from firefall ([#1041](https://github.com/adobe/spacecat-audit-worker/issues/1041)) ([4a1df69](https://github.com/adobe/spacecat-audit-worker/commit/4a1df695bba0a48e43e601137fc0239b2a3642a7))
+
 ## [1.140.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.140.0...v1.140.1) (2025-08-13)
 
 
