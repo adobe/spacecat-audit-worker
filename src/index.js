@@ -58,6 +58,7 @@ import analyticsReport from './analytics-report/handler.js';
 import detectPageIntent from './page-intent/handler.detect.js';
 import updatePageIntent from './page-intent/handler.update.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
+import readabilityGuidance from './preflight/guidance-readability-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 
 const HANDLERS = {
@@ -95,6 +96,7 @@ const HANDLERS = {
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
+  'guidance:readability': readabilityGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,

@@ -14,6 +14,7 @@ import rs from 'text-readability';
 import { JSDOM } from 'jsdom';
 import { franc } from 'franc-min';
 import { saveIntermediateResults } from './utils.js';
+import { sendReadabilityOpportunityToMystique } from './readability-auto-suggest.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 
@@ -171,6 +172,59 @@ export default async function readability(context, auditContext) {
 
       log.info(`[preflight-audit] readability: Processed ${processedElements} text element(s) on ${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability`);
     });
+
+    // Generate AI suggestions if this is the suggest step
+    if (step === 'suggest') {
+      const suggestStartTime = Date.now();
+      const suggestStartTimestamp = new Date().toISOString();
+
+      log.info(`[preflight-audit] readability: Starting Mystique suggestions generation for ${auditsResult.length} pages`);
+
+      // Collect all readability issues across all pages
+      const allReadabilityIssues = [];
+      for (const pageResult of auditsResult) {
+        const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+        if (audit && audit.opportunities.length > 0) {
+          // Add page URL to each issue for context
+          const issuesWithContext = audit.opportunities.map((issue) => ({
+            ...issue,
+            pageUrl: pageResult.pageUrl,
+          }));
+          allReadabilityIssues.push(...issuesWithContext);
+        }
+      }
+
+      if (allReadabilityIssues.length > 0) {
+        try {
+          // Send readability opportunities to Mystique
+          await sendReadabilityOpportunityToMystique(
+            context.auditUrl || site.getBaseURL(),
+            allReadabilityIssues,
+            site.getId(),
+            context.audit.getId(),
+            context,
+          );
+
+          log.info(`[preflight-audit] readability: Sent ${allReadabilityIssues.length} readability issues to Mystique for improvement`);
+        } catch (error) {
+          log.error('[preflight-audit] readability: Error sending readability issues to Mystique:', error);
+        }
+      } else {
+        log.info('[preflight-audit] readability: No readability issues found to send to Mystique');
+      }
+
+      const suggestEndTime = Date.now();
+      const suggestEndTimestamp = new Date().toISOString();
+      const suggestElapsed = ((suggestEndTime - suggestStartTime) / 1000).toFixed(2);
+      log.info(`[preflight-audit] readability: Mystique suggestions generation completed in ${suggestElapsed} seconds`);
+
+      timeExecutionBreakdown.push({
+        name: 'readability-suggestions',
+        duration: `${suggestElapsed} seconds`,
+        startTime: suggestStartTimestamp,
+        endTime: suggestEndTimestamp,
+      });
+    }
 
     const readabilityEndTime = Date.now();
     const readabilityEndTimestamp = new Date().toISOString();
