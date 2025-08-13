@@ -1,3 +1,31 @@
+## [1.141.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.141.2...v1.141.3) (2025-08-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/structured-data-validator to v1.4.1 ([#1115](https://github.com/adobe/spacecat-audit-worker/issues/1115)) ([e55d2ec](https://github.com/adobe/spacecat-audit-worker/commit/e55d2ec88b153ef712baf72bdf5e1d2d24fffd5b))
+
+## [1.141.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.141.1...v1.141.2) (2025-08-13)
+
+
+### Bug Fixes
+
+* llmo-referral-traffic backfill ([#1114](https://github.com/adobe/spacecat-audit-worker/issues/1114)) ([96898f5](https://github.com/adobe/spacecat-audit-worker/commit/96898f5db66fc6407b9f110f91f9ce20c1dc33ee))
+
+## [1.141.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.141.0...v1.141.1) (2025-08-13)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1017](https://github.com/adobe/spacecat-audit-worker/issues/1017)) ([50e99a1](https://github.com/adobe/spacecat-audit-worker/commit/50e99a17778265f3d7ce97c9c1795de0e283b8c6))
+
+# [1.141.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.140.4...v1.141.0) (2025-08-13)
+
+
+### Features
+
+* run llmo-referral-traffic for specific week ([#1113](https://github.com/adobe/spacecat-audit-worker/issues/1113)) ([41bc65e](https://github.com/adobe/spacecat-audit-worker/commit/41bc65eebdbca787f5abee1d9eb3dae1e4cd2816))
+
 ## [1.140.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.140.3...v1.140.4) (2025-08-13)
 
 
