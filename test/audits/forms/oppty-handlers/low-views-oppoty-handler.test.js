@@ -15,7 +15,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import createLowViewsOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-views-handler.js';
-import { FORM_OPPORTUNITY_TYPES } from '../../../../src/forms-opportunities/constants.js';
+import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../../../../src/forms-opportunities/constants.js';
 import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
 import { DATA_SOURCES } from '../../../../src/common/constants.js';
 
@@ -32,6 +32,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
     sinon.restore();
     auditUrl = 'https://example.com';
     highPageViewsLowFormViewsOptty = {
+      getOrigin: sinon.stub().returns('AUTOMATION'),
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
       save: sinon.stub(),
@@ -216,6 +217,13 @@ describe('createLowFormViewsOpportunities handler method', () => {
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
   });
 
+  it('should not process opportunities with origin ESS_OPS', async () => {
+    highPageViewsLowFormViewsOptty.getOrigin = sinon.stub().returns(ORIGINS.ESS_OPS);
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
+    await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+    expect(dataAccessStub.Opportunity.create).to.be.calledTwice;
+  });
+
   it('should throw error if fetching high page views low form navigation opportunity fails', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
 
@@ -243,7 +251,6 @@ describe('createLowFormViewsOpportunities handler method', () => {
 
   it('should handle empty form vitals data', async () => {
     auditData.auditResult.formVitals = [];
-
     await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
     expect(dataAccessStub.Opportunity.create).to.not.be.called;

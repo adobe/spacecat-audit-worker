@@ -14,7 +14,7 @@ import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils'
 import {
   filterForms, generateOpptyData, shouldExcludeForm, calculateProjectedConversionValue,
 } from '../utils.js';
-import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
+import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../constants.js';
 import { DATA_SOURCES } from '../../common/constants.js';
 
 function generateDefaultGuidance(scrapedData, oppoty) {
@@ -142,10 +142,16 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
       };
 
       log.info(`Forms Opportunity high form views low conversion ${JSON.stringify(opportunityData, null, 2)}`);
+
       if (!highFormViewsLowConversionsOppty) {
         // eslint-disable-next-line no-await-in-loop
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
         log.debug('Forms Opportunity high form views low conversion created');
+      } else if (highFormViewsLowConversionsOppty.getOrigin() === ORIGINS.ESS_OPS) {
+        log.debug('Forms Opportunity high form views low conversion exists and is from ESS_OPS');
+        opportunityData.status = 'IGNORED';
+        // eslint-disable-next-line no-await-in-loop
+        highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
       } else {
         highFormViewsLowConversionsOppty.setAuditId(auditData.auditId);
         highFormViewsLowConversionsOppty.setData({

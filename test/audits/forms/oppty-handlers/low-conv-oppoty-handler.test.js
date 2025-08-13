@@ -16,7 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
 import createLowConversionOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-conversion-handler.js';
-import { FORM_OPPORTUNITY_TYPES } from '../../../../src/forms-opportunities/constants.js';
+import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../../../../src/forms-opportunities/constants.js';
 import formScrapeData from '../../../fixtures/forms/formscrapedata.js';
 
 use(sinonChai);
@@ -32,6 +32,7 @@ describe('createLowConversionOpportunities handler method', () => {
     sinon.restore();
     auditUrl = 'https://example.com';
     formsOppty = {
+      getOrigin: sinon.stub().returns('AUTOMATION'),
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
       save: sinon.stub(),
@@ -202,5 +203,15 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(excludeUrls.has('https://www.surest.com/contact-us.mycontact')).to.be.true;
     expect(excludeUrls.has('https://www.surest.com/info/win-2')).to.be.true;
     expect(excludeUrls.has('https://www.surest.com/info/win')).to.be.false;
+  });
+
+  it('should not process opportunities with origin ESS_OPS', async () => {
+    formsOppty.getOrigin = sinon.stub().returns(ORIGINS.ESS_OPS);
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
+    const { auditDataWithExistingOppty } = testData;
+    // eslint-disable-next-line max-len
+    await createLowConversionOpportunities(auditUrl, auditDataWithExistingOppty, undefined, context);
+    expect(dataAccessStub.Opportunity.create).to.be.callCount(2);
+    formsOppty.getOrigin = sinon.stub().returns('');
   });
 });
