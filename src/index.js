@@ -28,6 +28,7 @@ import sitemap from './sitemap/handler.js';
 import paid from './paid/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
+import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
 import internalLinks from './internal-links/handler.js';
 import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
@@ -46,7 +47,6 @@ import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-
 import paidConsentGuidance from './paid/guidance-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
-import { suggestionsInternalLinksHandler } from './internal-links/suggestions-internal-links-handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
 import guidanceGeoBrandPresence from './geo-brand-presence/guidance-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
@@ -82,8 +82,8 @@ const HANDLERS = {
   'structured-data': structuredData,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
-  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance, // ref
-  'suggestions:internal-links': suggestionsInternalLinksHandler,
+  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
+  'guidance:broken-links': brokenLinksGuidance,
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
