@@ -108,7 +108,7 @@ async function asPresignedJsonUrl(data, bucketName, context) {
     s3Client, log, getPresignedUrl,
   } = context;
 
-  const key = `temp/audit-geo-brand-presence/${new Date().toString().split('T')[0]}-${randomUUID()}.json`;
+  const key = `temp/audit-geo-brand-presence/${new Date().toISOString().split('T')[0]}-${randomUUID()}.json`;
   await s3Client.send(new PutObjectCommand({
     Bucket: bucketName,
     Key: key,
