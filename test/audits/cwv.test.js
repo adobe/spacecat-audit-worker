@@ -99,6 +99,7 @@ describe('CWVRunner Tests', () => {
       context.log = {
         info: sandbox.stub(),
         error: sandbox.stub(),
+        warn: sandbox.stub(),
       };
 
       context.dataAccess.Opportunity = {

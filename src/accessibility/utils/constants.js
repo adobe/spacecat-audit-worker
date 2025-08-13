@@ -731,6 +731,9 @@ export const accessibilityOpportunitiesMap = {
  */
 export const issueTypesForMystique = [
   'aria-allowed-attr',
+  'aria-prohibited-attr',
+  'aria-roles',
+  'aria-hidden-focus',
 ];
 
 /**
