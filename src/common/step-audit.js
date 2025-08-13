@@ -101,7 +101,12 @@ export class StepAudit extends BaseAudit {
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
-      const stepContext = { ...context, data, site };
+      const stepContext = {
+        ...context,
+        auditContext,
+        data,
+        site,
+      };
 
       stepContext.finalUrl = await this.urlResolver(site, context);
 

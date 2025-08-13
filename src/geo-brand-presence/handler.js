@@ -24,10 +24,10 @@ export const OPPTY_TYPES = [GEO_BRAND_PRESENCE_OPPTY_TYPE, GEO_FAQ_OPPTY_TYPE];
 
 export async function sendToMystique(context) {
   const {
-    log, sqs, env, site, audit, s3Client,
+    auditContext, log, sqs, env, site, audit, s3Client,
   } = context;
   // eslint-disable-next-line prefer-rest-params
-  log.info('sending data to mystique', ...arguments);
+  log.info('sending data to mystique', auditContext);
 
   const storedMetricsConfig = {
     ...context,

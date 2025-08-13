@@ -121,8 +121,7 @@ async function run(message, context) {
   const { log } = context;
   const { type, siteId } = message;
 
-  log.info(`Received ${type} audit request for: ${siteId}`);
-  log.info(`Message ${JSON.stringify(message)}`);
+  log.info(`Received ${type} audit request for: ${siteId}. Message:`, message);
 
   const handler = HANDLERS[type];
   if (!handler) {
