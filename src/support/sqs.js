@@ -38,7 +38,7 @@ class SQS {
       this.log.info(`Success, message sent. MessageID:  ${data.MessageId}`);
     } catch (e) {
       const { type, code, message: msg } = e;
-      this.log.error(`Message sent failed. Type: ${type}, Code: ${code}, Message: ${msg}`);
+      this.log.error(`Message send failed. Type: ${type}, Code: ${code}, Message: ${msg}`, e, body);
       throw e;
     }
   }
