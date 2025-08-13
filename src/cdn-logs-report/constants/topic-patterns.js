@@ -37,4 +37,38 @@ export const TOPIC_PATTERNS = {
       regex: '^(?!/blog|/learn).*?/products/([^/.]+)',
     },
   ],
+  'wilson.com': [
+    {
+      name: 'Tennis Rackets',
+      regex: '^/(?:[a-z]{2}-[a-z]{2}/)?(?!.*blog|.*explore)(?:product/(?:blade|pro-staff|clash|ultra|burn|shift|tour-slam)|tennis/(?:tennis-rackets|collections))',
+    },
+    {
+      name: 'Tennis Shoes',
+      regex: '^/(?:[a-z]{2}-[a-z]{2}/)?(?!.*blog|.*explore)(?:product|shoes)/(?:intrigue|tour-slam)',
+    },
+    {
+      name: 'Basketball',
+      regex: '^/(?:[a-z]{2}-[a-z]{2}/)?(?!.*blog|.*explore)basketball',
+    },
+    {
+      name: 'Golf',
+      regex: '^/(?:[a-z]{2}-[a-z]{2}/)?(?!.*blog|.*explore)golf',
+    },
+    {
+      name: 'Baseball',
+      regex: '^/(?:[a-z]{2}-[a-z]{2}/)?(?!.*blog|.*explore)baseball',
+    },
+    {
+      name: 'Padel',
+      regex: '^/(?:[a-z]{2}-[a-z]{2}/)?(?!.*blog|.*explore)padel',
+    },
+    {
+      name: 'Football',
+      regex: '^/(?:[a-z]{2}-[a-z]{2}/)?(?!.*blog|.*explore)football',
+    },
+    {
+      name: 'Volleyball',
+      regex: '^/(?:[a-z]{2}-[a-z]{2}/)?(?!.*blog|.*explore)volleyball',
+    },
+  ],
 };

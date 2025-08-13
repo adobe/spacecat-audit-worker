@@ -351,8 +351,9 @@ export async function clearAltTextSuggestions({ opportunity, log }) {
     return;
   }
 
+  const IGNORED_STATUSES = [SuggestionModel.STATUSES.SKIPPED, SuggestionModel.STATUSES.FIXED];
   const ignoredSuggestions = existingSuggestions.filter(
-    (s) => s.getStatus() === SuggestionModel.STATUSES.SKIPPED,
+    (s) => IGNORED_STATUSES.includes(s.getStatus()),
   );
   const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
 
