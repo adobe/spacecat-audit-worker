@@ -33,8 +33,12 @@ export async function sendToMystique(context) {
   } = context;
 
   log.info('sending data to mystique');
-  const { parquetFiles } = auditContext ?? /* c8 ignore next */ {};
+  const { calendarWeek, parquetFiles } = auditContext ?? /* c8 ignore next */ {};
   /* c8 ignore start */
+  if (!calendarWeek || typeof calendarWeek !== 'object' || !calendarWeek.week || !calendarWeek.year) {
+    log.error('GEO BRAND PRESENCE: Invalid calendarWeek in auditContext. Cannot send data to Mystique', auditContext);
+    return;
+  }
   if (!Array.isArray(parquetFiles) || !parquetFiles.every((x) => typeof x === 'string')) {
     log.error('GEO BRAND PRESENCE: Invalid parquetFiles in auditContext. Cannot send data to Mystique', auditContext);
     return;
@@ -65,6 +69,8 @@ export async function sendToMystique(context) {
       auditId: audit.getId(),
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
+      week: calendarWeek.week,
+      year: calendarWeek.year,
       data: { prompts },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
