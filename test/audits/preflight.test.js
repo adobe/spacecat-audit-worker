@@ -584,6 +584,7 @@ describe('Preflight Audit', () => {
         getId: () => 'site-123',
         getBaseURL: () => 'https://example.com',
         getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
+        getAuthoringType: sandbox.stub(),
       };
       s3Client = {
         send: sinon.stub(),
