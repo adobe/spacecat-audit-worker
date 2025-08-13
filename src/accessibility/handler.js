@@ -22,13 +22,14 @@ import {
   saveA11yMetricsToS3,
 } from './utils/scrape-utils.js';
 import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
+import { URL_SOURCE_SEPARATOR } from './utils/constants.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
 
 /**
  * Filters out form accessibility entries from the aggregated data.
- * Form entries are identified by URLs containing '---'.
+ * Form entries are identified by URLs containing the URL_SOURCE_SEPARATOR.
  *
  * @param {Object} data - The aggregated accessibility data
  * @returns {Object} Filtered data without form entries
@@ -39,8 +40,8 @@ export function filterOutFormEntries(data) {
   const filteredData = {};
 
   Object.keys(data).forEach((key) => {
-    // Keep the 'overall' key and any URL that doesn't contain '---'
-    if (key === 'overall' || !key.includes('---')) {
+    // Keep the 'overall' key and any URL that doesn't contain the source separator
+    if (key === 'overall' || !key.includes(URL_SOURCE_SEPARATOR)) {
       filteredData[key] = data[key];
     }
   });
@@ -50,7 +51,7 @@ export function filterOutFormEntries(data) {
 
 /**
  * Extracts unique URLs from aggregated data, handling both direct site URLs
- * and composite form keys (url---formSource).
+ * and composite keys with source identifiers (url{separator}sourceId).
  *
  * @param {Object} data - The aggregated accessibility data
  * @returns {number} Count of unique URLs processed
@@ -62,8 +63,10 @@ export function getUniqueUrlCount(data) {
     // Skip the 'overall' key as it's not a URL
     if (key === 'overall') return urlSet;
 
-    // Extract base URL from composite key if it's a form entry, otherwise use the key as-is
-    const url = key.includes('---') ? key.split('---')[0] : key;
+    // Extract base URL from compositeKey if it has a source identifier, otherwise use the key as-is
+    const url = key.includes(URL_SOURCE_SEPARATOR)
+      ? key.split(URL_SOURCE_SEPARATOR)[0]
+      : key;
     urlSet.add(url);
 
     return urlSet;
@@ -212,10 +215,10 @@ export async function processAccessibilityOpportunities(context) {
   await updateStatusToIgnored(dataAccess, siteId, log);
 
   // Create a filtered version of aggregationResult for reports and opportunities
-  // This excludes form entries (URLs containing '---')
+  // This excludes entries with source identifiers (URLs containing the separator)
   const allKeys = Object.keys(aggregationResult.finalResultFiles.current).filter((k) => k !== 'overall');
-  const siteUrlCount = allKeys.filter((k) => !k.includes('---')).length;
-  const formEntryCount = allKeys.filter((k) => k.includes('---')).length;
+  const siteUrlCount = allKeys.filter((k) => !k.includes(URL_SOURCE_SEPARATOR)).length;
+  const formEntryCount = allKeys.filter((k) => k.includes(URL_SOURCE_SEPARATOR)).length;
   const uniqueUrlCount = getUniqueUrlCount(aggregationResult.finalResultFiles.current);
 
   const filteredAggregationResult = {

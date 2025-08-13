@@ -745,3 +745,12 @@ export const WCAG_CRITERIA_COUNTS = {
     return this.LEVEL_A + this.LEVEL_AA;
   },
 };
+
+/**
+ * Separator used to create composite keys for URLs with source identifiers
+ * This allows tracking issues from different sources (forms, specific elements, etc.)
+ * Format: {siteUrl}{URL_SOURCE_SEPARATOR}{sourceIdentifier}
+ * Example: https://example.com/contact---contact-form (form source)
+ * Future: Could be used for other sources like specific sections, components, etc.
+ */
+export const URL_SOURCE_SEPARATOR = '---';

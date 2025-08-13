@@ -348,7 +348,7 @@ describe('Accessibility Audit Handler', () => {
         },
       };
 
-      // The first entry should extract 'https://example.com/page' (before first ---)
+      // The first entry should extract 'https://example.com/page' (before first separator)
       // Should count 1 unique URL: page
       expect(getUniqueUrlCount(mockData)).to.equal(1);
     });

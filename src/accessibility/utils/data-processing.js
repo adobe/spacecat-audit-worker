@@ -30,6 +30,7 @@ import {
   generateFixedNewReportMarkdown,
   generateBaseReportMarkdown,
 } from './generate-md-reports.js';
+import { URL_SOURCE_SEPARATOR } from './constants.js';
 
 /**
  * Deletes the original JSON files after they've been processed
@@ -408,7 +409,7 @@ export async function aggregateAccessibilityData(
         };
       } else {
         // Creating a composite key to identify various forms on the same page
-        const compositeKey = `${siteUrl}---${formSource}`;
+        const compositeKey = `${siteUrl}${URL_SOURCE_SEPARATOR}${formSource}`;
         aggregatedData[compositeKey] = {
           violations,
           traffic,
