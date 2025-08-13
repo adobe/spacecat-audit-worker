@@ -10,10 +10,10 @@
  * governing permissions and limitations under the License.
  */
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { load as cheerioLoad } from 'cheerio';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_CSP;
-const scriptRegExp = /<script.*?(?:\/>|<\/script>)/gs;
-const hasNonceRegExp = /<script[^>]*? nonce=/s;
 
 async function determineSuggestionsForPage(url, context, site) {
   const { log } = context;
@@ -34,20 +34,21 @@ async function determineSuggestionsForPage(url, context, site) {
 
   let suggestedBody = responseBody;
   const findings = [];
-  const scriptTags = responseBody.matchAll(scriptRegExp);
+  const $ = cheerioLoad(responseBody);
+  const scriptTags = $('script');
 
-  scriptTags.forEach((tag) => {
-    const scriptContent = tag[0];
+  scriptTags.each((index, element) => {
+    const scriptContent = $.html(element);
 
     // no suggestion if nonce is already present
-    if (scriptContent.match(hasNonceRegExp)) {
+    if ($(element).attr('nonce')) {
       log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] [Url: ${url}]: script has nonce defined already: ${scriptContent}`);
       return;
     }
 
     // prepare finding
     const suggestedContent = scriptContent.replace(/<script/, '<script nonce="aem"');
-    const lineNumber = responseBody.slice(0, tag.index).split('\n').length;
+    const lineNumber = responseBody.slice(0, $(element).startIndex).split('\n').length;
 
     findings.push({
       scriptContent,
