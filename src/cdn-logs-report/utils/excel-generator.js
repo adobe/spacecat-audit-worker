@@ -83,11 +83,9 @@ export function createSheet(workbook, name, data, type, periods) {
 }
 
 export async function createExcelReport(reportData, reportConfig, options = {}) {
-  const { referenceDate, customEndDate, site } = options;
+  const { referenceDate, site } = options;
 
-  const periods = customEndDate
-    ? generateReportingPeriods(new Date(customEndDate))
-    : generateReportingPeriods(referenceDate);
+  const periods = generateReportingPeriods(referenceDate);
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = reportConfig.workbookCreator;

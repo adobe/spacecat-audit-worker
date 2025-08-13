@@ -15,8 +15,32 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   claude: '(?i)Claude|Anthropic',
   gemini: '(?i)Gemini',
   copilot: '(?i)Copilot',
+  google: '(?i)Googlebot',
+  bing: '(?i)Bingbot',
 };
 
 export function getProviderPattern(provider) {
   return PROVIDER_USER_AGENT_PATTERNS[provider?.toLowerCase()] || null;
+}
+
+export function buildAgentTypeClassificationSQL(provider = null) {
+  const allPatterns = [
+    // ChatGPT/OpenAI
+    { pattern: '%gptbot%', result: 'Crawlers', provider: 'chatgpt' },
+    { pattern: '%oai-searchbot%', result: 'Crawlers', provider: 'chatgpt' },
+    { pattern: '%chatgpt-user%', result: 'Chatbots', provider: 'chatgpt' },
+    { pattern: '%chatgpt%', result: 'Chatbots', provider: 'chatgpt' },
+    // Perplexity
+    { pattern: '%perplexitybot%', result: 'Crawlers', provider: 'perplexity' },
+    { pattern: '%perplexity-user%', result: 'Chatbots', provider: 'perplexity' },
+    { pattern: '%perplexity%', result: 'Chatbots', provider: 'perplexity' },
+    // Others
+    { pattern: '%googlebot%', result: 'Crawlers', provider: 'google' },
+    { pattern: '%bingbot%', result: 'Crawlers', provider: 'bing' },
+  ];
+
+  const patterns = provider ? allPatterns.filter((p) => p.provider === provider) : allPatterns;
+  const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');
+
+  return `CASE\n          ${cases}\n          ELSE 'Other'\n        END`;
 }

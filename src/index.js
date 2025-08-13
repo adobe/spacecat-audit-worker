@@ -56,6 +56,8 @@ import cdnAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
 import detectPageIntent from './page-intent/handler.detect.js';
+import updatePageIntent from './page-intent/handler.update.js';
+import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 
 const HANDLERS = {
@@ -92,11 +94,13 @@ const HANDLERS = {
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
   'guidance:paid-cookie-consent': paidConsentGuidance,
+  'guidance:missing-alt-text': missingAltTextGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
   'detect:page-intent': detectPageIntent,
+  'page-intent': updatePageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
   dummy: (message) => ok(message),
 };

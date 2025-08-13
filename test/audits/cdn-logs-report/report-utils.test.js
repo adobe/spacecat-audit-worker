@@ -33,7 +33,7 @@ describe('CDN Logs Report Utils', () => {
 
   const mockSite = (baseURL, cdnLogsConfig = null) => ({
     getBaseURL: () => baseURL,
-    getConfig: () => ({ getCdnLogsConfig: () => cdnLogsConfig }),
+    getConfig: () => ({ getCdnLogsConfig: () => cdnLogsConfig, getLlmoDataFolder: () => 'llmo' }),
   });
 
   beforeEach(() => {
@@ -87,30 +87,6 @@ describe('CDN Logs Report Utils', () => {
   });
 
   describe('Date and Time Operations', () => {
-    it('should format dates correctly', () => {
-      expect(utils.formatDateString(new Date('2024-01-15T10:30:00Z'))).to.equal('2024-01-15');
-      expect(utils.formatDateString(new Date('2024-02-29T00:00:00Z'))).to.equal('2024-02-29');
-    });
-
-    it('should generate valid week ranges', () => {
-      [new Date('2024-01-15T10:00:00Z'), new Date('2024-01-07T10:00:00Z')].forEach((date) => {
-        const { weekStart, weekEnd } = utils.getWeekRange(0, date);
-        expect(weekStart.getUTCDay()).to.equal(1); // Monday
-        expect(weekEnd.getUTCDay()).to.equal(0); // Sunday
-        expect(weekStart.getUTCHours()).to.equal(0);
-        expect(weekEnd.getUTCHours()).to.equal(23);
-      });
-    });
-
-    it('should create and validate date ranges', () => {
-      const { startDate, endDate } = utils.createDateRange('2025-01-01', '2025-01-07');
-      expect(startDate.getUTCHours()).to.equal(0);
-      expect(endDate.getUTCHours()).to.equal(23);
-
-      expect(() => utils.createDateRange('invalid', '2025-01-07')).to.throw('Invalid date format provided');
-      expect(() => utils.createDateRange('2025-01-07', '2025-01-01')).to.throw('Start date must be before end date');
-    });
-
     it('should generate period identifiers', () => {
       const weekStart = new Date('2025-01-08T00:00:00Z');
       const weekEnd = new Date('2025-01-14T23:59:59Z');
@@ -128,12 +104,16 @@ describe('CDN Logs Report Utils', () => {
         new Date('2025-12-31'),
         new Date('2024-02-29'), // Keep leap year test
         new Date('2025-01-07T10:00:00Z'),
+        new Date('2025-01-12T10:00:00Z'),
       ].forEach((date) => {
-        const periods = utils.generateReportingPeriods(date);
+        const periods = utils.generateReportingPeriods(date, -1);
         expect(periods.weeks).to.be.an('array').with.lengthOf(1);
         expect(periods.columns).to.be.an('array');
-        expect(periods.referenceDate).to.be.a('string');
         expect(periods.weeks[0].weekNumber).to.be.a('number').greaterThan(0).lessThan(54);
+        expect(periods.weeks[0].startDate.getUTCDay()).to.equal(1); // Monday
+        expect(periods.weeks[0].endDate.getUTCDay()).to.equal(0); // Sunday
+        expect(periods.weeks[0].startDate.getUTCHours()).to.equal(0);
+        expect(periods.weeks[0].endDate.getUTCHours()).to.equal(23);
       });
     });
   });

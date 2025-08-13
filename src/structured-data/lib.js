@@ -15,6 +15,7 @@ import {
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import StructuredDataValidator from '@adobe/structured-data-validator';
 import { join } from 'path';
+import { readFile } from 'fs/promises';
 import { load as cheerioLoad } from 'cheerio';
 import jsBeautify from 'js-beautify';
 import { Site } from '@adobe/spacecat-shared-data-access';
@@ -57,7 +58,7 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
   try {
     google = await GoogleClient.createFrom(context, finalUrl);
   } catch (error) {
-    log.warn('SDA: Failed to create Google client. Site was probably not onboarded to GSC yet. Continue without data from GSC.', error);
+    log.warn(`SDA: Failed to create Google client for site with url ${finalUrl}. Site was probably not onboarded to GSC yet. Continue without data from GSC.`, error);
     return [];
   }
 
@@ -211,8 +212,9 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
       'static',
       'schemaorg-current-https.jsonld',
     );
+    const schemaOrgJson = JSON.parse(await readFile(schemaOrgPath, 'utf8'));
 
-    const validator = new StructuredDataValidator(schemaOrgPath);
+    const validator = new StructuredDataValidator(schemaOrgJson);
     let validatorIssues = [];
     try {
       validatorIssues = (await validator.validate(waeResult))
