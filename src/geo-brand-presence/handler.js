@@ -13,7 +13,9 @@
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { parquetReadObjects } from 'hyparquet';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { randomUUID } from 'node:crypto';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
@@ -27,12 +29,12 @@ export const OPPTY_TYPES = [GEO_BRAND_PRESENCE_OPPTY_TYPE, GEO_FAQ_OPPTY_TYPE];
  * @import { S3Client } from '@aws-sdk/client-s3';
  */
 
-export async function sendToMystique(context) {
+export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   const {
     auditContext, log, sqs, env, site, audit, s3Client,
   } = context;
 
-  log.info('sending data to mystique');
+  log.info('GEO BRAND PRESENCE: sending data to mystique');
   const { calendarWeek, parquetFiles } = auditContext ?? /* c8 ignore next */ {};
   /* c8 ignore start */
   if (!calendarWeek || typeof calendarWeek !== 'object' || !calendarWeek.week || !calendarWeek.year) {
@@ -55,12 +57,15 @@ export async function sendToMystique(context) {
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
   }
 
-  log.debug('GEO BRAND PRESENCE: Found %d keyword questions', prompts.length);
+  log.info('GEO BRAND PRESENCE: Found %d keyword prompts', prompts.length);
   /* c8 ignore next 4 */
   if (prompts.length === 0) {
-    log.info('GEO BRAND PRESENCE: No keyword questions found, skipping message to mystique');
+    log.info('GEO BRAND PRESENCE: No keyword prompts found, skipping message to mystique');
     return;
   }
+
+  const url = await asPresignedJsonUrl(prompts, bucket, { ...context, getPresignedUrl });
+  log.info('GEO BRAND PRESENCE: Presigned URL for prompts: %s', url);
   await Promise.all(OPPTY_TYPES.map(async (opptyType) => {
     const message = {
       type: opptyType,
@@ -71,10 +76,10 @@ export async function sendToMystique(context) {
       time: new Date().toISOString(),
       week: calendarWeek.week,
       year: calendarWeek.year,
-      data: { prompts },
+      data: { url },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info('%s Message sent to Mystique:', opptyType, message);
+    log.info('GEO BRAND PRESENCE: %s Message sent to Mystique:', opptyType, message);
   }));
 }
 
@@ -98,6 +103,27 @@ async function loadParquetDataFromS3({ key, bucket, s3Client }) {
   return parquetReadObjects({ file: body.buffer });
 }
 
+async function asPresignedJsonUrl(data, bucketName, context) {
+  const {
+    s3Client, log, getPresignedUrl,
+  } = context;
+
+  const key = `temp/audit-geo-brand-presence/${new Date().toString().split('T')[0]}-${randomUUID()}.json`;
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    Body: JSON.stringify(data),
+    ContentType: 'application/json',
+  }));
+
+  log.info('GEO BRAND PRESENCE: Data uploaded to S3 at s3://%s/%s', bucketName, key);
+  return getPresignedUrl(
+    s3Client,
+    new GetObjectCommand({ Bucket: bucketName, Key: key }),
+    { expiresIn: 10_800 /* seconds, 3h */ },
+  );
+}
+
 export async function keywordPromptsImportStep(context) {
   const {
     site,
@@ -110,7 +136,7 @@ export async function keywordPromptsImportStep(context) {
   const endDate = Date.parse(data) ? data : undefined;
   /* c8 ignore stop */
 
-  log.info('Keyword questions import step for %s with endDate: %s', finalUrl, endDate);
+  log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s', finalUrl, endDate);
   return {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,

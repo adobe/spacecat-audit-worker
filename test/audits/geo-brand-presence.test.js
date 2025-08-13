@@ -30,6 +30,7 @@ describe('Geo Brand Presence Handler', () => {
   let sqs;
   let env;
   let s3Client;
+  let getPresignedUrl;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -54,6 +55,7 @@ describe('Geo Brand Presence Handler', () => {
     s3Client = {
       send: sinon.stub().throws(new Error('no stubbed response')),
     };
+    getPresignedUrl = sandbox.stub();
     context = {
       log,
       sqs,
@@ -111,13 +113,15 @@ describe('Geo Brand Presence Handler', () => {
     // Mock S3 client method used by getStoredMetrics (AWS SDK v3 style)
     fakeS3Response(fakeData());
 
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
     await sendToMystique({
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
-    });
+    }, getPresignedUrl);
     // two messages are sent to Mystique, one for brand presence and one for faq
     expect(sqs.sendMessage).to.have.been.calledTwice;
     const [brandPresenceQueue, brandPresenceMessage] = sqs.sendMessage.firstCall.args;
@@ -129,9 +133,10 @@ describe('Geo Brand Presence Handler', () => {
       auditId: audit.getId(),
       deliveryType: site.getDeliveryType(),
     });
+    expect(brandPresenceMessage.data).deep.equal({ url: 'https://example.com/presigned-url' });
 
-    const expectedPrompts = fakeData((x) => ({ ...x, market: x.region, origin: x.source }));
-    expect(brandPresenceMessage.data.prompts).to.deep.equal(expectedPrompts);
+    // TODO(aurelio): check that we write the right file to s3
+    // const expectedPrompts = fakeData((x) => ({ ...x, market: x.region, origin: x.source }));
 
     const [faqQueue, faqMessage] = sqs.sendMessage.secondCall.args;
     expect(faqQueue).to.equal('spacecat-to-mystique');
@@ -142,12 +147,15 @@ describe('Geo Brand Presence Handler', () => {
       auditId: audit.getId(),
       deliveryType: site.getDeliveryType(),
     });
-    expect(faqMessage.data.prompts).to.deep.equal(expectedPrompts);
+    expect(faqMessage.data).deep.equal({ url: 'https://example.com/presigned-url' });
   });
 
   it('should skip sending message to Mystique when no keywordQuestions', async () => {
     fakeS3Response([]);
-    await sendToMystique({ ...context, auditContext: { parquetFiles: ['some/parquet/file/data.parquet'] } });
+    await sendToMystique({
+      ...context,
+      auditContext: { parquetFiles: ['some/parquet/file/data.parquet'] },
+    }, getPresignedUrl);
     expect(sqs.sendMessage).to.not.have.been.called;
   });
 
