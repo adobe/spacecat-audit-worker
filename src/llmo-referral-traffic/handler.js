@@ -13,7 +13,7 @@
 /* eslint-disable no-param-reassign */
 /* c8 ignore start */
 
-import { getDateRanges, getStaticContent, hasText } from '@adobe/spacecat-shared-utils';
+import { getDateRanges, getStaticContent, isInteger } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import ExcelJS from 'exceljs';
 import { createFrom } from '@adobe/spacecat-helix-content-sdk';
@@ -58,7 +58,7 @@ async function createWorkbook(results) {
 }
 
 function calculateAuditStartDate(auditContext) {
-  if (!hasText(auditContext.week) || !hasText(auditContext.year)) {
+  if (!isInteger(auditContext.week) || !isInteger(auditContext.year)) {
     return new Date();
   }
 
