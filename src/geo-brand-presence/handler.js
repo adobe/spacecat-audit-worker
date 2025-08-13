@@ -9,63 +9,51 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+/* eslint-disable no-use-before-define */
 
-import { getStoredMetrics } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { parquetReadObjects } from 'hyparquet';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-const ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE = 'organic-keywords-questions';
 const LLMO_QUESTIONS_IMPORT_TYPE = 'llmo-prompts-ahrefs';
 export const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
 export const GEO_FAQ_OPPTY_TYPE = 'guidance:geo-faq';
 export const OPPTY_TYPES = [GEO_BRAND_PRESENCE_OPPTY_TYPE, GEO_FAQ_OPPTY_TYPE];
 
+/**
+ * @import { S3Client } from '@aws-sdk/client-s3';
+ */
+
 export async function sendToMystique(context) {
   const {
     auditContext, log, sqs, env, site, audit, s3Client,
   } = context;
-  // eslint-disable-next-line prefer-rest-params
+
   log.info('sending data to mystique', auditContext);
-
-  const storedMetricsConfig = {
-    ...context,
-    s3: {
-      s3Bucket: context.env?.S3_IMPORTER_BUCKET_NAME,
-      s3Client,
-    },
-  };
-  const allKeywordQuestions = (await getStoredMetrics(
-    { source: 'ahrefs', metric: ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE, siteId: site.getId() },
-    storedMetricsConfig,
-  )).filter(
-    (keywordQuestion) => keywordQuestion?.questions?.length > 0,
-  );
-
-  // Get data from the last import only.
-  // Ee use the following heuristic:
-  // Use the .importTime of the last array item, and choose all entries within 5 minutes
-  const lastImport = allKeywordQuestions[allKeywordQuestions.length - 1];
-  if (!lastImport || !lastImport.importTime) {
-    log.info('GEO BRAND PRESENCE: No keyword questions found, skipping message to mystique');
+  const { parquetFiles } = auditContext ?? {};
+  /* c8 ignore start */
+  if (!Array.isArray(parquetFiles) || !parquetFiles.every((x) => typeof x === 'string')) {
+    log.error('GEO BRAND PRESENCE: Invalid parquetFiles in auditContext. Cannot send data to Mystique', auditContext);
     return;
   }
-  const importTime = +new Date(lastImport.importTime);
-  const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
-  const keywordQuestions = allKeywordQuestions
-    .filter(({ importTime: t }) => t && Math.abs(importTime - +new Date(t)) < fiveMinutes)
-    .map((keywordQuestion) => ({
-      keyword: keywordQuestion.keyword,
-      questions: keywordQuestion.questions,
-      pageUrl: keywordQuestion.url,
-      importTime: keywordQuestion.importTime,
-      volume: keywordQuestion.volume,
-    }));
+  /* c8 ignore stop */
 
-  log.info(`GEO BRAND PRESENCE: Found ${keywordQuestions.length} keyword questions`);
+  const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? '';
+  const recordSets = await Promise.all(
+    parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
+  );
+  const prompts = recordSets.flat();
+  for (const x of prompts) {
+    x.market = x.region; // TODO(aurelio): remove when .region is supported by Mystique
+    x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
+  }
+
+  log.debug('GEO BRAND PRESENCE: Found %d keyword questions', prompts.length);
   /* c8 ignore next 4 */
-  if (keywordQuestions.length === 0) {
+  if (prompts.length === 0) {
     log.info('GEO BRAND PRESENCE: No keyword questions found, skipping message to mystique');
     return;
   }
@@ -77,11 +65,31 @@ export async function sendToMystique(context) {
       auditId: audit.getId(),
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
-      data: { keywordQuestions },
+      data: { prompts },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(`${opptyType} Message sent to Mystique: ${JSON.stringify(message)}`);
   }));
+}
+
+/**
+ * Loads Parquet data from S3 and returns the parsed data.
+ * @param {object} options - Options for loading Parquet data.
+ * @param {string} options.key - The S3 object key for the Parquet file.
+ * @param {string} options.bucket - The S3 bucket name.
+ * @param {S3Client} options.s3Client - The S3 client instance.
+ * @return {Promise<Array<Record<string, unknown>>>}
+ */
+async function loadParquetDataFromS3({ key, bucket, s3Client }) {
+  const res = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  const body = await res.Body?.transformToByteArray();
+  /* c8 ignore start */
+  if (!body) {
+    throw new Error(`Failed to read Parquet file from s3://${bucket}/${key}`);
+  }
+  /* c8 ignore end */
+
+  return parquetReadObjects({ file: body.buffer });
 }
 
 export async function keywordPromptsImportStep(context) {
