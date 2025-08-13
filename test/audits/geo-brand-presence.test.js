@@ -111,7 +111,13 @@ describe('Geo Brand Presence Handler', () => {
     // Mock S3 client method used by getStoredMetrics (AWS SDK v3 style)
     fakeS3Response(fakeData());
 
-    await sendToMystique({ ...context, auditContext: { parquetFiles: ['some/parquet/file/data.parquet'] } });
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    });
     // two messages are sent to Mystique, one for brand presence and one for faq
     expect(sqs.sendMessage).to.have.been.calledTwice;
     const [brandPresenceQueue, brandPresenceMessage] = sqs.sendMessage.firstCall.args;
