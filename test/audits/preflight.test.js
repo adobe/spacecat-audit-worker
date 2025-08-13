@@ -2740,49 +2740,81 @@ describe('Preflight Audit', () => {
 
       it('should handle polling with files that do not match expected pattern', async () => {
         let pollCount = 0;
-        // Mock S3 to return non-matching files first, then exit
-        s3Client.send.callsFake((command) => {
-          if (command.constructor.name === 'ListObjectsV2Command') {
-            pollCount += 1;
-            if (pollCount === 1) {
-              // First call: Return files that don't match expected patterns
-              return Promise.resolve({
-                Contents: [
-                  { Key: 'accessibility-preflight/site-123/wrong_file.json', LastModified: new Date() },
-                  { Key: 'accessibility-preflight/different-site/example_com_page1.json', LastModified: new Date() },
-                  { Key: 'other-prefix/site-123/example_com_page1.json', LastModified: new Date() },
-                  { Key: null, LastModified: new Date() }, // Test null key
-                  { Key: 'accessibility-preflight/site-123/', LastModified: new Date() }, // Directory-like key
-                ],
-              });
-            } else {
-              // Second call: Return proper files to exit the polling loop
-              return Promise.resolve({
-                Contents: [
-                  { Key: 'accessibility-preflight/site-123/example_com_page1.json', LastModified: new Date() },
-                  { Key: 'accessibility-preflight/site-123/example_com_page2.json', LastModified: new Date() },
-                ],
-              });
-            }
-          }
-          if (command.constructor.name === 'GetObjectCommand') {
-            return Promise.resolve({
-              Body: {
-                transformToString: sinon.stub().resolves(JSON.stringify({
-                  violations: {},
-                })),
-              },
-            });
-          }
-          return Promise.resolve({});
+        // Mock the accessibility module with s3-utils mocked
+        const accessibilityModule = await esmock('../../src/preflight/accessibility.js', {
+          '../../src/support/utils.js': {
+            sleep: sandbox.stub().resolves(),
+          },
+          '../../src/utils/s3-utils.js': {
+            getObjectKeysUsingPrefix: sinon.stub().callsFake(() => {
+              pollCount += 1;
+              if (pollCount === 1) {
+                // First call: Return files that don't match expected patterns
+                return Promise.resolve([
+                  'accessibility-preflight/site-123/wrong_file1.json',
+                  'accessibility-preflight/site-123/wrong_file2.json',
+                  'accessibility-preflight/site-123/other_file.json',
+                  'accessibility-preflight/site-123/', // Directory-like key
+                ]);
+              } else {
+                // Second call: Return proper files to exit the polling loop
+                return Promise.resolve([
+                  'accessibility-preflight/site-123/example_com_page1.json',
+                  'accessibility-preflight/site-123/example_com_page2.json',
+                ]);
+              }
+            }),
+            getObjectFromKey: sinon.stub().resolves({
+              violations: {},
+            }),
+          },
         });
 
-        await accessibility(context, auditContext);
+        const mockedAccessibility = accessibilityModule.default;
+
+        await mockedAccessibility(pollingContext, pollingAuditContext);
 
         // Verify that it found 0 files due to filtering logic on first attempt
-        expect(log.info).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected accessibility files, continuing to wait...');
+        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected accessibility files, continuing to wait...');
         // Verify that it eventually found the files and proceeded
-        expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      });
+
+      it('should handle polling timeout scenario', async () => {
+        let callCount = 0;
+
+        // Stub Date.now to simulate timeout
+        const dateNowStub = sandbox.stub(Date, 'now').callsFake(() => {
+          callCount += 1;
+          if (callCount === 1) {
+            // First call - start time
+            return 1000000;
+          } else {
+            // Subsequent calls - simulate timeout reached (11 minutes later)
+            return 1000000 + (11 * 60 * 1000);
+          }
+        });
+
+        // Mock the accessibility module with s3-utils mocked
+        const accessibilityModule = await esmock('../../src/preflight/accessibility.js', {
+          '../../src/support/utils.js': {
+            sleep: sandbox.stub().resolves(),
+          },
+          '../../src/utils/s3-utils.js': {
+            getObjectKeysUsingPrefix: sinon.stub().resolves([]), // Always return empty array
+            getObjectFromKey: sinon.stub().resolves(null),
+          },
+        });
+
+        const mockedAccessibility = accessibilityModule.default;
+
+        await mockedAccessibility(pollingContext, pollingAuditContext);
+
+        // Verify that timeout message was logged
+        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Maximum wait time reached, stopping polling');
+
+        // Restore the stub
+        dateNowStub.restore();
       });
     });
 

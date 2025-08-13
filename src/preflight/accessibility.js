@@ -11,12 +11,12 @@
  */
 
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { DeleteObjectsCommand } from '@aws-sdk/client-s3';
 
 import { saveIntermediateResults } from './utils.js';
 import { sleep } from '../support/utils.js';
 import { accessibilityOpportunitiesMap } from '../accessibility/utils/constants.js';
-import { getObjectFromKey } from '../utils/s3-utils.js';
+import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 
 export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
 
@@ -359,29 +359,30 @@ export default async function accessibility(context, auditContext) {
 
     log.info(`[preflight-audit] Expected files: ${JSON.stringify(expectedFiles)}`);
 
-    // eslint-disable-next-line no-await-in-loop
-    while (Date.now() - startTime < maxWaitTime) {
+    // Recursive polling function to check for accessibility files
+    const pollForAccessibilityFiles = async () => {
+      if (Date.now() - startTime >= maxWaitTime) {
+        log.info('[preflight-audit] Maximum wait time reached, stopping polling');
+        return;
+      }
+
       try {
         log.info(`[preflight-audit] Polling attempt - checking S3 bucket: ${bucketName}`);
 
-        // Check if accessibility data files exist in S3
-        const listCommand = new ListObjectsV2Command({
-          Bucket: bucketName,
-          Prefix: `accessibility-preflight/${siteId}/`,
-          MaxKeys: 100,
-        });
-
-        // eslint-disable-next-line no-await-in-loop
-        const response = await s3Client.send(listCommand);
+        // Check if accessibility data files exist in S3 using helper function
+        const objectKeys = await getObjectKeysUsingPrefix(
+          s3Client,
+          bucketName,
+          `accessibility-preflight/${siteId}/`,
+          log,
+          100,
+          '.json',
+        );
 
         // Check if we have the expected accessibility files
-        const foundFiles = response.Contents && response.Contents.filter((obj) => {
-          if (!obj.Key || !obj.Key.startsWith(`accessibility-preflight/${siteId}/`)) {
-            return false;
-          }
-
+        const foundFiles = objectKeys.filter((key) => {
           // Extract filename from the S3 key
-          const pathParts = obj.Key.split('/');
+          const pathParts = key.split('/');
           const filename = pathParts[pathParts.length - 1];
 
           // Check if this is one of our expected files
@@ -392,24 +393,29 @@ export default async function accessibility(context, auditContext) {
           log.info(`[preflight-audit] Found ${foundFiles.length} accessibility files out of ${expectedFiles.length} expected, accessibility processing complete`);
 
           // Log the found files for debugging
-          foundFiles.forEach((file) => {
-            log.debug(`[preflight-audit] Accessibility file: ${file.Key} (created: ${file.LastModified})`);
+          foundFiles.forEach((key) => {
+            log.debug(`[preflight-audit] Accessibility file: ${key}`);
           });
-          break;
-        } else {
-          const foundCount = foundFiles ? foundFiles.length : 0;
-          log.info(`[preflight-audit] Found ${foundCount} out of ${expectedFiles.length} expected accessibility files, continuing to wait...`);
+          return;
         }
 
+        log.info(`[preflight-audit] Found ${foundFiles.length} out of ${expectedFiles.length} expected accessibility files, continuing to wait...`);
         log.info('[preflight-audit] No accessibility data yet, waiting...');
-        // eslint-disable-next-line no-await-in-loop
         await sleep(pollInterval);
+
+        // Recursively call to continue polling
+        await pollForAccessibilityFiles();
       } catch (error) {
         log.error(`[preflight-audit] Error polling for accessibility data: ${error.message}`);
-        // eslint-disable-next-line no-await-in-loop
         await sleep(pollInterval);
+
+        // Recursively call to continue polling after error
+        await pollForAccessibilityFiles();
       }
-    }
+    };
+
+    // Start the polling process
+    await pollForAccessibilityFiles();
 
     log.info('[preflight-audit] Polling completed, proceeding to process accessibility data');
 
