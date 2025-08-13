@@ -1,3 +1,17 @@
+## [1.140.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.140.3...v1.140.4) (2025-08-13)
+
+
+### Bug Fixes
+
+* should ignore fixed suggestions when clearing alt-text suggestions ([#1112](https://github.com/adobe/spacecat-audit-worker/issues/1112)) ([f1ed81f](https://github.com/adobe/spacecat-audit-worker/commit/f1ed81f01fe222f2856563da91b420e9587fa113))
+
+## [1.140.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.140.2...v1.140.3) (2025-08-13)
+
+
+### Bug Fixes
+
+* add topics for wilson ([#1111](https://github.com/adobe/spacecat-audit-worker/issues/1111)) ([5d19bf9](https://github.com/adobe/spacecat-audit-worker/commit/5d19bf97621f57818bf3b7252c3ee08e378fdadf))
+
 ## [1.140.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.140.1...v1.140.2) (2025-08-13)
 
 
