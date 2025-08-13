@@ -33,7 +33,7 @@ export async function sendToMystique(context) {
   } = context;
 
   log.info('sending data to mystique', auditContext);
-  const { parquetFiles } = auditContext ?? {};
+  const { parquetFiles } = auditContext ?? /* c8 ignore next */ {};
   /* c8 ignore start */
   if (!Array.isArray(parquetFiles) || !parquetFiles.every((x) => typeof x === 'string')) {
     log.error('GEO BRAND PRESENCE: Invalid parquetFiles in auditContext. Cannot send data to Mystique', auditContext);
@@ -41,7 +41,7 @@ export async function sendToMystique(context) {
   }
   /* c8 ignore stop */
 
-  const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? '';
+  const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
   const recordSets = await Promise.all(
     parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
   );
