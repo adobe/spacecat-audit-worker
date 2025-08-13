@@ -253,6 +253,7 @@ export async function processAltTextWithMystique(context) {
         dataSources: altTextOppty.getData()?.dataSources || [], // Preserve data sources
         mystiqueResponsesReceived: 0,
         mystiqueResponsesExpected: urlBatches.length,
+        processedSuggestionIds: [],
       };
       altTextOppty.setData(resetData);
       await altTextOppty.save();
@@ -289,6 +290,7 @@ export async function processAltTextWithMystique(context) {
           ],
           mystiqueResponsesReceived: 0,
           mystiqueResponsesExpected: urlBatches.length,
+          processedSuggestionIds: [],
         },
         tags: ['seo', 'accessibility'],
       };

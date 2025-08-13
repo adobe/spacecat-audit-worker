@@ -60,12 +60,9 @@ export async function scrapePages(context) {
   }
 
   return {
-    urls: urls.map((url) => {
-      const urlObj = new URL(url);
-      return {
-        url: `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`,
-      };
-    }),
+    urls: urls.map((url) => ({
+      url: `${stripTrailingSlash(url)}`,
+    })),
     siteId: site.getId(),
     type: 'preflight',
     allowCache: false,
