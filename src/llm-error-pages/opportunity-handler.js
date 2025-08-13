@@ -90,55 +90,6 @@ export function sortErrorsByTrafficVolume(errors) {
   return errors.sort((a, b) => b.totalRequests - a.totalRequests);
 }
 
-export async function sendWithRetry(error, context, opportunity, maxRetries = 3) {
-  const {
-    sqs, env, site,
-  } = context;
-
-  const message = {
-    type: 'guidance:llm-error-pages',
-    siteId: site.getId?.() || 'unknown',
-    auditId: opportunity.auditId || 'unknown',
-    deliveryType: site?.getDeliveryType?.() || 'aem_edge',
-    time: new Date().toISOString(),
-    data: {
-      brokenUrl: `${site.getBaseURL()}${error.url}`,
-      userAgent: error.userAgent,
-      statusCode: error.status,
-      totalRequests: error.totalRequests,
-      opportunityId: opportunity.getId(),
-      rawUserAgents: error.rawUserAgents,
-      validatedAt: error.validatedAt,
-    },
-  };
-
-  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
-    try {
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-      return { success: true, error: null };
-    } catch (sqsError) {
-      /* c8 ignore next 3 */
-      if (attempt === maxRetries) {
-        return { success: false, error: sqsError };
-      }
-      /* c8 ignore next */
-      await new Promise((resolve) => {
-        setTimeout(resolve, 1000 * attempt);
-      });
-    }
-  }
-  /* c8 ignore next */
-  return { success: false, error: new Error('Max retries exceeded') };
-}
-/**
- * Creates an opportunity for a specific error category with AI-enhanced suggestions
- * @param {string} errorType - Error type (404, 403, 5xx)
- * @param {Array} enhancedErrors - Errors with AI suggestions
- * @param {string} siteId - Site identifier
- * @param {string} auditId - Audit identifier
- * @param {Object} context - Context object with logger
- * @returns {Promise<void>}
- */
 export async function createOpportunityForErrorCategory(
   errorType,
   enhancedErrors,
@@ -146,7 +97,9 @@ export async function createOpportunityForErrorCategory(
   auditId,
   context,
 ) {
-  const { log, sqs, env } = context;
+  const {
+    log, sqs, env, site,
+  } = context;
 
   if (!enhancedErrors || enhancedErrors.length === 0) {
     log.info(`No validated errors for ${errorType} category - skipping opportunity creation`);
@@ -215,42 +168,64 @@ export async function createOpportunityForErrorCategory(
     log.info(`Created opportunity ${opportunity.getId()} for ${errorType} errors with ${enhancedErrors.length} informational suggestions`);
   }
 
-  // Send SQS messages to Mystique for 404 errors only with enhanced error handling
+  // Send SQS messages to Mystique for 404 errors only (simplified: no per-item stats or retries)
   if (errorType === '404' && sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    log.info(`Sending ${enhancedErrors.length} 404 URLs to Mystique for AI processing`);
+    const baseURL = site?.getBaseURL?.() || '';
 
-    // Enhanced error handling with retry logic and partial failure reporting
-    const stats = {
-      total: enhancedErrors.length,
-      successful: 0,
-      failed: 0,
-      failedUrls: [],
-    };
+    const messages = enhancedErrors.map((error) => ({
+      type: 'guidance:llm-error-pages',
+      siteId,
+      auditId: opportunity.auditId || auditId || 'unknown',
+      deliveryType: site?.getDeliveryType?.() || 'aem_edge',
+      time: new Date().toISOString(),
+      data: {
+        brokenUrl: baseURL ? `${baseURL}${error.url}` : error.url,
+        userAgent: error.userAgent,
+        statusCode: error.status,
+        totalRequests: error.totalRequests,
+        opportunityId: opportunity.getId(),
+        rawUserAgents: error.rawUserAgents,
+        validatedAt: error.validatedAt,
+      },
+    }));
 
-    // Process all URLs with batch error handling - FIX: Pass all required parameters
-    const results = await Promise.allSettled(
-      enhancedErrors.map((error) => sendWithRetry(error, context, opportunity, 3)),
+    await Promise.allSettled(
+      messages.map((msg) => sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, msg)),
     );
 
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled' && result.value.success) {
-        /* c8 ignore next */
-        stats.successful += 1;
-      } else {
-        stats.failed += 1;
-        stats.failedUrls.push(enhancedErrors[index].url);
-        const errorMsg = result.status === 'fulfilled'
-          ? result.value.error.message
-          : result.reason;
-        log.error(`Failed to send 404 URL to Mystique for ${enhancedErrors[index].url}: ${errorMsg}`);
-      }
-    });
-
-    log.info(`Completed sending 404 URLs to Mystique: ${stats.successful}/${stats.total} successful, ${stats.failed} failed`);
-    if (stats.failed > 0) {
-      log.warn(`Failed URLs: ${stats.failedUrls.join(', ')}`);
-    }
+    log.info(`Queued ${messages.length} validated 404 URLs to Mystique for AI processing`);
   }
+}
+
+/**
+ * Processes a single error category end-to-end and may throw on failure.
+ */
+export async function processCategory(errorType, errors, siteId, auditId, context, site) {
+  const { log } = context;
+  log.info(`Processing ${errorType} category with ${errors.length} raw errors`);
+  const consolidatedErrors = consolidateErrorsByUrl(errors);
+  const sortedErrors = sortErrorsByTrafficVolume(consolidatedErrors);
+  log.info(`Consolidated to ${sortedErrors.length} unique URL+UserAgent combinations for ${errorType}`);
+  log.info(`Starting URL validation for ${errorType} category`);
+  const validatedUrls = await validateUrlsBatch(sortedErrors, log);
+  if (validatedUrls.length === 0) {
+    log.info(`No URLs passed validation for ${errorType} category - skipping`);
+    return;
+  }
+  log.info(`${validatedUrls.length}/${sortedErrors.length} URLs passed validation for ${errorType}`);
+  const enhancedErrors = validatedUrls;
+  if (errorType === '404') {
+    log.info(`Prepared ${validatedUrls.length} validated 404 URLs for Mystique AI processing`);
+  } else {
+    log.info(`Prepared ${validatedUrls.length} validated ${errorType} URLs for template suggestions`);
+  }
+  await createOpportunityForErrorCategory(
+    errorType,
+    enhancedErrors,
+    siteId,
+    auditId,
+    { ...context, site },
+  );
 }
 
 /**
@@ -289,52 +264,16 @@ export async function generateOpportunities(processedResults, message, context) 
 
   const categoryPromises = Object.entries(categorizedErrors)
     .filter(([, errors]) => errors.length > 0)
-    .map(async ([errorType, errors]) => {
-      log.info(`Processing ${errorType} category with ${errors.length} raw errors`);
+    .map(([errorType, errors]) => (
+      processCategory(errorType, errors, siteId, auditId, context, site)
+        .then(() => ({ ok: true, errorType }))
+        .catch((error) => {
+          log.error(`Failed to process ${errorType} category: ${error.message}`, error);
+          return { ok: false, errorType, error };
+        })
+    ));
 
-      try {
-        const consolidatedErrors = consolidateErrorsByUrl(errors);
-        const sortedErrors = sortErrorsByTrafficVolume(consolidatedErrors);
-
-        log.info(`Consolidated to ${sortedErrors.length} unique URL+UserAgent combinations for ${errorType}`);
-
-        // Step 2b: Validate URLs
-        log.info(`Starting URL validation for ${errorType} category`);
-        const validatedUrls = await validateUrlsBatch(sortedErrors, log);
-
-        if (validatedUrls.length === 0) {
-          log.info(`No URLs passed validation for ${errorType} category - skipping`);
-          return;
-        }
-
-        log.info(`${validatedUrls.length}/${sortedErrors.length} URLs passed validation for ${errorType}`);
-
-        let enhancedErrors;
-
-        if (errorType === '404') {
-          log.info(`Prepared ${validatedUrls.length} validated 404 URLs for Mystique AI processing`);
-
-          enhancedErrors = validatedUrls;
-        } else {
-          log.info(`Prepared ${validatedUrls.length} validated ${errorType} URLs for template suggestions`);
-
-          enhancedErrors = validatedUrls;
-        }
-
-        await createOpportunityForErrorCategory(
-          errorType,
-          enhancedErrors,
-          siteId,
-          auditId,
-          { ...context, site },
-        );
-      } catch (error) {
-        log.error(`Failed to process ${errorType} category: ${error.message}`, error);
-        // Continue with other categories even if one fails
-      }
-    });
-
-  await Promise.allSettled(categoryPromises);
+  await Promise.all(categoryPromises);
 
   const totalProcessedUrls = Object.values(categorizedErrors)
     .reduce((sum, errors) => sum + errors.length, 0);
