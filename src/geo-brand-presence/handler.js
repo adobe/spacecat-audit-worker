@@ -17,14 +17,18 @@ import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE = 'organic-keywords-questions';
+const LLMO_QUESTIONS_IMPORT_TYPE = 'llmo-prompts-ahrefs';
 export const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
 export const GEO_FAQ_OPPTY_TYPE = 'guidance:geo-faq';
 export const OPPTY_TYPES = [GEO_BRAND_PRESENCE_OPPTY_TYPE, GEO_FAQ_OPPTY_TYPE];
 
 export async function sendToMystique(context) {
   const {
-    log, sqs, env, site, audit, s3Client,
+    auditContext, log, sqs, env, site, audit, s3Client,
   } = context;
+  // eslint-disable-next-line prefer-rest-params
+  log.info('sending data to mystique', auditContext);
+
   const storedMetricsConfig = {
     ...context,
     s3: {
@@ -80,15 +84,22 @@ export async function sendToMystique(context) {
   }));
 }
 
-export async function keywordQuestionsImportStep(context) {
+export async function keywordPromptsImportStep(context) {
   const {
     site,
+    data,
     finalUrl,
     log,
   } = context;
-  log.info(`Keyword questions import step for ${finalUrl}`);
+
+  /* c8 ignore start */
+  const endDate = Date.parse(data) ? data : undefined;
+  /* c8 ignore stop */
+
+  log.info('Keyword questions import step for %s with endDate: %s', finalUrl, endDate);
   return {
-    type: ORGANIC_KEYWORDS_QUESTIONS_IMPORT_TYPE,
+    type: LLMO_QUESTIONS_IMPORT_TYPE,
+    endDate,
     siteId: site.getId(),
     // auditResult can't be empty, so sending empty array
     auditResult: { keywordQuestions: [] },
@@ -98,6 +109,6 @@ export async function keywordQuestionsImportStep(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('keywordQuestionsImportStep', keywordQuestionsImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('keywordPromptsImportStep', keywordPromptsImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('sendToMystiqueStep', sendToMystique)
   .build();
