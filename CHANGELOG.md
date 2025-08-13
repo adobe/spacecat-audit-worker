@@ -1,3 +1,10 @@
+## [1.141.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.141.1...v1.141.2) (2025-08-13)
+
+
+### Bug Fixes
+
+* llmo-referral-traffic backfill ([#1114](https://github.com/adobe/spacecat-audit-worker/issues/1114)) ([96898f5](https://github.com/adobe/spacecat-audit-worker/commit/96898f5db66fc6407b9f110f91f9ce20c1dc33ee))
+
 ## [1.141.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.141.0...v1.141.1) (2025-08-13)
 
 
