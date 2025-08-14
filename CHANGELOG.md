@@ -1,3 +1,10 @@
+## [1.144.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.0...v1.144.1) (2025-08-14)
+
+
+### Bug Fixes
+
+* excluding updation of forms oppty which were manually created ([#1108](https://github.com/adobe/spacecat-audit-worker/issues/1108)) ([a7e8848](https://github.com/adobe/spacecat-audit-worker/commit/a7e884808755b6a9351fd1c14aa66e9fd76fb51c))
+
 # [1.144.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.143.0...v1.144.0) (2025-08-14)
 
 
