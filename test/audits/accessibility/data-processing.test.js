@@ -1858,6 +1858,240 @@ describe('data-processing utility functions', () => {
       expect(mockS3Client.send
         .calledOnceWith(sinon.match.instanceOf(ListObjectsV2Command))).to.be.true;
     });
+
+    it('should use correct log identifier and storage prefix for forms-opportunities audit type', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+      const mockFileData = {
+        url: 'https://example.com/contact',
+        violations: { total: 3 },
+        traffic: 50,
+        formSource: '#contact-form',
+      };
+
+      // S3 ListObjectsV2 mock - note the forms-accessibility prefix
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
+        });
+      // S3 PutObject mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+      // S3 DeleteObject mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            .onFirstCall().resolves(['file1.json'])
+            .onSecondCall()
+            .resolves([`forms-accessibility/test-site/${targetDate}-final-result.json`]),
+          getObjectFromKey: sandbox.stub()
+            .onFirstCall().resolves(mockFileData)
+            .onSecondCall()
+            .resolves(null),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'forms-opportunities', // forms audit type
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.true;
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/contact---#contact-form');
+      expect(result.finalResultFiles.current['https://example.com/contact---#contact-form'].violations.total).to.equal(3);
+      expect(result.message).to.equal('Successfully aggregated 1 files into output-key');
+
+      // Verify the correct log identifier is used
+      expect(mockLog.info.calledWith('[Form Opportunity] Saved aggregated accessibility data to output-key')).to.be.true;
+    });
+
+    it('should handle forms-opportunities audit type with form source data', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+      const mockFileData = {
+        url: 'https://example.com/contact',
+        violations: { total: 2 },
+        traffic: 30,
+        formSource: '#contact-form', // CSS selector for form
+      };
+
+      // S3 ListObjectsV2 mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
+        });
+      // S3 PutObject mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+      // S3 DeleteObject mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            .onFirstCall().resolves(['file1.json'])
+            .onSecondCall()
+            .resolves([`forms-accessibility/test-site/${targetDate}-final-result.json`]),
+          getObjectFromKey: sandbox.stub()
+            .onFirstCall().resolves(mockFileData)
+            .onSecondCall()
+            .resolves(null),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'forms-opportunities',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.true;
+      // Should create composite key for form source data
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/contact---#contact-form');
+      expect(result.finalResultFiles.current['https://example.com/contact---#contact-form'].violations.total).to.equal(2);
+      expect(result.finalResultFiles.current['https://example.com/contact---#contact-form'].traffic).to.equal(30);
+    });
+
+    it('should handle forms-opportunities audit type with different CSS selector form sources', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+      const mockFileData = {
+        url: 'https://example.com/newsletter',
+        violations: { total: 1 },
+        traffic: 25,
+        formSource: '.newsletter-signup-form', // CSS class selector for form
+      };
+
+      // S3 ListObjectsV2 mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
+        });
+      // S3 PutObject mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+      // S3 DeleteObject mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            .onFirstCall().resolves(['file1.json'])
+            .onSecondCall()
+            .resolves([`forms-accessibility/test-site/${targetDate}-final-result.json`]),
+          getObjectFromKey: sandbox.stub()
+            .onFirstCall().resolves(mockFileData)
+            .onSecondCall()
+            .resolves(null),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'forms-opportunities',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.true;
+      // Should create composite key for form source data with CSS class selector
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/newsletter---.newsletter-signup-form');
+      expect(result.finalResultFiles.current['https://example.com/newsletter---.newsletter-signup-form'].violations.total).to.equal(1);
+      expect(result.finalResultFiles.current['https://example.com/newsletter---.newsletter-signup-form'].traffic).to.equal(25);
+    });
+
+    it('should return error with correct log identifier for forms-opportunities when no files processed', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+
+      // S3 ListObjectsV2 mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
+        });
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            .onFirstCall().resolves(['file1.json', 'file2.json'])
+            .onSecondCall()
+            .resolves([`forms-accessibility/test-site/${targetDate}-final-result.json`]),
+          getObjectFromKey: sandbox.stub().resolves(null), // No data returned
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'forms-opportunities',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.false;
+      expect(result.aggregatedData).to.be.null;
+      expect(result.message).to.equal('[Form Opportunity] No files could be processed successfully for site test-site');
+      expect(mockLog.error.calledWith('[Form Opportunity] No files could be processed successfully for site test-site')).to.be.true;
+    });
+
+    it('should handle forms-opportunities audit type error with correct log identifier', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+
+      // S3 ListObjectsV2 mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
+        });
+      // S3 PutObject mock - THIS ONE FAILS
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).rejects(new Error('S3 save failed'));
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub().resolves(['file1.json']),
+          getObjectFromKey: sandbox.stub().resolves({
+            url: 'https://example.com/contact',
+            violations: { total: 1 },
+            traffic: 20,
+            formSource: '#contact-form',
+          }),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'forms-opportunities',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.false;
+      expect(result.aggregatedData).to.be.null;
+      expect(result.message).to.equal('Error: S3 save failed');
+      // Verify the correct log identifier is used in error message
+      expect(mockLog.error.calledWith('[Form Opportunity] Error aggregating accessibility data for site test-site')).to.be.true;
+    });
   });
 
   describe('getEnvAsoDomain', () => {
