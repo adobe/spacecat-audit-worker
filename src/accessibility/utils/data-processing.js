@@ -320,6 +320,7 @@ function getAuditPrefixes(auditType) {
  * @param {string} siteId - the site ID to look for
  * @param {import('@azure/logger').Logger} log - a logger instance
  * @param {string} outputKey - the key for the aggregated output file
+ * @param {string} auditType - the type of audit (accessibility or forms-accessibility)
  * @param {string} version - the version/date to filter by
  * @param {number} maxRetries - maximum number of retries for failed promises (default: 1)
  * @returns {Promise<{success: boolean, aggregatedData: object, message: string}>} - result

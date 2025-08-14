@@ -231,7 +231,6 @@ export async function processAccessibilityOpportunities(context) {
   }
 
   // Step 2c: Create individual opportunities (URL-specific accessibility issues)
-  // Use filtered data to exclude form entries
   try {
     await createAccessibilityIndividualOpportunities(
       aggregationResult.finalResultFiles.current,
