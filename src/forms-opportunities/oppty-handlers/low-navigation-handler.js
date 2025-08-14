@@ -12,8 +12,6 @@
 
 import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../constants.js';
-import { calculateProjectedConversionValue, filterForms, generateOpptyData } from '../utils.js';
-import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import {
   calculateProjectedConversionValue,
   filterForms,
