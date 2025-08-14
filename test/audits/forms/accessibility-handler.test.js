@@ -17,7 +17,7 @@ import sinon from 'sinon';
 import nock from 'nock';
 import sinonChai from 'sinon-chai';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
-import mystiqueDetectedFormAccessibilityHandler, { createAccessibilityOpportunity } from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
+import mystiqueDetectedFormAccessibilityHandler, { createAccessibilityOpportunity, transformAxeViolationsToA11yData } from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -828,6 +828,433 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           '[Form Opportunity] [Site Id: test-site-id] Failed to create/update a11y opportunity with error: Database error',
         );
       }
+    });
+  });
+
+  describe('transformAxeViolationsToA11yData', () => {
+    it('should transform axe-core data with both critical and serious violations', () => {
+      // Arrange
+      const axeData = {
+        violations: {
+          critical: {
+            items: {
+              'select-name': {
+                count: 2,
+                description: 'Select element must have an accessible name',
+                level: 'A',
+                successCriteriaTags: ['wcag412'],
+                htmlWithIssues: ['<select id="inquiry">'],
+                failureSummary: 'Fix any of the following...',
+              },
+            },
+          },
+          serious: {
+            items: {
+              'color-contrast': {
+                count: 2,
+                description: 'Elements must meet minimum color contrast ratio thresholds',
+                level: 'AA',
+                successCriteriaTags: ['wcag143'],
+                htmlWithIssues: ['<span>(Optional)</span>'],
+                failureSummary: 'Fix any of the following...',
+              },
+            },
+          },
+        },
+        url: 'https://www.sunstar.com/contact',
+        formSource: 'form',
+      };
+
+      // Act
+      const result = transformAxeViolationsToA11yData(axeData);
+
+      // Assert
+      expect(result).to.deep.equal({
+        form: 'https://www.sunstar.com/contact',
+        formSource: 'form',
+        a11yIssues: [
+          {
+            issue: 'Select element must have an accessible name',
+            level: 'A',
+            successCriterias: ['4.1.2 Name, Role, Value'],
+            htmlWithIssues: ['<select id="inquiry">'],
+            recommendation: 'Fix any of the following...',
+          },
+          {
+            issue: 'Elements must meet minimum color contrast ratio thresholds',
+            level: 'AA',
+            successCriterias: ['1.4.3 Contrast (Minimum)'],
+            htmlWithIssues: ['<span>(Optional)</span>'],
+            recommendation: 'Fix any of the following...',
+          },
+        ],
+      });
+    });
+
+    it('should transform axe-core data with only critical violations', () => {
+      // Arrange
+      const axeData = {
+        violations: {
+          critical: {
+            items: {
+              'select-name': {
+                count: 1,
+                description: 'Select element must have an accessible name',
+                level: 'A',
+                successCriteriaTags: ['wcag412'],
+                htmlWithIssues: ['<select id="inquiry">'],
+                failureSummary: 'Fix any of the following...',
+              },
+            },
+          },
+          serious: {
+            items: {},
+          },
+        },
+        url: 'https://example.com/form',
+        formSource: 'contact-form',
+      };
+
+      // Act
+      const result = transformAxeViolationsToA11yData(axeData);
+
+      // Assert
+      expect(result).to.deep.equal({
+        form: 'https://example.com/form',
+        formSource: 'contact-form',
+        a11yIssues: [
+          {
+            issue: 'Select element must have an accessible name',
+            level: 'A',
+            successCriterias: ['4.1.2 Name, Role, Value'],
+            htmlWithIssues: ['<select id="inquiry">'],
+            recommendation: 'Fix any of the following...',
+          },
+        ],
+      });
+    });
+
+    it('should transform axe-core data with only serious violations', () => {
+      // Arrange
+      const axeData = {
+        violations: {
+          critical: {
+            items: {},
+          },
+          serious: {
+            items: {
+              'color-contrast': {
+                count: 2,
+                description: 'Elements must meet minimum color contrast ratio thresholds',
+                level: 'AA',
+                successCriteriaTags: ['wcag143'],
+                htmlWithIssues: ['<span>(Optional)</span>'],
+                failureSummary: 'Fix any of the following...',
+              },
+              'target-size': {
+                count: 1,
+                description: 'All touch targets must be 24px large',
+                level: 'AA',
+                successCriteriaTags: ['wcag258'],
+                htmlWithIssues: ['<button class="icon">'],
+                failureSummary: 'Fix any of the following...',
+              },
+            },
+          },
+        },
+        url: 'https://example.com/form',
+        formSource: 'newsletter-form',
+      };
+
+      // Act
+      const result = transformAxeViolationsToA11yData(axeData);
+
+      // Assert
+      expect(result).to.deep.equal({
+        form: 'https://example.com/form',
+        formSource: 'newsletter-form',
+        a11yIssues: [
+          {
+            issue: 'Elements must meet minimum color contrast ratio thresholds',
+            level: 'AA',
+            successCriterias: ['1.4.3 Contrast (Minimum)'],
+            htmlWithIssues: ['<span>(Optional)</span>'],
+            recommendation: 'Fix any of the following...',
+          },
+          {
+            issue: 'All touch targets must be 24px large',
+            level: 'AA',
+            successCriterias: ['2.5.8 Target Size (Minimum)'],
+            htmlWithIssues: ['<button class="icon">'],
+            recommendation: 'Fix any of the following...',
+          },
+        ],
+      });
+    });
+
+    it('should handle axe-core data with no violations', () => {
+      // Arrange
+      const axeData = {
+        violations: {
+          critical: {
+            items: {},
+          },
+          serious: {
+            items: {},
+          },
+        },
+        url: 'https://example.com/form',
+        formSource: 'empty-form',
+      };
+
+      // Act
+      const result = transformAxeViolationsToA11yData(axeData);
+
+      // Assert
+      expect(result).to.deep.equal({
+        form: 'https://example.com/form',
+        formSource: 'empty-form',
+        a11yIssues: [],
+      });
+    });
+
+    it('should handle axe-core data with missing violations object gracefully', () => {
+      // Arrange
+      const axeData = {
+        url: 'https://example.com/form',
+        formSource: 'no-violations',
+      };
+
+      // Act
+      const result = transformAxeViolationsToA11yData(axeData);
+
+      // Assert
+      expect(result).to.deep.equal({
+        form: 'https://example.com/form',
+        formSource: 'no-violations',
+        a11yIssues: [],
+      });
+    });
+
+    it('should handle axe-core data with missing critical and serious properties', () => {
+      // Arrange
+      const axeData = {
+        violations: {},
+        url: 'https://example.com/form',
+        formSource: 'missing-properties',
+      };
+
+      // Act
+      const result = transformAxeViolationsToA11yData(axeData);
+
+      // Assert
+      expect(result).to.deep.equal({
+        form: 'https://example.com/form',
+        formSource: 'missing-properties',
+        a11yIssues: [],
+      });
+    });
+
+    it('should handle axe-core data with missing items arrays', () => {
+      // Arrange
+      const axeData = {
+        violations: {
+          critical: {},
+          serious: {},
+        },
+        url: 'https://example.com/form',
+        formSource: 'missing-items',
+      };
+
+      // Act
+      const result = transformAxeViolationsToA11yData(axeData);
+
+      // Assert
+      expect(result).to.deep.equal({
+        form: 'https://example.com/form',
+        formSource: 'missing-items',
+        a11yIssues: [],
+      });
+    });
+
+    it('should handle multiple violations of the same type', () => {
+      // Arrange
+      const axeData = {
+        violations: {
+          critical: {
+            items: {
+              'select-name': {
+                count: 2,
+                description: 'Select element must have an accessible name',
+                level: 'A',
+                successCriteriaTags: ['wcag412'],
+                htmlWithIssues: ['<select id="inquiry">', '<select id="region">'],
+                failureSummary: 'Fix any of the following...',
+              },
+              'missing-alt': {
+                count: 1,
+                description: 'Images must have alternative text',
+                level: 'A',
+                successCriteriaTags: ['wcag111'],
+                htmlWithIssues: ['<img src="test.jpg">'],
+                failureSummary: 'Fix any of the following...',
+              },
+            },
+          },
+          serious: {
+            items: {},
+          },
+        },
+        url: 'https://example.com/form',
+        formSource: 'multiple-violations',
+      };
+
+      // Act
+      const result = transformAxeViolationsToA11yData(axeData);
+
+      // Assert
+      expect(result.a11yIssues).to.have.lengthOf(2);
+      expect(result.a11yIssues[0].issue).to.equal('Select element must have an accessible name');
+      expect(result.a11yIssues[1].issue).to.equal('Images must have alternative text');
+      expect(result.a11yIssues[0].successCriterias).to.deep.equal(['4.1.2 Name, Role, Value']);
+      expect(result.a11yIssues[1].successCriterias).to.deep.equal(['1.1.1 Non-text Content']);
+    });
+
+    it('should preserve all violation properties in the transformation', () => {
+      // Arrange
+      const axeData = {
+        violations: {
+          critical: {
+            items: {
+              'test-violation': {
+                count: 1,
+                description: 'Test violation description',
+                level: 'A',
+                successCriteriaTags: ['wcag111'],
+                htmlWithIssues: ['<test-element>'],
+                failureSummary: 'Test failure summary',
+                helpUrl: 'https://example.com/help',
+                target: ['#test'],
+                successCriteriaNumber: '111',
+                understandingUrl: 'https://example.com/understanding',
+              },
+            },
+          },
+          serious: {
+            items: {},
+          },
+        },
+        url: 'https://example.com/form',
+        formSource: 'test-form',
+      };
+
+      // Act
+      const result = transformAxeViolationsToA11yData(axeData);
+
+      // Assert
+      expect(result.a11yIssues[0]).to.deep.equal({
+        issue: 'Test violation description',
+        level: 'A',
+        successCriterias: ['1.1.1 Non-text Content'],
+        htmlWithIssues: ['<test-element>'],
+        recommendation: 'Test failure summary',
+      });
+
+      // Verify that only the expected properties are included (no extra properties)
+      expect(Object.keys(result.a11yIssues[0])).to.have.lengthOf(5);
+    });
+
+    it('should handle real sample data from JSON files', () => {
+      // Arrange - Using data similar to www_sunstar_com_contact_0.json
+      const axeData = {
+        violations: {
+          total: 5,
+          critical: {
+            count: 2,
+            items: {
+              'select-name': {
+                count: 2,
+                description: 'Select element must have an accessible name',
+                level: 'A',
+                htmlWithIssues: [
+                  '<select id="inquiry" required="required">',
+                  '<select id="region" disabled="" required="required"><option selected="" disabled="">Select region close to you</option><option value="Europe">Europe</option><option value="Japan">Japan</option><option value="Asia">Asia</option><option value="Americas">The Americas</option></select>',
+                ],
+                failureSummary: 'Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element\'s default semantics were not overridden with role="none" or role="presentation"',
+                successCriteriaTags: ['wcag412'],
+              },
+            },
+          },
+          serious: {
+            count: 3,
+            items: {
+              'color-contrast': {
+                count: 2,
+                description: 'Elements must meet minimum color contrast ratio thresholds',
+                level: 'AA',
+                htmlWithIssues: [
+                  '<span>(Optional)</span>',
+                  '<span>(Optional)</span>',
+                ],
+                failureSummary: 'Fix any of the following:\n  Element has insufficient color contrast of 2.54 (foreground color: #9ea3a8, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1',
+                successCriteriaTags: ['wcag143'],
+              },
+              'target-size': {
+                count: 1,
+                description: 'All touch targets must be 24px large, or leave sufficient space',
+                level: 'AA',
+                htmlWithIssues: [
+                  '<button class="icon search-icon" aria-label="Search"></button>',
+                ],
+                failureSummary: 'Fix any of the following:\n  Target has insufficient size (14px by 14px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 14px instead of at least 24px.',
+                successCriteriaTags: ['wcag258'],
+              },
+            },
+          },
+        },
+        url: 'https://www.sunstar.com/contact',
+        formSource: 'form',
+      };
+
+      // Act
+      const result = transformAxeViolationsToA11yData(axeData);
+
+      // Assert
+      expect(result).to.deep.equal({
+        form: 'https://www.sunstar.com/contact',
+        formSource: 'form',
+        a11yIssues: [
+          {
+            issue: 'Select element must have an accessible name',
+            level: 'A',
+            successCriterias: ['4.1.2 Name, Role, Value'],
+            htmlWithIssues: [
+              '<select id="inquiry" required="required">',
+              '<select id="region" disabled="" required="required"><option selected="" disabled="">Select region close to you</option><option value="Europe">Europe</option><option value="Japan">Japan</option><option value="Asia">Asia</option><option value="Americas">The Americas</option></select>',
+            ],
+            recommendation: 'Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist or references elements that are empty\n  Element has no title attribute\n  Element\'s default semantics were not overridden with role="none" or role="presentation"',
+          },
+          {
+            issue: 'Elements must meet minimum color contrast ratio thresholds',
+            level: 'AA',
+            successCriterias: ['1.4.3 Contrast (Minimum)'],
+            htmlWithIssues: [
+              '<span>(Optional)</span>',
+              '<span>(Optional)</span>',
+            ],
+            recommendation: 'Fix any of the following:\n  Element has insufficient color contrast of 2.54 (foreground color: #9ea3a8, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1',
+          },
+          {
+            issue: 'All touch targets must be 24px large, or leave sufficient space',
+            level: 'AA',
+            successCriterias: ['2.5.8 Target Size (Minimum)'],
+            htmlWithIssues: [
+              '<button class="icon search-icon" aria-label="Search"></button>',
+            ],
+            recommendation: 'Fix any of the following:\n  Target has insufficient size (14px by 14px, should be at least 24px by 24px)\n  Target has insufficient space to its closest neighbors. Safe clickable space has a diameter of 14px instead of at least 24px.',
+          },
+        ],
+      });
     });
   });
 });

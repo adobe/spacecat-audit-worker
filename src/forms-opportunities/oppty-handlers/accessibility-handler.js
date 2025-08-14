@@ -10,13 +10,13 @@
  * governing permissions and limitations under the License.
  */
 
-import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { getObjectKeysFromSubfolders, processFilesWithRetry } from '../../accessibility/utils/data-processing.js';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { getSuccessCriteriaDetails } from '../utils.js';
-import { getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
+import { aggregateAccessibilityData } from '../../accessibility/utils/data-processing.js';
+import { URL_SOURCE_SEPARATOR } from '../../accessibility/utils/constants.js';
 
 const filterAccessibilityOpportunities = (opportunities) => opportunities.filter((opportunity) => opportunity.getTags()?.includes('Forms Accessibility'));
 
@@ -136,6 +136,48 @@ function getWCAGCriteriaString(criteria) {
   return `${criteriaNumber} ${name}`;
 }
 
+/**
+ * Transforms axe-core violation format to the expected output format
+ * @param {Object} axeData - The axe-core violation data
+ * @returns {Object} Form with accessibility issues containing form, formSource, and a11yIssues
+ */
+export function transformAxeViolationsToA11yData(axeData) {
+  const { violations, url, formSource } = axeData;
+  const a11yIssues = [];
+
+  // Process critical violations
+  if (violations?.critical?.items) {
+    Object.values(violations.critical.items).forEach((violation) => {
+      a11yIssues.push({
+        issue: violation.description,
+        level: violation.level,
+        successCriterias: violation.successCriteriaTags.map(getWCAGCriteriaString),
+        htmlWithIssues: violation.htmlWithIssues,
+        recommendation: violation.failureSummary,
+      });
+    });
+  }
+
+  // Process serious violations
+  if (violations?.serious?.items) {
+    Object.values(violations.serious.items).forEach((violation) => {
+      a11yIssues.push({
+        issue: violation.description,
+        level: violation.level,
+        successCriterias: violation.successCriteriaTags.map(getWCAGCriteriaString),
+        htmlWithIssues: violation.htmlWithIssues,
+        recommendation: violation.failureSummary,
+      });
+    });
+  }
+
+  return {
+    form: url,
+    formSource,
+    a11yIssues,
+  };
+}
+
 export async function createAccessibilityOpportunity(auditData, context) {
   const {
     log, site, s3Client, env, sqs,
@@ -146,61 +188,45 @@ export async function createAccessibilityOpportunity(auditData, context) {
   const version = new Date().toISOString().split('T')[0];
   const outputKey = `forms-accessibility/${site.getId()}/${version}-final-result.json`;
   try {
-    const objectKeysResult = await getObjectKeysFromSubfolders(
+    const aggregationResult = await aggregateAccessibilityData(
       s3Client,
       bucketName,
-      'forms-accessibility',
-      site.getId(),
+      siteId,
+      log,
+      outputKey,
+      Audit.AUDIT_TYPES.FORMS_OPPORTUNITIES,
       version,
-      log,
     );
-
-    if (!objectKeysResult.success) {
-      log.error(`[Form Opportunity] [Site Id: ${site.getId()}] Failed to get object keys from subfolders: ${objectKeysResult.message}`);
+    if (!aggregationResult.success) {
+      log.error(`[Form Opportunity]  No data aggregated for site ${siteId} (${site.getBaseURL()}): ${aggregationResult.message}`);
       return;
     }
-    const { objectKeys } = objectKeysResult;
 
-    const { results } = await processFilesWithRetry(
-      s3Client,
-      bucketName,
-      objectKeys,
-      log,
-      2,
-    );
+    // Transform the aggregated data to the expected format
+    const aggregatedData = aggregationResult.finalResultFiles.current;
+    const a11yData = [];
 
-    if (results.length === 0) {
-      log.error(`[Form Opportunity] No files could be processed successfully for site ${site.getId()}`);
-      return;
-    }
-    const axeResults = results.map((result) => result.data);
-    const a11yData = axeResults.flatMap((a11y) => {
-      const { a11yResult } = a11y;
-      return a11yResult
-        .map((result) => ({
-          form: a11y.finalUrl,
-          formSource: result.formSource,
-          a11yIssues: result.a11yIssues.map((a11yIssue) => ({
-            issue: a11yIssue.issue,
-            level: a11yIssue.level,
-            successCriterias: a11yIssue.successCriterias.map(getWCAGCriteriaString),
-            htmlWithIssues: a11yIssue.htmlWithIssues,
-            recommendation: a11yIssue.recommendation,
-          })),
-        }));
+    // Process each form identified by composite key (URL + formSource)
+    Object.entries(aggregatedData).forEach(([key, data]) => {
+      // Skip the 'overall' key as it contains summary data
+      if (key === 'overall') return;
+
+      const { violations } = data;
+
+      // Extract URL and formSource from the composite key
+      const [url, formSource] = key.includes(URL_SOURCE_SEPARATOR)
+        ? key.split(URL_SOURCE_SEPARATOR)
+        : [key, null];
+
+      // Transform violations to the expected format
+      const transformedData = transformAxeViolationsToA11yData({
+        violations,
+        url,
+        formSource,
+      });
+
+      a11yData.push(transformedData);
     });
-
-    // Save aggregated data to S3
-    await s3Client.send(new PutObjectCommand({
-      Bucket: bucketName,
-      Key: outputKey,
-      Body: JSON.stringify(a11yData, null, 2),
-      ContentType: 'application/json',
-    }));
-    log.info(`[Form Opportunity] Saved aggregated forms-accessibility data to ${outputKey}`);
-
-    const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `forms-accessibility/${siteId}/`, log, 10, '-final-result.json');
-    log.info(`[Form Opportunity] Found ${lastWeekObjectKeys.length} final-result files in the forms-accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
 
     // Create opportunity
     const opportunity = await createOrUpdateOpportunity(auditId, siteId, a11yData, context);
