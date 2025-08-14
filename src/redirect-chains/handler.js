@@ -100,7 +100,7 @@ async function countRedirects(url, maxRedirects = STOP_AFTER_N_REDIRECTS) {
       redirectCount += 1;
       redirectUrl = response.headers.get('location');
       redirectUrl = ensureFullUrl(redirectUrl, domain);
-      redirectChain = `${redirectChain} -> ${redirectUrl}`;
+      redirectChain = `${redirectChain} -> ${redirectUrl}`; // ' -> ' is the separator for the chain
       // because we are manually following redirects, we need to wait for each fetch to complete
       // eslint-disable-next-line no-await-in-loop
       response = await fetch(redirectUrl, {
@@ -681,9 +681,6 @@ export function getSuggestedFix(result) {
   }
 
   // prep
-  let fix = '(no pre-determined fix)'; // not expected to be returned
-  let fixType = 'unknown'; // not expected to be returned
-
   const baseUrl = new URL(result.referencedBy).origin;
   let finalUrl = result.fullFinal;
   if (result.fullDest.startsWith(baseUrl) // if the fully qualified destination URL has the base URL
@@ -692,19 +689,23 @@ export function getSuggestedFix(result) {
     // remove the base URL from the final URL so it is in the spirit of the original destination URL
     finalUrl = finalUrl.replace(baseUrl, '');
   }
+  const redirectChain = result.redirectChain || ''; // can be an empty string
 
-  let canApplyFixAutomatically = false; // default is to manually apply the suggested fix
-
+  const fixForUnknown = 'No suggested fix available for this entry.'; // not expected to be returned
   const fixForDuplicate = 'Remove this entry since the same Source URL is used later in the redirects file.';
   const fixForTooQualified = `Update the Source URL and/or the Destination URL to use relative paths by removing the base URL: ${baseUrl}`;
   const fixForHasSameSrcDest = 'Remove this entry since the Source URL is the same as the Destination URL.';
   const fixForManualCheck = `Check the URL: ${finalUrl} since it resulted in an error code. Maybe remove the entry from the redirects file.`;
   const fixFor404page = 'Update, or remove, this entry since the Source URL redirects to a 404 page.';
   const fixForFinalMismatch = 'Replace the Destination URL with the Final URL, since the Source URL actually redirects to the Final URL.';
-  const fixForMaxRedirectsExceeded = 'Redesign the redirects that start from the Source URL. An excessive number of redirects were encountered.';
-  const fixForHighRedirectCount = 'Reduce the redirects that start from the Source URL. There are too many redirects to get to the Destination URL.';
+  const fixForMaxRedirectsExceeded = `Redesign the redirects that start from the Source URL. An excessive number of redirects were encountered. Partial redirect chain is: ${redirectChain}`;
+  const fixForHighRedirectCount = `Reduce the redirects that start from the Source URL. There are too many redirects to get to the Destination URL. Redirect chain is: ${redirectChain}`;
 
-  // determine the suggested fix
+  // determine the suggested fix (or leave as the unexpected 'unknown')
+  let fix = fixForUnknown;
+  let fixType = 'unknown';
+  let canApplyFixAutomatically = false; // default is to manually apply the suggested fix
+
   if (result.isDuplicateSrc) {
     fix = fixForDuplicate;
     fixType = 'duplicate-src';
@@ -740,9 +741,9 @@ export function getSuggestedFix(result) {
   }
   return {
     fix,
-    finalUrl,
     fixType,
     canApplyFixAutomatically,
+    finalUrl, // the final URL we redirected to ... in the style of the source URL
   };
 }
 
@@ -769,8 +770,12 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
     if (suggestedFixResult) {
       suggestedFixes.push({
         key: buildUniqueKey(row), // string
-        fix: suggestedFixResult.fix, // string
+
+        // {'duplicate-src', 'too-qualified', 'same-src-dest', 'manual-check', 'final-mismatch',
+        //   'max-redirects-exceeded', 'high-redirect-count', '404-page', 'unknown'}
         fixType: suggestedFixResult.fixType, // string: kabob-case tokens
+
+        fix: suggestedFixResult.fix, // string: en_US locale. Used as a human-readable example.
         canApplyFixAutomatically: suggestedFixResult.canApplyFixAutomatically, // boolean
         redirectsFile: row.referencedBy, // string
         redirectCount: row.redirectCount, // int
@@ -781,6 +786,10 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
         destinationUrlFull: row.fullDest, // string: fully qualified URL
         finalUrl: suggestedFixResult.finalUrl, // string: (in the style of the source URL)
         finalUrlFull: row.fullFinal, // string: fully qualified URL
+        // eslint-disable-next-line max-len
+        ordinalDuplicate: row.ordinalDuplicate, // int: 0 = unique, 1 = 1st duplicate, 2 = 2nd duplicate, etc.
+        // eslint-disable-next-line max-len
+        redirectChain: row.redirectChain || '', // string: empty (or null), or 1+ full URL strings separated by ' -> '
       });
     }
   }
