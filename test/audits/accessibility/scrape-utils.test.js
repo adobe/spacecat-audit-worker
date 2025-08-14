@@ -1131,5 +1131,164 @@ describe('Scrape Utils', () => {
       expect(result.topOffenders[0].url).to.equal('https://example.com/page1');
       expect(result.topOffenders[1].url).to.equal('https://example.com/page3');
     });
+
+    it('should aggregate violations from composite keys (forms) with same base URL', () => {
+      // Arrange
+      const reportData = {
+        overall: {
+          violations: {
+            critical: { items: { 'test-rule': { count: 1 } } },
+            serious: { items: {} },
+          },
+        },
+        'https://example.com/page1': {
+          violations: { total: 5 },
+        },
+        'https://example.com/page1---contact-form': {
+          violations: { total: 3 },
+        },
+        'https://example.com/page1---newsletter-form': {
+          violations: { total: 2 },
+        },
+        'https://example.com/page2': {
+          violations: { total: 4 },
+        },
+      };
+
+      // Act
+      const result = calculateA11yMetrics(reportData, 'test-site-id', 'https://example.com');
+
+      // Assert
+      expect(result.topOffenders).to.have.lengthOf(2);
+      expect(result.topOffenders[0]).to.deep.equal({
+        url: 'https://example.com/page1',
+        count: 10, // 5 + 3 + 2 = 10 (aggregated)
+      });
+      expect(result.topOffenders[1]).to.deep.equal({
+        url: 'https://example.com/page2',
+        count: 4,
+      });
+    });
+
+    it('should handle mixed composite and regular keys correctly', () => {
+      // Arrange
+      const reportData = {
+        overall: {
+          violations: {
+            critical: { items: {} },
+            serious: { items: {} },
+          },
+        },
+        'https://example.com/page1': {
+          violations: { total: 8 },
+        },
+        'https://example.com/page2---form1': {
+          violations: { total: 6 },
+        },
+        'https://example.com/page3': {
+          violations: { total: 5 },
+        },
+        'https://example.com/page2---form2': {
+          violations: { total: 4 },
+        },
+        'https://example.com/page2': {
+          violations: { total: 3 },
+        },
+      };
+
+      // Act
+      const result = calculateA11yMetrics(reportData, 'test-site-id', 'https://example.com');
+
+      // Assert
+      expect(result.topOffenders).to.have.lengthOf(3);
+      expect(result.topOffenders[0]).to.deep.equal({
+        url: 'https://example.com/page2',
+        count: 13, // 3 + 6 + 4 = 13 (aggregated from site and two forms)
+      });
+      expect(result.topOffenders[1]).to.deep.equal({
+        url: 'https://example.com/page1',
+        count: 8,
+      });
+      expect(result.topOffenders[2]).to.deep.equal({
+        url: 'https://example.com/page3',
+        count: 5,
+      });
+    });
+
+    it('should handle only composite keys (no direct URLs)', () => {
+      // Arrange
+      const reportData = {
+        overall: {
+          violations: {
+            critical: { items: {} },
+            serious: { items: {} },
+          },
+        },
+        'https://example.com/page1---contact-form': {
+          violations: { total: 7 },
+        },
+        'https://example.com/page1---feedback-form': {
+          violations: { total: 3 },
+        },
+        'https://example.com/page2---subscribe-form': {
+          violations: { total: 5 },
+        },
+      };
+
+      // Act
+      const result = calculateA11yMetrics(reportData, 'test-site-id', 'https://example.com');
+
+      // Assert
+      expect(result.topOffenders).to.have.lengthOf(2);
+      expect(result.topOffenders[0]).to.deep.equal({
+        url: 'https://example.com/page1',
+        count: 10, // 7 + 3 = 10
+      });
+      expect(result.topOffenders[1]).to.deep.equal({
+        url: 'https://example.com/page2',
+        count: 5,
+      });
+    });
+
+    it('should respect the limit of 10 top offenders after aggregation', () => {
+      // Arrange
+      const reportData = {
+        overall: {
+          violations: {
+            critical: { items: {} },
+            serious: { items: {} },
+          },
+        },
+      };
+
+      // Create 15 different pages with varying violation counts
+      for (let i = 1; i <= 15; i += 1) {
+        const baseUrl = `https://example.com/page${i}`;
+        reportData[baseUrl] = {
+          violations: { total: 20 - i }, // Decreasing counts
+        };
+        // Add form entries for some pages
+        if (i <= 5) {
+          reportData[`${baseUrl}---form1`] = {
+            violations: { total: i },
+          };
+        }
+      }
+
+      // Act
+      const result = calculateA11yMetrics(reportData, 'test-site-id', 'https://example.com');
+
+      // Assert
+      expect(result.topOffenders).to.have.lengthOf(10); // Should limit to 10
+      // First page should have highest count (20 - 1 + 1 = 20)
+      expect(result.topOffenders[0]).to.deep.equal({
+        url: 'https://example.com/page1',
+        count: 20,
+      });
+      // Verify it's sorted correctly
+      for (let i = 1; i < result.topOffenders.length; i += 1) {
+        expect(result.topOffenders[i - 1].count).to.be.at.least(result.topOffenders[i].count);
+      }
+    });
   });
 });
