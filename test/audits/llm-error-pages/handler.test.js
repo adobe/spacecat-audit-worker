@@ -108,7 +108,7 @@ describe('LLM Error Pages Handler', () => {
 
     // Mock all dependencies
     handler = await esmock('../../../src/llm-error-pages/handler.js', {
-      '../../../src/utils/athena-client.js': {
+      '@adobe/spacecat-shared-athena-client': {
         AWSAthenaClient: {
           fromContext: sandbox.stub().returns(mockAthenaClient),
         },
@@ -202,7 +202,7 @@ describe('LLM Error Pages Handler', () => {
     it('should handle database validation failure', async () => {
       const mockError = new Error('Database not found');
       handler = await esmock('../../../src/llm-error-pages/handler.js', {
-        '../../../src/utils/athena-client.js': {
+        '@adobe/spacecat-shared-athena-client': {
           AWSAthenaClient: {
             fromContext: sandbox.stub().returns(mockAthenaClient),
           },

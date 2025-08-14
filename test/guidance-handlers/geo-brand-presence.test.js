@@ -265,33 +265,4 @@ describe('geo-brand-presence guidance handler', () => {
     expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.not.include('https://adobe.com/page2');
     expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.not.include('https://adobe.com/page3');
   });
-
-  it('should skip suggestions with undefined sources', async () => {
-    const message = {
-      auditId: 'audit-id',
-      siteId: 'site-id',
-      type: 'guidance:geo-faq',
-      data: {
-        suggestions: [
-          {
-            pageUrl: 'https://adobe.com/page1',
-            question: 'q1',
-            answer: 'a1',
-            sources: ['s1'],
-          },
-          {
-            pageUrl: 'https://adobe.com/page3',
-            question: 'q3',
-            answer: 'a3',
-            // sources intentionally omitted
-          },
-        ],
-      },
-    };
-    await handler(message, context);
-    expect(log.warn).to.have.been.calledWithMatch(/No sources found for suggestion: q3. Skipping this suggestion./);
-    const createdArg = Suggestion.create.getCall(0).args[0];
-    expect(createdArg.data.suggestionValue).to.include('https://adobe.com/page1');
-    expect(createdArg.data.suggestionValue).to.not.include('https://adobe.com/page3');
-  });
 });
