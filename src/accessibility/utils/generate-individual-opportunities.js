@@ -912,6 +912,8 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
         context,
         opportunityId,
         opportunity.getType(),
+        siteId,
+        auditId,
       );
       log.info(`[A11yRemediationGuidance] Saved received metrics for opportunity ${opportunityId}, page ${pageUrl}: received=${receivedSuggestionIds.length} suggestion IDs`);
 
@@ -953,6 +955,8 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
             context,
             opportunityId,
             opportunity.getType(),
+            siteId,
+            auditId,
           );
           log.info(`[A11yValidation] Updated validation percentage to ${validatedPercentage.toFixed(1)}% for opportunity ${opportunityId}, page ${pageUrl}`);
         }
