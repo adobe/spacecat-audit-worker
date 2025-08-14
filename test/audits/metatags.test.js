@@ -305,8 +305,8 @@ describe('Meta Tags', () => {
         const result = await submitForScraping(context);
         expect(result).to.deep.equal({
           urls: [
-            { url: 'http://example.com/page1' },
-            { url: 'http://example.com/page2' },
+            'http://example.com/page1',
+            'http://example.com/page2',
           ],
           siteId: 'site-id',
           type: 'meta-tags',
@@ -332,8 +332,8 @@ describe('Meta Tags', () => {
         const result = await submitForScraping(context);
         expect(result).to.deep.equal({
           urls: [
-            { url: 'http://example.com/page1' },
-            { url: 'http://example.com/page2' },
+            'http://example.com/page1',
+            'http://example.com/page2',
           ],
           siteId: 'site-id',
           type: 'meta-tags',
