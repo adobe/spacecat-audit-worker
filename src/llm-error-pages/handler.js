@@ -10,9 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
+import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
-import { AWSAthenaClient } from '../utils/athena-client.js';
 import {
   getS3Config,
   validateDatabaseAndTable,

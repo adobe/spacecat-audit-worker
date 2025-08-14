@@ -15,42 +15,6 @@ export const suggestionData = [
     step: 'suggest',
     audits: [
       {
-        name: 'canonical',
-        type: 'seo',
-        opportunities: [
-          {
-            check: 'canonical-self-referenced',
-            issue: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
-            seoImpact: 'Moderate',
-            seoRecommendation: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
-          },
-        ],
-      },
-      {
-        name: 'metatags',
-        type: 'seo',
-        opportunities: [
-          {
-            seoImpact: 'Moderate',
-            issue: 'Title too short',
-            issueDetails: '28 chars below limit',
-            seoRecommendation: '40-60 characters long',
-            tagContent: 'Page 1 Title',
-            aiSuggestion: 'Our Story: Innovating Comfort for Every Home',
-            aiRationale: 'The title is catchy and broad...',
-            tagName: 'title',
-          },
-          {
-            seoImpact: 'Moderate',
-            issue: 'Description too short',
-            issueDetails: '122 chars below limit',
-            seoRecommendation: '140-160 characters long',
-            tagContent: 'Page 1 Description',
-            tagName: 'description',
-          },
-        ],
-      },
-      {
         name: 'body-size',
         type: 'seo',
         opportunities: [
@@ -80,36 +44,53 @@ export const suggestionData = [
         ],
       },
       {
+        name: 'canonical',
+        type: 'seo',
+        opportunities: [
+          {
+            check: 'canonical-self-referenced',
+            issue: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
+            seoImpact: 'Moderate',
+            seoRecommendation: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
+          },
+        ],
+      },
+      {
+        name: 'metatags',
+        type: 'seo',
+        opportunities: [], // Added length check in metatags audit, no oppty when body is short
+      },
+      {
         name: 'links',
         type: 'seo',
         opportunities: [
           {
             check: 'broken-internal-links',
-            issue: {
-              url: 'https://example.com/broken',
-              issue: 'Status 404',
-              seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-              urlsSuggested: [
-                'https://main--example--page.aem.page/fix',
-              ],
-              aiRationale: 'Rationale',
-            },
-          },
-          {
-            check: 'broken-internal-links',
-            issue: {
-              url: 'https://example.com/another-broken-url',
-              issue: 'Status 404',
-              seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-              urlsSuggested: [
-                'https://main--example--page.aem.page/fix',
-              ],
-              aiRationale: 'Rationale',
-            },
+            issue: [
+              {
+                url: 'https://main--example--page.aem.page/broken',
+                issue: 'Status 404',
+                seoImpact: 'High',
+                seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+                aiSuggestion: 'https://main--example--page.aem.page/fix',
+                aiRationale: 'Rationale',
+              },
+              {
+                url: 'https://main--example--page.aem.page/another-broken-url',
+                issue: 'Status 404',
+                seoImpact: 'High',
+                seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+                aiSuggestion: 'https://main--example--page.aem.page/fix',
+                aiRationale: 'Rationale',
+              },
+            ],
           },
         ],
+      },
+      {
+        name: 'readability',
+        type: 'seo',
+        opportunities: [],
       },
     ],
   },

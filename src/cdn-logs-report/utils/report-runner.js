@@ -11,16 +11,14 @@
  */
 
 import {
-  createDateRange,
   generatePeriodIdentifier,
   generateReportingPeriods,
   buildSiteFilters,
 } from './report-utils.js';
-import { saveExcelReport } from './report-uploader.js';
+import { saveExcelReport } from '../../utils/report-uploader.js';
 import { createExcelReport } from './excel-generator.js';
 import { REPORT_CONFIGS } from '../constants/report-configs.js';
 
-const SUPPORTED_PROVIDERS = ['chatgpt', 'perplexity'];
 const REPORT_TYPES = Object.keys(REPORT_CONFIGS);
 
 async function collectReportData(
@@ -52,16 +50,14 @@ async function collectReportData(
     // eslint-disable-next-line no-await-in-loop
     resolvedQueries[key] = await queryFunction(baseQueryOptions);
   }
-
+  /* c8 ignore start */
   for (const [key, query] of Object.entries(resolvedQueries)) {
     try {
-      /* c8 ignore start */
       if (query === null) {
         reportData[key] = [];
         // eslint-disable-next-line no-continue
         continue;
       }
-      /* c8 ignore end */
 
       const sqlQueryDescription = `[Athena Query] ${key} for ${provider}`;
       // eslint-disable-next-line no-await-in-loop
@@ -76,41 +72,30 @@ async function collectReportData(
       reportData[key] = [];
     }
   }
-
+  /* c8 ignore end */
   return reportData;
 }
 
 export async function runReport(athenaClient, s3Config, log, options = {}) {
   const {
-    startDate,
-    endDate,
     provider,
     site,
     sharepointClient,
     reportType = 'agentic',
   } = options;
 
-  let periodStart;
-  let periodEnd;
-  let referenceDate;
-
-  if (startDate && endDate) {
-    const parsed = createDateRange(startDate, endDate);
-    periodStart = parsed.startDate;
-    periodEnd = parsed.endDate;
-    referenceDate = periodEnd;
-  } else {
-    referenceDate = new Date();
-    const periods = generateReportingPeriods(referenceDate);
-    const week = periods.weeks[0];
-    periodStart = week.startDate;
-    periodEnd = week.endDate;
-  }
-
+  const referenceDate = new Date();
+  const periods = generateReportingPeriods(referenceDate);
+  const week = periods.weeks[0];
+  const periodStart = week.startDate;
+  const periodEnd = week.endDate;
   const reportConfig = REPORT_CONFIGS[reportType];
   const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
+
   log.info(`Running ${reportType} report for ${provider} for ${periodIdentifier}`);
-  const { outputLocation, filters } = site.getConfig().getCdnLogsConfig() || {};
+  const { filters } = site.getConfig().getCdnLogsConfig() || {};
+  const llmoFolder = site.getConfig()?.getLlmoDataFolder() || s3Config.customerName;
+  const outputLocation = `${llmoFolder}/${reportConfig.folderSuffix}`;
 
   try {
     const reportData = await collectReportData(
@@ -127,14 +112,14 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
     const filename = `${reportConfig.filePrefix}-${provider}-${periodIdentifier}.xlsx`;
 
     const workbook = await createExcelReport(reportData, reportConfig, {
-      customEndDate: referenceDate.toISOString().split('T')[0],
+      referenceDate,
       filename,
       site,
     });
 
     await saveExcelReport({
       workbook,
-      outputLocation: outputLocation || s3Config.customerName,
+      outputLocation,
       log,
       sharepointClient,
       filename,
@@ -151,19 +136,23 @@ export async function runReportsForAllProviders(
   log,
   options = {},
 ) {
-  log.info(`Generating reports for providers: ${SUPPORTED_PROVIDERS.join(', ')}`);
+  const { reportType = 'agentic' } = options;
+  const reportConfig = REPORT_CONFIGS[reportType];
+  const supportedProviders = reportConfig.providers || [];
 
-  for (const provider of SUPPORTED_PROVIDERS) {
+  log.info(`Generating ${reportType} reports for providers: ${supportedProviders.join(', ')}`);
+
+  for (const provider of supportedProviders) {
     try {
-      log.info(`Starting report generation for ${provider}...`);
+      log.info(`Starting ${reportType} report generation for ${provider}...`);
       // eslint-disable-next-line no-await-in-loop
       await runReport(athenaClient, s3Config, log, {
         ...options,
         provider,
       });
-      log.info(`Successfully generated ${provider} report`);
+      log.info(`Successfully generated ${reportType} ${provider} report`);
     } catch (error) {
-      log.error(`Failed to generate ${provider} report: ${error.message}`);
+      log.error(`Failed to generate ${reportType} ${provider} report: ${error.message}`);
     }
   }
 }
@@ -188,35 +177,6 @@ export async function runWeeklyReport({
       /* c8 ignore start */
     } catch (error) {
       log.error(`Failed to generate weekly ${reportType} reports: ${error.message}`);
-    }
-    /* c8 ignore end */
-  }
-}
-
-export async function runCustomDateRangeReport({
-  athenaClient,
-  startDateStr,
-  endDateStr,
-  s3Config,
-  log,
-  site,
-  sharepointClient,
-}) {
-  for (const reportType of REPORT_TYPES) {
-    try {
-      log.info(`Starting custom date range ${reportType} reports...`);
-      // eslint-disable-next-line no-await-in-loop
-      await runReportsForAllProviders(athenaClient, s3Config, log, {
-        startDate: startDateStr,
-        endDate: endDateStr,
-        site,
-        sharepointClient,
-        reportType,
-      });
-      log.info(`Successfully completed custom date range ${reportType} reports`);
-      /* c8 ignore start */
-    } catch (error) {
-      log.error(`Failed to generate custom date range ${reportType} reports: ${error.message}`);
     }
     /* c8 ignore end */
   }

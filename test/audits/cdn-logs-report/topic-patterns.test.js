@@ -68,17 +68,23 @@ describe('Topic Patterns', () => {
   it('tests business.adobe.com URL patterns', () => {
     const patterns = TOPIC_PATTERNS['business.adobe.com'];
     const testUrls = [
-      '/products/',
-      '/products/analytics/',
+      '/products/commerce.html',
+      '/products/marketo/adobe-marketo.html',
+      '/products/real-time-customer-data-platform/rtcdp.html',
+      '/blog/products/something/',
+      '/learn/products/analytics/',
       '/not-matching/',
     ];
 
-    const enterprisePattern = patterns.find((p) => p.name === 'Enterprise Products');
-    const enterpriseRegex = new RegExp(enterprisePattern.regex);
-    expect(enterprisePattern.regex).to.include('products');
-    expect(enterpriseRegex.test(testUrls[0])).to.be.true;
-    expect(enterpriseRegex.test(testUrls[1])).to.be.true;
-    expect(enterpriseRegex.test(testUrls[2])).to.be.false;
+    const pattern = patterns[0];
+    const regex = new RegExp(pattern.regex);
+
+    expect(regex.exec(testUrls[0])?.[1]).to.equal('commerce');
+    expect(regex.exec(testUrls[1])?.[1]).to.equal('marketo');
+    expect(regex.exec(testUrls[2])?.[1]).to.equal('real-time-customer-data-platform');
+    expect(regex.exec(testUrls[3])?.[1]).to.be.undefined;
+    expect(regex.exec(testUrls[4])?.[1]).to.be.undefined;
+    expect(regex.exec(testUrls[5])?.[1]).to.be.undefined;
   });
 
   it('handles unknown domains gracefully', () => {

@@ -28,6 +28,7 @@ import sitemap from './sitemap/handler.js';
 import paid from './paid/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
+import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
 import internalLinks from './internal-links/handler.js';
 import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
@@ -49,9 +50,15 @@ import preflight from './preflight/handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
 import guidanceGeoBrandPresence from './geo-brand-presence/guidance-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
+import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
+import accessibilityRemediationGuidance from './accessibility/guidance-handlers/guidance-accessibility-remediation.js';
 import cdnAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
+import detectPageIntent from './page-intent/handler.detect.js';
+import updatePageIntent from './page-intent/handler.update.js';
+import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
+import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
 
@@ -78,6 +85,7 @@ const HANDLERS = {
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
   'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
+  'guidance:broken-links': brokenLinksGuidance,
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
@@ -86,10 +94,16 @@ const HANDLERS = {
   'guidance:geo-brand-presence': guidanceGeoBrandPresence,
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
+  'guidance:accessibility-remediation': accessibilityRemediationGuidance,
   'guidance:paid-cookie-consent': paidConsentGuidance,
+  'guidance:missing-alt-text': missingAltTextGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
+  'detect:page-intent': detectPageIntent,
+  'detect:form-details': detectFormDetails,
+  'page-intent': updatePageIntent,
+  'llmo-referral-traffic': llmoReferralTraffic,
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   dummy: (message) => ok(message),
@@ -111,8 +125,7 @@ async function run(message, context) {
   const { log } = context;
   const { type, siteId } = message;
 
-  log.info(`Received ${type} audit request for: ${siteId}`);
-  log.info(`Message ${JSON.stringify(message)}`);
+  log.info(`Received ${type} audit request for: ${siteId}. Message:`, message);
 
   const handler = HANDLERS[type];
   if (!handler) {

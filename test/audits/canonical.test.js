@@ -21,7 +21,9 @@ import esmock from 'esmock';
 import {
   getTopPagesForSiteId, validateCanonicalTag, validateCanonicalFormat,
   validateCanonicalRecursively, canonicalAuditRunner, CANONICAL_CHECKS,
+  generateCanonicalSuggestion, generateSuggestions, opportunityAndSuggestions,
 } from '../../src/canonical/handler.js';
+import { createOpportunityData } from '../../src/canonical/opportunity-data-mapper.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -538,12 +540,12 @@ describe('Canonical URL Tests', () => {
 
   describe('canonicalAuditRunner', () => {
     it('should run canonical audit successfully', async () => {
-      const baseURL = 'http://example.com';
-      const html = `<html lang="en"><head><link rel="canonical" href="${baseURL}"><title>test</title></head><body></body></html>`;
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/page1';
+      const html = `<html lang="en"><head><link rel="canonical" href="${pageURL}"><title>test</title></head><body></body></html>`;
 
-      nock('http://example.com').get('/page1').reply(200, html);
-      nock(baseURL).get('/').reply(200, html);
-      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => 'http://example.com/page1' }]);
+      nock('https://example.com').get('/page1').twice().reply(200, html);
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => pageURL }]);
 
       const context = {
         log,
@@ -556,18 +558,12 @@ describe('Canonical URL Tests', () => {
       const result = await canonicalAuditRunner(baseURL, context, site);
 
       expect(result).to.be.an('object');
-      expect(result.auditResult).to.have.all.keys(
-        'canonical-self-referenced',
-        'canonical-tag-exists',
-        'canonical-tag-in-head',
-        'canonical-tag-nonempty',
-        'canonical-url-absolute',
-        'canonical-url-lowercased',
-        'canonical-url-same-domain',
-        'canonical-url-same-protocol',
-        'canonical-url-no-redirect',
-        'canonical-url-status-ok',
-      );
+      expect(result).to.have.property('fullAuditRef', baseURL);
+      expect(result).to.have.property('auditResult');
+      expect(result.auditResult).to.deep.equal({
+        status: 'success',
+        message: 'No canonical issues detected',
+      });
       expect(getTopPagesForSiteStub).to.have.been.calledOnceWith('testSiteId', 'ahrefs', 'global');
       expect(log.info).to.have.been.called;
     });
@@ -696,6 +692,362 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.calledWith('Retrieving page authentication for pageUrl http://example.page');
       expect(retrievePageAuthenticationStub).to.have.been.calledOnceWith(site, context);
       expect(log.error).to.have.been.calledWith('Error retrieving page authentication for pageUrl http://example.page: Something went wrong');
+    });
+  });
+
+  describe('generateCanonicalSuggestion', () => {
+    const testUrl = 'https://example.com/test-page';
+    const baseURL = 'https://example.com';
+
+    // shorter alias for the canonical checks
+    const checks = {
+      TAG_EXISTS: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.check,
+      TAG_ONCE: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.check,
+      TAG_NONEMPTY: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
+      TAG_IN_HEAD: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.check,
+      SELF_REFERENCED: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+      URL_ABSOLUTE: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.check,
+      URL_SAME_DOMAIN: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
+      URL_SAME_PROTOCOL: CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.check,
+      URL_LOWERCASED: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
+      URL_STATUS_OK: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
+      URL_NO_REDIRECT: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
+      URL_4XX: CANONICAL_CHECKS.CANONICAL_URL_4XX.check,
+      URL_5XX: CANONICAL_CHECKS.CANONICAL_URL_5XX.check,
+      URL_FETCH_ERROR: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+      URL_INVALID: CANONICAL_CHECKS.CANONICAL_URL_INVALID.check,
+    };
+
+    it('should generate suggestion for CANONICAL_TAG_EXISTS', () => {
+      const result = generateCanonicalSuggestion(checks.TAG_EXISTS, testUrl, baseURL);
+      expect(result).to.equal(`Add a canonical tag to the head section: <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_TAG_ONCE', () => {
+      const result = generateCanonicalSuggestion(checks.TAG_ONCE, testUrl, baseURL);
+      expect(result).to.equal('Remove duplicate canonical tags and keep only one canonical tag in the head section.');
+    });
+
+    it('should generate suggestion for CANONICAL_TAG_NONEMPTY', () => {
+      const result = generateCanonicalSuggestion(checks.TAG_NONEMPTY, testUrl, baseURL);
+      expect(result).to.equal(`Set the canonical URL in the href attribute: <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_TAG_IN_HEAD', () => {
+      const result = generateCanonicalSuggestion(checks.TAG_IN_HEAD, testUrl, baseURL);
+      expect(result).to.equal('Move the canonical tag to the <head> section of the HTML document.');
+    });
+
+    it('should generate suggestion for CANONICAL_URL_STATUS_OK', () => {
+      const result = generateCanonicalSuggestion(checks.URL_STATUS_OK, testUrl, baseURL);
+      expect(result).to.equal('Ensure the canonical URL returns a 200 status code and is accessible.');
+    });
+
+    it('should generate suggestion for CANONICAL_URL_NO_REDIRECT', () => {
+      const result = generateCanonicalSuggestion(checks.URL_NO_REDIRECT, testUrl, baseURL);
+      expect(result).to.equal('Update the canonical URL to point directly to the final destination without redirects.');
+    });
+
+    it('should generate suggestion for CANONICAL_URL_4XX', () => {
+      const result = generateCanonicalSuggestion(checks.URL_4XX, testUrl, baseURL);
+      expect(result).to.equal('Fix the canonical URL to resolve the 4xx client error and make it accessible.');
+    });
+
+    it('should generate suggestion for CANONICAL_URL_5XX', () => {
+      const result = generateCanonicalSuggestion(checks.URL_5XX, testUrl, baseURL);
+      expect(result).to.equal('Fix the canonical URL to resolve the 5xx server error and ensure it\'s accessible.');
+    });
+
+    it('should generate suggestion for CANONICAL_SELF_REFERENCED', () => {
+      const result = generateCanonicalSuggestion(checks.SELF_REFERENCED, testUrl, baseURL);
+      expect(result).to.equal(`Update canonical URL to point to itself: <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_URL_ABSOLUTE', () => {
+      const result = generateCanonicalSuggestion(checks.URL_ABSOLUTE, testUrl, baseURL);
+      expect(result).to.equal(`Use an absolute URL for the canonical tag: <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_URL_SAME_DOMAIN', () => {
+      const result = generateCanonicalSuggestion(checks.URL_SAME_DOMAIN, testUrl, baseURL);
+      expect(result).to.equal(`Update canonical URL to use the same domain as the page: <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_URL_SAME_PROTOCOL', () => {
+      const result = generateCanonicalSuggestion(checks.URL_SAME_PROTOCOL, testUrl, baseURL);
+      expect(result).to.equal(`Update canonical URL to use the same protocol (HTTP/HTTPS): <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_URL_LOWERCASED', () => {
+      const testUrlMixed = 'https://Example.com/Test-Page';
+      const result = generateCanonicalSuggestion(checks.URL_LOWERCASED, testUrlMixed, baseURL);
+      expect(result).to.equal(`Update canonical URL to use lowercase: <link rel="canonical" href="${testUrlMixed.toLowerCase()}" />`);
+    });
+
+    it('should generate suggestion for CANONICAL_URL_FETCH_ERROR', () => {
+      const result = generateCanonicalSuggestion(checks.URL_FETCH_ERROR, testUrl, baseURL);
+      expect(result).to.equal('Check if the canonical URL is accessible and fix any connectivity issues.');
+    });
+
+    it('should generate suggestion for CANONICAL_URL_INVALID', () => {
+      const result = generateCanonicalSuggestion(checks.URL_INVALID, testUrl, baseURL);
+      expect(result).to.equal(`Fix the malformed canonical URL and ensure it follows proper URL format: <link rel="canonical" href="${testUrl}" />`);
+    });
+
+    it('should return fallback message for unknown check type', () => {
+      const unknownCheckType = 'unknown-check-type';
+      const result = generateCanonicalSuggestion(unknownCheckType, testUrl, baseURL);
+      expect(result).to.equal('Review and fix the canonical tag implementation according to SEO best practices.');
+    });
+
+    it('should return fallback message when check object has no suggestion function', () => {
+      // Test with a check that exists but has no suggestion (since we removed some suggestions)
+      const result = generateCanonicalSuggestion(CANONICAL_CHECKS.TOPPAGES.check, testUrl, baseURL);
+      expect(result).to.equal('Review and fix the canonical tag implementation according to SEO best practices.');
+    });
+  });
+
+  describe('createOpportunityData', () => {
+    it('should return canonical opportunity data with correct structure', () => {
+      const result = createOpportunityData();
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('runbook', '');
+      expect(result).to.have.property('origin', 'AUTOMATION');
+      expect(result).to.have.property('title', 'Canonical URL issues affecting SEO');
+      expect(result).to.have.property('description').that.is.a('string');
+      expect(result).to.have.property('guidance').that.is.an('object');
+      expect(result.guidance).to.have.property('steps').that.is.an('array');
+      expect(result.guidance.steps).to.have.length.above(0);
+      expect(result).to.have.property('tags').that.is.an('array');
+      expect(result.tags).to.include('Traffic Acquisition');
+      expect(result.tags).to.include('SEO');
+      expect(result).to.have.property('data').that.is.an('object');
+      expect(result.data).to.have.property('dataSources').that.is.an('array');
+    });
+  });
+
+  describe('generateSuggestions', () => {
+    const auditUrl = 'https://example.com';
+    const mockContext = {
+      log: {
+        info: sinon.stub(),
+        error: sinon.stub(),
+      },
+    };
+
+    beforeEach(() => {
+      mockContext.log.info.reset();
+    });
+
+    it('should return audit data as-is when auditResult is not an array', () => {
+      const auditData = {
+        auditResult: {
+          status: 'success',
+          message: 'No canonical issues detected',
+        },
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(mockContext.log.info).to.have.been.calledOnceWith(
+        'Canonical audit for https://example.com has no issues or failed, skipping suggestions generation',
+      );
+    });
+
+    it('should generate suggestions from canonical audit results', () => {
+      const auditData = {
+        auditResult: [
+          {
+            type: 'canonical-self-referenced',
+            explanation: 'The canonical URL should point to itself',
+            affectedUrls: [
+              {
+                url: 'https://example.com/page1',
+                suggestion: 'Update canonical URL to point to itself',
+              },
+              {
+                url: 'https://example.com/page2',
+                suggestion: 'Update canonical URL to point to itself',
+              },
+            ],
+          },
+          {
+            type: 'canonical-url-fetch-error',
+            explanation: 'Error fetching canonical URL',
+            affectedUrls: [
+              {
+                url: 'https://example.com/page3',
+                suggestion: 'Check if the URL is accessible',
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result).to.have.property('suggestions').that.is.an('array');
+      expect(result.suggestions).to.have.length(3);
+
+      // Check first suggestion
+      expect(result.suggestions[0]).to.deep.equal({
+        type: 'CODE_CHANGE',
+        checkType: 'canonical-self-referenced',
+        explanation: 'The canonical URL should point to itself',
+        url: 'https://example.com/page1',
+        suggestion: 'Update canonical URL to point to itself',
+        recommendedAction: 'Update canonical URL to point to itself',
+      });
+
+      // Check second suggestion
+      expect(result.suggestions[1]).to.deep.equal({
+        type: 'CODE_CHANGE',
+        checkType: 'canonical-self-referenced',
+        explanation: 'The canonical URL should point to itself',
+        url: 'https://example.com/page2',
+        suggestion: 'Update canonical URL to point to itself',
+        recommendedAction: 'Update canonical URL to point to itself',
+      });
+
+      // Check third suggestion
+      expect(result.suggestions[2]).to.deep.equal({
+        type: 'CODE_CHANGE',
+        checkType: 'canonical-url-fetch-error',
+        explanation: 'Error fetching canonical URL',
+        url: 'https://example.com/page3',
+        suggestion: 'Check if the URL is accessible',
+        recommendedAction: 'Check if the URL is accessible',
+      });
+
+      expect(mockContext.log.info).to.have.been.calledOnceWith(
+        'Generated 3 canonical suggestions for https://example.com',
+      );
+    });
+
+    it('should handle empty auditResult array', () => {
+      const auditData = {
+        auditResult: [],
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result).to.have.property('suggestions').that.is.an('array').and.is.empty;
+      expect(mockContext.log.info).to.have.been.calledOnceWith(
+        'Generated 0 canonical suggestions for https://example.com',
+      );
+    });
+  });
+
+  describe('opportunityAndSuggestions', () => {
+    const auditUrl = 'https://example.com';
+    const mockContext = {
+      log: {
+        info: sinon.stub(),
+        error: sinon.stub(),
+        warn: sinon.stub(),
+      },
+      dataAccess: {
+        Opportunity: {
+          allBySiteIdAndStatus: sinon.stub(),
+          create: sinon.stub(),
+          getId: sinon.stub().returns('opportunity-123'),
+          getSuggestions: sinon.stub(),
+          addSuggestions: sinon.stub(),
+        },
+        Suggestion: {
+          create: sinon.stub(),
+        },
+      },
+    };
+
+    beforeEach(() => {
+      mockContext.log.info.reset();
+      mockContext.log.error.reset();
+      mockContext.dataAccess.Opportunity.allBySiteIdAndStatus.reset();
+      mockContext.dataAccess.Opportunity.create.reset();
+      mockContext.dataAccess.Opportunity.getSuggestions.reset();
+      mockContext.dataAccess.Opportunity.addSuggestions.reset();
+      mockContext.dataAccess.Suggestion.create.reset();
+    });
+
+    it('should skip opportunity creation when auditResult is not an array', async () => {
+      const auditData = {
+        auditResult: {
+          status: 'success',
+          message: 'No canonical issues detected',
+        },
+      };
+
+      const result = await opportunityAndSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(mockContext.log.info).to.have.been.calledOnceWith(
+        'Canonical audit has no issues, skipping opportunity creation',
+      );
+    });
+
+    it('should skip opportunity creation when no suggestions exist', async () => {
+      const auditData = {
+        auditResult: [
+          {
+            type: 'canonical-self-referenced',
+            explanation: 'The canonical URL should point to itself',
+            affectedUrls: [],
+          },
+        ],
+        suggestions: [],
+      };
+
+      const result = await opportunityAndSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(mockContext.log.info).to.have.been.calledOnceWith(
+        'Canonical audit has no issues, skipping opportunity creation',
+      );
+    });
+
+    it('should create opportunity and sync suggestions when issues exist', async () => {
+      const auditData = {
+        siteId: 'site-123',
+        auditResult: [
+          {
+            type: 'canonical-self-referenced',
+            explanation: 'The canonical URL should point to itself',
+            affectedUrls: [
+              {
+                url: 'https://example.com/page1',
+                suggestion: 'Update canonical URL',
+              },
+            ],
+          },
+        ],
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'canonical-self-referenced',
+            explanation: 'The canonical URL should point to itself',
+            url: 'https://example.com/page1',
+            suggestion: 'Update canonical URL',
+            recommendedAction: 'Update canonical URL',
+          },
+        ],
+      };
+
+      // Mock opportunity creation
+      mockContext.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      mockContext.dataAccess.Opportunity.create.resolves(mockContext.dataAccess.Opportunity);
+      mockContext.dataAccess.Opportunity.getSuggestions.resolves([]);
+      mockContext.dataAccess.Opportunity.addSuggestions.resolves({ createdItems: [] });
+
+      const result = await opportunityAndSuggestions(auditUrl, auditData, mockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(mockContext.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        'Canonical opportunity created and 1 suggestions synced for https://example.com',
+      );
     });
   });
 });

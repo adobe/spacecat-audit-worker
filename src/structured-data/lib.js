@@ -15,8 +15,10 @@ import {
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import StructuredDataValidator from '@adobe/structured-data-validator';
 import { join } from 'path';
+import { readFile } from 'fs/promises';
 import { load as cheerioLoad } from 'cheerio';
 import jsBeautify from 'js-beautify';
+import { Site } from '@adobe/spacecat-shared-data-access';
 
 import { generatePlainHtml, getScrapeForPath } from '../support/utils.js';
 
@@ -56,7 +58,7 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
   try {
     google = await GoogleClient.createFrom(context, finalUrl);
   } catch (error) {
-    log.warn('SDA: Failed to create Google client. Site was probably not onboarded to GSC yet. Continue without data from GSC.', error);
+    log.warn(`SDA: Failed to create Google client for site with url ${finalUrl}. Site was probably not onboarded to GSC yet. Continue without data from GSC.`, error);
     return [];
   }
 
@@ -156,6 +158,26 @@ export function deduplicateIssues(context, gscIssues, scraperIssues) {
   return issues;
 }
 
+export function includeIssue(context, issue) {
+  const { log } = context;
+  const isError = issue.severity === 'ERROR';
+  const isImageObject = issue.rootType === 'ImageObject';
+  const customerTypes = [Site.DELIVERY_TYPES.AEM_CS, Site.DELIVERY_TYPES.AEM_AMS];
+  const isAffectedCustomer = customerTypes.includes(context.site.getDeliveryType());
+
+  if (!isError) return false;
+  if (!isImageObject) return true;
+
+  if (isImageObject && isAffectedCustomer) {
+    const messageToSuppress = 'One of the following conditions needs to be met: Required attribute "creator" is missing or Required attribute "creditText" is missing or Required attribute "copyrightNotice" is missing or Required attribute "license" is missing';
+    if (issue.issueMessage.includes(messageToSuppress)) {
+      log.warn('SDA: Suppressing issue', issue.issueMessage);
+      return false;
+    }
+  }
+  return true;
+}
+
 export async function getIssuesFromScraper(context, pages, scrapeCache) {
   const { log, site } = context;
 
@@ -190,11 +212,18 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
       'static',
       'schemaorg-current-https.jsonld',
     );
+    const schemaOrgJson = JSON.parse(await readFile(schemaOrgPath, 'utf8'));
 
-    const validator = new StructuredDataValidator(schemaOrgPath);
-    const validatorIssues = (await validator.validate(waeResult))
-      // For now, ignore issues with severity lower than ERROR
-      .filter((issue) => issue.severity === 'ERROR');
+    const validator = new StructuredDataValidator(schemaOrgJson);
+    let validatorIssues = [];
+    try {
+      validatorIssues = (await validator.validate(waeResult))
+        // For now, ignore issues with severity lower than ERROR
+        //          and suppress unnecessary issues for AEM customers
+        .filter((issue) => includeIssue(context, issue));
+    } catch (e) {
+      log.error(`SDA: Failed to validate structured data for ${page}.`, e);
+    }
     for (const issue of validatorIssues) {
       // Only add if same issue for the same source does not exist already.
       // This can happen e.g. if a field is missing for every item in a list.

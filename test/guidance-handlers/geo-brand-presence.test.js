@@ -231,7 +231,7 @@ describe('geo-brand-presence guidance handler', () => {
     expect(Suggestion.create).to.have.been.calledOnce;
   });
 
-  it('should skip suggestions with no sources', async () => {
+  it('should skip suggestions with empty or no sources', async () => {
     const message = {
       auditId: 'audit-id',
       siteId: 'site-id',
@@ -250,13 +250,20 @@ describe('geo-brand-presence guidance handler', () => {
             answer: 'a2',
             sources: [],
           },
+          {
+            pageUrl: 'https://adobe.com/page3',
+            question: 'q3',
+            answer: 'a3',
+          },
         ],
       },
     };
     await handler(message, context);
     expect(log.warn).to.have.been.calledWithMatch(/No sources found for suggestion: q2. Skipping this suggestion./);
     expect(Suggestion.create).to.have.been.calledOnce;
+    expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.include('https://adobe.com/page1');
     expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.not.include('https://adobe.com/page2');
+    expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.not.include('https://adobe.com/page3');
   });
 
   it('should skip suggestions with undefined sources', async () => {

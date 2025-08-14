@@ -52,8 +52,11 @@ export async function formsAuditRunner(auditUrl, context) {
 
 export async function runAuditAndSendUrlsForScrapingStep(context) {
   const {
-    site, log, finalUrl,
+    site, log, finalUrl, dataAccess,
   } = context;
+
+  const { SiteTopForm } = dataAccess;
+  const topForms = await SiteTopForm.allBySiteId(site.getId());
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting audit`);
   const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
@@ -64,6 +67,17 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   const uniqueUrls = new Set();
   for (const opportunity of formOpportunities) {
     uniqueUrls.add(opportunity.form);
+  }
+
+  // Add topFormUrls that don't have formSource
+  for (const topForm of topForms) {
+    const url = topForm.getUrl();
+    const formSource = topForm.getFormSource();
+
+    // Add URL if it doesn't have a formSource
+    if (!formSource) {
+      uniqueUrls.add(url);
+    }
   }
 
   if (uniqueUrls.size < 10) {
@@ -106,14 +120,44 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
 
 export async function sendA11yUrlsForScrapingStep(context) {
   const {
-    log, site,
+    log, site, dataAccess,
   } = context;
+  const { SiteTopForm } = dataAccess;
+  const topForms = await SiteTopForm.allBySiteId(site.getId());
 
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
   const { formVitals } = latestAudit.getAuditResult();
   const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, formVitals, context);
+
+  // Merge top form URLs with existing urlsData
+  const existingUrls = new Set(urlsData.map((item) => item.url));
+
+  for (const topForm of topForms) {
+    const url = topForm.getUrl();
+    const formSource = topForm.getFormSource();
+
+    // Only add forms that have a formSource
+    if (formSource && !existingUrls.has(url)) {
+      const formSources = [formSource];
+      urlsData.push({
+        url,
+        formSources,
+      });
+      existingUrls.add(url);
+    } else if (formSource && existingUrls.has(url)) {
+      // URL exists, merge form sources if needed
+      const existingItem = urlsData.find((item) => item.url === url);
+      if (existingItem && !existingItem.formSources.includes(formSource)) {
+        if (existingItem.formSources.length === 1 && existingItem.formSources[0] === 'form') {
+          existingItem.formSources = [formSource];
+        } else {
+          existingItem.formSources.push(formSource);
+        }
+      }
+    }
+  }
   const result = {
     auditResult: latestAudit.auditResult,
     fullAuditRef: latestAudit.fullAuditRef,

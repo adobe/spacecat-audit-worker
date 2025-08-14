@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { sleep } from '../../support/utils.js';
+import { sleep } from '../support/utils.js';
 
 async function publishToAdminHlx(filename, outputLocation, log) {
   try {
@@ -49,7 +49,7 @@ async function publishToAdminHlx(filename, outputLocation, log) {
   }
 }
 
-async function uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log) {
+export async function uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log) {
   try {
     const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
     const sharepointDoc = sharepointClient.getDocument(documentPath);
@@ -59,6 +59,17 @@ async function uploadToSharePoint(buffer, filename, outputLocation, sharepointCl
     log.error(`Failed to upload to SharePoint: ${error.message}`);
     throw error;
   }
+}
+
+export async function uploadAndPublishFile(
+  buffer,
+  filename,
+  outputLocation,
+  sharepointClient,
+  log,
+) {
+  await uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log);
+  await publishToAdminHlx(filename, outputLocation, log);
 }
 
 export async function saveExcelReport({
@@ -71,8 +82,7 @@ export async function saveExcelReport({
   try {
     const buffer = await workbook.xlsx.writeBuffer();
     if (sharepointClient) {
-      await uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log);
-      await publishToAdminHlx(filename, outputLocation, log);
+      await uploadAndPublishFile(buffer, filename, outputLocation, sharepointClient, log);
     }
   } catch (error) {
     log.error(`Failed to save Excel report: ${error.message}`);

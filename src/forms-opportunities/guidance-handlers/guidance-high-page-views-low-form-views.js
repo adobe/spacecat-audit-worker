@@ -11,7 +11,7 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
+import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../constants.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
@@ -24,7 +24,8 @@ export default async function handler(message, context) {
   const opportunity = existingOpportunities
     .filter((oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_VIEWS)
     .find((oppty) => oppty.getData()?.form === url && (!formsource
-      || oppty.getData()?.formsource === formsource));
+      || oppty.getData()?.formsource === formsource)
+      && oppty.getData()?.origin !== ORIGINS.ESS_OPS);
 
   if (opportunity) {
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
@@ -34,7 +35,7 @@ export default async function handler(message, context) {
     opportunity.setGuidance(wrappedGuidance);
     opportunity.setUpdatedBy('system');
     await opportunity.save();
-    log.info(`high-page-views-low-form-views guidance updated oppty : ${JSON.stringify(opportunity, null, 2)}`);
+    log.info(`high-page-views-low-form-views guidance updated oppty 2 : ${JSON.stringify(opportunity, null, 2)}`);
   }
 
   return ok();
