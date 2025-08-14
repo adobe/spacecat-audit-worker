@@ -1,3 +1,10 @@
+# [1.143.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.142.0...v1.143.0) (2025-08-14)
+
+
+### Features
+
+* changes to accommodate forms quality agent ([#1078](https://github.com/adobe/spacecat-audit-worker/issues/1078)) ([0068dd3](https://github.com/adobe/spacecat-audit-worker/commit/0068dd3945b514c0dac3d5c8bc207edd9adff707))
+
 # [1.142.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.141.3...v1.142.0) (2025-08-13)
 
 
