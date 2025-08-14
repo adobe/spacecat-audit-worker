@@ -13,11 +13,11 @@
 import { isNonEmptyArray, isString } from '@adobe/spacecat-shared-utils';
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import { syncSuggestions } from '../../utils/data-access.js';
-import { successCriteriaLinks, accessibilityOpportunitiesMap, issueTypesForMystique } from './constants.js';
+import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
 import { getAuditData } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
-import { saveA11yValidationMetricsToS3 } from './scrape-utils.js';
+import { saveSentSuggestionMetricsToS3, saveReceivedSuggestionMetricsToS3, saveValidatedIssuesPercentageToS3 } from './scrape-utils.js';
 
 /**
  * Creates a Mystique message object
@@ -462,6 +462,47 @@ export async function createIndividualOpportunitySuggestions(
       `[A11yIndividual] Message sending completed: ${successfulMessages} successful, ${failedMessages} failed, ${rejectedPromises} rejected`,
     );
 
+    // Track "sent" metrics for each URL that was successfully sent to Mystique
+    const sentMetricsPromises = mystiqueData.map(async ({ url, issuesList }, index) => {
+      const result = results[index];
+      if (result.status === 'fulfilled' && result.value.success) {
+        // Extract suggestion IDs from the issues list
+        const sentSuggestionIds = issuesList.map((issue) => issue.suggestionId);
+        try {
+          await saveSentSuggestionMetricsToS3(
+            {
+              pageUrl: url,
+              sentSuggestionIds,
+              sentCount: sentSuggestionIds.length,
+            },
+            context,
+            refreshedOpportunity.getId(),
+            refreshedOpportunity.getType(),
+          );
+          log.debug(`[A11yIndividual][A11yValidation] Saved sent metrics for opportunity ${refreshedOpportunity.getId()}, page ${url}: sent=${sentSuggestionIds.length} suggestion IDs`);
+
+          // Initialize Validated Issues Percentage at 0.0%
+          await saveValidatedIssuesPercentageToS3(
+            {
+              pageUrl: url,
+              sentCount: sentSuggestionIds.length,
+              receivedCount: 0,
+              validatedPercentage: 0.0,
+            },
+            context,
+            refreshedOpportunity.getId(),
+            refreshedOpportunity.getType(),
+          );
+          log.debug(`[A11yValidation] Initialized validation percentage at 0.0% for opportunity ${refreshedOpportunity.getId()}, page ${url}`);
+        } catch (error) {
+          log.error(`[A11yValidation] Failed to save sent metrics for opportunity ${refreshedOpportunity.getId()}, page ${url}: ${error.message}`);
+        }
+      }
+    });
+
+    // Wait for all metrics to be uploaded to S3
+    await Promise.allSettled(sentMetricsPromises);
+
     return { success: true };
   } catch (e) {
     log.error(`Failed to create suggestions for opportunity ${opportunity.getId()}: ${e.message}`);
@@ -774,27 +815,6 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
         validRemediations.push(remediation);
       }
     }
-
-    // Orphan detection: Find the number of suggestions sent to Mystique but not received back
-    // because of validation filtering
-    const sentToMystiqueSuggestionIds = suggestions
-      .filter((suggestion) => {
-        const suggestionData = suggestion.getData();
-        return suggestionData.issues && isNonEmptyArray(suggestionData.issues)
-          && issueTypesForMystique.includes(suggestionData.issues[0].type);
-      })
-      .map((suggestion) => suggestion.getId());
-    const receivedFromMystiqueSuggestionIds = validRemediations.map((r) => r.suggestionId);
-    const orphanedSuggestionIds = sentToMystiqueSuggestionIds.filter(
-      (sentId) => !receivedFromMystiqueSuggestionIds.includes(sentId),
-    );
-
-    if (orphanedSuggestionIds.length > 0) {
-      orphanedSuggestionIds.forEach((orphanedId) => {
-        log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, opportunity ${opportunityId}: Orphaned suggestion ID ${orphanedId} - sent to Mystique but the remediation fix did not pass the validation and got filtered out`);
-      });
-    }
-
     // Process only valid remediations
     const processingPromises = [];
 
@@ -877,21 +897,70 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
 
     log.info(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Successfully processed ${successfulSaves} remediations`);
 
-    // Save complete Mystique metrics to S3 (sent + received + orphaned)
+    // Save received metrics to S3
     try {
-      await saveA11yValidationMetricsToS3(
+      // Extract suggestion IDs from valid remediations
+      const receivedSuggestionIds = validRemediations
+        .map((remediation) => remediation.suggestionId);
+
+      await saveReceivedSuggestionMetricsToS3(
         {
-          sentToMystiqueCount: sentToMystiqueSuggestionIds.length,
-          receivedFromMystiqueCount: validRemediations.length,
-          orphanedSuggestionsCount: orphanedSuggestionIds.length,
+          pageUrl,
+          receivedSuggestionIds,
+          receivedCount: receivedSuggestionIds.length,
         },
         context,
         opportunityId,
         opportunity.getType(),
       );
-      log.info(`[A11yRemediationGuidance] Saved complete A11yValidation metrics for opportunity ${opportunityId}: sent=${sentToMystiqueSuggestionIds.length}, received=${validRemediations.length}, orphaned=${orphanedSuggestionIds.length}`);
+      log.info(`[A11yRemediationGuidance] Saved received metrics for opportunity ${opportunityId}, page ${pageUrl}: received=${receivedSuggestionIds.length} suggestion IDs`);
+
+      // Update Validated Issues Percentage
+      try {
+        // Get the sent count from sent metrics to calculate percentage
+        const { s3Client, env } = context;
+        const bucketName = env.S3_IMPORTER_BUCKET_NAME;
+        const sentMetricsKey = `metrics/${siteId}/mystique/sent-metrics.json`;
+
+        let sentCount = 0;
+        try {
+          const { getObjectFromKey } = await import('../../utils/s3-utils.js');
+          const sentMetrics = await getObjectFromKey(s3Client, bucketName, sentMetricsKey, log);
+
+          if (sentMetrics && Array.isArray(sentMetrics)) {
+            // idk if i should use auditId here
+            const sentEntry = sentMetrics.find((entry) => entry.opportunityId === opportunityId
+              && entry.pageUrl === pageUrl);
+            sentCount = sentEntry?.sentCount || 0;
+            if (!sentEntry) {
+              log.warn(`[A11yValidation] No "sent" metrics found for opportunity ${opportunityId}, page ${pageUrl}. Available entries: ${sentMetrics.length}`);
+            }
+          }
+        } catch (error) {
+          log.warn(`[A11yValidation] Could not read sent metrics to calculate percentage: ${error.message}`);
+        }
+
+        if (sentCount > 0) {
+          const validatedPercentage = (receivedSuggestionIds.length / sentCount) * 100;
+
+          await saveValidatedIssuesPercentageToS3(
+            {
+              pageUrl,
+              sentCount,
+              receivedCount: receivedSuggestionIds.length,
+              validatedPercentage,
+            },
+            context,
+            opportunityId,
+            opportunity.getType(),
+          );
+          log.info(`[A11yValidation] Updated validation percentage to ${validatedPercentage.toFixed(1)}% for opportunity ${opportunityId}, page ${pageUrl}`);
+        }
+      } catch (error) {
+        log.error(`[A11yValidation] Failed to update validation percentage for opportunity ${opportunityId}, page ${pageUrl}: ${error.message}`);
+      }
     } catch (error) {
-      log.error(`[A11yRemediationGuidance] Failed to save complete A11yValidation metrics for opportunity ${opportunityId}: ${error.message}`);
+      log.error(`[A11yRemediationGuidance] Failed to save received metrics for opportunity ${opportunityId}: ${error.message}`);
     }
 
     return {

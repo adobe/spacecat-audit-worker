@@ -310,15 +310,18 @@ export async function saveA11yMetricsToS3(reportData, context) {
 }
 
 /**
- * Save A11yValidation metrics to S3 in JSON format
- * @param {Object} metricsData - The A11yValidation metrics data
+ * Save sent suggestion IDs metrics to S3 in JSON format
+ * @param {Object} sentData - The sent metrics data
+ * @param {string} sentData.pageUrl - The page URL
+ * @param {string[]} sentData.sentSuggestionIds - Array of sent suggestion IDs
+ * @param {number} sentData.sentCount - Count of sent suggestions
  * @param {Object} context - The context object containing s3Client, log, env, site, audit
  * @param {string} opportunityId - The opportunity ID
  * @param {string} opportunityType - The opportunity type
  * @returns {Object} Result object with success status
  */
-export async function saveA11yValidationMetricsToS3(
-  metricsData,
+export async function saveSentSuggestionMetricsToS3(
+  sentData,
   context,
   opportunityId,
   opportunityType,
@@ -330,45 +333,35 @@ export async function saveA11yValidationMetricsToS3(
   const siteId = site.getId();
   const auditId = audit.getId();
 
-  const newMetricsEntry = {
+  const newSentEntry = {
     siteId,
     auditId,
     opportunityId,
     opportunityType,
-    time: new Date().toISOString(),
-    metrics: {
-      sentToMystique: metricsData.sentToMystiqueCount || 0,
-      receivedFromMystique: metricsData.receivedFromMystiqueCount || 0,
-      orphaned: metricsData.orphanedSuggestionsCount || 0,
-      successRate: (() => {
-        const sent = metricsData.sentToMystiqueCount || 0;
-        const received = metricsData.receivedFromMystiqueCount || 0;
-        return sent > 0 ? ((received / sent) * 100).toFixed(2) : '0.00';
-      })(),
-    },
+    pageUrl: sentData.pageUrl,
+    sentAt: new Date().toISOString(),
+    sentSuggestionIds: sentData.sentSuggestionIds || [],
+    sentCount: sentData.sentCount || 0,
   };
 
-  const {
-    sentToMystique, receivedFromMystique, orphaned, successRate,
-  } = newMetricsEntry.metrics;
-  log.info(`[A11yValidation] Metrics summary for site ${siteId}, opportunity ${opportunityId} (${opportunityType}) - Number of Sent Suggestion IDs: ${sentToMystique}, Number of Received Suggestion IDs: ${receivedFromMystique}, Number of Orphaned Suggestion IDs: ${orphaned}, Success Rate: ${successRate}%`);
+  log.info(`[A11yValidation] Sent metrics for site ${siteId}, opportunity ${opportunityId}, page ${sentData.pageUrl} - Sent ${newSentEntry.sentCount} suggestion IDs`);
 
-  // Read existing A11yValidation-metrics.json file from S3
-  const s3Key = `metrics/${siteId}/a11y-suggestions/validation-metrics.json`;
+  // Read existing sent-metrics.json file from S3
+  const s3Key = `metrics/${siteId}/mystique/sent-metrics.json`;
   let existingMetrics = [];
 
   try {
     const existingData = await getObjectFromKey(s3Client, bucketName, s3Key, log);
     if (existingData && Array.isArray(existingData)) {
       existingMetrics = existingData;
-      log.info(`[A11yValidation] Found existing A11yValidation metrics file with ${existingMetrics.length} entries for site ${siteId}`);
+      log.info(`[A11yValidation] Found existing sent metrics file with ${existingMetrics.length} entries for site ${siteId}`);
     }
   } catch (error) {
-    log.info(`[A11yValidation] No existing A11yValidation metrics file found for site ${siteId}, creating new one: ${error.message}`);
+    log.info(`[A11yValidation] No existing sent metrics file found for site ${siteId}, creating new one: ${error.message}`);
   }
 
   // Append new metrics to existing array
-  existingMetrics.push(newMetricsEntry);
+  existingMetrics.push(newSentEntry);
 
   try {
     await s3Client.send(new PutObjectCommand({
@@ -378,19 +371,192 @@ export async function saveA11yValidationMetricsToS3(
       ContentType: 'application/json',
     }));
 
-    log.info(`[A11yValidation] Successfully saved A11yValidation metrics to S3: ${s3Key} for site ${siteId}, opportunity ${opportunityId}`);
+    log.info(`[A11yValidation] Successfully saved sent metrics to S3: ${s3Key} for site ${siteId}, opportunity ${opportunityId}`);
 
     return {
       success: true,
-      message: 'A11yValidation metrics saved to S3',
-      metricsData: newMetricsEntry,
+      message: 'Sent suggestion metrics saved to S3',
+      metricsData: newSentEntry,
       s3Key,
     };
   } catch (error) {
-    log.error(`[A11yValidation] Error saving A11yValidation metrics to S3 for site ${siteId}, opportunity ${opportunityId}: ${error.message}`);
+    log.error(`[A11yValidation] Error saving sent metrics to S3 for site ${siteId}, opportunity ${opportunityId}: ${error.message}`);
     return {
       success: false,
-      message: `Failed to save A11yValidation metrics to S3: ${error.message}`,
+      message: `Failed to save sent metrics to S3: ${error.message}`,
+      error: error.message,
+    };
+  }
+}
+
+/**
+ * Save received suggestion IDs metrics to S3 in JSON format
+ * @param {Object} receivedData - The received metrics data
+ * @param {string} receivedData.pageUrl - The page URL
+ * @param {string[]} receivedData.receivedSuggestionIds - Array of received suggestion IDs
+ * @param {number} receivedData.receivedCount - Count of received suggestions
+ * @param {Object} context - The context object containing s3Client, log, env, site, audit
+ * @param {string} opportunityId - The opportunity ID
+ * @param {string} opportunityType - The opportunity type
+ * @returns {Object} Result object with success status
+ */
+export async function saveReceivedSuggestionMetricsToS3(
+  receivedData,
+  context,
+  opportunityId,
+  opportunityType,
+) {
+  const {
+    log, env, s3Client, site, audit,
+  } = context;
+  const bucketName = env.S3_IMPORTER_BUCKET_NAME;
+  const siteId = site.getId();
+  const auditId = audit.getId();
+
+  const newReceivedEntry = {
+    siteId,
+    auditId,
+    opportunityId,
+    opportunityType,
+    pageUrl: receivedData.pageUrl,
+    receivedAt: new Date().toISOString(),
+    receivedSuggestionIds: receivedData.receivedSuggestionIds || [],
+    receivedCount: receivedData.receivedCount || 0,
+  };
+
+  log.info(`[A11yValidation] Received metrics for site ${siteId}, opportunity ${opportunityId}, page ${receivedData.pageUrl} - Received ${newReceivedEntry.receivedCount} suggestion IDs`);
+
+  // Read existing received-metrics.json file from S3
+  const s3Key = `metrics/${siteId}/mystique/received-metrics.json`;
+  let existingMetrics = [];
+
+  try {
+    const existingData = await getObjectFromKey(s3Client, bucketName, s3Key, log);
+    if (existingData && Array.isArray(existingData)) {
+      existingMetrics = existingData;
+      log.info(`[A11yValidation] Found existing received metrics file with ${existingMetrics.length} entries for site ${siteId}`);
+    }
+  } catch (error) {
+    log.info(`[A11yValidation] No existing received metrics file found for site ${siteId}, creating new one: ${error.message}`);
+  }
+
+  // Append new metrics to existing array
+  existingMetrics.push(newReceivedEntry);
+
+  try {
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: s3Key,
+      Body: JSON.stringify(existingMetrics, null, 2),
+      ContentType: 'application/json',
+    }));
+
+    log.info(`[A11yValidation] Successfully saved received metrics to S3: ${s3Key} for site ${siteId}, opportunity ${opportunityId}`);
+
+    return {
+      success: true,
+      message: 'Received suggestion metrics saved to S3',
+      metricsData: newReceivedEntry,
+      s3Key,
+    };
+  } catch (error) {
+    log.error(`[A11yValidation] Error saving received metrics to S3 for site ${siteId}, opportunity ${opportunityId}: ${error.message}`);
+    return {
+      success: false,
+      message: `Failed to save received metrics to S3: ${error.message}`,
+      error: error.message,
+    };
+  }
+}
+
+/**
+ * Save Validated Issues Percentage metrics to S3 in JSON format
+ * @param {Object} validationData - The validation percentage data
+ * @param {string} validationData.pageUrl - The page URL
+ * @param {number} validationData.sentCount - Total number of sent suggestion IDs
+ * @param {number} validationData.receivedCount - Current number of received suggestion IDs
+ * @param {number} validationData.validatedPercentage - (receivedCount / sentCount * 100)
+ * @param {Object} context - The context object containing s3Client, log, env, site, audit
+ * @param {string} opportunityId - The opportunity ID
+ * @param {string} opportunityType - The opportunity type
+ * @returns {Object} Result object with success status
+ */
+export async function saveValidatedIssuesPercentageToS3(
+  validationData,
+  context,
+  opportunityId,
+  opportunityType,
+) {
+  const {
+    log, env, s3Client, site, audit,
+  } = context;
+  const bucketName = env.S3_IMPORTER_BUCKET_NAME;
+  const siteId = site.getId();
+  const auditId = audit.getId();
+
+  const newValidationEntry = {
+    siteId,
+    auditId,
+    opportunityId,
+    opportunityType,
+    pageUrl: validationData.pageUrl,
+    updatedAt: new Date().toISOString(),
+    sentCount: validationData.sentCount,
+    receivedCount: validationData.receivedCount,
+    validatedPercentage: validationData.validatedPercentage,
+  };
+
+  log.info(`[A11yValidation] Validated Issues Percentage for site ${siteId}, opportunity ${opportunityId}, page ${validationData.pageUrl} - ${validationData.validatedPercentage.toFixed(1)}% (${validationData.receivedCount}/${validationData.sentCount})`);
+
+  // Read existing validation-percentage.json file from S3
+  const s3Key = `metrics/${siteId}/mystique/validation-percentage.json`;
+  let existingMetrics = [];
+
+  try {
+    const existingData = await getObjectFromKey(s3Client, bucketName, s3Key, log);
+    if (existingData && Array.isArray(existingData)) {
+      existingMetrics = existingData;
+      log.info(`[A11yValidation] Found existing validation percentage file with ${existingMetrics.length} entries for site ${siteId}`);
+    }
+  } catch (error) {
+    log.info(`[A11yValidation] No existing validation percentage file found for site ${siteId}, creating new one: ${error.message}`);
+  }
+
+  // idk if i should use auditId here
+  const existingIndex = existingMetrics.findIndex((entry) => entry.opportunityId === opportunityId
+    && entry.pageUrl === validationData.pageUrl);
+
+  if (existingIndex >= 0) {
+    // Update existing entry
+    existingMetrics[existingIndex] = newValidationEntry;
+    log.info(`[A11yValidation] Updated existing validation percentage entry for page ${validationData.pageUrl}`);
+  } else {
+    // Add new entry
+    existingMetrics.push(newValidationEntry);
+    log.info(`[A11yValidation] Added new validation percentage entry for page ${validationData.pageUrl}`);
+  }
+
+  try {
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: s3Key,
+      Body: JSON.stringify(existingMetrics, null, 2),
+      ContentType: 'application/json',
+    }));
+
+    log.info(`[A11yValidation] Successfully saved validation percentage to S3: ${s3Key} for site ${siteId}, opportunity ${opportunityId}`);
+
+    return {
+      success: true,
+      message: 'Validated Issues Percentage saved to S3',
+      metricsData: newValidationEntry,
+      s3Key,
+    };
+  } catch (error) {
+    log.error(`[A11yValidation] Error saving validation percentage to S3 for site ${siteId}, opportunity ${opportunityId}: ${error.message}`);
+    return {
+      success: false,
+      message: `Failed to save validation percentage to S3: ${error.message}`,
       error: error.message,
     };
   }
