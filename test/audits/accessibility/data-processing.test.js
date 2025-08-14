@@ -32,6 +32,7 @@ import {
   createReportOpportunitySuggestion,
   getEnvAsoDomain,
   aggregateAccessibilityData,
+  getAuditPrefixes,
 } from '../../../src/accessibility/utils/data-processing.js';
 
 use(sinonChai);
@@ -1299,6 +1300,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         '2024-01-01',
       );
 
@@ -1315,6 +1317,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         '2024-01-01',
       );
 
@@ -1330,6 +1333,23 @@ describe('data-processing utility functions', () => {
         null,
         mockLog,
         'output-key',
+        'accessibility',
+        '2024-01-01',
+      );
+
+      expect(result.success).to.be.false;
+      expect(result.aggregatedData).to.be.null;
+      expect(result.message).to.equal('Missing required parameters for aggregateAccessibilityData');
+    });
+
+    it('should return error when auditType is missing', async () => {
+      const result = await aggregateAccessibilityData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        null,
         '2024-01-01',
       );
 
@@ -1353,6 +1373,7 @@ describe('data-processing utility functions', () => {
           'test-site',
           mockLog,
           'output-key',
+          'accessibility',
           '2024-01-01',
           2,
         );
@@ -1377,6 +1398,7 @@ describe('data-processing utility functions', () => {
           'test-site',
           mockLog,
           'output-key',
+          'accessibility',
           '2024-01-01',
           2,
         );
@@ -1398,6 +1420,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         '2024-01-01',
         2,
       );
@@ -1434,14 +1457,15 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate, // version
         2,
       );
 
       expect(result.success).to.be.false;
       expect(result.aggregatedData).to.be.null;
-      expect(result.message).to.equal('No files could be processed successfully for site test-site');
-      expect(mockLog.error.calledWith('No files could be processed successfully for site test-site')).to.be.true;
+      expect(result.message).to.equal('[A11yAudit] No files could be processed successfully for site test-site');
+      expect(mockLog.error.calledWith('[A11yAudit] No files could be processed successfully for site test-site')).to.be.true;
     });
 
     it('should successfully aggregate data with single file', async () => {
@@ -1492,6 +1516,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate,
         2,
       );
@@ -1502,7 +1527,7 @@ describe('data-processing utility functions', () => {
       expect(result.finalResultFiles.current['https://example.com/page1'].violations.total).to.equal(5);
       expect(result.finalResultFiles.current['https://example.com/page1'].traffic).to.equal(100);
       expect(result.message).to.equal('Successfully aggregated 1 files into output-key');
-      expect(mockLog.info.calledWith('Saved aggregated accessibility data to output-key')).to.be.true;
+      expect(mockLog.info.calledWith('[A11yAudit] Saved aggregated accessibility data to output-key')).to.be.true;
     });
 
     it('should handle multiple files and aggregate violations correctly', async () => {
@@ -1573,6 +1598,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate,
         2,
       );
@@ -1630,6 +1656,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate,
         2,
       );
@@ -1676,6 +1703,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate,
         2,
       );
@@ -1684,7 +1712,7 @@ describe('data-processing utility functions', () => {
       expect(result.aggregatedData).to.be.null;
       expect(result.message).to.equal('Error: S3 save failed');
       // The main catch block in aggregateAccessibilityData logs a generic error
-      expect(mockLog.error.calledWith('Error aggregating accessibility data for site test-site')).to.be.true;
+      expect(mockLog.error.calledWith('[A11yAudit] Error aggregating accessibility data for site test-site')).to.be.true;
     });
 
     it('should handle lastWeekFile logging correctly', async () => {
@@ -1731,6 +1759,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate,
         2,
       );
@@ -1785,6 +1814,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate,
         2,
       );
@@ -1817,6 +1847,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility', // auditType
         '2024-01-01', // version
         2, // maxRetries
       );
@@ -4753,6 +4784,53 @@ describe('data-processing utility functions', () => {
         expect(creationOrder[2]).to.equal('Fixed vs New Report');
         expect(creationOrder[3]).to.equal('Base Report'); // Base report should be last
       });
+    });
+  });
+
+  describe('getAuditPrefixes', () => {
+    it('should return correct prefixes for accessibility audit type', () => {
+      const result = getAuditPrefixes('accessibility');
+
+      expect(result).to.deep.equal({
+        logIdentifier: 'A11yAudit',
+        storagePrefix: 'accessibility',
+      });
+    });
+
+    it('should return correct prefixes for forms-opportunities audit type', () => {
+      const result = getAuditPrefixes('forms-opportunities');
+
+      expect(result).to.deep.equal({
+        logIdentifier: 'Form Opportunity',
+        storagePrefix: 'forms-accessibility',
+      });
+    });
+
+    it('should throw error for unsupported audit type', () => {
+      expect(() => {
+        getAuditPrefixes('unsupported-audit-type');
+      }).to.throw('Unsupported audit type: unsupported-audit-type');
+    });
+
+    it('should throw error for null audit type', () => {
+      expect(() => {
+        getAuditPrefixes(null);
+      }).to.throw('Unsupported audit type: null');
+    });
+
+    it('should throw error for undefined audit type', () => {
+      expect(() => {
+        getAuditPrefixes(undefined);
+      }).to.throw('Unsupported audit type: undefined');
+    });
+
+    it('should return different prefixes for different audit types', () => {
+      const accessibilityResult = getAuditPrefixes('accessibility');
+      const formsResult = getAuditPrefixes('forms-opportunities');
+
+      expect(accessibilityResult).to.not.deep.equal(formsResult);
+      expect(accessibilityResult.logIdentifier).to.not.equal(formsResult.logIdentifier);
+      expect(accessibilityResult.storagePrefix).to.not.equal(formsResult.storagePrefix);
     });
   });
 });

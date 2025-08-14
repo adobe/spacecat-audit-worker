@@ -305,7 +305,7 @@ export async function processFilesWithRetry(s3Client, bucketName, objectKeys, lo
  * @param {string} auditType - the audit type
  * @returns {object} the storage prefix and logIdentifier
  */
-function getAuditPrefixes(auditType) {
+export function getAuditPrefixes(auditType) {
   const prefixes = AUDIT_PREFIXES[auditType];
   if (!prefixes) {
     throw new Error(`Unsupported audit type: ${auditType}`);
@@ -335,7 +335,7 @@ export async function aggregateAccessibilityData(
   version,
   maxRetries = 2,
 ) {
-  if (!s3Client || !bucketName || !siteId) {
+  if (!s3Client || !bucketName || !siteId || !auditType) {
     const message = 'Missing required parameters for aggregateAccessibilityData';
     log.error(message);
     return { success: false, aggregatedData: null, message };
@@ -373,11 +373,7 @@ export async function aggregateAccessibilityData(
 
     // Check if the call succeeded
     if (!objectKeysResult.success) {
-      return {
-        success: false,
-        aggregatedData: null,
-        message: `Failed to retrieve keys from ${storagePrefix} folder. ${objectKeysResult.message}`,
-      };
+      return { success: false, aggregatedData: null, message: objectKeysResult.message };
     }
 
     // Combine object keys from both sources
