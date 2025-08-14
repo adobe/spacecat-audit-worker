@@ -89,7 +89,7 @@ describe('createLowConversionOpportunities handler method', () => {
     // asserting spacecat to mystique message
     const [queueArg, messageArg] = context.sqs.sendMessage.getCall(4).args;
     expect(queueArg).to.equal('spacecat-to-mystique');
-    expect(messageArg.data).to.deep.equal(testData.mystiqueMessage.data);
+    expect(messageArg.data).to.deep.equal(testData.mystiqueMessageForFormDetails);
   });
 
   it('should create new forms opportunity with scraped data available', async () => {

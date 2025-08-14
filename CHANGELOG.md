@@ -1,3 +1,24 @@
+# [1.143.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.142.0...v1.143.0) (2025-08-14)
+
+
+### Features
+
+* changes to accommodate forms quality agent ([#1078](https://github.com/adobe/spacecat-audit-worker/issues/1078)) ([0068dd3](https://github.com/adobe/spacecat-audit-worker/commit/0068dd3945b514c0dac3d5c8bc207edd9adff707))
+
+# [1.142.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.141.3...v1.142.0) (2025-08-13)
+
+
+### Features
+
+* Use parquet import for geo brand presence ([#1110](https://github.com/adobe/spacecat-audit-worker/issues/1110)) ([b5ffe6f](https://github.com/adobe/spacecat-audit-worker/commit/b5ffe6fc3397856add0230c62002ebbabbd471e9))
+
+## [1.141.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.141.2...v1.141.3) (2025-08-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/structured-data-validator to v1.4.1 ([#1115](https://github.com/adobe/spacecat-audit-worker/issues/1115)) ([e55d2ec](https://github.com/adobe/spacecat-audit-worker/commit/e55d2ec88b153ef712baf72bdf5e1d2d24fffd5b))
+
 ## [1.141.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.141.1...v1.141.2) (2025-08-13)
 
 
