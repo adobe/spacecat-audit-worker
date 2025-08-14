@@ -54,31 +54,7 @@
       {
         "name": "metatags",
         "type": "seo",
-        "opportunities": [
-          {
-            "seoImpact": "High",
-            "issue": "Missing H1",
-            "issueDetails": "H1 tag is missing",
-            "seoRecommendation": "Should be present",
-            "tagName": "h1"
-          },
-          {
-            "seoImpact": "Moderate",
-            "issue": "Title too short",
-            "issueDetails": "28 chars below limit",
-            "seoRecommendation": "40-60 characters long",
-            "tagContent": "Page 1 Title",
-            "tagName": "title"
-          },
-          {
-            "seoImpact": "Moderate",
-            "issue": "Description too short",
-            "issueDetails": "122 chars below limit",
-            "seoRecommendation": "140-160 characters long",
-            "tagContent": "Page 1 Description",
-            "tagName": "description"
-          }
-        ]
+        "opportunities": []
       },
       {
         "name": "links",
@@ -86,21 +62,25 @@
         "opportunities": [
           {
             "check": "broken-internal-links",
-            "issue": {
+            "issue": [
+              {
               "url": "https://main--example--page.aem.page/broken",
               "issue": "Status 404",
               "seoImpact": "High",
               "seoRecommendation": "Fix or remove broken links to improve user experience and SEO"
-            }
+              }
+            ]
           },
           {
             "check": "broken-external-links",
-            "issue": {
-              "url": "http://test.com/",
-              "issue": "Status 404",
-              "seoImpact": "High",
-              "seoRecommendation": "Fix or remove broken links to improve user experience"
-            }
+            "issue": [
+              {
+                "url": "http://test.com/",
+                "issue": "Status 404",
+                "seoImpact": "High",
+                "seoRecommendation": "Fix or remove broken links to improve user experience"
+              }
+            ]
           },
           {
             "check": "bad-links",
@@ -114,6 +94,11 @@
             ]
           }
         ]
+      },
+      {
+        "name": "readability",
+        "type": "seo",
+        "opportunities": []
       }
     ]
   }

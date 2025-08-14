@@ -15,7 +15,10 @@ import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/space
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import suggestionsEngine from './suggestionsEngine.js';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
-import { CPC, PENALTY_PER_IMAGE, RUM_INTERVAL } from './constants.js';
+import {
+  CPC, PENALTY_PER_IMAGE, RUM_INTERVAL, ALT_TEXT_GUIDANCE_TYPE, ALT_TEXT_OBSERVATION,
+  MYSTIQUE_BATCH_SIZE,
+} from './constants.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { checkGoogleConnection } from '../common/opportunity-utils.js';
 
@@ -69,7 +72,7 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
   }
 }
 
-const getProjectedMetrics = async ({
+export const getProjectedMetrics = async ({
   images, auditUrl, context, log,
 }) => {
   let finalUrl;
@@ -77,6 +80,7 @@ const getProjectedMetrics = async ({
 
   try {
     finalUrl = await getRUMUrl(auditUrl);
+    log.info(`[${AUDIT_TYPE}]: RUM URL: ${finalUrl}`);
     const rumAPIClient = RUMAPIClient.createFrom(context);
     const options = {
       domain: finalUrl,
@@ -258,4 +262,142 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   });
 
   log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${siteId} and alt-text audit type.`);
+}
+
+export const chunkArray = (array, chunkSize) => {
+  const chunks = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
+};
+
+/**
+ * Sends alt-text opportunity message to Mystique for AI-powered suggestions
+ * @param {string} auditUrl - The base URL being audited
+ * @param {Array} pageUrls - Array of page URLs to analyze for missing alt-text
+ * @param {string} siteId - Site identifier
+ * @param {string} auditId - Audit identifier
+ * @param {Object} context - The context object containing sqs, env, etc.
+ * @returns {Promise<void>}
+ */
+export async function sendAltTextOpportunityToMystique(
+  auditUrl,
+  pageUrls,
+  siteId,
+  auditId,
+  context,
+) {
+  const {
+    sqs, env, log, dataAccess,
+  } = context;
+
+  try {
+    const site = await dataAccess.Site.findById(siteId);
+
+    // Batch the URLs to avoid sending too many at once
+    const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
+
+    log.info(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es)`);
+
+    // Send each batch as a separate message
+    for (let i = 0; i < urlBatches.length; i += 1) {
+      const batch = urlBatches[i];
+
+      const mystiqueMessage = {
+        type: ALT_TEXT_GUIDANCE_TYPE,
+        siteId,
+        auditId,
+        deliveryType: site.getDeliveryType(),
+        time: new Date().toISOString(),
+        url: auditUrl,
+        observation: ALT_TEXT_OBSERVATION,
+        data: {
+          pageUrls: batch,
+        },
+      };
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+      log.info(`[${AUDIT_TYPE}]: Batch ${i + 1}/${urlBatches.length} sent to Mystique with ${batch.length} URLs`);
+      log.info(`[${AUDIT_TYPE}]: Message sent to Mystique: ${JSON.stringify(mystiqueMessage)}`);
+    }
+
+    log.info(`[${AUDIT_TYPE}]: All ${urlBatches.length} batches sent to Mystique successfully`);
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}]: Failed to send alt-text opportunity to Mystique: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Clears all existing alt-text suggestions except those that are ignored/skipped
+ * This should be called once at the beginning of the alt-text audit process
+ *
+ * @param {Object} params - The parameters for the cleanup operation.
+ * @param {Object} params.opportunity - The opportunity object to clear suggestions for.
+ * @param {Object} params.log - Logger object for error reporting.
+ * @returns {Promise<void>} - Resolves when the cleanup is complete.
+ */
+export async function clearAltTextSuggestions({ opportunity, log }) {
+  if (!opportunity) {
+    log.debug(`[${AUDIT_TYPE}]: No opportunity found, skipping suggestion cleanup`);
+    return;
+  }
+
+  const existingSuggestions = await opportunity.getSuggestions();
+
+  if (!existingSuggestions || existingSuggestions.length === 0) {
+    log.debug(`[${AUDIT_TYPE}]: No existing suggestions to clear`);
+    return;
+  }
+
+  const IGNORED_STATUSES = [SuggestionModel.STATUSES.SKIPPED, SuggestionModel.STATUSES.FIXED];
+  const ignoredSuggestions = existingSuggestions.filter(
+    (s) => IGNORED_STATUSES.includes(s.getStatus()),
+  );
+  const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
+
+  // Remove existing suggestions that were not ignored
+  const suggestionsToRemove = existingSuggestions.filter(
+    (suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id),
+  );
+
+  if (suggestionsToRemove.length > 0) {
+    await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.remove()));
+    log.info(`[${AUDIT_TYPE}]: Cleared ${suggestionsToRemove.length} existing suggestions (preserved ${ignoredSuggestions.length} ignored suggestions)`);
+  } else {
+    log.debug(`[${AUDIT_TYPE}]: No suggestions to clear (all ${existingSuggestions.length} suggestions are ignored)`);
+  }
+}
+
+/**
+ * Adds new alt-text suggestions incrementally without removing existing ones
+ * This should be called when receiving batches from Mystique
+ *
+ * @param {Object} params - The parameters for the sync operation.
+ * @param {Object} params.opportunity - The opportunity object to add suggestions to.
+ * @param {Array} params.newSuggestionDTOs - Array of new suggestion DTOs to add.
+ * @param {Object} params.log - Logger object for error reporting.
+ * @returns {Promise<void>} - Resolves when the addition is complete.
+ */
+export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
+  if (!isNonEmptyArray(newSuggestionDTOs)) {
+    log.debug(`[${AUDIT_TYPE}]: No new suggestions to add`);
+    return;
+  }
+
+  const updateResult = await opportunity.addSuggestions(newSuggestionDTOs);
+
+  if (isNonEmptyArray(updateResult.errorItems)) {
+    log.error(`[${AUDIT_TYPE}]: Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
+    updateResult.errorItems.forEach((errorItem) => {
+      log.error(`[${AUDIT_TYPE}]: Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+    });
+
+    if (!isNonEmptyArray(updateResult.createdItems)) {
+      throw new Error(`[${AUDIT_TYPE}]: Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
+    }
+  }
+
+  log.info(`[${AUDIT_TYPE}]: Added ${newSuggestionDTOs.length} new suggestions`);
 }

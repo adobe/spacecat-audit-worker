@@ -77,7 +77,7 @@ describe('CDN Logs Report Audit', () => {
         loadSql: mockLoadSql,
         ensureTableExists: mockEnsureTableExists,
       },
-      '../../../src/utils/athena-client.js': {
+      '@adobe/spacecat-shared-athena-client': {
         AWSAthenaClient: {
           fromContext: () => ({
             execute: mockAthenaExecute,
@@ -111,34 +111,5 @@ describe('CDN Logs Report Audit', () => {
     expect(result.auditResult.database).to.equal('test_db');
     expect(result.auditResult.customer).to.equal('test_customer');
     expect(result.fullAuditRef).to.include('test_customer');
-  });
-
-  it('runs custom date range CDN logs report', async () => {
-    context.message = {
-      type: 'runCustomDateRange',
-      startDate: '2025-06-01',
-      endDate: '2025-06-07',
-    };
-
-    const result = await runCdnLogsReport('https://example.com', context, site);
-
-    expect(context.log.info).to.have.been.calledWith('Running custom report: 2025-06-01 to 2025-06-07');
-    expect(result.auditResult.reportType).to.equal('custom');
-    expect(result.auditResult.dateRange).to.deep.equal({
-      startDate: '2025-06-01',
-      endDate: '2025-06-07',
-    });
-  });
-
-  it('throws error when custom report is missing dates', async () => {
-    context.message = {
-      type: 'runCustomDateRange',
-    };
-
-    try {
-      await runCdnLogsReport('https://example.com', context, site);
-    } catch (err) {
-      expect(err.message).to.include('Custom date range requires startDate and endDate in message');
-    }
   });
 });

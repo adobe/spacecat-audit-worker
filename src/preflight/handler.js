@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isValidUrl, retrievePageAuthentication } from '@adobe/spacecat-shared-utils';
+import { isValidUrl, retrievePageAuthentication, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
 import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -22,6 +22,7 @@ import {
 import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
+import readability from './readability.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const PREFLIGHT_STEP_IDENTIFY = 'identify';
@@ -42,6 +43,7 @@ export const PREFLIGHT_HANDLERS = {
   canonical,
   metatags,
   links,
+  readability,
 };
 
 export async function scrapePages(context) {
@@ -56,12 +58,9 @@ export async function scrapePages(context) {
   }
 
   return {
-    urls: urls.map((url) => {
-      const urlObj = new URL(url);
-      return {
-        url: `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`,
-      };
-    }),
+    urls: urls.map((url) => ({
+      url: `${stripTrailingSlash(url)}`,
+    })),
     siteId: site.getId(),
     type: 'preflight',
     allowCache: false,
@@ -98,12 +97,12 @@ export const preflightAudit = async (context) => {
     enableAuthentication = true,
   } = jobMetadata.payload;
   const step = rawStep.toLowerCase();
+  context.step = step;
   const previewUrls = urls.map((url) => {
     if (!isValidUrl(url)) {
       throw new Error(`[preflight-audit] site: ${site.getId()}. Invalid URL provided: ${url}`);
     }
-    const urlObj = new URL(url);
-    return `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`;
+    return stripTrailingSlash(url);
   });
 
   log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit started.`);
@@ -168,8 +167,7 @@ export const preflightAudit = async (context) => {
 
       scrapedObjects.forEach(({ data }) => {
         const { finalUrl, scrapeResult: { rawBody } } = data;
-        const normalizedFinalUrl = new URL(finalUrl).origin + new URL(finalUrl).pathname.replace(/\/$/, '');
-        const pageResult = audits.get(normalizedFinalUrl);
+        const pageResult = audits.get(stripTrailingSlash(finalUrl));
         const doc = new JSDOM(rawBody).window.document;
 
         const auditsByName = Object.fromEntries(
