@@ -1,3 +1,10 @@
+# [1.144.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.143.0...v1.144.0) (2025-08-14)
+
+
+### Features
+
+* add preflight accessibility check ([#1054](https://github.com/adobe/spacecat-audit-worker/issues/1054)) ([a5f64d7](https://github.com/adobe/spacecat-audit-worker/commit/a5f64d7c1c10ec5074bfb13e87d60c9f098497c1))
+
 # [1.143.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.142.0...v1.143.0) (2025-08-14)
 
 
