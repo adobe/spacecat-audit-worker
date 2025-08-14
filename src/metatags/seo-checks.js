@@ -49,7 +49,7 @@ class SeoChecks {
    * @param {object} pageTags - An object containing the tags of the page.
    */
   checkForMissingTags(urlPath, pageTags) {
-    [TITLE, DESCRIPTION, H1].forEach((tagName) => {
+    [TITLE, DESCRIPTION].forEach((tagName) => {
       if (pageTags[tagName] === undefined
         || (Array.isArray(pageTags[tagName]) && pageTags[tagName].length === 0)) {
         const capitalisedTagName = SeoChecks.capitalizeFirstLetter(tagName);
@@ -62,6 +62,22 @@ class SeoChecks {
         };
       }
     });
+
+    // Only check for missing H1 if there is not more than one H1
+    if (pageTags[H1]?.length <= 1) {
+      const hasNoH1 = pageTags[H1] === undefined
+        || (Array.isArray(pageTags[H1]) && pageTags[H1].length === 0);
+      if (hasNoH1) {
+        const capitalisedTagName = SeoChecks.capitalizeFirstLetter(H1);
+        this.detectedTags[urlPath] ??= {};
+        this.detectedTags[urlPath][H1] = {
+          [SEO_IMPACT]: HIGH,
+          [ISSUE]: `Missing ${capitalisedTagName}`,
+          [ISSUE_DETAILS]: `${capitalisedTagName} tag is missing`,
+          [SEO_RECOMMENDATION]: SHOULD_BE_PRESENT,
+        };
+      }
+    }
   }
 
   /**
@@ -119,7 +135,10 @@ class SeoChecks {
     };
     checkTag(TITLE, pageTags[TITLE]);
     checkTag(DESCRIPTION, pageTags[DESCRIPTION]);
-    checkTag(H1, (pageTags[H1] && pageTags[H1][0]) ? pageTags[H1][0] : null);
+    // Only check H1 length if there is exactly one H1
+    if (pageTags[H1]?.length === 1) {
+      checkTag(H1, pageTags[H1][0]);
+    }
   }
 
   /**
@@ -146,7 +165,7 @@ class SeoChecks {
    * Checks for tag uniqueness and adds to detected tags array if found lacking.
    */
   checkForUniqueness() {
-    [TITLE, DESCRIPTION, H1].forEach((tagName) => {
+    [TITLE, DESCRIPTION].forEach((tagName) => {
       Object.values(this.allTags[tagName]).forEach((value) => {
         if (value?.pageUrls?.size > 1) {
           const capitalisedTagName = SeoChecks.capitalizeFirstLetter(tagName);
@@ -195,6 +214,7 @@ class SeoChecks {
     }
     this.checkForMissingTags(urlPath, pageTags);
     this.checkForTagsLength(urlPath, pageTags);
+    this.checkForH1Count(urlPath, pageTags);
     // store tag data in all tags object to be used in later checks like uniqueness
     this.addToAllTags(urlPath, TITLE, pageTags[TITLE]);
     this.addToAllTags(urlPath, DESCRIPTION, pageTags[DESCRIPTION]);
