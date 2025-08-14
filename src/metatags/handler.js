@@ -338,7 +338,7 @@ export async function submitForScraping(context) {
   }
 
   return {
-    urls: finalUrls.map((url) => ({ url })),
+    urls: finalUrls,
     siteId: site.getId(),
     type: 'meta-tags',
   };
