@@ -11,6 +11,7 @@
  */
 
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { hasText, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { BaseAudit } from './base-audit.js';
@@ -21,6 +22,7 @@ import {
 } from './audit-utils.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
+const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 
 export class StepAudit extends BaseAudit {
   constructor(
@@ -72,9 +74,18 @@ export class StepAudit extends BaseAudit {
       fullAuditRef: audit.getFullAuditRef(),
     };
 
-    const queueUrl = destination.getQueueUrl(context);
-    const payload = destination.formatPayload(stepResult, auditContext, context);
-    await sendContinuationMessage({ queueUrl, payload }, context);
+    if (step.destination === AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT) {
+      const scrapeClient = ScrapeClient.createFrom(context);
+      const payload = destination.formatPayload(stepResult, auditContext, context);
+      log.info(`Creating new scrapeJob with the ScrapeClient. Payload: ${JSON.stringify(payload)}`);
+      const scrapeJob = await scrapeClient.createScrapeJob(payload);
+      log.info(`Crated scrapeJob: ${scrapeJob}`);
+      return stepResult;
+    } else {
+      const queueUrl = destination.getQueueUrl(context);
+      const payload = destination.formatPayload(stepResult, auditContext, context);
+      await sendContinuationMessage({ queueUrl, payload }, context);
+    }
 
     log.info(`Step ${step.name} completed for audit ${audit.getId()} of type ${audit.getAuditType()}, message sent to ${step.destination}`);
 
@@ -96,6 +107,7 @@ export class StepAudit extends BaseAudit {
 
       // Determine which step to run
       const hasNext = hasText(auditContext.next);
+      const hasScrapeJobId = hasText(auditContext.scrapeJobId);
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
@@ -106,6 +118,10 @@ export class StepAudit extends BaseAudit {
       // For subsequent steps, load existing audit
       if (hasNext) {
         stepContext.audit = await loadExistingAudit(auditContext.auditId, context);
+      }
+      if (hasScrapeJobId) {
+        const scrapeClient = ScrapeClient.createFrom(context);
+        stepContext.scrapeResultPaths = scrapeClient.getScrapeResultPaths(auditContext.scrapeJobId);
       }
 
       // Run the step

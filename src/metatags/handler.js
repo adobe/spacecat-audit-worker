@@ -19,7 +19,6 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getIssueRanking, removeTrailingSlash } from './opportunity-utils.js';
 import {
   DESCRIPTION,
@@ -240,17 +239,17 @@ export async function metatagsAutoDetect(site, pagesSet, context) {
  * @param {string} siteId - The site ID
  * @returns {string} The path to the scrape.json file
  */
-function getScrapeJsonPath(url, siteId) {
+/* function getScrapeJsonPath(url, siteId) {
   const pathname = new URL(url).pathname.replace(/\/$/, '');
   return `scrapes/${siteId}${pathname}/scrape.json`;
-}
+} */
 
 export async function runAuditAndGenerateSuggestions(context) {
   const {
-    site, audit, finalUrl, log, dataAccess,
+    site, audit, finalUrl, log, scrapeResultPaths,
   } = context;
   // Get top pages for a site
-  const siteId = site.getId();
+  /* const siteId = site.getId();
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
   const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
 
@@ -259,13 +258,14 @@ export async function runAuditAndGenerateSuggestions(context) {
   const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, siteId));
   const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
 
-  log.info(`Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`);
-
+  log.info(`Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length},
+  totalPages to process after removing duplicates: ${totalPagesSet.size}`);
+ */
   const {
     seoChecks,
     detectedTags,
     extractedTags,
-  } = await metatagsAutoDetect(site, totalPagesSet, context);
+  } = await metatagsAutoDetect(site, scrapeResultPaths, context);
 
   // Calculate projected traffic lost
   const {
