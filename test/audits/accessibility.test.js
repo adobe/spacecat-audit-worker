@@ -29,8 +29,6 @@ describe('Accessibility Audit Handler', () => {
   let scrapeAccessibilityData;
   let processAccessibilityOpportunities;
   let processImportStep;
-  let filterOutFormEntries;
-  let getUniqueUrlCount;
   let getUrlsForAuditStub;
   let aggregateAccessibilityDataStub;
   let generateReportOpportunitiesStub;
@@ -100,278 +98,10 @@ describe('Accessibility Audit Handler', () => {
     scrapeAccessibilityData = accessibilityModule.scrapeAccessibilityData;
     processAccessibilityOpportunities = accessibilityModule.processAccessibilityOpportunities;
     processImportStep = accessibilityModule.processImportStep;
-    filterOutFormEntries = accessibilityModule.filterOutFormEntries;
-    getUniqueUrlCount = accessibilityModule.getUniqueUrlCount;
   });
 
   afterEach(() => {
     sandbox.restore();
-  });
-
-  describe('filterOutFormEntries', () => {
-    it('should return null/undefined when data is null/undefined', () => {
-      expect(filterOutFormEntries(null)).to.be.null;
-      expect(filterOutFormEntries(undefined)).to.be.undefined;
-    });
-
-    it('should filter out form entries and keep site URLs and overall data', () => {
-      const mockData = {
-        overall: {
-          violations: { total: 10 },
-        },
-        'https://example.com/page1': {
-          violations: { total: 3 },
-        },
-        'https://example.com/page2': {
-          violations: { total: 2 },
-        },
-        'https://example.com/page1---contact-form': {
-          violations: { total: 2 },
-        },
-        'https://example.com/page2---newsletter-form': {
-          violations: { total: 1 },
-        },
-        'https://example.com/page2---feedback-form': {
-          violations: { total: 2 },
-        },
-      };
-
-      const result = filterOutFormEntries(mockData);
-
-      expect(result).to.deep.equal({
-        overall: {
-          violations: { total: 10 },
-        },
-        'https://example.com/page1': {
-          violations: { total: 3 },
-        },
-        'https://example.com/page2': {
-          violations: { total: 2 },
-        },
-      });
-    });
-
-    it('should handle data with only form entries (edge case)', () => {
-      const mockData = {
-        overall: {
-          violations: { total: 5 },
-        },
-        'https://example.com/page1---form1': {
-          violations: { total: 3 },
-        },
-        'https://example.com/page2---form2': {
-          violations: { total: 2 },
-        },
-      };
-
-      const result = filterOutFormEntries(mockData);
-
-      expect(result).to.deep.equal({
-        overall: {
-          violations: { total: 5 },
-        },
-      });
-    });
-
-    it('should handle data with no form entries', () => {
-      const mockData = {
-        overall: {
-          violations: { total: 5 },
-        },
-        'https://example.com/page1': {
-          violations: { total: 3 },
-        },
-        'https://example.com/page2': {
-          violations: { total: 2 },
-        },
-      };
-
-      const result = filterOutFormEntries(mockData);
-
-      expect(result).to.deep.equal(mockData);
-    });
-
-    it('should handle empty object', () => {
-      const result = filterOutFormEntries({});
-      expect(result).to.deep.equal({});
-    });
-
-    it('should handle URLs with multiple dashes that are not form entries', () => {
-      const mockData = {
-        overall: {
-          violations: { total: 5 },
-        },
-        'https://example.com/page-with-dashes': {
-          violations: { total: 2 },
-        },
-        'https://example.com/another-page-here': {
-          violations: { total: 1 },
-        },
-        'https://example.com/page---form': {
-          violations: { total: 2 },
-        },
-      };
-
-      const result = filterOutFormEntries(mockData);
-
-      expect(result).to.deep.equal({
-        overall: {
-          violations: { total: 5 },
-        },
-        'https://example.com/page-with-dashes': {
-          violations: { total: 2 },
-        },
-        'https://example.com/another-page-here': {
-          violations: { total: 1 },
-        },
-      });
-    });
-  });
-
-  describe('getUniqueUrlCount', () => {
-    it('should return 0 for null/undefined data', () => {
-      expect(getUniqueUrlCount(null)).to.equal(0);
-      expect(getUniqueUrlCount(undefined)).to.equal(0);
-    });
-
-    it('should return 0 for empty object', () => {
-      expect(getUniqueUrlCount({})).to.equal(0);
-    });
-
-    it('should return 0 when only overall key exists', () => {
-      const mockData = {
-        overall: {
-          violations: { total: 0 },
-        },
-      };
-      expect(getUniqueUrlCount(mockData)).to.equal(0);
-    });
-
-    it('should count unique URLs from site entries only', () => {
-      const mockData = {
-        overall: {
-          violations: { total: 5 },
-        },
-        'https://example.com/page1': {
-          violations: { total: 3 },
-        },
-        'https://example.com/page2': {
-          violations: { total: 2 },
-        },
-      };
-
-      expect(getUniqueUrlCount(mockData)).to.equal(2);
-    });
-
-    it('should extract base URLs from form entries and count unique URLs', () => {
-      const mockData = {
-        overall: {
-          violations: { total: 10 },
-        },
-        'https://example.com/page1': {
-          violations: { total: 3 },
-        },
-        'https://example.com/page2': {
-          violations: { total: 2 },
-        },
-        'https://example.com/page1---contact-form': {
-          violations: { total: 2 },
-        },
-        'https://example.com/page3---newsletter-form': {
-          violations: { total: 3 },
-        },
-      };
-
-      // Should count 3 unique URLs: page1, page2, page3
-      expect(getUniqueUrlCount(mockData)).to.equal(3);
-    });
-
-    it('should handle multiple forms on the same page (count URL once)', () => {
-      const mockData = {
-        overall: {
-          violations: { total: 10 },
-        },
-        'https://example.com/page1---contact-form': {
-          violations: { total: 2 },
-        },
-        'https://example.com/page1---newsletter-form': {
-          violations: { total: 3 },
-        },
-        'https://example.com/page1---feedback-form': {
-          violations: { total: 1 },
-        },
-        'https://example.com/page2---contact-form': {
-          violations: { total: 4 },
-        },
-      };
-
-      // Should count 2 unique URLs: page1 and page2
-      expect(getUniqueUrlCount(mockData)).to.equal(2);
-    });
-
-    it('should handle duplicate URLs from both site and form entries', () => {
-      const mockData = {
-        overall: {
-          violations: { total: 15 },
-        },
-        'https://example.com/page1': {
-          violations: { total: 5 },
-        },
-        'https://example.com/page1---form1': {
-          violations: { total: 3 },
-        },
-        'https://example.com/page1---form2': {
-          violations: { total: 2 },
-        },
-        'https://example.com/page2': {
-          violations: { total: 3 },
-        },
-        'https://example.com/page2---form1': {
-          violations: { total: 2 },
-        },
-      };
-
-      // Should count 2 unique URLs: page1 and page2
-      expect(getUniqueUrlCount(mockData)).to.equal(2);
-    });
-
-    it('should handle URLs with triple dashes correctly', () => {
-      const mockData = {
-        overall: {
-          violations: { total: 5 },
-        },
-        'https://example.com/page---form---extra': {
-          violations: { total: 2 },
-        },
-        'https://example.com/page': {
-          violations: { total: 3 },
-        },
-      };
-
-      // The first entry should extract 'https://example.com/page' (before first separator)
-      // Should count 1 unique URL: page
-      expect(getUniqueUrlCount(mockData)).to.equal(1);
-    });
-
-    it('should handle edge case with only form entries', () => {
-      const mockData = {
-        overall: {
-          violations: { total: 10 },
-        },
-        'https://example.com/page1---form1': {
-          violations: { total: 3 },
-        },
-        'https://example.com/page2---form2': {
-          violations: { total: 4 },
-        },
-        'https://example.com/page3---form3': {
-          violations: { total: 3 },
-        },
-      };
-
-      // Should count 3 unique URLs from forms
-      expect(getUniqueUrlCount(mockData)).to.equal(3);
-    });
   });
 
   describe('scrapeAccessibilityData', () => {
@@ -1011,16 +741,16 @@ describe('Accessibility Audit Handler', () => {
       mockContext.env.AWS_ENV = 'test';
     });
 
-    it('should successfully process accessibility data with forms and filter them for reports', async () => {
-      // Arrange - Include both site and form data
+    it('should successfully process accessibility data and find opportunities', async () => {
+      // Arrange
       const mockAggregationResult = {
         success: true,
         finalResultFiles: {
           current: {
             overall: {
               violations: {
-                total: 10,
-                critical: { items: { 'some-id': { count: 10 } } },
+                total: 5,
+                critical: { items: { 'some-id': { count: 5 } } },
               },
             },
             'https://example.com/page1': {
@@ -1035,18 +765,6 @@ describe('Accessibility Audit Handler', () => {
                 critical: { items: { 'some-id': { count: 2 } } },
               },
             },
-            'https://example.com/page1---contact-form': {
-              violations: {
-                total: 2,
-                critical: { items: { 'form-error': { count: 2 } } },
-              },
-            },
-            'https://example.com/page2---newsletter-form': {
-              violations: {
-                total: 3,
-                critical: { items: { 'form-error': { count: 3 } } },
-              },
-            },
           },
         },
       };
@@ -1057,7 +775,7 @@ describe('Accessibility Audit Handler', () => {
       // Act
       const result = await processAccessibilityOpportunities(mockContext);
 
-      // Assert aggregation was called correctly
+      // Assert
       expect(aggregateAccessibilityDataStub).to.have.been.calledOnceWith(
         mockS3Client,
         'test-bucket',
@@ -1067,35 +785,14 @@ describe('Accessibility Audit Handler', () => {
         sinon.match(/\d{4}-\d{2}-\d{2}/),
       );
 
-      // Create expected filtered aggregation result (without forms)
-      const expectedFilteredResult = {
-        ...mockAggregationResult,
-        finalResultFiles: {
-          current: {
-            overall: mockAggregationResult.finalResultFiles.current.overall,
-            'https://example.com/page1': mockAggregationResult.finalResultFiles.current['https://example.com/page1'],
-            'https://example.com/page2': mockAggregationResult.finalResultFiles.current['https://example.com/page2'],
-          },
-          lastWeek: null,
-        },
-      };
-
-      // Verify that generateReportOpportunities received all correct arguments with filtered data
       expect(generateReportOpportunitiesStub).to.have.been.calledOnceWith(
         mockSite,
-        expectedFilteredResult,
+        mockAggregationResult,
         mockContext,
         'accessibility',
       );
 
-      // Verify that createAccessibilityIndividualOpportunities received filtered data (no forms)
       expect(createAccessibilityIndividualOpportunitiesStub).to.have.been.calledOnceWith(
-        expectedFilteredResult.finalResultFiles.current,
-        mockContext,
-      );
-
-      // Verify that saveA11yMetricsToS3 received original unfiltered data (including forms)
-      expect(saveA11yMetricsToS3Stub).to.have.been.calledOnceWith(
         mockAggregationResult.finalResultFiles.current,
         mockContext,
       );
@@ -1104,186 +801,11 @@ describe('Accessibility Audit Handler', () => {
         '[A11yAudit] Step 2: Processing scraped data for site test-site-id (https://example.com)',
       );
 
-      // Verify URL processing stats logging
-      expect(mockContext.log.info).to.have.been.calledWith(
-        '[A11yAudit] URL Processing Stats - Site URLs: 2, Form entries: 2, Total entries: 4, Unique URLs: 2',
-      );
-
-      // Verify correct URL count (2 unique URLs despite 4 entries)
       expect(result.status).to.equal('OPPORTUNITIES_FOUND');
-      expect(result.opportunitiesFound).to.equal(10);
-      expect(result.urlsProcessed).to.equal(2); // Only 2 unique URLs
-      expect(result.summary).to.equal('Found 10 accessibility issues across 2 URLs');
-      expect(result.fullReportUrl).to.match(/accessibility\/test-site-id\/\d{4}-\d{2}-\d{2}-final-result\.json/);
-    });
-
-    it('should filter lastWeek data when it exists', async () => {
-      // Arrange - Include both current and lastWeek data with forms
-      const mockAggregationResult = {
-        success: true,
-        finalResultFiles: {
-          current: {
-            overall: {
-              violations: {
-                total: 10,
-                critical: { items: { 'some-id': { count: 10 } } },
-              },
-            },
-            'https://example.com/page1': {
-              violations: {
-                total: 3,
-                critical: { items: { 'some-id': { count: 3 } } },
-              },
-            },
-            'https://example.com/page1---contact-form': {
-              violations: {
-                total: 2,
-                critical: { items: { 'form-error': { count: 2 } } },
-              },
-            },
-          },
-          lastWeek: {
-            overall: {
-              violations: {
-                total: 8,
-                critical: { items: { 'some-id': { count: 8 } } },
-              },
-            },
-            'https://example.com/page1': {
-              violations: {
-                total: 2,
-                critical: { items: { 'some-id': { count: 2 } } },
-              },
-            },
-            'https://example.com/page1---old-form': {
-              violations: {
-                total: 1,
-                critical: { items: { 'form-error': { count: 1 } } },
-              },
-            },
-          },
-        },
-      };
-      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
-      generateReportOpportunitiesStub.resolves();
-      createAccessibilityIndividualOpportunitiesStub.resolves();
-
-      // Act
-      const result = await processAccessibilityOpportunities(mockContext);
-
-      // Create expected filtered aggregation result (both current and lastWeek filtered)
-      const expectedFilteredResult = {
-        ...mockAggregationResult,
-        finalResultFiles: {
-          current: {
-            overall: mockAggregationResult.finalResultFiles.current.overall,
-            'https://example.com/page1': mockAggregationResult.finalResultFiles.current['https://example.com/page1'],
-          },
-          lastWeek: {
-            overall: mockAggregationResult.finalResultFiles.lastWeek.overall,
-            'https://example.com/page1': mockAggregationResult.finalResultFiles.lastWeek['https://example.com/page1'],
-          },
-        },
-      };
-
-      // Assert - Check all arguments passed to generateReportOpportunities
-      expect(generateReportOpportunitiesStub).to.have.been.calledOnceWith(
-        mockSite,
-        expectedFilteredResult,
-        mockContext,
-        'accessibility',
-      );
-
-      // Assert - Check all arguments passed to createAccessibilityIndividualOpportunities
-      expect(createAccessibilityIndividualOpportunitiesStub).to.have.been.calledOnceWith(
-        expectedFilteredResult.finalResultFiles.current,
-        mockContext,
-      );
-
-      // Assert - Check saveA11yMetricsToS3 receives unfiltered data
-      expect(saveA11yMetricsToS3Stub).to.have.been.calledOnceWith(
-        mockAggregationResult.finalResultFiles.current,
-        mockContext,
-      );
-
-      expect(result.status).to.equal('OPPORTUNITIES_FOUND');
-    });
-
-    it('should handle data with only form entries correctly', async () => {
-      // Arrange - Only form data, no direct site URLs
-      const mockAggregationResult = {
-        success: true,
-        finalResultFiles: {
-          current: {
-            overall: {
-              violations: {
-                total: 8,
-                critical: { items: { 'form-id': { count: 8 } } },
-              },
-            },
-            'https://example.com/page1---contact-form': {
-              violations: {
-                total: 3,
-                critical: { items: { 'form-id': { count: 3 } } },
-              },
-            },
-            'https://example.com/page1---newsletter-form': {
-              violations: {
-                total: 2,
-                critical: { items: { 'form-id': { count: 2 } } },
-              },
-            },
-            'https://example.com/page2---contact-form': {
-              violations: {
-                total: 3,
-                critical: { items: { 'form-id': { count: 3 } } },
-              },
-            },
-          },
-        },
-      };
-      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
-      generateReportOpportunitiesStub.resolves();
-      createAccessibilityIndividualOpportunitiesStub.resolves();
-
-      // Act
-      const result = await processAccessibilityOpportunities(mockContext);
-
-      // Create expected filtered aggregation result (only 'overall' key remains after filtering)
-      const expectedFilteredResult = {
-        ...mockAggregationResult,
-        finalResultFiles: {
-          current: {
-            overall: mockAggregationResult.finalResultFiles.current.overall,
-          },
-          lastWeek: null,
-        },
-      };
-
-      // Assert - Check all arguments passed to generateReportOpportunities
-      expect(generateReportOpportunitiesStub).to.have.been.calledOnceWith(
-        mockSite,
-        expectedFilteredResult,
-        mockContext,
-        'accessibility',
-      );
-
-      // Assert - Check all arguments passed to createAccessibilityIndividualOpportunities
-      expect(createAccessibilityIndividualOpportunitiesStub).to.have.been.calledOnceWith(
-        expectedFilteredResult.finalResultFiles.current,
-        mockContext,
-      );
-
-      // Assert - Check saveA11yMetricsToS3 receives unfiltered data with all forms
-      expect(saveA11yMetricsToS3Stub).to.have.been.calledOnceWith(
-        mockAggregationResult.finalResultFiles.current,
-        mockContext,
-      );
-
-      // Should correctly count 2 unique URLs from forms
+      expect(result.opportunitiesFound).to.equal(5);
       expect(result.urlsProcessed).to.equal(2);
-      expect(result.opportunitiesFound).to.equal(8);
-      expect(result.status).to.equal('OPPORTUNITIES_FOUND');
+      expect(result.summary).to.equal('Found 5 accessibility issues across 2 URLs');
+      expect(result.fullReportUrl).to.match(/accessibility\/test-site-id\/\d{4}-\d{2}-\d{2}-final-result\.json/);
     });
 
     it('should handle error from createAccessibilityIndividualOpportunities', async () => {
@@ -1509,17 +1031,10 @@ describe('Accessibility Audit Handler', () => {
       // Act
       await processAccessibilityOpportunities(mockContext);
 
-      // Assert - The filtered aggregation result should be passed (same as original if no forms)
-      const expectedFilteredResult = {
-        ...mockAggregationResult,
-        finalResultFiles: {
-          current: mockAggregationResult.finalResultFiles.current,
-          lastWeek: null,
-        },
-      };
+      // Assert
       expect(generateReportOpportunitiesStub).to.have.been.calledWith(
         mockSite,
-        expectedFilteredResult,
+        mockAggregationResult,
         mockContext,
         'accessibility',
       );
