@@ -28,28 +28,6 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
 
 /**
- * Filters out form accessibility entries from the aggregated data.
- * Form entries are identified by URLs containing the URL_SOURCE_SEPARATOR.
- *
- * @param {Object} data - The aggregated accessibility data
- * @returns {Object} Filtered data without form entries
- */
-export function filterOutFormEntries(data) {
-  if (!data) return data;
-
-  const filteredData = {};
-
-  Object.keys(data).forEach((key) => {
-    // Keep the 'overall' key and any URL that doesn't contain the source separator
-    if (key === 'overall' || !key.includes(URL_SOURCE_SEPARATOR)) {
-      filteredData[key] = data[key];
-    }
-  });
-
-  return filteredData;
-}
-
-/**
  * Extracts unique URLs from aggregated data, handling both direct site URLs
  * and composite keys with source identifiers (url{separator}sourceId).
  *
