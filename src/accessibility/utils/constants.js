@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { Audit } from '@adobe/spacecat-shared-data-access';
+
 /**
  * Accessibility success criteria links for common WCAG issues
  * This file contains standardized links to the WCAG success criteria
@@ -757,3 +759,17 @@ export const WCAG_CRITERIA_COUNTS = {
  * Future: Could be used for other sources like specific sections, components, etc.
  */
 export const URL_SOURCE_SEPARATOR = '---';
+
+/**
+ * Prefixes for different audit types
+ */
+export const AUDIT_PREFIXES = {
+  [Audit.AUDIT_TYPES.ACCESSIBILITY]: {
+    logIdentifier: 'A11yAudit',
+    storagePrefix: 'accessibility',
+  },
+  [Audit.AUDIT_TYPES.FORMS_OPPORTUNITIES]: {
+    logIdentifier: 'Form Opportunity',
+    storagePrefix: 'forms-accessibility',
+  },
+};

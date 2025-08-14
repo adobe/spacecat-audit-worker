@@ -193,6 +193,7 @@ export async function processAccessibilityOpportunities(context) {
       siteId,
       log,
       outputKey,
+      AUDIT_TYPE_ACCESSIBILITY,
       version,
     );
 
@@ -214,29 +215,10 @@ export async function processAccessibilityOpportunities(context) {
   // change status to IGNORED for older opportunities
   await updateStatusToIgnored(dataAccess, siteId, log);
 
-  // Create a filtered version of aggregationResult for reports and opportunities
-  // This excludes entries with source identifiers (URLs containing the separator)
-  const allKeys = Object.keys(aggregationResult.finalResultFiles.current).filter((k) => k !== 'overall');
-  const siteUrlCount = allKeys.filter((k) => !k.includes(URL_SOURCE_SEPARATOR)).length;
-  const formEntryCount = allKeys.filter((k) => k.includes(URL_SOURCE_SEPARATOR)).length;
-  const uniqueUrlCount = getUniqueUrlCount(aggregationResult.finalResultFiles.current);
-
-  const filteredAggregationResult = {
-    ...aggregationResult,
-    finalResultFiles: {
-      current: filterOutFormEntries(aggregationResult.finalResultFiles.current),
-      lastWeek: aggregationResult.finalResultFiles.lastWeek
-        ? filterOutFormEntries(aggregationResult.finalResultFiles.lastWeek)
-        : null,
-    },
-  };
-
-  log.info(`[A11yAudit] URL Processing Stats - Site URLs: ${siteUrlCount}, Form entries: ${formEntryCount}, Total entries: ${allKeys.length}, Unique URLs: ${uniqueUrlCount}`);
-
   try {
     await generateReportOpportunities(
       site,
-      filteredAggregationResult,
+      aggregationResult,
       context,
       AUDIT_TYPE_ACCESSIBILITY,
     );
@@ -252,7 +234,7 @@ export async function processAccessibilityOpportunities(context) {
   // Use filtered data to exclude form entries
   try {
     await createAccessibilityIndividualOpportunities(
-      filteredAggregationResult.finalResultFiles.current,
+      aggregationResult.finalResultFiles.current,
       context,
     );
     log.debug(`[A11yAudit] Individual opportunities created successfully for site ${siteId} (${site.getBaseURL()})`);
@@ -265,8 +247,9 @@ export async function processAccessibilityOpportunities(context) {
   }
 
   // step 3 save a11y metrics to s3
-  // Use original aggregationResult with all data (including forms) for metrics
   try {
+    // TODO: Get forms a11y metrics from the forms-accessibility/siteId/version-final-result.json
+    //  file, merge with the current metrics and save to s3
     const metricsResult = await saveA11yMetricsToS3(
       aggregationResult.finalResultFiles.current,
       context,
