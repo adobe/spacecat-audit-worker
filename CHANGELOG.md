@@ -1,3 +1,10 @@
+## [1.144.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.1...v1.144.2) (2025-08-14)
+
+
+### Bug Fixes
+
+* **page-intent:** extract URL from payload ([#1116](https://github.com/adobe/spacecat-audit-worker/issues/1116)) ([9537b8f](https://github.com/adobe/spacecat-audit-worker/commit/9537b8f7ce3eb6057edea7a79bc54b490bfa53bc))
+
 ## [1.144.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.0...v1.144.1) (2025-08-14)
 
 
