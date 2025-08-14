@@ -35,7 +35,7 @@ export default async function handler(message, context) {
     opportunity.setGuidance(wrappedGuidance);
     opportunity.setUpdatedBy('system');
     await opportunity.save();
-    log.info(`high-page-views-low-form-views guidance updated oppty : ${JSON.stringify(opportunity, null, 2)}`);
+    log.info(`high-page-views-low-form-views guidance updated oppty 2 : ${JSON.stringify(opportunity, null, 2)}`);
   }
 
   return ok();
