@@ -398,6 +398,8 @@ export async function saveSentSuggestionMetricsToS3(
  * @param {Object} context - The context object containing s3Client, log, env, site, audit
  * @param {string} opportunityId - The opportunity ID
  * @param {string} opportunityType - The opportunity type
+ * @param siteId
+ * @param auditId
  * @returns {Object} Result object with success status
  */
 export async function saveReceivedSuggestionMetricsToS3(
@@ -405,13 +407,13 @@ export async function saveReceivedSuggestionMetricsToS3(
   context,
   opportunityId,
   opportunityType,
+  siteId,
+  auditId,
 ) {
   const {
-    log, env, s3Client, site, audit,
+    log, env, s3Client,
   } = context;
   const bucketName = env.S3_IMPORTER_BUCKET_NAME;
-  const siteId = site.getId();
-  const auditId = audit.getId();
 
   const newReceivedEntry = {
     siteId,
@@ -479,6 +481,8 @@ export async function saveReceivedSuggestionMetricsToS3(
  * @param {Object} context - The context object containing s3Client, log, env, site, audit
  * @param {string} opportunityId - The opportunity ID
  * @param {string} opportunityType - The opportunity type
+ * @param siteId
+ * @param auditId
  * @returns {Object} Result object with success status
  */
 export async function saveValidatedIssuesPercentageToS3(
@@ -486,13 +490,13 @@ export async function saveValidatedIssuesPercentageToS3(
   context,
   opportunityId,
   opportunityType,
+  siteId,
+  auditId,
 ) {
   const {
-    log, env, s3Client, site, audit,
+    log, env, s3Client,
   } = context;
   const bucketName = env.S3_IMPORTER_BUCKET_NAME;
-  const siteId = site.getId();
-  const auditId = audit.getId();
 
   const newValidationEntry = {
     siteId,
