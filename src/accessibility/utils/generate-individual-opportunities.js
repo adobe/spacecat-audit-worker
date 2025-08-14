@@ -856,7 +856,7 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
 
     log.info(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Successfully processed ${successfulSaves} remediations`);
 
-    // Save complete Mystique validation metrics to S3 (sent + received + percentage in one file)
+    // Save complete Mystique validation metrics to S3 (sent + received)
     try {
       // Extract suggestion IDs from valid remediations
       const receivedSuggestionIds = validRemediations
@@ -864,7 +864,11 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
 
       // Get all suggestions for this opportunity to determine what was sent to Mystique
       const allSuggestions = await opportunity.getSuggestions();
-      const allSentSuggestionIds = processSuggestionsForMystique(allSuggestions)
+      const sentPayloads = processSuggestionsForMystique(allSuggestions);
+
+      // Extract all suggestion IDs from all issuesList arrays in all messages
+      const allSentSuggestionIds = sentPayloads
+        .flatMap((payload) => payload.issuesList)
         .map((issue) => issue.suggestionId);
 
       const sentCount = allSentSuggestionIds.length;
