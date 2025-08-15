@@ -263,6 +263,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   log.info(`Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length},
   totalPages to process after removing duplicates: ${totalPagesSet.size}`);
  */
+  log.info(scrapeResultPaths);
   const {
     seoChecks,
     detectedTags,
