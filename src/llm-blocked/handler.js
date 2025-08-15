@@ -94,7 +94,10 @@ export async function checkLLMBlocked(context) {
 
     topPages.forEach((page) => {
       if (!robots.isAllowed(page.getUrl(), agent)) {
-        agentResult.affectedUrls.push(page.getUrl());
+        agentResult.affectedUrls.push({
+          url: page.getUrl(),
+          line: robots.getMatchingLineNumber(page.getUrl(), agent),
+        });
       }
     });
 

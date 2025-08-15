@@ -89,7 +89,10 @@ describe('LLM Blocked Audit', () => {
         agent: 'ClaudeBot/1.0',
         rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',
         affectedUrls: [
-          'https://example.com/page1',
+          {
+            url: 'https://example.com/page1',
+            line: 2,
+          },
         ],
       },
     ];
