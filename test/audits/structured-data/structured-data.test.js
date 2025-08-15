@@ -12,14 +12,12 @@
 
 /* eslint-env mocha */
 import GoogleClient from '@adobe/spacecat-shared-google-client';
-import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 
 import {
   processStructuredData,
-  generateSuggestionsData,
   opportunityAndSuggestions,
   runAuditAndGenerateSuggestions,
   importTopPages,
@@ -48,15 +46,6 @@ const createS3ObjectStub = (object) => ({
   },
 });
 
-const createFirefallSuggestion = (suggestion) => ({
-  choices: [{
-    finish_reason: 'stop',
-    message: {
-      content: JSON.stringify(suggestion),
-    },
-  }],
-});
-
 describe('Structured Data Audit', () => {
   let context;
   let googleClientStub;
@@ -65,7 +54,6 @@ describe('Structured Data Audit', () => {
   let structuredDataSuggestions;
   let mockConfiguration;
   let s3ClientStub;
-  let firefallClientStub;
   let auditStub;
 
   const finalUrl = 'https://www.example.com';
@@ -77,9 +65,6 @@ describe('Structured Data Audit', () => {
     s3ClientStub = {
       send: sinon.mock(),
       getObject: sinon.stub(),
-    };
-    firefallClientStub = {
-      fetchChatCompletion: sinon.stub(),
     };
 
     siteStub = {
@@ -137,8 +122,6 @@ describe('Structured Data Audit', () => {
         },
       ],
     };
-
-    sandbox.stub(FirefallClient, 'createFrom').returns(firefallClientStub);
   });
 
   afterEach(() => {
@@ -209,7 +192,6 @@ describe('Structured Data Audit', () => {
         aiRationale: 'The product name is missing.',
         confidenceScore: 0.95,
       };
-      firefallClientStub.fetchChatCompletion.resolves(createFirefallSuggestion(suggestion));
 
       const result = await runAuditAndGenerateSuggestions(context);
 
@@ -370,244 +352,6 @@ describe('Structured Data Audit', () => {
           'product:missingfieldname',
         ],
       });
-    });
-  });
-
-  describe('generateSuggestionsData', () => {
-    it('returns early if previous audit was not successful', async () => {
-      const scrapeCache = new Map();
-      const auditData = {
-        auditResult: {
-          success: false,
-          issues: [],
-        },
-      };
-      const result = await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-      expect(result).to.deep.equal(auditData);
-    });
-
-    it('returns early if auto-suggest configuration is disabled', async () => {
-      const scrapeCache = new Map();
-      const auditData = {
-        auditResult: {
-          success: true,
-          issues: [],
-        },
-      };
-      mockConfiguration.isHandlerEnabledForSite = sinon.stub().returns(false);
-
-      const result = await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-      expect(result).to.deep.equal(auditData);
-    });
-
-    it('stops early if Firefall request limit is reached', async () => {
-      const auditData = {
-        auditResult: {
-          success: true,
-          issues: [{
-            pageUrl: finalUrl,
-            rootType: 'BreadcrumbList',
-            dataFormat: 'jsonld',
-            source: '{"itemListElement":[{"position":1,"name":"Things To Do","item":"com.adobe.cq.wcm.core.components.internal.link.LinkImpl@5ac9b38d","@type":"ListItem"},{"position":2,"name":"REESE\'S Stuff Your Cup","item":"com.adobe.cq.wcm.core.components.internal.link.LinkImpl@545b1739","@type":"ListItem"}],"@type":"BreadcrumbList"}',
-            issueMessage: 'Invalid URL in field "item"',
-            severity: 'WARNING',
-          }],
-        },
-      };
-
-      auditData.auditResult.issues = Array
-        .from({ length: 51 }, () => structuredClone(auditData.auditResult.issues[0]))
-        .map((issue, index) => ({
-          ...issue,
-          issueMessage: `${issue.issueMessage} ${index}`,
-        }));
-
-      const scrapeCache = new Map();
-      s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
-        scrapeResult: {
-          rawBody: '<main></main>',
-          structuredData: [{
-            '@type': 'BreadcrumbList',
-          }],
-        },
-      })));
-
-      const suggestion = {
-        errorDescription: 'Invalid URL in field "item"',
-        correctedLdjson: '{}',
-        aiRationale: 'Invalid URL in field "item"',
-        confidenceScore: 0.95,
-      };
-      firefallClientStub.fetchChatCompletion.resolves(createFirefallSuggestion(suggestion));
-
-      const result = await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-
-      expect(result.auditResult.issues.length).to.equal(51);
-      expect(context.log.error).to.have.been.calledWith('SDA: Aborting suggestion generation as more than 50 Firefall requests have been used.');
-    });
-
-    it('re-uses an existing suggestion', async () => {
-      const auditData = {
-        auditResult: {
-          success: true,
-          issues: [{
-            pageUrl: 'https://example.com/product/1',
-            rootType: 'BreadcrumbList',
-            dataFormat: 'jsonld',
-            source: '{"itemListElement":[{"position":1,"name":"Things To Do","item":"com.adobe.cq.wcm.core.components.internal.link.LinkImpl@5ac9b38d","@type":"ListItem"},{"position":2,"name":"REESE\'S Stuff Your Cup","item":"com.adobe.cq.wcm.core.components.internal.link.LinkImpl@545b1739","@type":"ListItem"}],"@type":"BreadcrumbList"}',
-            issueMessage: 'Invalid URL in field "item"',
-            severity: 'WARNING',
-          }, {
-            pageUrl: 'https://example.com/product/2',
-            rootType: 'BreadcrumbList',
-            dataFormat: 'jsonld',
-            source: '{"itemListElement":[{"position":1,"name":"Things To Do","item":"com.adobe.cq.wcm.core.components.internal.link.LinkImpl@5ac9b38d","@type":"ListItem"},{"position":2,"name":"REESE\'S Stuff Your Cup","item":"com.adobe.cq.wcm.core.components.internal.link.LinkImpl@545b1739","@type":"ListItem"}],"@type":"BreadcrumbList"}',
-            issueMessage: 'Invalid URL in field "item"',
-            severity: 'WARNING',
-          }],
-        },
-      };
-
-      const scrapeCache = new Map();
-      s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
-        scrapeResult: {
-          rawBody: '<main></main>',
-          structuredData: [{
-            '@type': 'BreadcrumbList',
-          }],
-        },
-      })));
-
-      const suggestion = {
-        errorDescription: 'Invalid URL in field "item"',
-        correctedLdjson: '{}',
-        aiRationale: 'Invalid URL in field "item"',
-        confidenceScore: 0.95,
-      };
-      firefallClientStub.fetchChatCompletion.resolves(createFirefallSuggestion(suggestion));
-
-      const result = await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-
-      expect(firefallClientStub.fetchChatCompletion).to.have.been.calledOnce;
-      expect(result.auditResult.issues).to.have.lengthOf(2);
-      expect(result.auditResult.issues[0].suggestion).to.deep.equal(suggestion);
-      expect(result.auditResult.issues[1].suggestion).to.deep.equal(suggestion);
-    });
-
-    it('skips issue if scrape cannot be found', async () => {
-      const auditData = {
-        auditResult: {
-          success: true,
-          issues: [{
-            pageUrl: 'https://example.com/product/1',
-            rootType: 'BreadcrumbList',
-            dataFormat: 'jsonld',
-            source: '{"itemListElement":[{"position":1,"name":"Things To Do","item":"com.adobe.cq.wcm.core.components.internal.link.LinkImpl@5ac9b38d","@type":"ListItem"},{"position":2,"name":"REESE\'S Stuff Your Cup","item":"com.adobe.cq.wcm.core.components.internal.link.LinkImpl@545b1739","@type":"ListItem"}],"@type":"BreadcrumbList"}',
-            issueMessage: 'Invalid URL in field "item"',
-            severity: 'WARNING',
-          }],
-        },
-      };
-
-      const scrapeCache = new Map();
-      s3ClientStub.send.rejects(new Error('Failed to fetch S3 object'));
-
-      await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-      expect(context.log.error).to.have.been.calledWith('SDA: Could not find scrape for https://example.com/product/1 at /product/1. Make sure that scrape-top-pages did run.');
-      expect(firefallClientStub.fetchChatCompletion).to.not.have.been.called;
-    });
-
-    it('skips issue if wrong markup cannot be found', async () => {
-      const auditData = {
-        auditResult: {
-          success: true,
-          issues: [{
-            pageUrl: 'https://example.com/product/1',
-            rootType: 'BreadcrumbList',
-            dataFormat: 'jsonld',
-            issueMessage: 'Invalid URL in field "item"',
-            severity: 'WARNING',
-          }],
-        },
-      };
-
-      const scrapeCache = new Map();
-      s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
-        scrapeResult: {
-          rawBody: '<main></main>',
-        },
-      })));
-
-      await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-      expect(context.log.error).to.have.been.calledWith('SDA: Could not find structured data for issue of type BreadcrumbList for URL https://example.com/product/1');
-      expect(firefallClientStub.fetchChatCompletion).to.not.have.been.called;
-    });
-
-    it('logs a warning if cleanup of microdata markup fails', async () => {
-      const auditData = {
-        auditResult: {
-          success: true,
-          issues: [{
-            pageUrl: 'https://example.com/product/1',
-            rootType: 'BreadcrumbList',
-            dataFormat: 'rdfa',
-            source: 123,
-            issueMessage: 'Invalid URL in field "item"',
-            severity: 'ERROR',
-          }],
-        },
-      };
-
-      const scrapeCache = new Map();
-      s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
-        scrapeResult: {
-          rawBody: '<main></main>',
-          structuredData: [{
-            '@type': 'BreadcrumbList',
-          }],
-        },
-      })));
-
-      await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-      expect(context.log.warn).to.have.been.calledWith('SDA: Could not cleanup markup for issue of type BreadcrumbList for URL https://example.com/product/1');
-    });
-
-    it('generates a suggestion', async () => {
-      const auditData = {
-        auditResult: {
-          success: true,
-          issues: [{
-            pageUrl: finalUrl,
-            rootType: 'BreadcrumbList',
-            dataFormat: 'jsonld',
-            source: '{"itemListElement":[{"position":1,"name":"Things To Do","item":"com.adobe.cq.wcm.core.components.internal.link.LinkImpl@5ac9b38d","@type":"ListItem"},{"position":2,"name":"REESE\'S Stuff Your Cup","item":"com.adobe.cq.wcm.core.components.internal.link.LinkImpl@545b1739","@type":"ListItem"}],"@type":"BreadcrumbList"}',
-            issueMessage: 'Invalid URL in field "item"',
-            severity: 'WARNING',
-          }],
-        },
-      };
-
-      const scrapeCache = new Map();
-      s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
-        scrapeResult: {
-          rawBody: '<main></main>',
-          structuredData: [{
-            '@type': 'BreadcrumbList',
-          }],
-        },
-      })));
-
-      const suggestion = {
-        errorDescription: 'Invalid URL in field "item"',
-        correctedLdjson: '{}',
-        aiRationale: 'Invalid URL in field "item"',
-        confidenceScore: 0.95,
-      };
-      firefallClientStub.fetchChatCompletion.resolves(createFirefallSuggestion(suggestion));
-
-      const result = await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-      expect(result.auditResult.issues.length).to.equal(1);
-      expect(result.auditResult.issues[0].suggestion).to.deep.equal(suggestion);
     });
   });
 

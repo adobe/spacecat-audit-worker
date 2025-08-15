@@ -416,3 +416,14 @@ export async function getScrapeForPath(path, context, site) {
   }
   return result;
 }
+
+export async function getMystiqueGuidanceForPath(context, suggestionId) {
+  const { log, s3Client } = context;
+  const bucketName = context.env.S3_MYSTIQUE_ASSETS_BUCKET_NAME;
+  const prefix = `opportunities/${suggestionId}/opportunity.json`;
+  const result = await getObjectFromKey(s3Client, bucketName, prefix, log);
+  if (!result) {
+    throw new Error(`No scrape found for path ${suggestionId}`);
+  }
+  return result;
+}
