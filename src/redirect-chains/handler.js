@@ -122,8 +122,8 @@ async function countRedirects(url, maxRedirects = STOP_AFTER_N_REDIRECTS) {
     };
   } catch (error) {
     return {
-      redirectCount: 0,
-      redirectChain,
+      redirectCount, // incomplete, but we return the count so far
+      redirectChain, // incomplete, but we return the chain so far
       status: 418,
       error: `Network error: ${error.message}`,
     };
@@ -301,11 +301,11 @@ async function followAnyRedirectForUrl(urlStruct, domain = '') {
       fullDest,
       fullFinal, // technically: unknown
       redirected: false, // technically: unknown
-      isDuplicateSrc, // false
-      ordinalDuplicate,
+      isDuplicateSrc: false, // false, since we already checked for duplicates
+      ordinalDuplicate: 0, // 0 = unique, since we already checked for duplicates
       tooQualified: isTooQualified,
       hasSameSrcDest,
-      redirectCount: 0, // technically: unknown
+      redirectCount, // technically: unknown
       fullFinalMatchesDestUrl: false, // technically: unknown
       redirectChain, // technically: unknown
     };
@@ -773,7 +773,7 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
 
         // {'duplicate-src', 'too-qualified', 'same-src-dest', 'manual-check', 'final-mismatch',
         //   'max-redirects-exceeded', 'high-redirect-count', '404-page', 'unknown'}
-        fixType: suggestedFixResult.fixType, // string: kabob-case tokens
+        fixType: suggestedFixResult.fixType, // string: kabob-case tokens ... (see comments above)
 
         fix: suggestedFixResult.fix, // string: en_US locale. Used as a human-readable example.
         canApplyFixAutomatically: suggestedFixResult.canApplyFixAutomatically, // boolean
@@ -789,7 +789,9 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
         // eslint-disable-next-line max-len
         ordinalDuplicate: row.ordinalDuplicate, // int: 0 = unique, 1 = 1st duplicate, 2 = 2nd duplicate, etc.
         // eslint-disable-next-line max-len
-        redirectChain: row.redirectChain || '', // string: empty (or null), or 1+ full URL strings separated by ' -> '
+        redirectChain: row.redirectChain || row.fullSrc, // string: 1+ full URL strings separated by ' -> '
+        // eslint-disable-next-line max-len
+        errorMsg: row.error || '', // string: empty if no error (note: API returns null for empty strings), otherwise the error message
       });
     }
   }
@@ -831,10 +833,9 @@ export async function generateOpportunities(auditUrl, auditData, context) {
   // Calculate projected traffic metrics based on the number of issues found
   const totalIssues = auditData.suggestions.length;
   const { projectedTrafficLost, projectedTrafficValue } = calculateProjectedMetrics(totalIssues);
-
   log.info(`${AUDIT_LOGGING_NAME} - Calculated projected traffic metrics: ${projectedTrafficLost} traffic lost, $${projectedTrafficValue} traffic value for ${totalIssues} issues`);
 
-  log.info(`${AUDIT_LOGGING_NAME} - Creating opportunities for each suggestion.`);
+  log.info(`${AUDIT_LOGGING_NAME} - Creating an opportunity for all the suggestions.`);
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
@@ -847,7 +848,8 @@ export async function generateOpportunities(auditUrl, auditData, context) {
     },
   );
 
-  const buildKey = (data) => data.key;
+  log.info(`${AUDIT_LOGGING_NAME} - Creating each suggestion for this opportunity.`);
+  const buildKey = (data) => data.key; // we use a simple function since we pre-built each key
   await syncSuggestions({
     opportunity,
     newData: auditData.suggestions,
