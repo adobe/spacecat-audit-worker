@@ -1,3 +1,10 @@
+# [1.145.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.4...v1.145.0) (2025-08-15)
+
+
+### Features
+
+* auto-suggest for CSP audit ([#984](https://github.com/adobe/spacecat-audit-worker/issues/984)) ([e080ea1](https://github.com/adobe/spacecat-audit-worker/commit/e080ea1d2cc0a14d08c6c56e9fd27254991da460))
+
 ## [1.144.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.3...v1.144.4) (2025-08-14)
 
 
