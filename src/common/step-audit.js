@@ -96,6 +96,8 @@ export class StepAudit extends BaseAudit {
         return ok();
       }
 
+      log.info(`auditContext :rocket: soft-404s${JSON.stringify(auditContext)}`);
+
       // Determine which step to run
       const hasNext = hasText(auditContext.next);
       const stepName = auditContext.next || stepNames[0];
@@ -120,6 +122,7 @@ export class StepAudit extends BaseAudit {
       let response = ok();
 
       if (!hasNext) {
+        log.info(`Processing audit result for step ${stepName}`);
         response = await this.processAuditResult(
           stepResult,
           {

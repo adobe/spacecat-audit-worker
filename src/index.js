@@ -37,6 +37,7 @@ import essExperimentationAll from './experimentation-ess/all.js';
 import experimentationOpportunities from './experimentation-opportunities/handler.js';
 import formsOpportunities from './forms-opportunities/handler.js';
 import metaTags from './metatags/handler.js';
+import soft404s from './soft404s/handler.js';
 import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
 import siteDetection from './site-detection/handler.js';
@@ -79,6 +80,7 @@ const HANDLERS = {
   'experimentation-ess-all': essExperimentationAll,
   'experimentation-opportunities': experimentationOpportunities,
   'meta-tags': metaTags,
+  'soft-404s': soft404s,
   costs,
   'structured-data': structuredData,
   'forms-opportunities': formsOpportunities,
