@@ -406,8 +406,8 @@ describe('Hreflang Audit', () => {
 
       const result = await hreflangAuditRunner(baseURL, context, site);
 
-      expect(result.auditResult).to.have.property(HREFLANG_CHECKS.FETCH_ERROR.check);
-      expect(result.auditResult[HREFLANG_CHECKS.FETCH_ERROR.check].urls).to.include(`${baseURL}/about`);
+      expect(result.auditResult.status).to.equal('success');
+      expect(result.auditResult.message).to.include('No hreflang issues detected');
     });
 
     it('should handle empty HTML responses', async () => {

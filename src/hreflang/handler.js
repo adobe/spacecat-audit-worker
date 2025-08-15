@@ -226,6 +226,8 @@ export async function hreflangAuditRunner(baseURL, context, site) {
       return acc;
     }, {});
 
+    delete aggregatedResults[HREFLANG_CHECKS.FETCH_ERROR.check];
+
     log.info(`Successfully completed Hreflang Audit for site: ${baseURL}`);
 
     // All checks passed

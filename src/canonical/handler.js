@@ -597,10 +597,16 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       return acc;
     }, {});
 
+    const filteredAggregatedResults = Object.fromEntries(
+      Object.entries(aggregatedResults).filter(
+        ([checkType]) => checkType !== CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+      ),
+    );
+
     log.info(`Successfully completed Canonical Audit for site: ${baseURL}`);
 
     // all checks are successful, no issues were found
-    if (Object.keys(aggregatedResults).length === 0) {
+    if (Object.keys(filteredAggregatedResults).length === 0) {
       return {
         fullAuditRef: baseURL,
         auditResult: {
@@ -611,7 +617,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
     }
 
     // final results structure
-    const results = Object.entries(aggregatedResults).map(([checkType, checkData]) => ({
+    const results = Object.entries(filteredAggregatedResults).map(([checkType, checkData]) => ({
       type: checkType,
       explanation: checkData.explanation,
       affectedUrls: checkData.urls.map((url) => ({
