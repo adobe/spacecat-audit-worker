@@ -206,8 +206,34 @@ export default async function readability(context, auditContext) {
           );
 
           log.info(`[preflight-audit] readability: Sent ${allReadabilityIssues.length} readability issues to Mystique for improvement`);
+
+          // Update the opportunities to indicate suggestions are being processed
+          for (const pageResult of auditsResult) {
+            const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+            if (audit && audit.opportunities.length > 0) {
+              audit.opportunities = audit.opportunities.map((opportunity) => ({
+                ...opportunity,
+                seoRecommendation: 'AI suggestions are being generated for this readability issue. Check back later for improved text recommendations.',
+                status: 'processing',
+                suggestionCount: 0,
+              }));
+            }
+          }
         } catch (error) {
           log.error('[preflight-audit] readability: Error sending readability issues to Mystique:', error);
+
+          // Update opportunities to indicate error
+          for (const pageResult of auditsResult) {
+            const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+            if (audit && audit.opportunities.length > 0) {
+              audit.opportunities = audit.opportunities.map((opportunity) => ({
+                ...opportunity,
+                seoRecommendation: 'Failed to generate AI suggestions. Please try again later.',
+                status: 'error',
+                error: error.message,
+              }));
+            }
+          }
         }
       } else {
         log.info('[preflight-audit] readability: No readability issues found to send to Mystique');
