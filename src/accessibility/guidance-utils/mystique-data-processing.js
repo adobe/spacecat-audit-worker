@@ -10,7 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { issueTypesForMystique } from '../utils/constants.js';
 
 /**
@@ -29,13 +30,25 @@ export function processSuggestionsForMystique(suggestions) {
   for (const suggestion of suggestions) {
     const suggestionData = suggestion.getData();
     const suggestionId = suggestion.getId();
-    if (suggestionData.issues && isNonEmptyArray(suggestionData.issues)
-      && issueTypesForMystique.includes(suggestionData.issues[0].type)) {
-      const { url } = suggestionData;
-      if (!suggestionsByUrl[url]) {
-        suggestionsByUrl[url] = [];
+    // skip sending to M suggestions that are fixed or skipped
+    if (![SuggestionDataAccess.STATUSES.FIXED, SuggestionDataAccess.STATUSES.SKIPPED]
+      .includes(suggestion.getStatus())
+      && suggestionData.issues
+      && isNonEmptyArray(suggestionData.issues)
+      && isNonEmptyArray(suggestionData.issues[0].htmlWithIssues)) {
+      // Starting with SITES-33832, a suggestion corresponds to a single granular issue,
+      // i.e. target selector and faulty HTML line
+      const singleIssue = suggestionData.issues[0];
+      const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
+      // skip sending to M suggestions that already have guidance
+      if (issueTypesForMystique.includes(singleIssue.type)
+      && !isNonEmptyObject(singleHtmlWithIssue.guidance)) {
+        const { url } = suggestionData;
+        if (!suggestionsByUrl[url]) {
+          suggestionsByUrl[url] = [];
+        }
+        suggestionsByUrl[url].push({ ...suggestionData, suggestionId });
       }
-      suggestionsByUrl[url].push({ ...suggestionData, suggestionId });
     }
   }
 
