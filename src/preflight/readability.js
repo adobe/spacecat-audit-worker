@@ -49,6 +49,16 @@ export default async function readability(context, auditContext) {
     if (step === 'suggest') {
       log.info(`[preflight-audit] readability: Starting Mystique suggestions generation for ${auditsResult.length} pages`);
 
+      // Ensure readability audit entries exist for all pages
+      for (const pageResult of auditsResult) {
+        let audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+        if (!audit) {
+          // Create readability audit entry if it doesn't exist
+          audit = { name: PREFLIGHT_READABILITY, type: 'seo', opportunities: [] };
+          pageResult.audits.push(audit);
+        }
+      }
+
       // Collect all readability issues across all pages from stored results
       const allReadabilityIssues = [];
       for (const pageResult of auditsResult) {

@@ -827,7 +827,7 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links'],
+          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
         },
       });
 
