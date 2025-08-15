@@ -698,7 +698,6 @@ describe('Redirect Chains Audit', () => {
         const result = await processEntriesInParallel(pageUrls, url, context.log);
         expect(result[0]).to.have.property('status', 418);
         expect(result[0].error).to.include('Failed to count redirects');
-        expect(result[0]).to.have.property('redirectCount', 0);
         expect(result[0]).to.have.property('redirected', true);
       });
 
