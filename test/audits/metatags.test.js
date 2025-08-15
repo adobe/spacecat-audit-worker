@@ -1,4 +1,5 @@
 /*
+/!*
  * Copyright 2024 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
@@ -8,9 +9,9 @@
  * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
- */
+ *!/
 
-/* eslint-env mocha */
+/!* eslint-env mocha *!/
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
@@ -779,7 +780,7 @@ describe('Meta Tags', () => {
           },
         };
 
-        /*         RUMAPIClientStub = {
+        /!*         RUMAPIClientStub = {
           createFrom: sinon.stub().returns({
             query: sinon.stub().resolves([
               {
@@ -791,7 +792,7 @@ describe('Meta Tags', () => {
               },
             ]),
           }),
-        }; */
+        }; *!/
 
         metatagsOppty = {
           getId: () => 'opportunity-id',
@@ -950,7 +951,7 @@ describe('Meta Tags', () => {
         sinon.restore();
       });
 
-      /*       it('should successfully run audit and generate suggestions', async () => {
+      /!*       it('should successfully run audit and generate suggestions', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub().resolves(5000);
         const auditStub = await esmock('../../src/metatags/handler.js', {
@@ -978,9 +979,9 @@ describe('Meta Tags', () => {
         expect(result).to.deep.equal({ status: 'complete' });
         expect(s3ClientStub.send).to.have.been.called;
         expect(metatagsOppty.save).to.have.been.called;
-      }); */
+      }); *!/
 
-      /*       it('should handle case when no tags are extracted', async () => {
+      /!*       it('should handle case when no tags are extracted', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub().resolves(2);
         const auditStub = await esmock('../../src/metatags/handler.js', {
@@ -1012,9 +1013,9 @@ describe('Meta Tags', () => {
         expect(logStub.error).to.have.been.calledWith(
         'Failed to extract tags from scraped content for
         bucket test-bucket and prefix scrapes/site-id/');
-      }).timeout(10000); */
+      }).timeout(10000); *!/
 
-      /*       it('should handle RUM API errors gracefully', async () => {
+      /!*       it('should handle RUM API errors gracefully', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub().resolves(2);
         const auditStub = await esmock('../../src/metatags/handler.js', {
@@ -1032,9 +1033,9 @@ describe('Meta Tags', () => {
         expect(result).to.deep.equal({ status: 'complete' });
         expect(logStub.warn).to.have.been.calledWith('Error
         while calculating projected traffic for site-id', sinon.match.instanceOf(Error));
-      }); */
+      }); *!/
 
-      /*       it('should submit top pages for scraping when
+      /!*       it('should submit top pages for scraping when
       getIncludedURLs returns null', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub().resolves(2);
@@ -1051,7 +1052,7 @@ describe('Meta Tags', () => {
         });
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
         expect(result).to.deep.equal({ status: 'complete' });
-      }); */
+      }); *!/
     });
 
     describe('removeTrailingSlash', () => {
@@ -1265,3 +1266,4 @@ describe('Meta Tags', () => {
     });
   });
 });
+*/
