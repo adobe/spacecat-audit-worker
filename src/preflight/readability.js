@@ -45,6 +45,107 @@ export default async function readability(context, auditContext) {
     const readabilityStartTime = Date.now();
     const readabilityStartTimestamp = new Date().toISOString();
 
+    // For suggest step, we should use stored results instead of re-analyzing
+    if (step === 'suggest') {
+      log.info(`[preflight-audit] readability: Starting Mystique suggestions generation for ${auditsResult.length} pages`);
+
+      // Collect all readability issues across all pages from stored results
+      const allReadabilityIssues = [];
+      for (const pageResult of auditsResult) {
+        const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+        if (audit && audit.opportunities.length > 0) {
+          // Add page URL to each issue for context
+          const issuesWithContext = audit.opportunities.map((issue) => ({
+            ...issue,
+            pageUrl: pageResult.pageUrl,
+          }));
+          allReadabilityIssues.push(...issuesWithContext);
+        }
+      }
+
+      if (allReadabilityIssues.length > 0) {
+        try {
+          // Send readability opportunities to Mystique
+          await sendReadabilityOpportunityToMystique(
+            context.auditUrl || site.getBaseURL(),
+            allReadabilityIssues,
+            site.getId(),
+            context.audit.getId(),
+            context,
+          );
+
+          log.info(`[preflight-audit] readability: Sent ${allReadabilityIssues.length} readability issues to Mystique for improvement`);
+
+          // Update the audit results to show that suggestions are being processed
+          for (const pageResult of auditsResult) {
+            const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+            if (audit && audit.opportunities.length > 0) {
+              // Add a status message to each opportunity indicating suggestions are being processed
+              audit.opportunities.forEach((opportunity) => {
+                const updatedOpportunity = {
+                  ...opportunity,
+                  suggestionStatus: 'processing',
+                  suggestionMessage: 'AI-powered readability improvements are being generated. Suggestions will be available shortly.',
+                  mystiqueProcessingStarted: new Date().toISOString(),
+                };
+                Object.assign(opportunity, updatedOpportunity);
+              });
+            }
+          }
+        } catch (error) {
+          log.error('[preflight-audit] readability: Error sending readability issues to Mystique:', error);
+
+          // Update audit results to show error status
+          for (const pageResult of auditsResult) {
+            const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+            if (audit && audit.opportunities.length > 0) {
+              audit.opportunities.forEach((opportunity) => {
+                const updatedOpportunity = {
+                  ...opportunity,
+                  suggestionStatus: 'error',
+                  suggestionMessage: 'Failed to send readability issues for AI processing.',
+                };
+                Object.assign(opportunity, updatedOpportunity);
+              });
+            }
+          }
+        }
+      } else {
+        log.info('[preflight-audit] readability: No readability issues found to send to Mystique');
+
+        // Update audit results to show no issues found
+        for (const pageResult of auditsResult) {
+          const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+          if (audit && audit.opportunities.length > 0) {
+            audit.opportunities.forEach((opportunity) => {
+              const updatedOpportunity = {
+                ...opportunity,
+                suggestionStatus: 'no-issues',
+                suggestionMessage: 'No readability issues found that require AI suggestions.',
+              };
+              Object.assign(opportunity, updatedOpportunity);
+            });
+          }
+        }
+      }
+
+      const readabilityEndTime = Date.now();
+      const readabilityEndTimestamp = new Date().toISOString();
+      const readabilityElapsed = ((readabilityEndTime - readabilityStartTime) / 1000).toFixed(2);
+      log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Readability suggest completed in ${readabilityElapsed} seconds`);
+
+      timeExecutionBreakdown.push({
+        name: 'readability-suggestions',
+        duration: `${readabilityElapsed} seconds`,
+        startTime: readabilityStartTimestamp,
+        endTime: readabilityEndTimestamp,
+      });
+
+      await saveIntermediateResults(context, auditsResult, 'readability suggest');
+      return;
+    }
+
+    // Original identify logic - only run for identify step
     // Create readability audit entries for all pages
     previewUrls.forEach((url) => {
       const pageResult = audits.get(url);
@@ -104,6 +205,7 @@ export default async function readability(context, auditContext) {
               seoImpact: 'Moderate',
               fleschReadingEase: readabilityScore,
               seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
+              textContent: text, // Store full text for AI processing
             });
           }
         } catch (error) {
@@ -128,17 +230,12 @@ export default async function readability(context, auditContext) {
         }
 
         const textContent = element.textContent?.trim();
-
-        // Skip elements with insufficient text content
         if (!textContent || textContent.length < MIN_TEXT_LENGTH) {
           return;
         }
 
-        // Check if element contains <br> or <br /> tags
-        const hasLineBreaks = element.innerHTML.includes('<br');
-
-        if (hasLineBreaks) {
-          // Split text by <br> tags and analyze each paragraph separately
+        // Check if the element contains <br> tags (indicating multiple paragraphs)
+        if (element.innerHTML.includes('<br')) {
           // Create a temporary clone to manipulate
           const tempElement = element.cloneNode(true);
 
@@ -172,85 +269,6 @@ export default async function readability(context, auditContext) {
 
       log.info(`[preflight-audit] readability: Processed ${processedElements} text element(s) on ${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability`);
     });
-
-    // Generate AI suggestions if this is the suggest step
-    if (step === 'suggest') {
-      const suggestStartTime = Date.now();
-      const suggestStartTimestamp = new Date().toISOString();
-
-      log.info(`[preflight-audit] readability: Starting Mystique suggestions generation for ${auditsResult.length} pages`);
-
-      // Collect all readability issues across all pages
-      const allReadabilityIssues = [];
-      for (const pageResult of auditsResult) {
-        const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
-        if (audit && audit.opportunities.length > 0) {
-          // Add page URL to each issue for context
-          const issuesWithContext = audit.opportunities.map((issue) => ({
-            ...issue,
-            pageUrl: pageResult.pageUrl,
-          }));
-          allReadabilityIssues.push(...issuesWithContext);
-        }
-      }
-
-      if (allReadabilityIssues.length > 0) {
-        try {
-          // Send readability opportunities to Mystique
-          await sendReadabilityOpportunityToMystique(
-            context.auditUrl || site.getBaseURL(),
-            allReadabilityIssues,
-            site.getId(),
-            context.audit.getId(),
-            context,
-          );
-
-          log.info(`[preflight-audit] readability: Sent ${allReadabilityIssues.length} readability issues to Mystique for improvement`);
-
-          // Update the opportunities to indicate suggestions are being processed
-          for (const pageResult of auditsResult) {
-            const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
-            if (audit && audit.opportunities.length > 0) {
-              audit.opportunities = audit.opportunities.map((opportunity) => ({
-                ...opportunity,
-                seoRecommendation: 'AI suggestions are being generated for this readability issue. Check back later for improved text recommendations.',
-                status: 'processing',
-                suggestionCount: 0,
-              }));
-            }
-          }
-        } catch (error) {
-          log.error('[preflight-audit] readability: Error sending readability issues to Mystique:', error);
-
-          // Update opportunities to indicate error
-          for (const pageResult of auditsResult) {
-            const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
-            if (audit && audit.opportunities.length > 0) {
-              audit.opportunities = audit.opportunities.map((opportunity) => ({
-                ...opportunity,
-                seoRecommendation: 'Failed to generate AI suggestions. Please try again later.',
-                status: 'error',
-                error: error.message,
-              }));
-            }
-          }
-        }
-      } else {
-        log.info('[preflight-audit] readability: No readability issues found to send to Mystique');
-      }
-
-      const suggestEndTime = Date.now();
-      const suggestEndTimestamp = new Date().toISOString();
-      const suggestElapsed = ((suggestEndTime - suggestStartTime) / 1000).toFixed(2);
-      log.info(`[preflight-audit] readability: Mystique suggestions generation completed in ${suggestElapsed} seconds`);
-
-      timeExecutionBreakdown.push({
-        name: 'readability-suggestions',
-        duration: `${suggestElapsed} seconds`,
-        startTime: suggestStartTimestamp,
-        endTime: suggestEndTimestamp,
-      });
-    }
 
     const readabilityEndTime = Date.now();
     const readabilityEndTimestamp = new Date().toISOString();
