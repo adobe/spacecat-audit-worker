@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { ok } from '@adobe/spacecat-shared-http-utils';
+import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
 
@@ -40,12 +40,20 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Opportunity, Site } = dataAccess;
-  const { auditId, siteId, data } = message;
+  const { Opportunity, Site, Audit } = dataAccess;
+  const {
+    auditId, siteId, data, id: messageId,
+  } = message;
   const { suggestions } = data || {};
 
   log.info(`[${AUDIT_TYPE}]: Received Mystique guidance for alt-text: ${JSON.stringify(message, null, 2)}`);
 
+  // Validate audit exists
+  const audit = await Audit.findById(auditId);
+  if (!audit) {
+    log.warn(`[${AUDIT_TYPE}]: No audit found for auditId: ${auditId}`);
+    return notFound();
+  }
   const site = await Site.findById(siteId);
   const auditUrl = site.getBaseURL();
 
@@ -68,6 +76,15 @@ export default async function handler(message, context) {
     throw new Error(errorMsg);
   }
 
+  const existingData = altTextOppty.getData() || {};
+  const processedSuggestionIds = new Set(existingData.processedSuggestionIds || []);
+  if (processedSuggestionIds.has(messageId)) {
+    log.info(`[${AUDIT_TYPE}]: Suggestions with id ${messageId} already processed. Skipping processing.`);
+    return ok();
+  } else {
+    processedSuggestionIds.add(messageId);
+  }
+
   // Map Mystique suggestions
   const mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(suggestions || []);
 
@@ -87,7 +104,6 @@ export default async function handler(message, context) {
   ) => suggestion.isDecorative === true).length;
 
   // Accumulate metrics with existing data
-  const existingData = altTextOppty.getData() || {};
   const updatedOpportunityData = {
     projectedTrafficLost: (existingData.projectedTrafficLost || 0)
     + batchProjectedMetrics.projectedTrafficLost,
@@ -95,7 +111,11 @@ export default async function handler(message, context) {
     + batchProjectedMetrics.projectedTrafficValue,
     decorativeImagesCount: (existingData.decorativeImagesCount || 0) + batchDecorativeImagesCount,
     dataSources: existingData.dataSources,
+    mystiqueResponsesReceived: (existingData.mystiqueResponsesReceived || 0) + 1,
+    mystiqueResponsesExpected: existingData.mystiqueResponsesExpected || 0,
+    processedSuggestionIds: [...processedSuggestionIds],
   };
+  log.info(`[${AUDIT_TYPE}]: Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
 
   // Update opportunity with accumulated metrics
   try {

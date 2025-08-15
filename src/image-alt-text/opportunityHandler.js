@@ -264,7 +264,7 @@ export default async function convertToOpportunity(auditUrl, auditData, context)
   log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${siteId} and alt-text audit type.`);
 }
 
-const chunkArray = (array, chunkSize) => {
+export const chunkArray = (array, chunkSize) => {
   const chunks = [];
   for (let i = 0; i < array.length; i += chunkSize) {
     chunks.push(array.slice(i, i + chunkSize));
@@ -351,8 +351,9 @@ export async function clearAltTextSuggestions({ opportunity, log }) {
     return;
   }
 
+  const IGNORED_STATUSES = [SuggestionModel.STATUSES.SKIPPED, SuggestionModel.STATUSES.FIXED];
   const ignoredSuggestions = existingSuggestions.filter(
-    (s) => s.getStatus() === SuggestionModel.STATUSES.SKIPPED,
+    (s) => IGNORED_STATUSES.includes(s.getStatus()),
   );
   const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
 

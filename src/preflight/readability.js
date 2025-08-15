@@ -28,7 +28,7 @@ const MAX_CHARACTERS_DISPLAY = 200;
 
 export default async function readability(context, auditContext) {
   const {
-    site, jobId, log,
+    site, job, log,
   } = context;
   const {
     checks,
@@ -175,7 +175,7 @@ export default async function readability(context, auditContext) {
     const readabilityEndTime = Date.now();
     const readabilityEndTimestamp = new Date().toISOString();
     const readabilityElapsed = ((readabilityEndTime - readabilityStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Readability audit completed in ${readabilityElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Readability audit completed in ${readabilityElapsed} seconds`);
 
     timeExecutionBreakdown.push({
       name: 'readability',
