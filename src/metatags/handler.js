@@ -209,7 +209,7 @@ export async function metatagsAutoDetect(site, pagesSet, context) {
     .map((key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log))); */
   // I just need some change to commit/push again...
   const pageMetadataResults = await Promise.all([...pagesSet]
-    .map((url, path) => fetchAndProcessPageObject(s3Client, bucketName, url, path, log)));
+    .map(([url, path]) => fetchAndProcessPageObject(s3Client, bucketName, url, path, log)));
   pageMetadataResults.forEach((pageMetadata) => {
     if (pageMetadata) {
       Object.assign(extractedTags, pageMetadata);
