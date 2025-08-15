@@ -613,6 +613,7 @@ describe('Hreflang Audit', () => {
     const mockContext = {
       log: {
         info: sinon.stub(),
+        warn: sinon.stub(),
         error: sinon.stub(),
       },
       dataAccess: {
@@ -631,6 +632,7 @@ describe('Hreflang Audit', () => {
 
     beforeEach(() => {
       mockContext.log.info.reset();
+      mockContext.log.warn.reset();
       mockContext.log.error.reset();
       mockContext.dataAccess.Opportunity.allBySiteIdAndStatus.reset();
       mockContext.dataAccess.Opportunity.create.reset();
