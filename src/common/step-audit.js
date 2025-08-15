@@ -122,7 +122,8 @@ export class StepAudit extends BaseAudit {
       // If there are scrape results, load the paths
       if (hasScrapeJobId) {
         const scrapeClient = ScrapeClient.createFrom(context);
-        stepContext.scrapeResultPaths = scrapeClient.getScrapeResultPaths(auditContext.scrapeJobId);
+        stepContext.scrapeResultPaths = await scrapeClient
+          .getScrapeResultPaths(auditContext.scrapeJobId);
       }
 
       // Run the step
