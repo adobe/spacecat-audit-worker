@@ -1,4 +1,4 @@
-# SpaceCat Audit Worker
+# SpaceCat Audit Worker 
 
 > SpaceCat Audit Worker for auditing edge delivery sites.
 
