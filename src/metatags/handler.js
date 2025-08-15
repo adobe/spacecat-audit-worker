@@ -13,7 +13,7 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { calculateCPCValue } from '../support/utils.js';
-import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
@@ -81,7 +81,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
 }
 
-export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
+export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
     log.error(`No Scraped tags found in S3 ${key} object`);
@@ -94,7 +94,7 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefi
   }
 
   let pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
-    : key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
+    : new URL(url).pathname;
   // handling for homepage
   if (pageUrl === '') {
     pageUrl = '/';
@@ -202,11 +202,13 @@ export async function metatagsAutoDetect(site, pagesSet, context) {
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const prefix = `scrapes/${site.getId()}/`;
-  const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
+  // const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
   const extractedTags = {};
-  const pageMetadataResults = await Promise.all(scrapedObjectKeys
+  /* const pageMetadataResults = await Promise.all(scrapedObjectKeys
     .filter((key) => pagesSet.has(key))
-    .map((key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)));
+    .map((key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log))); */
+  const pageMetadataResults = await Promise.all([...pagesSet]
+    .map((url, key) => fetchAndProcessPageObject(s3Client, bucketName, url, key, log)));
   pageMetadataResults.forEach((pageMetadata) => {
     if (pageMetadata) {
       Object.assign(extractedTags, pageMetadata);
