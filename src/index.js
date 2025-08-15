@@ -39,6 +39,7 @@ import formsOpportunities from './forms-opportunities/handler.js';
 import metaTags from './metatags/handler.js';
 import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
+import structuredDataGuidance from './structured-data/guidance-handler.js';
 import siteDetection from './site-detection/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
@@ -96,6 +97,7 @@ const HANDLERS = {
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
+  'guidance:structured-data': structuredDataGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
