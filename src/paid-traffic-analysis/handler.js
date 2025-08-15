@@ -12,7 +12,6 @@
 import { getWeekInfo, getMonthInfo } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
-// import { getLastFullWeekInfo, getMonthInfo } from './date-utils.js';
 
 function buildMystiqueMessage(site, auditId, baseUrl, auditResult) {
   return {
