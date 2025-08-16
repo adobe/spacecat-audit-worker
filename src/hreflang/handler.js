@@ -24,8 +24,8 @@ import { getTopPagesForSiteId } from '../canonical/handler.js';
 const auditType = Audit.AUDIT_TYPES.HREFLANG;
 
 export const HREFLANG_CHECKS = Object.freeze({
-  HREFLANG_EXISTS: {
-    check: 'hreflang-exists',
+  HREFLANG_MISSING: {
+    check: 'hreflang-missing',
     explanation: 'No hreflang tags found. Hreflang tags help search engines understand which language versions of pages to serve to users.',
   },
   HREFLANG_INVALID_LANGUAGE_CODE: {
@@ -36,8 +36,8 @@ export const HREFLANG_CHECKS = Object.freeze({
     check: 'hreflang-self-reference-missing',
     explanation: 'Missing self-referencing hreflang tag. Each page should include a hreflang tag pointing to itself.',
   },
-  HREFLANG_NOT_IN_HEAD: {
-    check: 'hreflang-not-in-head',
+  HREFLANG_OUTSIDE_HEAD: {
+    check: 'hreflang-outside-head',
     explanation: 'Hreflang tags found outside the head section. Hreflang tags should be placed in the HTML head.',
   },
   TOPPAGES: {
@@ -86,14 +86,14 @@ export async function validatePageHreflang(url, log) {
     // Check if any hreflang tags exist
     if (hreflangLinks.length === 0) {
       checks.push({
-        check: HREFLANG_CHECKS.HREFLANG_EXISTS.check,
+        check: HREFLANG_CHECKS.HREFLANG_MISSING.check,
         success: false,
-        explanation: HREFLANG_CHECKS.HREFLANG_EXISTS.explanation,
+        explanation: HREFLANG_CHECKS.HREFLANG_MISSING.explanation,
       });
       log.info(`No hreflang tags found for URL: ${url}`);
     } else {
       checks.push({
-        check: HREFLANG_CHECKS.HREFLANG_EXISTS.check,
+        check: HREFLANG_CHECKS.HREFLANG_MISSING.check,
         success: true,
       });
       log.info(`Found ${hreflangLinks.length} hreflang tags for URL: ${url}`);
@@ -111,9 +111,9 @@ export async function validatePageHreflang(url, log) {
         // Check if hreflang is in head section
         if (!link.closest('head')) {
           checks.push({
-            check: HREFLANG_CHECKS.HREFLANG_NOT_IN_HEAD.check,
+            check: HREFLANG_CHECKS.HREFLANG_OUTSIDE_HEAD.check,
             success: false,
-            explanation: HREFLANG_CHECKS.HREFLANG_NOT_IN_HEAD.explanation,
+            explanation: HREFLANG_CHECKS.HREFLANG_OUTSIDE_HEAD.explanation,
             hreflang,
             href,
           });
@@ -308,13 +308,13 @@ export function generateSuggestions(auditUrl, auditData, context) {
  */
 function generateRecommendedAction(checkType) {
   switch (checkType) {
-    case HREFLANG_CHECKS.HREFLANG_EXISTS.check:
+    case HREFLANG_CHECKS.HREFLANG_MISSING.check:
       return 'Add hreflang tags to the <head> section to specify language and region targeting.';
     case HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_CODE.check:
       return 'Update hreflang attribute to use valid ISO 639-1 language codes and ISO 3166-1 Alpha 2 country codes.';
     case HREFLANG_CHECKS.HREFLANG_SELF_REFERENCE_MISSING.check:
       return 'Add a self-referencing hreflang tag that points to the current page with its own language/region.';
-    case HREFLANG_CHECKS.HREFLANG_NOT_IN_HEAD.check:
+    case HREFLANG_CHECKS.HREFLANG_OUTSIDE_HEAD.check:
       return 'Move hreflang tags from the body to the <head> section of the HTML document.';
     case HREFLANG_CHECKS.FETCH_ERROR.check:
       return 'Ensure the page is accessible and fix any server or network issues preventing content retrieval.';

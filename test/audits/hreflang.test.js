@@ -69,7 +69,7 @@ describe('Hreflang Audit', () => {
       const result = await validatePageHreflang(`${baseURL}/`, mockLog);
 
       const hasHreflangExists = result.checks.some((check) => check.check
-        === HREFLANG_CHECKS.HREFLANG_EXISTS.check
+        === HREFLANG_CHECKS.HREFLANG_MISSING.check
         && check.success);
       expect(hasHreflangExists).to.be.true;
     });
@@ -84,7 +84,7 @@ describe('Hreflang Audit', () => {
       const result = await validatePageHreflang(`${baseURL}/`, mockLog);
 
       const missingHreflang = result.checks.some((check) => check.check
-        === HREFLANG_CHECKS.HREFLANG_EXISTS.check
+        === HREFLANG_CHECKS.HREFLANG_MISSING.check
         && !check.success);
       expect(missingHreflang).to.be.true;
     });
@@ -193,7 +193,7 @@ describe('Hreflang Audit', () => {
       const result = await validatePageHreflang(`${baseURL}/`, mockLog);
 
       const notInHead = result.checks.some((check) => check.check
-        === HREFLANG_CHECKS.HREFLANG_NOT_IN_HEAD.check
+        === HREFLANG_CHECKS.HREFLANG_OUTSIDE_HEAD.check
         && !check.success);
       expect(notInHead).to.be.true;
     });
@@ -241,7 +241,7 @@ describe('Hreflang Audit', () => {
       expect(missingSelfRef).to.be.false;
 
       const hreflangExists = result.checks.some((check) => check.check
-        === HREFLANG_CHECKS.HREFLANG_EXISTS.check
+        === HREFLANG_CHECKS.HREFLANG_MISSING.check
         && check.success);
       expect(hreflangExists).to.be.true;
     });
@@ -268,7 +268,7 @@ describe('Hreflang Audit', () => {
       );
 
       const hreflangExists = result.checks.some((check) => check.check
-        === HREFLANG_CHECKS.HREFLANG_EXISTS.check && check.success);
+        === HREFLANG_CHECKS.HREFLANG_MISSING.check && check.success);
       expect(hreflangExists).to.be.true;
     });
   });
@@ -382,8 +382,8 @@ describe('Hreflang Audit', () => {
       expect(result.auditResult).to.have.property(
         HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_CODE.check,
       );
-      expect(result.auditResult).to.have.property(HREFLANG_CHECKS.HREFLANG_EXISTS.check);
-      expect(result.auditResult[HREFLANG_CHECKS.HREFLANG_EXISTS.check].urls).to.include(`${baseURL}/about`);
+      expect(result.auditResult).to.have.property(HREFLANG_CHECKS.HREFLANG_MISSING.check);
+      expect(result.auditResult[HREFLANG_CHECKS.HREFLANG_MISSING.check].urls).to.include(`${baseURL}/about`);
     });
 
     it('should handle audit errors gracefully', async () => {
@@ -419,8 +419,8 @@ describe('Hreflang Audit', () => {
 
       const result = await hreflangAuditRunner(baseURL, context, site);
 
-      expect(result.auditResult).to.have.property(HREFLANG_CHECKS.HREFLANG_EXISTS.check);
-      expect(result.auditResult[HREFLANG_CHECKS.HREFLANG_EXISTS.check].urls).to.have.length(2);
+      expect(result.auditResult).to.have.property(HREFLANG_CHECKS.HREFLANG_MISSING.check);
+      expect(result.auditResult[HREFLANG_CHECKS.HREFLANG_MISSING.check].urls).to.have.length(2);
     });
   });
 
@@ -461,7 +461,7 @@ describe('Hreflang Audit', () => {
     it('should generate suggestions for hreflang issues', () => {
       const auditData = {
         auditResult: {
-          'hreflang-exists': {
+          'hreflang-missing': {
             success: false,
             explanation: 'No hreflang tags found',
             urls: ['https://example.com/page1', 'https://example.com/page2'],
@@ -482,7 +482,7 @@ describe('Hreflang Audit', () => {
       // Check first suggestion
       expect(result.suggestions[0]).to.deep.include({
         type: 'CODE_CHANGE',
-        checkType: 'hreflang-exists',
+        checkType: 'hreflang-missing',
         explanation: 'No hreflang tags found',
         url: 'https://example.com/page1',
         recommendedAction: 'Add hreflang tags to the <head> section to specify language and region targeting.',
@@ -532,7 +532,7 @@ describe('Hreflang Audit', () => {
     it('should generate suggestions for all check types', () => {
       const auditData = {
         auditResult: {
-          'hreflang-exists': {
+          'hreflang-missing': {
             success: false,
             explanation: 'No hreflang tags found',
             urls: ['https://example.com/page1'],
@@ -547,7 +547,7 @@ describe('Hreflang Audit', () => {
             explanation: 'Missing self-referencing hreflang tag',
             urls: ['https://example.com/page3'],
           },
-          'hreflang-not-in-head': {
+          'hreflang-outside-head': {
             success: false,
             explanation: 'Hreflang tags found outside the head section',
             urls: ['https://example.com/page4'],
@@ -644,7 +644,7 @@ describe('Hreflang Audit', () => {
     it('should skip opportunity creation when no suggestions', async () => {
       const auditData = {
         auditResult: {
-          'hreflang-exists': {
+          'hreflang-missing': {
             success: false,
             explanation: 'No hreflang tags found',
             urls: ['https://example.com/page1'],
@@ -665,7 +665,7 @@ describe('Hreflang Audit', () => {
       const auditData = {
         siteId: 'site-123',
         auditResult: {
-          'hreflang-exists': {
+          'hreflang-missing': {
             success: false,
             explanation: 'No hreflang tags found',
             urls: ['https://example.com/page1'],
@@ -674,7 +674,7 @@ describe('Hreflang Audit', () => {
         suggestions: [
           {
             type: 'CODE_CHANGE',
-            checkType: 'hreflang-exists',
+            checkType: 'hreflang-missing',
             explanation: 'No hreflang tags found',
             url: 'https://example.com/page1',
             recommendedAction: 'Add hreflang tags to the <head> section',
