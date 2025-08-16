@@ -60,6 +60,7 @@ import detectPageIntent from './page-intent/handler.detect.js';
 import updatePageIntent from './page-intent/handler.update.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
+import hreflang from './hreflang/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -104,6 +105,7 @@ const HANDLERS = {
   'detect:form-details': detectFormDetails,
   'page-intent': updatePageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
+  hreflang,
   dummy: (message) => ok(message),
 };
 

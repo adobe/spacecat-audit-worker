@@ -27,23 +27,23 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 const auditType = Audit.AUDIT_TYPES.CANONICAL;
 
 export const CANONICAL_CHECKS = Object.freeze({
-  CANONICAL_TAG_EXISTS: {
-    check: 'canonical-tag-exists',
+  CANONICAL_TAG_MISSING: {
+    check: 'canonical-tag-missing',
     explanation: 'The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings.',
     suggestion: (url) => `Add a canonical tag to the head section: <link rel="canonical" href="${url}" />`,
   },
-  CANONICAL_TAG_ONCE: {
-    check: 'canonical-tag-once',
+  CANONICAL_TAG_MULTIPLE: {
+    check: 'canonical-tag-multiple',
     explanation: 'Multiple canonical tags detected, which confuses search engines and can dilute page authority.',
     suggestion: () => 'Remove duplicate canonical tags and keep only one canonical tag in the head section.',
   },
-  CANONICAL_TAG_NONEMPTY: {
-    check: 'canonical-tag-nonempty',
+  CANONICAL_TAG_EMPTY: {
+    check: 'canonical-tag-empty',
     explanation: 'The canonical tag is empty. It should point to the preferred version of the page to avoid content duplication.',
     suggestion: (url) => `Set the canonical URL in the href attribute: <link rel="canonical" href="${url}" />`,
   },
-  CANONICAL_TAG_IN_HEAD: {
-    check: 'canonical-tag-in-head',
+  CANONICAL_TAG_OUTSIDE_HEAD: {
+    check: 'canonical-tag-outside-head',
     explanation: 'The canonical tag must be placed in the head section of the HTML document to ensure it is recognized by search engines.',
     suggestion: () => 'Move the canonical tag to the <head> section of the HTML document.',
   },
@@ -185,14 +185,14 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
     // Check if any canonical tag exists
     if (canonicalLinks.length === 0) {
       checks.push({
-        check: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.check,
+        check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
         success: false,
-        explanation: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.explanation,
+        explanation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
       });
       log.info(`No canonical tag found for URL: ${url}`);
     } else {
       checks.push({
-        check: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.check,
+        check: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
         success: true,
       });
       log.info(`Canonical tag exists for URL: ${url}`);
@@ -202,9 +202,9 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
     if (canonicalLinks.length > 0) {
       if (canonicalLinks.length > 1) {
         checks.push({
-          check: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.check,
+          check: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.check,
           success: false,
-          explanation: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.explanation,
+          explanation: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.explanation,
         });
         log.info(`Multiple canonical tags found for URL: ${url}`);
       } else {
@@ -212,9 +212,9 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
         const href = canonicalLink.getAttribute('href');
         if (!href) {
           checks.push({
-            check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
+            check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
             success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.explanation,
+            explanation: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.explanation,
           });
           log.info(`Empty canonical tag found for URL: ${url}`);
         } else {
@@ -228,7 +228,7 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
             }
 
             checks.push({
-              check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
+              check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
               success: true,
             });
             const canonicalPath = new URL(canonicalUrl).pathname;
@@ -260,14 +260,14 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
         // Check if canonical link is in the head section
         if (!canonicalLink.closest('head')) {
           checks.push({
-            check: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.check,
+            check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
             success: false,
-            explanation: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.explanation,
+            explanation: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.explanation,
           });
           log.info('Canonical tag is not in the head section');
         } else {
           checks.push({
-            check: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.check,
+            check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
             success: true,
           });
         }
@@ -597,10 +597,16 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       return acc;
     }, {});
 
+    const filteredAggregatedResults = Object.fromEntries(
+      Object.entries(aggregatedResults).filter(
+        ([checkType]) => checkType !== CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+      ),
+    );
+
     log.info(`Successfully completed Canonical Audit for site: ${baseURL}`);
 
     // all checks are successful, no issues were found
-    if (Object.keys(aggregatedResults).length === 0) {
+    if (Object.keys(filteredAggregatedResults).length === 0) {
       return {
         fullAuditRef: baseURL,
         auditResult: {
@@ -611,7 +617,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
     }
 
     // final results structure
-    const results = Object.entries(aggregatedResults).map(([checkType, checkData]) => ({
+    const results = Object.entries(filteredAggregatedResults).map(([checkType, checkData]) => ({
       type: checkType,
       explanation: checkData.explanation,
       affectedUrls: checkData.urls.map((url) => ({
