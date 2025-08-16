@@ -12,7 +12,7 @@
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
-import { wwwUrlResolver } from '../common/index.js';
+import { noopPersister, wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getTemporalCondition } from '../utils/date-utils.js';
 
@@ -82,5 +82,6 @@ async function updatePageIntent(auditUrl, auditData, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(getPathsOfLastWeek)
+  .withPersister(noopPersister)
   .withPostProcessors([updatePageIntent])
   .build();
