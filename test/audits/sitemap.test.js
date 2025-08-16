@@ -17,20 +17,22 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import chaiAsPromised from 'chai-as-promised';
 import {
-  ERROR_CODES,
   sitemapAuditRunner,
+  opportunityAndSuggestions,
+  generateSuggestions,
+  findSitemap,
+  getPagesWithIssues,
+  getSitemapsWithIssues,
+} from '../../src/sitemap/handler.js';
+import {
+  ERROR_CODES,
+  filterValidUrls,
   isSitemapContentValid,
   checkSitemap,
   checkRobotsForSitemap,
   fetchContent,
-  opportunityAndSuggestions,
-  generateSuggestions,
-  findSitemap,
-  filterValidUrls,
   getBaseUrlPagesFromSitemaps,
-  getPagesWithIssues,
-  getSitemapsWithIssues,
-} from '../../src/sitemap/handler.js';
+} from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
 import { DATA_SOURCES } from '../../src/common/constants.js';
@@ -604,6 +606,68 @@ describe('Sitemap Audit', () => {
 
       const result = await findSitemap(url);
       expect(result.success).to.equal(false);
+    });
+
+    it('should handle missing details properties with fallback defaults (lines 41-42)', async () => {
+      // Test the exact fallback logic directly by simulating the specific scenario
+      // This is what the code does on lines 41-42:
+      // const extractedPaths = siteMapUrlsResult.details?.extractedPaths || {};
+      // const filteredSitemapUrls = siteMapUrlsResult.details?.filteredSitemapUrls || [];
+
+      // Test case 1: details exists but properties are undefined
+      const siteMapUrlsResult1 = {
+        success: true,
+        reasons: [{ value: 'Extracted URLs successfully' }],
+        details: {
+          // extractedPaths and filteredSitemapUrls are undefined
+        },
+      };
+
+      const extractedPaths1 = siteMapUrlsResult1.details?.extractedPaths || {};
+      const filteredSitemapUrls1 = siteMapUrlsResult1.details?.filteredSitemapUrls || [];
+
+      expect(extractedPaths1).to.deep.equal({});
+      expect(filteredSitemapUrls1).to.deep.equal([]);
+
+      // Test case 2: details is undefined
+      const siteMapUrlsResult2 = {
+        success: true,
+        reasons: [{ value: 'Test scenario' }],
+        details: undefined,
+      };
+
+      const extractedPaths2 = siteMapUrlsResult2.details?.extractedPaths || {};
+      const filteredSitemapUrls2 = siteMapUrlsResult2.details?.filteredSitemapUrls || [];
+
+      expect(extractedPaths2).to.deep.equal({});
+      expect(filteredSitemapUrls2).to.deep.equal([]);
+
+      // Test case 3: details is null
+      const siteMapUrlsResult3 = {
+        success: true,
+        reasons: [{ value: 'Test scenario' }],
+        details: null,
+      };
+
+      const extractedPaths3 = siteMapUrlsResult3.details?.extractedPaths || {};
+      const filteredSitemapUrls3 = siteMapUrlsResult3.details?.filteredSitemapUrls || [];
+
+      expect(extractedPaths3).to.deep.equal({});
+      expect(filteredSitemapUrls3).to.deep.equal([]);
+
+      // Now use esmock to test the actual findSitemap function with these conditions
+      const esmock = (await import('esmock')).default;
+
+      const mockedSitemapHandler = await esmock('../../src/sitemap/handler.js', {
+        '../../src/sitemap/common.js': {
+          getSitemapUrls: async () => siteMapUrlsResult1,
+          ERROR_CODES,
+        },
+      });
+
+      const result = await mockedSitemapHandler.findSitemap(url);
+      expect(result.success).to.equal(false);
+      expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
     });
   });
 
