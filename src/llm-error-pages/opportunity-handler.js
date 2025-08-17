@@ -12,8 +12,8 @@
 
 /* eslint-disable no-await-in-loop */
 
-import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
+import { syncSuggestions } from '../utils/data-access.js';
 import {
   buildOpportunityDataForErrorType,
   populateSuggestion,
@@ -111,15 +111,56 @@ export async function createOpportunityForErrorCategory(
 
   // Build opportunity data
   const opportunityData = buildOpportunityDataForErrorType(errorType, enhancedErrors);
-  const opportunity = await convertToOpportunity({
-    siteId,
-    auditId,
-    ...opportunityData,
-  });
+
+  // Debug: Log the parameters being passed to convertToOpportunity
+  const siteIdFromSite = site.getId();
+  log.info(`Creating opportunity with siteId: ${siteIdFromSite}, auditId: ${auditId}`);
+
+  const opportunity = await convertToOpportunity(
+    site.getBaseURL?.() || 'unknown',
+    { siteId: siteIdFromSite, id: auditId },
+    context,
+    () => opportunityData,
+    /* TODO: replace with Audit.AUDIT_TYPES.LLM_ERROR_PAGES once constant is available
+     * in shared library */
+    'llm-error-pages',
+  );
 
   // Create suggestions based on error type
   if (errorType === '404') {
-    log.info(`Created opportunity ${opportunity.getId()} for ${errorType} errors - suggestions will be created by Mystique`);
+    // Create placeholder suggestions so Mystique can later update the same records
+    await syncSuggestions({
+      opportunity,
+      newData: enhancedErrors,
+      buildKey: (error) => `${error.url}|${error.userAgent}`,
+      context,
+      mapNewSuggestion: (error, index) => {
+        const suggestionId = `llm-${error.url}-${error.userAgent}`;
+        return {
+          opportunityId: opportunity.getId(),
+          type: 'ERROR_REMEDIATION',
+          rank: index + 1,
+          status: 'NEW',
+          data: {
+            url: error.url,
+            statusCode: error.status,
+            totalRequests: error.totalRequests,
+            userAgent: error.userAgent,
+            rawUserAgents: error.rawUserAgents,
+            suggestedUrls: [], // Mystique will fill
+            aiRationale: null,
+            confidenceScore: null,
+            suggestionType: 'REDIRECT_UPDATE',
+            suggestionId,
+            suggestion: `Placeholder for ${error.url}`,
+            validatedAt: error.validatedAt,
+          },
+        };
+      },
+      log,
+    });
+
+    log.info(`Created opportunity ${opportunity.getId()} for ${errorType} errors with ${enhancedErrors.length} placeholder suggestions (awaiting Mystique)`);
   } else {
     // Create informational template suggestions for 403/5xx errors
     await syncSuggestions({
@@ -168,24 +209,24 @@ export async function createOpportunityForErrorCategory(
     log.info(`Created opportunity ${opportunity.getId()} for ${errorType} errors with ${enhancedErrors.length} informational suggestions`);
   }
 
-  // Send SQS messages to Mystique for 404 errors only (simplified: no per-item stats or retries)
+  // Send SQS messages to Mystique for 404 errors only
   if (errorType === '404' && sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
     const baseURL = site?.getBaseURL?.() || '';
 
     const messages = enhancedErrors.map((error) => ({
-      type: 'guidance:llm-error-pages',
+      type: 'guidance:broken-links',
       siteId,
       auditId: opportunity.auditId || auditId || 'unknown',
       deliveryType: site?.getDeliveryType?.() || 'aem_edge',
       time: new Date().toISOString(),
       data: {
-        brokenUrl: baseURL ? `${baseURL}${error.url}` : error.url,
-        userAgent: error.userAgent,
-        statusCode: error.status,
-        totalRequests: error.totalRequests,
+        brokenLinks: [{
+          urlFrom: error.userAgent, // Use user agent as "from" context
+          urlTo: baseURL ? `${baseURL}${error.url}` : error.url,
+          suggestionId: `llm-${error.url}-${error.userAgent}`,
+        }],
+        alternativeUrls: [], // Will be populated by Mystique from site analysis
         opportunityId: opportunity.getId(),
-        rawUserAgents: error.rawUserAgents,
-        validatedAt: error.validatedAt,
       },
     }));
 
@@ -245,14 +286,29 @@ export async function generateOpportunities(processedResults, message, context) 
 
   if (!env || !env.QUEUE_SPACECAT_TO_MYSTIQUE) {
     log.info('Missing required SQS queue configuration');
-    return { status: 'skipped', reason: 'Missing SQS configuration' };
+    // Continue without SQS - will create opportunities but not send to Mystique
   }
 
-  const { siteId, auditId } = message;
+  const { siteId: messageSiteId, auditId } = message;
+  let effectiveAuditId = auditId;
+  if (!effectiveAuditId) {
+    // generate stable id per run
+    effectiveAuditId = `llm-${Date.now()}`;
+  }
   const { Site } = dataAccess;
 
-  const site = await Site.findById(siteId);
+  let { site } = context;
+  let siteId = messageSiteId;
 
+  if (!site) {
+    site = messageSiteId ? await Site.findById(messageSiteId) : null;
+  }
+  if (!site) {
+    log.error(`Site not found. siteId in message: ${messageSiteId}`);
+    throw new Error(`Site not found for siteId: ${messageSiteId}`);
+  }
+
+  siteId = site.getId();
   if (!processedResults?.errorPages?.length) {
     log.info('No LLM error pages found, skipping opportunity generation');
     return { status: 'skipped', reason: 'No error pages to process' };
@@ -262,18 +318,17 @@ export async function generateOpportunities(processedResults, message, context) 
 
   const categorizedErrors = categorizeErrorsByStatusCode(processedResults.errorPages);
 
-  const categoryPromises = Object.entries(categorizedErrors)
-    .filter(([, errors]) => errors.length > 0)
-    .map(([errorType, errors]) => (
-      processCategory(errorType, errors, siteId, auditId, context, site)
-        .then(() => ({ ok: true, errorType }))
-        .catch((error) => {
-          log.error(`Failed to process ${errorType} category: ${error.message}`, error);
-          return { ok: false, errorType, error };
-        })
-    ));
-
-  await Promise.all(categoryPromises);
+  // Process categories sequentially to prevent race-conditions on the same Opportunity record.
+  // TODO: revisit if we ever split into one-opportunity-per-category.
+  for (const [errorType, errors] of Object.entries(categorizedErrors)) {
+    if (errors.length > 0) {
+      try {
+        await processCategory(errorType, errors, siteId, effectiveAuditId, context, site);
+      } catch (error) {
+        log.error(`Failed to process ${errorType} category: ${error.message}`, error);
+      }
+    }
+  }
 
   const totalProcessedUrls = Object.values(categorizedErrors)
     .reduce((sum, errors) => sum + errors.length, 0);

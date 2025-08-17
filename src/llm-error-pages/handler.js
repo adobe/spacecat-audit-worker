@@ -42,7 +42,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
     let endDate;
     let periodIdentifier;
 
-    if (message.type === 'runCustomDateRange') {
+    if (message.startDate && message.endDate) {
       const { startDate: msgStartDate, endDate: msgEndDate } = message;
       if (!msgStartDate || !msgEndDate) {
         throw new Error('Custom date range requires startDate and endDate in message');
@@ -75,7 +75,6 @@ async function runLlmErrorPagesAudit(url, context, site) {
       endDate,
       llmProviders: getAllLlmProviders(), // Query all LLM providers
       siteFilters,
-      // errorStatuses: [404, 500, 503], // Can be enabled later for specific error filtering
     });
 
     log.info('Executing LLM error pages query...');
@@ -91,7 +90,10 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
     log.info(`Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
 
-    await generateOpportunities(processedResults, message, context);
+    // Attach site to context for downstream opportunity generation
+    const downstreamContext = { ...context, site };
+
+    await generateOpportunities(processedResults, message, downstreamContext);
 
     const auditResult = {
       success: true,

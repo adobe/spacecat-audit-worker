@@ -59,7 +59,6 @@ export async function buildLlmErrorPagesQuery(options) {
     endDate,
     llmProviders = null,
     siteFilters = [],
-    errorStatuses = null,
   } = options;
 
   const conditions = [];
@@ -69,11 +68,8 @@ export async function buildLlmErrorPagesQuery(options) {
     conditions.push(buildDateFilter(startDate, endDate));
   }
 
-  // Error status filter (placeholder for future expansion)
-  if (errorStatuses && errorStatuses.length > 0) {
-    const statusFilter = `status IN (${errorStatuses.join(',')})`;
-    conditions.push(statusFilter);
-  }
+  // Error status filter - get all error status codes (400-599)
+  conditions.push('status BETWEEN 400 AND 599');
 
   const whereClause = buildWhereClause(conditions, llmProviders, siteFilters);
 
