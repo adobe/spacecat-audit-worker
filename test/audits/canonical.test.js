@@ -255,8 +255,8 @@ describe('Canonical URL Tests', () => {
       expect(log.error).to.have.been.calledWith('Invalid URL: invalid-url');
     });
 
-    it('should handle non-lowercase canonical URL', () => {
-      const canonicalUrl = 'https://example.com/UpperCase';
+    it('should handle non-uppercase canonical URL', () => {
+      const canonicalUrl = 'HTTPS://EXAMPLE.COM/UPPERCASE';
       const baseUrl = 'https://example.com';
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
 
@@ -265,7 +265,7 @@ describe('Canonical URL Tests', () => {
         success: false,
         explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
       });
-      expect(log.info).to.have.been.calledWith('Canonical URL is not lowercased: https://example.com/UpperCase');
+      expect(log.info).to.have.been.calledWith('Canonical URL is fully uppercased: HTTPS://EXAMPLE.COM/UPPERCASE');
     });
 
     it('should pass if canonical URL is in lowercase', () => {

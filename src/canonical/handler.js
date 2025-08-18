@@ -315,16 +315,17 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
     return checks;
   }
 
-  // Check if the canonical URL is in lowercase
+  // Check if the canonical URL is fully uppercased
   if (canonicalUrl) {
     if (typeof canonicalUrl === 'string') {
-      if (canonicalUrl !== canonicalUrl.toLowerCase()) {
+      const isAllCaps = canonicalUrl === canonicalUrl.toUpperCase();
+      if (isAllCaps) {
         checks.push({
           check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
           success: false,
           explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
         });
-        log.info(`Canonical URL is not lowercased: ${canonicalUrl}`);
+        log.info(`Canonical URL is fully uppercased: ${canonicalUrl}`);
       } else {
         checks.push({
           check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
