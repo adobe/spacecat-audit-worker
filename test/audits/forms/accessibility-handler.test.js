@@ -264,7 +264,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 serious: { count: 0, items: {} },
               },
             },
-            'https://example.com/form1---contact-form': {
+            'https://example.com/form1?source=contact-form': {
               violations: {
                 total: 0,
                 critical: { count: 0, items: {} },
@@ -311,7 +311,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 serious: { count: 3, items: {} },
               },
             },
-            'https://example.com/form1---contact-form': {
+            'https://example.com/form1?source=contact-form': {
               violations: {
                 total: 2,
                 critical: {
@@ -398,7 +398,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 serious: { count: 2, items: {} },
               },
             },
-            'https://example.com/form1---contact-form': {
+            'https://example.com/form1?source=contact-form': {
               violations: {
                 total: 2,
                 critical: {
@@ -429,7 +429,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 },
               },
             },
-            'https://example.com/form2---newsletter-form': {
+            'https://example.com/form2?source=newsletter-form': {
               violations: {
                 total: 2,
                 critical: {
@@ -598,7 +598,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 serious: { count: 0, items: {} },
               },
             },
-            'https://example.com/form1---contact-form': {
+            'https://example.com/form1?source=contact-form': {
               violations: {
                 total: 1,
                 critical: {
@@ -660,7 +660,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 serious: { count: 0, items: {} },
               },
             },
-            'https://example.com/page1---contact-form': {
+            'https://example.com/page1?source=contact-form': {
               violations: {
                 total: 1,
                 critical: {
@@ -758,7 +758,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 serious: { count: 0, items: {} },
               },
             },
-            'https://example.com/form1---contact-form': {
+            'https://example.com/form1?source=contact-form': {
               violations: {
                 total: 1,
                 critical: {
@@ -822,7 +822,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 serious: { count: 0, items: {} },
               },
             },
-            'https://example.com/form1---': { // Malformed: missing formSource
+            'https://example.com/form1?source=': { // Malformed: missing formSource
               violations: {
                 total: 1,
                 critical: {
@@ -928,7 +928,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 serious: { count: 0, items: {} },
               },
             },
-            'https://example.com/form1---contact-form': {
+            'https://example.com/form1?source=contact-form': {
               violations: {
                 total: 2,
                 critical: {
@@ -981,7 +981,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 serious: { count: 0, items: {} },
               },
             },
-            'https://example.com/form1---contact-form': {
+            'https://example.com/form1?source=contact-form': {
               // Missing violations object
             },
           },
@@ -1046,7 +1046,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 },
               },
             },
-            'https://example.com/form1---contact-form': { // Form (with separator)
+            'https://example.com/form1?source=contact-form': { // Form (with separator)
               violations: {
                 total: 2,
                 critical: {
@@ -1124,7 +1124,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 serious: { count: 1, items: {} },
               },
             },
-            'https://example.com/contact---contact-form': {
+            'https://example.com/contact?source=contact-form': {
               violations: {
                 total: 2,
                 critical: {
@@ -1155,7 +1155,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 },
               },
             },
-            'https://example.com/signup---newsletter-form': {
+            'https://example.com/signup?source=newsletter-form': {
               violations: {
                 total: 1,
                 critical: {

@@ -1904,8 +1904,8 @@ describe('data-processing utility functions', () => {
       );
 
       expect(result.success).to.be.true;
-      expect(result.finalResultFiles.current).to.have.property('https://example.com/contact---#contact-form');
-      expect(result.finalResultFiles.current['https://example.com/contact---#contact-form'].violations.total).to.equal(3);
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/contact?source=#contact-form');
+      expect(result.finalResultFiles.current['https://example.com/contact?source=#contact-form'].violations.total).to.equal(3);
       expect(result.message).to.equal('Successfully aggregated 1 files into output-key');
 
       // Verify the correct log identifier is used
@@ -1958,9 +1958,9 @@ describe('data-processing utility functions', () => {
 
       expect(result.success).to.be.true;
       // Should create composite key for form source data
-      expect(result.finalResultFiles.current).to.have.property('https://example.com/contact---#contact-form');
-      expect(result.finalResultFiles.current['https://example.com/contact---#contact-form'].violations.total).to.equal(2);
-      expect(result.finalResultFiles.current['https://example.com/contact---#contact-form'].traffic).to.equal(30);
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/contact?source=#contact-form');
+      expect(result.finalResultFiles.current['https://example.com/contact?source=#contact-form'].violations.total).to.equal(2);
+      expect(result.finalResultFiles.current['https://example.com/contact?source=#contact-form'].traffic).to.equal(30);
     });
 
     it('should handle forms-opportunities audit type with different CSS selector form sources', async () => {
@@ -2009,9 +2009,9 @@ describe('data-processing utility functions', () => {
 
       expect(result.success).to.be.true;
       // Should create composite key for form source data with CSS class selector
-      expect(result.finalResultFiles.current).to.have.property('https://example.com/newsletter---.newsletter-signup-form');
-      expect(result.finalResultFiles.current['https://example.com/newsletter---.newsletter-signup-form'].violations.total).to.equal(1);
-      expect(result.finalResultFiles.current['https://example.com/newsletter---.newsletter-signup-form'].traffic).to.equal(25);
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/newsletter?source=.newsletter-signup-form');
+      expect(result.finalResultFiles.current['https://example.com/newsletter?source=.newsletter-signup-form'].violations.total).to.equal(1);
+      expect(result.finalResultFiles.current['https://example.com/newsletter?source=.newsletter-signup-form'].traffic).to.equal(25);
     });
 
     it('should return error with correct log identifier for forms-opportunities when no files processed', async () => {

@@ -1308,10 +1308,10 @@ describe('Accessibility Audit Handler', () => {
       // Arrange
       const data = {
         overall: { violations: { total: 10 } },
-        'https://example.com/page1---contact-form': { violations: { total: 5 } },
-        'https://example.com/page1---newsletter-form': { violations: { total: 3 } },
-        'https://example.com/page2---feedback-form': { violations: { total: 2 } },
-        'https://example.com/page3---subscribe-form': { violations: { total: 1 } },
+        'https://example.com/page1?source=contact-form': { violations: { total: 5 } },
+        'https://example.com/page1?source=newsletter-form': { violations: { total: 3 } },
+        'https://example.com/page2?source=feedback-form': { violations: { total: 2 } },
+        'https://example.com/page3?source=subscribe-form': { violations: { total: 1 } },
       };
 
       // Act
@@ -1326,10 +1326,10 @@ describe('Accessibility Audit Handler', () => {
       const data = {
         overall: { violations: { total: 15 } },
         'https://example.com/page1': { violations: { total: 5 } },
-        'https://example.com/page1---contact-form': { violations: { total: 3 } },
-        'https://example.com/page1---newsletter-form': { violations: { total: 2 } },
+        'https://example.com/page1?source=contact-form': { violations: { total: 3 } },
+        'https://example.com/page1?source=newsletter-form': { violations: { total: 2 } },
         'https://example.com/page2': { violations: { total: 4 } },
-        'https://example.com/page2---feedback-form': { violations: { total: 1 } },
+        'https://example.com/page2?source=feedback-form': { violations: { total: 1 } },
         'https://example.com/page3': { violations: { total: 3 } },
       };
 
@@ -1357,8 +1357,8 @@ describe('Accessibility Audit Handler', () => {
       // Arrange
       const data = {
         overall: { violations: { total: 5 } },
-        'https://example.com/page1---': { violations: { total: 3 } }, // Empty form source
-        'https://example.com/page2---form1': { violations: { total: 2 } },
+        'https://example.com/page1?source=': { violations: { total: 3 } }, // Empty form source
+        'https://example.com/page2?source=form1': { violations: { total: 2 } },
         'https://example.com/page3': { violations: { total: 1 } },
       };
 
@@ -1373,10 +1373,10 @@ describe('Accessibility Audit Handler', () => {
       // Arrange
       const data = {
         overall: { violations: { total: 10 } },
-        'https://example.com/page1---contact-form-v2': { violations: { total: 5 } },
-        'https://example.com/page1---newsletter-signup-form': { violations: { total: 3 } },
-        'https://example.com/page2---user-registration-form': { violations: { total: 2 } },
-        'https://example.com/page3---checkout-form-step1': { violations: { total: 1 } },
+        'https://example.com/page1?source=contact-form-v2': { violations: { total: 5 } },
+        'https://example.com/page1?source=newsletter-signup-form': { violations: { total: 3 } },
+        'https://example.com/page2?source=user-registration-form': { violations: { total: 2 } },
+        'https://example.com/page3?source=checkout-form-step1': { violations: { total: 1 } },
       };
 
       // Act
