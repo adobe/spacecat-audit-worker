@@ -26,7 +26,9 @@ const REGEX_PATTERNS = {
 const CDN_LOGS_PREFIX = 'cdn-logs-';
 
 export function extractCustomerDomain(site) {
-  return new URL(site.getBaseURL()).host
+  const { host } = new URL(site.getBaseURL());
+  const cleanHost = host.startsWith('www.') ? host.substring(4) : host;
+  return cleanHost
     .replace(REGEX_PATTERNS.URL_SANITIZATION, '_')
     .toLowerCase();
 }
@@ -38,7 +40,9 @@ export function getAnalysisBucket(customerDomain) {
 
 export function getS3Config(site) {
   const customerDomain = extractCustomerDomain(site);
-  const customerName = customerDomain.split(/[._]/)[0];
+  const domainParts = customerDomain.split(/[._]/);
+  // Remove 'www' if it's the first part, otherwise use the first part
+  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
   const { bucketName: bucket } = site.getConfig().getCdnLogsConfig()
     || { bucketName: getAnalysisBucket(customerDomain) };
 

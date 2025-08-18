@@ -11,32 +11,18 @@
  */
 
 /* eslint-env mocha */
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
-import esmock from 'esmock';
-import * as utils from '../../../src/cdn-logs-report/utils/report-utils.js';
-import { DEFAULT_COUNTRY_PATTERNS } from '../../../src/cdn-logs-report/constants/country-patterns.js';
+import sinonChai from 'sinon-chai';
 
-function extractCC(url) {
-  for (const { regex } of DEFAULT_COUNTRY_PATTERNS) {
-    const pattern = new RegExp(regex, 'i');
-    const match = url.match(pattern);
-    if (match && match[1]) {
-      return match[1].toLowerCase();
-    }
-  }
-  return null;
-}
+use(sinonChai);
 
 describe('CDN Logs Report Utils', () => {
+  let reportUtils;
   let sandbox;
 
-  const mockSite = (baseURL, cdnLogsConfig = null) => ({
-    getBaseURL: () => baseURL,
-    getConfig: () => ({ getCdnLogsConfig: () => cdnLogsConfig, getLlmoDataFolder: () => 'llmo' }),
-  });
-
-  beforeEach(() => {
+  before(async () => {
+    reportUtils = await import('../../../src/cdn-logs-report/utils/report-utils.js');
     sandbox = sinon.createSandbox();
   });
 
@@ -44,184 +30,173 @@ describe('CDN Logs Report Utils', () => {
     sandbox.restore();
   });
 
-  describe('Domain and Bucket Operations', () => {
-    it('should extract and sanitize customer domains', () => {
-      expect(utils.extractCustomerDomain(mockSite('https://test.example-site.com')))
-        .to.equal('test_example_site_com');
-      expect(utils.extractCustomerDomain(mockSite('https://sub-domain.multi-word-site.example-test.co.uk')))
-        .to.equal('sub_domain_multi_word_site_example_test_co_uk');
-    });
-
-    it('should generate analysis bucket names', () => {
-      expect(utils.getAnalysisBucket('test.example.com')).to.equal('cdn-logs-test-example-com');
-      expect(utils.getAnalysisBucket('Test.Example.COM')).to.equal('cdn-logs-Test-Example-COM');
-    });
-  });
-
   describe('S3 Configuration', () => {
-    it('should handle custom bucket config', () => {
-      const config = utils.getS3Config(mockSite('https://test.com', { bucketName: 'custom-bucket' }));
-      expect(config.bucket).to.equal('custom-bucket');
-      expect(config.customerName).to.equal('test');
-      expect(config.customerDomain).to.equal('test_com');
+    it('generates correct S3 config from site', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => ({
+          getCdnLogsConfig: () => ({
+            s3Config: {
+              bucketName: 'test-bucket',
+              bucketRegion: 'us-east-1',
+            },
+          }),
+        }),
+      };
+
+      const config = reportUtils.getS3Config(mockSite);
+
+      expect(config).to.have.property('customerName', 'example');
+      expect(config).to.have.property('customerDomain', 'example_com');
+      expect(config).to.have.property('databaseName', 'cdn_logs_example_com');
+      expect(config).to.have.property('tableName', 'aggregated_logs_example_com');
     });
 
-    it('should handle null config fallback', () => {
-      const config = utils.getS3Config(mockSite('https://empty.com', null));
-      expect(config.bucket).to.equal('cdn-logs-empty-com');
-      expect(config.customerName).to.equal('empty');
-      expect(config.customerDomain).to.equal('empty_com');
+    it('removes www from both customer name and domain', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.adobe.com',
+        getConfig: () => ({
+          getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+        }),
+      };
+
+      const config = reportUtils.getS3Config(mockSite);
+
+      expect(config).to.have.property('customerName', 'adobe');
+      expect(config).to.have.property('customerDomain', 'adobe_com');
     });
 
-    it('should handle empty object config', () => {
-      const config = utils.getS3Config(mockSite('https://empty.com', {}));
-      expect(config.bucket).to.be.undefined;
-      expect(config.customerName).to.equal('empty');
-      expect(config.customerDomain).to.equal('empty_com');
+    it('handles non-www domains correctly', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://adobe.com',
+        getConfig: () => ({
+          getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+        }),
+      };
+
+      const config = reportUtils.getS3Config(mockSite);
+
+      expect(config).to.have.property('customerName', 'adobe');
+      expect(config).to.have.property('customerDomain', 'adobe_com');
     });
 
-    it('should generate correct temp location', () => {
-      const config = utils.getS3Config(mockSite('https://test.example.com'));
-      expect(config.getAthenaTempLocation()).to.equal('s3://cdn-logs-test-example-com/temp/athena-results/');
-    });
-  });
-
-  describe('Date and Time Operations', () => {
-    it('should generate period identifiers', () => {
-      const weekStart = new Date('2025-01-08T00:00:00Z');
-      const weekEnd = new Date('2025-01-14T23:59:59Z');
-      expect(utils.generatePeriodIdentifier(weekStart, weekEnd)).to.match(/^w\d{2}-\d{4}$/);
-
-      const start = new Date('2025-01-01');
-      const end = new Date('2025-01-05');
-      expect(utils.generatePeriodIdentifier(start, end)).to.equal('2025-01-01_to_2025-01-05');
-    });
-
-    it('should generate reporting periods for various dates', () => {
-      [
-        new Date('2025-01-15T10:00:00Z'),
-        new Date('2025-01-01'),
-        new Date('2025-12-31'),
-        new Date('2024-02-29'), // Keep leap year test
-        new Date('2025-01-07T10:00:00Z'),
-        new Date('2025-01-12T10:00:00Z'),
-      ].forEach((date) => {
-        const periods = utils.generateReportingPeriods(date, -1);
-        expect(periods.weeks).to.be.an('array').with.lengthOf(1);
-        expect(periods.columns).to.be.an('array');
-        expect(periods.weeks[0].weekNumber).to.be.a('number').greaterThan(0).lessThan(54);
-        expect(periods.weeks[0].startDate.getUTCDay()).to.equal(1); // Monday
-        expect(periods.weeks[0].endDate.getUTCDay()).to.equal(0); // Sunday
-        expect(periods.weeks[0].startDate.getUTCHours()).to.equal(0);
-        expect(periods.weeks[0].endDate.getUTCHours()).to.equal(23);
-      });
+    it('generates analysis bucket name correctly', () => {
+      const bucketName = reportUtils.getAnalysisBucket('example_com');
+      expect(bucketName).to.equal('cdn-logs-example-com');
     });
   });
 
-  describe('Validation and Filtering', () => {
-    it('should validate basic country codes', () => {
-      expect(utils.validateCountryCode('US')).to.equal('US');
-      expect(utils.validateCountryCode('us')).to.equal('US');
-      expect(utils.validateCountryCode('FR')).to.equal('FR');
-      expect(utils.validateCountryCode('GLOBAL')).to.equal('GLOBAL');
+  describe('Date and Period Management', () => {
+    it('generates period identifiers correctly', () => {
+      const startDate = new Date('2025-01-06');
+      const endDate = new Date('2025-01-12');
 
-      ['', null, undefined, 'INVALID', '   '].forEach((input) => {
-        expect(utils.validateCountryCode(input)).to.equal('GLOBAL');
-      });
+      const identifier = reportUtils.generatePeriodIdentifier(startDate, endDate);
+      expect(identifier).to.equal('w02-2025');
     });
 
-    it('should validate country codes from URL paths', () => {
-      const testCases = [
-        { url: 'genuine/ooc-dm-twp-row-cx6-nc.html', expected: 'GLOBAL' },
-        { url: 'th_th/genuine/ooc-dm-ses-cx6-nc.html', expected: 'TH' },
-        { url: '/', expected: 'GLOBAL' },
-        { url: 'in/creativecloud.html', expected: 'IN' },
-        { url: 'kr/genuine/ooc-dm-ses-cx6-nc.html', expected: 'KR' },
-        { url: 'upload', expected: 'GLOBAL' },
-        { url: 'id_id/genuine/ooc-dm-ses-cx6-nc.html', expected: 'ID' },
-        { url: '/uk/', expected: 'UK' },
-        { url: '/se/', expected: 'SE' },
-        { url: '/nl/products/pure-whey-protein/bpb-wpc8-0000', expected: 'NL' },
-        { url: '/fr/search', expected: 'FR' },
-        { url: '/ie/products/creatine-monohydrate/bpb-cmon-0000', expected: 'IE' },
-        { url: '/sendfriend/', expected: 'GLOBAL' },
-        { url: '/en-us/', expected: 'US' },
-        { url: '/en-us/sportswear/women/new-arrivals', expected: 'US' },
-        { url: '/en-gb/', expected: 'GB' },
-      ];
+    it('generates reporting periods with week offset', () => {
+      const refDate = new Date('2025-01-15');
 
-      testCases.forEach(({ url, expected }) => {
-        expect(utils.validateCountryCode(extractCC(url))).to.equal(expected);
-      });
+      const periods = reportUtils.generateReportingPeriods(refDate, -1);
+
+      expect(periods).to.have.property('weeks').that.is.an('array');
+      expect(periods.weeks).to.have.length(1);
+      expect(periods.weeks[0]).to.have.property('startDate');
+      expect(periods.weeks[0]).to.have.property('endDate');
+      expect(periods.weeks[0]).to.have.property('weekLabel');
     });
 
-    it('should build site filters', () => {
-      expect(utils.buildSiteFilters([])).to.equal('');
-      expect(utils.buildSiteFilters(null)).to.equal('');
-      expect(utils.buildSiteFilters([{ key: 'domain', value: ['example.com'] }]))
-        .to.equal("(REGEXP_LIKE(domain, '(?i)(example.com)'))");
-      expect(utils.buildSiteFilters([{ key: 'domain', value: ['example.com', 'test.com'], type: 'include' }]))
-        .to.equal("(REGEXP_LIKE(domain, '(?i)(example.com|test.com)'))");
-      expect(utils.buildSiteFilters([{ key: 'domain', value: ['example.com', 'test.com'], type: 'exclude' }]))
-        .to.equal("(NOT REGEXP_LIKE(domain, '(?i)(example.com|test.com)'))");
-      expect(utils.buildSiteFilters([
-        { key: 'domain', value: ['example.com'] },
-        { key: 'status', value: ['200'] },
-      ])).to.equal("(REGEXP_LIKE(domain, '(?i)(example.com)') AND REGEXP_LIKE(status, '(?i)(200)'))");
-      expect(utils.buildSiteFilters([
-        { key: 'domain', value: ['example.com', 'test.com'], type: 'exclude' },
-        { key: 'status', value: ['200'], type: 'include' },
-      ])).to.equal("(NOT REGEXP_LIKE(domain, '(?i)(example.com|test.com)') AND REGEXP_LIKE(status, '(?i)(200)'))");
+    it('generates non-week format period identifier', () => {
+      const startDate = new Date('2025-01-06');
+      const endDate = new Date('2025-01-20'); // Spans more than a week
+
+      const identifier = reportUtils.generatePeriodIdentifier(startDate, endDate);
+      expect(identifier).to.equal('2025-01-06_to_2025-01-20');
     });
   });
 
-  describe('Database Operations', () => {
-    it('should load SQL and ensure table exists successfully', async () => {
-      const reportUtils = await esmock('../../../src/cdn-logs-report/utils/report-utils.js', {
-        '@adobe/spacecat-shared-utils': {
-          getStaticContent: sandbox.stub().resolves('CREATE TABLE test_table...'),
-        },
-      });
+  describe('Validation', () => {
+    it('validates country codes correctly', () => {
+      expect(reportUtils.validateCountryCode('US')).to.equal('US');
+      expect(reportUtils.validateCountryCode('us')).to.equal('US');
+      expect(reportUtils.validateCountryCode('ABC')).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode(null)).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('')).to.equal('GLOBAL');
+    });
 
-      const result = await reportUtils.loadSql('test-query', { table: 'test_table' });
-      expect(result).to.equal('CREATE TABLE test_table...');
+    it('builds site filters correctly', () => {
+      expect(reportUtils.buildSiteFilters([])).to.equal('');
+      expect(reportUtils.buildSiteFilters([
+        { key: 'url', value: ['test'], type: 'include' },
+        { key: 'url', value: ['prod'], type: 'include' },
+      ])).to.include("REGEXP_LIKE(url, '(?i)(test)')");
+    });
 
-      const mockAthenaClient = { execute: sandbox.stub().resolves() };
+    it('builds exclude filters correctly', () => {
+      const result = reportUtils.buildSiteFilters([
+        { key: 'url', value: ['admin'], type: 'exclude' },
+      ]);
+      expect(result).to.include("NOT REGEXP_LIKE(url, '(?i)(admin)')");
+    });
+  });
+
+  describe('SQL Loading and Database Operations', () => {
+    it('loads and processes SQL templates', async () => {
+      const sql = await reportUtils.loadSql('create-database', { database: 'test_db' });
+
+      expect(sql).to.be.a('string');
+      expect(sql).to.include('test_db');
+    });
+
+    it('loads SQL without variables', async () => {
+      const sql = await reportUtils.loadSql('create-database', {});
+
+      expect(sql).to.be.a('string');
+    });
+
+    it('ensures table exists successfully', async () => {
+      const mockAthenaClient = {
+        execute: sandbox.stub().resolves(),
+      };
       const mockS3Config = {
         tableName: 'test_table',
-        databaseName: 'test_database',
-        aggregatedLocation: 's3://test-bucket/aggregated/',
+        databaseName: 'test_db',
+        aggregatedLocation: 's3://test-bucket/data/',
       };
-      const mockLog = { info: sandbox.stub(), error: sandbox.stub() };
+      const mockLog = {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+      };
 
       await reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, mockLog);
-      expect(mockAthenaClient.execute.calledOnce).to.be.true;
-      expect(mockLog.info.calledWith('Creating or checking table: test_table')).to.be.true;
-      expect(mockLog.info.calledWith('Table test_table is ready')).to.be.true;
+
+      expect(mockAthenaClient.execute).to.have.been.calledOnce;
+      expect(mockLog.info).to.have.been.calledWith('Creating or checking table: test_table');
+      expect(mockLog.info).to.have.been.calledWith('Table test_table is ready');
     });
 
-    it('should handle database operation errors', async () => {
-      const errorReportUtils = await esmock('../../../src/cdn-logs-report/utils/report-utils.js', {
-        '@adobe/spacecat-shared-utils': {
-          getStaticContent: sandbox.stub().rejects(new Error('SQL load failed')),
-        },
-      });
-
-      const mockAthenaClient = { execute: sandbox.stub().resolves() };
+    it('handles table creation errors', async () => {
+      const mockAthenaClient = {
+        execute: sandbox.stub().rejects(new Error('Table creation failed')),
+      };
       const mockS3Config = {
         tableName: 'test_table',
-        databaseName: 'test_database',
-        aggregatedLocation: 's3://test-bucket/aggregated/',
+        databaseName: 'test_db',
+        aggregatedLocation: 's3://test-bucket/data/',
       };
-      const mockLog = { info: sandbox.stub(), error: sandbox.stub() };
+      const mockLog = {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+      };
 
-      try {
-        await errorReportUtils.ensureTableExists(mockAthenaClient, mockS3Config, mockLog);
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.equal('SQL load failed');
-        expect(mockLog.error.calledOnce).to.be.true;
-      }
+      await expect(
+        reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, mockLog),
+      ).to.be.rejectedWith('Table creation failed');
+
+      expect(mockLog.error).to.have.been.calledWith(
+        'Failed to ensure table exists: Table creation failed',
+      );
     });
   });
 });

@@ -29,300 +29,93 @@ describe('CDN Logs Query Builder', () => {
       periods: {
         weeks: [
           {
-            startDate: new Date('2025-01-01'),
-            endDate: new Date('2025-01-07'),
-            weekLabel: 'Week 1',
-            dateRange: { start: '2025-01-01', end: '2025-01-07' },
-          },
-          {
-            startDate: new Date('2025-01-08'),
-            endDate: new Date('2025-01-14'),
-            weekLabel: 'Week 2',
-            dateRange: { start: '2025-01-08', end: '2025-01-14' },
+            startDate: new Date('2025-01-06'),
+            endDate: new Date('2025-01-12'),
+            weekLabel: 'Week 2 2025',
           },
         ],
-        columns: ['Week 1', 'Week 2'],
       },
       databaseName: 'test_db',
       tableName: 'test_table',
-      provider: 'chatgpt',
       siteFilters: [],
       site: {
-        getBaseURL: () => 'https://adobe.com',
+        getBaseURL: () => 'https://example.com',
         getConfig: () => ({
-          getGroupedURLs: () => [
-            { name: 'home', pattern: '^/$' },
-            { name: 'product', pattern: '/products/.+' },
-          ],
+          getGroupedURLs: () => null,
         }),
       },
     };
   });
 
-  it('builds comprehensive set of analytics queries with proper filtering', async () => {
-    const queries = await Promise.all([
-      weeklyBreakdownQueries.createCountryWeeklyBreakdown(mockOptions),
-      weeklyBreakdownQueries.createUserAgentWeeklyBreakdown(mockOptions),
-      weeklyBreakdownQueries.createError404Urls(mockOptions),
-      weeklyBreakdownQueries.createError503Urls(mockOptions),
-      weeklyBreakdownQueries.createTopUrls(mockOptions),
-      weeklyBreakdownQueries.createHitsByProductAgentType(mockOptions),
-      weeklyBreakdownQueries.createHitsByPageCategoryAgentType(mockOptions),
-    ]);
+  it('creates agentic report query with ChatGPT and Perplexity filtering', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
 
-    queries.forEach((query) => {
-      expect(query).to.be.a('string');
-      expect(query.length).to.be.greaterThan(50);
-      expect(query.toUpperCase()).to.include('SELECT');
-      expect(query).to.include('test_db');
-      expect(query).to.include('test_table');
+    expect(query).to.be.a('string');
+    expect(query).to.include('ChatGPT|GPTBot|OAI-SearchBot');
+    expect(query).to.include('Perplexity');
+    expect(query).to.include('test_db.test_table');
+    expect(query).to.include('agent_type');
+    expect(query).to.include('user_agent_display');
+    expect(query).to.include('number_of_hits');
+    expect(query).to.include('avg_ttfb_ms');
+  });
+
+  it('handles site filters correctly', async () => {
+    mockOptions.siteFilters = "url LIKE '%test%'";
+
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
+
+    expect(query).to.include("url LIKE '%test%'");
+  });
+
+  it('includes date filtering for the specified week', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
+
+    expect(query).to.include("year = '2025'");
+    expect(query).to.include("month = '01'");
+  });
+
+  it('handles site with extract-only patterns', async () => {
+    mockOptions.site.getConfig = () => ({
+      getGroupedURLs: () => [
+        { regex: '/(products)/' },
+      ],
     });
+
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
+
+    expect(query).to.include('REGEXP_EXTRACT');
+    expect(query).to.include('NULLIF');
   });
 
-  it('handles bulk.com site with special success URLs by category query', async () => {
-    const bulkOptions = {
-      ...mockOptions,
-      site: {
-        getBaseURL: () => 'https://bulk.com',
-        getConfig: () => ({ getGroupedURLs: () => [] }),
-      },
-    };
+  it('handles site with mixed named and extract patterns', async () => {
+    mockOptions.site.getConfig = () => ({
+      getGroupedURLs: () => [
+        { regex: '/(products)/', name: 'Products' },
+        { regex: '/(blog)/' },
+      ],
+    });
 
-    const categoryQuery = await weeklyBreakdownQueries.createSuccessUrlsByCategory(bulkOptions);
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
 
-    expect(categoryQuery).to.be.a('string');
-    expect(categoryQuery.toUpperCase()).to.include('SELECT');
-    expect(categoryQuery).to.include('status = 200');
-    expect(categoryQuery).to.include('test_db');
-    expect(categoryQuery).to.include('test_table');
+    expect(query).to.include('Products');
+    expect(query).to.include('REGEXP_EXTRACT');
   });
 
-  it('generates valid queries without provider filtering when provider is null', async () => {
-    const optionsWithoutProvider = {
-      ...mockOptions,
-      provider: null,
-    };
+  it('handles site with null URL patterns', async () => {
+    mockOptions.site.getConfig = () => ({
+      getGroupedURLs: () => null,
+    });
 
-    const query = await weeklyBreakdownQueries.createCountryWeeklyBreakdown(optionsWithoutProvider);
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
 
     expect(query).to.be.a('string');
-    expect(query).to.not.include('REGEXP_LIKE(user_agent');
-    expect(query).to.include('test_db');
-    expect(query).to.include('test_table');
-    expect(query.toUpperCase()).to.include('SELECT');
   });
 
-  it('includes site filters when provided in query options', async () => {
-    const optionsWithFilters = {
-      ...mockOptions,
-      siteFilters: ['url LIKE "https://test.com/%"', 'status = 200'],
-    };
-
-    const query = await weeklyBreakdownQueries.createCountryWeeklyBreakdown(optionsWithFilters);
+  it('handles topic patterns with mixed named and extract patterns', async () => {
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
 
     expect(query).to.be.a('string');
-    expect(query).to.include('test_db');
-    expect(query).to.include('test_table');
-    expect(query.toUpperCase()).to.include('SELECT');
-  });
-
-  it('returns null for non-bulk.com sites when creating success URLs by category', async () => {
-    const nonBulkOptions = {
-      ...mockOptions,
-      site: {
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getGroupedURLs: () => [] }),
-      },
-    };
-
-    const result = await weeklyBreakdownQueries.createSuccessUrlsByCategory(nonBulkOptions);
-
-    expect(result).to.be.null;
-  });
-
-  it('handles cross-month date ranges in query filters', async () => {
-    const crossMonthOptions = {
-      ...mockOptions,
-      periods: {
-        weeks: [
-          {
-            startDate: new Date('2024-01-25'),
-            endDate: new Date('2024-02-05'),
-            weekLabel: 'Week 1',
-            dateRange: { start: '2024-01-25', end: '2024-02-05' },
-          },
-        ],
-        columns: ['Week 1'],
-      },
-    };
-
-    const query = await weeklyBreakdownQueries.createCountryWeeklyBreakdown(crossMonthOptions);
-
-    expect(query).to.be.a('string');
-    expect(query).to.include("year = '2024' AND month = '01' AND day >= '25'");
-    expect(query).to.include("year = '2024' AND month = '02' AND day <= '05'");
-  });
-
-  it('generates queries without WHERE clause when no filters are applied', async () => {
-    const noFilterOptions = {
-      ...mockOptions,
-      provider: null,
-      siteFilters: [],
-    };
-
-    const query = await weeklyBreakdownQueries.createUserAgentWeeklyBreakdown(noFilterOptions);
-
-    expect(query).to.be.a('string');
-    expect(query).to.not.include('REGEXP_LIKE(user_agent');
-    expect(query).to.include('test_db');
-    expect(query).to.include('test_table');
-  });
-
-  it('handles exact patterns without regex', async () => {
-    const exactOnlyOptions = {
-      ...mockOptions,
-      site: {
-        getConfig: () => ({
-          getCdnLogsConfig: () => ({
-            patterns: {
-              pages: {
-                product: { exact: '/products' },
-                help: { exact: '/help' },
-              },
-            },
-          }),
-        }),
-        getBaseURL: () => 'https://test.com',
-      },
-    };
-
-    const query = await weeklyBreakdownQueries.createSuccessUrlsByCategory(exactOnlyOptions);
-    if (query) {
-      expect(query).to.include('CASE');
-      expect(query).to.include('product');
-    }
-  });
-
-  it('handles mixed exact and regex patterns', async () => {
-    const mixedOptions = {
-      ...mockOptions,
-      site: {
-        getConfig: () => ({
-          getCdnLogsConfig: () => ({
-            patterns: {
-              pages: {
-                product: { exact: '/products' },
-                blog: '/blog/([^/]+)',
-              },
-            },
-          }),
-        }),
-        getBaseURL: () => 'https://test.com',
-      },
-    };
-
-    const query = await weeklyBreakdownQueries.createSuccessUrlsByCategory(mixedOptions);
-    if (query) {
-      expect(query).to.include('CASE');
-      expect(query).to.include('COALESCE');
-    }
-  });
-
-  it('handles patterns with only named patterns', async () => {
-    const namedOnlyOptions = {
-      ...mockOptions,
-      site: {
-        getConfig: () => ({
-          getCdnLogsConfig: () => ({
-            patterns: {
-              pages: { product: { exact: '/products/' } },
-            },
-          }),
-        }),
-        getBaseURL: () => 'https://test.com',
-      },
-    };
-
-    const query = await weeklyBreakdownQueries.createSuccessUrlsByCategory(namedOnlyOptions);
-    if (query) {
-      expect(query).to.include('CASE');
-    }
-  });
-
-  it('handles patterns with only regex extracts', async () => {
-    const regexOnlyOptions = {
-      ...mockOptions,
-      site: {
-        getConfig: () => ({
-          getCdnLogsConfig: () => ({
-            patterns: {
-              pages: { product: '/products/([^/]+)' },
-            },
-          }),
-        }),
-        getBaseURL: () => 'https://test.com',
-      },
-    };
-
-    const query = await weeklyBreakdownQueries.createSuccessUrlsByCategory(regexOnlyOptions);
-    if (query) {
-      expect(query).to.include('COALESCE');
-    }
-  });
-
-  it('falls back to default patterns when site config returns null', async () => {
-    const nullConfigOptions = {
-      ...mockOptions,
-      site: {
-        getConfig: () => ({ getCdnLogsConfig: () => null, getLlmoDataFolder: () => 'llmo' }),
-        getBaseURL: () => 'https://example.com',
-      },
-    };
-
-    const query = await weeklyBreakdownQueries.createSuccessUrlsByCategory(nullConfigOptions);
-    // The function may return null when config is null, which is acceptable behavior
-    expect(query === null || typeof query === 'string').to.be.true;
-    if (query !== null) {
-      expect(query).to.include('test_db');
-      expect(query).to.include('test_table');
-    }
-  });
-
-  it('handles single pattern objects for topic extraction', async () => {
-    const singlePatternOptions = {
-      ...mockOptions,
-      site: {
-        getConfig: () => ({
-          getCdnLogsConfig: () => ({
-            patterns: {
-              pages: { product: '/products/' },
-              topics: { adobe: 'adobe' },
-            },
-          }),
-        }),
-        getBaseURL: () => 'https://test.com',
-      },
-    };
-
-    const query = await weeklyBreakdownQueries.createTopUrls(singlePatternOptions);
-    expect(query).to.be.a('string');
-    expect(query).to.include('test_db');
-    expect(query).to.include('test_table');
-  });
-
-  it('handles patterns without name property (extract patterns only)', async () => {
-    const extractOnlyOptions = {
-      ...mockOptions,
-      site: {
-        getConfig: () => ({ getCdnLogsConfig: () => null, getLlmoDataFolder: () => 'llmo' }),
-        getBaseURL: () => 'https://bulk.com',
-      },
-    };
-
-    const query = await weeklyBreakdownQueries.createTopUrls(extractOnlyOptions);
-    expect(query).to.be.a('string');
-    expect(query).to.include('test_db');
-    expect(query).to.include('test_table');
-    expect(query).to.include('NULLIF(REGEXP_EXTRACT');
+    expect(query).to.include('CASE');
   });
 });

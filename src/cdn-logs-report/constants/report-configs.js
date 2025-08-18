@@ -12,49 +12,10 @@
 
 import { weeklyBreakdownQueries } from '../utils/query-builder.js';
 
-export const REPORT_CONFIGS = {
-  // agentic: {
-  //   filePrefix: 'agentictraffic',
-  //   folderSuffix: 'agentic-traffic',
-  //   workbookCreator: 'Spacecat Agentic Traffic Report',
-  //   providers: ['chatgpt', 'perplexity'],
-  //   queries: {
-  //     reqcountbycountry: weeklyBreakdownQueries.createCountryWeeklyBreakdown,
-  //     reqcountbyuseragent: weeklyBreakdownQueries.createUserAgentWeeklyBreakdown,
-  //     error_404_urls: weeklyBreakdownQueries.createError404Urls,
-  //     error_503_urls: weeklyBreakdownQueries.createError503Urls,
-  //     success_urls_by_category: weeklyBreakdownQueries.createSuccessUrlsByCategory,
-  //     top_urls: weeklyBreakdownQueries.createTopUrls,
-  //     hits_by_product_agent_type: weeklyBreakdownQueries.createHitsByProductAgentType,
-  //     hits_by_page_category_agent_type: weeklyBreakdownQueries.createHitsByPageCategoryAgentType,
-  //   },
-  //   sheets: [
-  //     { name: 'shared-hits_by_user_agents', dataKey: 'reqcountbyuseragent', type: 'userAgents' },
-  //     { name: 'shared-hits_by_country', dataKey: 'reqcountbycountry', type: 'country' },
-  //     { name: 'shared-404_all_urls', dataKey: 'error_404_urls', type: 'error404' },
-  //     { name: 'shared-503_all_urls', dataKey: 'error_503_urls', type: 'error503' },
-  //     { name: 'shared-hits_by_page', dataKey: 'top_urls', type: 'topUrls' },
-  //     { name: 'shared-hits_by_product', dataKey: 'hits_by_product_agent_type', type: 'hitsByProductAgentType' },
-  //     { name: 'shared-hits_by_page_category', dataKey: 'hits_by_page_category_agent_type', type: 'hitsByPageCategoryAgentType' },
-  //   ],
-  //   conditionalSheets: [
-  //     {
-  //       condition: (site) => site && site.getBaseURL().includes('bulk.com'),
-  //       sheet: { name: 'shared-200s_by_category', dataKey: 'success_urls_by_category', type: 'category' },
-  //     },
-  //   ],
-  // },
-  agenticFlat: {
-    filePrefix: 'agentictraffic',
-    folderSuffix: 'agentic-traffic',
-    workbookCreator: 'Spacecat Agentic Traffic Report',
-    providers: ['chatgpt', 'perplexity'],
-    queries: {
-      agentic_flat_data: weeklyBreakdownQueries.createAllWeeklyBreakdownQuery,
-    },
-    sheets: [
-      { name: 'agentic-data', dataKey: 'agentic_flat_data', type: 'agenticFlat' },
-    ],
-    conditionalSheets: [],
-  },
+export const AGENTIC_REPORT_CONFIG = {
+  filePrefix: 'agentictraffic',
+  folderSuffix: 'agentic-traffic',
+  workbookCreator: 'Spacecat Agentic Flat Report',
+  queryFunction: weeklyBreakdownQueries.createAgenticReportQuery,
+  sheetName: 'shared-all',
 };

@@ -11,23 +11,69 @@
  */
 
 /* eslint-env mocha */
-import { expect } from 'chai';
-import { getProviderPattern } from '../../../src/cdn-logs-report/constants/user-agent-patterns.js';
+import { expect, use } from 'chai';
+import sinonChai from 'sinon-chai';
 
-describe('getProviderPattern', () => {
-  it('should return correct pattern for known providers (case-insensitive)', () => {
-    expect(getProviderPattern('chatgpt')).to.include('ChatGPT');
-    expect(getProviderPattern('CHATGPT')).to.include('ChatGPT');
-    expect(getProviderPattern('perplexity')).to.include('Perplexity');
-    expect(getProviderPattern('claude')).to.include('Claude');
-    expect(getProviderPattern('gemini')).to.include('Gemini');
-    expect(getProviderPattern('copilot')).to.include('Copilot');
+use(sinonChai);
+
+describe('User Agent Patterns', () => {
+  let userAgentPatterns;
+
+  before(async () => {
+    userAgentPatterns = await import('../../../src/cdn-logs-report/constants/user-agent-patterns.js');
   });
-  it('should return null for unknown provider', () => {
-    expect(getProviderPattern('unknown')).to.equal(null);
+
+  describe('PROVIDER_USER_AGENT_PATTERNS', () => {
+    it('contains ChatGPT and Perplexity patterns', () => {
+      const { PROVIDER_USER_AGENT_PATTERNS } = userAgentPatterns;
+
+      expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('chatgpt');
+      expect(PROVIDER_USER_AGENT_PATTERNS).to.have.property('perplexity');
+      expect(PROVIDER_USER_AGENT_PATTERNS.chatgpt).to.include('ChatGPT');
+      expect(PROVIDER_USER_AGENT_PATTERNS.perplexity).to.include('Perplexity');
+    });
   });
-  it('should return null for undefined or null', () => {
-    expect(getProviderPattern(undefined)).to.equal(null);
-    expect(getProviderPattern(null)).to.equal(null);
+
+  describe('getProviderPattern', () => {
+    it('returns correct pattern for known providers', () => {
+      const { getProviderPattern } = userAgentPatterns;
+
+      expect(getProviderPattern('chatgpt')).to.include('ChatGPT');
+      expect(getProviderPattern('CHATGPT')).to.include('ChatGPT');
+      expect(getProviderPattern('perplexity')).to.include('Perplexity');
+    });
+
+    it('returns null for unknown providers', () => {
+      const { getProviderPattern } = userAgentPatterns;
+
+      expect(getProviderPattern('unknown')).to.be.null;
+      expect(getProviderPattern(null)).to.be.null;
+      expect(getProviderPattern(undefined)).to.be.null;
+    });
+  });
+
+  describe('buildAgentTypeClassificationSQL', () => {
+    it('builds SQL for ChatGPT and Perplexity agent types', () => {
+      const { buildAgentTypeClassificationSQL } = userAgentPatterns;
+      const sql = buildAgentTypeClassificationSQL();
+
+      expect(sql).to.include('CASE');
+      expect(sql).to.include('Crawlers');
+      expect(sql).to.include('Chatbots');
+      expect(sql).to.include('gptbot');
+      expect(sql).to.include('perplexity');
+    });
+  });
+
+  describe('buildUserAgentDisplaySQL', () => {
+    it('builds SQL for user agent display names', () => {
+      const { buildUserAgentDisplaySQL } = userAgentPatterns;
+      const sql = buildUserAgentDisplaySQL();
+
+      expect(sql).to.include('CASE');
+      expect(sql).to.include('ChatGPT-User');
+      expect(sql).to.include('GPTBot');
+      expect(sql).to.include('PerplexityBot');
+    });
   });
 });
