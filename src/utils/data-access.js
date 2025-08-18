@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
+import { merge } from 'ts-deepmerge';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 /**
@@ -94,15 +95,9 @@ const handleOutdatedSuggestions = async ({
   }
 };
 
-/**
- * Deep merge function that recursively merges nested objects and arrays.
- * This preserves deeply nested data instead of overriding entire objects.
- *
- * @param {*} target - The target value (existing data)
- * @param {*} source - The source value (new data)
- * @returns {*} - The deeply merged result
- */
-function deepMerge(target, source) {
+// Wrapper function to handle null/undefined cases and primitive
+// values that ts-deepmerge doesn't handle
+export const deepMergeDataFunction = (target, source) => {
   // Handle null/undefined cases
   if (source === null || source === undefined) {
     return target;
@@ -111,43 +106,19 @@ function deepMerge(target, source) {
     return source;
   }
 
-  // Handle arrays - merge by concatenating unique items or replacing based on preference
-  if (Array.isArray(target) && Array.isArray(source)) {
-    // For arrays, we'll replace with source to maintain consistency with expected behavior
-    // but you could implement array merging logic here if needed
-    return source;
+  // Handle primitive values - ts-deepmerge is designed for objects
+  if (typeof source !== 'object' || typeof target !== 'object') {
+    return source; // For primitives, source overwrites target
   }
 
-  // Handle objects - recursively merge properties
-  if (typeof target === 'object' && typeof source === 'object' && !Array.isArray(target) && !Array.isArray(source)) {
-    const result = { ...target };
-
-    Object.keys(source).forEach((key) => {
-      if (Object.prototype.hasOwnProperty.call(result, key)) {
-        // Recursively merge nested objects
-        result[key] = deepMerge(result[key], source[key]);
-      } else {
-        // Add new property
-        result[key] = source[key];
-      }
-    });
-
-    return result;
+  // Handle arrays - replace rather than merge
+  if (Array.isArray(source) || Array.isArray(target)) {
+    return source; // For arrays, source overwrites target
   }
 
-  // For primitive values, source overrides target
-  return source;
-}
-
-/**
- * Deep merge function for combining existing and new data.
- * This performs a deep merge that preserves nested data structures.
- *
- * @param {Object} existingData - The existing suggestion data.
- * @param {Object} newData - The new data to merge.
- * @returns {Object} - The deeply merged data object.
- */
-export const deepMergeDataFunction = (existingData, newData) => deepMerge(existingData, newData);
+  // Both are valid objects, use ts-deepmerge with custom array handling
+  return merge.withOptions({ mergeArrays: false }, target, source);
+};
 
 /**
  * Default merge function for combining existing and new data.
