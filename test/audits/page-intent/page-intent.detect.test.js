@@ -62,10 +62,10 @@ describe('page-intent.detect handler', () => {
     const raw = 'not-valid';
     const message = {
       siteId: 'site-1',
-      url: 'https://example.com',
       data: {
         pageIntent: raw,
         topic: 'topic-1',
+        url: 'https://example.com',
       },
     };
 
@@ -79,10 +79,10 @@ describe('page-intent.detect handler', () => {
 
     const message = {
       siteId: 'site-foo',
-      url: 'https://foo.com/path',
       data: {
         pageIntent: raw,
         topic: 'new-topic',
+        url: 'https://foo.com/path',
       },
     };
 
@@ -98,7 +98,7 @@ describe('page-intent.detect handler', () => {
     await handler(message, context);
 
     // verify the update branch
-    expect(PageIntent.findByUrl).to.have.been.calledWith(message.url);
+    expect(PageIntent.findByUrl).to.have.been.calledWith(message.data.url);
     expect(existing.setTopic).to.have.been.calledWith('new-topic');
     expect(existing.setPageIntent).to.have.been.calledWith(validIntent);
     expect(existing.save).to.have.been.calledOnce;
@@ -111,10 +111,10 @@ describe('page-intent.detect handler', () => {
 
     const message = {
       siteId: 'site-bar',
-      url: 'https://bar.com/xyz',
       data: {
         pageIntent: raw,
         topic: 'topic-bar',
+        url: 'https://bar.com/xyz',
       },
     };
 

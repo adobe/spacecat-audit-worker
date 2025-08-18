@@ -1,3 +1,45 @@
+## [1.145.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.145.1...v1.145.2) (2025-08-16)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1129](https://github.com/adobe/spacecat-audit-worker/issues/1129)) ([796dc56](https://github.com/adobe/spacecat-audit-worker/commit/796dc56f2dac090a640ab632551d662ba9213fa2))
+
+## [1.145.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.145.0...v1.145.1) (2025-08-15)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1124](https://github.com/adobe/spacecat-audit-worker/issues/1124)) ([bf715ae](https://github.com/adobe/spacecat-audit-worker/commit/bf715ae5e3d76b17809a4881fe55694c19edeb53))
+
+# [1.145.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.4...v1.145.0) (2025-08-15)
+
+
+### Features
+
+* auto-suggest for CSP audit ([#984](https://github.com/adobe/spacecat-audit-worker/issues/984)) ([e080ea1](https://github.com/adobe/spacecat-audit-worker/commit/e080ea1d2cc0a14d08c6c56e9fd27254991da460))
+
+## [1.144.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.3...v1.144.4) (2025-08-14)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.46.0 ([#1121](https://github.com/adobe/spacecat-audit-worker/issues/1121)) ([0761466](https://github.com/adobe/spacecat-audit-worker/commit/076146652461a865e0bd6e348f381a4447ee8b52))
+
+## [1.144.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.2...v1.144.3) (2025-08-14)
+
+
+### Bug Fixes
+
+* broken internal links auto-suggest ([#1119](https://github.com/adobe/spacecat-audit-worker/issues/1119)) ([7aa4711](https://github.com/adobe/spacecat-audit-worker/commit/7aa47119b4c1d8b07d7038109c1698bf7bd291f9))
+
+## [1.144.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.1...v1.144.2) (2025-08-14)
+
+
+### Bug Fixes
+
+* **page-intent:** extract URL from payload ([#1116](https://github.com/adobe/spacecat-audit-worker/issues/1116)) ([9537b8f](https://github.com/adobe/spacecat-audit-worker/commit/9537b8f7ce3eb6057edea7a79bc54b490bfa53bc))
+
 ## [1.144.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.0...v1.144.1) (2025-08-14)
 
 
