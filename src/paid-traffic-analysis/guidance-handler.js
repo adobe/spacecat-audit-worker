@@ -80,7 +80,7 @@ async function ignorePreviousOpportunitiesForPeriod(Opportunity, siteId, _period
     oppty.setUpdatedBy('system');
     await oppty.save();
   }));
-  log.info(`Ignored ${candidates.length ?? 0} existing paid-traffic opportunities for siteId=${siteId}`);
+  log.info(`Ignored ${candidates.length} existing paid-traffic opportunities for siteId=${siteId}`);
 }
 
 export default async function handler(message, context) {
