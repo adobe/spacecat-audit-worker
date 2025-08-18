@@ -1,3 +1,10 @@
+# [1.147.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.146.1...v1.147.0) (2025-08-18)
+
+
+### Features
+
+* add traffic analysis audits ([#1127](https://github.com/adobe/spacecat-audit-worker/issues/1127)) ([c9a77be](https://github.com/adobe/spacecat-audit-worker/commit/c9a77be51fbd3639971ba40f231a3944a0206d2d))
+
 ## [1.146.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.146.0...v1.146.1) (2025-08-18)
 
 
