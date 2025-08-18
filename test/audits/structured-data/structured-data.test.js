@@ -75,7 +75,7 @@ describe('Structured Data Audit', () => {
       isHandlerEnabledForSite: sinon.stub().returns(true),
     };
     s3ClientStub = {
-      send: sinon.stub(),
+      send: sinon.mock(),
       getObject: sinon.stub(),
     };
     firefallClientStub = {
@@ -87,6 +87,7 @@ describe('Structured Data Audit', () => {
       getConfig: () => ({
         getIncludedURLs: () => ['https://example.com/product/1', 'https://example.com/product/2', 'https://example.com/product/3'],
       }),
+      getDeliveryType: () => 'other',
     };
 
     auditStub = {
@@ -156,6 +157,26 @@ describe('Structured Data Audit', () => {
           success: false,
         },
       });
+    });
+
+    it('filters out files from top pages', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([
+        createPageStub('https://example.com/product/1'),
+        createPageStub('https://example.com/product/2.pdf'),
+        createPageStub('https://example.com/product/8.xlsx'),
+      ]);
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus
+        .resolves([context.dataAccess.Opportunity]);
+      context.dataAccess.Opportunity.getSuggestions.resolves([]);
+      context.dataAccess.Opportunity.getId.returns('opportunity-id');
+      context.dataAccess.Opportunity.getType.returns('structured-data');
+      context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
+
+      await runAuditAndGenerateSuggestions(context);
+      expect(s3ClientStub.send.calledOnce).to.equal(true);
+      const scrapeRequests = s3ClientStub.send.getCalls().map((call) => call.args[0].input.Key);
+      expect(scrapeRequests).to.deep.equal(['scrapes/123/product/1/scrape.json']);
     });
 
     it('runs a full audit', async () => {
@@ -296,6 +317,59 @@ describe('Structured Data Audit', () => {
           ],
         },
       }]);
+    });
+
+    it('ensure unique error IDs for duplicate issues', async () => {
+      const auditData = {
+        siteId: context.site.getId(),
+        auditResult: {
+          success: true,
+          issues: [
+            { rootType: 'Product', issueMessage: 'Missing field "name"', pageUrl: 'https://example.com/page1' },
+            { rootType: 'Product', issueMessage: 'Missing field "name"', pageUrl: 'https://example.com/page2' },
+            { rootType: 'Product', issueMessage: 'Missing field "price"', pageUrl: 'https://example.com/page1' },
+            { rootType: 'BreadcrumbList', issueMessage: 'Missing field "name"', pageUrl: 'https://example.com/page1' },
+            { rootType: 'Product', issueMessage: 'Missing field "name"', pageUrl: 'https://example.com/page1' },
+          ],
+        },
+      };
+      const opportunity = {
+        auditId: 'audit-id-12345',
+        updatedBy: 'system',
+        setAuditId: () => {},
+        getSuggestions: () => [],
+        getType: () => 'structured-data',
+        getData: () => ({ dataSources: ['Ahrefs', 'Site'] }),
+        setData: () => {},
+        setUpdatedBy: () => {},
+        save: () => {},
+        getId: () => 'opportunity-id-12345',
+        addSuggestions: () => ({ errorItems: [] }),
+        setType: () => {},
+        getSiteId: () => 'site-id-12345',
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus = () => [opportunity];
+      await opportunityAndSuggestions(finalUrl, auditData, context);
+      const pageUrlToErrorIds = auditData.auditResult.issues.reduce((acc, issue) => {
+        if (!acc[issue.pageUrl]) acc[issue.pageUrl] = [];
+        acc[issue.pageUrl].push(issue.errors[0].id);
+        return acc;
+      }, {});
+      Object.values(pageUrlToErrorIds).forEach((errorIds) => {
+        expect(new Set(errorIds).size).to.equal(errorIds.length);
+      });
+      expect(pageUrlToErrorIds).to.deep.equal({
+        'https://example.com/page1': [
+          'product:missingfieldname',
+          'product:missingfieldprice',
+          'breadcrumblist:missingfieldname',
+          'product:missingfieldname:1',
+        ],
+        'https://example.com/page2': [
+          'product:missingfieldname',
+        ],
+      });
     });
   });
 
@@ -439,7 +513,7 @@ describe('Structured Data Audit', () => {
       s3ClientStub.send.rejects(new Error('Failed to fetch S3 object'));
 
       await generateSuggestionsData(finalUrl, auditData, context, scrapeCache);
-      expect(context.log.error).to.have.been.calledWith('SDA: Could not find scrape for /product/1. Make sure that scrape-top-pages did run.');
+      expect(context.log.error).to.have.been.calledWith('SDA: Could not find scrape for https://example.com/product/1 at /product/1. Make sure that scrape-top-pages did run.');
       expect(firefallClientStub.fetchChatCompletion).to.not.have.been.called;
     });
 

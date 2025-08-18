@@ -50,6 +50,9 @@ describe('Image Alt Text Handler', () => {
         site: {
           getId: () => 'site-id',
           resolveFinalURL: () => 'https://example.com',
+          getConfig: () => ({
+            getIncludedURLs: sandbox.stub().returns([]),
+          }),
         },
         audit: {
           getId: () => 'audit-id',
@@ -70,7 +73,13 @@ describe('Image Alt Text Handler', () => {
           },
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
-            create: sandbox.stub().resolves({}),
+            create: sandbox.stub().resolves({
+              getId: sandbox.stub().returns('opportunity-id'),
+              getData: sandbox.stub().returns({}),
+              setData: sandbox.stub(),
+              save: sandbox.stub().resolves(),
+              getType: sandbox.stub().returns('alt-text'),
+            }),
           },
         },
         imsHost: 'test-ims-host',
@@ -104,7 +113,7 @@ describe('Image Alt Text Handler', () => {
   });
 
   describe('prepareScrapingStep', () => {
-    it('should prepare scraping step with top pages', async () => {
+    it('should prepare scraping step with top pages only', async () => {
       const result = await handlerModule.prepareScrapingStep(context);
 
       expect(result).to.deep.equal({
@@ -117,10 +126,141 @@ describe('Image Alt Text Handler', () => {
       });
     });
 
-    it('should throw error if no top pages found', async () => {
+    it('should prepare scraping step with top pages and included URLs', async () => {
+      // Reset the stub and configure it for this test
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns([
+        'https://example.com/page3',
+        'https://example.com/page4',
+      ]);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      const result = await handlerModule.prepareScrapingStep(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+          { url: 'https://example.com/page3' },
+          { url: 'https://example.com/page4' },
+        ],
+        siteId: 'site-id',
+        type: 'alt-text',
+      });
+    });
+
+    it('should prepare scraping step with included URLs only when no top pages', async () => {
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
-      await expect(handlerModule.prepareScrapingStep(context)).to.be.rejectedWith('No top pages found for site');
+      // Reset the stub and configure it for this test
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns(['https://example.com/page3']);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      const result = await handlerModule.prepareScrapingStep(context);
+
+      expect(result).to.deep.equal({
+        urls: [{ url: 'https://example.com/page3' }],
+        siteId: 'site-id',
+        type: 'alt-text',
+      });
+    });
+
+    it('should deduplicate URLs between top pages and included URLs', async () => {
+      // Reset the stub and configure it for this test
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns([
+        'https://example.com/page1', // duplicate
+        'https://example.com/page3',
+      ]);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      const result = await handlerModule.prepareScrapingStep(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+          { url: 'https://example.com/page3' },
+        ],
+        siteId: 'site-id',
+        type: 'alt-text',
+      });
+    });
+
+    it('should throw error if no URLs found', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+
+      // Reset the stub and configure it for this test
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns([]);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      await expect(handlerModule.prepareScrapingStep(context)).to.be.rejectedWith(
+        'No URLs found for site neither top pages nor included URLs',
+      );
+    });
+
+    it('should handle when site config is null', async () => {
+      context.site.getConfig = () => null;
+
+      const result = await handlerModule.prepareScrapingStep(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+        ],
+        siteId: 'site-id',
+        type: 'alt-text',
+      });
+    });
+
+    it('should handle when getIncludedURLs returns null', async () => {
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns(null);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      const result = await handlerModule.prepareScrapingStep(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+        ],
+        siteId: 'site-id',
+        type: 'alt-text',
+      });
+    });
+
+    it('should handle when site.getConfig() is undefined', async () => {
+      // Set getConfig to undefined to test optional chaining fallback
+      const originalSite = context.site;
+      context.site = {
+        ...originalSite,
+        getConfig: undefined,
+      };
+
+      const result = await handlerModule.prepareScrapingStep(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://example.com/page1' },
+          { url: 'https://example.com/page2' },
+        ],
+        siteId: 'site-id',
+        type: 'alt-text',
+      });
     });
   });
 
@@ -181,6 +321,157 @@ describe('Image Alt Text Handler', () => {
       expect(result['/page1'].images).to.have.lengthOf(4);
       expect(result['/page1'].images.filter((img) => img.isDecorative)).to.have.lengthOf(3);
     });
+
+    it('should handle when S3 object is null', async () => {
+      context.s3Client.send.resolves(null);
+
+      const result = await handlerModule.fetchPageScrapeAndRunAudit(
+        context.s3Client,
+        bucketName,
+        'scrape.json',
+        s3BucketPath,
+        context.log,
+      );
+
+      expect(result).to.be.null;
+    });
+
+    it('should handle when scrapeResult is missing', async () => {
+      context.s3Client.send.resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify({})),
+        },
+      });
+
+      const result = await handlerModule.fetchPageScrapeAndRunAudit(
+        context.s3Client,
+        bucketName,
+        'scrape.json',
+        s3BucketPath,
+        context.log,
+      );
+
+      expect(result).to.be.null;
+    });
+
+    it('should handle when rawBody is empty string', async () => {
+      const mockScrapeResult = {
+        scrapeResult: {
+          rawBody: '',
+        },
+      };
+
+      context.s3Client.send.resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(mockScrapeResult)),
+        },
+      });
+
+      const result = await handlerModule.fetchPageScrapeAndRunAudit(
+        context.s3Client,
+        bucketName,
+        'scrape.json',
+        s3BucketPath,
+        context.log,
+      );
+
+      expect(result).to.be.null;
+    });
+
+    it('should handle homepage URL (root path)', async () => {
+      const mockScrapeResult = {
+        scrapeResult: {
+          rawBody: '<html><head></head><body><img src="test.jpg" alt="test" /></body></html>',
+        },
+      };
+
+      // Mock JSDOM and utility functions to avoid localStorage issues
+      const handlerModuleWithMocks = await esmock('../../../src/image-alt-text/handler.js', {
+        '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
+        jsdom: {
+          JSDOM: class MockJSDOM {
+            constructor() {
+              this.window = {
+                document: {
+                  getElementsByTagName: () => [
+                    {
+                      getAttribute: sandbox.stub()
+                        .withArgs('src')
+                        .returns('test.jpg')
+                        .withArgs('alt')
+                        .returns('test'),
+                    },
+                  ],
+                },
+              };
+            }
+          },
+        },
+        '../../../src/image-alt-text/utils.js': {
+          shouldShowImageAsSuggestion: sandbox.stub().returns(true),
+          isImageDecorative: sandbox.stub().returns(false),
+        },
+        'get-xpath': sandbox.stub().returns('//img[1]'),
+      });
+
+      context.s3Client.send.resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(mockScrapeResult)),
+        },
+      });
+
+      const result = await handlerModuleWithMocks.fetchPageScrapeAndRunAudit(
+        context.s3Client,
+        bucketName,
+        `${s3BucketPath}/scrape.json`, // root/homepage path
+        s3BucketPath,
+        context.log,
+      );
+
+      expect(result).to.not.be.null;
+      expect(result).to.have.property('/');
+      expect(result['/']).to.have.property('images');
+      expect(result['/'].images).to.have.lengthOf(1);
+    });
+
+    it('should filter out images without src attribute', async () => {
+      const mockScrapeResult = {
+        scrapeResult: {
+          rawBody: `
+            <html>
+              <body>
+                <img src="image1.jpg" alt="Image 1" />
+                <img alt="No src" />
+                <img src="" alt="Empty src" />
+                <img src="image2.jpg" />
+              </body>
+            </html>
+          `,
+        },
+      };
+
+      context.s3Client.send.resolves({
+        ContentType: 'application/json',
+        Body: {
+          transformToString: () => Promise.resolve(JSON.stringify(mockScrapeResult)),
+        },
+      });
+
+      const result = await handlerModule.fetchPageScrapeAndRunAudit(
+        context.s3Client,
+        bucketName,
+        `${s3BucketPath}page1/scrape.json`,
+        s3BucketPath,
+        context.log,
+      );
+
+      expect(result).to.not.be.null;
+      expect(result['/page1'].images).to.have.lengthOf(2); // Only images with non-empty src
+      expect(result['/page1'].images.every((img) => img.src)).to.be.true;
+    });
   });
 
   describe('processAltTextAuditStep', () => {
@@ -204,8 +495,10 @@ describe('Image Alt Text Handler', () => {
 
       s3UtilsStub = {
         getObjectKeysUsingPrefix: sandbox.stub().resolves([
+          `${s3BucketPath}/scrape.json`, // homepage
           `${s3BucketPath}page1/scrape.json`,
           `${s3BucketPath}page2/scrape.json`,
+          `${s3BucketPath}other-page/scrape.json`, // not in top pages or included URLs
         ]),
         getObjectFromKey: sandbox.stub().resolves({
           scrapeResult: {
@@ -223,16 +516,16 @@ describe('Image Alt Text Handler', () => {
       });
     });
 
-    it('should process scraped pages and create opportunities', async () => {
+    it('should process only top pages when no included URLs', async () => {
       const result = await handlerModule.processAltTextAuditStep(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
+
+      // Should only process 2 pages (page1, page2) from top pages, not the other-page
       expect(context.log.info).to.have.been.calledWith(
-        `[${AUDIT_TYPE}] [Site Id: site-id] [Audit Url: https://example.com] processing scraped content`,
+        sinon.match(/found 2 relevant scraped pages to analyze out of 4 total scraped pages/),
       );
-      expect(context.log.info).to.have.been.calledWith(
-        `[${AUDIT_TYPE}] [Site Id: site-id] found 2 scraped pages to analyze`,
-      );
+
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com');
       expect(convertToOpportunityStub.firstCall.args[1]).to.deep.include({
@@ -241,22 +534,39 @@ describe('Image Alt Text Handler', () => {
       });
     });
 
-    it('should handle case when no scraped content is found', async () => {
-      s3UtilsStub.getObjectKeysUsingPrefix.resolves([]);
+    it('should process top pages and included URLs', async () => {
+      // Reset the stub and configure it for this test
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns(['https://example.com/other-page']);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+
+      // Should now process 3 pages (page1, page2, other-page)
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/found 3 relevant scraped pages to analyze out of 4 total scraped pages/),
+      );
+
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+    });
+
+    it('should handle case when no relevant scraped content is found', async () => {
+      s3UtilsStub.getObjectKeysUsingPrefix.resolves([
+        `${s3BucketPath}different-page/scrape.json`, // not in top pages
+      ]);
       auditEngineStub.getAuditedTags.returns({ imagesWithoutAltText: [] });
 
       const result = await handlerModule.processAltTextAuditStep(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.log.error).to.have.been.calledWith(
-        `[${AUDIT_TYPE}] [Site Id: site-id] no scraped content found, cannot proceed with audit`,
+        sinon.match(/no relevant scraped content found for specified pages, cannot proceed with audit/),
       );
       expect(convertToOpportunityStub).to.have.been.calledOnce;
-      expect(convertToOpportunityStub.firstCall.args[1]).to.deep.include({
-        detectedImages: { imagesWithoutAltText: [] },
-        siteId: 'site-id',
-        auditId: 'audit-id',
-      });
     });
 
     it('should handle case when no images are found', async () => {
@@ -298,6 +608,405 @@ describe('Image Alt Text Handler', () => {
       const expectedMessage = `[${AUDIT_TYPE}]: Found no images without alt text from the scraped content in bucket ${bucketName} with path ${s3BucketPath}`;
       expect(logMessages).to.include(expectedMessage);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
+    });
+
+    it('should log correct counts for top pages and included URLs', async () => {
+      // Reset the stub and configure it for this test
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns([
+        'https://example.com/page3',
+        'https://example.com/page1', // duplicate with top page
+      ]);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      await handlerModule.processAltTextAuditStep(context);
+
+      // Should log 2 top pages, 2 included URLs, 3 total after deduplication
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Received topPages: 2, includedURLs: 2, totalPages to process after removing duplicates: 3/),
+      );
+    });
+
+    it('should handle when site config is null in processAltTextAuditStep', async () => {
+      context.site.getConfig = () => null;
+
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+
+      // Should only process top pages
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Received topPages: 2, includedURLs: 0, totalPages to process after removing duplicates: 2/),
+      );
+    });
+
+    it('should handle when getIncludedURLs returns null in processAltTextAuditStep', async () => {
+      const getIncludedURLsStub = sandbox.stub();
+      getIncludedURLsStub.withArgs('alt-text').returns(null);
+      context.site.getConfig = () => ({
+        getIncludedURLs: getIncludedURLsStub,
+      });
+
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+
+      // Should only process top pages
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Received topPages: 2, includedURLs: 0, totalPages to process after removing duplicates: 2/),
+      );
+    });
+
+    it('should handle when fetchPageScrapeAndRunAudit returns null', async () => {
+      // Override the fetchPageScrapeAndRunAudit to return null for some pages
+      sandbox.stub(handlerModule, 'fetchPageScrapeAndRunAudit')
+        .onFirstCall().resolves(null)
+        .onSecondCall()
+        .resolves({
+          '/page2': {
+            images: [{ src: 'test.jpg', alt: 'test' }],
+            dom: {},
+          },
+        });
+
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+    });
+
+    it('should handle when audit engine returns empty results', async () => {
+      auditEngineStub.getAuditedTags.returns({
+        imagesWithoutAltText: [],
+      });
+
+      const result = await handlerModule.processAltTextAuditStep(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Identified 0 images \(after filtering\)/),
+      );
+    });
+  });
+
+  describe('processAltTextWithMystique', () => {
+    let sendAltTextOpportunityToMystiqueStub;
+    let clearAltTextSuggestionsStub;
+
+    beforeEach(async () => {
+      sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
+      clearAltTextSuggestionsStub = sandbox.stub().resolves();
+      // Mock the module with our stubs
+      handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
+        '../../../src/image-alt-text/opportunityHandler.js': {
+          default: sandbox.stub(),
+          sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
+          clearAltTextSuggestions: clearAltTextSuggestionsStub,
+        },
+      });
+    });
+
+    it('should process alt-text with Mystique successfully', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Processing alt-text with Mystique for site site-id',
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Sent 2 pages to Mystique for generating alt-text suggestions',
+      );
+    });
+
+    it('should handle case when no top pages found', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('No top pages found for site site-id');
+
+      expect(context.log.error).to.have.been.calledWith(
+        '[alt-text]: Failed to process with Mystique: No top pages found for site site-id',
+      );
+    });
+
+    it('should handle errors when sending to Mystique fails', async () => {
+      const error = new Error('Mystique send failed');
+      sendAltTextOpportunityToMystiqueStub.rejects(error);
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('Mystique send failed');
+
+      expect(context.log.error).to.have.been.calledWith(
+        '[alt-text]: Failed to process with Mystique: Mystique send failed',
+      );
+    });
+
+    it('should call clearAltTextSuggestions when existing opportunity is found', async () => {
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: () => ({}),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      // Override the default empty array with our mock opportunity
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(clearAltTextSuggestionsStub).to.have.been.calledWith({
+        opportunity: mockOpportunity,
+        log: context.log,
+      });
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Clearing existing suggestions before sending to Mystique',
+      );
+    });
+
+    it('should not call clearAltTextSuggestions when no existing opportunity is found', async () => {
+      // Ensure no existing opportunities are returned
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(clearAltTextSuggestionsStub).to.not.have.been.called;
+      expect(context.log.info).to.not.have.been.calledWith(
+        '[alt-text]: Clearing existing suggestions before sending to Mystique',
+      );
+    });
+
+    it('should handle includedURLs when site.getConfig is available', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns(['https://example.com/included']),
+        }),
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2', 'https://example.com/included'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+    });
+
+    it('should handle when site.getConfig is null', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => null,
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+    });
+
+    it('should handle when site.getConfig is undefined', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: undefined,
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+    });
+
+    it('should handle when getIncludedURLs returns null', async () => {
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns(null),
+        }),
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(sendAltTextOpportunityToMystiqueStub).to.have.been.calledWith(
+        'https://example.com',
+        ['https://example.com/page1', 'https://example.com/page2'],
+        'site-id',
+        'audit-id',
+        context,
+      );
+    });
+
+    it('should handle case when no top pages and no included URLs found', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getIncludedURLs: sandbox.stub().withArgs('alt-text').returns([]),
+        }),
+      };
+
+      await expect(handlerModule.processAltTextWithMystique(context))
+        .to.be.rejectedWith('No top pages found for site site-id');
+    });
+  });
+
+  describe('configuration-based handler selection', () => {
+    function createMockAuditBuilder(runStub) {
+      return function MockAuditBuilder() {
+        return {
+          withUrlResolver() { return this; },
+          addStep() { return this; },
+          build() {
+            return {
+              run: runStub,
+              steps: { /* mock steps */ },
+            };
+          },
+        };
+      };
+    }
+
+    it('should use Mystique flow when alt-text-mystique is enabled for site', async () => {
+      const mockSite = {
+        getId: sandbox.stub().returns('test-site-id'),
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+      };
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(true), // Mystique enabled
+      };
+
+      const mockDataAccess = {
+        Site: {
+          findById: sandbox.stub().resolves(mockSite),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves(mockConfiguration),
+        },
+      };
+
+      const mockContext = {
+        dataAccess: mockDataAccess,
+        log: console,
+      };
+
+      const mockMessage = {
+        siteId: 'test-site-id',
+        type: 'alt-text',
+      };
+
+      // Mock the audit builder's run method
+      const mockAuditResult = { success: true };
+      const runStub = sandbox.stub().resolves(mockAuditResult);
+
+      // Import the handler and mock the audit builders
+      const altTextHandlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/common/audit-builder.js': {
+          AuditBuilder: createMockAuditBuilder(runStub),
+        },
+      });
+
+      const result = await altTextHandlerModule.default(mockMessage, mockContext);
+
+      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('alt-text-auto-suggest-mystique', mockSite);
+      expect(runStub).to.have.been.calledWith(mockMessage, mockContext);
+      expect(result).to.equal(mockAuditResult);
+    });
+
+    it('should use Firefall flow when alt-text-mystique is disabled for site', async () => {
+      const mockSite = {
+        getId: sandbox.stub().returns('test-site-id'),
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+      };
+
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(false), // Mystique disabled
+      };
+
+      const mockDataAccess = {
+        Site: {
+          findById: sandbox.stub().resolves(mockSite),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves(mockConfiguration),
+        },
+      };
+
+      const mockContext = {
+        dataAccess: mockDataAccess,
+        log: console,
+      };
+
+      const mockMessage = {
+        siteId: 'test-site-id',
+        type: 'alt-text',
+      };
+
+      // Mock the audit builder's run method
+      const mockAuditResult = { success: true };
+      const runStub = sandbox.stub().resolves(mockAuditResult);
+
+      // Import the handler and mock the audit builders
+      const altTextHandlerModule = await esmock('../../../src/image-alt-text/handler.js', {
+        '../../../src/common/audit-builder.js': {
+          AuditBuilder: createMockAuditBuilder(runStub),
+        },
+      });
+
+      const result = await altTextHandlerModule.default(mockMessage, mockContext);
+
+      expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith('alt-text-auto-suggest-mystique', mockSite);
+      expect(runStub).to.have.been.calledWith(mockMessage, mockContext);
+      expect(result).to.equal(mockAuditResult);
     });
   });
 });

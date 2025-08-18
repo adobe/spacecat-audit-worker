@@ -18,9 +18,11 @@ use(sinonChai);
 
 describe('CDN Logs Excel Generator', () => {
   let createExcelReport;
+  let REPORT_CONFIGS;
 
   before(async () => {
-    ({ createCDNLogsExcelReport: createExcelReport } = await import('../../../src/cdn-logs-report/utils/excel-generator.js'));
+    ({ createExcelReport } = await import('../../../src/cdn-logs-report/utils/excel-generator.js'));
+    ({ REPORT_CONFIGS } = await import('../../../src/cdn-logs-report/constants/report-configs.js'));
   });
 
   it('creates comprehensive excel report with all data sheets', async () => {
@@ -59,7 +61,7 @@ describe('CDN Logs Excel Generator', () => {
       getConfig: () => ({}),
     };
 
-    const result = await createExcelReport(mockData, { site });
+    const result = await createExcelReport(mockData, REPORT_CONFIGS.agentic, { site });
     const buffer = await result.xlsx.writeBuffer();
 
     expect(buffer).to.be.instanceOf(Buffer);
@@ -89,7 +91,7 @@ describe('CDN Logs Excel Generator', () => {
       getConfig: () => ({}),
     };
 
-    const result = await createExcelReport(mockData, { site });
+    const result = await createExcelReport(mockData, REPORT_CONFIGS.agentic, { site });
     const buffer = await result.xlsx.writeBuffer();
 
     expect(buffer).to.be.instanceOf(Buffer);
@@ -121,7 +123,7 @@ describe('CDN Logs Excel Generator', () => {
       getConfig: () => ({}),
     };
 
-    const result = await createExcelReport(mockData, {
+    const result = await createExcelReport(mockData, REPORT_CONFIGS.agentic, {
       site,
       customEndDate: '2024-01-01',
     });
@@ -145,7 +147,7 @@ describe('CDN Logs Excel Generator', () => {
       getConfig: () => ({}),
     };
 
-    const result = await createExcelReport(mockData, { site });
+    const result = await createExcelReport(mockData, REPORT_CONFIGS.agentic, { site });
     expect(result.worksheets.length).to.be.greaterThan(0);
   });
 });

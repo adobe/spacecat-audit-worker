@@ -16,6 +16,9 @@ import { cleanupS3Files, getObjectKeysFromSubfolders, processFilesWithRetry } fr
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { getSuccessCriteriaDetails } from '../utils.js';
 import { getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
+import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
+
+const filterAccessibilityOpportunities = (opportunities) => opportunities.filter((opportunity) => opportunity.getTags()?.includes('Forms Accessibility'));
 
 /**
  * Create a11y opportunity for the given siteId and auditId
@@ -100,14 +103,17 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
 
     // If no existing opportunity, create new opportunity
     if (!opportunity) {
+      // change status to IGNORED for older opportunities
+      await updateStatusToIgnored(dataAccess, siteId, log, filterAccessibilityOpportunities);
+
       const opportunityData = {
         siteId,
         auditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
         type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
         origin: 'AUTOMATION',
-        title: 'Form Accessibility Issues',
-        description: 'Form Accessibility Issues',
+        title: 'Form accessibility report',
+        description: '',
         tags: [
           'Forms Accessibility',
         ],

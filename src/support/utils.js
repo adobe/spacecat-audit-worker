@@ -127,7 +127,7 @@ export function extractUrlsFromSitemap(payload, tagName = 'url') {
   // Filter out any nulls if 'loc' element is missing
   return Array.from(elements).map((element) => {
     const loc = element.getElementsByTagName('loc')[0];
-    return loc ? loc.textContent : null;
+    return loc ? loc.textContent.trim() : null;
   }).filter((url) => url !== null);
 }
 

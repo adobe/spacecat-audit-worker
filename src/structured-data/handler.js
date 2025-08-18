@@ -14,7 +14,6 @@ import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { load as cheerioLoad } from 'cheerio';
-import { createHash } from 'crypto';
 
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -95,7 +94,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, scra
   // Check if auto suggest was enabled
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite(auditAutoSuggestType, site)) {
-    log.info('SDA: Auto-suggest is disabled for site');
+    log.info(`SDA: Auto-suggest is disabled for site ${auditUrl}`);
     return { ...auditData };
   }
 
@@ -144,7 +143,7 @@ export async function generateSuggestionsData(auditUrl, auditData, context, scra
         }
         scrapeResult = await scrapeCache.get(pathname);
       } catch (e) {
-        log.error(`SDA: Could not find scrape for ${pathname}. Make sure that scrape-top-pages did run.`, e);
+        log.error(`SDA: Could not find scrape for ${issue.pageUrl} at ${pathname}. Make sure that scrape-top-pages did run.`, e);
         continue;
       }
 
@@ -199,6 +198,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   }
 
   // Convert suggestions to errors
+  const errorIdMap = {};
   for (const issue of auditData.auditResult.issues) {
     issue.errors = [];
     const fix = generateErrorMarkupForIssue(issue);
@@ -206,7 +206,16 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     if (issue.issue === 'missing') {
       errorTitle = `Missing: ${issue.rootType}`;
     }
-    const errorId = createHash('sha256').update(`${issue.pageUrl}:${errorTitle.replaceAll(/[^a-zA-Z]/g, '').toLowerCase()}`).digest('hex');
+    let errorId = errorTitle.replaceAll(/["\s]/g, '').toLowerCase();
+
+    errorIdMap[issue.pageUrl] ??= {};
+    const pageErrors = errorIdMap[issue.pageUrl];
+    if (errorId in pageErrors) {
+      pageErrors[errorId] += 1;
+      errorId = `${errorId}:${pageErrors[errorId]}`;
+    } else {
+      pageErrors[errorId] = 0;
+    }
     issue.errors.push({ fix, id: errorId, errorTitle });
   }
 
@@ -367,7 +376,11 @@ export async function runAuditAndGenerateSuggestions(context) {
   const scrapeCache = new Map();
 
   try {
-    const topPages = await getClassifiedTopPages(context);
+    let topPages = await getClassifiedTopPages(context);
+
+    // Filter out files from the top pages as these are not scraped
+    const dataTypesToIgnore = ['pdf', 'ps', 'dwf', 'kml', 'kmz', 'xls', 'xlsx', 'ppt', 'pptx', 'doc', 'docx', 'rtf', 'swf'];
+    topPages = topPages.filter((page) => !dataTypesToIgnore.some((dataType) => page.url.endsWith(`.${dataType}`)));
 
     let auditResult = await processStructuredData(finalUrl, context, topPages, scrapeCache);
 

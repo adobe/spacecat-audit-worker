@@ -10,12 +10,10 @@
  * governing permissions and limitations under the License.
  */
 /* eslint-disable object-curly-newline */
-
-/* c8 ignore start */
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { determineCdnProvider } from './utils/cdn-utils.js';
-import { AWSAthenaClient } from '../utils/athena-client.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -109,4 +107,3 @@ export default new AuditBuilder()
   .withRunner(cdnLogAnalysisRunner)
   .withUrlResolver(wwwUrlResolver)
   .build();
-/* c8 ignore stop */

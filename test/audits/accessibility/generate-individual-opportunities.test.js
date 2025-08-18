@@ -145,7 +145,13 @@ describe('formatIssue', () => {
       description: 'Test description',
       level: 'AA',
       count: 5,
-      htmlWithIssues: ['<div>test</div>'],
+      htmlWithIssues: ['<div>test1</div>', '<div>test2</div>', '<div>test3</div>', '<div>test4</div>', '<div>test5</div>'],
+      nodes: [
+        {
+          html: '<div>test</div>',
+          target: ['div.test'],
+        },
+      ],
       failureSummary: 'Test summary',
     }, 'critical');
 
@@ -156,9 +162,29 @@ describe('formatIssue', () => {
       wcagLevel: 'AA',
       severity: 'critical',
       occurrences: 5,
-      htmlWithIssues: ['<div>test</div>'],
+      htmlWithIssues: [
+        {
+          update_from: '<div>test1</div>',
+          target_selector: '',
+        },
+        {
+          update_from: '<div>test2</div>',
+          target_selector: '',
+        },
+        {
+          update_from: '<div>test3</div>',
+          target_selector: '',
+        },
+        {
+          update_from: '<div>test4</div>',
+          target_selector: '',
+        },
+        {
+          update_from: '<div>test5</div>',
+          target_selector: '',
+        },
+      ],
       failureSummary: 'Test summary',
-      targetSelector: '',
     });
   });
 
@@ -229,7 +255,11 @@ describe('formatIssue', () => {
       description: 'Test description',
     }, 'critical');
 
-    expect(result.htmlWithIssues).to.deep.equal([]);
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0]).to.deep.include({
+      update_from: '',
+      target_selector: '',
+    });
   });
 
   it('should handle missing failureSummary', () => {
@@ -266,7 +296,7 @@ describe('formatIssue', () => {
       target: ['div:nth-child(1) > .footer-menu-item'],
     }, 'critical');
 
-    expect(result.targetSelector).to.equal('div:nth-child(1) > .footer-menu-item');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('div:nth-child(1) > .footer-menu-item');
   });
 
   it('should handle missing target field', () => {
@@ -275,7 +305,7 @@ describe('formatIssue', () => {
       description: 'Test description',
     }, 'critical');
 
-    expect(result.targetSelector).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
   });
 
   it('should handle empty target array', () => {
@@ -285,7 +315,469 @@ describe('formatIssue', () => {
       target: [],
     }, 'critical');
 
-    expect(result.targetSelector).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle nodes with non-array target (fallback to string)', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      nodes: [
+        {
+          html: '<div>test</div>',
+          target: 'div.single-target', // String instead of array
+        },
+      ],
+    }, 'critical');
+
+    expect(result).to.deep.equal({
+      type: 'aria-allowed-attr',
+      description: 'Test description',
+      wcagRule: '4.1.2 Name, Role, Value',
+      wcagLevel: '',
+      severity: 'critical',
+      occurrences: 0,
+      htmlWithIssues: [
+        {
+          update_from: '',
+          target_selector: '',
+        },
+      ],
+      failureSummary: '',
+    });
+  });
+
+  it('should handle nodes with null target (fallback to empty string)', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      nodes: [
+        {
+          html: '<div>test</div>',
+          target: null, // null target
+        },
+      ],
+    }, 'critical');
+
+    expect(result).to.deep.equal({
+      type: 'aria-allowed-attr',
+      description: 'Test description',
+      wcagRule: '4.1.2 Name, Role, Value',
+      wcagLevel: '',
+      severity: 'critical',
+      occurrences: 0,
+      htmlWithIssues: [
+        {
+          update_from: '',
+          target_selector: '',
+        },
+      ],
+      failureSummary: '',
+    });
+  });
+
+  it('should handle nodes with missing html property', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      nodes: [
+        {
+          // Missing html property
+          target: ['div.test'],
+        },
+      ],
+    }, 'critical');
+
+    expect(result).to.deep.equal({
+      type: 'aria-allowed-attr',
+      description: 'Test description',
+      wcagRule: '4.1.2 Name, Role, Value',
+      wcagLevel: '',
+      severity: 'critical',
+      occurrences: 0,
+      htmlWithIssues: [
+        {
+          update_from: '',
+          target_selector: '',
+        },
+      ],
+      failureSummary: '',
+    });
+  });
+
+  it('should handle missing properties with fallback values', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      // Missing description, level, count, failureSummary
+      htmlWithIssues: [
+        {
+          // Missing update_from and issue_id, but has target_selector
+          target_selector: 'div.test',
+        },
+      ],
+    }, 'critical');
+
+    expect(result).to.deep.equal({
+      type: 'aria-allowed-attr',
+      description: '', // Should default to empty string
+      wcagRule: '4.1.2 Name, Role, Value',
+      wcagLevel: '', // Should default to empty string
+      severity: 'critical',
+      occurrences: 1, // Length of htmlWithIssues array
+      htmlWithIssues: [
+        {
+          update_from: '', // Should default to empty string
+          target_selector: '', // Uses targetSelector from issueData.target (empty in this case)
+        },
+      ],
+      failureSummary: '', // Should default to empty string
+    });
+  });
+
+  it('should handle missing properties with completely empty htmlWithIssues', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      // Missing description, level, count, failureSummary
+      htmlWithIssues: [
+        {
+          // Missing all properties
+        },
+      ],
+    }, 'critical');
+
+    expect(result).to.deep.equal({
+      type: 'aria-allowed-attr',
+      description: '', // Should default to empty string
+      wcagRule: '4.1.2 Name, Role, Value',
+      wcagLevel: '', // Should default to empty string
+      severity: 'critical',
+      occurrences: 1, // Length of htmlWithIssues array
+      htmlWithIssues: [
+        {
+          update_from: '', // Should default to empty string
+          target_selector: '', // Should default to empty string
+        },
+      ],
+      failureSummary: '', // Should default to empty string
+    });
+  });
+
+  it('should handle htmlWithIssues with object having no update_from (fallback logic)', () => {
+    // This test covers the complex fallback logic on lines 204-208
+    // where we have an object without update_from property
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          // Object without update_from to trigger fallback
+          some_other_prop: 'value',
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with undefined update_from property (line 207 fallback)', () => {
+    // This test targets line 207 - the final fallback to empty string
+    // when item.update_from is undefined
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          // Object with undefined update_from (not even null)
+          // update_from is undefined (not present)
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with empty string update_from (line 207 fallback)', () => {
+    // This test targets line 207 - the final fallback to empty string
+    // when item.update_from is an empty string (falsy)
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          update_from: '', // Empty string (falsy)
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with object without update_from (line 208)', () => {
+    // This test verifies line 208 - the final fallback to empty string
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {}, // Object without update_from
+      ],
+    }, 'critical');
+
+    // Should fallback to empty string since no update_from is present (line 208)
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with object having falsy update_from (line 208)', () => {
+    // This test also targets line 208 with a falsy update_from value
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          update_from: null, // Falsy update_from
+        },
+      ],
+    }, 'critical');
+
+    // Should fallback to empty string since update_from is falsy (line 208)
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with empty object (line 208)', () => {
+    // This test specifically targets line 208 with an empty object
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {}, // Empty object - no issue_id or update_from
+      ],
+    }, 'critical');
+
+    // Should fallback to empty string (line 208)
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with null item (line 208)', () => {
+    // This test specifically targets line 208 with a null item
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        null,
+      ],
+    }, 'critical');
+
+    // Should fallback to empty string since item is falsy (line 208)
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with undefined item (line 208)', () => {
+    // This test specifically targets line 208 with an undefined item
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        undefined, // Undefined item
+      ],
+    }, 'critical');
+
+    // Should fallback to empty string since item is falsy (line 208)
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with false item (line 208)', () => {
+    // This test specifically targets line 208 with false value
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        false, // Boolean false is falsy
+      ],
+    }, 'critical');
+
+    // Should fallback to empty string since item is falsy (line 208)
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with object missing update_from (final fallback)', () => {
+    // This test targets the final fallback when no update_from is available
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          // Object without update_from property
+          other_prop: 'value',
+        },
+      ],
+    }, 'critical');
+
+    // Should use the final fallback to empty string
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with string items', () => {
+    // This test verifies the simplified logic handles string items correctly
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        '<div>string content</div>', // String item
+      ],
+    }, 'critical');
+
+    // Should use the string as update_from
+    expect(result.htmlWithIssues).to.have.length(1);
+    expect(result.htmlWithIssues[0].update_from).to.equal('<div>string content</div>');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with null values triggering all fallbacks', () => {
+    // This test ensures all fallback paths are covered
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          update_from: null, // Falsy value
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with false values (line 207)', () => {
+    // This test specifically targets line 207 - the final || ''
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          update_from: false, // Falsy but not null/undefined
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with zero values (line 205)', () => {
+    // This test specifically targets line 205 - the final || ''
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          update_from: 0, // Falsy number
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should handle htmlWithIssues with NaN values (line 205)', () => {
+    // This test specifically targets line 205 - the final || '' fallback
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      htmlWithIssues: [
+        {
+          update_from: NaN, // Falsy NaN value
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  // New tests that actually use htmlWithIssues to cover lines 201-219
+  it('should process htmlWithIssues with string items', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: ['<div>test string</div>', '<span>another string</span>'],
+    }, 'critical');
+
+    expect(result.htmlWithIssues).to.have.length(2);
+    expect(result.htmlWithIssues[0].update_from).to.equal('<div>test string</div>');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[1].update_from).to.equal('<span>another string</span>');
+    expect(result.htmlWithIssues[1].target_selector).to.equal('div.test');
+  });
+
+  it('should process htmlWithIssues with object items that have update_from', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: [
+        {
+          update_from: '<div>object with update_from</div>',
+        },
+        {
+          update_from: '<span>another object</span>',
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues).to.have.length(2);
+    expect(result.htmlWithIssues[0].update_from).to.equal('<div>object with update_from</div>');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[1].update_from).to.equal('<span>another object</span>');
+    expect(result.htmlWithIssues[1].target_selector).to.equal('div.test');
+  });
+
+  it('should process htmlWithIssues with mixed string and object items', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: [
+        '<div>string item</div>',
+        {
+          update_from: '<span>object item</span>',
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues).to.have.length(2);
+    expect(result.htmlWithIssues[0].update_from).to.equal('<div>string item</div>');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[1].update_from).to.equal('<span>object item</span>');
+    expect(result.htmlWithIssues[1].target_selector).to.equal('div.test');
+  });
+
+  it('should handle htmlWithIssues with objects without update_from (triggers line 208)', () => {
+    const result = formatIssue('aria-allowed-attr', {
+      successCriteriaTags: ['wcag412'],
+      description: 'Test description',
+      target: ['div.test'],
+      htmlWithIssues: [
+        {
+          // No update_from property
+        },
+        {
+          update_from: null, // Null update_from
+        },
+        {
+          update_from: '', // Empty string update_from
+        },
+      ],
+    }, 'critical');
+
+    expect(result.htmlWithIssues).to.have.length(3);
+    // All should have empty string update_from due to line 208
+    expect(result.htmlWithIssues[0].update_from).to.equal('');
+    expect(result.htmlWithIssues[0].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[1].update_from).to.equal('');
+    expect(result.htmlWithIssues[1].target_selector).to.equal('div.test');
+    expect(result.htmlWithIssues[2].update_from).to.equal('');
+    expect(result.htmlWithIssues[2].target_selector).to.equal('div.test');
   });
 });
 
@@ -332,7 +824,9 @@ describe('aggregateAccessibilityIssues', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -347,7 +841,9 @@ describe('aggregateAccessibilityIssues', () => {
     expect(result.data[0]['a11y-assistive'][0].issues).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].issues[0].type).to.equal('aria-hidden-focus');
     expect(result.data[0]['a11y-assistive'][0].issues[0].severity).to.equal('critical');
-    expect(result.data[0]['a11y-assistive'][0].issues[0].occurrences).to.equal(5);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].occurrences).to.equal(1);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].htmlWithIssues).to.have.lengthOf(1);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].htmlWithIssues[0].update_from).to.equal('<div aria-hidden="true"><button>Click</button></div>');
   });
 
   it('should process serious violations correctly', () => {
@@ -359,7 +855,9 @@ describe('aggregateAccessibilityIssues', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 3,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><input type="text"></div>'],
+                target: ['div[aria-hidden] input'],
               },
             },
           },
@@ -374,7 +872,9 @@ describe('aggregateAccessibilityIssues', () => {
     expect(result.data[0]['a11y-assistive'][0].issues).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].issues[0].type).to.equal('aria-hidden-focus');
     expect(result.data[0]['a11y-assistive'][0].issues[0].severity).to.equal('serious');
-    expect(result.data[0]['a11y-assistive'][0].issues[0].occurrences).to.equal(3);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].occurrences).to.equal(1);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].htmlWithIssues).to.have.lengthOf(1);
+    expect(result.data[0]['a11y-assistive'][0].issues[0].htmlWithIssues[0].update_from).to.equal('<div aria-hidden="true"><input type="text"></div>');
   });
 
   it('should process both critical and serious violations', () => {
@@ -386,7 +886,9 @@ describe('aggregateAccessibilityIssues', () => {
               'aria-required-parent': {
                 description: 'Critical issue',
                 successCriteriaTags: ['wcag412'],
-                count: 2,
+                count: 1,
+                htmlWithIssues: ['<div><li>Item</li></div>'],
+                target: ['div > li'],
               },
             },
           },
@@ -396,6 +898,8 @@ describe('aggregateAccessibilityIssues', () => {
                 description: 'Serious issue',
                 successCriteriaTags: ['wcag412'],
                 count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -406,10 +910,17 @@ describe('aggregateAccessibilityIssues', () => {
     const result = aggregateAccessibilityIssues(input);
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
-    expect(opportunity['a11y-assistive']).to.have.lengthOf(1);
-    expect(opportunity['a11y-assistive'][0].issues).to.have.lengthOf(2);
+    expect(opportunity['a11y-assistive']).to.have.lengthOf(2); // Now creates separate URL objects
+    // First URL object (critical issue)
+    expect(opportunity['a11y-assistive'][0].url).to.equal('https://example.com');
+    expect(opportunity['a11y-assistive'][0].issues).to.have.lengthOf(1);
+    expect(opportunity['a11y-assistive'][0].issues[0].type).to.equal('aria-required-parent');
     expect(opportunity['a11y-assistive'][0].issues[0].severity).to.equal('critical');
-    expect(opportunity['a11y-assistive'][0].issues[1].severity).to.equal('serious');
+    // Second URL object (serious issue)
+    expect(opportunity['a11y-assistive'][1].url).to.equal('https://example.com');
+    expect(opportunity['a11y-assistive'][1].issues).to.have.lengthOf(1);
+    expect(opportunity['a11y-assistive'][1].issues[0].type).to.equal('aria-hidden-focus');
+    expect(opportunity['a11y-assistive'][1].issues[0].severity).to.equal('serious');
   });
 
   it('should handle multiple URLs', () => {
@@ -421,7 +932,9 @@ describe('aggregateAccessibilityIssues', () => {
               'aria-required-parent': {
                 description: 'Page 1 issue',
                 successCriteriaTags: ['wcag412'],
-                count: 2,
+                count: 1,
+                htmlWithIssues: ['<div><li>Item</li></div>'],
+                target: ['div > li'],
               },
             },
           },
@@ -434,7 +947,9 @@ describe('aggregateAccessibilityIssues', () => {
               'aria-hidden-focus': {
                 description: 'Page 2 issue',
                 successCriteriaTags: ['wcag111'],
-                count: 3,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -465,7 +980,9 @@ describe('aggregateAccessibilityIssues', () => {
               'aria-hidden-focus': {
                 description: 'Page 2 issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -501,6 +1018,119 @@ describe('aggregateAccessibilityIssues', () => {
 
     const result = aggregateAccessibilityIssues(input);
     expect(result.data).to.be.empty;
+  });
+
+  it('should skip issues without htmlWithIssues', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                description: 'Issue without HTML',
+                successCriteriaTags: ['wcag412'],
+                count: 1,
+                // No htmlWithIssues array
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.be.empty;
+  });
+
+  it('should handle missing target list', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: {
+            items: {
+              'aria-allowed-attr': {
+                description: 'Multiple elements with invalid ARIA',
+                successCriteriaTags: ['wcag412'],
+                count: 3,
+                htmlWithIssues: [
+                  '<div aria-fake="true">Content 1</div>',
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+
+    expect(result.data).to.have.lengthOf(1);
+    const opportunity = result.data[0];
+    expect(opportunity['a11y-assistive']).to.have.lengthOf(1);
+    const assistiveOpportunity = opportunity['a11y-assistive'][0];
+
+    expect(assistiveOpportunity.url).to.equal('https://example.com');
+    expect(assistiveOpportunity.issues).to.have.lengthOf(1);
+    expect(assistiveOpportunity.issues[0].type).to.equal('aria-allowed-attr');
+    expect(assistiveOpportunity.issues[0].htmlWithIssues).to.have.lengthOf(1);
+    expect(assistiveOpportunity.issues[0].htmlWithIssues[0].target_selector).to.equal('');
+  });
+
+  it('should create separate URL objects for multiple HTML elements', () => {
+    const input = {
+      'https://example.com': {
+        violations: {
+          critical: {
+            items: {
+              'aria-allowed-attr': {
+                description: 'Multiple elements with invalid ARIA',
+                successCriteriaTags: ['wcag412'],
+                count: 3,
+                htmlWithIssues: [
+                  '<div aria-fake="true">Content 1</div>',
+                  '<span aria-invalid-attr="value">Content 2</span>',
+                  '<p aria-made-up="test">Content 3</p>',
+                ],
+                target: [
+                  'div[aria-fake]',
+                  'span[aria-invalid-attr]',
+                  'p[aria-made-up]',
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.have.lengthOf(1);
+    const opportunity = result.data[0];
+    expect(opportunity['a11y-assistive']).to.have.lengthOf(3); // Creates 3 separate URL objects
+
+    // Verify each URL object has one issue with one HTML element
+    opportunity['a11y-assistive'].forEach((urlObject) => {
+      expect(urlObject.url).to.equal('https://example.com');
+      expect(urlObject.issues).to.have.lengthOf(1);
+      expect(urlObject.issues[0].type).to.equal('aria-allowed-attr');
+      expect(urlObject.issues[0].htmlWithIssues).to.have.lengthOf(1);
+    });
+
+    // Verify specific HTML content
+    expect(opportunity['a11y-assistive'][0].issues[0].htmlWithIssues[0].update_from)
+      .to.equal('<div aria-fake="true">Content 1</div>');
+    expect(opportunity['a11y-assistive'][1].issues[0].htmlWithIssues[0].update_from)
+      .to.equal('<span aria-invalid-attr="value">Content 2</span>');
+    expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].update_from)
+      .to.equal('<p aria-made-up="test">Content 3</p>');
+
+    // Verify specific target
+    expect(opportunity['a11y-assistive'][0].issues[0].htmlWithIssues[0].target_selector)
+      .to.equal('div[aria-fake]');
+    expect(opportunity['a11y-assistive'][1].issues[0].htmlWithIssues[0].target_selector)
+      .to.equal('span[aria-invalid-attr]');
+    expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].target_selector)
+      .to.equal('p[aria-made-up]');
   });
 });
 
@@ -593,6 +1223,7 @@ describe('createIndividualOpportunitySuggestions', () => {
   let mockContext;
   let mockLog;
   let mockSyncSuggestions;
+  let mockIsAuditEnabledForSite;
   let createIndividualOpportunitySuggestions;
 
   beforeEach(async () => {
@@ -609,6 +1240,7 @@ describe('createIndividualOpportunitySuggestions', () => {
       error: sandbox.stub(),
     };
     mockSyncSuggestions = sandbox.stub().resolves();
+    mockIsAuditEnabledForSite = sandbox.stub().returns(true);
     mockContext = {
       site: {
         getId: sandbox.stub().returns('test-site'),
@@ -620,6 +1252,11 @@ describe('createIndividualOpportunitySuggestions', () => {
         Opportunity: {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
         },
       },
       sqs: {
@@ -636,6 +1273,9 @@ describe('createIndividualOpportunitySuggestions', () => {
       },
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
     createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
@@ -763,6 +1403,7 @@ describe('createIndividualOpportunitySuggestions', () => {
             occurrences: 3,
           },
         ],
+        isCreateTicketClicked: false,
       },
     });
   });
@@ -845,12 +1486,13 @@ describe('createIndividualOpportunitySuggestions', () => {
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
-            suggestion: { getId: () => 'sugg-1' },
-            suggestionData: { url: 'https://example.com', suggestionId: 'sugg-1' },
-            issueType: 'aria-allowed-attr',
+            url: 'https://example.com',
             issuesList: [{ issue_name: 'aria-allowed-attr' }],
           },
         ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
 
@@ -873,6 +1515,18 @@ describe('createIndividualOpportunitySuggestions', () => {
     expect(mockLog.info).to.have.been.calledWithMatch(
       /Message sending completed: 0 successful, 1 failed, 0 rejected/,
     );
+  });
+
+  it('should skip mystique suggestions and log when feature toggle is disabled', async () => {
+    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(false);
+    const result = await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      { data: [] }, // aggregatedData cu proprietatea data
+      mockContext,
+      mockLog,
+    );
+    expect(result).to.deep.equal({ success: true });
+    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
   });
 });
 
@@ -1003,6 +1657,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
   let mockGetAuditData;
   let mockCreateAssistiveOppty;
   let mockSyncSuggestions;
+  let mockIsAuditEnabledForSite;
   let createAccessibilityIndividualOpportunities;
 
   beforeEach(async () => {
@@ -1016,6 +1671,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
       getAuditId: sandbox.stub().returns('test-audit'),
       getSuggestions: sandbox.stub().resolves([]),
     };
+    mockIsAuditEnabledForSite = sandbox.stub().returns(true);
     mockContext = {
       site: mockSite,
       log: {
@@ -1028,6 +1684,11 @@ describe('createAccessibilityIndividualOpportunities', () => {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
           allBySiteId: sandbox.stub().resolves([]),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
         },
       },
       sqs: {
@@ -1081,24 +1742,21 @@ describe('createAccessibilityIndividualOpportunities', () => {
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
-            suggestion: {},
-            suggestionData: {},
-            issueType: 'type1',
+            url: 'https://example.com/page1',
             issuesList: [1],
           },
           {
-            suggestion: {},
-            suggestionData: {},
-            issueType: 'type2',
+            url: 'https://example.com/page2',
             issuesList: [2],
           },
           {
-            suggestion: {},
-            suggestionData: {},
-            issueType: 'type3',
+            url: 'https://example.com/page3',
             issuesList: [3],
           },
         ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
     createAccessibilityIndividualOpportunities = module.createAccessibilityIndividualOpportunities;
@@ -1174,7 +1832,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1202,7 +1862,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1230,7 +1892,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1304,7 +1968,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1332,7 +1998,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1365,7 +2033,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1399,7 +2069,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1433,7 +2105,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1461,7 +2135,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'First issue',
                 successCriteriaTags: ['wcag412'],
-                count: 2,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1470,7 +2146,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-allowed-attr': {
                 description: 'Second issue',
                 successCriteriaTags: ['wcag412'],
-                count: 3,
+                count: 1,
+                htmlWithIssues: ['<div aria-fake="true">Content</div>'],
+                target: ['div[aria-fake]'],
               },
             },
           },
@@ -1489,8 +2167,8 @@ describe('createAccessibilityIndividualOpportunities', () => {
     }
     expect(result.opportunities).to.have.lengthOf(1);
     expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-    expect(result.opportunities[0].suggestionsCount).to.equal(1);
-    expect(result.opportunities[0].totalIssues).to.equal(5);
+    expect(result.opportunities[0].suggestionsCount).to.equal(2);
+    expect(result.opportunities[0].totalIssues).to.equal(2);
     expect(result.opportunities[0].pagesWithIssues).to.equal(1);
   });
 
@@ -1502,7 +2180,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
             items: {
               'aria-hidden-focus': {
                 description: 'Test issue',
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1532,7 +2212,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: [],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1562,7 +2244,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['invalid-tag'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1592,6 +2276,8 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'aria-hidden-focus': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1620,7 +2306,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
             items: {
               'aria-hidden-focus': {
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
               },
             },
           },
@@ -1650,7 +2338,9 @@ describe('createAccessibilityIndividualOpportunities', () => {
               'unknown-issue-type': {
                 description: 'Test issue',
                 successCriteriaTags: ['wcag412'],
-                count: 5,
+                count: 1,
+                htmlWithIssues: ['<div aria-unknown="true">Content</div>'],
+                target: ['div[aria-unknown]'],
               },
             },
           },
@@ -1696,16 +2386,13 @@ describe('createAccessibilityIndividualOpportunities', () => {
 
 describe('createMystiqueMessage', () => {
   it('should create a message object with all required fields', () => {
-    const fakeSuggestion = { getId: () => 'sugg-456' };
     const fakeOpportunity = { getId: () => 'oppty-123' };
-    const suggestionData = { url: 'https://example.com', suggestionId: 'sugg-456' };
     const issuesList = [{ type: 'color-contrast', description: 'desc' }];
     const siteId = 'site-789';
     const auditId = 'audit-101';
     const deliveryType = 'aem_edge';
     const result = generateIndividualOpportunitiesModule.createMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData,
+      url: 'https://example.com',
       issuesList,
       opportunity: fakeOpportunity,
       siteId,
@@ -1720,21 +2407,17 @@ describe('createMystiqueMessage', () => {
     });
     expect(result.data).to.deep.equal({
       url: 'https://example.com',
-      opportunity_id: 'oppty-123',
-      suggestion_id: 'sugg-456',
-      issues_list: issuesList,
+      opportunityId: 'oppty-123',
+      issuesList,
     });
     expect(result.time).to.be.a('string');
   });
 
   it('should default siteId and auditId to empty string if not provided', () => {
-    const fakeSuggestion = { getId: () => 'sugg-456' };
     const fakeOpportunity = { getId: () => 'oppty-123' };
-    const suggestionData = { url: 'https://example.com', suggestionId: 'sugg-456' };
     const issuesList = [];
     const result = generateIndividualOpportunitiesModule.createMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData,
+      url: 'https://example.com',
       issuesList,
       opportunity: fakeOpportunity,
       siteId: undefined,
@@ -1751,18 +2434,14 @@ describe('sendMystiqueMessage', () => {
   let fakeSqs;
   let fakeEnv;
   let fakeLog;
-  let fakeSuggestion;
   let fakeOpportunity;
-  let fakeSuggestionData;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     fakeSqs = { sendMessage: sandbox.stub().resolves() };
     fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
     fakeLog = { info: sandbox.stub(), error: sandbox.stub() };
-    fakeSuggestion = { getId: () => 'sugg-1' };
     fakeOpportunity = { getId: () => 'oppty-1' };
-    fakeSuggestionData = { url: 'https://example.com', suggestionId: 'sugg-1' };
   });
 
   afterEach(() => {
@@ -1771,9 +2450,7 @@ describe('sendMystiqueMessage', () => {
 
   it('should send a message and log info on success', async () => {
     const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData: fakeSuggestionData,
-      issueType: 'color-contrast',
+      url: 'https://example.com',
       issuesList: [{ type: 'color-contrast' }],
       opportunity: fakeOpportunity,
       siteId: 'site-1',
@@ -1785,15 +2462,13 @@ describe('sendMystiqueMessage', () => {
     });
     expect(fakeSqs.sendMessage).to.have.been.calledOnce;
     expect(fakeLog.info).to.have.been.calledWithMatch('[A11yIndividual] Sent message to Mystique');
-    expect(result).to.deep.include({ success: true, issueType: 'color-contrast', suggestionId: 'sugg-1' });
+    expect(result).to.deep.include({ success: true, url: 'https://example.com' });
   });
 
   it('should log error and return failure object on error', async () => {
     fakeSqs.sendMessage.rejects(new Error('SQS error'));
     const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData: fakeSuggestionData,
-      issueType: 'color-contrast',
+      url: 'https://example.com',
       issuesList: [{ type: 'color-contrast' }],
       opportunity: fakeOpportunity,
       siteId: 'site-1',
@@ -1805,7 +2480,7 @@ describe('sendMystiqueMessage', () => {
     });
     expect(fakeSqs.sendMessage).to.have.been.calledOnce;
     expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual] Failed to send message to Mystique');
-    expect(result).to.deep.include({ success: false, issueType: 'color-contrast', suggestionId: 'sugg-1' });
+    expect(result).to.deep.include({ success: false, url: 'https://example.com' });
     expect(result.error).to.equal('SQS error');
   });
 });
@@ -1815,13 +2490,9 @@ describe('sendMystiqueMessage error path (coverage)', () => {
     const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('Simulated SQS failure')) };
     const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
     const fakeLog = { info: sinon.stub(), error: sinon.stub() };
-    const fakeSuggestion = { getId: () => 'sugg-123' };
     const fakeOpportunity = { getId: () => 'oppty-456' };
-    const fakeSuggestionData = { url: 'https://example.com', suggestionId: 'sugg-123' };
     const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData: fakeSuggestionData,
-      issueType: 'aria-allowed-attr',
+      url: 'https://example.com',
       issuesList: [{ issue_name: 'aria-allowed-attr' }],
       opportunity: fakeOpportunity,
       siteId: 'site-123',
@@ -1832,11 +2503,10 @@ describe('sendMystiqueMessage error path (coverage)', () => {
       log: fakeLog,
     });
     expect(result.success).to.be.false;
-    expect(result.issueType).to.equal('aria-allowed-attr');
-    expect(result.suggestionId).to.equal('sugg-123');
+    expect(result.url).to.equal('https://example.com');
     expect(result.error).to.equal('Simulated SQS failure');
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual] Failed to send message to Mystique for suggestion sugg-123 and issue type aria-allowed-attr: Simulated SQS failure',
+      '[A11yIndividual] Failed to send message to Mystique for url https://example.com',
     );
   });
 });
@@ -1846,6 +2516,7 @@ describe('createIndividualOpportunitySuggestions fallback logic (branch coverage
   let mockOpportunity;
   let mockContext;
   let mockLog;
+  let mockIsAuditEnabledForSite;
   let createIndividualOpportunitySuggestions;
 
   beforeEach(async () => {
@@ -1860,6 +2531,7 @@ describe('createIndividualOpportunitySuggestions fallback logic (branch coverage
       debug: sandbox.stub(),
       error: sandbox.stub(),
     };
+    mockIsAuditEnabledForSite = sandbox.stub().returns(true);
     mockContext = {
       site: {
         getId: sandbox.stub().returns('site-1'),
@@ -1875,6 +2547,11 @@ describe('createIndividualOpportunitySuggestions fallback logic (branch coverage
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
         },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
+        },
       },
       sqs: {
         sendMessage: sandbox.stub().resolves(),
@@ -1889,6 +2566,9 @@ describe('createIndividualOpportunitySuggestions fallback logic (branch coverage
       },
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
     createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
@@ -1925,6 +2605,7 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
   let mockOpportunity;
   let mockContext;
   let mockLog;
+  let mockIsAuditEnabledForSite;
   let createIndividualOpportunitySuggestions;
 
   beforeEach(async () => {
@@ -1940,6 +2621,7 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
       debug: sandbox.stub(),
       error: sandbox.stub(),
     };
+    mockIsAuditEnabledForSite = sandbox.stub().returns(true);
     mockContext = {
       site: {
         getId: sandbox.stub().returns('site-1'),
@@ -1951,6 +2633,11 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
         Opportunity: {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
         },
       },
       sqs: null, // Missing SQS
@@ -1964,12 +2651,13 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
-            suggestion: { getId: () => 'sugg-1' },
-            suggestionData: { url: 'https://example.com', suggestionId: 'sugg-1' },
-            issueType: 'aria-allowed-attr',
+            url: 'https://example.com',
             issuesList: [{ issue_name: 'aria-allowed-attr' }],
           },
         ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
     createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
@@ -2029,6 +2717,7 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
   let mockOpportunity;
   let mockContext;
   let mockLog;
+  let mockIsAuditEnabledForSite;
   let createIndividualOpportunitySuggestions;
 
   beforeEach(async () => {
@@ -2062,6 +2751,7 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
       debug: sandbox.stub(),
       error: sandbox.stub(),
     };
+    mockIsAuditEnabledForSite = sandbox.stub().returns(true);
     mockContext = {
       site: {
         getId: sandbox.stub().returns('site-1'),
@@ -2073,6 +2763,11 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
         Opportunity: {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
+        },
+        Configuration: {
+          findLatest: sandbox.stub().resolves({
+            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
+          }),
         },
       },
       sqs: {
@@ -2090,12 +2785,13 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
-            suggestion: { getId: () => 'sugg-1' },
-            suggestionData: { url: 'https://example.com', suggestionId: 'sugg-1' },
-            issueType: 'aria-allowed-attr',
+            url: 'https://example.com',
             issuesList: [{ issue_name: 'aria-allowed-attr' }],
           },
         ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
     createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
@@ -2140,14 +2836,10 @@ describe('sendMystiqueMessage error handling', () => {
     const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('SQS connection failed')) };
     const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
     const fakeLog = { info: sinon.stub(), error: sinon.stub() };
-    const fakeSuggestion = { getId: () => 'sugg-123' };
     const fakeOpportunity = { getId: () => 'oppty-456' };
-    const fakeSuggestionData = { url: 'https://example.com', suggestionId: 'sugg-123' };
 
     const result = await testModule.sendMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData: fakeSuggestionData,
-      issueType: 'aria-allowed-attr',
+      url: 'https://example.com',
       issuesList: [{ issue_name: 'aria-allowed-attr' }],
       opportunity: fakeOpportunity,
       siteId: 'site-123',
@@ -2161,29 +2853,24 @@ describe('sendMystiqueMessage error handling', () => {
     // Should return failure object
     expect(result).to.deep.equal({
       success: false,
-      issueType: 'aria-allowed-attr',
-      suggestionId: 'sugg-123',
+      url: 'https://example.com',
       error: 'SQS connection failed',
     });
 
     // Should log the error
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual] Failed to send message to Mystique for suggestion sugg-123 and issue type aria-allowed-attr: SQS connection failed',
+      '[A11yIndividual] Failed to send message to Mystique for url https://example.com',
     );
   });
 
-  it('should handle sendMessage errors with suggestion without getId method', async () => {
+  it('should handle sendMessage errors with different URL', async () => {
     const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('Network error')) };
     const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
     const fakeLog = { info: sinon.stub(), error: sinon.stub() };
-    const fakeSuggestion = {}; // No getId method
     const fakeOpportunity = { getId: () => 'oppty-456' };
-    const fakeSuggestionData = { url: 'https://example.com', suggestionId: 'sugg-123' };
 
     const result = await testModule.sendMystiqueMessage({
-      suggestion: fakeSuggestion,
-      suggestionData: fakeSuggestionData,
-      issueType: 'color-contrast',
+      url: 'https://test.com',
       issuesList: [{ issue_name: 'color-contrast' }],
       opportunity: fakeOpportunity,
       siteId: 'site-123',
@@ -2194,17 +2881,786 @@ describe('sendMystiqueMessage error handling', () => {
       log: fakeLog,
     });
 
-    // Should return failure object with empty suggestionId
+    // Should return failure object
     expect(result).to.deep.equal({
       success: false,
-      issueType: 'color-contrast',
-      suggestionId: '',
+      url: 'https://test.com',
       error: 'Network error',
     });
 
-    // Should log the error with empty suggestion ID
+    // Should log the error
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual] Failed to send message to Mystique for suggestion  and issue type color-contrast: Network error',
+      '[A11yIndividual] Failed to send message to Mystique for url https://test.com',
+    );
+  });
+});
+
+describe('handleAccessibilityRemediationGuidance', () => {
+  let testModule;
+  let sandbox;
+  let mockLog;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    testModule = await import('../../../src/accessibility/utils/generate-individual-opportunities.js');
+    mockLog = {
+      info: sandbox.stub(),
+      debug: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should successfully process remediation guidance', async () => {
+    const mockOpportunity = {
+      getId: () => 'oppty-123',
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                    issue_id: 'issue-123',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-new-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 1,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [],
+      failedSuggestionIds: [],
+    });
+
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-new-123, page https://example.com/page1, opportunity oppty-123: Received accessibility remediation guidance with 1 remediations and 1 total issues',
+    );
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-new-123, page https://example.com/page1, opportunity oppty-123: Successfully processed 1 remediations',
+    );
+
+    expect(mockOpportunity.setAuditId).to.have.been.calledWith('audit-new-123');
+    expect(mockOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+    expect(mockOpportunity.save).to.have.been.called;
+  });
+
+  it('should return error when opportunity not found', async () => {
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(null),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-nonexistent',
+        pageUrl: 'https://example.com/page1',
+        remediations: [],
+        totalIssues: 0,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: false,
+      error: 'Opportunity not found',
+    });
+
+    expect(mockLog.error).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-nonexistent: Opportunity not found',
+    );
+  });
+
+  it('should return error when site ID mismatch', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-different',
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [],
+        totalIssues: 0,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: false,
+      error: 'Site ID mismatch',
+    });
+
+    expect(mockLog.error).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Site ID mismatch. Expected: site-456, Found: site-different',
+    );
+  });
+
+  it('should return error when suggestion not found', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-different',
+        },
+      ]),
+      setAuditId: sandbox.stub().resolves(),
+      setUpdatedBy: sandbox.stub().resolves(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 1,
+      pageUrl: 'https://example.com/page1',
+      failedSuggestionIds: [],
+      notFoundSuggestionIds: ['sugg-789'],
+      invalidRemediations: [],
+    });
+
+    expect(mockLog.warn).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 1 suggestions not found: sugg-789',
+    );
+  });
+
+  it('should handle issues without htmlWithIssues and return them unchanged', async () => {
+    const originalIssue1 = {
+      type: 'aria-allowed-attr',
+      description: 'Issue without htmlWithIssues',
+      // No htmlWithIssues property at all
+    };
+
+    const originalIssue2 = {
+      type: 'color-contrast',
+      description: 'Issue with null htmlWithIssues',
+      htmlWithIssues: null,
+    };
+
+    const originalIssue3 = {
+      type: 'image-alt',
+      description: 'Issue with empty htmlWithIssues',
+      htmlWithIssues: [],
+    };
+
+    const setDataSpy = sandbox.stub();
+
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [originalIssue1, originalIssue2, originalIssue3],
+          }),
+          setData: setDataSpy,
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'some-other-issue',
+            general_suggestion: 'Some suggestion',
+            update_to: '<div>Fixed</div>',
+            user_impact: 'Some impact',
+            suggestionId: 'sugg-789',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 1,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [],
+      failedSuggestionIds: [],
+    });
+
+    // Verify that setData was called with unchanged issues
+    expect(setDataSpy).to.have.been.calledOnce;
+    const updatedSuggestionData = setDataSpy.firstCall.args[0];
+
+    // All issues should be returned unchanged since they don't have valid htmlWithIssues
+    expect(updatedSuggestionData.issues).to.have.length(3);
+    expect(updatedSuggestionData.issues[0]).to.deep.equal(originalIssue1);
+    expect(updatedSuggestionData.issues[1]).to.deep.equal(originalIssue2);
+    expect(updatedSuggestionData.issues[2]).to.deep.equal(originalIssue3);
+  });
+
+  it('should handle function errors and return error object', async () => {
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().rejects(new Error('Database connection failed')),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [],
+        totalIssues: 0,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: false,
+      error: 'Database connection failed',
+    });
+
+    expect(mockLog.error).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to process accessibility remediation guidance: Database connection failed',
+    );
+  });
+
+  it('should handle empty remediations array', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [],
+        totalIssues: 0,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 0,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [],
+      failedSuggestionIds: [],
+    });
+
+    expect(mockLog.warn).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: No remediations provided',
+    );
+  });
+
+  it('should handle multiple remediations with unique suggestionIds', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+        {
+          getId: () => 'sugg-790',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'color-contrast',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div style="color: #ccc">Content</div>',
+                    target_selector: 'div.contrast',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+          {
+            issue_name: 'color-contrast',
+            general_suggestion: 'Improve color contrast',
+            update_to: '<div style="color: #000">Content</div>',
+            user_impact: 'Improves readability',
+            suggestionId: 'sugg-790',
+          },
+        ],
+        totalIssues: 2,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 2,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [],
+      failedSuggestionIds: [],
+    });
+  });
+
+  it('should handle missing suggestionId in some remediations', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+          {
+            issue_name: 'color-contrast',
+            general_suggestion: 'Improve color contrast',
+            update_to: '<div style="color: #000">Content</div>',
+            user_impact: 'Improves readability',
+            // Missing suggestionId
+          },
+        ],
+        totalIssues: 2,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 2,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [
+        {
+          issue_name: 'color-contrast',
+          general_suggestion: 'Improve color contrast',
+          update_to: '<div style="color: #000">Content</div>',
+          user_impact: 'Improves readability',
+        },
+      ],
+      failedSuggestionIds: [],
+    });
+
+    expect(mockLog.warn).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 1 remediations missing suggestionId',
+    );
+  });
+
+  it('should handle all suggestions not found', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-different',
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+          {
+            issue_name: 'color-contrast',
+            general_suggestion: 'Improve color contrast',
+            update_to: '<div style="color: #000">Content</div>',
+            user_impact: 'Improves readability',
+            suggestionId: 'sugg-790',
+          },
+        ],
+        totalIssues: 2,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 2,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: ['sugg-789', 'sugg-790'],
+      invalidRemediations: [],
+      failedSuggestionIds: [],
+    });
+
+    expect(mockLog.warn).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 2 suggestions not found: sugg-789, sugg-790',
+    );
+  });
+
+  it('should handle suggestion save failures', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-456',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().rejects(new Error('Database connection failed')),
+        },
+        {
+          getId: () => 'sugg-790',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'color-contrast',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div style="color: #ccc">Content</div>',
+                    target_selector: 'div.contrast',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+          {
+            issue_name: 'color-contrast',
+            general_suggestion: 'Improve color contrast',
+            update_to: '<div style="color: #000">Content</div>',
+            user_impact: 'Improves readability',
+            suggestionId: 'sugg-790',
+          },
+        ],
+        totalIssues: 2,
+      },
+    };
+
+    const result = await testModule.handleAccessibilityRemediationGuidance(message, mockContext);
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 2,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [],
+      failedSuggestionIds: ['sugg-789'],
+    });
+
+    expect(mockLog.error).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to save suggestion sugg-789: Error: Database connection failed',
+    );
+    expect(mockLog.warn).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 1 suggestions failed to save: sugg-789',
+    );
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Successfully processed 1 remediations',
     );
   });
 });

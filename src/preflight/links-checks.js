@@ -11,7 +11,69 @@
  */
 
 import { JSDOM } from 'jsdom';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { stripTrailingSlash, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+
+/**
+ * Helper function to check if a link is broken
+ * @param {string} href - The URL to check
+ * @param {string} pageUrl - The source page URL
+ * @param {Object} context - Context object containing the logger
+ * @param {Object} options - Options for the fetch request
+ * @param {string} options.pageAuthToken - Optional authorization token for the page
+ * @param {boolean} options.isInternal - Whether this is an internal link
+ * @returns {Promise<Object|null>} - Object with link details if broken, null otherwise
+ */
+async function checkLinkStatus(href, pageUrl, context, options = {
+  pageAuthToken: null,
+}) {
+  const { log } = context;
+  const { pageAuthToken, isInternal } = options;
+
+  const fetchOptions = {
+    method: 'HEAD',
+    decode: false,
+  };
+
+  // Add Authorization header only for internal links
+  if (isInternal && pageAuthToken) {
+    fetchOptions.headers = {
+      Authorization: pageAuthToken,
+    };
+  }
+
+  try {
+    const res = await fetch(href, fetchOptions);
+
+    if (res.status >= 400) {
+      const linkType = isInternal ? 'internal' : 'external';
+      log.debug(`[preflight-audit] ${linkType} url ${href} returned with status code: %s`, res.status, res.statusText);
+      return { urlTo: href, href: pageUrl, status: res.status };
+    }
+
+    return null;
+  } catch (err) {
+    // Fallback to GET on any error
+    log.warn(`[preflight-audit] HEAD request failed (${err.message}), retrying with GET: ${href}`);
+
+    fetchOptions.method = 'GET';
+    let res;
+    try {
+      res = await fetch(href, fetchOptions);
+
+      if (res.status >= 400) {
+        const linkType = isInternal ? 'internal' : 'external';
+        log.debug(`[preflight-audit] ${linkType} url ${href} returned with status code: %s`, res.status, res.statusText);
+        return { urlTo: href, href: pageUrl, status: res.status };
+      }
+
+      return null;
+    } catch (finalErr) {
+      const linkType = isInternal ? 'internal' : 'external';
+      log.error(`[preflight-audit] Error checking ${linkType} link ${href} from ${pageUrl} with GET fallback:`, finalErr.message);
+      return null;
+    }
+  }
+}
 
 /**
  * Preflight check for both internal and external links
@@ -33,7 +95,7 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 
   await Promise.all(
     scrapedObjects
-      .filter(({ data }) => urlSet.has(data.finalUrl))
+      .filter(({ data }) => urlSet.has(stripTrailingSlash(data.finalUrl)))
       .map(async ({ data }) => {
         const html = data.scrapeResult.rawBody;
         const pageUrl = data.finalUrl;
@@ -45,7 +107,14 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         const internalSet = new Set();
         const externalSet = new Set();
 
+        log.info(`[preflight-audit] Total links found (${anchors.length}):`, anchors.map((a) => a.href));
+
         anchors.forEach((a) => {
+          // Skip links that are inside header or footer elements
+          if (a.closest('header') || a.closest('footer')) {
+            return;
+          }
+
           try {
             const abs = new URL(a.href, pageUrl).toString();
             if (new URL(abs).origin === pageOrigin) {
@@ -62,56 +131,39 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         log.info('[preflight-audit] Found external links:', externalSet);
 
         // Check internal links
-        await Promise.all(
-          Array.from(internalSet).map(async (href) => {
-            try {
-              const response = await fetch(href, {
-                method: 'HEAD',
-                headers: {
-                  Authorization: options.pageAuthToken,
-                },
-                timeout: 3000,
-              });
-              const { status } = response;
-
-              if (status >= 400) {
-                log.debug(`[preflight-audit] internal url ${href} returned with status code: %s`, status);
-                brokenInternalLinks.push({ urlTo: href, href: pageUrl, status });
-              }
-            } catch (err) {
-              log.error(`[preflight-audit] Error checking internal link ${href} from ${pageUrl}:`, err.message);
-            }
-          }),
+        const internalResults = await Promise.all(
+          Array.from(internalSet).map(async (href) => checkLinkStatus(
+            href,
+            pageUrl,
+            context,
+            {
+              ...options,
+              isInternal: true,
+            },
+          )),
         );
 
         // Check external links
-        await Promise.all(
-          Array.from(externalSet).map(async (href) => {
-            try {
-              const response = await fetch(href, {
-                method: 'HEAD',
-                headers: {
-                  Authorization: options.pageAuthToken,
-                },
-                timeout: 3000,
-              });
-              const { status } = response;
-
-              if (status >= 400) {
-                log.debug(`[preflight-audit] external url ${href} returned with status code: %s`, status);
-                brokenExternalLinks.push({ urlTo: href, href: pageUrl, status });
-              }
-            } catch (err) {
-              log.error(`[preflight-audit] Error checking external link ${href} from ${pageUrl}:`, err.message);
-              brokenExternalLinks.push({
-                urlTo: href,
-                href: pageUrl,
-                status: 'error',
-                error: err.message,
-              });
-            }
-          }),
+        const externalResults = await Promise.all(
+          Array.from(externalSet).map(async (href) => checkLinkStatus(
+            href,
+            pageUrl,
+            context,
+            {
+              ...options,
+              isInternal: false,
+            },
+          )),
         );
+
+        // Filter out null results and add to respective arrays
+        internalResults.forEach((result) => {
+          if (result) brokenInternalLinks.push(result);
+        });
+
+        externalResults.forEach((result) => {
+          if (result) brokenExternalLinks.push(result);
+        });
       }),
   );
 
