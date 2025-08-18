@@ -189,4 +189,31 @@ export const SHEET_CONFIGS = {
       Number(row.hits) || 0,
     ]) || [],
   },
+
+  agenticFlat: {
+    getHeaders: () => [
+      'Agent Type',
+      'User Agent',
+      'Status',
+      'Number of Hits',
+      'Avg TTFB (ms)',
+      'Country Code',
+      'URL',
+      'Product',
+      'Category',
+    ],
+    headerColor: SHEET_COLORS.DEFAULT,
+    numberColumns: [2, 3, 4],
+    processData: (data) => data?.map((row) => [
+      row.agent_type || 'Other',
+      row.user_agent_display || 'Unknown',
+      Number(row.status) || 'N/A',
+      Number(row.number_of_hits) || 0,
+      Number(row.avg_ttfb_ms) || 0,
+      validateCountryCode(row.country_code) || 'GLOBAL',
+      row.url || '',
+      capitalizeFirstLetter(row.product) || 'Other',
+      row.category || 'Uncategorized',
+    ]) || [],
+  },
 };

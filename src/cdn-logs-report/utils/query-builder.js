@@ -291,6 +291,33 @@ async function createHitsByPageCategoryAgentTypeQuery(options) {
   });
 }
 
+async function createAllWeeklyBreakdownQuery(options) {
+  const {
+    periods, databaseName, tableName, provider, site, siteFilters = [],
+  } = options;
+
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClause(
+    [
+      buildDateFilter(lastWeek.startDate, lastWeek.endDate),
+      'url NOT LIKE \'%robots.txt\'',
+      'url NOT LIKE \'%sitemap%\'',
+    ],
+    provider,
+    siteFilters,
+  );
+
+  return loadSql('agentic-flat-report', {
+    agentTypeClassification: buildAgentTypeClassificationSQL(provider),
+    countryExtraction: buildCountryExtractionSQL(),
+    topicExtraction: buildTopicExtractionSQL(site),
+    pageCategoryClassification: generatePageTypeClassification(site),
+    databaseName,
+    tableName,
+    whereClause,
+  });
+}
+
 export const weeklyBreakdownQueries = {
   createCountryWeeklyBreakdown: createCountryWeeklyBreakdownQuery,
   createUserAgentWeeklyBreakdown: createUserAgentWeeklyBreakdownQuery,
@@ -300,4 +327,5 @@ export const weeklyBreakdownQueries = {
   createTopUrls: createTopUrlsQuery,
   createHitsByProductAgentType: createHitsByProductAgentTypeQuery,
   createHitsByPageCategoryAgentType: createHitsByPageCategoryAgentTypeQuery,
+  createAllWeeklyBreakdownQuery,
 };
