@@ -44,7 +44,6 @@
       "static/prompts/broken-backlinks.prompt",
       "static/prompts/broken-backlinks-followup.prompt",
       "static/prompts/structured-data-suggest.prompt",
-      "static/prompts/image-alt-text.prompt",
       "static/schemaorg-current-https.jsonld",
       "src/cdn-analysis/sql",
       "src/cdn-logs-report/sql",
