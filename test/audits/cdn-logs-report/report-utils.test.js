@@ -84,6 +84,19 @@ describe('CDN Logs Report Utils', () => {
       const bucketName = reportUtils.getAnalysisBucket('example_com');
       expect(bucketName).to.equal('cdn-logs-example-com');
     });
+
+    it('falls back to generated bucket when getCdnLogsConfig returns null', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({
+          getCdnLogsConfig: () => null,
+        }),
+      };
+
+      const config = reportUtils.getS3Config(mockSite);
+
+      expect(config).to.have.property('bucket', 'cdn-logs-example-com');
+    });
   });
 
   describe('Date and Period Management', () => {
@@ -114,6 +127,16 @@ describe('CDN Logs Report Utils', () => {
       const identifier = reportUtils.generatePeriodIdentifier(startDate, endDate);
       expect(identifier).to.equal('2025-01-06_to_2025-01-20');
     });
+
+    it('handles Sunday as reference date correctly', () => {
+      const sundayDate = new Date('2025-01-12');
+
+      const periods = reportUtils.generateReportingPeriods(sundayDate, -1);
+
+      expect(periods).to.have.property('weeks').that.is.an('array');
+      expect(periods.weeks).to.have.length(1);
+      expect(periods.weeks[0].startDate.getUTCDay()).to.equal(1); // Monday
+    });
   });
 
   describe('Validation', () => {
@@ -123,6 +146,11 @@ describe('CDN Logs Report Utils', () => {
       expect(reportUtils.validateCountryCode('ABC')).to.equal('GLOBAL');
       expect(reportUtils.validateCountryCode(null)).to.equal('GLOBAL');
       expect(reportUtils.validateCountryCode('')).to.equal('GLOBAL');
+    });
+
+    it('handles GLOBAL country code correctly', () => {
+      expect(reportUtils.validateCountryCode('GLOBAL')).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('global')).to.equal('GLOBAL');
     });
 
     it('builds site filters correctly', () => {

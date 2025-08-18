@@ -65,11 +65,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
 
     const filename = `${AGENTIC_REPORT_CONFIG.filePrefix}-${periodIdentifier}.xlsx`;
 
-    const workbook = await createExcelReport(reportData, reportConfig, {
-      referenceDate,
-      filename,
-      site,
-    });
+    const workbook = await createExcelReport(reportData, reportConfig);
 
     await saveExcelReport({
       workbook,

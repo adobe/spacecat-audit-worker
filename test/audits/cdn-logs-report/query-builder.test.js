@@ -118,4 +118,31 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.be.a('string');
     expect(query).to.include('CASE');
   });
+
+  it('handles cross-month date filtering', async () => {
+    mockOptions.periods.weeks[0] = {
+      startDate: new Date('2024-12-30'),
+      endDate: new Date('2025-01-05'),
+      weekLabel: 'Week 1 2025',
+    };
+
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
+
+    expect(query).to.include("year = '2024'");
+    expect(query).to.include("month = '12'");
+    expect(query).to.include("year = '2025'");
+    expect(query).to.include("month = '01'");
+    expect(query).to.include('OR');
+  });
+
+  it('handles empty conditions in where clause', async () => {
+    const { weeklyBreakdownQueries: localQueries } = await import('../../../src/cdn-logs-report/utils/query-builder.js');
+
+    mockOptions.siteFilters = [];
+
+    const query = await localQueries.createAgenticReportQuery(mockOptions);
+
+    expect(query).to.include('WHERE');
+    expect(query).to.include('ChatGPT|GPTBot|OAI-SearchBot');
+  });
 });

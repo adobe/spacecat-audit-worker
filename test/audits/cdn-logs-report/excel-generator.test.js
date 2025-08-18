@@ -12,6 +12,8 @@
 /* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
+import ExcelJS from 'exceljs';
+import { getSheetConfig, createSheet, createExcelReport } from '../../../src/cdn-logs-report/utils/excel-generator.js';
 
 use(sinonChai);
 
@@ -138,5 +140,84 @@ describe('CDN Logs Excel Generator', () => {
     // Config should still be valid
     expect(AGENTIC_REPORT_CONFIG).to.be.an('object');
     expect(AGENTIC_REPORT_CONFIG.sheetName).to.equal('shared-all');
+  });
+
+  describe('getSheetConfig', () => {
+    it('should return config for valid sheet type', () => {
+      const config = getSheetConfig('agentic');
+      expect(config).to.be.an('object');
+      expect(config).to.have.property('headers');
+      expect(config).to.have.property('headerColor');
+      expect(config).to.have.property('numberColumns');
+      expect(config).to.have.property('processData');
+      expect(config.processData).to.be.a('function');
+    });
+
+    it('should throw error for invalid sheet type', () => {
+      expect(() => getSheetConfig('invalid-type')).to.throw('Unknown sheet type: invalid-type');
+    });
+  });
+
+  describe('createSheet', () => {
+    it('should create worksheet with proper structure', () => {
+      const workbook = new ExcelJS.Workbook();
+      const mockData = [
+        {
+          agent_type: 'Chatbots',
+          user_agent_display: 'ChatGPT-User',
+          status: '200',
+          number_of_hits: 150,
+          avg_ttfb_ms: 85.5,
+          country_code: 'US',
+          url: '/products/firefly.html',
+          product: 'Firefly',
+          category: 'Products',
+        },
+      ];
+
+      const worksheet = createSheet(workbook, 'Test Sheet', mockData, 'agentic');
+
+      expect(worksheet).to.be.an('object');
+      expect(worksheet.name).to.equal('Test Sheet');
+      expect(worksheet.rowCount).to.be.greaterThan(1);
+    });
+  });
+
+  describe('createExcelReport', () => {
+    it('should create workbook with sheets', async () => {
+      const reportData = {
+        'shared-all': [
+          {
+            agent_type: 'Chatbots',
+            user_agent_display: 'ChatGPT-User',
+            status: '200',
+            number_of_hits: 150,
+            avg_ttfb_ms: 85.5,
+            country_code: 'US',
+            url: '/products/firefly.html',
+            product: 'Firefly',
+            category: 'Products',
+          },
+        ],
+      };
+
+      const mockReportConfig = {
+        workbookCreator: 'Test Creator',
+        sheets: [
+          {
+            name: 'Agentic Traffic',
+            dataKey: 'shared-all',
+            type: 'agentic',
+          },
+        ],
+      };
+
+      const workbook = await createExcelReport(reportData, mockReportConfig);
+
+      expect(workbook).to.be.instanceOf(ExcelJS.Workbook);
+      expect(workbook.creator).to.equal('Test Creator');
+      expect(workbook.worksheets).to.have.length(1);
+      expect(workbook.worksheets[0].name).to.equal('Agentic Traffic');
+    });
   });
 });

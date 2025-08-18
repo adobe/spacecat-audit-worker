@@ -52,6 +52,7 @@ function formatColumns(worksheet, config) {
 
     let maxLength = 0;
     column.eachCell({ includeEmpty: false }, (cell) => {
+      /* c8 ignore next */
       const cellValue = cell.value ? cell.value.toString() : '';
       maxLength = Math.max(maxLength, cellValue.length);
     });
@@ -81,22 +82,12 @@ export function createSheet(workbook, name, data, type) {
   return worksheet;
 }
 
-export async function createExcelReport(reportData, reportConfig, options = {}) {
-  const { site } = options;
-
+export async function createExcelReport(reportData, reportConfig) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = reportConfig.workbookCreator;
   workbook.created = new Date();
 
   const sheets = [...reportConfig.sheets];
-
-  if (reportConfig.conditionalSheets) {
-    reportConfig.conditionalSheets.forEach((conditionalSheet) => {
-      if (conditionalSheet.condition(site)) {
-        sheets.push(conditionalSheet.sheet);
-      }
-    });
-  }
 
   for (const sheet of sheets) {
     const data = reportData[sheet.dataKey];

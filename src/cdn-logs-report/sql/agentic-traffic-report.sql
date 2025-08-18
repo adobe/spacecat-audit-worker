@@ -1,21 +1,34 @@
+WITH classified_data AS (
+  SELECT 
+    {{agentTypeClassification}} as agent_type,
+    {{userAgentDisplay}} as user_agent_display,
+    status,
+    count,
+    time_to_first_byte,
+    {{countryExtraction}} as country_code,
+    url,
+    {{topicExtraction}} as product,
+    {{pageCategoryClassification}} as category
+  FROM {{databaseName}}.{{tableName}}
+  {{whereClause}}
+)
 SELECT 
-  {{agentTypeClassification}} as agent_type,
-  {{userAgentDisplay}} as user_agent_display,
+  agent_type,
+  user_agent_display,
   status,
   SUM(count) as number_of_hits,
   ROUND(SUM(time_to_first_byte * count) / SUM(count), 2) as avg_ttfb_ms,
-  {{countryExtraction}} as country_code,
+  country_code,
   url,
-  {{topicExtraction}} as product,
-  {{pageCategoryClassification}} as category
-FROM {{databaseName}}.{{tableName}}
-{{whereClause}}
+  product,
+  category
+FROM classified_data
 GROUP BY 
-  {{agentTypeClassification}},
-  {{userAgentDisplay}},
+  agent_type,
+  user_agent_display,
   status,
-  {{countryExtraction}},
+  country_code,
   url,
-  {{topicExtraction}},
-  {{pageCategoryClassification}}
+  product,
+  category
 ORDER BY number_of_hits DESC

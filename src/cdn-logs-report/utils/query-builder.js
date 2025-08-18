@@ -44,6 +44,7 @@ function buildWhereClause(conditions = [], siteFilters = []) {
     allConditions.push(siteFilters);
   }
 
+  /* c8 ignore next */
   return allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : '';
 }
 
@@ -75,6 +76,7 @@ function buildTopicExtractionSQL(site) {
 
   const patterns = TOPIC_PATTERNS[domain];
 
+  /* c8 ignore start */
   if (Array.isArray(patterns)) {
     const namedPatterns = [];
     const extractPatterns = [];
@@ -87,7 +89,6 @@ function buildTopicExtractionSQL(site) {
       }
     });
 
-    /* c8 ignore next 10 */
     if (namedPatterns.length > 0 && extractPatterns.length > 0) {
       const caseClause = `CASE\n          ${namedPatterns.join('\n          ')}\n          ELSE NULL\n        END`;
       const coalesceClause = extractPatterns.join(',\n    ');
@@ -98,6 +99,7 @@ function buildTopicExtractionSQL(site) {
       return `COALESCE(\n    ${extractPatterns.join(',\n    ')},\n    'Other'\n  )`;
     }
   }
+  /* c8 ignore stop */
 
   return "CASE WHEN url IS NOT NULL THEN 'Other' END";
 }

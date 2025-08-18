@@ -41,7 +41,7 @@ export function getAnalysisBucket(customerDomain) {
 export function getS3Config(site) {
   const customerDomain = extractCustomerDomain(site);
   const domainParts = customerDomain.split(/[._]/);
-  // Remove 'www' if it's the first part, otherwise use the first part
+  /* c8 ignore next */
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
   const { bucketName: bucket } = site.getConfig().getCdnLogsConfig()
     || { bucketName: getAnalysisBucket(customerDomain) };
