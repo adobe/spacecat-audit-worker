@@ -125,7 +125,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
     expect(Opportunity.create).to.have.been.calledOnce;
     const createdArg = Opportunity.create.getCall(0).args[0];
     expect(createdArg).to.include({ siteId, type: 'paid-traffic' });
-    expect(createdArg.data).to.include({ year: 2025, week: '2' });
+    expect(createdArg.data).to.include({ year: 2025, week: 2 });
     expect(createdArg.title).to.equal('Paid Traffic Analysis Week 2 / 2025');
 
     // Suggestions created for each section
@@ -161,7 +161,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     expect(Opportunity.create).to.have.been.calledOnce;
     const createdArg = Opportunity.create.getCall(0).args[0];
-    expect(createdArg.data).to.include({ year: 2024, month: '12' });
+    expect(createdArg.data).to.include({ year: 2024, month: 12 });
     expect(createdArg.data).to.not.have.property('week');
     expect(createdArg.title).to.equal('Paid Traffic Analysis Month 12 / 2024');
   });
@@ -184,7 +184,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
     const createdArg = Opportunity.create.getCall(0).args[0];
     expect(createdArg.title).to.equal('Paid Traffic Analysis Week 2 / 2025');
     // Data retains both if present
-    expect(createdArg.data).to.include({ week: '2', month: '1' });
+    expect(createdArg.data).to.include({ week: 2, month: 1 });
   });
 
   it('handles guidance with non-array body by creating no suggestions', async () => {
@@ -265,7 +265,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     const createdArg = Opportunity.create.getCall(0).args[0];
     expect(createdArg.title).to.equal('Paid Traffic Analysis Week 7 / 2025');
-    expect(createdArg.data).to.include({ year: 2025, week: '7' });
+    expect(createdArg.data).to.include({ year: 2025, week: 7 });
     expect(createdArg.data).to.not.have.property('month');
   });
 
@@ -276,6 +276,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
       getId: () => 'old-1',
       setStatus: sandbox.stub().resolves(),
       setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
       getData: () => ({ week: '1' }),
       getTitle: () => 'Old PT Oppty',
     };
@@ -285,6 +286,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
       getId: () => 'old-2',
       setStatus: sandbox.stub().resolves(),
       setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
       getData: () => ({ month: '12' }),
       getTitle: () => 'Old PT Oppty 2',
     };

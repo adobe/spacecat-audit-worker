@@ -33,8 +33,8 @@ function mapToPaidOpportunity(siteId, audit, { year, month, week }) {
     data: {
       year,
       // Keep only one of week/month depending on period; ensure string as in spec
-      ...(week != null ? { week: String(week) } : {}),
-      ...(month != null ? { month: String(month) } : {}),
+      ...(week != null ? { week: Number(week) } : {}),
+      ...(month != null ? { month: Number(month) } : {}),
       dataSources: [DATA_SOURCES.RUM],
     },
     origin: ORIGIN,
@@ -69,7 +69,6 @@ async function ignorePreviousOpportunitiesForPeriod(Opportunity, siteId, _period
     .filter((oppty) => oppty.getStatus() === 'NEW')
     .filter((oppty) => oppty.getId() !== newOpptyId);
 
-  let count = 0;
   await Promise.all(candidates.map(async (oppty) => {
     const data = oppty.getData();
     const title = oppty.getTitle();
@@ -77,11 +76,11 @@ async function ignorePreviousOpportunitiesForPeriod(Opportunity, siteId, _period
     const monthVal = data?.month;
     const id = oppty.getId();
     log.info(`Setting existing paid-traffic opportunity id=${id} title="${title}" week=${weekVal} month=${monthVal} to IGNORED`);
-    await oppty.setStatus('IGNORED');
+    oppty.setStatus('IGNORED');
     oppty.setUpdatedBy('system');
-    count += 1;
+    await oppty.save();
   }));
-  log.info(`Ignored ${count} existing paid-traffic opportunities for siteId=${siteId}`);
+  log.info(`Ignored ${candidates.length ?? 0} existing paid-traffic opportunities for siteId=${siteId}`);
 }
 
 export default async function handler(message, context) {
