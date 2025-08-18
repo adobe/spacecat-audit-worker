@@ -85,7 +85,7 @@ describe('Paid Traffic Analysis Handler', () => {
       const expectedAuditResult = {
         year: 2025,
         week: 2, // Last full week (Jan 6-12, 2025)
-        temporalCondition: 'year=2025 AND month=1 AND week=2',
+        temporalCondition: '(year=2025 AND month=1 AND week=2)',
         month: 1,
         siteId,
       };

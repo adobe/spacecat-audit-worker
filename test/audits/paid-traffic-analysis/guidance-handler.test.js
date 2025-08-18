@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import handler from '../../src/paid-traffic-analysis/guidance-handler.js';
+import handler from '../../../src/paid-traffic-analysis/guidance-handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -185,6 +185,88 @@ describe('Paid-traffic-analysis guidance handler', () => {
     expect(createdArg.title).to.equal('Paid Traffic Analysis Week 2 / 2025');
     // Data retains both if present
     expect(createdArg.data).to.include({ week: '2', month: '1' });
+  });
+
+  it('handles guidance with non-array body by creating no suggestions', async () => {
+    // body is an object, not an array -> mapToAIInsightsSuggestions should return []
+    const nonArrayGuidance = [{ body: { foo: 'bar' } }];
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: nonArrayGuidance,
+      },
+    };
+
+    await handler(message, context);
+
+    // Opportunity still created
+    expect(Opportunity.create).to.have.been.calledOnce;
+    // No suggestions created
+    expect(Suggestion.create).not.to.have.been.called;
+  });
+
+  it('handles empty guidance array (no recommendations) by creating no suggestions', async () => {
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: [],
+      },
+    };
+
+    await handler(message, context);
+
+    expect(Opportunity.create).to.have.been.calledOnce;
+    expect(Suggestion.create).not.to.have.been.called;
+  });
+
+  it('handles section without recommendations by using empty list', async () => {
+    // One section has no recommendations array
+    const guidanceMissingRecs = [{
+      body: [
+        { reportType: 'PAID_CHANNEL_PERFORMANCE', recommendations: [{ markdown: 'A' }] },
+        { reportType: 'PAGE_TYPE_PERFORMANCE' }, // no recommendations -> [] branch
+      ],
+    }];
+
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: guidanceMissingRecs,
+      },
+    };
+
+    await handler(message, context);
+
+    // Two suggestions created (one per section)
+    expect(Suggestion.create.callCount).to.equal(2);
+    const second = Suggestion.create.getCall(1).args[0];
+    expect(second.data.parentReport).to.equal('PAGE_TYPE_PERFORMANCE');
+    expect(second.data.recommendations).to.be.an('array').that.has.length(0);
+  });
+
+  it('creates weekly opportunity when month is undefined (nullish coalescing path)', async () => {
+    // Only week/year provided; month is undefined
+    dummyAudit.getAuditResult = () => ({
+      siteId, week: 7, year: 2025, temporalCondition: 'year=2025 AND week=7',
+    });
+
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: guidancePayload,
+      },
+    };
+
+    await handler(message, context);
+
+    const createdArg = Opportunity.create.getCall(0).args[0];
+    expect(createdArg.title).to.equal('Paid Traffic Analysis Week 7 / 2025');
+    expect(createdArg.data).to.include({ year: 2025, week: '7' });
+    expect(createdArg.data).to.not.have.property('month');
   });
 
   it('ignores previous paid-traffic opportunities after creation', async () => {
