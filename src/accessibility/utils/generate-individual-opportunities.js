@@ -370,7 +370,6 @@ export async function createIndividualOpportunitySuggestions(
 
   log.debug(`[A11yIndividual] Creating ${aggregatedData.data.length} suggestions for opportunity ${opportunity.getId()}`);
   log.info(`[A11yIndividual] New Data ${JSON.stringify(aggregatedData, null, 2)}`);
-  log.info(`[A11yIndividual] Existing Data: ${JSON.stringify(opportunity.getSuggestions(), null, 2)}`);
 
   try {
     await syncSuggestions({
