@@ -1,3 +1,15 @@
+# [1.146.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.145.2...v1.146.0) (2025-08-18)
+
+
+### Bug Fixes
+
+* test failures ([#1131](https://github.com/adobe/spacecat-audit-worker/issues/1131)) ([30f9b20](https://github.com/adobe/spacecat-audit-worker/commit/30f9b209980f4580f7c8ead6d5d0316428b69660))
+
+
+### Features
+
+* disable geo faq opportunity for now ([#1120](https://github.com/adobe/spacecat-audit-worker/issues/1120)) ([0e8d06f](https://github.com/adobe/spacecat-audit-worker/commit/0e8d06f56e7671936f0df08916b48765c380e323))
+
 ## [1.145.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.145.1...v1.145.2) (2025-08-16)
 
 
