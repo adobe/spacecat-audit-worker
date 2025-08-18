@@ -45,6 +45,7 @@ import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-hand
 import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
 import paidConsentGuidance from './paid/guidance-handler.js';
+import paidTrafficAnalysisGuidance from './paid-traffic-analysis/guidance-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
@@ -60,6 +61,8 @@ import detectPageIntent from './page-intent/handler.detect.js';
 import updatePageIntent from './page-intent/handler.update.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
+import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
+import hreflang from './hreflang/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -70,6 +73,8 @@ const HANDLERS = {
   404: notfound,
   sitemap,
   paid,
+  'paid-traffic-analysis-weekly': paidTrafficAnalysisWeekly,
+  'paid-traffic-analysis-monthly': paidTrafficAnalysisMonthly,
   canonical,
   'broken-backlinks': backlinks,
   'broken-internal-links': internalLinks,
@@ -95,6 +100,7 @@ const HANDLERS = {
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
   'guidance:paid-cookie-consent': paidConsentGuidance,
+  'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
@@ -104,6 +110,7 @@ const HANDLERS = {
   'detect:form-details': detectFormDetails,
   'page-intent': updatePageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
+  hreflang,
   dummy: (message) => ok(message),
 };
 
