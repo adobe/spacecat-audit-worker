@@ -840,12 +840,6 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
     });
 
     // Update the opportunity with new audit ID
-    // Add random jitter to prevent concurrent database save conflicts
-    const jitter = Math.random() * 5000 + 1000;
-    await new Promise((resolve) => {
-      setTimeout(resolve, jitter);
-    });
-
     opportunity.setAuditId(auditId);
     opportunity.setUpdatedBy('system');
     await opportunity.save();
