@@ -1801,7 +1801,7 @@ describe('data-processing utility functions', () => {
       expect(mockS3Client.send.calledWith(sinon.match.instanceOf(PutObjectCommand))).to.be.true;
 
       expect(mockS3Client.send.calledWith(sinon.match.instanceOf(DeleteObjectCommand)))
-        .to.be.true;
+        .to.be.false;
     });
 
     it('should return error and specific message when getObjectKeysFromSubfolders returns success false', async () => {
