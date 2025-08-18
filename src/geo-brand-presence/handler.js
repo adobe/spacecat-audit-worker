@@ -23,7 +23,10 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const LLMO_QUESTIONS_IMPORT_TYPE = 'llmo-prompts-ahrefs';
 export const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
 export const GEO_FAQ_OPPTY_TYPE = 'guidance:geo-faq';
-export const OPPTY_TYPES = [GEO_BRAND_PRESENCE_OPPTY_TYPE, GEO_FAQ_OPPTY_TYPE];
+export const OPPTY_TYPES = [
+  GEO_BRAND_PRESENCE_OPPTY_TYPE,
+  // GEO_FAQ_OPPTY_TYPE, // TODO reenable when working on faqs again
+];
 
 /**
  * @import { S3Client } from '@aws-sdk/client-s3';
