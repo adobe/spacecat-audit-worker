@@ -16,8 +16,9 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import nock from 'nock';
 import sinonChai from 'sinon-chai';
+import esmock from 'esmock';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
-import mystiqueDetectedFormAccessibilityHandler, { createAccessibilityOpportunity, transformAxeViolationsToA11yData } from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
+import mystiqueDetectedFormAccessibilityHandler, { transformAxeViolationsToA11yData } from '../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
@@ -129,7 +130,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
     let context;
     const siteId = 'test-site-id';
     const bucketName = 'test-bucket';
-    const version = new Date().getTime();
 
     beforeEach(() => {
       context = new MockContextBuilder()
@@ -173,7 +173,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       sandbox.restore();
     });
 
-    it('should not create opportunities when no a11y data is present', async () => {
+    it('should not create opportunities when aggregation fails', async () => {
       const latestAudit = {
         siteId,
         auditId: 'test-audit-id',
@@ -181,81 +181,29 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         getAuditId: () => 'test-audit-id',
       };
 
-      context.s3Client.send.onFirstCall().resolves({ CommonPrefixes: [] });
-      await createAccessibilityOpportunity(latestAudit, context);
-      expect(context.log.error).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] Failed to get object keys from subfolders: No accessibility data found in bucket test-bucket at prefix forms-accessibility/test-site-id/ for site test-site-id with delimiter /');
-    });
+      // Mock aggregateAccessibilityData to return failure
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: false,
+        message: 'No data found for aggregation',
+      });
 
-    it('should not create opportunities when no content is present', async () => {
-      const latestAudit = {
-        siteId,
-        auditId: 'test-audit-id',
-        getSiteId: () => siteId,
-        getAuditId: () => 'test-audit-id',
-      };
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
 
-      context.s3Client.send
-        .onFirstCall()
-        .resolves({ CommonPrefixes: [{ Prefix: `forms-accessibility/${siteId}/${version}/` }] })
-        .onSecondCall()
-        .resolves({
-          Contents: [
-            { Key: `forms-accessibility/${siteId}/${version}/form1.json` },
-          ],
-          IsTruncated: false,
-        })
-        .onThirdCall()
-        .resolves({
-          ContentType: 'application/json',
-          Body: {
-            transformToString: sandbox.stub().resolves(null),
-          },
-        });
-      await createAccessibilityOpportunity(latestAudit, context);
-      expect(context.log.error).to.have.been.calledWith('[Form Opportunity] No files could be processed successfully for site test-site-id');
-    });
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-    it('should not create opportunity if a11yData is empty', async () => {
-      const latestAudit = {
-        siteId,
-        auditId: 'test-audit-id',
-        getSiteId: () => siteId,
-        getAuditId: () => 'test-audit-id',
-      };
-
-      context.s3Client.send
-        .onFirstCall()
-        .resolves({
-          CommonPrefixes: [
-            { Prefix: `forms-accessibility/${siteId}/${version}/` },
-          ],
-        })
-        .onSecondCall()
-        .resolves({
-          Contents: [
-            { Key: `forms-accessibility/${siteId}/${version}/form1.json` },
-          ],
-          IsTruncated: false,
-        })
-        .onThirdCall()
-        .resolves({
-          ContentType: 'application/json',
-          Body: {
-            transformToString: sandbox.stub().resolves(JSON.stringify({
-              finalUrl: 'https://example.com/form1',
-              a11yResult: [],
-            })),
-          },
-        });
-
-      await createAccessibilityOpportunity(latestAudit, context);
-      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(
-        `[Form Opportunity] [Site Id: ${siteId}] No a11y data found to create or update opportunity `,
+      expect(context.log.error).to.have.been.calledWith(
+        '[Form Opportunity]  No data aggregated for site test-site-id (https://example.com): No data found for aggregation',
       );
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     });
 
-    it('should fail when no a11yIssues are present', async () => {
+    it('should not create opportunity if no a11yData is generated', async () => {
       const latestAudit = {
         siteId,
         auditId: 'test-audit-id',
@@ -263,40 +211,83 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         getAuditId: () => 'test-audit-id',
       };
 
-      context.s3Client.send
-        .onFirstCall()
-        .resolves({
-          CommonPrefixes: [
-            { Prefix: `forms-accessibility/${siteId}/${version}/` },
-          ],
-        })
-        .onSecondCall()
-        .resolves({
-          Contents: [
-            { Key: `forms-accessibility/${siteId}/${version}/form1.json` },
-          ],
-          IsTruncated: false,
-        })
-        .onThirdCall()
-        .resolves({
-          ContentType: 'application/json',
-          Body: {
-            transformToString: sandbox.stub().resolves(JSON.stringify({
-              finalUrl: 'https://example.com/form1',
-              a11yResult: [{
-                form: 'https://example.com/form1',
-                formSource: '#form1',
-                a11yIssues: [],
-              }],
-            })),
+      // Mock aggregateAccessibilityData to return success but with only overall data
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 0,
+                critical: { count: 0, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
           },
-        });
+        },
+      });
 
-      await createAccessibilityOpportunity(latestAudit, context);
-      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
       expect(context.log.info).to.have.been.calledWith(
-        `[Form Opportunity] [Site Id: ${siteId}] No a11y issues found to create or update opportunity`,
+        '[Form Opportunity] [Site Id: test-site-id] No a11y data found to create or update opportunity ',
       );
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    });
+
+    it('should not create opportunity if no a11yIssues are present', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success with data but no violations
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 0,
+                critical: { count: 0, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+            'https://example.com/form1---contact-form': {
+              violations: {
+                total: 0,
+                critical: { count: 0, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+          },
+        },
+      });
+
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] No a11y issues found to create or update opportunity',
+      );
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     });
 
     it('should create opportunities when a11y issues are present', async () => {
@@ -307,46 +298,62 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         getAuditId: () => 'test-audit-id',
       };
 
-      const scrapedData = {
-        finalUrl: 'https://example.com/form1',
-        a11yResult: [{
-          formSource: '#form1',
-          a11yIssues: [{
-            issue: 'Missing alt text',
-            level: 'error',
-            successCriterias: ['1.1.1'],
-            htmlWithIssues: '<img src="test.jpg">',
-            recommendation: 'Add alt text to image',
-          }],
-        }],
-        auditTime: '6987',
-        scrapedAt: '1748348057009',
-        userAgent: 'mock-user-agent',
-      };
-
-      context.s3Client.send
-        .onFirstCall()
-        .resolves({
-          CommonPrefixes: [
-            { Prefix: `forms-accessibility/${siteId}/${version}/` },
-          ],
-        })
-        .onSecondCall()
-        .resolves({
-          Contents: [
-            { Key: `forms-accessibility/${siteId}/${version}/form1.json` },
-          ],
-          IsTruncated: false,
-        })
-        .onThirdCall()
-        .resolves({
-          ContentType: 'application/json',
-          Body: {
-            transformToString: sandbox.stub().resolves(JSON.stringify(scrapedData)),
+      // Mock aggregateAccessibilityData to return success with violations data
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 5,
+                critical: { count: 2, items: {} },
+                serious: { count: 3, items: {} },
+              },
+            },
+            'https://example.com/form1---contact-form': {
+              violations: {
+                total: 2,
+                critical: {
+                  count: 1,
+                  items: {
+                    'select-name': {
+                      count: 1,
+                      description: 'Select element must have an accessible name',
+                      level: 'A',
+                      successCriteriaTags: ['wcag412'],
+                      htmlWithIssues: ['<select id="inquiry">'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+                serious: {
+                  count: 1,
+                  items: {
+                    'color-contrast': {
+                      count: 1,
+                      description: 'Elements must meet minimum color contrast ratio thresholds',
+                      level: 'AA',
+                      successCriteriaTags: ['wcag143'],
+                      htmlWithIssues: ['<span>(Optional)</span>'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+              },
+            },
           },
-        });
+        },
+      });
 
-      await createAccessibilityOpportunity(latestAudit, context);
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
       const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
@@ -356,14 +363,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(createArgs.origin).to.equal('AUTOMATION');
       expect(createArgs.data.accessibility).to.have.lengthOf(1);
       expect(createArgs.data.accessibility[0].form).to.equal('https://example.com/form1');
-      expect(createArgs.data.accessibility[0].formSource).to.equal('#form1');
-      expect(createArgs.data.accessibility[0].a11yIssues).to.have.lengthOf(1);
-
-      // Check that success criteria are processed
-      const successCriteria = createArgs.data.accessibility[0].a11yIssues[0].successCriterias[0];
-      expect(successCriteria.criteriaNumber).to.equal('1.1.1');
-      expect(successCriteria.name).to.equal('Non-text Content');
-      expect(successCriteria).to.have.property('understandingUrl');
+      expect(createArgs.data.accessibility[0].formSource).to.equal('contact-form');
+      expect(createArgs.data.accessibility[0].a11yIssues).to.have.lengthOf(2);
 
       // Verify SQS message was sent
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
@@ -374,9 +375,181 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(sqsMessage.deliveryType).to.equal('aem');
       expect(sqsMessage.data.url).to.equal('https://example.com');
       expect(sqsMessage.data.opportunityId).to.equal('test-opportunity-id');
+    });
 
-      // Verify updateStatusToIgnored was called by checking the dataAccess calls
-      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith(siteId, 'NEW');
+    it('should handle multiple forms with violations', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success with multiple forms
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 4,
+                critical: { count: 2, items: {} },
+                serious: { count: 2, items: {} },
+              },
+            },
+            'https://example.com/form1---contact-form': {
+              violations: {
+                total: 2,
+                critical: {
+                  count: 1,
+                  items: {
+                    'select-name': {
+                      count: 1,
+                      description: 'Select element must have an accessible name',
+                      level: 'A',
+                      successCriteriaTags: ['wcag412'],
+                      htmlWithIssues: ['<select id="inquiry">'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+                serious: {
+                  count: 1,
+                  items: {
+                    'color-contrast': {
+                      count: 1,
+                      description: 'Elements must meet minimum color contrast ratio thresholds',
+                      level: 'AA',
+                      successCriteriaTags: ['wcag143'],
+                      htmlWithIssues: ['<span>(Optional)</span>'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+              },
+            },
+            'https://example.com/form2---newsletter-form': {
+              violations: {
+                total: 2,
+                critical: {
+                  count: 1,
+                  items: {
+                    'missing-alt': {
+                      count: 1,
+                      description: 'Images must have alternative text',
+                      level: 'A',
+                      successCriteriaTags: ['wcag111'],
+                      htmlWithIssues: ['<img src="test.jpg">'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+                serious: {
+                  count: 1,
+                  items: {
+                    'target-size': {
+                      count: 1,
+                      description: 'All touch targets must be 24px large',
+                      level: 'AA',
+                      successCriteriaTags: ['wcag258'],
+                      htmlWithIssues: ['<button class="icon">'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
+      expect(createArgs.data.accessibility).to.have.lengthOf(2);
+
+      // Check first form
+      expect(createArgs.data.accessibility[0].form).to.equal('https://example.com/form1');
+      expect(createArgs.data.accessibility[0].formSource).to.equal('contact-form');
+      expect(createArgs.data.accessibility[0].a11yIssues).to.have.lengthOf(2);
+
+      // Check second form
+      expect(createArgs.data.accessibility[1].form).to.equal('https://example.com/form2');
+      expect(createArgs.data.accessibility[1].formSource).to.equal('newsletter-form');
+      expect(createArgs.data.accessibility[1].a11yIssues).to.have.lengthOf(2);
+    });
+
+    it('should handle forms without composite keys (legacy format)', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success with legacy format (no separator)
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 1,
+                critical: { count: 1, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+            'https://example.com/form1': {
+              violations: {
+                total: 1,
+                critical: {
+                  count: 1,
+                  items: {
+                    'select-name': {
+                      count: 1,
+                      description: 'Select element must have an accessible name',
+                      level: 'A',
+                      successCriteriaTags: ['wcag412'],
+                      htmlWithIssues: ['<select id="inquiry">'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+                serious: {
+                  count: 0,
+                  items: {},
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
+      expect(createArgs.data.accessibility).to.have.lengthOf(1);
+      expect(createArgs.data.accessibility[0].form).to.equal('https://example.com/form1');
+      expect(createArgs.data.accessibility[0].formSource).to.equal(null);
+      expect(createArgs.data.accessibility[0].a11yIssues).to.have.lengthOf(1);
     });
 
     it('should handle errors when processing a11y data', async () => {
@@ -387,12 +560,20 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         getAuditId: () => 'test-audit-id',
       };
 
-      // Mock S3 error
-      context.s3Client.send.rejects(new Error('S3 error'));
+      // Mock aggregateAccessibilityData to throw error
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.rejects(new Error('Aggregation error'));
 
-      await createAccessibilityOpportunity(latestAudit, context);
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
 
-      expect(context.log.error).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] Error creating a11y issues: S3 error');
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      expect(context.log.error).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] Error creating a11y issues: Aggregation error');
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     });
 
@@ -404,51 +585,61 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         getAuditId: () => 'test-audit-id',
       };
 
-      const scrapedData = {
-        finalUrl: 'https://example.com/form1',
-        a11yResult: [{
-          formSource: '#form1',
-          a11yIssues: [{
-            issue: 'Missing alt text',
-            level: 'error',
-            successCriterias: ['1.1.1'],
-            htmlWithIssues: '<img src="test.jpg">',
-            recommendation: 'Add alt text to image',
-          }],
-        }],
-      };
-
-      context.s3Client.send
-        .onFirstCall()
-        .resolves({
-          CommonPrefixes: [
-            { Prefix: `forms-accessibility/${siteId}/${version}/` },
-          ],
-        })
-        .onSecondCall()
-        .resolves({
-          Contents: [
-            { Key: `forms-accessibility/${siteId}/${version}/form1.json` },
-          ],
-          IsTruncated: false,
-        })
-        .onThirdCall()
-        .resolves({
-          ContentType: 'application/json',
-          Body: {
-            transformToString: sandbox.stub().resolves(JSON.stringify(scrapedData)),
+      // Mock aggregateAccessibilityData to return success with violations data
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 1,
+                critical: { count: 1, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+            'https://example.com/form1---contact-form': {
+              violations: {
+                total: 1,
+                critical: {
+                  count: 1,
+                  items: {
+                    'select-name': {
+                      count: 1,
+                      description: 'Select element must have an accessible name',
+                      level: 'A',
+                      successCriteriaTags: ['wcag412'],
+                      htmlWithIssues: ['<select id="inquiry">'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+                serious: {
+                  count: 0,
+                  items: {},
+                },
+              },
+            },
           },
-        });
+        },
+      });
+
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
 
       context.dataAccess.Opportunity.create = sandbox.stub().rejects(new Error('Network error'));
 
-      await createAccessibilityOpportunity(latestAudit, context);
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
       expect(context.log.error).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] Failed to create/update a11y opportunity with error: Network error',
       );
     });
 
-    it('should handle updateStatusToIgnored failure gracefully', async () => {
+    it('should continue processing even when updateStatusToIgnored returns failure', async () => {
       const latestAudit = {
         siteId,
         auditId: 'test-audit-id',
@@ -456,51 +647,641 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         getAuditId: () => 'test-audit-id',
       };
 
-      const scrapedData = {
-        finalUrl: 'https://example.com/form1',
-        a11yResult: [{
-          formSource: '#form1',
-          a11yIssues: [{
-            issue: 'Missing alt text',
-            level: 'error',
-            successCriterias: ['1.1.1'],
-            htmlWithIssues: '<img src="test.jpg">',
-            recommendation: 'Add alt text to image',
-          }],
-        }],
+      // Mock aggregateAccessibilityData to return success with actual violations
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 1,
+                critical: { count: 1, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+            'https://example.com/page1---contact-form': {
+              violations: {
+                total: 1,
+                critical: {
+                  count: 1,
+                  items: {
+                    label: {
+                      count: 1,
+                      description: 'Form elements must have labels',
+                      level: 'A',
+                      successCriteriaTags: ['wcag131'],
+                      htmlWithIssues: ['<input type="text">'],
+                      failureSummary: 'Fix any of the following: Form element does not have a label',
+                    },
+                  },
+                },
+                serious: {
+                  count: 0,
+                  items: {},
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Mock updateStatusToIgnored to return a failure result (not reject)
+      const updateStatusToIgnoredStub = sandbox.stub().resolves({
+        success: false,
+        updatedCount: 0,
+        error: 'Failed to update some opportunities',
+      });
+
+      // Mock the created opportunity
+      const createdOpportunity = {
+        getId: () => 'opportunity-123',
+      };
+      context.dataAccess.Opportunity.create.resolves(createdOpportunity);
+
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+        '../../../src/accessibility/utils/scrape-utils.js': {
+          updateStatusToIgnored: updateStatusToIgnoredStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      // Verify updateStatusToIgnored was called
+      expect(updateStatusToIgnoredStub).to.have.been.calledOnce;
+
+      // Verify that the opportunity was still created despite updateStatusToIgnored failure
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+
+      // Verify that the SQS message was still sent
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        'test-queue',
+        sinon.match({
+          type: 'detect:forms-a11y',
+          siteId,
+          auditId: 'test-audit-id',
+        }),
+      );
+
+      // Verify success was logged (not error)
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/a11y opportunity created.*and sent to mystique/),
+      );
+
+      // Verify no error was logged since the function continues normally
+      expect(context.log.error).to.not.have.been.called;
+    });
+
+    it('should handle SQS message sending failure gracefully', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
       };
 
-      // Mock allBySiteIdAndStatus to fail (simulating updateStatusToIgnored failure)
-      context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('Failed to update status'));
-
-      context.s3Client.send
-        .onFirstCall()
-        .resolves({
-          CommonPrefixes: [
-            { Prefix: `forms-accessibility/${siteId}/${version}/` },
-          ],
-        })
-        .onSecondCall()
-        .resolves({
-          Contents: [
-            { Key: `forms-accessibility/${siteId}/${version}/form1.json` },
-          ],
-          IsTruncated: false,
-        })
-        .onThirdCall()
-        .resolves({
-          ContentType: 'application/json',
-          Body: {
-            transformToString: sandbox.stub().resolves(JSON.stringify(scrapedData)),
+      // Mock aggregateAccessibilityData to return success with violations data
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 1,
+                critical: { count: 1, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+            'https://example.com/form1---contact-form': {
+              violations: {
+                total: 1,
+                critical: {
+                  count: 1,
+                  items: {
+                    'select-name': {
+                      count: 1,
+                      description: 'Select element must have an accessible name',
+                      level: 'A',
+                      successCriteriaTags: ['wcag412'],
+                      htmlWithIssues: ['<select id="inquiry">'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+                serious: {
+                  count: 0,
+                  items: {},
+                },
+              },
+            },
           },
-        });
+        },
+      });
 
-      await createAccessibilityOpportunity(latestAudit, context);
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
 
-      // Verify that updateStatusToIgnored was called and failed but the process continued
-      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith(siteId, 'NEW');
+      // Mock SQS to fail
+      context.sqs.sendMessage = sandbox.stub().rejects(new Error('SQS service unavailable'));
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
       expect(context.log.error).to.have.been.calledWith(
-        '[A11yAudit] Error updating opportunities to IGNORED for site test-site-id: Failed to update status',
+        '[Form Opportunity] [Site Id: test-site-id] Error creating a11y issues: SQS service unavailable',
+      );
+    });
+
+    it('should handle malformed composite keys gracefully', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success with malformed composite keys
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 1,
+                critical: { count: 1, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+            'https://example.com/form1---': { // Malformed: missing formSource
+              violations: {
+                total: 1,
+                critical: {
+                  count: 1,
+                  items: {
+                    'select-name': {
+                      count: 1,
+                      description: 'Select element must have an accessible name',
+                      level: 'A',
+                      successCriteriaTags: ['wcag412'],
+                      htmlWithIssues: ['<select id="inquiry">'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+                serious: {
+                  count: 0,
+                  items: {},
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
+      expect(createArgs.data.accessibility).to.have.lengthOf(1);
+
+      // Check that malformed key is handled gracefully
+      const form1Data = createArgs.data.accessibility.find((a) => a.form === 'https://example.com/form1');
+      expect(form1Data.formSource).to.equal(''); // Empty formSource for malformed key
+    });
+
+    it('should not create opportunities when no content is present in aggregationResult', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success but with empty current data
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            // Only overall data exists, no form-specific analysis
+            overall: {
+              violations: {
+                total: 0,
+                critical: { count: 0, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+          },
+        },
+      });
+
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] No a11y data found to create or update opportunity ',
+      );
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    });
+
+    it('should handle empty violations items gracefully', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success with empty violations items
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 0,
+                critical: { count: 0, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+            'https://example.com/form1---contact-form': {
+              violations: {
+                total: 2,
+                critical: {
+                  count: 1,
+                  items: {}, // Empty items
+                },
+                serious: {
+                  count: 1,
+                  items: {}, // Empty items
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] No a11y issues found to create or update opportunity',
+      );
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    });
+
+    it('should handle missing violations object gracefully', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success with missing violations object
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 0,
+                critical: { count: 0, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+            'https://example.com/form1---contact-form': {
+              // Missing violations object
+            },
+          },
+        },
+      });
+
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      expect(context.log.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] No a11y issues found to create or update opportunity',
+      );
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+    });
+
+    it('should handle mixed data types (forms and regular pages)', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success with mixed data types
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 3,
+                critical: { count: 2, items: {} },
+                serious: { count: 1, items: {} },
+              },
+            },
+            'https://example.com/page1': { // Regular page (no separator)
+              violations: {
+                total: 1,
+                critical: {
+                  count: 1,
+                  items: {
+                    'missing-alt': {
+                      count: 1,
+                      description: 'Images must have alternative text',
+                      level: 'A',
+                      successCriteriaTags: ['wcag111'],
+                      htmlWithIssues: ['<img src="test.jpg">'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+                serious: {
+                  count: 0,
+                  items: {},
+                },
+              },
+            },
+            'https://example.com/form1---contact-form': { // Form (with separator)
+              violations: {
+                total: 2,
+                critical: {
+                  count: 1,
+                  items: {
+                    'select-name': {
+                      count: 1,
+                      description: 'Select element must have an accessible name',
+                      level: 'A',
+                      successCriteriaTags: ['wcag412'],
+                      htmlWithIssues: ['<select id="inquiry">'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+                serious: {
+                  count: 1,
+                  items: {
+                    'color-contrast': {
+                      count: 1,
+                      description: 'Elements must meet minimum color contrast ratio thresholds',
+                      level: 'AA',
+                      successCriteriaTags: ['wcag143'],
+                      htmlWithIssues: ['<span>(Optional)</span>'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
+      expect(createArgs.data.accessibility).to.have.lengthOf(2);
+
+      // Check that both regular pages and forms are processed correctly
+      const pageData = createArgs.data.accessibility.find((a) => a.form === 'https://example.com/page1');
+      const formData = createArgs.data.accessibility.find((a) => a.form === 'https://example.com/form1');
+
+      expect(pageData.formSource).to.equal(null); // Regular page has no formSource
+      expect(formData.formSource).to.equal('contact-form'); // Form has formSource
+    });
+
+    it('should successfully create accessibility opportunity with transformed data and send to Mystique', async () => {
+      // Arrange - Set up the audit data
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return realistic aggregated data with violations
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 3,
+                critical: { count: 2, items: {} },
+                serious: { count: 1, items: {} },
+              },
+            },
+            'https://example.com/contact---contact-form': {
+              violations: {
+                total: 2,
+                critical: {
+                  count: 1,
+                  items: {
+                    'select-name': {
+                      count: 1,
+                      description: 'Select element must have an accessible name',
+                      level: 'A',
+                      successCriteriaTags: ['wcag412'],
+                      htmlWithIssues: ['<select id="inquiry">'],
+                      failureSummary: 'Fix any of the following: Element does not have a label',
+                    },
+                  },
+                },
+                serious: {
+                  count: 1,
+                  items: {
+                    'color-contrast': {
+                      count: 3,
+                      description: 'Elements must have sufficient color contrast',
+                      level: 'AA',
+                      successCriteriaTags: ['wcag143'],
+                      htmlWithIssues: ['<button class="submit">Submit</button>'],
+                      failureSummary: 'Fix any of the following: Element has insufficient color contrast',
+                    },
+                  },
+                },
+              },
+            },
+            'https://example.com/signup---newsletter-form': {
+              violations: {
+                total: 1,
+                critical: {
+                  count: 1,
+                  items: {
+                    label: {
+                      count: 2,
+                      description: 'Form elements must have labels',
+                      level: 'A',
+                      successCriteriaTags: ['wcag131'],
+                      htmlWithIssues: ['<input type="email" name="email">'],
+                      failureSummary: 'Fix any of the following: Form element does not have a label',
+                    },
+                  },
+                },
+                serious: {
+                  count: 0,
+                  items: {},
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Mock the created opportunity
+      const createdOpportunity = {
+        getId: () => 'opportunity-123',
+      };
+      context.dataAccess.Opportunity.create.resolves(createdOpportunity);
+
+      // Mock the module to override the imported function
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+      });
+
+      // Act - Execute the function
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      // Assert - Verify the aggregation was called correctly
+      expect(aggregateAccessibilityDataStub).to.have.been.calledOnce;
+      expect(aggregateAccessibilityDataStub).to.have.been.calledWith(
+        context.s3Client,
+        'test-bucket',
+        siteId,
+        context.log,
+        sinon.match.string, // outputKey
+        'forms-opportunities',
+        sinon.match.string, // version
+      );
+
+      // Assert - Verify opportunity was created with correctly transformed data
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      const opportunityData = context.dataAccess.Opportunity.create.getCall(0).args[0];
+
+      expect(opportunityData).to.deep.include({
+        siteId,
+        auditId: 'test-audit-id',
+        type: 'form-accessibility',
+        origin: 'AUTOMATION',
+        title: 'Form accessibility report',
+        runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
+      });
+
+      // Verify the transformed accessibility data
+      expect(opportunityData.data.accessibility).to.have.lengthOf(2);
+
+      // Check first form's transformed data
+      const contactForm = opportunityData.data.accessibility.find(
+        (item) => item.form === 'https://example.com/contact',
+      );
+      expect(contactForm).to.deep.include({
+        form: 'https://example.com/contact',
+        formSource: 'contact-form',
+      });
+      expect(contactForm.a11yIssues).to.have.lengthOf(2);
+      expect(contactForm.a11yIssues[0]).to.deep.include({
+        issue: 'Select element must have an accessible name',
+        level: 'A',
+        recommendation: 'Fix any of the following: Element does not have a label',
+      });
+      expect(contactForm.a11yIssues[0].successCriterias[0]).to.deep.include({
+        name: 'Name, Role, Value',
+        criteriaNumber: '4.1.2',
+      });
+
+      // Check second form's transformed data
+      const newsletterForm = opportunityData.data.accessibility.find(
+        (item) => item.form === 'https://example.com/signup',
+      );
+      expect(newsletterForm).to.deep.include({
+        form: 'https://example.com/signup',
+        formSource: 'newsletter-form',
+      });
+      expect(newsletterForm.a11yIssues).to.have.lengthOf(1);
+
+      // Assert - Verify message was sent to Mystique queue
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        'test-queue',
+        sinon.match({
+          type: 'detect:forms-a11y',
+          siteId,
+          auditId: 'test-audit-id',
+          deliveryType: 'aem',
+          data: {
+            url: 'https://example.com',
+            opportunityId: 'opportunity-123',
+            a11y: sinon.match.array,
+          },
+        }),
+      );
+
+      // Verify the Mystique message contains the transformed data
+      const mystiqueMessage = context.sqs.sendMessage.getCall(0).args[1];
+      expect(mystiqueMessage.data.a11y).to.have.lengthOf(2);
+      expect(mystiqueMessage.data.a11y[0]).to.deep.include({
+        form: 'https://example.com/contact',
+        formSource: 'contact-form',
+      });
+
+      // Assert - Verify success log message
+      expect(context.log.info).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] a11y opportunity created (if issues found) and sent to mystique',
       );
     });
   });
