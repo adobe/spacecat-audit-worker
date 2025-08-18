@@ -63,6 +63,7 @@ describe('Image Alt Text Opportunity Handler', () => {
       info: sinon.stub(),
       debug: sinon.stub(),
       error: sinon.stub(),
+      warn: sinon.stub(),
     };
 
     dataAccessStub = {
@@ -715,6 +716,428 @@ describe('Image Alt Text Opportunity Handler', () => {
     expect(altTextOppty.addSuggestions).to.have.been.called;
     expect(logStub.info).to.have.been.calledWith(
       '[alt-text]: Successfully synced Opportunity And Suggestions for site: https://example.com siteId: site-id and alt-text audit type.',
+    );
+  });
+});
+
+describe('clearAltTextSuggestions', () => {
+  let logStub;
+  let clearAltTextSuggestions;
+
+  beforeEach(async () => {
+    sinon.restore();
+
+    logStub = {
+      info: sinon.stub(),
+      debug: sinon.stub(),
+      error: sinon.stub(),
+    };
+    const module = await import('../../../src/image-alt-text/opportunityHandler.js');
+    clearAltTextSuggestions = module.clearAltTextSuggestions;
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should clear existing suggestions except ignored ones', async () => {
+    const mockSuggestions = [
+      {
+        getStatus: () => 'NEW',
+        getData: () => ({ recommendations: [{ id: 'suggestion-1' }] }),
+        remove: sinon.stub().resolves(),
+      },
+      {
+        getStatus: () => 'SKIPPED',
+        getData: () => ({ recommendations: [{ id: 'suggestion-2' }] }),
+        remove: sinon.stub().resolves(),
+      },
+      {
+        getStatus: () => 'NEW',
+        getData: () => ({ recommendations: [{ id: 'suggestion-3' }] }),
+        remove: sinon.stub().resolves(),
+      },
+    ];
+
+    const mockOpportunity = {
+      getSuggestions: sinon.stub().resolves(mockSuggestions),
+    };
+
+    await clearAltTextSuggestions({ opportunity: mockOpportunity, log: logStub });
+
+    // Should remove non-ignored suggestions (suggestion-1 and suggestion-3)
+    expect(mockSuggestions[0].remove).to.have.been.called;
+    expect(mockSuggestions[1].remove).to.not.have.been.called; // SKIPPED should not be removed
+    expect(mockSuggestions[2].remove).to.have.been.called;
+
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: Cleared 2 existing suggestions (preserved 1 ignored suggestions)',
+    );
+  });
+
+  it('should handle case when no opportunity is provided', async () => {
+    await clearAltTextSuggestions({ opportunity: null, log: logStub });
+
+    expect(logStub.debug).to.have.been.calledWith(
+      '[alt-text]: No opportunity found, skipping suggestion cleanup',
+    );
+  });
+
+  it('should handle case when no existing suggestions are found', async () => {
+    const mockOpportunity = {
+      getSuggestions: sinon.stub().resolves([]),
+    };
+
+    await clearAltTextSuggestions({ opportunity: mockOpportunity, log: logStub });
+
+    expect(logStub.debug).to.have.been.calledWith(
+      '[alt-text]: No existing suggestions to clear',
+    );
+  });
+
+  it('should handle case when all suggestions are ignored', async () => {
+    const mockSuggestions = [
+      {
+        getStatus: () => 'SKIPPED',
+        getData: () => ({ recommendations: [{ id: 'suggestion-1' }] }),
+        remove: sinon.stub().resolves(),
+      },
+      {
+        getStatus: () => 'SKIPPED',
+        getData: () => ({ recommendations: [{ id: 'suggestion-2' }] }),
+        remove: sinon.stub().resolves(),
+      },
+    ];
+
+    const mockOpportunity = {
+      getSuggestions: sinon.stub().resolves(mockSuggestions),
+    };
+
+    await clearAltTextSuggestions({ opportunity: mockOpportunity, log: logStub });
+
+    expect(mockSuggestions[0].remove).to.not.have.been.called;
+    expect(mockSuggestions[1].remove).to.not.have.been.called;
+
+    expect(logStub.debug).to.have.been.calledWith(
+      '[alt-text]: No suggestions to clear (all 2 suggestions are ignored)',
+    );
+  });
+});
+
+describe('addAltTextSuggestions', () => {
+  let logStub;
+  let addAltTextSuggestions;
+
+  beforeEach(async () => {
+    sinon.restore();
+
+    logStub = {
+      info: sinon.stub(),
+      debug: sinon.stub(),
+      error: sinon.stub(),
+    };
+
+    const module = await import('../../../src/image-alt-text/opportunityHandler.js');
+    addAltTextSuggestions = module.addAltTextSuggestions;
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should add new suggestions successfully', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-id',
+      addSuggestions: sinon.stub().resolves({
+        errorItems: [],
+        createdItems: [1, 2],
+      }),
+    };
+
+    const newSuggestionDTOs = [
+      {
+        opportunityId: 'opportunity-id',
+        type: 'CONTENT_UPDATE',
+        data: { recommendations: [{ id: 'suggestion-1' }] },
+        rank: 1,
+      },
+      {
+        opportunityId: 'opportunity-id',
+        type: 'CONTENT_UPDATE',
+        data: { recommendations: [{ id: 'suggestion-2' }] },
+        rank: 1,
+      },
+    ];
+
+    await addAltTextSuggestions({
+      opportunity: mockOpportunity,
+      newSuggestionDTOs,
+      log: logStub,
+    });
+
+    expect(mockOpportunity.addSuggestions).to.have.been.calledWith(newSuggestionDTOs);
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: Added 2 new suggestions',
+    );
+  });
+
+  it('should handle case when no suggestions are provided', async () => {
+    const mockOpportunity = {
+      addSuggestions: sinon.stub(),
+    };
+
+    await addAltTextSuggestions({
+      opportunity: mockOpportunity,
+      newSuggestionDTOs: [],
+      log: logStub,
+    });
+
+    expect(mockOpportunity.addSuggestions).to.not.have.been.called;
+    expect(logStub.debug).to.have.been.calledWith(
+      '[alt-text]: No new suggestions to add',
+    );
+  });
+
+  it('should handle case when newSuggestionDTOs is null/undefined', async () => {
+    const mockOpportunity = {
+      addSuggestions: sinon.stub(),
+    };
+
+    await addAltTextSuggestions({
+      opportunity: mockOpportunity,
+      newSuggestionDTOs: null,
+      log: logStub,
+    });
+
+    expect(mockOpportunity.addSuggestions).to.not.have.been.called;
+    expect(logStub.debug).to.have.been.calledWith(
+      '[alt-text]: No new suggestions to add',
+    );
+  });
+
+  it('should handle errors when adding suggestions partially fails', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-id',
+      addSuggestions: sinon.stub().resolves({
+        errorItems: [
+          {
+            item: { id: 'suggestion-1' },
+            error: 'Invalid suggestion data',
+          },
+        ],
+        createdItems: [1], // At least one successful creation
+      }),
+    };
+
+    const newSuggestionDTOs = [
+      {
+        opportunityId: 'opportunity-id',
+        type: 'CONTENT_UPDATE',
+        data: { recommendations: [{ id: 'suggestion-1' }] },
+        rank: 1,
+      },
+    ];
+
+    await addAltTextSuggestions({
+      opportunity: mockOpportunity,
+      newSuggestionDTOs,
+      log: logStub,
+    });
+
+    expect(logStub.error).to.have.been.calledWith(
+      '[alt-text]: Suggestions for siteId site-id contains 1 items with errors',
+    );
+    expect(logStub.error).to.have.been.calledWith(
+      '[alt-text]: Item {"id":"suggestion-1"} failed with error: Invalid suggestion data',
+    );
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: Added 1 new suggestions',
+    );
+  });
+
+  it('should throw error when all suggestions fail to create', async () => {
+    const mockOpportunity = {
+      getSiteId: () => 'site-id',
+      addSuggestions: sinon.stub().resolves({
+        errorItems: [
+          {
+            item: { id: 'suggestion-1' },
+            error: 'Invalid suggestion data',
+          },
+        ],
+        createdItems: [], // No successful creations
+      }),
+    };
+
+    const newSuggestionDTOs = [
+      {
+        opportunityId: 'opportunity-id',
+        type: 'CONTENT_UPDATE',
+        data: { recommendations: [{ id: 'suggestion-1' }] },
+        rank: 1,
+      },
+    ];
+
+    await expect(addAltTextSuggestions({
+      opportunity: mockOpportunity,
+      newSuggestionDTOs,
+      log: logStub,
+    })).to.be.rejectedWith('[alt-text]: Failed to create suggestions for siteId site-id');
+
+    expect(logStub.error).to.have.been.calledWith(
+      '[alt-text]: Suggestions for siteId site-id contains 1 items with errors',
+    );
+    expect(logStub.error).to.have.been.calledWith(
+      '[alt-text]: Item {"id":"suggestion-1"} failed with error: Invalid suggestion data',
+    );
+  });
+});
+
+describe('sendAltTextOpportunityToMystique', () => {
+  let context;
+  let logStub;
+  let sqsStub;
+  let dataAccessStub;
+  let sendAltTextOpportunityToMystique;
+
+  beforeEach(async () => {
+    sinon.restore();
+
+    logStub = {
+      info: sinon.stub(),
+      debug: sinon.stub(),
+      error: sinon.stub(),
+    };
+
+    sqsStub = {
+      sendMessage: sinon.stub().resolves(),
+    };
+
+    dataAccessStub = {
+      Site: {
+        findById: sinon.stub().resolves({
+          getDeliveryType: () => 'aem_edge',
+        }),
+      },
+      Opportunity: {
+        allBySiteIdAndStatus: sinon.stub().resolves([{
+          getType: () => 'alt-text',
+          getData: () => ({ existingData: 'test' }),
+          setData: sinon.stub(),
+          save: sinon.stub().resolves(),
+        }]),
+      },
+    };
+
+    context = {
+      log: logStub,
+      sqs: sqsStub,
+      dataAccess: dataAccessStub,
+      env: {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+      },
+    };
+
+    // Import the function
+    const module = await import('../../../src/image-alt-text/opportunityHandler.js');
+    sendAltTextOpportunityToMystique = module.sendAltTextOpportunityToMystique;
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should send alt-text opportunity to Mystique successfully', async () => {
+    const auditUrl = 'https://example.com';
+    const pageUrls = ['https://example.com/page1', 'https://example.com/page2'];
+    const siteId = 'site-id';
+    const auditId = 'audit-id';
+
+    await sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context);
+
+    expect(sqsStub.sendMessage).to.have.been.calledOnce;
+    expect(sqsStub.sendMessage).to.have.been.calledWith(
+      'test-queue',
+      sinon.match({
+        type: 'guidance:missing-alt-text',
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        deliveryType: 'aem_edge',
+        url: 'https://example.com',
+        observation: 'Missing alt text on images',
+        data: {
+          pageUrls: ['https://example.com/page1', 'https://example.com/page2'],
+        },
+      }),
+    );
+
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: Sending 2 URLs to Mystique in 1 batch(es)',
+    );
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: All 1 batches sent to Mystique successfully',
+    );
+  });
+
+  it('should batch URLs when there are more than the batch size', async () => {
+    const auditUrl = 'https://example.com';
+    // Create 25 URLs to test batching (batch size is 20)
+    const pageUrls = Array.from({ length: 15 }, (_, i) => `https://example.com/page${i + 1}`);
+    const siteId = 'site-id';
+    const auditId = 'audit-id';
+
+    await sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context);
+
+    // Should send 2 batches (10 + 5)
+    expect(sqsStub.sendMessage).to.have.been.calledTwice;
+
+    // First batch should have 10 URLs
+    const firstCall = sqsStub.sendMessage.getCall(0);
+    expect(firstCall.args[1].data.pageUrls).to.have.lengthOf(10);
+
+    // Second batch should have 5 URLs
+    const secondCall = sqsStub.sendMessage.getCall(1);
+    expect(secondCall.args[1].data.pageUrls).to.have.lengthOf(5);
+
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: Sending 15 URLs to Mystique in 2 batch(es)',
+    );
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: All 2 batches sent to Mystique successfully',
+    );
+  });
+
+  it('should handle errors when sending to Mystique fails', async () => {
+    const auditUrl = 'https://example.com';
+    const pageUrls = ['https://example.com/page1'];
+    const siteId = 'site-id';
+    const auditId = 'audit-id';
+
+    const error = new Error('SQS send failed');
+    sqsStub.sendMessage.rejects(error);
+
+    await expect(sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context))
+      .to.be.rejectedWith('SQS send failed');
+
+    expect(logStub.error).to.have.been.calledWith(
+      '[alt-text]: Failed to send alt-text opportunity to Mystique: SQS send failed',
+    );
+  });
+
+  it('should handle errors when fetching site fails', async () => {
+    const auditUrl = 'https://example.com';
+    const pageUrls = ['https://example.com/page1'];
+    const siteId = 'site-id';
+    const auditId = 'audit-id';
+
+    const error = new Error('Site not found');
+    dataAccessStub.Site.findById.rejects(error);
+
+    await expect(sendAltTextOpportunityToMystique(auditUrl, pageUrls, siteId, auditId, context))
+      .to.be.rejectedWith('Site not found');
+
+    expect(logStub.error).to.have.been.calledWith(
+      '[alt-text]: Failed to send alt-text opportunity to Mystique: Site not found',
     );
   });
 });
