@@ -36,6 +36,54 @@ function chunkArray(array, chunkSize) {
 }
 
 /**
+ * Generates mock suggestions for development/testing when Mystique is not available
+ * @param {Array} readabilityIssues - Array of readability issues
+ * @param {Object} log - Logger object
+ * @returns {Array} Mock suggestions with improved text
+ */
+function generateMockSuggestions(readabilityIssues, log) {
+  log.info('[readability-sync] Generating mock suggestions for development');
+
+  return readabilityIssues
+    .filter((issue) => issue.check === 'poor-readability' && issue.textContent)
+    .map((issue) => {
+      const originalText = issue.textContent;
+      const originalScore = rs.fleschReadingEase(originalText);
+
+      // Simple mock improvement: replace complex words and shorten sentences
+      const improvedText = originalText
+        .replace(/utilize/gi, 'use')
+        .replace(/numerous/gi, 'many')
+        .replace(/extraordinarily/gi, 'very')
+        .replace(/multisyllabic/gi, 'long')
+        .replace(/intricate/gi, 'complex')
+        .replace(/grammatical constructions/gi, 'grammar')
+        .replace(/comprehend/gi, 'understand')
+        .replace(/considerable/gi, 'much')
+        .replace(/concentration/gi, 'focus')
+        .replace(/substantially/gi, 'greatly')
+        .replace(/facilitate/gi, 'help')
+        .replace(/accommodate/gi, 'fit')
+        .replace(/comprehensive/gi, 'complete')
+        .replace(/predominantly/gi, 'mainly');
+
+      const improvedScore = rs.fleschReadingEase(improvedText);
+
+      return {
+        type: 'content_improvement',
+        originalText,
+        improvedText,
+        originalFleschScore: originalScore,
+        improvedFleschScore: improvedScore,
+        improvement: improvedScore - originalScore,
+        seoRecommendation: 'Mock suggestion: Simplified complex words and shortened sentences to improve readability.',
+        aiRationale: 'Development mock: Replaced complex vocabulary with simpler alternatives and improved sentence structure.',
+        rank: 1,
+      };
+    });
+}
+
+/**
  * Formats Mystique suggestions for inclusion in API response
  * @param {Array} suggestions - Array of suggestion objects from the database
  * @returns {Array} Formatted suggestions with improved text
@@ -160,6 +208,11 @@ export async function sendToMystiqueAndWait(
     throw new Error('SQS client is required for Mystique integration');
   }
 
+  if (!env.QUEUE_SPACECAT_TO_MYSTIQUE) {
+    log.warn('[readability-sync] QUEUE_SPACECAT_TO_MYSTIQUE not configured, using mock suggestions for development');
+    return generateMockSuggestions(readabilityIssues, log);
+  }
+
   try {
     // Filter issues for Mystique processing
     const mystiqueReadyIssues = readabilityIssues.filter((issue) => {
@@ -261,7 +314,14 @@ export async function sendToMystiqueAndWait(
 
     return suggestions;
   } catch (error) {
-    log.error('[readability-sync] Error in Mystique sync processing:', error);
+    log.error('[readability-sync] Error in Mystique sync processing:', {
+      error: error.message,
+      stack: error.stack,
+      siteId,
+      auditId,
+      auditUrl,
+      issuesCount: readabilityIssues.length,
+    });
     throw error;
   }
 }
