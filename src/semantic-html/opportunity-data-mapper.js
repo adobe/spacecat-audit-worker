@@ -1,0 +1,33 @@
+/*
+ * Copyright 2025 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+import { DATA_SOURCES } from '../common/constants.js';
+
+export function createOpportunityData() {
+  return {
+    runbook: '',
+    origin: 'AUTOMATION',
+    title: 'Semantic HTML heading issues affecting accessibility and SEO',
+    description: 'Ensure heading elements (h1–h6) are used in a logical, hierarchical order without skipping levels, and that no heading is empty. Proper heading structure improves accessibility and helps search engines understand page content.',
+    guidance: {
+      steps: [
+        'Review pages flagged for heading order or empty heading issues in the audit results.',
+        'Adjust headings so that levels increase by at most one at a time (e.g., h1 → h2 → h3).',
+        'Remove or fill any empty heading elements with descriptive text.',
+      ],
+    },
+    tags: ['Accessibility', 'SEO'],
+    data: {
+      dataSources: [DATA_SOURCES.SITE],
+    },
+  };
+}
