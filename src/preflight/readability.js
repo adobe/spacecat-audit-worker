@@ -236,9 +236,19 @@ export default async function readability(context, auditContext) {
             }
           }
         } catch (error) {
-          log.error('[preflight-audit] readability: Error getting suggestions from Mystique:', error);
+          log.error('[preflight-audit] readability: Error getting suggestions from Mystique:', {
+            error: error.message,
+            stack: error.stack,
+            siteId: site.getId(),
+            auditId: context.audit.getId(),
+            issuesCount: allReadabilityIssues.length,
+            auditUrl: context.auditUrl || site.getBaseURL(),
+          });
 
-          // Update audit results to show error status
+          // Create detailed error message for debugging
+          const detailedErrorMessage = `Mystique integration failed: ${error.message}. Details: siteId=${site.getId()}, auditId=${context.audit.getId()}, issuesCount=${allReadabilityIssues.length}, hasEnvQueue=${!!context.env.QUEUE_SPACECAT_TO_MYSTIQUE}, hasSqs=${!!context.sqs}`;
+
+          // Update audit results to show error status with detailed debugging
           for (const pageResult of auditsResult) {
             const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
             if (audit && audit.opportunities.length > 0) {
@@ -246,7 +256,14 @@ export default async function readability(context, auditContext) {
                 audit.opportunities[index] = {
                   ...opportunity,
                   suggestionStatus: 'error',
-                  suggestionMessage: 'Failed to get readability suggestions from AI processing.',
+                  suggestionMessage: detailedErrorMessage,
+                  debugInfo: {
+                    errorType: error.constructor.name,
+                    errorMessage: error.message,
+                    timestamp: new Date().toISOString(),
+                    mystiqueQueueConfigured: !!context.env.QUEUE_SPACECAT_TO_MYSTIQUE,
+                    sqsClientAvailable: !!context.sqs,
+                  },
                 };
               });
             }

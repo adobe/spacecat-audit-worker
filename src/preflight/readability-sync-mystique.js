@@ -179,8 +179,15 @@ async function waitForMystiqueResponses(opportunity, context) {
     }
   }
 
-  log.warn(`[readability-sync] Timeout waiting for Mystique responses after ${MAX_POLLING_TIME_MS}ms`);
-  return [];
+  log.error(`[readability-sync] Timeout waiting for Mystique responses after ${MAX_POLLING_TIME_MS}ms`, {
+    opportunityId,
+    maxAttempts: MAX_POLLING_ATTEMPTS,
+    actualAttempts: attempts,
+    pollingIntervalMs: POLLING_INTERVAL_MS,
+  });
+
+  // Return more specific error instead of empty array
+  throw new Error(`Mystique response timeout: No responses received within ${MAX_POLLING_TIME_MS}ms (${attempts} polling attempts). This could indicate: 1) Mystique queue not processing messages, 2) Database update issues, 3) Network connectivity problems, or 4) Opportunity ${opportunityId} configuration issues.`);
 }
 
 /**
@@ -207,6 +214,8 @@ export async function sendToMystiqueAndWait(
   if (!sqs) {
     throw new Error('SQS client is required for Mystique integration');
   }
+
+  log.info(`[readability-sync] Environment check: QUEUE_SPACECAT_TO_MYSTIQUE=${env.QUEUE_SPACECAT_TO_MYSTIQUE ? 'configured' : 'not_configured'}, sqsClient=${sqs ? 'available' : 'not_available'}`);
 
   if (!env.QUEUE_SPACECAT_TO_MYSTIQUE) {
     log.warn('[readability-sync] QUEUE_SPACECAT_TO_MYSTIQUE not configured, using mock suggestions for development');
@@ -297,10 +306,24 @@ export async function sendToMystiqueAndWait(
             },
           };
 
-          await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-          totalMessagesSent += 1;
+          try {
+            await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+            totalMessagesSent += 1;
 
-          log.debug(`[readability-sync] Sent message for issue in batch ${batchIndex + 1}`);
+            log.debug(`[readability-sync] Successfully sent message for issue in batch ${batchIndex + 1}`, {
+              messageId: mystiqueMessage.data.issue_id,
+              textLength: originalText.length,
+              queueUrl: env.QUEUE_SPACECAT_TO_MYSTIQUE,
+            });
+          } catch (sqsError) {
+            log.error(`[readability-sync] Failed to send SQS message in batch ${batchIndex + 1}:`, {
+              error: sqsError.message,
+              queueUrl: env.QUEUE_SPACECAT_TO_MYSTIQUE,
+              messageType: mystiqueMessage.type,
+              issueId: mystiqueMessage.data.issue_id,
+            });
+            throw sqsError;
+          }
         });
 
         await Promise.all(batchPromises);
@@ -321,7 +344,23 @@ export async function sendToMystiqueAndWait(
       auditId,
       auditUrl,
       issuesCount: readabilityIssues.length,
+      hasEnvQueue: !!env.QUEUE_SPACECAT_TO_MYSTIQUE,
+      queueUrl: env.QUEUE_SPACECAT_TO_MYSTIQUE || 'not_configured',
+      hasSqs: !!sqs,
+      hasDataAccess: !!dataAccess,
     });
-    throw error;
+
+    // Enhance error with more context
+    const enhancedError = new Error(`Mystique readability processing failed: ${error.message}. Context: Queue=${env.QUEUE_SPACECAT_TO_MYSTIQUE || 'not_configured'}, SQS=${!!sqs}, DataAccess=${!!dataAccess}, Issues=${readabilityIssues.length}`);
+    enhancedError.originalError = error;
+    enhancedError.context = {
+      siteId,
+      auditId,
+      auditUrl,
+      issuesCount: readabilityIssues.length,
+      queueConfigured: !!env.QUEUE_SPACECAT_TO_MYSTIQUE,
+      sqsAvailable: !!sqs,
+    };
+    throw enhancedError;
   }
 }
