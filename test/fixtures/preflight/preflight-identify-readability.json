@@ -30,7 +30,7 @@
         "type": "seo",
         "opportunities": [
           {
-            "check": "canonical-tag-exists",
+            "check": "canonical-tag-missing",
             "issue": "The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings.",
             "seoImpact": "Moderate",
             "seoRecommendation": "The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings."
