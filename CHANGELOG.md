@@ -1,3 +1,24 @@
+## [1.149.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.149.0...v1.149.1) (2025-08-19)
+
+
+### Bug Fixes
+
+* created pr to trigger release ([#1139](https://github.com/adobe/spacecat-audit-worker/issues/1139)) ([4ee4fb5](https://github.com/adobe/spacecat-audit-worker/commit/4ee4fb583ed379ac0b818eafa24a5cbed91e8332))
+
+# [1.149.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.148.1...v1.149.0) (2025-08-19)
+
+
+### Features
+
+* remove firefall work in image-alt-text ([#1123](https://github.com/adobe/spacecat-audit-worker/issues/1123)) ([3c3b951](https://github.com/adobe/spacecat-audit-worker/commit/3c3b951dcf79a306c22d6fcb8744c52875a16e79))
+
+## [1.148.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.148.0...v1.148.1) (2025-08-19)
+
+
+### Bug Fixes
+
+* **page-intent:** store total number of missing page intents ([#1134](https://github.com/adobe/spacecat-audit-worker/issues/1134)) ([269a590](https://github.com/adobe/spacecat-audit-worker/commit/269a5902b26da34bfedb2423f56dfa4b0d69577a))
+
 # [1.148.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.147.0...v1.148.0) (2025-08-18)
 
 
