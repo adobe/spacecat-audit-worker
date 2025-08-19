@@ -355,6 +355,7 @@ export default async function accessibility(context, auditContext) {
     log.debug(`[preflight-audit] Looking for data in path: accessibility-preflight/${siteId}/`);
 
     const maxWaitTime = 10 * 60 * 1000;
+    // 1 second poll interval
     const pollInterval = 1 * 1000;
 
     // Generate expected filenames based on preview URLs
