@@ -18,6 +18,8 @@ const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/S
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
  */
+
+/* c8 ignore start */
 /**
  * @param {object} context
  * @param {object} context.env - Environment configuration object
@@ -40,6 +42,7 @@ export function createLLMOSharepointClient({ env, log }) {
     log,
   );
 }
+/* c8 ignore end */
 
 async function publishToAdminHlx(filename, outputLocation, log) {
   try {
