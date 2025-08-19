@@ -61,7 +61,8 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 }
 
 /**
- * Handles outdated suggestions by updating their status to OUTDATED.
+ * Handles outdated suggestions by updating their status to OUTDATED by default,
+ * or the status given as input.
  *
  * @param {Object} params - The parameters for the handleOutdatedSuggestions operation.
  * @param {Suggestion[]} params.existingSuggestions - The existing suggestions.
@@ -71,7 +72,11 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
  * @returns {Promise<void>} - Resolves when the outdated suggestions are updated.
  */
 const handleOutdatedSuggestions = async ({
-  existingSuggestions, newDataKeys, buildKey, context,
+  context,
+  existingSuggestions,
+  newDataKeys,
+  buildKey,
+  statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
 }) => {
   // Return early if context is not provided
   if (!context) {
@@ -89,7 +94,7 @@ const handleOutdatedSuggestions = async ({
   if (isNonEmptyArray(existingOutdatedSuggestions)) {
     await Suggestion.bulkUpdateStatus(
       existingOutdatedSuggestions,
-      SuggestionDataAccess.STATUSES.OUTDATED,
+      statusToSetForOutdated,
     );
   }
 };
@@ -130,6 +135,7 @@ export async function syncSuggestions({
   buildKey,
   mapNewSuggestion,
   mergeDataFunction = defaultMergeDataFunction,
+  statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
   log,
 }) {
   const newDataKeys = new Set(newData.map(buildKey));
@@ -141,6 +147,7 @@ export async function syncSuggestions({
     newDataKeys,
     buildKey,
     context,
+    statusToSetForOutdated,
   });
 
   // Update existing suggestions
@@ -185,36 +192,5 @@ export async function syncSuggestions({
         throw new Error(`Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
       }
     }
-  }
-}
-
-export async function markSuggestionsNotFoundAnymoreAsFixed({
-  opportunity,
-  newData,
-  buildKey,
-  context,
-  log,
-}) {
-  const { Suggestion } = context.dataAccess;
-
-  const newDataKeys = new Set(newData.map(buildKey));
-  const existingSuggestions = await opportunity.getSuggestions();
-
-  // Identify suggestions to mark as FIXED (no longer found in new data)
-  const suggestionsToMarkAsFixed = existingSuggestions.filter((existing) => {
-    const existingKey = buildKey(existing.getData());
-    return !newDataKeys.has(existingKey)
-           && existing.getStatus() !== SuggestionDataAccess.STATUSES.FIXED;
-  });
-
-  // Bulk update suggestions to FIXED status
-  if (suggestionsToMarkAsFixed.length > 0) {
-    const suggestionIds = suggestionsToMarkAsFixed.map((s) => s.getId());
-    log.info(`Marking ${suggestionIds.length} suggestions as FIXED - no longer found in audit`);
-
-    await Suggestion.bulkUpdateStatus(
-      suggestionIds,
-      SuggestionDataAccess.STATUSES.FIXED,
-    );
   }
 }

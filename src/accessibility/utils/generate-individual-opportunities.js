@@ -15,7 +15,6 @@ import { Opportunity as OpportunityDataAccess } from '@adobe/spacecat-shared-dat
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import {
   syncSuggestions,
-  markSuggestionsNotFoundAnymoreAsFixed,
   keepSameDataFunction,
 } from '../../utils/data-access.js';
 import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
@@ -396,14 +395,7 @@ export async function createIndividualOpportunitySuggestions(
       }),
       log,
       mergeDataFunction: keepSameDataFunction,
-    });
-
-    await markSuggestionsNotFoundAnymoreAsFixed({
-      opportunity,
-      newData: aggregatedData.data,
-      buildKey,
-      context,
-      log,
+      statusToSetForOutdated: OpportunityDataAccess.STATUSES.FIXED,
     });
 
     // Check if mystique suggestions are enabled for this site
