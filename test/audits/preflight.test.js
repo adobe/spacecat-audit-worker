@@ -2161,7 +2161,7 @@ describe('Preflight Audit', () => {
 
         expect(auditContext.timeExecutionBreakdown).to.have.lengthOf(1);
         expect(auditContext.timeExecutionBreakdown[0]).to.deep.include({
-          name: 'accessibility',
+          name: 'accessibility-processing',
         });
         expect(auditContext.timeExecutionBreakdown[0]).to.have.property('duration');
         expect(auditContext.timeExecutionBreakdown[0]).to.have.property('startTime');
