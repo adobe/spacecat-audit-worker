@@ -62,11 +62,10 @@ export async function processReadabilityGuidance(message, context) {
       return null;
     }
 
-    // Find existing opportunity or create new one
-    const opportunity = await Opportunity.findBySiteIdAndAuditIdAndType(
-      siteId,
-      auditId,
-      AUDIT_TYPE,
+    // Find existing opportunity
+    const existingOpportunities = await Opportunity.allBySiteId(siteId);
+    const opportunity = existingOpportunities.find(
+      (oppty) => oppty.getAuditId() === auditId && oppty.getType() === AUDIT_TYPE,
     );
 
     if (!opportunity) {

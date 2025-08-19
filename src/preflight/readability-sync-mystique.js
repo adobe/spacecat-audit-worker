@@ -244,11 +244,10 @@ export async function sendToMystiqueAndWait(
       return [];
     }
 
-    // Create opportunity to track responses
-    let opportunity = await Opportunity.findBySiteIdAndAuditIdAndType(
-      siteId,
-      jobId,
-      'readability',
+    // Find or create opportunity to track responses
+    const existingOpportunities = await Opportunity.allBySiteId(siteId);
+    let opportunity = existingOpportunities.find(
+      (oppty) => oppty.getAuditId() === jobId && oppty.getType() === 'readability',
     );
 
     if (!opportunity) {
