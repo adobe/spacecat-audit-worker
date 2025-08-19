@@ -365,7 +365,7 @@ export async function createIndividualOpportunitySuggestions(
     if (issues.length === 0) {
       return data.url;
     }
-    return `${data.url}|${issues[0].type}|${issues[0].target || ''}`;
+    return `${data.url}|${issues[0].type}|${issues[0]?.htmlWithIssues[0]?.target_selector || ''}`;
   };
 
   log.debug(`[A11yIndividual] Creating ${aggregatedData.data.length} suggestions for opportunity ${opportunity.getId()}`);

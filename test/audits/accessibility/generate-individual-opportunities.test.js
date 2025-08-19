@@ -1297,6 +1297,11 @@ describe('createIndividualOpportunitySuggestions', () => {
             {
               type: 'color-contrast',
               occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
             },
           ],
         },
@@ -1307,6 +1312,11 @@ describe('createIndividualOpportunitySuggestions', () => {
             {
               type: 'image-alt',
               occurrences: 3,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-invalid-attr]',
+                },
+              ],
             },
           ],
         },
@@ -1365,10 +1375,20 @@ describe('createIndividualOpportunitySuggestions', () => {
             {
               type: 'color-contrast',
               occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
             },
             {
               type: 'image-alt',
               occurrences: 3,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-invalid-attr]',
+                },
+              ],
             },
           ],
         },
@@ -1399,10 +1419,20 @@ describe('createIndividualOpportunitySuggestions', () => {
           {
             type: 'color-contrast',
             occurrences: 5,
+            htmlWithIssues: [
+              {
+                target_selector: 'div[aria-fake]',
+              },
+            ],
           },
           {
             type: 'image-alt',
             occurrences: 3,
+            htmlWithIssues: [
+              {
+                target_selector: 'div[aria-invalid-attr]',
+              },
+            ],
           },
         ],
         isCreateTicketClicked: false,
@@ -1416,7 +1446,15 @@ describe('createIndividualOpportunitySuggestions', () => {
         {
           url: 'https://example.com/page1',
           type: 'url',
-          issues: [],
+          issues: [{
+            type: 'color-contrast',
+            occurrences: 5,
+            htmlWithIssues: [
+              {
+                target_selector: 'div[aria-fake]',
+              },
+            ],
+          }],
         },
       ],
     };
@@ -1434,7 +1472,164 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the buildKey function
     const result = buildKey(aggregatedData.data[0]);
 
+    expect(result).to.equal('https://example.com/page1|color-contrast|div[aria-fake]');
+  });
+
+  it('should call buildKey function with empty issues array', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [], // Empty issues array
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the buildKey function with empty issues
+    const result = buildKey(aggregatedData.data[0]);
+
     expect(result).to.equal('https://example.com/page1');
+  });
+
+  it('should call buildKey function with no issues property', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page2',
+          type: 'url',
+          // No issues property at all
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the buildKey function with no issues property
+    const result = buildKey(aggregatedData.data[0]);
+
+    expect(result).to.equal('https://example.com/page2');
+  });
+
+  it('should call buildKey function with missing target_selector', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page3',
+          type: 'url',
+          issues: [{
+            type: 'image-alt',
+            occurrences: 3,
+            htmlWithIssues: [
+              {
+                // Missing target_selector property
+                update_from: '<img src="test.jpg">',
+              },
+            ],
+          }],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the buildKey function with missing target_selector
+    const result = buildKey(aggregatedData.data[0]);
+
+    expect(result).to.equal('https://example.com/page3|image-alt|');
+  });
+
+  it('should call buildKey function with null target_selector', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page4',
+          type: 'url',
+          issues: [{
+            type: 'button-name',
+            occurrences: 2,
+            htmlWithIssues: [
+              {
+                target_selector: null, // Explicitly null
+                update_from: '<button></button>',
+              },
+            ],
+          }],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the buildKey function with null target_selector
+    const result = buildKey(aggregatedData.data[0]);
+
+    expect(result).to.equal('https://example.com/page4|button-name|');
+  });
+
+  it('should call buildKey function with empty htmlWithIssues array', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page5',
+          type: 'url',
+          issues: [{
+            type: 'label',
+            occurrences: 1,
+            htmlWithIssues: [], // Empty htmlWithIssues array
+          }],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the buildKey function with empty htmlWithIssues
+    const result = buildKey(aggregatedData.data[0]);
+
+    expect(result).to.equal('https://example.com/page5|label|');
   });
 
   it('should handle suggestions with no issues in debug logging', async () => {
@@ -2742,9 +2937,17 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
         {
           getData: () => ({
             url: 'https://example.com/page1',
+            type: 'url',
             issues: [
-              { type: 'aria-allowed-attr' },
-              { type: 'button-name' },
+              {
+                type: 'color-contrast',
+                occurrences: 5,
+                htmlWithIssues: [
+                  {
+                    target_selector: 'div[aria-fake]',
+                  },
+                ],
+              },
             ],
           }),
           getStatus: () => 'NEW',
@@ -2753,8 +2956,17 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
         {
           getData: () => ({
             url: 'https://example.com/page2',
+            type: 'url',
             issues: [
-              { type: 'color-contrast' },
+              {
+                type: 'aria-allowed-attr',
+                occurrences: 2,
+                htmlWithIssues: [
+                  {
+                    target_selector: 'button[aria-label="test"]',
+                  },
+                ],
+              },
             ],
           }),
           getStatus: () => 'NEW',
@@ -2823,7 +3035,21 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
   it('should process suggestions and send messages to Mystique', async () => {
     const aggregatedData = {
       data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
+            },
+          ],
+        },
       ],
     };
 
