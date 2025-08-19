@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { saveIntermediateResults } from './utils.js';
 import { metatagsAutoDetect } from '../metatags/handler.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
@@ -18,11 +19,10 @@ export const PREFLIGHT_METATAGS = 'metatags';
 
 export default async function metatags(context, auditContext) {
   const {
-    site, jobId, log,
+    site, job, log,
   } = context;
   const {
     checks,
-    previewBaseURL,
     previewUrls,
     step,
     audits,
@@ -52,7 +52,12 @@ export default async function metatags(context, auditContext) {
       }, context, site, { forceAutoSuggest: true })
       : detectedTags;
     Object.entries(tagCollection).forEach(([path, tags]) => {
-      const pageUrl = `${previewBaseURL}${path}`.replace(/\/$/, '');
+      const pageUrl = previewUrls.find((url) => {
+        const u = new URL(url);
+        const previewPath = stripTrailingSlash(u.pathname);
+        const targetPath = stripTrailingSlash(path);
+        return previewPath === targetPath;
+      });
       const audit = audits.get(pageUrl)?.audits.find((a) => a.name === PREFLIGHT_METATAGS);
       return tags && Object.values(tags).forEach((data, tag) => audit.opportunities.push({
         ...data,
@@ -62,7 +67,7 @@ export default async function metatags(context, auditContext) {
     const metatagsEndTime = Date.now();
     const metatagsEndTimestamp = new Date().toISOString();
     const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds`);
 
     timeExecutionBreakdown.push({
       name: 'metatags',

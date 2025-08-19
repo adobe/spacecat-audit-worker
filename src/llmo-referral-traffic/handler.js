@@ -13,13 +13,13 @@
 /* eslint-disable no-param-reassign */
 /* c8 ignore start */
 
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { getDateRanges, getStaticContent, isInteger } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import ExcelJS from 'exceljs';
 import { createFrom } from '@adobe/spacecat-helix-content-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { getPreviousWeekYear, getTemporalCondition } from './date-utils.js';
+import { getPreviousWeekYear, getTemporalCondition } from '../utils/date-utils.js';
 import { saveExcelReport } from '../utils/report-uploader.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../cdn-logs-report/constants/country-patterns.js';
 
@@ -57,33 +57,57 @@ async function createWorkbook(results) {
   return workbook;
 }
 
-export async function referralTrafficRunner(auditUrl, context, site) {
+function calculateAuditStartDate(auditContext) {
+  if (!isInteger(auditContext.week) || !isInteger(auditContext.year)) {
+    return new Date();
+  }
+
+  const ranges = getDateRanges(auditContext.week, auditContext.year);
+  return new Date(ranges[0].startTime);
+}
+
+export async function referralTrafficRunner(auditUrl, context, site, auditContext) {
   const { env, log } = context;
   const { S3_IMPORTER_BUCKET_NAME: importerBucket } = env;
+
+  const today = calculateAuditStartDate(auditContext);
 
   // constants
   const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
   const databaseName = 'rum_metrics';
   const tableName = 'compact_metrics';
-
   const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
 
   // query build-up
   const variables = {
     tableName: `${databaseName}.${tableName}`,
     siteId: site.getSiteId(),
-    temporalCondition: getTemporalCondition(),
+    temporalCondition: getTemporalCondition(today),
   };
 
   // run athena query - fetch data
   const query = await getStaticContent(variables, './src/llmo-referral-traffic/sql/referral-traffic.sql');
   const description = `[Athena Query] Fetching referral traffic data for ${site.getBaseURL()}`;
   const results = await athenaClient.query(query, databaseName, description);
+  const pageIntents = await site.getPageIntents();
+  const baseURL = site.getBaseURL();
+  const memo = {};
+
+  const findPageIntentByPath = (path) => {
+    if (memo[path]) {
+      return memo[path];
+    }
+
+    const url = `${baseURL}${path}`;
+    const pageIntent = pageIntents.find((pi) => pi.getUrl() === url) || '';
+    memo[path] = pageIntent;
+    return pageIntent;
+  };
 
   // enrich with extra fields
   results.forEach((result) => {
+    result.page_intent = findPageIntentByPath(result.path);
     result.region = extractCountryCode(result.path);
-    result.user_intent = '';
   });
 
   // upload to sharepoint & publish via hlx admin api
@@ -97,7 +121,7 @@ export async function referralTrafficRunner(auditUrl, context, site) {
   const workbook = await createWorkbook(results);
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();
   const outputLocation = `${llmoFolder}/referral-traffic`;
-  const filename = `referral-traffic-w${getPreviousWeekYear()}.xlsx`;
+  const filename = `referral-traffic-w${getPreviousWeekYear(today)}.xlsx`;
 
   await saveExcelReport({
     sharepointClient,

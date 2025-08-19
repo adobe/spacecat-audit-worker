@@ -52,6 +52,7 @@ describe('Missing Alt Text Guidance Handler', () => {
         info: sandbox.stub(),
         debug: sandbox.stub(),
         error: sandbox.stub(),
+        warn: sandbox.stub(),
       },
       dataAccess: {
         Opportunity: {
@@ -60,6 +61,9 @@ describe('Missing Alt Text Guidance Handler', () => {
         },
         Site: {
           findById: sandbox.stub().resolves(mockSite),
+        },
+        Audit: {
+          findById: sandbox.stub().resolves({ getId: () => 'test-audit-id' }),
         },
       },
       env: {
@@ -309,5 +313,59 @@ describe('Missing Alt Text Guidance Handler', () => {
         dataSources: undefined,
       }),
     );
+  });
+
+  it('should return notFound when audit does not exist', async () => {
+    context.dataAccess.Audit.findById.resolves(null);
+
+    const result = await guidanceHandler(mockMessage, context);
+
+    expect(result.status).to.equal(404);
+    expect(context.log.warn).to.have.been.calledWith(
+      '[alt-text]: No audit found for auditId: test-audit-id',
+    );
+    expect(context.dataAccess.Audit.findById).to.have.been.calledWith('test-audit-id');
+  });
+
+  it('should proceed when audit exists', async () => {
+    const mockAudit = { getId: () => 'test-audit-id' };
+    context.dataAccess.Audit.findById.resolves(mockAudit);
+
+    const result = await guidanceHandler(mockMessage, context);
+
+    expect(result.status).to.equal(200);
+    expect(context.dataAccess.Audit.findById).to.have.been.calledWith('test-audit-id');
+  });
+
+  it('should skip processing when message ID already exists in processedSuggestionIds', async () => {
+    // Set up existing data with the message ID already processed
+    const existingData = {
+      projectedTrafficLost: 100,
+      projectedTrafficValue: 100,
+      decorativeImagesCount: 2,
+      dataSources: ['RUM', 'SITE'],
+      mystiqueResponsesReceived: 1,
+      mystiqueResponsesExpected: 2,
+      processedSuggestionIds: ['test-message-id'],
+    };
+    mockOpportunity.getData.returns(existingData);
+
+    const messageWithProcessedId = {
+      ...mockMessage,
+      id: 'test-message-id',
+    };
+
+    const result = await guidanceHandler(messageWithProcessedId, context);
+
+    expect(result.status).to.equal(200);
+    expect(context.log.info).to.have.been.calledWith(
+      '[alt-text]: Suggestions with id test-message-id already processed. Skipping processing.',
+    );
+
+    // Should not call any of the processing functions
+    expect(getProjectedMetricsStub).to.not.have.been.called;
+    expect(addAltTextSuggestionsStub).to.not.have.been.called;
+    expect(mockOpportunity.setData).to.not.have.been.called;
+    expect(mockOpportunity.save).to.not.have.been.called;
   });
 });
