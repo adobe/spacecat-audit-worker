@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 import { isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
-import { merge } from 'ts-deepmerge';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 /**
@@ -95,11 +94,7 @@ const handleOutdatedSuggestions = async ({
   }
 };
 
-export const deepMergeDataFunction = (target, source) => merge.withOptions(
-  { mergeArrays: false },
-  target,
-  source,
-);
+export const keepSameDataFunction = (target) => target;
 
 /**
  * Default merge function for combining existing and new data.
