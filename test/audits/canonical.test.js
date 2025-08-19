@@ -109,9 +109,9 @@ describe('Canonical URL Tests', () => {
 
       expect(result.canonicalUrl).to.be.null;
       expect(result.checks).to.deep.include({
-        check: 'canonical-tag-exists',
+        check: 'canonical-tag-missing',
         success: false,
-        explanation: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.explanation,
+        explanation: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.explanation,
       });
       expect(log.info).to.have.been.called;
     });
@@ -179,9 +179,9 @@ describe('Canonical URL Tests', () => {
 
       expect(result.canonicalUrl).to.be.null;
       expect(result.checks).to.deep.include({
-        check: 'canonical-tag-nonempty',
+        check: 'canonical-tag-empty',
         success: false,
-        explanation: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.explanation,
+        explanation: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.explanation,
       });
       expect(log.info).to.have.been.calledWith(`Empty canonical tag found for URL: ${url}`);
     });
@@ -194,9 +194,9 @@ describe('Canonical URL Tests', () => {
       const result = await validateCanonicalTag(url, log);
 
       expect(result.checks).to.deep.include({
-        check: 'canonical-tag-once',
+        check: 'canonical-tag-multiple',
         success: false,
-        explanation: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.explanation,
+        explanation: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.explanation,
       });
     });
 
@@ -208,9 +208,9 @@ describe('Canonical URL Tests', () => {
       const result = await validateCanonicalTag(url, log);
 
       expect(result.checks).to.deep.include({
-        check: 'canonical-tag-in-head',
+        check: 'canonical-tag-outside-head',
         success: false,
-        explanation: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.explanation,
+        explanation: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.explanation,
       });
       expect(log.info).to.have.been.calledWith('Canonical tag is not in the head section');
     });
@@ -367,11 +367,11 @@ describe('Canonical URL Tests', () => {
 
       expect(result.checks).to.deep.include.members([
         {
-          check: 'canonical-tag-nonempty',
+          check: 'canonical-tag-empty',
           success: true,
         },
         {
-          check: 'canonical-tag-exists',
+          check: 'canonical-tag-missing',
           success: true,
         }]);
       expect(log.info).to.have.been.calledWith(`Canonical URL ${url} references itself`);
@@ -406,7 +406,7 @@ describe('Canonical URL Tests', () => {
       const result = await validateCanonicalTag(url, log);
 
       expect(result.checks).to.deep.include.members([{
-        check: 'canonical-tag-nonempty',
+        check: 'canonical-tag-empty',
         success: true,
       }]);
       expect(result.checks).to.deep.include.members([{
@@ -512,7 +512,7 @@ describe('Canonical URL Tests', () => {
       // ensure that the resolved canonical URL is correct
       expect(result.canonicalUrl).to.equal(expectedCanonicalUrl);
       expect(result.checks).to.deep.include({
-        check: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
+        check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
         success: true,
       });
       expect(result.checks).to.deep.include({
@@ -701,10 +701,10 @@ describe('Canonical URL Tests', () => {
 
     // shorter alias for the canonical checks
     const checks = {
-      TAG_EXISTS: CANONICAL_CHECKS.CANONICAL_TAG_EXISTS.check,
-      TAG_ONCE: CANONICAL_CHECKS.CANONICAL_TAG_ONCE.check,
-      TAG_NONEMPTY: CANONICAL_CHECKS.CANONICAL_TAG_NONEMPTY.check,
-      TAG_IN_HEAD: CANONICAL_CHECKS.CANONICAL_TAG_IN_HEAD.check,
+      TAG_MISSING: CANONICAL_CHECKS.CANONICAL_TAG_MISSING.check,
+      TAG_MULTIPLE: CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.check,
+      TAG_EMPTY: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
+      TAG_OUTSIDE_HEAD: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
       SELF_REFERENCED: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
       URL_ABSOLUTE: CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.check,
       URL_SAME_DOMAIN: CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.check,
@@ -718,23 +718,23 @@ describe('Canonical URL Tests', () => {
       URL_INVALID: CANONICAL_CHECKS.CANONICAL_URL_INVALID.check,
     };
 
-    it('should generate suggestion for CANONICAL_TAG_EXISTS', () => {
-      const result = generateCanonicalSuggestion(checks.TAG_EXISTS, testUrl, baseURL);
+    it('should generate suggestion for CANONICAL_TAG_MISSING', () => {
+      const result = generateCanonicalSuggestion(checks.TAG_MISSING, testUrl, baseURL);
       expect(result).to.equal(`Add a canonical tag to the head section: <link rel="canonical" href="${testUrl}" />`);
     });
 
-    it('should generate suggestion for CANONICAL_TAG_ONCE', () => {
-      const result = generateCanonicalSuggestion(checks.TAG_ONCE, testUrl, baseURL);
+    it('should generate suggestion for CANONICAL_TAG_MULTIPLE', () => {
+      const result = generateCanonicalSuggestion(checks.TAG_MULTIPLE, testUrl, baseURL);
       expect(result).to.equal('Remove duplicate canonical tags and keep only one canonical tag in the head section.');
     });
 
-    it('should generate suggestion for CANONICAL_TAG_NONEMPTY', () => {
-      const result = generateCanonicalSuggestion(checks.TAG_NONEMPTY, testUrl, baseURL);
+    it('should generate suggestion for CANONICAL_TAG_EMPTY', () => {
+      const result = generateCanonicalSuggestion(checks.TAG_EMPTY, testUrl, baseURL);
       expect(result).to.equal(`Set the canonical URL in the href attribute: <link rel="canonical" href="${testUrl}" />`);
     });
 
-    it('should generate suggestion for CANONICAL_TAG_IN_HEAD', () => {
-      const result = generateCanonicalSuggestion(checks.TAG_IN_HEAD, testUrl, baseURL);
+    it('should generate suggestion for CANONICAL_TAG_OUTSIDE_HEAD', () => {
+      const result = generateCanonicalSuggestion(checks.TAG_OUTSIDE_HEAD, testUrl, baseURL);
       expect(result).to.equal('Move the canonical tag to the <head> section of the HTML document.');
     });
 
@@ -946,6 +946,7 @@ describe('Canonical URL Tests', () => {
       log: {
         info: sinon.stub(),
         error: sinon.stub(),
+        warn: sinon.stub(),
       },
       dataAccess: {
         Opportunity: {
