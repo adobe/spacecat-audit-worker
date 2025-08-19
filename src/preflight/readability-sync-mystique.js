@@ -195,7 +195,7 @@ async function waitForMystiqueResponses(opportunity, context) {
  * @param {string} auditUrl - The URL being audited
  * @param {Array} readabilityIssues - Array of readability issues
  * @param {string} siteId - Site ID
- * @param {string} auditId - Audit ID
+ * @param {string} jobId - Job ID (used as audit ID for preflight audits)
  * @param {Object} context - Context object with sqs, env, log, dataAccess
  * @returns {Promise<Array>} Array of improved text suggestions from Mystique
  */
@@ -203,7 +203,7 @@ export async function sendToMystiqueAndWait(
   auditUrl,
   readabilityIssues,
   siteId,
-  auditId,
+  jobId,
   context,
 ) {
   const {
@@ -247,7 +247,7 @@ export async function sendToMystiqueAndWait(
     // Create opportunity to track responses
     let opportunity = await Opportunity.findBySiteIdAndAuditIdAndType(
       siteId,
-      auditId,
+      jobId,
       'readability',
     );
 
@@ -255,7 +255,7 @@ export async function sendToMystiqueAndWait(
       // Create temporary opportunity for tracking
       const opportunityData = {
         siteId,
-        auditId,
+        auditId: jobId,
         type: 'readability',
         title: 'Readability Improvement Suggestions',
         description: 'AI-generated suggestions to improve content readability',
@@ -293,7 +293,7 @@ export async function sendToMystiqueAndWait(
           const mystiqueMessage = {
             type: READABILITY_GUIDANCE_TYPE,
             siteId,
-            auditId,
+            auditId: jobId,
             deliveryType: context.site.getDeliveryType(),
             time: new Date().toISOString(),
             url: auditUrl,
@@ -341,7 +341,7 @@ export async function sendToMystiqueAndWait(
       error: error.message,
       stack: error.stack,
       siteId,
-      auditId,
+      jobId,
       auditUrl,
       issuesCount: readabilityIssues.length,
       hasEnvQueue: !!env.QUEUE_SPACECAT_TO_MYSTIQUE,
@@ -355,7 +355,7 @@ export async function sendToMystiqueAndWait(
     enhancedError.originalError = error;
     enhancedError.context = {
       siteId,
-      auditId,
+      jobId,
       auditUrl,
       issuesCount: readabilityIssues.length,
       queueConfigured: !!env.QUEUE_SPACECAT_TO_MYSTIQUE,

@@ -195,7 +195,7 @@ export default async function readability(context, auditContext) {
             context.auditUrl || site.getBaseURL(),
             allReadabilityIssues,
             site.getId(),
-            context.audit.getId(),
+            job.getId(),
             context,
           );
 
@@ -240,13 +240,13 @@ export default async function readability(context, auditContext) {
             error: error.message,
             stack: error.stack,
             siteId: site.getId(),
-            auditId: context.audit.getId(),
+            jobId: job.getId(),
             issuesCount: allReadabilityIssues.length,
             auditUrl: context.auditUrl || site.getBaseURL(),
           });
 
           // Create detailed error message for debugging
-          const detailedErrorMessage = `Mystique integration failed: ${error.message}. Details: siteId=${site.getId()}, auditId=${context.audit.getId()}, issuesCount=${allReadabilityIssues.length}, hasEnvQueue=${!!context.env.QUEUE_SPACECAT_TO_MYSTIQUE}, hasSqs=${!!context.sqs}`;
+          const detailedErrorMessage = `Mystique integration failed: ${error.message}. Details: siteId=${site.getId()}, jobId=${job.getId()}, issuesCount=${allReadabilityIssues.length}, hasEnvQueue=${!!context.env.QUEUE_SPACECAT_TO_MYSTIQUE}, hasSqs=${!!context.sqs}`;
 
           // Update audit results to show error status with detailed debugging
           for (const pageResult of auditsResult) {
