@@ -11,6 +11,7 @@
  */
 
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { ok } from '@adobe/spacecat-shared-http-utils';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.READABILITY;
 
@@ -45,7 +46,7 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiqueSuggestions) {
  * @param {Object} context - The context object containing dataAccess, log, etc.
  * @returns {Promise<Object>} Processed opportunity data
  */
-export async function processReadabilityGuidance(message, context) {
+async function processReadabilityGuidance(message, context) {
   const { dataAccess, log } = context;
   const { Site, Opportunity } = dataAccess;
 
@@ -166,11 +167,20 @@ export default async function handler(message, context) {
     // Check if this is a readability guidance message
     if (message.type !== 'guidance:readability') {
       log.debug(`[${AUDIT_TYPE}]: Ignoring non-readability message type: ${message.type}`);
-      return;
+      return ok();
     }
 
-    await processReadabilityGuidance(message, context);
+    const result = await processReadabilityGuidance(message, context);
+
+    if (!result) {
+      log.warn(`[${AUDIT_TYPE}]: No result returned from processing`);
+      return ok();
+    }
+
+    log.info(`[${AUDIT_TYPE}]: Successfully processed ${result.totalImprovements} readability improvements`);
+    return ok();
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Error handling readability guidance:`, error);
+    return ok(); // Return ok to avoid retries
   }
 }
