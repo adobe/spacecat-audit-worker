@@ -11,7 +11,7 @@
  */
 
 import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
-import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
+import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../constants.js';
 import {
   calculateProjectedConversionValue,
   filterForms,
@@ -102,6 +102,12 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
 
       log.info(`Forms Opportunity created high page views low form nav ${JSON.stringify(opportunityData, null, 2)}`);
       if (!highPageViewsLowFormNavOppty) {
+        // eslint-disable-next-line no-await-in-loop
+        highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
+        log.debug('Forms Opportunity high page views low form nav created');
+      } else if (highPageViewsLowFormNavOppty.getOrigin() === ORIGINS.ESS_OPS) {
+        log.debug('Forms Opportunity high page views low form nav exists and is from ESS_OPS');
+        opportunityData.status = 'IGNORED';
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
       } else {

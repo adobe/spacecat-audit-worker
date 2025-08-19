@@ -12,27 +12,14 @@
 
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
-import { GEO_FAQ_OPPTY_TYPE, OPPTY_TYPES } from './handler.js';
+import { OPPTY_TYPES } from './handler.js';
 
-function getSuggestionValue(suggestions, subType, log) {
-  if (subType === GEO_FAQ_OPPTY_TYPE) {
-    let suggestionValue = '| URL | Question | Answer | Rationale | Sources |\n|-----|----------|-------|--------|---------|\n';
-    suggestions.forEach((suggestion) => {
-      const sources = suggestion.sources ? suggestion.sources.map((source, sourceIndex) => `[${sourceIndex + 1}] ${source}`).join('<br>') : '';
-      if (!sources) {
-        log.warn(`No sources found for suggestion: ${suggestion.question}. Skipping this suggestion.`);
-      } else {
-        suggestionValue += `| ${suggestion.pageUrl} | ${suggestion.question} | ${suggestion.answer} | ${suggestion.rationale} | ${sources} |\n`;
-      }
-    });
-    return suggestionValue;
-  } else {
-    let suggestionValue = '| Url | Questions | Screenshot |\n |-----|-----------|------------|\n';
-    suggestions.forEach((suggestion) => {
-      suggestionValue += `| ${suggestion.url} | ${suggestion.q.join('\n')} | [![${suggestion.name}](${suggestion.previewImage})](${suggestion.screenshotUrl})|\n`;
-    });
-    return suggestionValue;
-  }
+function getSuggestionValue(suggestions) {
+  let suggestionValue = '| Url | Questions | Screenshot |\n |-----|-----------|------------|\n';
+  suggestions.forEach((suggestion) => {
+    suggestionValue += `| ${suggestion.url} | ${suggestion.q.join('\n')} | [![${suggestion.name}](${suggestion.previewImage})](${suggestion.screenshotUrl})|\n`;
+  });
+  return suggestionValue;
 }
 
 export default async function handler(message, context) {

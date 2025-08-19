@@ -32,7 +32,7 @@ export default async function handler(message, context) {
     opportunity.setUpdatedBy('system');
     opportunity.setData({
       ...opportunity.getData(),
-      form_details: formDetails,
+      formDetails,
     });
 
     // eslint-disable-next-line no-await-in-loop
