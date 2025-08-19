@@ -1,3 +1,10 @@
+## [1.148.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.148.0...v1.148.1) (2025-08-19)
+
+
+### Bug Fixes
+
+* **page-intent:** store total number of missing page intents ([#1134](https://github.com/adobe/spacecat-audit-worker/issues/1134)) ([269a590](https://github.com/adobe/spacecat-audit-worker/commit/269a5902b26da34bfedb2423f56dfa4b0d69577a))
+
 # [1.148.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.147.0...v1.148.0) (2025-08-18)
 
 
