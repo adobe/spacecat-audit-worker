@@ -65,7 +65,7 @@ export async function processReadabilityGuidance(message, context) {
     // Find existing opportunity
     const existingOpportunities = await Opportunity.allBySiteId(siteId);
     const opportunity = existingOpportunities.find(
-      (oppty) => oppty.getAuditId() === auditId && oppty.getType() === AUDIT_TYPE,
+      (oppty) => oppty.getAuditId() === auditId && oppty.getData()?.subType === 'readability',
     );
 
     if (!opportunity) {

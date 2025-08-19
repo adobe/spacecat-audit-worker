@@ -247,7 +247,7 @@ export async function sendToMystiqueAndWait(
     // Find or create opportunity to track responses
     const existingOpportunities = await Opportunity.allBySiteId(siteId);
     let opportunity = existingOpportunities.find(
-      (oppty) => oppty.getAuditId() === jobId && oppty.getType() === 'readability',
+      (oppty) => oppty.getAuditId() === jobId && oppty.getData()?.subType === 'readability',
     );
 
     if (!opportunity) {
@@ -255,18 +255,31 @@ export async function sendToMystiqueAndWait(
       const opportunityData = {
         siteId,
         auditId: jobId,
-        type: 'readability',
+        type: 'generic-opportunity',
+        origin: 'AUTOMATION',
         title: 'Readability Improvement Suggestions',
-        description: 'AI-generated suggestions to improve content readability',
+        description: 'AI-generated suggestions to improve content readability using advanced text analysis',
         status: 'NEW',
+        runbook: auditUrl,
+        tags: ['Readability', 'Content', 'SEO'],
         data: {
+          subType: 'readability',
           mystiqueResponsesReceived: 0,
           mystiqueResponsesExpected: 0,
           totalReadabilityIssues: mystiqueReadyIssues.length,
         },
       };
-      opportunity = await Opportunity.create(opportunityData);
-      log.info(`[readability-sync] Created opportunity ${opportunity.getId()} for tracking Mystique responses`);
+      try {
+        opportunity = await Opportunity.create(opportunityData);
+        log.info(`[readability-sync] Created opportunity ${opportunity.getId()} for tracking Mystique responses`);
+      } catch (createError) {
+        log.error('[readability-sync] Failed to create opportunity:', {
+          error: createError.message,
+          stack: createError.stack,
+          opportunityData,
+        });
+        throw new Error(`Failed to create opportunity: ${createError.message}. Data: ${JSON.stringify(opportunityData)}`);
+      }
     }
 
     // Send issues to Mystique in batches
