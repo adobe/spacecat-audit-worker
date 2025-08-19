@@ -20,8 +20,8 @@ const TARGET_READABILITY_SCORE = 30;
 const MYSTIQUE_BATCH_SIZE = 5;
 
 // Polling configuration
-const POLLING_INTERVAL_MS = 2000; // Poll every 2 seconds
-const MAX_POLLING_TIME_MS = 60000; // Maximum wait time: 60 seconds
+const POLLING_INTERVAL_MS = 5000; // Poll every 5 seconds (less frequent)
+const MAX_POLLING_TIME_MS = 300000; // Maximum wait time: 5 minutes
 const MAX_POLLING_ATTEMPTS = MAX_POLLING_TIME_MS / POLLING_INTERVAL_MS;
 
 /**
@@ -140,7 +140,7 @@ async function waitForMystiqueResponses(opportunity, context) {
       const responsesExpected = data.mystiqueResponsesExpected || 0;
 
       const attemptNumber = attempts + 1;
-      log.debug(`[readability-sync] Polling attempt ${attemptNumber}: ${responsesReceived}/${responsesExpected} responses received`);
+      log.info(`[readability-sync] Polling attempt ${attemptNumber}/${MAX_POLLING_ATTEMPTS}: ${responsesReceived}/${responsesExpected} responses received for opportunity ${opportunityId}`);
 
       // Check if all responses have been received
       if (responsesReceived >= responsesExpected && responsesExpected > 0) {
