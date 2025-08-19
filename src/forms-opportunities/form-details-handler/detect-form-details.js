@@ -56,6 +56,8 @@ export default async function handler(message, context) {
         cta_text: opptyData.data?.formNavigation?.text || '',
         form_source: opptyData.data?.formsource || '',
         form_details: opptyData.data?.formDetails,
+        page_views: opptyData.data?.pageViews,
+        form_views: opptyData.data?.formViews,
       },
     };
 
