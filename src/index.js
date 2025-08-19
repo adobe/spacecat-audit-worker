@@ -96,6 +96,7 @@ const HANDLERS = {
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
   'guidance:geo-brand-presence': guidanceGeoBrandPresence,
+  'detect:geo-brand-presence': guidanceGeoBrandPresence, // TODO(aurelio) remove once mystique sends to guidance:
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,

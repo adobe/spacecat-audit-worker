@@ -9,7 +9,37 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import * as helixContentSDK from '@adobe/spacecat-helix-content-sdk';
+
 import { sleep } from '../support/utils.js';
+
+const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
+
+/**
+ * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
+ */
+/**
+ * @param {object} context
+ * @param {object} context.env - Environment configuration object
+ * @param {string} context.env.SHAREPOINT_CLIENT_ID - SharePoint client ID
+ * @param {string} context.env.SHAREPOINT_CLIENT_SECRET - SharePoint client secret
+ * @param {string} context.env.SHAREPOINT_AUTHORITY - SharePoint authority URL
+ * @param {string} context.env.SHAREPOINT_DOMAIN_ID - SharePoint domain ID
+ * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} context.log - Logger instance
+ * @returns {Promise<SharepointClient>}
+ */
+export function createLLMOSharepointClient({ env, log }) {
+  return helixContentSDK.createFrom(
+    {
+      clientId: env.SHAREPOINT_CLIENT_ID,
+      clientSecret: env.SHAREPOINT_CLIENT_SECRET,
+      authority: env.SHAREPOINT_AUTHORITY,
+      domainId: env.SHAREPOINT_DOMAIN_ID,
+    },
+    { url: SHAREPOINT_URL, type: 'onedrive' },
+    log,
+  );
+}
 
 async function publishToAdminHlx(filename, outputLocation, log) {
   try {
