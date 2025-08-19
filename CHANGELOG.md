@@ -1,3 +1,10 @@
+# [1.149.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.148.1...v1.149.0) (2025-08-19)
+
+
+### Features
+
+* remove firefall work in image-alt-text ([#1123](https://github.com/adobe/spacecat-audit-worker/issues/1123)) ([3c3b951](https://github.com/adobe/spacecat-audit-worker/commit/3c3b951dcf79a306c22d6fcb8744c52875a16e79))
+
 ## [1.148.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.148.0...v1.148.1) (2025-08-19)
 
 
