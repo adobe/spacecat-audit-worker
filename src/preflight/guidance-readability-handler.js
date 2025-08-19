@@ -52,6 +52,16 @@ export async function processReadabilityGuidance(message, context) {
   try {
     const { siteId, auditId, data } = message;
 
+    log.info(`[${AUDIT_TYPE}]: Received Mystique response for readability guidance`, {
+      siteId,
+      auditId,
+      messageType: message.type,
+      opportunityId: message.id,
+      hasImprovedParagraph: !!data?.improved_paragraph,
+      messageKeys: Object.keys(message),
+      dataKeys: Object.keys(data || {}),
+    });
+
     log.info(
       `[${AUDIT_TYPE}]: Received Mystique guidance for readability: ${JSON.stringify(message, null, 2)}`,
     );
@@ -77,16 +87,37 @@ export async function processReadabilityGuidance(message, context) {
     // Get existing opportunity data
     const existingData = opportunity.getData() || {};
 
-    // Extract suggestions from Mystique response
-    const suggestions = data?.guidance || [];
+    // Extract readability improvements from Mystique response
+    const guidance = data?.guidance || [];
+    const hasImprovedText = data?.improved_paragraph && data?.improved_flesch_score;
 
-    if (!Array.isArray(suggestions) || suggestions.length === 0) {
-      log.warn(`[${AUDIT_TYPE}]: No suggestions found in Mystique response for siteId: ${siteId}`);
+    if (!hasImprovedText && (!Array.isArray(guidance) || guidance.length === 0)) {
+      log.warn(`[${AUDIT_TYPE}]: No readability improvements found in Mystique response for siteId: ${siteId}`);
       return null;
     }
 
-    const mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(suggestions);
-    const totalImprovements = suggestions.length;
+    // Create suggestion from the improved text data
+    const mappedSuggestions = [];
+    if (hasImprovedText) {
+      mappedSuggestions.push({
+        type: SuggestionModel.TYPES.CONTENT_UPDATE,
+        rank: 1,
+        data: {
+          originalText: data.original_paragraph || data.originalParagraph,
+          improvedText: data.improved_paragraph || data.improvedParagraph,
+          originalFleschScore: data.current_flesch_score || data.currentFleschScore,
+          improvedFleschScore: data.improved_flesch_score || data.improvedFleschScore,
+          seoRecommendation: data.seo_recommendation || data.seoRecommendation,
+          aiRationale: data.ai_rationale || data.aiRationale,
+          targetFleschScore: data.target_flesch_score || data.targetFleschScore,
+          guidance, // Include the guidance array as well
+        },
+      });
+    } else {
+      // Fallback to guidance-only suggestions if no improved text
+      mappedSuggestions.push(...mapMystiqueSuggestionsToOpportunityFormat(guidance));
+    }
+    const totalImprovements = mappedSuggestions.length;
 
     const updatedOpportunityData = {
       ...existingData,
@@ -105,7 +136,7 @@ export async function processReadabilityGuidance(message, context) {
         mappedSuggestions.map((suggestionData) => opportunity.addSuggestion(suggestionData)),
       );
       log.info(
-        `[${AUDIT_TYPE}]: Successfully processed ${suggestions.length} suggestions from Mystique for siteId: ${siteId}`,
+        `[${AUDIT_TYPE}]: Successfully processed ${mappedSuggestions.length} suggestions from Mystique for siteId: ${siteId}`,
       );
     }
     log.info(`[${AUDIT_TYPE}]: Successfully processed Mystique guidance for siteId: ${siteId}`);
