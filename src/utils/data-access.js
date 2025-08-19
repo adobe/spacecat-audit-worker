@@ -83,6 +83,7 @@ const handleOutdatedSuggestions = async ({
     return;
   }
   const { Suggestion } = context.dataAccess;
+  const { log } = context;
   const existingOutdatedSuggestions = existingSuggestions
     .filter((existing) => !newDataKeys.has(buildKey(existing.getData())))
     .filter((existing) => ![
@@ -91,6 +92,9 @@ const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.ERROR,
       SuggestionDataAccess.STATUSES.SKIPPED,
     ].includes(existing.getStatus()));
+
+  log.debug(`Outdated suggestions: ${JSON.stringify(existingOutdatedSuggestions, null, 2)}`);
+
   if (isNonEmptyArray(existingOutdatedSuggestions)) {
     await Suggestion.bulkUpdateStatus(
       existingOutdatedSuggestions,
@@ -125,6 +129,7 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * @param {Function} params.mapNewSuggestion - Function to map new data to suggestion objects.
  * @param {Function} [params.mergeDataFunction] - Function to merge existing and new data.
  *   Defaults to shallow merge.
+ * @param {string} [params.statusToSetForOutdated] - Status to set for outdated suggestions.
  * @param {Object} params.log - Logger object for error reporting.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
@@ -140,7 +145,7 @@ export async function syncSuggestions({
 }) {
   const newDataKeys = new Set(newData.map(buildKey));
   const existingSuggestions = await opportunity.getSuggestions();
-  log.info(`[A11yIndividual] Existing Data ${JSON.stringify(existingSuggestions, null, 2)}`);
+
   // Remove outdated suggestions
   await handleOutdatedSuggestions({
     existingSuggestions,
@@ -159,8 +164,6 @@ export async function syncSuggestions({
       })
       .map((existing) => {
         const newDataItem = newData.find((data) => buildKey(data) === buildKey(existing.getData()));
-        log.info(`[A11yIndividual] New Data Item ${JSON.stringify(newDataItem, null, 2)}`);
-        log.info(`[A11yIndividual] Existing Data Item ${JSON.stringify(existing.getData(), null, 2)}`);
         existing.setData(mergeDataFunction(existing.getData(), newDataItem));
         if ([SuggestionDataAccess.STATUSES.OUTDATED].includes(existing.getStatus())) {
           log.warn('Resolved suggestion found in audit. Possible regression.');
@@ -170,6 +173,7 @@ export async function syncSuggestions({
         return existing.save();
       }),
   );
+  log.debug(`Updated existing suggestions: ${JSON.stringify(existingSuggestions, null, 2)}`);
 
   // Prepare new suggestions
   const newSuggestions = newData
@@ -181,6 +185,7 @@ export async function syncSuggestions({
   // Add new suggestions if any
   if (newSuggestions.length > 0) {
     const suggestions = await opportunity.addSuggestions(newSuggestions);
+    log.debug(`New suggestions: ${JSON.stringify(suggestions, null, 2)}`);
 
     if (suggestions.errorItems?.length > 0) {
       log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);

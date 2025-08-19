@@ -57,6 +57,9 @@ describe('CWVRunner Tests', () => {
     },
     dataAccess: {},
     env: {},
+    log: {
+      debug: sinon.stub(),
+    },
   };
 
   afterEach(() => {
@@ -97,6 +100,7 @@ describe('CWVRunner Tests', () => {
 
     beforeEach(() => {
       context.log = {
+        debug: sandbox.stub(),
         info: sandbox.stub(),
         error: sandbox.stub(),
         warn: sandbox.stub(),

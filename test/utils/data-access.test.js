@@ -115,6 +115,7 @@ describe('data-access', () => {
         .build();
 
       mockLogger = {
+        debug: sinon.spy(),
         error: sinon.spy(),
         info: sinon.spy(),
         warn: sinon.spy(),
