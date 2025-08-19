@@ -41,7 +41,7 @@ export async function getRobotsTxt(context) {
     const robotsTxt = await fetch(`https://${finalUrl}/robots.txt`);
     const robotsTxtContent = await robotsTxt.text();
 
-    const robots = robotsParser(`${finalUrl}/robots.txt`, robotsTxtContent);
+    const robots = robotsParser(`https://${finalUrl}`, robotsTxtContent);
 
     return robots;
   } catch (error) {

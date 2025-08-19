@@ -45,7 +45,7 @@ describe('LLM Blocked Audit', () => {
           getId: () => 'test-site-id',
           getBaseURL: () => 'https://example.com',
         },
-        finalUrl: 'https://example.com',
+        finalUrl: 'example.com',
         audit: {
           getId: () => 'test-audit-id',
         },
@@ -159,13 +159,13 @@ describe('LLM Blocked Audit', () => {
     expect(result).to.deep.equal({
       type: 'top-pages',
       siteId: 'test-site-id',
-      auditResult: { status: 'Importing Pages', finalUrl: 'https://example.com' },
-      fullAuditRef: 'llm-blocked::https://example.com',
-      finalUrl: 'https://example.com',
+      auditResult: { status: 'Importing Pages', finalUrl: 'example.com' },
+      fullAuditRef: 'llm-blocked::example.com',
+      finalUrl: 'example.com',
     });
 
     // Verify that log.info was called
-    expect(context.log.info).to.have.been.calledWith('Importing top pages for https://example.com');
+    expect(context.log.info).to.have.been.calledWith('Importing top pages for example.com');
     expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 
