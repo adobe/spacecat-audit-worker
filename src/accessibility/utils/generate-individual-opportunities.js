@@ -11,7 +11,7 @@
  */
 
 import { isNonEmptyArray, isString } from '@adobe/spacecat-shared-utils';
-import { Opportunity as OpportunityDataAccess } from '@adobe/spacecat-shared-data-access';
+import { Opportunity as OpportunityDataAccess, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import {
   syncSuggestions,
@@ -395,7 +395,7 @@ export async function createIndividualOpportunitySuggestions(
       }),
       log,
       mergeDataFunction: keepSameDataFunction,
-      statusToSetForOutdated: OpportunityDataAccess.STATUSES.FIXED,
+      statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
     });
 
     // Check if mystique suggestions are enabled for this site

@@ -103,7 +103,7 @@ const handleOutdatedSuggestions = async ({
   }
 };
 
-export const keepSameDataFunction = (target) => target;
+export const keepSameDataFunction = (existingData) => ({ ...existingData });
 
 /**
  * Default merge function for combining existing and new data.
@@ -146,7 +146,7 @@ export async function syncSuggestions({
   const newDataKeys = new Set(newData.map(buildKey));
   const existingSuggestions = await opportunity.getSuggestions();
 
-  // Remove outdated suggestions
+  // Update outdated suggestions
   await handleOutdatedSuggestions({
     existingSuggestions,
     newDataKeys,
@@ -154,6 +154,8 @@ export async function syncSuggestions({
     context,
     statusToSetForOutdated,
   });
+
+  log.debug(`Existing suggestions = ${existingSuggestions.length}: ${JSON.stringify(existingSuggestions, null, 2)}`);
 
   // Update existing suggestions
   await Promise.all(
