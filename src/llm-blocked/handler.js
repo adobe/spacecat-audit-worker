@@ -11,10 +11,12 @@
  */
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import robotsParser from 'robots-parser';
+import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -34,8 +36,9 @@ export async function importTopPages(context) {
 
 export async function getRobotsTxt(context) {
   try {
-    const { finalUrl } = context;
-    const robotsTxt = await fetch(`${finalUrl}/robots.txt`);
+    const { finalUrl, log } = context;
+    log.info(`Fetching https://${finalUrl}/robots.txt`);
+    const robotsTxt = await fetch(`https://${finalUrl}/robots.txt`);
     const robotsTxtContent = await robotsTxt.text();
 
     const robots = robotsParser(`${finalUrl}/robots.txt`, robotsTxtContent);
@@ -150,7 +153,7 @@ export async function checkLLMBlocked(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver((site) => site.getBaseURL())
+  .withUrlResolver(wwwUrlResolver)
   .addStep('import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('check-llm-blocked', checkLLMBlocked)
   .build();
