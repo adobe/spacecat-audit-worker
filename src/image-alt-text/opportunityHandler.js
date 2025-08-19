@@ -10,19 +10,15 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, tracingFetch } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import suggestionsEngine from './suggestionsEngine.js';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
 import {
   CPC, PENALTY_PER_IMAGE, RUM_INTERVAL, ALT_TEXT_GUIDANCE_TYPE, ALT_TEXT_OBSERVATION,
   MYSTIQUE_BATCH_SIZE,
 } from './constants.js';
-import { DATA_SOURCES } from '../common/constants.js';
-import { checkGoogleConnection } from '../common/opportunity-utils.js';
 
-const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
 /**
@@ -130,140 +126,6 @@ export const getProjectedMetrics = async ({
   };
 };
 
-/**
- * @param auditUrl - The URL of the audit
- * @param auditData - The audit data containing the audit result and additional details.
- * @param context - The context object containing the data access and logger objects.
- * @returns {Promise<void>} - Resolves when the synchronization is complete.
- */
-export default async function convertToOpportunity(auditUrl, auditData, context) {
-  const { dataAccess, log } = context;
-  const { Opportunity } = dataAccess;
-  const { detectedImages, siteId, auditId } = auditData;
-
-  log.info(`[${AUDIT_TYPE}]: Syncing opportunity and suggestions for ${siteId}`);
-  let altTextOppty;
-
-  try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    altTextOppty = opportunities.find(
-      (oppty) => oppty.getType() === AUDIT_TYPE,
-    );
-  } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
-    throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
-  }
-
-  const projectedMetrics = await getProjectedMetrics({
-    images:
-      detectedImages.imagesWithoutAltText
-        .map((image) => ({ src: image.src, pageUrl: image.pageUrl })),
-    auditUrl,
-    context,
-    log,
-  });
-
-  const opportunityData = {
-    ...projectedMetrics,
-    decorativeImagesCount: detectedImages.decorativeImagesCount,
-  };
-  opportunityData.dataSources = [
-    DATA_SOURCES.RUM,
-    DATA_SOURCES.SITE,
-    DATA_SOURCES.AHREFS,
-    DATA_SOURCES.GSC,
-  ];
-
-  const isGoogleConnected = await checkGoogleConnection(auditUrl, context);
-
-  if (!isGoogleConnected && opportunityData.dataSources) {
-    opportunityData.dataSources = opportunityData.dataSources
-      .filter((source) => source !== DATA_SOURCES.GSC);
-  }
-
-  try {
-    if (!altTextOppty) {
-      const opportunityDTO = {
-        siteId,
-        auditId,
-        runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
-        type: AUDIT_TYPE,
-        origin: 'AUTOMATION',
-        title: 'Missing alt text for images decreases accessibility and discoverability of content',
-        description: 'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',
-        guidance: {
-          recommendations: [
-            {
-              insight: 'Alt text for images decreases accessibility and limits discoverability',
-              recommendation: 'Add meaningful alt text on images that clearly articulate the subject matter of the image',
-              type: null,
-              rationale: 'Alt text for images is vital to ensure your content is discoverable and usable for many people as possible',
-            },
-          ],
-        },
-        data: opportunityData,
-        tags: ['seo', 'accessibility'],
-      };
-      altTextOppty = await Opportunity.create(opportunityDTO);
-      log.debug(`[${AUDIT_TYPE}]: Opportunity created`);
-    } else {
-      altTextOppty.setAuditId(auditId);
-      altTextOppty.setData(opportunityData);
-      altTextOppty.setUpdatedBy('system');
-      await altTextOppty.save();
-    }
-  } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Creating alt-text opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
-    throw new Error(`[${AUDIT_TYPE}]: Failed to create alt-text opportunity for siteId ${siteId}: ${e.message}`);
-  }
-
-  const imageUrls = detectedImages.imagesWithoutAltText.map(
-    (image) => {
-      const el = { url: new URL(image.src, auditUrl).toString() };
-
-      if (image.blob) {
-        el.blob = image.blob;
-      }
-      el.language = image.language;
-      return el;
-    },
-  ).filter((image) => image !== null);
-
-  const imageSuggestions = await suggestionsEngine.getImageSuggestions(
-    imageUrls,
-    context,
-    tracingFetch,
-  );
-
-  const suggestions = detectedImages.imagesWithoutAltText.map((image) => {
-    const imageUrl = new URL(image.src, auditUrl).toString();
-    return {
-      id: getImageSuggestionIdentifier(image),
-      pageUrl: new URL(image.pageUrl, auditUrl).toString(),
-      imageUrl,
-      altText: imageSuggestions[imageUrl]?.suggestion || '',
-      isAppropriate: imageSuggestions[imageUrl]?.is_appropriate ?? null,
-      xpath: image.xpath,
-      language: image.language,
-    };
-  });
-
-  log.debug(`[${AUDIT_TYPE}]: Suggestions: ${JSON.stringify(suggestions)}`);
-
-  await syncAltTextSuggestions({
-    opportunity: altTextOppty,
-    newSuggestionDTOs: suggestions.map((suggestion) => ({
-      opportunityId: altTextOppty.getId(),
-      type: SuggestionModel.TYPES.CONTENT_UPDATE,
-      data: { recommendations: [suggestion] },
-      rank: 1,
-    })),
-    log,
-  });
-
-  log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${siteId} and alt-text audit type.`);
-}
-
 export const chunkArray = (array, chunkSize) => {
   const chunks = [];
   for (let i = 0; i < array.length; i += chunkSize) {
@@ -351,8 +213,9 @@ export async function clearAltTextSuggestions({ opportunity, log }) {
     return;
   }
 
+  const IGNORED_STATUSES = [SuggestionModel.STATUSES.SKIPPED, SuggestionModel.STATUSES.FIXED];
   const ignoredSuggestions = existingSuggestions.filter(
-    (s) => s.getStatus() === SuggestionModel.STATUSES.SKIPPED,
+    (s) => IGNORED_STATUSES.includes(s.getStatus()),
   );
   const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
 

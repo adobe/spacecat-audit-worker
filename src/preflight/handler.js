@@ -23,6 +23,7 @@ import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
 import readability from './readability.js';
+import accessibility from './accessibility.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const PREFLIGHT_STEP_IDENTIFY = 'identify';
@@ -44,6 +45,7 @@ export const PREFLIGHT_HANDLERS = {
   metatags,
   links,
   readability,
+  accessibility,
 };
 
 export async function scrapePages(context) {
@@ -58,12 +60,9 @@ export async function scrapePages(context) {
   }
 
   return {
-    urls: urls.map((url) => {
-      const urlObj = new URL(url);
-      return {
-        url: `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`,
-      };
-    }),
+    urls: urls.map((url) => ({
+      url: `${stripTrailingSlash(url)}`,
+    })),
     siteId: site.getId(),
     type: 'preflight',
     allowCache: false,

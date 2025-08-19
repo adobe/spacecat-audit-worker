@@ -15,7 +15,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import createLowNavigationOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-navigation-handler.js';
-import { FORM_OPPORTUNITY_TYPES } from '../../../../src/forms-opportunities/constants.js';
+import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../../../../src/forms-opportunities/constants.js';
 import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
 import { DATA_SOURCES } from '../../../../src/common/constants.js';
 
@@ -32,6 +32,7 @@ describe('createLowNavigationOpportunities handler method', () => {
     sinon.restore();
     auditUrl = 'https://example.com';
     formsCTAOppty = {
+      getOrigin: sinon.stub().returns('AUTOMATION'),
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
       save: sinon.stub(),
@@ -266,6 +267,13 @@ describe('createLowNavigationOpportunities handler method', () => {
     expect(formsCTAOppty.setUpdatedBy).to.be.calledWith('system');
     expect(formsCTAOppty.save).to.be.calledOnce;
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+  });
+
+  it('should not process opportunities with origin ESS_OPS', async () => {
+    formsCTAOppty.getOrigin = sinon.stub().returns(ORIGINS.ESS_OPS);
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);
+    await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
+    expect(dataAccessStub.Opportunity.create).to.be.calledOnce;
   });
 
   it('should throw error if fetching high page views low form navigation opportunity fails', async () => {
