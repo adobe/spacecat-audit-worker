@@ -454,18 +454,18 @@ describe('data-access', () => {
         expect(() => deepMergeDataFunction(target, source)).to.throw(TypeError, 'Arguments provided to ts-deepmerge must be objects, not arrays.');
       });
 
-      it('should merge arrays within objects by concatenating them', () => {
+      it('should merge arrays within objects, by overriding them (custom merge option)', () => {
         const target = { items: [1, 2, 3] };
         const source = { items: [4, 5, 6] };
         const result = deepMergeDataFunction(target, source);
-        expect(result).to.deep.equal({ items: [1, 2, 3, 4, 5, 6] });
+        expect(result).to.deep.equal({ items: [4, 5, 6] });
       });
 
-      it('should handle empty arrays within objects', () => {
+      it('should handle empty arrays within objects, clearing the array (custom merge option)', () => {
         const target = { items: [1, 2, 3] };
         const source = { items: [] };
         const result = deepMergeDataFunction(target, source);
-        expect(result).to.deep.equal({ items: [1, 2, 3] });
+        expect(result).to.deep.equal({ items: [] });
       });
 
       it('should handle target with empty array', () => {
@@ -475,11 +475,11 @@ describe('data-access', () => {
         expect(result).to.deep.equal({ items: [1, 2, 3] });
       });
 
-      it('should handle nested arrays within objects', () => {
+      it('should handle nested arrays within objects, by overriding with source (custom merge option)', () => {
         const target = { data: [[1, 2], [3, 4]] };
         const source = { data: [[5, 6]] };
         const result = deepMergeDataFunction(target, source);
-        expect(result).to.deep.equal({ data: [[1, 2], [3, 4], [5, 6]] });
+        expect(result).to.deep.equal({ data: [[5, 6]] });
       });
     });
 
@@ -507,7 +507,7 @@ describe('data-access', () => {
     });
 
     describe('nested object handling', () => {
-      it('should deeply merge nested objects', () => {
+      it('should deeply merge nested objects, without merging arrays (custom merge option)', () => {
         const target = {
           data: {
             items: [{ id: 1, name: 'Item 1' }],
@@ -529,7 +529,7 @@ describe('data-access', () => {
         const result = deepMergeDataFunction(target, source);
         expect(result).to.deep.equal({
           data: {
-            items: [{ id: 1, name: 'Item 1' }, { id: 2, name: 'Item 2' }],
+            items: [{ id: 2, name: 'Item 2' }],
             metadata: {
               count: 2,
               lastUpdated: '2023-01-01',
@@ -573,7 +573,7 @@ describe('data-access', () => {
     });
 
     describe('mixed type handling', () => {
-      it('should handle objects with arrays', () => {
+      it('should handle objects with arrays, without merging arrays (custom merge option)', () => {
         const target = {
           items: [1, 2, 3],
           config: { enabled: true },
@@ -584,7 +584,7 @@ describe('data-access', () => {
         };
         const result = deepMergeDataFunction(target, source);
         expect(result).to.deep.equal({
-          items: [1, 2, 3, 4, 5],
+          items: [4, 5],
           config: { enabled: true, timeout: 5000 },
         });
       });

@@ -95,9 +95,11 @@ const handleOutdatedSuggestions = async ({
   }
 };
 
-// Wrapper function to handle null/undefined cases and primitive
-// values that ts-deepmerge doesn't handle
-export const deepMergeDataFunction = (target, source) => merge(target, source);
+export const deepMergeDataFunction = (target, source) => merge.withOptions(
+  { mergeArrays: false },
+  target,
+  source,
+);
 
 /**
  * Default merge function for combining existing and new data.
