@@ -1,3 +1,10 @@
+## [1.149.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.149.0...v1.149.1) (2025-08-19)
+
+
+### Bug Fixes
+
+* created pr to trigger release ([#1139](https://github.com/adobe/spacecat-audit-worker/issues/1139)) ([4ee4fb5](https://github.com/adobe/spacecat-audit-worker/commit/4ee4fb583ed379ac0b818eafa24a5cbed91e8332))
+
 # [1.149.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.148.1...v1.149.0) (2025-08-19)
 
 
