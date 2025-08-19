@@ -47,7 +47,8 @@ async function getPathsOfLastWeek(auditUrl, context, site) {
     return true;
   };
 
-  const missingPageIntents = paths.filter(({ path }) => !hasPageIntent(path));
+  const missingPageIntents = paths.map(({ path }) => path)
+    .filter((path) => !hasPageIntent(path));
 
   return {
     auditResult: missingPageIntents,
@@ -55,6 +56,16 @@ async function getPathsOfLastWeek(auditUrl, context, site) {
   };
 }
 
+async function storeMetaData(auditData, context) {
+  const { dataAccess } = context;
+  const { Audit } = dataAccess;
+  const auditResult = { numOfMissingPageIntents: auditData.auditResult?.length || 0 };
+  const audit = await Audit.create({
+    ...auditData,
+    auditResult,
+  });
+  return audit;
+}
 async function updatePageIntent(auditUrl, auditData, context, site) {
   const {
     env, sqs,
@@ -63,7 +74,7 @@ async function updatePageIntent(auditUrl, auditData, context, site) {
   const baseUrl = site.getBaseURL();
   const siteId = site.getSiteId();
 
-  for (const { path } of auditResult) {
+  for (const path of auditResult) {
     const mystiqueMessage = {
       type: DETECT_PAGE_INTENT_FLOW,
       siteId,
@@ -82,5 +93,6 @@ async function updatePageIntent(auditUrl, auditData, context, site) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(getPathsOfLastWeek)
+  .withPersister(storeMetaData)
   .withPostProcessors([updatePageIntent])
   .build();
