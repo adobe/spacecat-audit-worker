@@ -1,3 +1,10 @@
+# [1.150.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.149.1...v1.150.0) (2025-08-19)
+
+
+### Features
+
+* make agentic traffic simple structure ([#1138](https://github.com/adobe/spacecat-audit-worker/issues/1138)) ([0c954f4](https://github.com/adobe/spacecat-audit-worker/commit/0c954f459f72c5af0723612de6b0bb054630cbbb))
+
 ## [1.149.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.149.0...v1.149.1) (2025-08-19)
 
 
