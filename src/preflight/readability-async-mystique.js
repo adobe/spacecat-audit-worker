@@ -91,14 +91,15 @@ export async function sendReadabilityToMystique(
         deliveryType: site.getDeliveryType(),
         time: new Date().toISOString(),
         url: auditUrl,
-        observation: 'Content readability improvement opportunity',
+        observation: 'Content readability needs improvement',
         data: {
           opportunityId: opportunity.getId(),
-          originalText: issue.textContent,
-          targetFleschScore: 30.0, // Target for improvement
-          currentFleschScore: issue.fleschReadingEase,
+          original_paragraph: issue.textContent,
+          target_flesch_score: 30.0, // Target for improvement
+          current_flesch_score: issue.fleschReadingEase,
           pageUrl: issue.pageUrl,
           selector: issue.selector,
+          issue_id: `readability-${Date.now()}-${Math.random()}`,
         },
       };
 
