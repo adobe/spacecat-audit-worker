@@ -85,11 +85,6 @@ describe('CDN Logs Sheet Configs', () => {
       expect(headers).to.deep.equal(['Country Code', 'Agent Type', 'Week 1', 'Week 2']);
     });
 
-    it('generates correct number columns', () => {
-      const numberColumns = SHEET_CONFIGS.country.getNumberColumns(mockPeriods);
-      expect(numberColumns).to.deep.equal([2, 3]);
-    });
-
     it('processes and aggregates country data correctly', () => {
       const mockData = [
         {
@@ -348,20 +343,6 @@ describe('CDN Logs Sheet Configs', () => {
         expect(config).to.have.property('processData');
         expect(config.getHeaders).to.be.a('function');
         expect(config.processData).to.be.a('function');
-      });
-    });
-
-    it('configs with week data have getNumberColumns', () => {
-      ['country'].forEach((configName) => {
-        expect(SHEET_CONFIGS[configName]).to.have.property('getNumberColumns');
-        expect(SHEET_CONFIGS[configName].getNumberColumns).to.be.a('function');
-      });
-    });
-
-    it('configs without week data have numberColumns array', () => {
-      ['userAgents', 'error404', 'error503', 'category', 'topUrls', 'hitsByProductAgentType', 'hitsByPageCategoryAgentType'].forEach((configName) => {
-        expect(SHEET_CONFIGS[configName]).to.have.property('numberColumns');
-        expect(SHEET_CONFIGS[configName].numberColumns).to.be.an('array');
       });
     });
 
