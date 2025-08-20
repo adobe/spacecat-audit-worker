@@ -198,13 +198,7 @@ export async function metatagsAutoDetect(site, pagesSet, context) {
   const { log, s3Client } = context;
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
-  const prefix = `scrapes/${site.getId()}/`;
-  // const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
   const extractedTags = {};
-  /* const pageMetadataResults = await Promise.all(scrapedObjectKeys
-    .filter((key) => pagesSet.has(key))
-    .map((key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log))); */
-  // I just need some change to commit/push again...
   const pageMetadataResults = await Promise.all([...pagesSet]
     .map(([url, path]) => fetchAndProcessPageObject(s3Client, bucketName, url, path, log)));
   pageMetadataResults.forEach((pageMetadata) => {
@@ -214,7 +208,7 @@ export async function metatagsAutoDetect(site, pagesSet, context) {
   });
   const extractedTagsCount = Object.entries(extractedTags).length;
   if (extractedTagsCount === 0) {
-    log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
+    log.error(`Failed to extract tags from scraped content for bucket ${bucketName}`);
   }
 
   // Perform SEO checks
@@ -233,34 +227,10 @@ export async function metatagsAutoDetect(site, pagesSet, context) {
   };
 }
 
-/**
- * Transforms a URL into a scrape.json path for a given site
- * @param {string} url - The URL to transform
- * @param {string} siteId - The site ID
- * @returns {string} The path to the scrape.json file
- */
-/* function getScrapeJsonPath(url, siteId) {
-  const pathname = new URL(url).pathname.replace(/\/$/, '');
-  return `scrapes/${siteId}${pathname}/scrape.json`;
-} */
-
 export async function runAuditAndGenerateSuggestions(context) {
   const {
     site, audit, finalUrl, log, scrapeResultPaths,
   } = context;
-  // Get top pages for a site
-  /* const siteId = site.getId();
-  const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-  const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
-
-  // Transform URLs into scrape.json paths and combine them into a Set
-  const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.url, siteId));
-  const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, siteId));
-  const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
-
-  log.info(`Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length},
-  totalPages to process after removing duplicates: ${totalPagesSet.size}`);
- */
   log.info(scrapeResultPaths);
   const {
     seoChecks,
