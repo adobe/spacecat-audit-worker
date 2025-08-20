@@ -97,7 +97,7 @@ const HANDLERS = {
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
-  'guidance:structured-data': structuredDataGuidance,
+  'guidance:structured-data-remediation': structuredDataGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,

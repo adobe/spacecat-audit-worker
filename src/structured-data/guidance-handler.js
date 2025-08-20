@@ -11,14 +11,13 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
-import { getMystiqueGuidanceForPath } from '../support/utils.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Suggestion, Site } = dataAccess;
   const { auditId, siteId, data } = message;
   const {
-    suggestionId, opportunityId,
+    suggestionId, opportunityId, remediations,
   } = data;
   log.info(`Message received in broken-links suggestion handler: ${JSON.stringify(message, null, 2)}`);
 
@@ -53,12 +52,17 @@ export default async function handler(message, context) {
     log.error(`Suggestion not found for suggestionId: ${suggestionId}`);
     return notFound('Suggestion not found');
   }
-  const mystiqueGuidanceForPath = getMystiqueGuidanceForPath(suggestionId);
-  const guidance = mystiqueGuidanceForPath?.guidance;
-  suggestion.setData(
+
+  suggestion.setData({
     ...suggestion.getData(),
-    guidance,
-  );
+    errors: remediations.map((remediation) => (
+      {
+        aiRationale: remediation.ai_rationale,
+        id: remediation.id,
+        errorTitle: remediation.error_title,
+        fix: remediation.corrected_markup,
+      })),
+  });
   await suggestion.save();
   return ok();
 }
