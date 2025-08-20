@@ -16,9 +16,6 @@ import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { OPPTY_TYPES } from './handler.js';
 import { createLLMOSharepointClient, uploadAndPublishFile } from '../utils/report-uploader.js';
 
-// TODO(aurelio): remove when we agreed on what comes back from mystique
-const ACCEPTED_TYPES = [...OPPTY_TYPES, 'guidance:geo-brand-presence'];
-
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Site } = dataAccess;
@@ -26,22 +23,22 @@ export default async function handler(message, context) {
     auditId, siteId, type: subType, data,
   } = message;
 
-  log.info('GEO BRAND PRESENCE GUIDANCE: Message received:', message);
+  log.info('GEO BRAND PRESENCE: Message received:', message);
 
-  if (!subType || !ACCEPTED_TYPES.includes(subType)) {
-    log.error(`GEO BRAND PRESENCE GUIDANCE: Unsupported subtype: ${subType}`);
+  if (!subType || !OPPTY_TYPES.includes(subType)) {
+    log.error(`GEO BRAND PRESENCE: Unsupported subtype: ${subType}`);
     return notFound();
   }
 
   const [audit, site] = await Promise.all([Audit.findById(auditId), Site.findById(siteId)]);
   if (!audit || !site) {
-    log.error(`GEO BRAND PRESENCE GUIDANCE: Audit or site not found for auditId: ${auditId}, siteId: ${siteId}`);
+    log.error(`GEO BRAND PRESENCE: Audit or site not found for auditId: ${auditId}, siteId: ${siteId}`);
     return notFound();
   }
 
   const sheetUrl = URL.parse(data.presigned_url);
   if (!sheetUrl || !sheetUrl.href) {
-    log.error(`GEO BRAND PRESENCE GUIDANCE: Invalid presigned URL: ${data.presigned_url}`);
+    log.error(`GEO BRAND PRESENCE: Invalid presigned URL: ${data.presigned_url}`);
     return badRequest('Invalid presigned URL');
   }
 
