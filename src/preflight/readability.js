@@ -147,6 +147,7 @@ export default async function readability(context, auditContext) {
   const {
     site, job, log,
   } = context;
+  let isProcessing = false;
   const {
     checks,
     previewUrls,
@@ -344,6 +345,15 @@ export default async function readability(context, auditContext) {
 
             log.info(`[preflight-audit] readability: Successfully sent ${allReadabilityIssues.length} `
               + 'readability issues to Mystique for processing');
+            // Indicate to preflight runner that we are still processing
+            isProcessing = true;
+            // While waiting for Mystique, clear readability opportunities in response
+            auditsResult.forEach((page) => {
+              const readabilityAudit = page.audits.find((a) => a.name === PREFLIGHT_READABILITY);
+              if (readabilityAudit) {
+                readabilityAudit.opportunities = [];
+              }
+            });
           } else {
             log.info(`[preflight-audit] readability: All ${allReadabilityIssues.length} `
               + 'readability issues already have suggestions');
@@ -405,4 +415,7 @@ export default async function readability(context, auditContext) {
 
     await saveIntermediateResults(context, auditsResult, `readability ${step}`);
   }
+
+  // Always return a value to satisfy consistent-return
+  return { processing: isProcessing };
 }

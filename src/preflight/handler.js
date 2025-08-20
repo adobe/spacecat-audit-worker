@@ -226,7 +226,7 @@ export const preflightAudit = async (context) => {
     }
 
     // Execute all preflight handlers
-    await Object.keys(PREFLIGHT_HANDLERS).reduce(
+    const handlerResults = await Object.keys(PREFLIGHT_HANDLERS).reduce(
       async (accPromise, handler) => {
         const acc = await accPromise;
         const res = await PREFLIGHT_HANDLERS[handler](context, {
@@ -266,10 +266,17 @@ export const preflightAudit = async (context) => {
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. ${JSON.stringify(resultWithProfiling)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
-    jobEntity.setStatus(AsyncJob.Status.COMPLETED);
+    const anyProcessing = (handlerResults || []).some((r) => r && r.processing === true);
     jobEntity.setResultType(AsyncJob.ResultType.INLINE);
     jobEntity.setResult(resultWithProfiling);
-    jobEntity.setEndedAt(new Date().toISOString());
+    if (anyProcessing) {
+      // Keep the job in progress while waiting for Mystique guidance
+      jobEntity.setStatus(AsyncJob.Status.IN_PROGRESS);
+      // Do not set endedAt yet
+    } else {
+      jobEntity.setStatus(AsyncJob.Status.COMPLETED);
+      jobEntity.setEndedAt(new Date().toISOString());
+    }
     await jobEntity.save();
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Error during preflight audit.`, error);
