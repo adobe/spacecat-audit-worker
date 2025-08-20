@@ -1,3 +1,10 @@
+# [1.153.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.152.1...v1.153.0) (2025-08-20)
+
+
+### Features
+
+* add audit to check whether llm agents are blocked in robots txt ([#1074](https://github.com/adobe/spacecat-audit-worker/issues/1074)) ([7377e2a](https://github.com/adobe/spacecat-audit-worker/commit/7377e2af06bbaedf72d3a420a1776236588fa8e8))
+
 ## [1.152.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.152.0...v1.152.1) (2025-08-20)
 
 
