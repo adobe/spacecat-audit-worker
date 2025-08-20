@@ -3663,4 +3663,93 @@ describe('handleAccessibilityRemediationGuidance', () => {
       '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Successfully processed 1 remediations',
     );
   });
+
+  it('should log success message when metrics are saved successfully (line 889 coverage)', async () => {
+    // Mock the scrape-utils module to ensure saveMystiqueValidationMetricsToS3 succeeds
+    const mockScrapeUtils = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/utils/scrape-utils.js': {
+        saveMystiqueValidationMetricsToS3: sandbox.stub().resolves(),
+      },
+    });
+
+    const mockOpportunity = {
+      getId: () => 'oppty-123',
+      getSiteId: () => 'site-456',
+      getType: () => 'accessibility',
+      getSuggestions: sandbox.stub().resolves([
+        {
+          getId: () => 'sugg-789',
+          getData: () => ({
+            url: 'https://example.com/page1',
+            issues: [
+              {
+                type: 'aria-allowed-attr',
+                htmlWithIssues: [
+                  {
+                    update_from: '<div aria-label="test">Content</div>',
+                    target_selector: 'div.test',
+                    issue_id: 'issue-123',
+                  },
+                ],
+              },
+            ],
+          }),
+          setData: sandbox.stub(),
+          save: sandbox.stub().resolves(),
+        },
+      ]),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+    };
+
+    const mockDataAccess = {
+      Opportunity: {
+        findById: sandbox.stub().resolves(mockOpportunity),
+      },
+    };
+
+    const mockContext = {
+      log: mockLog,
+      dataAccess: mockDataAccess,
+    };
+
+    const message = {
+      auditId: 'audit-new-123',
+      siteId: 'site-456',
+      data: {
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        remediations: [
+          {
+            issue_name: 'aria-allowed-attr',
+            general_suggestion: 'Remove disallowed ARIA attributes',
+            update_to: '<div>Content</div>',
+            user_impact: 'Improves screen reader accessibility',
+            suggestionId: 'sugg-789',
+          },
+        ],
+        totalIssues: 1,
+      },
+    };
+
+    const result = await mockScrapeUtils.handleAccessibilityRemediationGuidance(
+      message,
+      mockContext,
+    );
+
+    expect(result).to.deep.equal({
+      success: true,
+      totalIssues: 1,
+      pageUrl: 'https://example.com/page1',
+      notFoundSuggestionIds: [],
+      invalidRemediations: [],
+      failedSuggestionIds: [],
+    });
+
+    // Verify that the success log message for metrics saving was called (line 889)
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yRemediationGuidance] Saved complete Mystique validation metrics for opportunity oppty-123, page https://example.com/page1: sent=1, received=1',
+    );
+  });
 });

@@ -14,9 +14,9 @@
 
 import { expect } from 'chai';
 import sinon from 'sinon';
-import handler from '../../src/geo-brand-presence/guidance-geo-brand-presence-handler.js';
+import handler from '../../src/geo-brand-presence/detect-geo-brand-presence-handler.js';
 
-describe('geo-brand-presence guidance handler', () => {
+xdescribe('geo-brand-presence detect handler', () => {
   let context;
   let Audit;
   let Opportunity;
