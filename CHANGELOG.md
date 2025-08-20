@@ -1,3 +1,127 @@
+# [1.153.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.152.1...v1.153.0) (2025-08-20)
+
+
+### Features
+
+* add audit to check whether llm agents are blocked in robots txt ([#1074](https://github.com/adobe/spacecat-audit-worker/issues/1074)) ([7377e2a](https://github.com/adobe/spacecat-audit-worker/commit/7377e2af06bbaedf72d3a420a1776236588fa8e8))
+
+## [1.152.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.152.0...v1.152.1) (2025-08-20)
+
+
+### Bug Fixes
+
+* add wcag formatting ([#1143](https://github.com/adobe/spacecat-audit-worker/issues/1143)) ([07af6f0](https://github.com/adobe/spacecat-audit-worker/commit/07af6f0289bc5a18e5f77a10f5b8b54dbcd4bdf6))
+
+# [1.152.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.151.0...v1.152.0) (2025-08-20)
+
+
+### Features
+
+* add a11y validation metrics ([#1117](https://github.com/adobe/spacecat-audit-worker/issues/1117)) ([c91ad0e](https://github.com/adobe/spacecat-audit-worker/commit/c91ad0e4903cce55264a2e855e65eb802f287755))
+
+# [1.151.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.150.0...v1.151.0) (2025-08-20)
+
+
+### Features
+
+* geo-brand-presence upload xlsx to elmo-ui ([#1140](https://github.com/adobe/spacecat-audit-worker/issues/1140)) ([19babf1](https://github.com/adobe/spacecat-audit-worker/commit/19babf1c305a35df8e83a51b54d6d7630f8d1455))
+
+# [1.150.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.149.1...v1.150.0) (2025-08-19)
+
+
+### Features
+
+* make agentic traffic simple structure ([#1138](https://github.com/adobe/spacecat-audit-worker/issues/1138)) ([0c954f4](https://github.com/adobe/spacecat-audit-worker/commit/0c954f459f72c5af0723612de6b0bb054630cbbb))
+
+## [1.149.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.149.0...v1.149.1) (2025-08-19)
+
+
+### Bug Fixes
+
+* created pr to trigger release ([#1139](https://github.com/adobe/spacecat-audit-worker/issues/1139)) ([4ee4fb5](https://github.com/adobe/spacecat-audit-worker/commit/4ee4fb583ed379ac0b818eafa24a5cbed91e8332))
+
+# [1.149.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.148.1...v1.149.0) (2025-08-19)
+
+
+### Features
+
+* remove firefall work in image-alt-text ([#1123](https://github.com/adobe/spacecat-audit-worker/issues/1123)) ([3c3b951](https://github.com/adobe/spacecat-audit-worker/commit/3c3b951dcf79a306c22d6fcb8744c52875a16e79))
+
+## [1.148.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.148.0...v1.148.1) (2025-08-19)
+
+
+### Bug Fixes
+
+* **page-intent:** store total number of missing page intents ([#1134](https://github.com/adobe/spacecat-audit-worker/issues/1134)) ([269a590](https://github.com/adobe/spacecat-audit-worker/commit/269a5902b26da34bfedb2423f56dfa4b0d69577a))
+
+# [1.148.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.147.0...v1.148.0) (2025-08-18)
+
+
+### Features
+
+* hreflang audit ([#1081](https://github.com/adobe/spacecat-audit-worker/issues/1081)) ([acf599c](https://github.com/adobe/spacecat-audit-worker/commit/acf599cdf769362b8a24cd61cde3d8907130d031))
+
+# [1.147.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.146.1...v1.147.0) (2025-08-18)
+
+
+### Features
+
+* add traffic analysis audits ([#1127](https://github.com/adobe/spacecat-audit-worker/issues/1127)) ([c9a77be](https://github.com/adobe/spacecat-audit-worker/commit/c9a77be51fbd3639971ba40f231a3944a0206d2d))
+
+## [1.146.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.146.0...v1.146.1) (2025-08-18)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.48.0 ([#1130](https://github.com/adobe/spacecat-audit-worker/issues/1130)) ([5afc939](https://github.com/adobe/spacecat-audit-worker/commit/5afc939a7ae43f7cfb744615a51afe4ee28c8fe0))
+
+# [1.146.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.145.2...v1.146.0) (2025-08-18)
+
+
+### Bug Fixes
+
+* test failures ([#1131](https://github.com/adobe/spacecat-audit-worker/issues/1131)) ([30f9b20](https://github.com/adobe/spacecat-audit-worker/commit/30f9b209980f4580f7c8ead6d5d0316428b69660))
+
+
+### Features
+
+* disable geo faq opportunity for now ([#1120](https://github.com/adobe/spacecat-audit-worker/issues/1120)) ([0e8d06f](https://github.com/adobe/spacecat-audit-worker/commit/0e8d06f56e7671936f0df08916b48765c380e323))
+
+## [1.145.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.145.1...v1.145.2) (2025-08-16)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1129](https://github.com/adobe/spacecat-audit-worker/issues/1129)) ([796dc56](https://github.com/adobe/spacecat-audit-worker/commit/796dc56f2dac090a640ab632551d662ba9213fa2))
+
+## [1.145.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.145.0...v1.145.1) (2025-08-15)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1124](https://github.com/adobe/spacecat-audit-worker/issues/1124)) ([bf715ae](https://github.com/adobe/spacecat-audit-worker/commit/bf715ae5e3d76b17809a4881fe55694c19edeb53))
+
+# [1.145.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.4...v1.145.0) (2025-08-15)
+
+
+### Features
+
+* auto-suggest for CSP audit ([#984](https://github.com/adobe/spacecat-audit-worker/issues/984)) ([e080ea1](https://github.com/adobe/spacecat-audit-worker/commit/e080ea1d2cc0a14d08c6c56e9fd27254991da460))
+
+## [1.144.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.3...v1.144.4) (2025-08-14)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.46.0 ([#1121](https://github.com/adobe/spacecat-audit-worker/issues/1121)) ([0761466](https://github.com/adobe/spacecat-audit-worker/commit/076146652461a865e0bd6e348f381a4447ee8b52))
+
+## [1.144.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.2...v1.144.3) (2025-08-14)
+
+
+### Bug Fixes
+
+* broken internal links auto-suggest ([#1119](https://github.com/adobe/spacecat-audit-worker/issues/1119)) ([7aa4711](https://github.com/adobe/spacecat-audit-worker/commit/7aa47119b4c1d8b07d7038109c1698bf7bd291f9))
+
 ## [1.144.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.144.1...v1.144.2) (2025-08-14)
 
 

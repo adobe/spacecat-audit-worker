@@ -16,14 +16,11 @@
 import { getDateRanges, getStaticContent, isInteger } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import ExcelJS from 'exceljs';
-import { createFrom } from '@adobe/spacecat-helix-content-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { getPreviousWeekYear, getTemporalCondition } from '../utils/date-utils.js';
-import { saveExcelReport } from '../utils/report-uploader.js';
+import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../cdn-logs-report/constants/country-patterns.js';
-
-const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
 
 function extractCountryCode(url) {
   for (const { regex } of DEFAULT_COUNTRY_PATTERNS) {
@@ -111,12 +108,7 @@ export async function referralTrafficRunner(auditUrl, context, site, auditContex
   });
 
   // upload to sharepoint & publish via hlx admin api
-  const sharepointClient = await createFrom({
-    clientId: context.env.SHAREPOINT_CLIENT_ID,
-    clientSecret: context.env.SHAREPOINT_CLIENT_SECRET,
-    authority: context.env.SHAREPOINT_AUTHORITY,
-    domainId: context.env.SHAREPOINT_DOMAIN_ID,
-  }, { url: SHAREPOINT_URL, type: 'onedrive' });
+  const sharepointClient = await createLLMOSharepointClient(context);
 
   const workbook = await createWorkbook(results);
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();

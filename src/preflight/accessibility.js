@@ -17,6 +17,7 @@ import { saveIntermediateResults } from './utils.js';
 import { sleep } from '../support/utils.js';
 import { accessibilityOpportunitiesMap } from '../accessibility/utils/constants.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
+import { formatWcagRule } from '../accessibility/utils/generate-individual-opportunities.js';
 
 export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
 
@@ -221,7 +222,7 @@ export async function processAccessibilityOpportunities(context, auditContext) {
                         update_from: html || '',
                       })) || [],
                       failureSummary: violationData.failureSummary || '',
-                      wcagRule: violationData.successCriteriaNumber || '',
+                      wcagRule: formatWcagRule(violationData.successCriteriaTags?.[0] || ''),
                       description: violationData.description || '',
                       check: opportunityType,
                       type: checkType,
@@ -270,7 +271,7 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
     );
 
     timeExecutionBreakdown.push({
-      name: 'accessibility',
+      name: 'accessibility-processing',
       duration: `${accessibilityElapsed} seconds`,
       startTime: accessibilityStartTimestamp,
       endTime: accessibilityEndTimestamp,
@@ -325,8 +326,8 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
  * Accessibility preflight handler
  */
 export default async function accessibility(context, auditContext) {
-  const { checks, previewUrls } = auditContext;
-  const { log } = context;
+  const { checks, previewUrls, timeExecutionBreakdown } = auditContext;
+  const { log, site, job } = context;
 
   if (!checks || checks.includes(PREFLIGHT_ACCESSIBILITY)) {
     // Check if we have URLs to process
@@ -334,6 +335,10 @@ export default async function accessibility(context, auditContext) {
       log.warn('[preflight-audit] No URLs to process for accessibility audit, skipping');
       return;
     }
+
+    // Start timing for the entire accessibility scraping process (sending to scraper + polling)
+    const scrapeStartTime = Date.now();
+    const scrapeStartTimestamp = new Date().toISOString();
 
     // Step 1: Send URLs to content scraper for accessibility-specific processing
     await scrapeAccessibilityData(context, auditContext);
@@ -351,8 +356,8 @@ export default async function accessibility(context, auditContext) {
     log.debug(`[preflight-audit] Looking for data in path: accessibility-preflight/${siteId}/`);
 
     const maxWaitTime = 10 * 60 * 1000;
-    const pollInterval = 30 * 1000;
-    const startTime = Date.now();
+    // 1 second poll interval
+    const pollInterval = 1 * 1000;
 
     // Generate expected filenames based on preview URLs
     const expectedFiles = previewUrls.map((url) => generateAccessibilityFilename(url));
@@ -361,7 +366,7 @@ export default async function accessibility(context, auditContext) {
 
     // Recursive polling function to check for accessibility files
     const pollForAccessibilityFiles = async () => {
-      if (Date.now() - startTime >= maxWaitTime) {
+      if (Date.now() - scrapeStartTime >= maxWaitTime) {
         log.info('[preflight-audit] Maximum wait time reached, stopping polling');
         return;
       }
@@ -416,6 +421,20 @@ export default async function accessibility(context, auditContext) {
 
     // Start the polling process
     await pollForAccessibilityFiles();
+
+    // End timing for the entire scraping process (sending to scraper + polling)
+    const scrapeEndTime = Date.now();
+    const scrapeEndTimestamp = new Date().toISOString();
+    const scrapeElapsed = ((scrapeEndTime - scrapeStartTime) / 1000).toFixed(2);
+
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job?.getId()}, step: ${auditContext.step}. Accessibility scraping process completed in ${scrapeElapsed} seconds`);
+
+    timeExecutionBreakdown.push({
+      name: 'accessibility-scraping',
+      duration: `${scrapeElapsed} seconds`,
+      startTime: scrapeStartTimestamp,
+      endTime: scrapeEndTimestamp,
+    });
 
     log.info('[preflight-audit] Polling completed, proceeding to process accessibility data');
 
