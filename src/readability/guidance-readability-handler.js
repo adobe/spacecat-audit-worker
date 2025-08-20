@@ -12,7 +12,7 @@
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
-import { addReadabilitySuggestions } from './opportunity-handler.js';
+import { addReadabilitySuggestions } from './suggestions-opportunity-handler.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.READABILITY;
 
@@ -60,24 +60,24 @@ export default async function handler(message, context) {
 
   log.info(`[${AUDIT_TYPE}]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
 
-  let readabilityOppty;
+  let readabilitySuggestionsOppty;
   try {
     const opportunities = await Opportunity.allBySiteId(siteId);
-    readabilityOppty = opportunities.find(
-      (oppty) => oppty.getAuditId() === auditId && oppty.getData()?.subType === 'readability',
+    readabilitySuggestionsOppty = opportunities.find(
+      (oppty) => oppty.getType() === 'readability-suggestions' && oppty.getAuditId() === auditId,
     );
   } catch (e) {
     log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
     throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
   }
 
-  if (!readabilityOppty) {
-    const errorMsg = `[${AUDIT_TYPE}]: No existing opportunity found for siteId ${siteId}. Opportunity should be created by main handler before processing suggestions.`;
+  if (!readabilitySuggestionsOppty) {
+    const errorMsg = `[${AUDIT_TYPE}]: No existing readability-suggestions opportunity found for siteId ${siteId}, auditId ${auditId}. Opportunity should be created by main handler before processing suggestions.`;
     log.error(errorMsg);
     throw new Error(errorMsg);
   }
 
-  const existingData = readabilityOppty.getData() || {};
+  const existingData = readabilitySuggestionsOppty.getData() || {};
   const processedSuggestionIds = new Set(existingData.processedSuggestionIds || []);
   if (processedSuggestionIds.has(messageId)) {
     log.info(`[${AUDIT_TYPE}]: Suggestions with id ${messageId} already processed. Skipping processing.`);
@@ -120,7 +120,7 @@ export default async function handler(message, context) {
     ...existingData,
     mystiqueResponsesReceived: (existingData.mystiqueResponsesReceived || 0) + 1,
     mystiqueResponsesExpected: existingData.mystiqueResponsesExpected || 0,
-    totalReadabilityIssues: mappedSuggestions.length,
+    totalReadabilityImprovements: mappedSuggestions.length,
     processedSuggestionIds: [...processedSuggestionIds],
     lastMystiqueResponse: new Date().toISOString(),
   };
@@ -129,10 +129,10 @@ export default async function handler(message, context) {
 
   // Update opportunity with accumulated data
   try {
-    readabilityOppty.setAuditId(auditId);
-    readabilityOppty.setData(updatedOpportunityData);
-    readabilityOppty.setUpdatedBy('system');
-    await readabilityOppty.save();
+    readabilitySuggestionsOppty.setAuditId(auditId);
+    readabilitySuggestionsOppty.setData(updatedOpportunityData);
+    readabilitySuggestionsOppty.setUpdatedBy('system');
+    await readabilitySuggestionsOppty.save();
     log.info(`[${AUDIT_TYPE}]: Updated opportunity with accumulated data`);
   } catch (e) {
     log.error(`[${AUDIT_TYPE}]: Updating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
@@ -142,9 +142,9 @@ export default async function handler(message, context) {
   // Process suggestions from Mystique
   if (mappedSuggestions.length > 0) {
     await addReadabilitySuggestions({
-      opportunity: readabilityOppty,
+      opportunity: readabilitySuggestionsOppty,
       newSuggestionDTOs: mappedSuggestions.map((suggestion) => ({
-        opportunityId: readabilityOppty.getId(),
+        opportunityId: readabilitySuggestionsOppty.getId(),
         type: SuggestionModel.TYPES.CONTENT_UPDATE,
         data: { recommendations: [suggestion] },
         rank: 1,

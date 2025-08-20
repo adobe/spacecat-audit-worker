@@ -61,6 +61,7 @@ import detectPageIntent from './page-intent/handler.detect.js';
 import updatePageIntent from './page-intent/handler.update.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
 import readabilityGuidance from './readability/guidance-readability-handler.js';
+import readabilitySuggestions from './readability/suggestions-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
 import hreflang from './hreflang/handler.js';
@@ -104,6 +105,7 @@ const HANDLERS = {
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
   'guidance:readability': readabilityGuidance,
+  'readability-suggestions': readabilitySuggestions,
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
