@@ -60,7 +60,7 @@ import analyticsReport from './analytics-report/handler.js';
 import detectPageIntent from './page-intent/handler.detect.js';
 import updatePageIntent from './page-intent/handler.update.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
-import readabilityGuidance from './preflight/guidance-readability-handler.js';
+import readabilityGuidance from './readability/guidance-readability-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
 import hreflang from './hreflang/handler.js';

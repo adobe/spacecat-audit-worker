@@ -13,9 +13,9 @@
 import rs from 'text-readability';
 import { JSDOM } from 'jsdom';
 import { franc } from 'franc-min';
-import { saveIntermediateResults } from './utils.js';
+import { saveIntermediateResults } from '../preflight/utils.js';
 
-import { sendReadabilityToMystique } from './readability-async-mystique.js';
+import { sendReadabilityToMystique } from './async-mystique.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 

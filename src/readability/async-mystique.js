@@ -10,6 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
+import { DATA_SOURCES } from '../common/constants.js';
+import { READABILITY_GUIDANCE_TYPE, READABILITY_OBSERVATION, TARGET_FLESCH_SCORE } from './constants.js';
+
 /**
  * Asynchronous Mystique integration for readability audit
  * Similar to how alt-text and accessibility audits work:
@@ -50,56 +53,79 @@ export async function sendReadabilityToMystique(
   try {
     const site = await dataAccess.Site.findById(siteId);
 
-    // Create opportunity to track Mystique responses (like alt-text does)
+    // Create or update opportunity to track Mystique responses (like alt-text does)
     const { Opportunity } = dataAccess;
 
-    const opportunityData = {
-      siteId,
-      auditId: jobId,
-      type: 'generic-opportunity',
-      origin: 'AUTOMATION',
-      title: 'Readability Improvement Suggestions',
-      description: 'AI-generated suggestions to improve content readability using advanced text analysis',
-      status: 'NEW',
-      runbook: auditUrl,
-      tags: ['Readability', 'Content', 'SEO'],
-      data: {
-        subType: 'readability',
-        mystiqueResponsesReceived: 0,
+    // Check if opportunity already exists
+    const existingOpportunities = await Opportunity.allBySiteId(siteId);
+    let opportunity = existingOpportunities.find(
+      (oppty) => oppty.getAuditId() === jobId && oppty.getData()?.subType === 'readability',
+    );
+
+    if (opportunity) {
+      // Update existing opportunity
+      const existingData = opportunity.getData() || {};
+      const updatedData = {
+        ...existingData,
+        mystiqueResponsesReceived: 0, // Reset for new batch
         mystiqueResponsesExpected: readabilityIssues.length,
         totalReadabilityIssues: readabilityIssues.length,
-        processedSuggestionIds: [],
-        dataSources: ['CONTENT_ANALYSIS', 'AI_PROCESSING'],
-      },
-    };
+        processedSuggestionIds: existingData.processedSuggestionIds || [],
+        lastMystiqueRequest: new Date().toISOString(),
+      };
+      opportunity.setData(updatedData);
+      await opportunity.save();
+      log.info(`[readability-async] Updated existing opportunity with ID: ${opportunity.getId()}`);
+    } else {
+      // Create new opportunity
+      const opportunityData = {
+        siteId,
+        auditId: jobId,
+        type: 'generic-opportunity',
+        origin: 'AUTOMATION',
+        title: 'Readability Improvement Suggestions',
+        description: 'AI-generated suggestions to improve content readability using advanced text analysis',
+        status: 'NEW',
+        runbook: auditUrl,
+        tags: ['Readability', 'Content', 'SEO'],
+        data: {
+          subType: 'readability',
+          mystiqueResponsesReceived: 0,
+          mystiqueResponsesExpected: readabilityIssues.length,
+          totalReadabilityIssues: readabilityIssues.length,
+          processedSuggestionIds: [],
+          dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.PAGE],
+          lastMystiqueRequest: new Date().toISOString(),
+        },
+      };
 
-    let opportunity;
-    try {
-      opportunity = await Opportunity.create(opportunityData);
-      log.info(`[readability-async] Created opportunity with ID: ${opportunity.getId()}`);
-    } catch (createError) {
-      log.error(`[readability-async] Failed to create opportunity: ${createError.message}`);
-      throw createError;
+      try {
+        opportunity = await Opportunity.create(opportunityData);
+        log.info(`[readability-async] Created opportunity with ID: ${opportunity.getId()}`);
+      } catch (createError) {
+        log.error(`[readability-async] Failed to create opportunity: ${createError.message}`);
+        throw createError;
+      }
     }
 
     // Send each readability issue as a separate message to Mystique
     const messagePromises = readabilityIssues.map((issue, index) => {
       const mystiqueMessage = {
-        type: 'guidance:readability',
+        type: READABILITY_GUIDANCE_TYPE,
         siteId,
         auditId: jobId,
         deliveryType: site.getDeliveryType(),
         time: new Date().toISOString(),
         url: auditUrl,
-        observation: 'Content readability needs improvement',
+        observation: READABILITY_OBSERVATION,
         data: {
           opportunityId: opportunity.getId(),
           original_paragraph: issue.textContent,
-          target_flesch_score: 30.0, // Target for improvement
+          target_flesch_score: TARGET_FLESCH_SCORE,
           current_flesch_score: issue.fleschReadingEase,
           pageUrl: issue.pageUrl,
           selector: issue.selector,
-          issue_id: `readability-${Date.now()}-${Math.random()}`,
+          issue_id: `readability-${Date.now()}-${index}`,
         },
       };
 
