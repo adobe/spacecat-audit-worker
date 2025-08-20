@@ -21,6 +21,7 @@ import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants
 import { getAuditData } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
+import { saveMystiqueValidationMetricsToS3 } from './scrape-utils.js';
 
 /**
  * Creates a Mystique message object
@@ -790,7 +791,6 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
         validRemediations.push(remediation);
       }
     }
-
     // Process only valid remediations
     const processingPromises = [];
 
@@ -872,6 +872,41 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
     }
 
     log.info(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Successfully processed ${successfulSaves} remediations`);
+
+    // Save complete Mystique validation metrics to S3 (sent + received)
+    try {
+      // Extract suggestion IDs from valid remediations
+      const receivedSuggestionIds = validRemediations
+        .map((remediation) => remediation.suggestionId);
+
+      // Get all suggestions for this opportunity to determine what was sent to Mystique
+      const allSuggestions = await opportunity.getSuggestions();
+      const sentPayloads = processSuggestionsForMystique(allSuggestions);
+
+      // Extract all suggestion IDs from all issuesList arrays in all messages
+      const allSentSuggestionIds = sentPayloads
+        .flatMap((payload) => payload.issuesList)
+        .map((issue) => issue.suggestionId);
+
+      const sentCount = allSentSuggestionIds.length;
+      const receivedCount = receivedSuggestionIds.length;
+
+      await saveMystiqueValidationMetricsToS3(
+        {
+          pageUrl,
+          sentCount,
+          receivedCount,
+        },
+        context,
+        opportunityId,
+        opportunity.getType(),
+        siteId,
+        auditId,
+      );
+      log.info(`[A11yRemediationGuidance] Saved complete Mystique validation metrics for opportunity ${opportunityId}, page ${pageUrl}: sent=${sentCount}, received=${receivedCount}`);
+    } catch (error) {
+      log.error(`[A11yRemediationGuidance] Failed to save Mystique validation metrics for opportunity ${opportunityId}, page ${pageUrl}: ${error.message}`);
+    }
 
     return {
       success: true,
