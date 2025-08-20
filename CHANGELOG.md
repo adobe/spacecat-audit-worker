@@ -1,3 +1,10 @@
+# [1.151.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.150.0...v1.151.0) (2025-08-20)
+
+
+### Features
+
+* geo-brand-presence upload xlsx to elmo-ui ([#1140](https://github.com/adobe/spacecat-audit-worker/issues/1140)) ([19babf1](https://github.com/adobe/spacecat-audit-worker/commit/19babf1c305a35df8e83a51b54d6d7630f8d1455))
+
 # [1.150.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.149.1...v1.150.0) (2025-08-19)
 
 
