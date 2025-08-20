@@ -20,9 +20,10 @@ import nock from 'nock';
 import esmock from 'esmock';
 import {
   getTopPagesForSiteId, validateCanonicalTag, validateCanonicalFormat,
-  validateCanonicalRecursively, canonicalAuditRunner, CANONICAL_CHECKS,
+  validateCanonicalRecursively, canonicalAuditRunner,
   generateCanonicalSuggestion, generateSuggestions, opportunityAndSuggestions,
 } from '../../src/canonical/handler.js';
+import { CANONICAL_CHECKS } from '../../src/canonical/constants.js';
 import { createOpportunityData } from '../../src/canonical/opportunity-data-mapper.js';
 
 use(sinonChai);
