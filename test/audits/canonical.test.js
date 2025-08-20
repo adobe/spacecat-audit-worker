@@ -214,6 +214,50 @@ describe('Canonical URL Tests', () => {
       });
       expect(log.info).to.have.been.calledWith('Canonical tag is not in the head section');
     });
+
+    it('should follow redirects and validate canonical tag on the final destination page', async () => {
+      const originalUrl = 'http://example.com/old';
+      const finalUrl = 'http://example.com/new';
+      const finalHtml = `<html lang="en"><head><link rel="canonical" href="${finalUrl}"><title>test</title></head><body></body></html>`;
+
+      nock('http://example.com')
+        .get('/old')
+        .reply(301, undefined, { Location: finalUrl });
+
+      nock('http://example.com')
+        .get('/new')
+        .reply(200, finalHtml);
+
+      const result = await validateCanonicalTag(originalUrl, log);
+
+      expect(result.canonicalUrl).to.equal(finalUrl);
+      expect(result.checks).to.deep.include({
+        check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+        success: true,
+      });
+    });
+
+    it('should resolve relative canonical against the final destination after redirect', async () => {
+      const originalUrl = 'https://example.com/a';
+      const finalUrl = 'https://example.com/b';
+      const html = '<html lang="en"><head><link rel="canonical" href="/b"><title>test</title></head><body></body></html>';
+
+      nock('https://example.com')
+        .get('/a')
+        .reply(301, undefined, { Location: finalUrl });
+
+      nock('https://example.com')
+        .get('/b')
+        .reply(200, html);
+
+      const result = await validateCanonicalTag(originalUrl, log);
+
+      expect(result.canonicalUrl).to.equal(finalUrl);
+      expect(result.checks).to.deep.include({
+        check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+        success: true,
+      });
+    });
   });
 
   describe('validateCanonicalUrlFormat', () => {

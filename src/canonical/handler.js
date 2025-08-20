@@ -174,6 +174,8 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
   try {
     log.info(`Fetching URL: ${url}`);
     const response = await fetch(url, options);
+    // finalUrl is the URL after any redirects
+    const finalUrl = response.url;
     const html = await response.text();
     const dom = new JSDOM(html);
     const { document } = dom.window;
@@ -220,7 +222,7 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
         } else {
           try {
             canonicalUrl = href.startsWith('/')
-              ? new URL(href, url).toString()
+              ? new URL(href, finalUrl).toString()
               : new URL(href).toString();
 
             if (!href.endsWith('/') && canonicalUrl.endsWith('/')) {
@@ -232,8 +234,12 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
               success: true,
             });
             const canonicalPath = new URL(canonicalUrl).pathname;
-            const urlPath = new URL(url).pathname;
-            if ((isPreview && canonicalPath === urlPath) || canonicalUrl === url) {
+            const finalPath = new URL(finalUrl).pathname;
+            const normalize = (u) => (typeof u === 'string' && u.endsWith('/') ? u.slice(0, -1) : u);
+            const normalizedCanonical = normalize(canonicalUrl);
+            const normalizedFinal = normalize(finalUrl);
+            if ((isPreview && canonicalPath === finalPath)
+                || normalizedCanonical === normalizedFinal) {
               checks.push({
                 check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
                 success: true,
@@ -274,7 +280,6 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
       }
     }
 
-    log.info(`Checks: ${JSON.stringify(checks)}`);
     return { canonicalUrl, checks };
   } catch (error) {
     const errorMessage = `Error validating canonical tag for ${url}: ${error.message}`;
