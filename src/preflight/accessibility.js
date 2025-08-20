@@ -222,7 +222,7 @@ export async function processAccessibilityOpportunities(context, auditContext) {
                         update_from: html || '',
                       })) || [],
                       failureSummary: violationData.failureSummary || '',
-                      wcagRule: formatWcagRule(violationData.successCriteriaNumber || ''),
+                      wcagRule: formatWcagRule(violationData.successCriteriaTags?.[0] || ''),
                       description: violationData.description || '',
                       check: opportunityType,
                       type: checkType,
