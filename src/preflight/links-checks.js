@@ -13,6 +13,7 @@
 import { JSDOM } from 'jsdom';
 import { stripTrailingSlash, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
+const LINK_TIMEOUT = 3000;
 /**
  * Helper function to check if a link is broken
  * @param {string} href - The URL to check
@@ -42,7 +43,10 @@ async function checkLinkStatus(href, pageUrl, context, options = {
   }
 
   try {
-    const res = await fetch(href, fetchOptions);
+    const res = await fetch(href, {
+      ...fetchOptions,
+      timeout: LINK_TIMEOUT,
+    });
 
     if (res.status >= 400) {
       const linkType = isInternal ? 'internal' : 'external';
@@ -58,7 +62,10 @@ async function checkLinkStatus(href, pageUrl, context, options = {
     fetchOptions.method = 'GET';
     let res;
     try {
-      res = await fetch(href, fetchOptions);
+      res = await fetch(href, {
+        ...fetchOptions,
+        timeout: LINK_TIMEOUT,
+      });
 
       if (res.status >= 400) {
         const linkType = isInternal ? 'internal' : 'external';
