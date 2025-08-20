@@ -43,29 +43,22 @@ describe('isPreviewPage', () => {
 });
 
 describe('parseCustomUrls Function', () => {
-  const domain = 'https://example.com';
-
   it('should return null for empty or invalid input', () => {
-    expect(parseCustomUrls(null, domain)).to.be.null;
-    expect(parseCustomUrls(undefined, domain)).to.be.null;
-    expect(parseCustomUrls([], domain)).to.be.null;
-    expect(parseCustomUrls([''], domain)).to.be.null;
-    expect(parseCustomUrls(['   '], domain)).to.be.null;
-    expect(parseCustomUrls(['', '  ', ''], domain)).to.be.null;
+    expect(parseCustomUrls(null)).to.be.null;
+    expect(parseCustomUrls(undefined)).to.be.null;
+    expect(parseCustomUrls('')).to.be.null;
+    expect(parseCustomUrls('   ')).to.be.null;
+    expect(parseCustomUrls(123)).to.be.null;
+    expect(parseCustomUrls([])).to.be.null;
   });
 
-  it('should handle single relative URL', () => {
-    const result = parseCustomUrls(['/page1'], domain);
+  it('should handle single URL', () => {
+    const result = parseCustomUrls('https://example.com/page1');
     expect(result).to.deep.equal(['https://example.com/page1']);
   });
 
-  it('should handle multiple relative URLs', () => {
-    const result = parseCustomUrls(['/page1', '/page2'], domain);
-    expect(result).to.deep.equal(['https://example.com/page1', 'https://example.com/page2']);
-  });
-
   it('should handle comma-separated URLs', () => {
-    const result = parseCustomUrls(['/page1,/page2,/page3'], domain);
+    const result = parseCustomUrls('https://example.com/page1,https://example.com/page2,https://example.com/page3');
     expect(result).to.deep.equal([
       'https://example.com/page1',
       'https://example.com/page2',
@@ -73,81 +66,27 @@ describe('parseCustomUrls Function', () => {
     ]);
   });
 
-  it('should handle mixed relative and full URLs', () => {
-    const result = parseCustomUrls(['/page1', 'https://example.com/page2'], domain);
-    expect(result).to.deep.equal(['https://example.com/page1', 'https://example.com/page2']);
-  });
-
-  it('should handle URLs without leading slash', () => {
-    const result = parseCustomUrls(['page1', 'page2'], domain);
+  it('should trim whitespace from URLs', () => {
+    const result = parseCustomUrls(' https://example.com/page1 ,  https://example.com/page2  ');
     expect(result).to.deep.equal(['https://example.com/page1', 'https://example.com/page2']);
   });
 
   it('should remove duplicates', () => {
-    const result = parseCustomUrls(['/page1', '/page1', '/page2'], domain);
+    const result = parseCustomUrls('https://example.com/page1,https://example.com/page1,https://example.com/page2');
     expect(result).to.deep.equal(['https://example.com/page1', 'https://example.com/page2']);
-  });
-
-  it('should remove duplicates after normalization', () => {
-    const result = parseCustomUrls(['/page1', 'page1', 'https://example.com/page1'], domain);
-    expect(result).to.deep.equal(['https://example.com/page1']);
-  });
-
-  it('should trim whitespace', () => {
-    const result = parseCustomUrls([' /page1 ', '  /page2  '], domain);
-    expect(result).to.deep.equal(['https://example.com/page1', 'https://example.com/page2']);
-  });
-
-  it('should handle domain with trailing slash', () => {
-    const result = parseCustomUrls(['/page1'], 'https://example.com/');
-    expect(result).to.deep.equal(['https://example.com/page1']);
-  });
-
-  it('should preserve full URLs from different domains', () => {
-    const result = parseCustomUrls(['https://other.com/page1', '/page2'], domain);
-    expect(result).to.deep.equal(['https://other.com/page1', 'https://example.com/page2']);
-  });
-
-  it('should handle HTTP URLs', () => {
-    const result = parseCustomUrls(['http://other.com/page1', '/page2'], domain);
-    expect(result).to.deep.equal(['http://other.com/page1', 'https://example.com/page2']);
-  });
-
-  it('should handle complex paths', () => {
-    const result = parseCustomUrls(['/products/category/item', '/blog/2024/article'], domain);
-    expect(result).to.deep.equal([
-      'https://example.com/products/category/item',
-      'https://example.com/blog/2024/article',
-    ]);
-  });
-
-  it('should return relative URLs unchanged when no domain provided', () => {
-    const result = parseCustomUrls(['/page1', '/page2'], null);
-    expect(result).to.deep.equal(['/page1', '/page2']);
   });
 
   it('should handle empty entries in comma-separated values', () => {
-    const result = parseCustomUrls(['/page1,,/page2, ,/page3'], domain);
+    const result = parseCustomUrls('https://example.com/page1,,https://example.com/page2, ,https://example.com/page3');
     expect(result).to.deep.equal([
       'https://example.com/page1',
       'https://example.com/page2',
       'https://example.com/page3',
-    ]);
-  });
-
-  it('should handle mixed comma-separated and array entries', () => {
-    const result = parseCustomUrls(['/page1,/page2', '/page3', 'page4,page5'], domain);
-    expect(result).to.deep.equal([
-      'https://example.com/page1',
-      'https://example.com/page2',
-      'https://example.com/page3',
-      'https://example.com/page4',
-      'https://example.com/page5',
     ]);
   });
 
   it('should handle URLs with query parameters', () => {
-    const result = parseCustomUrls(['/page1?param=value', '/page2?a=1&b=2'], domain);
+    const result = parseCustomUrls('https://example.com/page1?param=value,https://example.com/page2?a=1&b=2');
     expect(result).to.deep.equal([
       'https://example.com/page1?param=value',
       'https://example.com/page2?a=1&b=2',
@@ -155,15 +94,24 @@ describe('parseCustomUrls Function', () => {
   });
 
   it('should handle URLs with fragments', () => {
-    const result = parseCustomUrls(['/page1#section', '/page2#top'], domain);
+    const result = parseCustomUrls('https://example.com/page1#section,https://example.com/page2#top');
     expect(result).to.deep.equal([
       'https://example.com/page1#section',
       'https://example.com/page2#top',
     ]);
   });
 
-  it('should handle not-a-string input that passes array check', () => {
-    const result = parseCustomUrls('not-an-array', domain);
+  it('should handle mixed URL formats', () => {
+    const result = parseCustomUrls('https://example.com/page1,http://other.com/page2,https://third.com/page3');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'http://other.com/page2',
+      'https://third.com/page3',
+    ]);
+  });
+
+  it('should return null for string with only empty values', () => {
+    const result = parseCustomUrls(',,, ,  ,');
     expect(result).to.be.null;
   });
 });
