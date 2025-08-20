@@ -11,7 +11,13 @@
  */
 
 export function removeTrailingSlash(url) {
-  return url.endsWith('/') ? url.slice(0, -1) : url;
+  try {
+    const urlObj = new URL(url);
+    return `${urlObj.protocol}//${urlObj.hostname}`;
+  } catch {
+    // If URL parsing fails, just remove trailing slash
+    return url.endsWith('/') ? url.slice(0, -1) : url;
+  }
 }
 
 const issueRankings = {

@@ -746,6 +746,66 @@ describe('Meta Tags', () => {
         expect(opportunity.save).to.be.calledOnce;
         expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
+
+      it('should handle malformed URLs in audit data', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        const auditDataWithMalformedUrl = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'malformed-url.com/path/', // Malformed URL without protocol
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithMalformedUrl, context);
+        expect(opportunity.save).to.be.calledOnce;
+
+        // Verify URL construction falls back to removeTrailingSlash
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        expect(suggestions[0].data.url).to.equal('malformed-url.com/path/page1');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+
+      it('should handle URLs with port numbers', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        const auditDataWithPort = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'https://example.com:8080/path/',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithPort, context);
+        expect(opportunity.save).to.be.calledOnce;
+
+        // Verify URL construction excludes port number
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        expect(suggestions[0].data.url).to.equal('https://example.com/page1');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+
+      it('should handle URLs with query parameters', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        const auditDataWithQuery = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'https://example.com/path/?param=value',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithQuery, context);
+        expect(opportunity.save).to.be.calledOnce;
+
+        // Verify URL construction excludes query parameters
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        expect(suggestions[0].data.url).to.equal('https://example.com/page1');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
     });
 
     describe('runAuditAndGenerateSuggestions', () => {
