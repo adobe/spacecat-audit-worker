@@ -42,37 +42,19 @@ export function getCountryCodeFromLang(lang, defaultCountry = 'us') {
 }
 
 /**
- * Parses additional data to extract and normalize URLs, handling comma-separated values
- * @param {Array|null} additionalData - Raw additional data from SQS (array of strings)
- * @param {string} domain - The domain to use for normalizing relative URLs
- * @returns {Array|null} Array of normalized URLs or null
+ * Parses comma-separated URLs from Slack command data
+ * @param {string} data - Comma-separated URLs string
+ * @returns {Array|null} Array of unique URLs or null
  */
-export function parseCustomUrls(additionalData, domain = null) {
-  if (!additionalData || !Array.isArray(additionalData) || additionalData.length === 0) {
+export function parseCustomUrls(data) {
+  if (!data || typeof data !== 'string') {
     return null;
   }
 
-  // Join all data and split by commas to handle comma-separated URLs
-  const allUrls = additionalData
-    .join(',')
+  const urls = data
     .split(',')
     .map((url) => url.trim())
-    .filter((url) => url.length > 0)
-    .map((url) => {
-      // Normalize relative paths to full URLs for consistency with RUM data
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        if (domain) {
-          // Clean domain (remove trailing slash) and ensure path starts with /
-          const cleanDomain = domain.replace(/\/$/, '');
-          const path = url.startsWith('/') ? url : `/${url}`;
-          return `${cleanDomain}${path}`;
-        }
-        // If no domain provided, return as-is (for backward compatibility)
-        return url;
-      }
-      return url;
-    })
-    .filter((url, index, array) => array.indexOf(url) === index); // Remove duplicates
+    .filter((url) => url.length > 0);
 
-  return allUrls.length > 0 ? allUrls : null;
+  return urls.length > 0 ? [...new Set(urls)] : null;
 }

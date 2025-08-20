@@ -13,6 +13,7 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { getCountryCodeFromLang, parseCustomUrls } from '../utils/url-utils.js';
@@ -75,7 +76,7 @@ export async function generateOpportunityAndSuggestions(context) {
   }));
 
   if (!messages) {
-    log.info('No experimentation opportunities found or audit result is undefined.');
+    log.info(`No experimentation opportunities found or audit result is undefined. Site ID: ${site.getId()}, Audit ID: ${audit.getId()}`);
     return;
   }
 
@@ -90,25 +91,6 @@ export function getHighOrganicLowCtrOpportunity(experimentationOpportunities) {
   return experimentationOpportunities?.filter(
     (oppty) => oppty.type === HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
   );
-}
-
-/**
- * Maps URLs to opportunity data format for consistency
- * @param {string[]} urls - Array of URLs to normalize
- * @returns {Array} Array of opportunity objects with consistent structure
- */
-function mapToOpportunities(urls) {
-  return urls.map((url) => ({
-    type: HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
-    page: url,
-    screenshot: '',
-    trackedPageKPIName: 'Click Through Rate',
-    trackedKPISiteAverage: '',
-    trackedPageKPIValue: '',
-    pageViews: null,
-    samples: null,
-    metrics: null,
-  }));
 }
 
 /**
@@ -132,10 +114,10 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
   processRageClickOpportunities(experimentationOpportunities);
 
   // Handle custom URLs if provided via audit context
-  const additionalData = context.auditContext?.additionalData;
-  const customUrls = additionalData ? parseCustomUrls(additionalData, auditUrl) : null;
+  const { data } = context;
+  const customUrls = data ? parseCustomUrls(data) : null;
 
-  if (customUrls && customUrls.length > 0) {
+  if (isNonEmptyArray(customUrls)) {
     log.info(`Processing ${customUrls.length} custom URLs for experimentation opportunities`);
 
     const highOrganicLowCtrOpportunities = getHighOrganicLowCtrOpportunity(
@@ -155,15 +137,19 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
     );
 
     const customUrlsWithoutRumData = [...customUrlSet];
-    const opptiesWithoutRumData = mapToOpportunities(customUrlsWithoutRumData);
+    // For URLs without RUM data, create simple opportunity objects for consistency
+    const opptiesWithoutRumData = customUrlsWithoutRumData.map((url) => ({
+      type: HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
+      page: url,
+    }));
     const finalExperimentationOpportunities = [...opptiesWithRumData, ...opptiesWithoutRumData];
 
-    if (opptiesWithRumData.length > 0) {
+    if (isNonEmptyArray(opptiesWithRumData)) {
       const urlsWithRUMData = opptiesWithRumData.map((oppty) => oppty.page);
       log.info(`Found real RUM data for ${opptiesWithRumData.length} high-organic-low-ctr URLs: ${urlsWithRUMData.join(', ')}`);
     }
-    if (opptiesWithoutRumData.length > 0) {
-      log.info(`No RUM data found for ${opptiesWithoutRumData.length} URLs: ${customUrlsWithoutRumData.join(', ')} - returning empty values`);
+    if (isNonEmptyArray(opptiesWithoutRumData)) {
+      log.info(`No RUM data found for ${opptiesWithoutRumData.length} URLs: ${customUrlsWithoutRumData.join(', ')} - using URLs without performance metrics`);
     }
 
     return {
