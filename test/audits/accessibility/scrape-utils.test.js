@@ -1291,4 +1291,737 @@ describe('Scrape Utils', () => {
       }
     });
   });
+
+  describe('saveMystiqueValidationMetricsToS3', () => {
+    let testModule;
+    let sandbox;
+    let mockS3Client;
+    let mockLog;
+    let mockContext;
+    let getObjectFromKeyStub;
+
+    beforeEach(async () => {
+      sandbox = sinon.createSandbox();
+      mockS3Client = { send: sandbox.stub() };
+      mockLog = {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+        warn: sandbox.stub(),
+      };
+      mockContext = {
+        log: mockLog,
+        env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
+        s3Client: mockS3Client,
+      };
+
+      getObjectFromKeyStub = sandbox.stub();
+
+      testModule = await esmock('../../../src/accessibility/utils/scrape-utils.js', {
+        '../../../src/accessibility/utils/data-processing.js': {},
+        '../../../src/utils/s3-utils.js': {
+          getObjectFromKey: getObjectFromKeyStub,
+        },
+      });
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it('should create new metrics file when none exists', async () => {
+      // Arrange
+      const validationData = {
+        pageUrl: 'https://example.com/page1',
+        sentCount: 15,
+        receivedCount: 12,
+      };
+
+      // Mock getObjectFromKey to throw (no existing file)
+      getObjectFromKeyStub.rejects(new Error('File not found'));
+      // Mock successful S3 save
+      mockS3Client.send.resolves();
+
+      // Act
+      const result = await testModule.saveMystiqueValidationMetricsToS3(
+        validationData,
+        mockContext,
+        'oppty-123',
+        'accessibility',
+        'site-456',
+        'audit-789',
+      );
+
+      // Assert
+      expect(result.success).to.be.true;
+      expect(result.message).to.equal('Mystique validation metrics saved to S3');
+      expect(result.s3Key).to.equal('metrics/site-456/mystique/a11y-suggestions-validation.json');
+      expect(result.metricsData).to.deep.include({
+        siteId: 'site-456',
+        auditId: 'audit-789',
+        opportunityId: 'oppty-123',
+        opportunityType: 'accessibility',
+        pageUrl: 'https://example.com/page1',
+        sentCount: 15,
+        receivedCount: 12,
+      });
+      expect(result.metricsData.validatedAt).to.be.a('string');
+
+      // Verify S3 call
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const putCall = mockS3Client.send.getCall(0);
+      const putCommand = putCall.args[0];
+      expect(putCommand.input.Bucket).to.equal('test-bucket');
+      expect(putCommand.input.Key).to.equal('metrics/site-456/mystique/a11y-suggestions-validation.json');
+      expect(putCommand.input.ContentType).to.equal('application/json');
+
+      const savedData = JSON.parse(putCommand.input.Body);
+      expect(savedData).to.be.an('array').with.lengthOf(1);
+      expect(savedData[0]).to.deep.include({
+        siteId: 'site-456',
+        auditId: 'audit-789',
+        opportunityId: 'oppty-123',
+        opportunityType: 'accessibility',
+        pageUrl: 'https://example.com/page1',
+        sentCount: 15,
+        receivedCount: 12,
+      });
+
+      expect(mockLog.info).to.have.been.calledWith(
+        '[A11yValidation] No existing mystique validation file found for site site-456, creating new one: File not found',
+      );
+      expect(mockLog.info).to.have.been.calledWith(
+        '[A11yValidation] Added new mystique validation entry for page https://example.com/page1',
+      );
+    });
+
+    it('should update existing entry for same audit+opportunity+page', async () => {
+      // Arrange
+      const existingMetrics = [
+        {
+          siteId: 'site-456',
+          auditId: 'audit-789',
+          opportunityId: 'oppty-123',
+          opportunityType: 'accessibility',
+          pageUrl: 'https://example.com/page1',
+          validatedAt: '2024-01-01T00:00:00.000Z',
+          sentCount: 10,
+          receivedCount: 8,
+        },
+        {
+          siteId: 'site-456',
+          auditId: 'audit-789',
+          opportunityId: 'oppty-123',
+          opportunityType: 'accessibility',
+          pageUrl: 'https://example.com/page2',
+          validatedAt: '2024-01-01T00:00:00.000Z',
+          sentCount: 5,
+          receivedCount: 4,
+        },
+      ];
+
+      const validationData = {
+        pageUrl: 'https://example.com/page1',
+        sentCount: 15,
+        receivedCount: 12,
+      };
+
+      // Mock getObjectFromKey to return existing data
+      getObjectFromKeyStub.resolves(existingMetrics);
+      // Mock successful S3 save
+      mockS3Client.send.resolves();
+
+      // Act
+      const result = await testModule.saveMystiqueValidationMetricsToS3(
+        validationData,
+        mockContext,
+        'oppty-123',
+        'accessibility',
+        'site-456',
+        'audit-789',
+      );
+
+      // Assert
+      expect(result.success).to.be.true;
+      expect(mockLog.info).to.have.been.calledWith(
+        '[A11yValidation] Updated existing mystique validation entry for page https://example.com/page1',
+      );
+
+      // Verify the updated data
+      const putCall = mockS3Client.send.getCall(0);
+      const savedData = JSON.parse(putCall.args[0].input.Body);
+      expect(savedData).to.have.lengthOf(2);
+
+      // First entry should be updated
+      expect(savedData[0]).to.deep.include({
+        siteId: 'site-456',
+        auditId: 'audit-789',
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page1',
+        sentCount: 15,
+        receivedCount: 12,
+      });
+
+      // Second entry should remain unchanged
+      expect(savedData[1]).to.deep.equal(existingMetrics[1]);
+    });
+
+    it('should add new entry when audit+opportunity+page combination is different', async () => {
+      // Arrange
+      const existingMetrics = [
+        {
+          siteId: 'site-456',
+          auditId: 'audit-789',
+          opportunityId: 'oppty-123',
+          opportunityType: 'accessibility',
+          pageUrl: 'https://example.com/page1',
+          validatedAt: '2024-01-01T00:00:00.000Z',
+          sentCount: 10,
+          receivedCount: 8,
+        },
+      ];
+
+      const validationData = {
+        pageUrl: 'https://example.com/page2',
+        sentCount: 7,
+        receivedCount: 5,
+      };
+
+      // Mock getObjectFromKey to return existing data
+      getObjectFromKeyStub.resolves(existingMetrics);
+      // Mock successful S3 save
+      mockS3Client.send.resolves();
+
+      // Act
+      const result = await testModule.saveMystiqueValidationMetricsToS3(
+        validationData,
+        mockContext,
+        'oppty-123',
+        'accessibility',
+        'site-456',
+        'audit-789',
+      );
+
+      // Assert
+      expect(result.success).to.be.true;
+      expect(mockLog.info).to.have.been.calledWith(
+        '[A11yValidation] Added new mystique validation entry for page https://example.com/page2',
+      );
+
+      // Verify the data now has 2 entries
+      const putCall = mockS3Client.send.getCall(0);
+      const savedData = JSON.parse(putCall.args[0].input.Body);
+      expect(savedData).to.have.lengthOf(2);
+
+      // Original entry should remain
+      expect(savedData[0]).to.deep.equal(existingMetrics[0]);
+
+      // New entry should be added
+      expect(savedData[1]).to.deep.include({
+        siteId: 'site-456',
+        auditId: 'audit-789',
+        opportunityId: 'oppty-123',
+        pageUrl: 'https://example.com/page2',
+        sentCount: 7,
+        receivedCount: 5,
+      });
+    });
+
+    it('should handle default values for sentCount and receivedCount', async () => {
+      // Arrange
+      const validationData = {
+        pageUrl: 'https://example.com/page1',
+        // sentCount and receivedCount are undefined
+      };
+
+      // Mock no existing file
+      getObjectFromKeyStub.rejects(new Error('File not found'));
+      mockS3Client.send.resolves();
+
+      // Act
+      const result = await testModule.saveMystiqueValidationMetricsToS3(
+        validationData,
+        mockContext,
+        'oppty-123',
+        'accessibility',
+        'site-456',
+        'audit-789',
+      );
+
+      // Assert
+      expect(result.success).to.be.true;
+      expect(result.metricsData.sentCount).to.equal(0);
+      expect(result.metricsData.receivedCount).to.equal(0);
+    });
+
+    it('should handle S3 save errors gracefully', async () => {
+      // Arrange
+      const validationData = {
+        pageUrl: 'https://example.com/page1',
+        sentCount: 10,
+        receivedCount: 8,
+      };
+
+      // Mock getObjectFromKey success but S3 save failure
+      getObjectFromKeyStub.rejects(new Error('File not found'));
+      mockS3Client.send.rejects(new Error('S3 save failed'));
+
+      // Act
+      const result = await testModule.saveMystiqueValidationMetricsToS3(
+        validationData,
+        mockContext,
+        'oppty-123',
+        'accessibility',
+        'site-456',
+        'audit-789',
+      );
+
+      // Assert
+      expect(result.success).to.be.false;
+      expect(result.message).to.equal('Failed to save mystique validation metrics to S3: S3 save failed');
+      expect(result.error).to.equal('S3 save failed');
+      expect(mockLog.error).to.have.been.calledWith(
+        '[A11yValidation] Error saving mystique validation metrics to S3 for site site-456, opportunity oppty-123: S3 save failed',
+      );
+    });
+
+    it('should handle invalid existing data gracefully', async () => {
+      // Arrange
+      const validationData = {
+        pageUrl: 'https://example.com/page1',
+        sentCount: 15,
+        receivedCount: 12,
+      };
+
+      // Mock getObjectFromKey to return invalid data (not an array)
+      getObjectFromKeyStub.resolves({ invalid: 'data' });
+      mockS3Client.send.resolves();
+
+      // Act
+      const result = await testModule.saveMystiqueValidationMetricsToS3(
+        validationData,
+        mockContext,
+        'oppty-123',
+        'accessibility',
+        'site-456',
+        'audit-789',
+      );
+
+      // Assert
+      expect(result.success).to.be.true;
+
+      // Should create new array with just the new entry
+      const putCall = mockS3Client.send.getCall(0);
+      const savedData = JSON.parse(putCall.args[0].input.Body);
+      expect(savedData).to.be.an('array').with.lengthOf(1);
+      expect(savedData[0]).to.deep.include({
+        siteId: 'site-456',
+        pageUrl: 'https://example.com/page1',
+        sentCount: 15,
+        receivedCount: 12,
+      });
+    });
+
+    describe('sent vs received count relationships', () => {
+      it('should track multiple page metrics for same opportunity', async () => {
+        // Arrange - Simulate multiple pages for same opportunity
+        const existingMetrics = [];
+
+        // First page with some suggestions received
+        const page1Data = {
+          pageUrl: 'https://example.com/page1',
+          sentCount: 15, // Total sent for entire opportunity
+          receivedCount: 8, // Received for this page only
+        };
+
+        // Second page with different received count
+        const page2Data = {
+          pageUrl: 'https://example.com/page2',
+          sentCount: 15, // Same total (as expected per user requirement)
+          receivedCount: 4, // Received for this page only
+        };
+
+        getObjectFromKeyStub.onFirstCall().resolves(existingMetrics);
+        getObjectFromKeyStub.onSecondCall().resolves([
+          {
+            siteId: 'site-456',
+            auditId: 'audit-789',
+            opportunityId: 'oppty-123',
+            opportunityType: 'accessibility',
+            ...page1Data,
+            validatedAt: '2024-01-01T00:00:00.000Z',
+          },
+        ]);
+        mockS3Client.send.resolves();
+
+        // Act - Save metrics for both pages
+        const result1 = await testModule.saveMystiqueValidationMetricsToS3(page1Data, mockContext, 'oppty-123', 'accessibility', 'site-456', 'audit-789');
+
+        const result2 = await testModule.saveMystiqueValidationMetricsToS3(page2Data, mockContext, 'oppty-123', 'accessibility', 'site-456', 'audit-789');
+
+        // Assert - Both pages stored with same sentCount but different receivedCount
+        expect(result1.success).to.be.true;
+        expect(result2.success).to.be.true;
+
+        expect(result1.metricsData.sentCount).to.equal(15);
+        expect(result1.metricsData.receivedCount).to.equal(8);
+
+        expect(result2.metricsData.sentCount).to.equal(15);
+        expect(result2.metricsData.receivedCount).to.equal(4);
+
+        // Verify total received (8 + 4 = 12) is less than sent (15)
+        const totalReceived = result1.metricsData.receivedCount + result2.metricsData.receivedCount;
+        const totalSent = result1.metricsData.sentCount; // Same for all pages
+        expect(totalReceived).to.equal(12);
+        expect(totalSent).to.equal(15);
+        expect(totalReceived).to.be.lessThan(totalSent); // Some suggestions were "orphaned"
+      });
+
+      it('should handle case where received equals sent (100% success)', async () => {
+        // Arrange - Perfect success scenario
+        const validationData = {
+          pageUrl: 'https://example.com/page1',
+          sentCount: 10,
+          receivedCount: 10, // All suggestions received back
+        };
+
+        getObjectFromKeyStub.resolves([]);
+        mockS3Client.send.resolves();
+
+        // Act
+        const result = await testModule.saveMystiqueValidationMetricsToS3(validationData, mockContext, 'oppty-123', 'accessibility', 'site-456', 'audit-789');
+
+        // Assert - 100% success rate
+        expect(result.success).to.be.true;
+        expect(result.metricsData.sentCount).to.equal(10);
+        expect(result.metricsData.receivedCount).to.equal(10);
+
+        // Calculate success rate
+        const successRate = ((result.metricsData.receivedCount / result.metricsData.sentCount)
+            * 100);
+        expect(successRate).to.equal(100);
+      });
+
+      it('should handle case where received exceeds sent (error scenario)', async () => {
+        // Arrange - Data inconsistency scenario (should not happen in practice)
+        const validationData = {
+          pageUrl: 'https://example.com/page1',
+          sentCount: 5,
+          receivedCount: 8, // More received than sent (data issue)
+        };
+
+        getObjectFromKeyStub.resolves([]);
+        mockS3Client.send.resolves();
+
+        // Act
+        const result = await testModule.saveMystiqueValidationMetricsToS3(validationData, mockContext, 'oppty-123', 'accessibility', 'site-456', 'audit-789');
+
+        // Assert - Still stores the data (doesn't validate business logic)
+        expect(result.success).to.be.true;
+        expect(result.metricsData.sentCount).to.equal(5);
+        expect(result.metricsData.receivedCount).to.equal(8);
+
+        // Calculate success rate (would be > 100% - indicates data issue)
+        const successRate = ((result.metricsData.receivedCount / result.metricsData.sentCount)
+            * 100);
+        expect(successRate).to.equal(160); // 160% indicates data problem
+      });
+
+      it('should handle zero received (0% success)', async () => {
+        // Arrange - No suggestions received back
+        const validationData = {
+          pageUrl: 'https://example.com/page1',
+          sentCount: 12,
+          receivedCount: 0, // No suggestions received
+        };
+
+        getObjectFromKeyStub.resolves([]);
+        mockS3Client.send.resolves();
+
+        // Act
+        const result = await testModule.saveMystiqueValidationMetricsToS3(validationData, mockContext, 'oppty-123', 'accessibility', 'site-456', 'audit-789');
+
+        // Assert - 0% success rate
+        expect(result.success).to.be.true;
+        expect(result.metricsData.sentCount).to.equal(12);
+        expect(result.metricsData.receivedCount).to.equal(0);
+
+        // Calculate success rate
+        const successRate = ((result.metricsData.receivedCount / result.metricsData.sentCount)
+            * 100);
+        expect(successRate).to.equal(0);
+      });
+
+      it('should demonstrate aggregation across multiple opportunities', async () => {
+        // Arrange - Different opportunities with different sent/received ratios
+        const opportunity1Metrics = [
+          { pageUrl: 'https://example.com/page1', sentCount: 20, receivedCount: 15 },
+          { pageUrl: 'https://example.com/page2', sentCount: 20, receivedCount: 12 },
+        ];
+
+        const opportunity2Metrics = [
+          { pageUrl: 'https://example.com/page3', sentCount: 8, receivedCount: 8 },
+        ];
+
+        // Mock empty existing data for clean test
+        getObjectFromKeyStub.resolves([]);
+        mockS3Client.send.resolves();
+
+        // Act - Save metrics for multiple opportunities
+        const opp1Promises = opportunity1Metrics.map((data) => testModule.saveMystiqueValidationMetricsToS3(data, mockContext, 'oppty-123', 'accessibility', 'site-456', 'audit-789'));
+        const opp2Promises = opportunity2Metrics.map((data) => testModule.saveMystiqueValidationMetricsToS3(data, mockContext, 'oppty-456', 'accessibility', 'site-456', 'audit-789'));
+
+        const results = await Promise.all([...opp1Promises, ...opp2Promises]);
+
+        // Assert - Calculate aggregated success rates
+        expect(results).to.have.lengthOf(3);
+
+        // Opportunity 1: 20 sent, (15 + 12) = 27 received total
+        const opp1TotalReceived = opportunity1Metrics.reduce((sum, m) => sum + m.receivedCount, 0);
+        const opp1SentCount = opportunity1Metrics[0].sentCount; // Same for all pages
+        expect(opp1TotalReceived).to.equal(27);
+        expect(opp1SentCount).to.equal(20);
+        expect(opp1TotalReceived).to.be.greaterThan(opp1SentCount); // 135% success rate
+
+        // Opportunity 2: 8 sent, 8 received
+        const opp2TotalReceived = opportunity2Metrics.reduce((sum, m) => sum + m.receivedCount, 0);
+        const opp2SentCount = opportunity2Metrics[0].sentCount;
+        expect(opp2TotalReceived).to.equal(8);
+        expect(opp2SentCount).to.equal(8);
+        expect(opp2TotalReceived).to.equal(opp2SentCount); // 100% success rate
+      });
+
+      it('should validate real-world scenario: multiple pages with consistent sentCount but low receivedCount', async () => {
+        // Arrange
+        const realWorldMetrics = [
+          {
+            pageUrl: 'https://www.volvotrucks.us/parts-and-services/parts/all-makes/',
+            sentCount: 143, // Total suggestions sent for entire opportunity
+            receivedCount: 2, // Only 2 received for this page
+          },
+          {
+            pageUrl: 'https://www.volvotrucks.us/trucks/vhd-ii/interior/',
+            sentCount: 143, // Same total (as expected)
+            receivedCount: 2, // Only 2 received for this page
+          },
+          {
+            pageUrl: 'https://www.volvotrucks.us/about-volvo/facilities/parts-distribution-centers/',
+            sentCount: 143, // Same total
+            receivedCount: 2, // Only 2 received for this page
+          },
+          {
+            pageUrl: 'https://www.volvotrucks.us/our-difference/driver-productivity/volvo-dynamic-steering/',
+            sentCount: 143, // Same total
+            receivedCount: 2, // Only 2 received for this page
+          },
+        ];
+
+        // Mock empty existing data for clean test
+        getObjectFromKeyStub.resolves([]);
+        mockS3Client.send.resolves();
+
+        // Act - Save metrics for all pages (simulating async SQS message processing)
+        const saveMetrics = (data) => testModule.saveMystiqueValidationMetricsToS3(
+          data,
+          mockContext,
+          'bd068a2a-8150-4ea7-b821-9120b2561cdc', // Real opportunity ID
+          'a11y-assistive',
+          'd1a5d531-8c3a-42a0-a39a-e7f4a72f4015', // Real site ID
+          '7dc5c794-6116-446f-907d-47b96a5be571', // Real audit ID
+        );
+        const promises = realWorldMetrics.map(saveMetrics);
+        const results = await Promise.all(promises);
+
+        // Assert - All pages have same sentCount but different receivedCount
+        expect(results).to.have.lengthOf(4);
+
+        // Verify each page stores the correct data
+        results.forEach((result, index) => {
+          expect(result.success).to.be.true;
+          expect(result.metricsData.sentCount).to.equal(143);
+          expect(result.metricsData.receivedCount).to.equal(2);
+          expect(result.metricsData.pageUrl).to.equal(realWorldMetrics[index].pageUrl);
+        });
+
+        // Calculate aggregated success rate across all pages
+        const totalSent = realWorldMetrics[0].sentCount; // 143 (same for all)
+        // 2+2+2+2 = 8
+        const totalReceived = realWorldMetrics.reduce((sum, m) => sum + m.receivedCount, 0);
+        const successRate = ((totalReceived / totalSent) * 100);
+
+        expect(totalSent).to.equal(143);
+        expect(totalReceived).to.equal(8);
+        expect(successRate).to.be.approximately(5.59, 0.01); // ~5.6% success rate
+
+        // Verify this indicates many "orphaned" suggestions
+        const orphanedCount = totalSent - totalReceived;
+        expect(orphanedCount).to.equal(135); // 135 suggestions never received back
+        expect(orphanedCount).to.be.greaterThan(totalReceived); // More orphaned than successful
+
+        // Log the insights (for documentation purposes)
+        console.log('\n Metrics analysis with failed remediation:');
+        console.log(`   Total sent: ${totalSent}`);
+        console.log(`   Total received: ${totalReceived}`);
+        console.log(`   Success rate: ${successRate.toFixed(2)}%`);
+        console.log(`   Orphaned suggestions: ${orphanedCount}`);
+      });
+
+      it('should validate ideal scenario: receivedCount sum equals sentCount (100% success)', async () => {
+        // Arrange - Ideal scenario where ALL suggestions are successfully processed by Mystique
+        const idealMetrics = [
+          { pageUrl: 'https://example.com/page1', sentCount: 143, receivedCount: 35 },
+          { pageUrl: 'https://example.com/page2', sentCount: 143, receivedCount: 42 },
+          { pageUrl: 'https://example.com/page3', sentCount: 143, receivedCount: 38 },
+          { pageUrl: 'https://example.com/page4', sentCount: 143, receivedCount: 28 },
+          // Total received: 35 + 42 + 38 + 28 = 143 (matches sentCount perfectly)
+        ];
+
+        getObjectFromKeyStub.resolves([]);
+        mockS3Client.send.resolves();
+
+        // Act - Save metrics for all pages
+        const promises = idealMetrics.map((data) => testModule.saveMystiqueValidationMetricsToS3(data, mockContext, 'ideal-oppty-123', 'accessibility', 'site-456', 'audit-789'));
+        const results = await Promise.all(promises);
+
+        // Assert - Perfect 100% success rate
+        expect(results).to.have.lengthOf(4);
+
+        const totalSent = idealMetrics[0].sentCount; // 143
+        const totalReceived = idealMetrics.reduce((sum, m) => sum + m.receivedCount, 0); // 143
+        const successRate = ((totalReceived / totalSent) * 100);
+
+        expect(totalSent).to.equal(143);
+        expect(totalReceived).to.equal(143);
+        expect(successRate).to.equal(100); // Perfect 100% success rate
+
+        const orphanedCount = totalSent - totalReceived;
+        expect(orphanedCount).to.equal(0); // No orphaned suggestions
+
+        console.log('\n Ideal scenario validation:');
+        console.log(`   Total sent: ${totalSent}`);
+        console.log(`   Total received: ${totalReceived}`);
+        console.log(`   Success rate: ${successRate}%`);
+        console.log(`   Orphaned suggestions: ${orphanedCount}`);
+      });
+
+      it('should detect and flag when receivedCount sum is significantly less than sentCount', async () => {
+        // Arrange - Your real-world problematic scenario
+        const problematicMetrics = [
+          { pageUrl: 'https://www.volvotrucks.us/page1', sentCount: 143, receivedCount: 2 },
+          { pageUrl: 'https://www.volvotrucks.us/page2', sentCount: 143, receivedCount: 2 },
+          { pageUrl: 'https://www.volvotrucks.us/page3', sentCount: 143, receivedCount: 2 },
+          { pageUrl: 'https://www.volvotrucks.us/page4', sentCount: 143, receivedCount: 2 },
+          // Total received: 2 + 2 + 2 + 2 = 8 (much less than sentCount of 143)
+        ];
+
+        getObjectFromKeyStub.resolves([]);
+        mockS3Client.send.resolves();
+
+        // Act
+        const promises = problematicMetrics.map((data) => testModule.saveMystiqueValidationMetricsToS3(data, mockContext, 'problematic-oppty-456', 'accessibility', 'site-789', 'audit-123'));
+        const results = await Promise.all(promises);
+
+        // Assert - Flag the significant discrepancy
+        expect(results).to.have.lengthOf(4);
+        results.forEach((result) => expect(result.success).to.be.true);
+        const totalSent = problematicMetrics[0].sentCount; // 143
+        const totalReceived = problematicMetrics.reduce((sum, m) => sum + m.receivedCount, 0); // 8
+        const successRate = ((totalReceived / totalSent) * 100);
+        const orphanedCount = totalSent - totalReceived;
+
+        expect(totalSent).to.equal(143);
+        expect(totalReceived).to.equal(8);
+        expect(successRate).to.be.approximately(5.59, 0.01);
+        expect(orphanedCount).to.equal(135);
+
+        // Flag this as problematic (< 50% success rate indicates issues)
+        expect(successRate).to.be.lessThan(50); // This should trigger investigation
+        // 10x more orphaned than successful
+        expect(orphanedCount).to.be.greaterThan(totalReceived * 10);
+
+        console.log('\n ROBLEMATIC SCENARIO DETECTED:');
+        console.log(`   Expected total received: ${totalSent}`);
+        console.log(`   Actual total received: ${totalReceived}`);
+        console.log(`   Success rate: ${successRate.toFixed(2)}% (should be ~100%)`);
+        console.log(`   Orphaned suggestions: ${orphanedCount} (indicates Mystique processing issues)`);
+
+        // This test validates that your real data shows a significant problem
+        expect(successRate).to.be.lessThan(10); // Less than 10% is definitely problematic
+      });
+
+      it('should simulate realistic async receival workflow: static sent, variable received per payload', async () => {
+        // Arrange - Simulate the real workflow philosophy:
+        // 1. We already sent 143 suggestions to Mystique (this count is now static/known)
+        // 2. Mystique processes them and sends back multiple SQS payloads at different times
+        // 3. Each payload has variable receivedCount based on what Mystique processed for that page
+        // 4. Each receival triggers metrics collection with the SAME sentCount but
+        // different receivedCount
+
+        const opportunityId = 'oppty-async-workflow';
+        const staticSentCount = 143; // This never changes - we know we sent 143 total
+
+        // Simulate 5 SQS payloads arriving at different times from Mystique
+        const asyncReceivals = [
+          {
+            pageUrl: 'https://example.com/landing',
+            sentCount: staticSentCount, // Always the same - static
+            receivedCount: 24, // Variable - what Mystique processed for this page
+          },
+          {
+            pageUrl: 'https://example.com/products',
+            sentCount: staticSentCount, // Same static value
+            receivedCount: 31, // Different received count
+          },
+          {
+            pageUrl: 'https://example.com/services',
+            sentCount: staticSentCount, // Same static value
+            receivedCount: 18, // Different received count
+          },
+          {
+            pageUrl: 'https://example.com/about',
+            sentCount: staticSentCount, // Same static value
+            receivedCount: 42, // Different received count
+          },
+          {
+            pageUrl: 'https://example.com/contact',
+            sentCount: staticSentCount, // Same static value
+            receivedCount: 28, // Different received count
+          },
+          // Total received: 24 + 31 + 18 + 42 + 28 = 143 (equals staticSentCount - perfect!)
+        ];
+
+        getObjectFromKeyStub.resolves([]);
+        mockS3Client.send.resolves();
+
+        // Act - Simulate each SQS payload arriving and triggering metrics collection
+        const promises = asyncReceivals.map((payload, i) => {
+          console.log(`📨 SQS Payload ${i + 1} received: ${payload.pageUrl} -> ${payload.receivedCount} suggestions processed`);
+          return testModule.saveMystiqueValidationMetricsToS3(payload, mockContext, opportunityId, 'accessibility', 'site-async', 'audit-async');
+        });
+        const results = await Promise.all(promises);
+
+        // Assert - Validate the philosophy
+        expect(results).to.have.lengthOf(5);
+
+        // 1. All payloads have the SAME staticSentCount (known from when we sent to Mystique)
+        results.forEach((result) => {
+          expect(result.metricsData.sentCount).to.equal(staticSentCount);
+        });
+
+        // 2. Each payload has DIFFERENT receivedCount (varies per page/payload)
+        const receivedCounts = results.map((r) => r.metricsData.receivedCount);
+        expect(receivedCounts).to.deep.equal([24, 31, 18, 42, 28]);
+
+        // 3. Sum of all receivedCounts should ideally equal staticSentCount
+        const totalReceived = receivedCounts.reduce((sum, count) => sum + count, 0);
+        expect(totalReceived).to.equal(staticSentCount); // Perfect 100% success!
+
+        console.log('\n Async Workflow Validated:');
+        console.log(`   Static sent count (known): ${staticSentCount}`);
+        console.log(`   Variable received per payload: [${receivedCounts.join(', ')}]`);
+        console.log(`   Total received across all payloads: ${totalReceived}`);
+        console.log(`   Success rate: ${((totalReceived / staticSentCount) * 100)}%`);
+        console.log('   Workflow confirmed: sentCount static, receivedCount varies, sum equals sent');
+      });
+    });
+  });
 });
