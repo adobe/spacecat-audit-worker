@@ -22,12 +22,12 @@ import {
   runAuditAndSendUrlsForScrapingStep,
   sendA11yUrlsForScrapingStep,
 } from '../../../src/forms-opportunities/handler.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
 import { MockContextBuilder } from '../../shared.js';
 import formVitalsData from '../../fixtures/forms/formvitalsdata.json' with { type: 'json' };
 import expectedFormVitalsData from '../../fixtures/forms/expectedformvitalsdata.json' with { type: 'json' };
 import expectedFormSendToScraperData from '../../fixtures/forms/expectedformsendtoscraperdata.json' with { type: 'json' };
 import expectedFormA11yScraperData from '../../fixtures/forms/expectedforma11ysendtoscraperdata.json' with { type: 'json' };
-import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
 
 use(sinonChai);
 

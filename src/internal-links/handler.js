@@ -223,11 +223,11 @@ export const opportunityAndSuggestionsStep = async (context) => {
       time: new Date().toISOString(),
       data: {
         alternativeUrls: topPages.map((page) => page.getUrl()),
+        opportunityId: opportunity?.getId(),
         brokenLinks: suggestions.map((suggestion) => ({
           urlFrom: suggestion?.getData()?.urlFrom,
           urlTo: suggestion?.getData()?.urlTo,
           suggestionId: suggestion?.getId(),
-          opportunityId: opportunity?.getId(),
         })),
       },
     };

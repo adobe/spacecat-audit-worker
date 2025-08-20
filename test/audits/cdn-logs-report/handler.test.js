@@ -112,4 +112,14 @@ describe('CDN Logs Report Audit', () => {
     expect(result.auditResult.customer).to.equal('test_customer');
     expect(result.fullAuditRef).to.include('test_customer');
   });
+
+  it('runs weekly CDN logs report with weekOffset', async () => {
+    const result = await runCdnLogsReport('https://example.com', context, site, { weekOffset: '-2' });
+
+    expect(context.log.info).to.have.been.calledWith('Running weekly report...');
+    expect(result.auditResult.reportType).to.equal('cdn-report-weekly');
+    expect(result.auditResult.database).to.equal('test_db');
+    expect(result.auditResult.customer).to.equal('test_customer');
+    expect(result.fullAuditRef).to.include('test_customer');
+  });
 });
