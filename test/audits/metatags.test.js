@@ -1040,7 +1040,7 @@ describe('Meta Tags', () => {
           .to
           .have
           .been
-          .calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
+          .calledWith('Failed to extract tags from scraped content for bucket test-bucket');
       })
         .timeout(10000);
 
