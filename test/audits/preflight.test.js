@@ -2186,7 +2186,8 @@ describe('Preflight Audit', () => {
                           htmlWithIssues: ['<button><img src="icon.png" alt=""></button>'],
                           target: ['button'],
                           failureSummary: 'Buttons must have discernible text',
-                          successCriteriaNumber: '4.1.2',
+                          successCriteriaNumber: '412',
+                          successCriteriaTags: ['wcag412'],
                           description: 'Ensures buttons have accessible names',
                           understandingUrl: 'https://www.w3.org/WAI/WCAG21/Understanding/name-role-value.html',
                         },
@@ -2213,7 +2214,7 @@ describe('Preflight Audit', () => {
           severity: 'critical',
           occurrences: 2,
           failureSummary: 'Buttons must have discernible text',
-          wcagRule: '4.1.2',
+          wcagRule: '4.1.2 Name, Role, Value',
           check: 'a11y-assistive',
           type: 'button-name',
         });

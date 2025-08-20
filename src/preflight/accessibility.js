@@ -17,6 +17,7 @@ import { saveIntermediateResults } from './utils.js';
 import { sleep } from '../support/utils.js';
 import { accessibilityOpportunitiesMap } from '../accessibility/utils/constants.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
+import { formatWcagRule } from '../accessibility/utils/generate-individual-opportunities.js';
 
 export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
 
@@ -221,7 +222,7 @@ export async function processAccessibilityOpportunities(context, auditContext) {
                         update_from: html || '',
                       })) || [],
                       failureSummary: violationData.failureSummary || '',
-                      wcagRule: violationData.successCriteriaNumber || '',
+                      wcagRule: formatWcagRule(violationData.successCriteriaTags?.[0] || ''),
                       description: violationData.description || '',
                       check: opportunityType,
                       type: checkType,
