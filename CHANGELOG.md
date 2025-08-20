@@ -1,3 +1,10 @@
+# [1.152.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.151.0...v1.152.0) (2025-08-20)
+
+
+### Features
+
+* add a11y validation metrics ([#1117](https://github.com/adobe/spacecat-audit-worker/issues/1117)) ([c91ad0e](https://github.com/adobe/spacecat-audit-worker/commit/c91ad0e4903cce55264a2e855e65eb802f287755))
+
 # [1.151.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.150.0...v1.151.0) (2025-08-20)
 
 
