@@ -299,7 +299,7 @@ describe('Canonical URL Tests', () => {
       expect(log.error).to.have.been.calledWith('Invalid URL: invalid-url');
     });
 
-    it('should handle non-uppercase canonical URL', () => {
+    it('should handle uppercase canonical URL', () => {
       const canonicalUrl = 'HTTPS://EXAMPLE.COM/UPPERCASE';
       const baseUrl = 'https://example.com';
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
