@@ -123,6 +123,18 @@ describe('data-access', () => {
         .build();
     });
 
+    it('should return early if context is empty', async () => {
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: [],
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      expect(mockOpportunity.getSuggestions).to.not.have.been.called;
+      expect(mockOpportunity.addSuggestions).to.not.have.been.called;
+    });
+
     it('should handle outdated suggestions and add new ones', async () => {
       const suggestionsData = [{ key: '1' }, { key: '2' }];
       const existingSuggestions = [

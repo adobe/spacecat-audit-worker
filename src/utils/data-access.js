@@ -78,10 +78,6 @@ const handleOutdatedSuggestions = async ({
   buildKey,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
 }) => {
-  // Return early if context is not provided
-  if (!context) {
-    return;
-  }
   const { Suggestion } = context.dataAccess;
   const { log } = context;
   const existingOutdatedSuggestions = existingSuggestions
@@ -119,10 +115,15 @@ const defaultMergeDataFunction = (existingData, newData) => ({
 });
 
 /**
- * Synchronizes existing suggestions with new data by removing outdated suggestions
- * and adding new ones.
+ * Synchronizes existing suggestions with new data.
+ * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
+ * Updates existing suggestions with new data if they match based on the provided key.
+ *
+ * Prepares new suggestions from the new data and adds them to the opportunity.
+ * Maps new data to suggestion objects using the provided mapping function.
  *
  * @param {Object} params - The parameters for the sync operation.
+ * @param {Object} params.context - The context object containing the data access object and logger.
  * @param {Object} params.opportunity - The opportunity object to synchronize suggestions for.
  * @param {Array} params.newData - Array of new data objects to sync.
  * @param {Function} params.buildKey - Function to generate a unique key for each item.
@@ -130,7 +131,6 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * @param {Function} [params.mergeDataFunction] - Function to merge existing and new data.
  *   Defaults to shallow merge.
  * @param {string} [params.statusToSetForOutdated] - Status to set for outdated suggestions.
- * @param {Object} params.log - Logger object for error reporting.
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncSuggestions({
