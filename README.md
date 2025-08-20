@@ -364,7 +364,6 @@ export default new AuditBuilder()
   .build();
 ```
 
-
 The logic for converting to an opportunity is in `common/opportunity.js`. The function `convertToOpportunity` is used to create a new opportunity or update an existing one based on the audit type. The function takes the audit URL, audit data, context, createOpportunityData, auditType, and props as arguments. It first fetches the opportunities for the site. If the opportunity is not found, it creates a new one. If the opportunity is found, it updates the existing one with the new data. The function returns the opportunity entity.
 
 
