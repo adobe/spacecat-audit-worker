@@ -13,10 +13,10 @@ export function createOpportunityData() {
   return {
     origin: 'AUTOMATION',
     title: 'Blocked AI agent bots',
-    description: 'Several URLs have been detected that return a different HTTP status code if accessed by a LLM AI bot user agent.',
+    description: 'Several URLs are blocked from being accessed by LLM user agents.',
     guidance: {
       steps: [
-        'Check each URL in the suggestions and ensure that AI user agents are not blocked at the CDN level.',
+        'Check each URL in the suggestions and ensure that AI user agents are not blocked in robots.txt',
       ],
     },
     tags: ['llm', 'isElmo'],
