@@ -93,12 +93,9 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
     return null;
   }
 
-  let pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
+  const pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
     : new URL(url).pathname;
   // handling for homepage
-  if (pageUrl === '') {
-    pageUrl = '/';
-  }
   return {
     [pageUrl]: {
       title: object.scrapeResult.tags.title,
