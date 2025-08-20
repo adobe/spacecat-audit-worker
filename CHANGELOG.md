@@ -1,3 +1,10 @@
+## [1.152.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.152.0...v1.152.1) (2025-08-20)
+
+
+### Bug Fixes
+
+* add wcag formatting ([#1143](https://github.com/adobe/spacecat-audit-worker/issues/1143)) ([07af6f0](https://github.com/adobe/spacecat-audit-worker/commit/07af6f0289bc5a18e5f77a10f5b8b54dbcd4bdf6))
+
 # [1.152.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.151.0...v1.152.0) (2025-08-20)
 
 
