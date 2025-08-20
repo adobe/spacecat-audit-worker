@@ -13,7 +13,10 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
+import sinon from 'sinon';
+import nock from 'nock';
 import { isPreviewPage, getCountryCodeFromLang, parseCustomUrls } from '../../src/utils/url-utils.js';
+import * as utils from '../../src/utils/url-utils.js';
 
 describe('isPreviewPage', () => {
   it('should return true for preview pages', () => {
@@ -113,5 +116,95 @@ describe('parseCustomUrls Function', () => {
   it('should return null for string with only empty values', () => {
     const result = parseCustomUrls(',,, ,  ,');
     expect(result).to.be.null;
+  });
+});
+
+describe('filterBrokenSuggestedUrls', () => {
+  let fetchStub;
+  let prependSchemaStub;
+  const baseURL = 'https://example.com';
+
+  beforeEach(() => {
+    fetchStub = sinon.stub();
+    prependSchemaStub = sinon.stub();
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should return only working URLs from the same domain', async () => {
+    const suggestedUrls = [
+      'https://www.example.com/page1',
+      'https://www.example.com/page2',
+      'https://www.other.com/page3',
+    ];
+
+    nock('https://example.com')
+      .get('/page1').reply(200)
+      .get('/page2')
+      .reply(200);
+    nock('https://www.other.com')
+      .head('/page3').reply(200);
+
+    prependSchemaStub.callsFake((url) => url);
+    fetchStub.withArgs('https://www.example.com/page1').resolves({ ok: true });
+    fetchStub.withArgs('https://www.example.com/page2').resolves({ ok: true });
+    fetchStub.withArgs('https://www.other.com/page3').resolves({ ok: true });
+
+    const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
+    expect(result).to.deep.equal([
+      'https://www.example.com/page1',
+      'https://www.example.com/page2',
+    ]);
+  });
+
+  it('should filter out broken URLs', async () => {
+    const suggestedUrls = [
+      'https://www.example.com/page1',
+      'https://www.example.com/page2',
+    ];
+    nock('https://example.com')
+      .get('/page1').reply(404)
+      .get('/page2')
+      .reply(200);
+    prependSchemaStub.callsFake((url) => url);
+    fetchStub.withArgs('https://www.example.com/page1').resolves({ ok: false });
+    fetchStub.withArgs('https://www.example.com/page2').resolves({ ok: true });
+
+    const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
+    expect(result).to.deep.equal(['https://www.example.com/page2']);
+  });
+
+  it('should filter out URLs from different domains', async () => {
+    const suggestedUrls = [
+      'https://www.example.com/page1',
+      'https://www.other.com/page2',
+    ];
+    nock('https://example.com')
+      .get('/page1').reply(200)
+      .get('/page2')
+      .reply(200);
+    fetchStub.resolves({ ok: true });
+
+    const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
+    expect(result).to.deep.equal(['https://www.example.com/page1']);
+  });
+
+  it('should handle fetch errors gracefully', async () => {
+    const suggestedUrls = [
+      'https://www.example.com/page1',
+      'https://www.example.com/page2',
+    ];
+    nock('https://example.com')
+      .get('/page1').replyWithError('Network error')
+      .get('/page2')
+      .reply(200);
+    prependSchemaStub.callsFake((url) => url);
+    fetchStub.withArgs('https://www.example.com/page1').rejects(new Error('Network error'));
+    fetchStub.withArgs('https://www.example.com/page2').resolves({ ok: true });
+
+    const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
+    expect(result).to.deep.equal(['https://www.example.com/page2']);
   });
 });

@@ -10,16 +10,15 @@
  * governing permissions and limitations under the License.
  */
 
-import { isNonEmptyArray, tracingFetch } from '@adobe/spacecat-shared-utils';
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import suggestionsEngine from './suggestionsEngine.js';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
-import { CPC, PENALTY_PER_IMAGE, RUM_INTERVAL } from './constants.js';
-import { DATA_SOURCES } from '../common/constants.js';
-import { checkGoogleConnection } from '../common/opportunity-utils.js';
+import {
+  CPC, PENALTY_PER_IMAGE, RUM_INTERVAL, ALT_TEXT_GUIDANCE_TYPE, ALT_TEXT_OBSERVATION,
+  MYSTIQUE_BATCH_SIZE,
+} from './constants.js';
 
-const getImageSuggestionIdentifier = (suggestion) => `${suggestion.pageUrl}/${suggestion.src}`;
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
 /**
@@ -69,7 +68,7 @@ export async function syncAltTextSuggestions({ opportunity, newSuggestionDTOs, l
   }
 }
 
-const getProjectedMetrics = async ({
+export const getProjectedMetrics = async ({
   images, auditUrl, context, log,
 }) => {
   let finalUrl;
@@ -77,6 +76,7 @@ const getProjectedMetrics = async ({
 
   try {
     finalUrl = await getRUMUrl(auditUrl);
+    log.info(`[${AUDIT_TYPE}]: RUM URL: ${finalUrl}`);
     const rumAPIClient = RUMAPIClient.createFrom(context);
     const options = {
       domain: finalUrl,
@@ -126,136 +126,140 @@ const getProjectedMetrics = async ({
   };
 };
 
+export const chunkArray = (array, chunkSize) => {
+  const chunks = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
+};
+
 /**
- * @param auditUrl - The URL of the audit
- * @param auditData - The audit data containing the audit result and additional details.
- * @param context - The context object containing the data access and logger objects.
- * @returns {Promise<void>} - Resolves when the synchronization is complete.
+ * Sends alt-text opportunity message to Mystique for AI-powered suggestions
+ * @param {string} auditUrl - The base URL being audited
+ * @param {Array} pageUrls - Array of page URLs to analyze for missing alt-text
+ * @param {string} siteId - Site identifier
+ * @param {string} auditId - Audit identifier
+ * @param {Object} context - The context object containing sqs, env, etc.
+ * @returns {Promise<void>}
  */
-export default async function convertToOpportunity(auditUrl, auditData, context) {
-  const { dataAccess, log } = context;
-  const { Opportunity } = dataAccess;
-  const { detectedImages, siteId, auditId } = auditData;
-
-  log.info(`[${AUDIT_TYPE}]: Syncing opportunity and suggestions for ${siteId}`);
-  let altTextOppty;
-
-  try {
-    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    altTextOppty = opportunities.find(
-      (oppty) => oppty.getType() === AUDIT_TYPE,
-    );
-  } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
-    throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
-  }
-
-  const projectedMetrics = await getProjectedMetrics({
-    images:
-      detectedImages.imagesWithoutAltText
-        .map((image) => ({ src: image.src, pageUrl: image.pageUrl })),
-    auditUrl,
-    context,
-    log,
-  });
-
-  const opportunityData = {
-    ...projectedMetrics,
-    decorativeImagesCount: detectedImages.decorativeImagesCount,
-  };
-  opportunityData.dataSources = [
-    DATA_SOURCES.RUM,
-    DATA_SOURCES.SITE,
-    DATA_SOURCES.AHREFS,
-    DATA_SOURCES.GSC,
-  ];
-
-  const isGoogleConnected = await checkGoogleConnection(auditUrl, context);
-
-  if (!isGoogleConnected && opportunityData.dataSources) {
-    opportunityData.dataSources = opportunityData.dataSources
-      .filter((source) => source !== DATA_SOURCES.GSC);
-  }
+export async function sendAltTextOpportunityToMystique(
+  auditUrl,
+  pageUrls,
+  siteId,
+  auditId,
+  context,
+) {
+  const {
+    sqs, env, log, dataAccess,
+  } = context;
 
   try {
-    if (!altTextOppty) {
-      const opportunityDTO = {
+    const site = await dataAccess.Site.findById(siteId);
+
+    // Batch the URLs to avoid sending too many at once
+    const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
+
+    log.info(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es)`);
+
+    // Send each batch as a separate message
+    for (let i = 0; i < urlBatches.length; i += 1) {
+      const batch = urlBatches[i];
+
+      const mystiqueMessage = {
+        type: ALT_TEXT_GUIDANCE_TYPE,
         siteId,
         auditId,
-        runbook: 'https://adobe.sharepoint.com/:w:/s/aemsites-engineering/EeEUbjd8QcFOqCiwY0w9JL8BLMnpWypZ2iIYLd0lDGtMUw?e=XSmEjh',
-        type: AUDIT_TYPE,
-        origin: 'AUTOMATION',
-        title: 'Missing alt text for images decreases accessibility and discoverability of content',
-        description: 'Missing alt text on images leads to poor seo scores, low accessibility scores and search engine failing to surface such images with keyword search',
-        guidance: {
-          recommendations: [
-            {
-              insight: 'Alt text for images decreases accessibility and limits discoverability',
-              recommendation: 'Add meaningful alt text on images that clearly articulate the subject matter of the image',
-              type: null,
-              rationale: 'Alt text for images is vital to ensure your content is discoverable and usable for many people as possible',
-            },
-          ],
+        deliveryType: site.getDeliveryType(),
+        time: new Date().toISOString(),
+        url: auditUrl,
+        observation: ALT_TEXT_OBSERVATION,
+        data: {
+          pageUrls: batch,
         },
-        data: opportunityData,
-        tags: ['seo', 'accessibility'],
       };
-      altTextOppty = await Opportunity.create(opportunityDTO);
-      log.debug(`[${AUDIT_TYPE}]: Opportunity created`);
-    } else {
-      altTextOppty.setAuditId(auditId);
-      altTextOppty.setData(opportunityData);
-      altTextOppty.setUpdatedBy('system');
-      await altTextOppty.save();
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+      log.info(`[${AUDIT_TYPE}]: Batch ${i + 1}/${urlBatches.length} sent to Mystique with ${batch.length} URLs`);
+      log.info(`[${AUDIT_TYPE}]: Message sent to Mystique: ${JSON.stringify(mystiqueMessage)}`);
     }
-  } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Creating alt-text opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
-    throw new Error(`[${AUDIT_TYPE}]: Failed to create alt-text opportunity for siteId ${siteId}: ${e.message}`);
+
+    log.info(`[${AUDIT_TYPE}]: All ${urlBatches.length} batches sent to Mystique successfully`);
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}]: Failed to send alt-text opportunity to Mystique: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Clears all existing alt-text suggestions except those that are ignored/skipped
+ * This should be called once at the beginning of the alt-text audit process
+ *
+ * @param {Object} params - The parameters for the cleanup operation.
+ * @param {Object} params.opportunity - The opportunity object to clear suggestions for.
+ * @param {Object} params.log - Logger object for error reporting.
+ * @returns {Promise<void>} - Resolves when the cleanup is complete.
+ */
+export async function clearAltTextSuggestions({ opportunity, log }) {
+  if (!opportunity) {
+    log.debug(`[${AUDIT_TYPE}]: No opportunity found, skipping suggestion cleanup`);
+    return;
   }
 
-  const imageUrls = detectedImages.imagesWithoutAltText.map(
-    (image) => {
-      const el = { url: new URL(image.src, auditUrl).toString() };
+  const existingSuggestions = await opportunity.getSuggestions();
 
-      if (image.blob) {
-        el.blob = image.blob;
-      }
-      el.language = image.language;
-      return el;
-    },
-  ).filter((image) => image !== null);
+  if (!existingSuggestions || existingSuggestions.length === 0) {
+    log.debug(`[${AUDIT_TYPE}]: No existing suggestions to clear`);
+    return;
+  }
 
-  const imageSuggestions = await suggestionsEngine.getImageSuggestions(
-    imageUrls,
-    context,
-    tracingFetch,
+  const IGNORED_STATUSES = [SuggestionModel.STATUSES.SKIPPED, SuggestionModel.STATUSES.FIXED];
+  const ignoredSuggestions = existingSuggestions.filter(
+    (s) => IGNORED_STATUSES.includes(s.getStatus()),
+  );
+  const ignoredSuggestionIds = ignoredSuggestions.map((s) => s.getData().recommendations[0].id);
+
+  // Remove existing suggestions that were not ignored
+  const suggestionsToRemove = existingSuggestions.filter(
+    (suggestion) => !ignoredSuggestionIds.includes(suggestion.getData().recommendations[0].id),
   );
 
-  const suggestions = detectedImages.imagesWithoutAltText.map((image) => {
-    const imageUrl = new URL(image.src, auditUrl).toString();
-    return {
-      id: getImageSuggestionIdentifier(image),
-      pageUrl: new URL(image.pageUrl, auditUrl).toString(),
-      imageUrl,
-      altText: imageSuggestions[imageUrl]?.suggestion || '',
-      isAppropriate: imageSuggestions[imageUrl]?.is_appropriate ?? null,
-      xpath: image.xpath,
-      language: image.language,
-    };
-  });
+  if (suggestionsToRemove.length > 0) {
+    await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.remove()));
+    log.info(`[${AUDIT_TYPE}]: Cleared ${suggestionsToRemove.length} existing suggestions (preserved ${ignoredSuggestions.length} ignored suggestions)`);
+  } else {
+    log.debug(`[${AUDIT_TYPE}]: No suggestions to clear (all ${existingSuggestions.length} suggestions are ignored)`);
+  }
+}
 
-  log.debug(`[${AUDIT_TYPE}]: Suggestions: ${JSON.stringify(suggestions)}`);
+/**
+ * Adds new alt-text suggestions incrementally without removing existing ones
+ * This should be called when receiving batches from Mystique
+ *
+ * @param {Object} params - The parameters for the sync operation.
+ * @param {Object} params.opportunity - The opportunity object to add suggestions to.
+ * @param {Array} params.newSuggestionDTOs - Array of new suggestion DTOs to add.
+ * @param {Object} params.log - Logger object for error reporting.
+ * @returns {Promise<void>} - Resolves when the addition is complete.
+ */
+export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, log }) {
+  if (!isNonEmptyArray(newSuggestionDTOs)) {
+    log.debug(`[${AUDIT_TYPE}]: No new suggestions to add`);
+    return;
+  }
 
-  await syncAltTextSuggestions({
-    opportunity: altTextOppty,
-    newSuggestionDTOs: suggestions.map((suggestion) => ({
-      opportunityId: altTextOppty.getId(),
-      type: SuggestionModel.TYPES.CONTENT_UPDATE,
-      data: { recommendations: [suggestion] },
-      rank: 1,
-    })),
-    log,
-  });
+  const updateResult = await opportunity.addSuggestions(newSuggestionDTOs);
 
-  log.info(`[${AUDIT_TYPE}]: Successfully synced Opportunity And Suggestions for site: ${auditUrl} siteId: ${siteId} and alt-text audit type.`);
+  if (isNonEmptyArray(updateResult.errorItems)) {
+    log.error(`[${AUDIT_TYPE}]: Suggestions for siteId ${opportunity.getSiteId()} contains ${updateResult.errorItems.length} items with errors`);
+    updateResult.errorItems.forEach((errorItem) => {
+      log.error(`[${AUDIT_TYPE}]: Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+    });
+
+    if (!isNonEmptyArray(updateResult.createdItems)) {
+      throw new Error(`[${AUDIT_TYPE}]: Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
+    }
+  }
+
+  log.info(`[${AUDIT_TYPE}]: Added ${newSuggestionDTOs.length} new suggestions`);
 }

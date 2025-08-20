@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { JSDOM } from 'jsdom';
 import { saveIntermediateResults } from './utils.js';
 import { runLinksChecks } from './links-checks.js';
@@ -19,7 +19,7 @@ export const PREFLIGHT_LINKS = 'links';
 
 export default async function links(context, auditContext) {
   const {
-    site, jobId, log,
+    site, job, log,
   } = context;
   const {
     checks,
@@ -55,16 +55,22 @@ export default async function links(context, auditContext) {
     // Link checks (both internal and external)
     const linksStartTime = Date.now();
     const linksStartTimestamp = new Date().toISOString();
-
-    const { auditResult } = await runLinksChecks(urls, scrapedObjects, context, {
+    const auditUrls = urls.map((url) => stripTrailingSlash(url));
+    const { auditResult } = await runLinksChecks(auditUrls, scrapedObjects, context, {
       pageAuthToken,
     });
 
+    const brokenInternalLinksByPage = new Map();
+    const brokenExternalLinksByPage = new Map();
+
     // Process internal links
     if (isNonEmptyArray(auditResult.brokenInternalLinks)) {
+      const baseURLOrigin = new URL(previewBaseURL).origin;
       if (step === 'suggest') {
         const brokenLinks = auditResult.brokenInternalLinks.map((link) => ({
-          urlTo: new URL(site.getBaseURL()).origin + new URL(link.urlTo).pathname.replace(/\/$/, ''),
+          urlTo: stripTrailingSlash(
+            link.urlTo.replace(new URL(link.urlTo).origin, site.getBaseURL()),
+          ),
           href: link.href,
           status: link.status,
         }));
@@ -72,35 +78,34 @@ export default async function links(context, auditContext) {
         const brokenInternalLinks = await
         generateSuggestionData(previewBaseURL, brokenLinks, context, site);
         log.debug(`[preflight-audit] Generated suggestions for broken internal links: ${JSON.stringify(brokenInternalLinks)}`);
-        const baseURLOrigin = new URL(previewBaseURL).origin;
         brokenInternalLinks.forEach(({
           urlTo, href, status, urlsSuggested, aiRationale,
         }) => {
-          const audit = linksAuditMap.get(href);
-          const aiUrls = urlsSuggested?.map((url) => (baseURLOrigin + new URL(url).pathname.replace(/\/$/, '')));
-          audit.opportunities.push({
-            check: 'broken-internal-links',
-            issue: {
-              url: urlTo,
-              issue: `Status ${status}`,
-              seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-              urlsSuggested: aiUrls,
-              aiRationale,
-            },
+          if (!brokenInternalLinksByPage.has(href)) {
+            brokenInternalLinksByPage.set(href, []);
+          }
+          const aiUrls = urlsSuggested?.map((url) => stripTrailingSlash(
+            url.replace(new URL(url).origin, baseURLOrigin),
+          ));
+          brokenInternalLinksByPage.get(href).push({
+            url: stripTrailingSlash(urlTo.replace(new URL(urlTo).origin, baseURLOrigin)),
+            issue: `Status ${status}`,
+            seoImpact: 'High',
+            seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+            aiSuggestion: aiUrls[0],
+            aiRationale,
           });
         });
       } else {
         auditResult.brokenInternalLinks.forEach(({ urlTo, href, status }) => {
-          const audit = linksAuditMap.get(href);
-          audit.opportunities.push({
-            check: 'broken-internal-links',
-            issue: {
-              url: urlTo,
-              issue: `Status ${status}`,
-              seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-            },
+          if (!brokenInternalLinksByPage.has(href)) {
+            brokenInternalLinksByPage.set(href, []);
+          }
+          brokenInternalLinksByPage.get(href).push({
+            url: urlTo.replace(new URL(urlTo).origin, baseURLOrigin),
+            issue: `Status ${status}`,
+            seoImpact: 'High',
+            seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
           });
         });
       }
@@ -109,23 +114,42 @@ export default async function links(context, auditContext) {
     // Process external links from the same audit auditsResult
     if (isNonEmptyArray(auditResult.brokenExternalLinks)) {
       auditResult.brokenExternalLinks.forEach(({ urlTo, href, status }) => {
-        const audit = linksAuditMap.get(href);
-        audit.opportunities.push({
-          check: 'broken-external-links',
-          issue: {
-            url: urlTo,
-            issue: `Status ${status}`,
-            seoImpact: 'High',
-            seoRecommendation: 'Fix or remove broken links to improve user experience',
-          },
+        if (!brokenExternalLinksByPage.has(href)) {
+          brokenExternalLinksByPage.set(href, []);
+        }
+        brokenExternalLinksByPage.get(href).push({
+          url: urlTo,
+          issue: `Status ${status}`,
+          seoImpact: 'High',
+          seoRecommendation: 'Fix or remove broken links to improve user experience',
         });
       });
     }
 
+    brokenInternalLinksByPage.forEach((issues, href) => {
+      const audit = linksAuditMap.get(stripTrailingSlash(href));
+      if (audit && issues.length > 0) {
+        audit.opportunities.push({
+          check: 'broken-internal-links',
+          issue: issues,
+        });
+      }
+    });
+
+    brokenExternalLinksByPage.forEach((issues, href) => {
+      const audit = linksAuditMap.get(stripTrailingSlash(href));
+      if (audit && issues.length > 0) {
+        audit.opportunities.push({
+          check: 'broken-external-links',
+          issue: issues,
+        });
+      }
+    });
+
     const linksEndTime = Date.now();
     const linksEndTimestamp = new Date().toISOString();
     const linksElapsed = ((linksEndTime - linksStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Links audit completed in ${linksElapsed} seconds`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Links audit completed in ${linksElapsed} seconds`);
 
     timeExecutionBreakdown.push({
       name: 'links',
@@ -138,7 +162,8 @@ export default async function links(context, auditContext) {
     scrapedObjects.forEach(({ data }) => {
       const { finalUrl, scrapeResult: { rawBody } } = data;
       const doc = new JSDOM(rawBody).window.document;
-      const audit = linksAuditMap.get(finalUrl);
+      const auditUrl = stripTrailingSlash(finalUrl);
+      const audit = linksAuditMap.get(auditUrl);
       const insecureLinks = Array.from(doc.querySelectorAll('a'))
         .filter((anchor) => anchor.href.startsWith('http://'))
         .map((anchor) => ({

@@ -14,3 +14,8 @@
 export const CPC = 1; // $1
 export const PENALTY_PER_IMAGE = 0.01; // 1%
 export const RUM_INTERVAL = 30; // days
+
+export const ALT_TEXT_GUIDANCE_TYPE = 'guidance:missing-alt-text';
+export const ALT_TEXT_OBSERVATION = 'Missing alt text on images';
+
+export const MYSTIQUE_BATCH_SIZE = 10;
