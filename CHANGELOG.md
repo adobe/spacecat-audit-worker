@@ -1,3 +1,45 @@
+# [1.153.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.152.1...v1.153.0) (2025-08-20)
+
+
+### Features
+
+* add audit to check whether llm agents are blocked in robots txt ([#1074](https://github.com/adobe/spacecat-audit-worker/issues/1074)) ([7377e2a](https://github.com/adobe/spacecat-audit-worker/commit/7377e2af06bbaedf72d3a420a1776236588fa8e8))
+
+## [1.152.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.152.0...v1.152.1) (2025-08-20)
+
+
+### Bug Fixes
+
+* add wcag formatting ([#1143](https://github.com/adobe/spacecat-audit-worker/issues/1143)) ([07af6f0](https://github.com/adobe/spacecat-audit-worker/commit/07af6f0289bc5a18e5f77a10f5b8b54dbcd4bdf6))
+
+# [1.152.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.151.0...v1.152.0) (2025-08-20)
+
+
+### Features
+
+* add a11y validation metrics ([#1117](https://github.com/adobe/spacecat-audit-worker/issues/1117)) ([c91ad0e](https://github.com/adobe/spacecat-audit-worker/commit/c91ad0e4903cce55264a2e855e65eb802f287755))
+
+# [1.151.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.150.0...v1.151.0) (2025-08-20)
+
+
+### Features
+
+* geo-brand-presence upload xlsx to elmo-ui ([#1140](https://github.com/adobe/spacecat-audit-worker/issues/1140)) ([19babf1](https://github.com/adobe/spacecat-audit-worker/commit/19babf1c305a35df8e83a51b54d6d7630f8d1455))
+
+# [1.150.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.149.1...v1.150.0) (2025-08-19)
+
+
+### Features
+
+* make agentic traffic simple structure ([#1138](https://github.com/adobe/spacecat-audit-worker/issues/1138)) ([0c954f4](https://github.com/adobe/spacecat-audit-worker/commit/0c954f459f72c5af0723612de6b0bb054630cbbb))
+
+## [1.149.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.149.0...v1.149.1) (2025-08-19)
+
+
+### Bug Fixes
+
+* created pr to trigger release ([#1139](https://github.com/adobe/spacecat-audit-worker/issues/1139)) ([4ee4fb5](https://github.com/adobe/spacecat-audit-worker/commit/4ee4fb583ed379ac0b818eafa24a5cbed91e8332))
+
 # [1.149.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.148.1...v1.149.0) (2025-08-19)
 
 

@@ -48,8 +48,9 @@ import paidConsentGuidance from './paid/guidance-handler.js';
 import paidTrafficAnalysisGuidance from './paid-traffic-analysis/guidance-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
+import llmBlocked from './llm-blocked/handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
-import guidanceGeoBrandPresence from './geo-brand-presence/guidance-geo-brand-presence-handler.js';
+import detectGeoBrandPresence from './geo-brand-presence/detect-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
 import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
@@ -87,6 +88,7 @@ const HANDLERS = {
   'meta-tags': metaTags,
   costs,
   'structured-data': structuredData,
+  'llm-blocked': llmBlocked,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
   'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
@@ -96,7 +98,7 @@ const HANDLERS = {
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
-  'guidance:geo-brand-presence': guidanceGeoBrandPresence,
+  'detect:geo-brand-presence': detectGeoBrandPresence,
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
