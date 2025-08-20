@@ -393,7 +393,6 @@ export async function createIndividualOpportunitySuggestions(
           isCreateTicketClicked: false,
         },
       }),
-      log,
       mergeDataFunction: keepSameDataFunction,
       statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
     });

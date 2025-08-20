@@ -1337,7 +1337,6 @@ describe('createIndividualOpportunitySuggestions', () => {
     expect(callArgs.context).to.equal(mockContext);
     expect(callArgs.buildKey).to.be.a('function');
     expect(callArgs.mapNewSuggestion).to.be.a('function');
-    expect(callArgs.log).to.equal(mockContext.log);
   });
 
   it('should handle errors during suggestion creation', async () => {

@@ -157,7 +157,6 @@ export async function syncBrokenInternalLinksSuggestions({
   brokenInternalLinks,
   context,
   opportunityId,
-  log,
 }) {
   const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
   await syncSuggestions({
@@ -178,6 +177,5 @@ export async function syncBrokenInternalLinksSuggestions({
         trafficDomain: entry.trafficDomain,
       },
     }),
-    log,
   });
 }

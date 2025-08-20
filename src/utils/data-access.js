@@ -134,15 +134,18 @@ const defaultMergeDataFunction = (existingData, newData) => ({
  * @returns {Promise<void>} - Resolves when the synchronization is complete.
  */
 export async function syncSuggestions({
+  context,
   opportunity,
   newData,
-  context,
   buildKey,
   mapNewSuggestion,
   mergeDataFunction = defaultMergeDataFunction,
   statusToSetForOutdated = SuggestionDataAccess.STATUSES.OUTDATED,
-  log,
 }) {
+  if (!context) {
+    return;
+  }
+  const { log } = context;
   const newDataKeys = new Set(newData.map(buildKey));
   const existingSuggestions = await opportunity.getSuggestions();
 

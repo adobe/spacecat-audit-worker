@@ -100,6 +100,13 @@ describe('data-access', () => {
         getSiteId: () => 'site-id',
       };
 
+      mockLogger = {
+        debug: sinon.spy(),
+        error: sinon.spy(),
+        info: sinon.spy(),
+        warn: sinon.spy(),
+      };
+
       context = new MockContextBuilder()
         .withSandbox(sandbox)
         .withOverrides({
@@ -111,15 +118,9 @@ describe('data-access', () => {
           s3Client: {
             send: sandbox.stub(),
           },
+          log: mockLogger,
         })
         .build();
-
-      mockLogger = {
-        debug: sinon.spy(),
-        error: sinon.spy(),
-        info: sinon.spy(),
-        warn: sinon.spy(),
-      };
     });
 
     it('should handle outdated suggestions and add new ones', async () => {
@@ -151,7 +152,6 @@ describe('data-access', () => {
         context,
         buildKey,
         mapNewSuggestion,
-        log: mockLogger,
       });
 
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
@@ -201,7 +201,6 @@ describe('data-access', () => {
         newData,
         buildKey,
         mapNewSuggestion,
-        log: mockLogger,
       });
 
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
@@ -239,7 +238,6 @@ describe('data-access', () => {
         context,
         buildKey,
         mapNewSuggestion,
-        log: mockLogger,
       });
 
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
@@ -273,7 +271,6 @@ describe('data-access', () => {
         context,
         buildKey,
         mapNewSuggestion,
-        log: mockLogger,
       });
 
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
@@ -308,7 +305,6 @@ describe('data-access', () => {
           context,
           buildKey,
           mapNewSuggestion,
-          log: mockLogger,
         });
       } catch (e) {
         expect(e.message).to.equal('Failed to create suggestions for siteId site-id');
@@ -342,7 +338,6 @@ describe('data-access', () => {
         context,
         buildKey,
         mapNewSuggestion,
-        log: mockLogger,
       })).to.be.rejectedWith('Failed to create suggestions for siteId');
     });
   });
