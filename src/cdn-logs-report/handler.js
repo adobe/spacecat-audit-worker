@@ -16,7 +16,7 @@ import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
-async function runCdnLogsReport(url, context, site) {
+async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
   const s3Config = getS3Config(site, context);
 
@@ -49,8 +49,14 @@ async function runCdnLogsReport(url, context, site) {
   };
 
   log.info('Running weekly report...');
+  const weekOffset = auditContext?.weekOffset || -1;
   await runWeeklyReport({
-    athenaClient, s3Config, log, site, sharepointClient,
+    athenaClient,
+    s3Config,
+    log,
+    site,
+    sharepointClient,
+    weekOffset,
   });
 
   return {

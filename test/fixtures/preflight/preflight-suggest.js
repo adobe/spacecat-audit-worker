@@ -66,31 +66,31 @@ export const suggestionData = [
         opportunities: [
           {
             check: 'broken-internal-links',
-            issue: {
-              url: 'https://example.com/broken',
-              issue: 'Status 404',
-              seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-              urlsSuggested: [
-                'https://main--example--page.aem.page/fix',
-              ],
-              aiRationale: 'Rationale',
-            },
-          },
-          {
-            check: 'broken-internal-links',
-            issue: {
-              url: 'https://example.com/another-broken-url',
-              issue: 'Status 404',
-              seoImpact: 'High',
-              seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
-              urlsSuggested: [
-                'https://main--example--page.aem.page/fix',
-              ],
-              aiRationale: 'Rationale',
-            },
+            issue: [
+              {
+                url: 'https://main--example--page.aem.page/broken',
+                issue: 'Status 404',
+                seoImpact: 'High',
+                seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+                aiSuggestion: 'https://main--example--page.aem.page/fix',
+                aiRationale: 'Rationale',
+              },
+              {
+                url: 'https://main--example--page.aem.page/another-broken-url',
+                issue: 'Status 404',
+                seoImpact: 'High',
+                seoRecommendation: 'Fix or remove broken links to improve user experience and SEO',
+                aiSuggestion: 'https://main--example--page.aem.page/fix',
+                aiRationale: 'Rationale',
+              },
+            ],
           },
         ],
+      },
+      {
+        name: 'readability',
+        type: 'seo',
+        opportunities: [],
       },
     ],
   },

@@ -14,6 +14,7 @@ import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getScrapedDataForSiteId } from '../support/utils.js';
+import { syncSuggestions } from '../utils/data-access.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
@@ -71,11 +72,11 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   }
 
   /**
-   * Process a broken internal link to generate URL suggestions
-   * @param {Object} link - The broken internal link object containing urlTo and other properties
-   * @param {Object} headerSuggestions - Suggestions generated from header links
-   * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
-   */
+     * Process a broken internal link to generate URL suggestions
+     * @param {Object} link - The broken internal link object containing urlTo and other properties
+     * @param {Object} headerSuggestions - Suggestions generated from header links
+     * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
+     */
   const processLink = async (link, headerSuggestions) => {
     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Processing link: ${link.urlTo}`);
     const suggestions = await processBatches(dataBatches, link.urlTo);
@@ -109,9 +110,11 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     return {
       ...link,
       urlsSuggested:
-        suggestions[0]?.suggested_urls?.length > 0 ? suggestions[0]?.suggested_urls : [finalUrl],
+                suggestions[0]?.suggested_urls?.length > 0
+                  ? suggestions[0]?.suggested_urls
+                  : [finalUrl],
       aiRationale:
-        suggestions[0]?.aiRationale?.length > 0 ? suggestions[0]?.aiRationale : 'No suitable suggestions found',
+                suggestions[0]?.aiRationale?.length > 0 ? suggestions[0]?.aiRationale : 'No suitable suggestions found',
     };
   };
 
@@ -148,3 +151,33 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions generation complete.`);
   return updatedInternalLinks;
 };
+
+export async function syncBrokenInternalLinksSuggestions({
+  opportunity,
+  brokenInternalLinks,
+  context,
+  opportunityId,
+  log,
+}) {
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  await syncSuggestions({
+    opportunity,
+    newData: brokenInternalLinks,
+    context,
+    buildKey,
+    mapNewSuggestion: (entry) => ({
+      opportunityId,
+      type: 'CONTENT_UPDATE',
+      rank: entry.trafficDomain,
+      data: {
+        title: entry.title,
+        urlFrom: entry.urlFrom,
+        urlTo: entry.urlTo,
+        urlsSuggested: entry.urlsSuggested || [],
+        aiRationale: entry.aiRationale || '',
+        trafficDomain: entry.trafficDomain,
+      },
+    }),
+    log,
+  });
+}

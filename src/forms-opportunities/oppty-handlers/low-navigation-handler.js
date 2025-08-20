@@ -11,8 +11,13 @@
  */
 
 import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
-import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
-import { calculateProjectedConversionValue, filterForms, generateOpptyData } from '../utils.js';
+import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../constants.js';
+import {
+  calculateProjectedConversionValue,
+  filterForms,
+  generateOpptyData,
+  sendMessageToFormsQualityAgent,
+} from '../utils.js';
 import { DATA_SOURCES } from '../../common/constants.js';
 
 const formPathSegments = ['contact', 'newsletter', 'sign', 'enrol', 'subscribe', 'register', 'join', 'apply', 'quote', 'buy', 'trial', 'demo', 'offer'];
@@ -25,7 +30,7 @@ const formPathSegments = ['contact', 'newsletter', 'sign', 'enrol', 'subscribe',
 // eslint-disable-next-line max-len
 export default async function createLowNavigationOpportunities(auditUrl, auditDataObject, scrapedData, context, excludeForms = new Set()) {
   const {
-    dataAccess, log, sqs, site, env,
+    dataAccess, log,
   } = context;
   const { Opportunity } = dataAccess;
 
@@ -99,6 +104,12 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
       if (!highPageViewsLowFormNavOppty) {
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
+        log.debug('Forms Opportunity high page views low form nav created');
+      } else if (highPageViewsLowFormNavOppty.getOrigin() === ORIGINS.ESS_OPS) {
+        log.debug('Forms Opportunity high page views low form nav exists and is from ESS_OPS');
+        opportunityData.status = 'IGNORED';
+        // eslint-disable-next-line no-await-in-loop
+        highPageViewsLowFormNavOppty = await Opportunity.create(opportunityData);
       } else {
         highPageViewsLowFormNavOppty.setAuditId(auditData.auditId);
         highPageViewsLowFormNavOppty.setData({
@@ -114,24 +125,8 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         await highPageViewsLowFormNavOppty.save();
       }
 
-      log.info('sending message to mystique for high-page-views-low-form-nav');
-      const mystiqueMessage = {
-        type: 'guidance:high-page-views-low-form-nav',
-        siteId: auditData.siteId,
-        auditId: auditData.auditId,
-        deliveryType: site.getDeliveryType(),
-        time: new Date().toISOString(),
-        data: {
-          url: opportunityData.data.form,
-          cr: opportunityData.data.trackedFormKPIValue,
-          cta_source: opportunityData.data.formNavigation.source,
-          form_source: opportunityData.data.formsource || '',
-        },
-      };
-
       // eslint-disable-next-line no-await-in-loop
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-      log.info(`forms opportunity high page views low form nav sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
+      await sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for high page views low form nav for siteId ${auditData.siteId} failed with error: ${e.message}`, e);

@@ -488,3 +488,25 @@ export async function calculateProjectedConversionValue(context, siteId, opportu
     return null;
   }
 }
+
+export async function sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData) {
+  const auditData = JSON.parse(JSON.stringify(auditDataObject));
+  const {
+    log, sqs, site, env,
+  } = context;
+  const mystiqueFormsQualityAgentMessage = {
+    type: 'detect:form-details',
+    siteId: auditData.siteId,
+    auditId: auditData.auditId,
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      url: opportunityData.data.form,
+      form_source: opportunityData.data.formsource,
+    },
+  };
+
+  // eslint-disable-next-line no-await-in-loop
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueFormsQualityAgentMessage);
+  log.info(`forms quality agent message sent to mystique : ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
+}

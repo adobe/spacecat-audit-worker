@@ -11,23 +11,22 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
+  from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { wwwUrlResolver } from '../common/index.js';
+import { syncBrokenInternalLinksSuggestions } from './suggestions-generator.js';
+import {
+  isLinkInaccessible,
+  calculatePriority, calculateKpiDeltasForAudit,
+} from './helpers.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { wwwUrlResolver } from '../common/index.js';
-import { syncBrokenInternalLinksSuggestions } from './suggestions-internal-links-handler.js';
-import {
-  calculateKpiDeltasForAudit,
-  isLinkInaccessible,
-  calculatePriority,
-} from './helpers.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 30; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
-const LINKS_CHUNK_SIZE = 30;
 
 /**
  * Perform an audit to check which internal links for domain are broken.
@@ -135,10 +134,11 @@ export async function prepareScrapingStep(context) {
   };
 }
 
-export async function opportunityAndSuggestionsStep(context) {
+export const opportunityAndSuggestionsStep = async (context) => {
   const {
     log, site, finalUrl, sqs, env, dataAccess, audit,
   } = context;
+  const { Configuration, Suggestion, SiteTopPage } = dataAccess;
 
   const { brokenInternalLinks, success } = audit.getAuditResult();
 
@@ -178,7 +178,6 @@ export async function opportunityAndSuggestionsStep(context) {
 
       // If there are suggestions, update their status to outdated
       if (isNonEmptyArray(suggestions)) {
-        const { Suggestion } = dataAccess;
         await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
       }
       opportunity.setUpdatedBy('system');
@@ -201,51 +200,44 @@ export async function opportunityAndSuggestionsStep(context) {
       kpiDeltas,
     },
   );
+  await syncBrokenInternalLinksSuggestions({
+    opportunity,
+    brokenInternalLinks,
+    context,
+    opportunityId: opportunity.getId(),
+    log,
+  });
 
-  // if auto-suggest is disabled, sync suggestions and return
-  const configuration = await dataAccess.Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Auto-suggest is disabled for site`);
-    await syncBrokenInternalLinksSuggestions({
-      opportunity,
-      brokenInternalLinks,
-      context,
-      opportunityId: opportunity.getId(),
-      log,
-    });
-    return {
-      status: 'complete',
+  const configuration = await Configuration.findLatest();
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  if (configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
+    const suggestions = await Suggestion.allByOpportunityIdAndStatus(
+      opportunity.getId(),
+      SuggestionDataAccess.STATUSES.NEW,
+    );
+    const message = {
+      type: 'guidance:broken-links',
+      siteId: site.getId(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        alternativeUrls: topPages.map((page) => page.getUrl()),
+        opportunityId: opportunity?.getId(),
+        brokenLinks: suggestions.map((suggestion) => ({
+          urlFrom: suggestion?.getData()?.urlFrom,
+          urlTo: suggestion?.getData()?.urlTo,
+          suggestionId: suggestion?.getId(),
+        })),
+      },
     };
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
   }
-
-  // Chunk the brokenInternalLinks array into pieces of LINKS_CHUNK_SIZE URLs each
-  // for further processing in batches. This is done to avoid aws lambda function timeout.
-  const brokenInternalLinksChunks = [];
-  for (let i = 0; i < brokenInternalLinks.length; i += LINKS_CHUNK_SIZE) {
-    brokenInternalLinksChunks.push(brokenInternalLinks.slice(i, i + LINKS_CHUNK_SIZE));
-  }
-  // brokenInternalLinksChunks is an array of arrays, each containing up to LINKS_CHUNK_SIZE items.
-  const messages = brokenInternalLinksChunks.map((brokenInternalLinksChunk) => ({
-    type: 'suggestions:internal-links',
-    siteId: site.getId(),
-    // auditId: audit.getId(),
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      brokenInternalLinks: brokenInternalLinksChunk,
-      size: brokenInternalLinksChunk.length,
-      opportunityId: opportunity.getId(),
-    },
-  }));
-  // Send all messages in parallel using Promise.all to avoid sequential processing
-  await Promise.all(messages.map(async (message) => {
-    await sqs.sendMessage(env.AUDIT_JOBS_QUEUE_URL, message);
-    log.info(`Message sent to audit queue: ${JSON.stringify(message)}`);
-  }));
   return {
     status: 'complete',
   };
-}
+};
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
@@ -259,5 +251,5 @@ export default new AuditBuilder()
     prepareScrapingStep,
     AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
   )
-  .addStep('opportunityAndSuggestions', opportunityAndSuggestionsStep)
+  .addStep('trigger-ai-suggestions', opportunityAndSuggestionsStep)
   .build();

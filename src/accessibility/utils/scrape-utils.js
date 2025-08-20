@@ -120,7 +120,12 @@ export function filterAccessibilityOpportunities(opportunities) {
  * Result of the operation
  * @returns {Promise<{success: boolean, updatedCount: number, error?: string}>}
  */
-export async function updateStatusToIgnored(dataAccess, siteId, log) {
+export async function updateStatusToIgnored(
+  dataAccess,
+  siteId,
+  log,
+  filterOpportunities = filterAccessibilityOpportunities,
+) {
   try {
     const { Opportunity } = dataAccess;
     const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
@@ -130,7 +135,7 @@ export async function updateStatusToIgnored(dataAccess, siteId, log) {
       return { success: true, updatedCount: 0 };
     }
 
-    const accessibilityOppties = filterAccessibilityOpportunities(opportunities);
+    const accessibilityOppties = filterOpportunities(opportunities);
     log.info(`[A11yAudit] Found ${accessibilityOppties.length} opportunities to update to IGNORED for site ${siteId}`);
 
     if (accessibilityOppties.length === 0) {
@@ -299,6 +304,100 @@ export async function saveA11yMetricsToS3(reportData, context) {
     return {
       success: false,
       message: `Failed to save a11y metrics to S3: ${error.message}`,
+      error: error.message,
+    };
+  }
+}
+
+/**
+ * Save received suggestion IDs metrics to S3 in JSON format
+ * @param {Object} receivedData - The received metrics data
+ * @param {string} receivedData.pageUrl - The page URL
+ * @param {string[]} receivedData.receivedSuggestionIds - Array of received suggestion IDs
+ * @param {number} receivedData.receivedCount - Count of received suggestions
+ * @param {Object} context - The context object containing s3Client, log, env, site, audit
+ * @param {string} opportunityId - The opportunity ID
+ * @param {string} opportunityType - The opportunity type
+ * @param siteId
+ * @param auditId
+ * @returns {Object} Result object with success status
+ */
+export async function saveMystiqueValidationMetricsToS3(
+  validationData,
+  context,
+  opportunityId,
+  opportunityType,
+  siteId,
+  auditId,
+) {
+  const {
+    log, env, s3Client,
+  } = context;
+  const bucketName = env.S3_IMPORTER_BUCKET_NAME;
+
+  const newValidationEntry = {
+    siteId,
+    auditId,
+    opportunityId,
+    opportunityType,
+    pageUrl: validationData.pageUrl,
+    validatedAt: new Date().toISOString(),
+    sentCount: validationData.sentCount || 0,
+    receivedCount: validationData.receivedCount || 0,
+  };
+
+  log.info(`[A11yValidation] Mystique validation metrics for site ${siteId}, opportunity ${opportunityId}, page ${validationData.pageUrl} - Sent: ${newValidationEntry.sentCount}, Received: ${newValidationEntry.receivedCount}`);
+
+  // Read existing a11y-suggestions-validation.json file from S3
+  const s3Key = `metrics/${siteId}/mystique/a11y-suggestions-validation.json`;
+  let existingMetrics = [];
+
+  try {
+    const existingData = await getObjectFromKey(s3Client, bucketName, s3Key, log);
+    if (existingData && Array.isArray(existingData)) {
+      existingMetrics = existingData;
+      log.info(`[A11yValidation] Found existing mystique validation file with ${existingMetrics.length} entries for site ${siteId}`);
+    }
+  } catch (error) {
+    log.info(`[A11yValidation] No existing mystique validation file found for site ${siteId}, creating new one: ${error.message}`);
+  }
+
+  // Check if entry already exists for this audit + opportunity + page combination
+  const existingIndex = existingMetrics.findIndex((entry) => entry.auditId === auditId
+    && entry.opportunityId === opportunityId
+    && entry.pageUrl === validationData.pageUrl);
+
+  if (existingIndex >= 0) {
+    // Update existing entry
+    existingMetrics[existingIndex] = newValidationEntry;
+    log.info(`[A11yValidation] Updated existing mystique validation entry for page ${validationData.pageUrl}`);
+  } else {
+    // Add new entry
+    existingMetrics.push(newValidationEntry);
+    log.info(`[A11yValidation] Added new mystique validation entry for page ${validationData.pageUrl}`);
+  }
+
+  try {
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: s3Key,
+      Body: JSON.stringify(existingMetrics, null, 2),
+      ContentType: 'application/json',
+    }));
+
+    log.info(`[A11yValidation] Successfully saved mystique validation metrics to S3: ${s3Key} for site ${siteId}, opportunity ${opportunityId}`);
+
+    return {
+      success: true,
+      message: 'Mystique validation metrics saved to S3',
+      metricsData: newValidationEntry,
+      s3Key,
+    };
+  } catch (error) {
+    log.error(`[A11yValidation] Error saving mystique validation metrics to S3 for site ${siteId}, opportunity ${opportunityId}: ${error.message}`);
+    return {
+      success: false,
+      message: `Failed to save mystique validation metrics to S3: ${error.message}`,
       error: error.message,
     };
   }

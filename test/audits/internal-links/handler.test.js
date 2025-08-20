@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Adobe. All rights reserved.
+ * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -32,6 +32,7 @@ import {
 } from '../../fixtures/internal-links-data.js';
 import { MockContextBuilder } from '../../shared.js';
 
+const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
 const AUDIT_RESULT_DATA = [
   {
     trafficDomain: 1800,
@@ -191,7 +192,6 @@ describe('Broken internal links audit ', () => {
   });
 
   it('prepareScrapingStep should send top pages to scraping service', async () => {
-    const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
     context.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
     };
@@ -221,11 +221,18 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         runtime: { name: 'aws-lambda', region: 'us-east-1' },
         func: { package: 'spacecat-services', version: 'ci', name: 'test' },
         finalUrl: 'www.example.com',
+        env: {
+          QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue-url',
+        },
+        sqs: {
+          sendMessage: sandbox.stub().resolves({ MessageId: 'test-message-id' }),
+        },
       })
       .build();
     context.log = {
       info: sandbox.stub(),
       error: sandbox.stub(),
+      warn: sandbox.stub(),
     };
     context.sqs.sendMessage.resolves();
 
@@ -237,6 +244,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     context.dataAccess.Opportunity = {
       allBySiteIdAndStatus: sandbox.stub(),
+      addSuggestions: sandbox.stub(),
       create: sandbox.stub(),
     };
 
@@ -245,6 +253,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     addSuggestionsResponse = {
       createdItems: [],
       errorItems: [],
+    };
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
     };
 
     opportunity = {
@@ -286,6 +297,9 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         generateSuggestionData: () => AUDIT_RESULT_DATA_WITH_SUGGESTIONS,
       },
     });
+    context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sandbox.stub()
+      .resolves(AUDIT_RESULT_DATA_WITH_SUGGESTIONS.map((data) => (
+        { getData: () => data, getId: () => '1111', save: () => {} })));
   });
 
   afterEach(() => {
@@ -296,61 +310,38 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(opportunity);
     context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
     expect(result.status).to.equal('complete');
     expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+    expect(opportunity.addSuggestions).to.have.been.calledOnce;
+    const suggestionsArg = opportunity.addSuggestions.getCall(0).args[0];
+    expect(suggestionsArg).to.be.an('array').with.lengthOf(3);
+    expect(suggestionsArg[0].data.urlTo).to.equal(
+      'https://www.petplace.com/a01',
+    );
   }).timeout(10000);
 
-  it('does not create new suggestions if the audit result was not successful', async () => {
-    context.audit = {
-      ...auditData,
-      getAuditResult: () => ({
-        brokenInternalLinks: AUDIT_RESULT_DATA,
-        success: false,
-        auditContext: {
-          interval: 30,
-        },
-      }),
-    };
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    context.dataAccess.Opportunity.create.resolves(opportunity);
-    context.site.getLatestAuditByAuditType = () => context.audit;
-
-    await handler.opportunityAndSuggestionsStep(context);
-    expect(context.log.info).to.have.been.calledWith(
-      `[broken-internal-links] [Site: ${site.getId()}] Audit failed, skipping suggestions generation`,
-    );
-  });
-
-  it('creating a new opportunity object fails', async () => {
-    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    context.dataAccess.Opportunity.create.rejects(
-      new Error('big error happened'),
-    );
-    sandbox.stub(GoogleClient, 'createFrom').resolves({});
-
-    await expect(
-      handler.opportunityAndSuggestionsStep(context),
-    ).to.be.rejectedWith('big error happened');
-
-    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
-      expectedOpportunity,
-    );
-    expect(context.log.error).to.have.been.calledOnceWith(
-      'Failed to create new opportunity for siteId site-id-1 and auditId audit-id-1: big error happened',
-    );
-
-    // make sure that no new suggestions are added
-    expect(opportunity.addSuggestions).to.have.been.to.not.have.been.called;
-  }).timeout(5000);
 
   it('no broken internal links found and fetching existing opportunity object fails', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(
       new Error('read error happened'),
     );
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    // Override audit to have no broken links
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [],
+        success: true,
+        auditContext: {
+          interval: 30,
+        },
+      }),
+    };
 
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
@@ -360,12 +351,56 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     await expect(
       handler.opportunityAndSuggestionsStep(context),
-    ).to.be.rejectedWith('read error happened');
+    ).to.be.rejectedWith('Failed to fetch opportunities for siteId site-id-1: read error happened');
+
+    expect(context.log.error).to.have.been.calledWith(
+      'Fetching opportunities for siteId site-id-1 failed with error: read error happened',
+    );
+  }).timeout(5000);
+
+  it('handles SQS message sending errors', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    context.sqs.sendMessage.rejects(new Error('SQS error'));
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    await expect(
+      handler.opportunityAndSuggestionsStep(context),
+    ).to.be.rejectedWith('SQS error');
+
+    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
+      expectedOpportunity,
+    );
+  }).timeout(5000);
+
+  it('creating a new opportunity object succeeds and sends SQS messages', async () => {
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(opportunity);
+    sandbox.stub(GoogleClient, 'createFrom').resolves({});
+
+    context.site.getLatestAuditByAuditType = () => auditData;
+    context.site.getDeliveryType = () => 'aem_edge';
+
+    const result = await handler.opportunityAndSuggestionsStep(context);
+
+    expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(
+      expectedOpportunity,
+    );
+
+    expect(result.status).to.equal('complete');
+
+    // Verify SQS messages were sent
+    expect(context.sqs.sendMessage).to.have.been.called;
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match('Message sent to Mystique:'),
+    );
   }).timeout(5000);
 
   it('no new opportunity created if no broken internal links found', async () => {
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-    context.dataAccess.Opportunity.create.resolves(opportunity);
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
 
     auditData.auditResult.brokenInternalLinks = [];
@@ -377,6 +412,18 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
         generateSuggestionData: () => [],
       },
     });
+
+    // Override audit to have no broken links
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [],
+        success: true,
+        auditContext: {
+          interval: 30,
+        },
+      }),
+    };
 
     const result = await handler.opportunityAndSuggestionsStep(context);
 
@@ -413,6 +460,18 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     sandbox.stub(SuggestionDataAccess, 'STATUSES').value({ OUTDATED: 'OUTDATED', NEW: 'NEW' });
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
     context.site.getLatestAuditByAuditType = () => auditData;
+
+    // Override audit to have no broken links
+    context.audit = {
+      ...auditData,
+      getAuditResult: () => ({
+        brokenInternalLinks: [],
+        success: true,
+        auditContext: {
+          interval: 30,
+        },
+      }),
+    };
 
     handler = await esmock('../../../src/internal-links/handler.js', {
       '../../../src/internal-links/suggestions-generator.js': {
@@ -488,7 +547,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     // auditData.auditResult.brokenInternalLinks = [];
     // context.site.getLatestAuditByAuditType = () => auditData;
-  
+
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
     const existingSuggestions = expectedSuggestions.map((suggestion) => ({
       ...suggestion,
