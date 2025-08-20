@@ -113,18 +113,14 @@ describe('LLM Error Pages Handler', () => {
           fromContext: sandbox.stub().returns(mockAthenaClient),
         },
       },
-      '../../../src/llm-error-pages/utils/report-utils.js': {
+      '../../../src/llm-error-pages/utils.js': {
         getS3Config: mockGetS3Config,
         validateDatabaseAndTable: mockValidateDatabase,
         generateReportingPeriods: mockGenerateReportingPeriods,
         createDateRange: mockCreateDateRange,
         buildSiteFilters: mockBuildSiteFilters,
         processLlmErrorPagesResults: mockProcessResults,
-      },
-      '../../../src/llm-error-pages/utils/query-builder.js': {
         buildLlmErrorPagesQuery: mockBuildQuery,
-      },
-      '../../../src/llm-error-pages/constants/user-agent-patterns.js': {
         getAllLlmProviders: mockGetAllLlmProviders,
       },
       '../../../src/llm-error-pages/opportunity-handler.js': {
@@ -207,7 +203,7 @@ describe('LLM Error Pages Handler', () => {
             fromContext: sandbox.stub().returns(mockAthenaClient),
           },
         },
-        '../../../src/llm-error-pages/utils/report-utils.js': {
+        '../../../src/llm-error-pages/utils.js': {
           getS3Config: sandbox.stub().returns(mockS3Config),
           validateDatabaseAndTable: sandbox.stub().rejects(mockError),
           generateReportingPeriods: sandbox.stub().returns({
@@ -217,11 +213,7 @@ describe('LLM Error Pages Handler', () => {
           }),
           buildSiteFilters: sandbox.stub().returns(''),
           processLlmErrorPagesResults: sandbox.stub().returns({ totalErrors: 0, errorPages: [], summary: {} }),
-        },
-        '../../../src/llm-error-pages/utils/query-builder.js': {
           buildLlmErrorPagesQuery: sandbox.stub().resolves('SELECT * FROM test'),
-        },
-        '../../../src/llm-error-pages/constants/user-agent-patterns.js': {
           getAllLlmProviders: sandbox.stub().returns(['chatgpt']),
         },
         '../../../src/llm-error-pages/opportunity-handler.js': {

@@ -14,19 +14,13 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import esmock from 'esmock';
+import { buildLlmErrorPagesQuery } from '../../../src/llm-error-pages/utils.js';
 
-describe('LLM Error Pages - Query Builder', () => {
-  let queryBuilder;
+describe('LLM Error Pages – query-builder', () => {
   let mockOptions;
-  let sandbox;
+  const sandbox = sinon.createSandbox();
 
-  before(async () => {
-    sandbox = sinon.createSandbox();
-
-    queryBuilder = await import('../../../src/llm-error-pages/utils/query-builder.js');
-  });
-
-  beforeEach(() => {
+  beforeEach(async () => {
     mockOptions = {
       databaseName: 'test_database',
       tableName: 'test_table',
@@ -38,13 +32,11 @@ describe('LLM Error Pages - Query Builder', () => {
     };
   });
 
-  afterEach(() => {
-    sandbox.restore();
-  });
+  afterEach(() => sandbox.restore());
 
   describe('buildLlmErrorPagesQuery', () => {
     it('should build comprehensive query with all filters', async () => {
-      const query = await queryBuilder.buildLlmErrorPagesQuery(mockOptions);
+      const query = await buildLlmErrorPagesQuery(mockOptions);
 
       expect(query).to.be.a('string');
       expect(query.length).to.be.greaterThan(50);
@@ -62,7 +54,7 @@ describe('LLM Error Pages - Query Builder', () => {
         endDate: undefined,
       };
 
-      const query = await queryBuilder.buildLlmErrorPagesQuery(optionsWithoutDates);
+      const query = await buildLlmErrorPagesQuery(optionsWithoutDates);
 
       expect(query).to.be.a('string');
       expect(query).to.include('test_database');
@@ -77,7 +69,7 @@ describe('LLM Error Pages - Query Builder', () => {
         errorStatuses: [],
       };
 
-      const query = await queryBuilder.buildLlmErrorPagesQuery(optionsWithEmptyConditions);
+      const query = await buildLlmErrorPagesQuery(optionsWithEmptyConditions);
 
       expect(query).to.be.a('string');
       expect(query).to.include('test_database');
@@ -91,15 +83,15 @@ describe('LLM Error Pages - Query Builder', () => {
         siteFilters: ['host = "example.com"'],
       };
 
-      const query = await queryBuilder.buildLlmErrorPagesQuery(optionsWithNullProviders);
+      const query = await buildLlmErrorPagesQuery(optionsWithNullProviders);
 
       expect(query).to.be.a('string');
       expect(query).to.include('host = "example.com"');
     });
 
     it('should handle llmProviders returning null filter', async () => {
-      const mockedQueryBuilder = await esmock('../../../src/llm-error-pages/utils/query-builder.js', {
-        '../../../src/llm-error-pages/constants/user-agent-patterns.js': {
+      const mockedQueryBuilder = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/llm-error-pages/utils.js': {
           buildLlmUserAgentFilter: sandbox.stub().returns(null), // Return null to test the branch
         },
         '@adobe/spacecat-shared-utils': {
@@ -135,7 +127,7 @@ describe('LLM Error Pages - Query Builder', () => {
         endDate: new Date('2025-01-09T23:59:59Z'),
       };
 
-      const query = await queryBuilder.buildLlmErrorPagesQuery(optionsWithSingleDigitDate);
+      const query = await buildLlmErrorPagesQuery(optionsWithSingleDigitDate);
 
       expect(query).to.be.a('string');
       // Should pad single digits with leading zeros
@@ -150,7 +142,7 @@ describe('LLM Error Pages - Query Builder', () => {
         endDate: new Date('2025-02-05T23:59:59Z'),
       };
 
-      const query = await queryBuilder.buildLlmErrorPagesQuery(crossMonthOptions);
+      const query = await buildLlmErrorPagesQuery(crossMonthOptions);
 
       expect(query).to.be.a('string');
       expect(query).to.include('test_database');
@@ -167,7 +159,7 @@ describe('LLM Error Pages - Query Builder', () => {
         endDate: new Date('2025-01-01T23:59:59Z'),
       };
 
-      const query = await queryBuilder.buildLlmErrorPagesQuery(singleDayOptions);
+      const query = await buildLlmErrorPagesQuery(singleDayOptions);
 
       expect(query).to.be.a('string');
       expect(query).to.include('test_database');
@@ -184,7 +176,7 @@ describe('LLM Error Pages - Query Builder', () => {
         ],
       };
 
-      const query = await queryBuilder.buildLlmErrorPagesQuery(multiFilterOptions);
+      const query = await buildLlmErrorPagesQuery(multiFilterOptions);
 
       expect(query).to.be.a('string');
       expect(query).to.include('host LIKE "example.com"');
@@ -198,7 +190,7 @@ describe('LLM Error Pages - Query Builder', () => {
         errorStatuses: [404, 500, 503],
       };
 
-      const query = await queryBuilder.buildLlmErrorPagesQuery(statusFilterOptions);
+      const query = await buildLlmErrorPagesQuery(statusFilterOptions);
 
       expect(query).to.be.a('string');
       expect(query).to.include('test_database');
@@ -211,7 +203,7 @@ describe('LLM Error Pages - Query Builder', () => {
         errorStatuses: null,
       };
 
-      const query = await queryBuilder.buildLlmErrorPagesQuery(nullStatusOptions);
+      const query = await buildLlmErrorPagesQuery(nullStatusOptions);
 
       expect(query).to.be.a('string');
       expect(query).to.include('test_database');
@@ -224,7 +216,7 @@ describe('LLM Error Pages - Query Builder', () => {
         errorStatuses: [],
       };
 
-      const query = await queryBuilder.buildLlmErrorPagesQuery(emptyStatusOptions);
+      const query = await buildLlmErrorPagesQuery(emptyStatusOptions);
 
       expect(query).to.be.a('string');
       expect(query).to.include('test_database');
@@ -271,7 +263,7 @@ describe('LLM Error Pages - Query Builder', () => {
     it('should build user agent filter from providers', async () => {
       // Test the integration with user agent patterns
       const providers = ['chatgpt', 'claude'];
-      const query = await queryBuilder.buildLlmErrorPagesQuery({
+      const query = await buildLlmErrorPagesQuery({
         ...mockOptions,
         llmProviders: providers,
       });
@@ -287,7 +279,7 @@ describe('LLM Error Pages - Query Builder', () => {
         'path LIKE "/api/%"',
       ];
 
-      const query = await queryBuilder.buildLlmErrorPagesQuery({
+      const query = await buildLlmErrorPagesQuery({
         ...mockOptions,
         siteFilters,
       });
@@ -298,7 +290,7 @@ describe('LLM Error Pages - Query Builder', () => {
     });
 
     it('should handle empty site filters', async () => {
-      const query = await queryBuilder.buildLlmErrorPagesQuery({
+      const query = await buildLlmErrorPagesQuery({
         ...mockOptions,
         siteFilters: [],
       });
@@ -309,7 +301,7 @@ describe('LLM Error Pages - Query Builder', () => {
     });
 
     it('should handle null site filters', async () => {
-      const query = await queryBuilder.buildLlmErrorPagesQuery({
+      const query = await buildLlmErrorPagesQuery({
         ...mockOptions,
         siteFilters: null,
       });
@@ -338,7 +330,7 @@ describe('LLM Error Pages - Query Builder', () => {
         return Promise.resolve(template);
       });
 
-      const mockedQueryBuilder = await esmock('../../../src/llm-error-pages/utils/query-builder.js', {
+      const mockedQueryBuilder = await esmock('../../../src/llm-error-pages/utils.js', {
         '@adobe/spacecat-shared-utils': {
           getStaticContent: getStaticContentSpy,
         },
@@ -357,7 +349,7 @@ describe('LLM Error Pages - Query Builder', () => {
   describe('Error Handling and Edge Cases', () => {
     it('should handle loadSql failure gracefully', async () => {
       // Use esmock to mock getStaticContent to simulate loadSql failure
-      const mockedQueryBuilder = await esmock('../../../src/llm-error-pages/utils/query-builder.js', {
+      const mockedQueryBuilder = await esmock('../../../src/llm-error-pages/utils.js', {
         '@adobe/spacecat-shared-utils': {
           getStaticContent: sandbox.stub().rejects(new Error('SQL load failed')),
         },
@@ -381,7 +373,7 @@ describe('LLM Error Pages - Query Builder', () => {
       };
 
       try {
-        await queryBuilder.buildLlmErrorPagesQuery(malformedOptions);
+        await buildLlmErrorPagesQuery(malformedOptions);
         expect.fail('Should have thrown an error');
       } catch (error) {
         expect(error.message).to.include('getUTCFullYear is not a function');
@@ -391,7 +383,7 @@ describe('LLM Error Pages - Query Builder', () => {
 
   describe('Query Template Processing', () => {
     it('should replace all template variables', async () => {
-      const query = await queryBuilder.buildLlmErrorPagesQuery(mockOptions);
+      const query = await buildLlmErrorPagesQuery(mockOptions);
 
       expect(query).to.include('test_database');
       expect(query).to.include('test_table');
@@ -400,7 +392,7 @@ describe('LLM Error Pages - Query Builder', () => {
     });
 
     it('should handle template with missing variables', async () => {
-      const mockedQueryBuilder = await esmock('../../../src/llm-error-pages/utils/query-builder.js', {
+      const mockedQueryBuilder = await esmock('../../../src/llm-error-pages/utils.js', {
         '@adobe/spacecat-shared-utils': {
           getStaticContent: sandbox.stub().resolves(
             'SELECT * FROM {{missingVar}}.{{anotherMissing}} WHERE {{whereClause}}',
@@ -417,7 +409,7 @@ describe('LLM Error Pages - Query Builder', () => {
     });
 
     it('should handle empty template', async () => {
-      const mockedQueryBuilder = await esmock('../../../src/llm-error-pages/utils/query-builder.js', {
+      const mockedQueryBuilder = await esmock('../../../src/llm-error-pages/utils.js', {
         '@adobe/spacecat-shared-utils': {
           getStaticContent: sandbox.stub().resolves(''),
         },
@@ -428,20 +420,22 @@ describe('LLM Error Pages - Query Builder', () => {
       expect(query).to.equal('');
     });
 
-    it('should handle template with only static content', async () => {
-      const query = await queryBuilder.buildLlmErrorPagesQuery({
+    it('should handle template without any filters', async () => {
+      const query = await buildLlmErrorPagesQuery({
         databaseName: 'test_database',
         tableName: 'test_table',
-        provider: null, // Explicitly null to avoid LLM filters
-        siteFilters: null, // Explicitly null
-        errorStatuses: null, // Explicitly null
-        dates: null, // Explicitly null - no date conditions
+        startDate: null,
+        endDate: null,
+        llmProviders: null,
+        siteFilters: null,
+        errorStatuses: null,
       });
 
       expect(query).to.be.a('string');
       expect(query).to.include('test_database');
       expect(query).to.include('test_table');
-      expect(query).to.not.include('WHERE');
+      expect(query).to.include('WHERE');
+      expect(query).to.include('status BETWEEN 400 AND 599');
     });
   });
 });

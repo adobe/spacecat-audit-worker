@@ -18,7 +18,9 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
-import * as opportunityHandler from '../../../src/llm-error-pages/opportunity-handler.js';
+import {
+  generateOpportunities, consolidateErrorsByUrl, sortErrorsByTrafficVolume, categorizeErrorsByStatusCode,
+} from '../../../src/llm-error-pages/opportunity-handler.js';
 
 use(sinonChai);
 
@@ -39,6 +41,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
               id: 'test-site-id',
               baseURL: 'https://example.com',
               getDeliveryType: () => 'aem_edge',
+              getId: () => 'test-site-id',
             }),
           },
           Opportunity: {
@@ -65,7 +68,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
       };
 
       const message = { siteId: 'test-site-id' };
-      const result = await opportunityHandler.generateOpportunities(processedResults, message, context);
+      const result = await generateOpportunities(processedResults, message, context);
 
       expect(result).to.be.an('object');
       expect(result.status).to.equal('skipped');
@@ -82,7 +85,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
         summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 1 } },
       };
 
-      const result = await opportunityHandler.generateOpportunities(processedResults, null, context);
+      const result = await generateOpportunities(processedResults, null, context);
 
       expect(result).to.be.an('object');
       expect(result.status).to.equal('error');
@@ -108,7 +111,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
         })
         .build();
 
-      const result = await opportunityHandler.generateOpportunities(processedResults, message, contextWithoutSqs);
+      const result = await generateOpportunities(processedResults, message, contextWithoutSqs);
 
       expect(result).to.be.an('object');
       expect(result.status).to.equal('skipped');
@@ -119,7 +122,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
     it('should process opportunities successfully with valid data', async () => {
       // Mock the full pipeline using esmock pattern from internal-links
       const mockedOpportunityHandler = await esmock('../../../src/llm-error-pages/opportunity-handler.js', {
-        '../../../src/llm-error-pages/url-validator.js': {
+        '../../../src/llm-error-pages/utils.js': {
           validateUrlsBatch: sandbox.stub().resolves([
             {
               url: 'https://example.com/page1', status: 404, user_agent: 'ChatGPT', total_requests: 3,
@@ -183,7 +186,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
         },
       ];
 
-      const result = opportunityHandler.categorizeErrorsByStatusCode(errorPages);
+      const result = categorizeErrorsByStatusCode(errorPages);
 
       expect(result[404]).to.have.lengthOf(2);
       expect(result[403]).to.have.lengthOf(1);
@@ -203,7 +206,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
         },
       ];
 
-      const result = opportunityHandler.consolidateErrorsByUrl(errors);
+      const result = consolidateErrorsByUrl(errors);
 
       expect(result).to.have.lengthOf(2);
       expect(result[0].totalRequests).to.equal(3); // 1 + 2
@@ -223,7 +226,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
           url: '/other', status: 404, user_agent: 'Claude', total_requests: '1',
         },
       ];
-      const result = opportunityHandler.consolidateErrorsByUrl(errors);
+      const result = consolidateErrorsByUrl(errors);
       const same = result.find((e) => e.url === '/same');
       const other = result.find((e) => e.url === '/other');
       expect(same.totalRequests).to.equal(2);
@@ -237,7 +240,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
         { url: 'https://example.com/page3', totalRequests: 20 },
       ];
 
-      const result = opportunityHandler.sortErrorsByTrafficVolume(errors);
+      const result = sortErrorsByTrafficVolume(errors);
 
       expect(result[0].totalRequests).to.equal(30);
       expect(result[1].totalRequests).to.equal(20);
@@ -253,7 +256,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
           url: '/same', status: 404, user_agent: 'ChatGPT', total_requests: undefined,
         }, // force aggregate with 0
       ];
-      const result = opportunityHandler.consolidateErrorsByUrl(errors);
+      const result = consolidateErrorsByUrl(errors);
       const same = result.find((e) => e.url === '/same');
       expect(same.totalRequests).to.equal(0);
     });
@@ -281,14 +284,16 @@ describe('LLM Error Pages - Opportunity Handler', () => {
       .build();
 
     const message = { siteId: 'test-site-id', auditId: 'audit-id' };
-    const result = await opportunityHandler.generateOpportunities(processedResults, message, contextWithMissingSite);
-
-    expect(result).to.be.an('object');
-    expect(result.status).to.equal('completed'); // Should still complete with site null
+    try {
+      await generateOpportunities(processedResults, message, contextWithMissingSite);
+      expect.fail('Should have thrown an error');
+    } catch (error) {
+      expect(error.message).to.include('Site not found for siteId: test-site-id');
+    }
   });
   it('should skip opportunity creation if no validated URLs', async () => {
     const mockedHandler = await esmock('../../../src/llm-error-pages/opportunity-handler.js', {
-      '../../../src/llm-error-pages/url-validator.js': {
+      '../../../src/llm-error-pages/utils.js': {
         validateUrlsBatch: sandbox.stub().resolves([]),
       },
     });
@@ -313,7 +318,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
       '../../../src/llm-error-pages/opportunity-data-mapper.js': {
         buildOpportunityDataForErrorType: failingMapper,
       },
-      '../../../src/llm-error-pages/url-validator.js': {
+      '../../../src/llm-error-pages/utils.js': {
         validateUrlsBatch: sandbox.stub().resolves([
           {
             url: '/error-url', status: 404, user_agent: 'ChatGPT', total_requests: 1,
@@ -595,7 +600,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
         summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 200: 1 } },
       };
       const message = { siteId: 'test-site-id', auditId: 'aid' };
-      const result = await opportunityHandler.generateOpportunities(processedResults, message, context);
+      const result = await generateOpportunities(processedResults, message, context);
       expect(result.status).to.equal('completed');
       expect(result.processedUrls).to.equal(0);
     });
@@ -611,7 +616,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
         summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 1 } },
       };
       const message = { siteId: 'test-site-id', auditId: 'aid' };
-      const result = await opportunityHandler.generateOpportunities(processedResults, message, context);
+      const result = await generateOpportunities(processedResults, message, context);
       expect(result.status).to.equal('completed');
       // Ensure the log path using errorPages.length is executed
       const infoLogs = context.log.info.getCalls().map((c) => c.args[0]).join('\n');
@@ -620,7 +625,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
 
     it('logs error for a category failure and continues (catch branch)', async () => {
       const mockedHandler = await esmock('../../../src/llm-error-pages/opportunity-handler.js', {
-        '../../../src/llm-error-pages/url-validator.js': {
+        '../../../src/llm-error-pages/utils.js': {
           validateUrlsBatch: sandbox.stub().throws(new Error('validation failed')),
         },
       });
@@ -650,7 +655,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
     });
 
     const mockedHandler = await esmock('../../../src/llm-error-pages/opportunity-handler.js', {
-      '../../../src/llm-error-pages/url-validator.js': {
+      '../../../src/llm-error-pages/utils.js': {
         validateUrlsBatch: validateStub,
       },
       '../../../src/common/opportunity.js': {
@@ -700,7 +705,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
     });
 
     const mockedHandler = await esmock('../../../src/llm-error-pages/opportunity-handler.js', {
-      '../../../src/llm-error-pages/url-validator.js': {
+      '../../../src/llm-error-pages/utils.js': {
         validateUrlsBatch: validateStub,
       },
       '../../../src/common/opportunity.js': {
@@ -748,7 +753,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
       })));
 
       const mockedHandler = await esmock('../../../src/llm-error-pages/opportunity-handler.js', {
-        '../../../src/llm-error-pages/url-validator.js': {
+        '../../../src/llm-error-pages/utils.js': {
           validateUrlsBatch: validateStub,
         },
         '../../../src/common/opportunity.js': {
@@ -794,7 +799,7 @@ describe('LLM Error Pages - Opportunity Handler', () => {
       })));
 
       const mockedHandler = await esmock('../../../src/llm-error-pages/opportunity-handler.js', {
-        '../../../src/llm-error-pages/url-validator.js': {
+        '../../../src/llm-error-pages/utils.js': {
           validateUrlsBatch: validateStub,
         },
         '../../../src/common/opportunity.js': {

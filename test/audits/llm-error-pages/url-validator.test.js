@@ -20,14 +20,14 @@ import esmock from 'esmock';
 use(sinonChai);
 
 describe('LLM Error Pages – url-validator', () => {
-  let urlValidator;
+  let utils;
   let fetchStub;
   const sandbox = sinon.createSandbox();
 
   beforeEach(async () => {
     fetchStub = sandbox.stub();
     // Use esmock to replace tracingFetch with our stub
-    urlValidator = await esmock('../../../src/llm-error-pages/url-validator.js', {
+    utils = await esmock('../../../src/llm-error-pages/utils.js', {
       '@adobe/spacecat-shared-utils': { tracingFetch: fetchStub },
     });
   });
@@ -46,7 +46,7 @@ describe('LLM Error Pages – url-validator', () => {
         userAgent: 'ChatGPT',
         rawUserAgents: ['ChatGPT'],
       };
-      const validated = await urlValidator.validateUrlsBatch([error], console);
+      const validated = await utils.validateUrlsBatch([error], console);
       expect(validated).to.have.lengthOf(1);
       expect(validated[0].url).to.equal('https://example.com/private');
     });
@@ -61,7 +61,7 @@ describe('LLM Error Pages – url-validator', () => {
         userAgent: 'ChatGPT',
         rawUserAgents: ['ChatGPT'],
       };
-      const validated = await urlValidator.validateUrlsBatch([error], console);
+      const validated = await utils.validateUrlsBatch([error], console);
       expect(validated).to.have.lengthOf(0);
     });
 
@@ -75,7 +75,7 @@ describe('LLM Error Pages – url-validator', () => {
         userAgent: 'ChatGPT',
         rawUserAgents: ['ChatGPT'],
       };
-      const validated = await urlValidator.validateUrlsBatch([error], console);
+      const validated = await utils.validateUrlsBatch([error], console);
       expect(validated).to.have.lengthOf(0);
     });
 
@@ -95,7 +95,7 @@ describe('LLM Error Pages – url-validator', () => {
         error: sandbox.stub(),
       };
 
-      const validated = await urlValidator.validateUrlsBatch([error], mockLog);
+      const validated = await utils.validateUrlsBatch([error], mockLog);
       expect(validated).to.have.lengthOf(1);
       expect(validated[0].url).to.equal('https://example.com/network-error');
       expect(validated[0].validationError).to.equal('Network timeout');
@@ -120,7 +120,7 @@ describe('LLM Error Pages – url-validator', () => {
         error: sandbox.stub(),
       };
 
-      const validated = await urlValidator.validateUrlsBatch(errors, mockLog);
+      const validated = await utils.validateUrlsBatch(errors, mockLog);
 
       expect(validated).to.have.lengthOf(5);
       expect(mockLog.info.calledWith('Starting URL validation for 5 URLs')).to.be.true;
@@ -133,7 +133,7 @@ describe('LLM Error Pages – url-validator', () => {
         error: sandbox.stub(),
       };
 
-      const validated = await urlValidator.validateUrlsBatch([], mockLog);
+      const validated = await utils.validateUrlsBatch([], mockLog);
 
       expect(validated).to.have.lengthOf(0);
       expect(mockLog.info.calledWith('Starting URL validation for 0 URLs')).to.be.true;
@@ -164,7 +164,7 @@ describe('LLM Error Pages – url-validator', () => {
         debug: sandbox.stub(),
       };
 
-      const validated = await urlValidator.validateUrlsBatch(errors, mockLog);
+      const validated = await utils.validateUrlsBatch(errors, mockLog);
 
       // Should include valid 404 and network error (but not status mismatch)
       expect(validated).to.have.lengthOf(2);
@@ -183,7 +183,7 @@ describe('LLM Error Pages – url-validator', () => {
         rawUserAgents: ['ChatGPT'],
       };
 
-      const validated = await urlValidator.validateUrlsBatch([error], console);
+      const validated = await utils.validateUrlsBatch([error], console);
       expect(validated).to.have.lengthOf(1);
       expect(validated[0].url).to.equal('https://example.com/server-error');
     });
@@ -212,7 +212,7 @@ describe('LLM Error Pages – url-validator', () => {
         .matchHeader('User-Agent', 'ChatGPT-User')
         .reply(403, 'Forbidden');
 
-      const result = await urlValidator.validateSingleUrl(error, log);
+      const result = await utils.validateSingleUrl(error, log);
 
       expect(result).to.not.be.null;
       expect(result.validatedAt).to.be.a('string');
@@ -247,7 +247,7 @@ describe('LLM Error Pages – url-validator', () => {
       ]);
 
       try {
-        const result = await urlValidator.validateUrlsBatch(errors, log);
+        const result = await utils.validateUrlsBatch(errors, log);
         expect(result).to.be.an('array');
         expect(log.error).to.have.been.calledWith(sinon.match(/Batch processing failed/));
       } finally {

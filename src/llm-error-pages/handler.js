@@ -12,7 +12,7 @@
 
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { wwwUrlResolver } from '../common/base-audit.js';
+import { generateOpportunities } from './opportunity-handler.js';
 import {
   getS3Config,
   validateDatabaseAndTable,
@@ -20,10 +20,10 @@ import {
   createDateRange,
   buildSiteFilters,
   processLlmErrorPagesResults,
-} from './utils/report-utils.js';
-import { buildLlmErrorPagesQuery } from './utils/query-builder.js';
-import { getAllLlmProviders } from './constants/user-agent-patterns.js';
-import { generateOpportunities } from './opportunity-handler.js';
+  buildLlmErrorPagesQuery,
+  getAllLlmProviders,
+} from './utils.js';
+import { wwwUrlResolver } from '../common/index.js';
 
 async function runLlmErrorPagesAudit(url, context, site) {
   const { log, message = {} } = context;
@@ -37,25 +37,20 @@ async function runLlmErrorPagesAudit(url, context, site) {
     // Validate database and table exist
     await validateDatabaseAndTable(athenaClient, s3Config, log);
 
-    // Determine time range
     let startDate;
     let endDate;
     let periodIdentifier;
 
+    // Handle date range - custom dates or default to previous week
     if (message.startDate && message.endDate) {
-      const { startDate: msgStartDate, endDate: msgEndDate } = message;
-      if (!msgStartDate || !msgEndDate) {
-        throw new Error('Custom date range requires startDate and endDate in message');
-      }
-      const parsedRange = createDateRange(msgStartDate, msgEndDate);
+      const parsedRange = createDateRange(message.startDate, message.endDate);
       startDate = parsedRange.startDate;
       endDate = parsedRange.endDate;
-      periodIdentifier = `${msgStartDate}_to_${msgEndDate}`;
-      log.info(`Running custom date range audit: ${msgStartDate} to ${msgEndDate}`);
+      periodIdentifier = `${message.startDate}_to_${message.endDate}`;
+      log.info(`Running custom date range audit: ${message.startDate} to ${message.endDate}`);
     } else {
       // Default to previous week
-      const periods = generateReportingPeriods();
-      const week = periods.weeks[0];
+      const week = generateReportingPeriods().weeks[0];
       startDate = week.startDate;
       endDate = week.endDate;
       periodIdentifier = `w${week.weekNumber}-${week.year}`;

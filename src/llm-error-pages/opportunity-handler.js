@@ -12,15 +12,10 @@
 
 /* eslint-disable no-await-in-loop */
 
-import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
-import {
-  buildOpportunityDataForErrorType,
-  populateSuggestion,
-  SUGGESTION_TEMPLATES,
-} from './opportunity-data-mapper.js';
-import { normalizeUserAgentToProvider } from './constants/user-agent-patterns.js';
-import { validateUrlsBatch } from './url-validator.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { buildOpportunityDataForErrorType } from './opportunity-data-mapper.js';
+import { normalizeUserAgentToProvider, validateUrlsBatch } from './utils.js';
 
 /**
  * Categorizes error pages by status code into 404, 403, and 5xx groups
@@ -172,16 +167,11 @@ export async function createOpportunityForErrorCategory(
         // Template suggestion for 403/5xx errors
         let template = 'Fix error for {url} - {userAgent} crawler affected';
         if (error.status === '403') {
-          template = SUGGESTION_TEMPLATES.FORBIDDEN;
+          template = 'Fix error for {url} - {userAgent} crawler affected';
         } else if (error.status.startsWith('5')) {
-          template = SUGGESTION_TEMPLATES.SERVER_ERROR;
+          template = 'Fix error for {url} - {userAgent} crawler affected';
         }
-        const suggestionText = populateSuggestion(
-          template,
-          error.url,
-          error.status,
-          error.userAgent,
-        );
+        const suggestionText = template.replace('{url}', error.url).replace('{userAgent}', error.userAgent);
 
         return {
           opportunityId: opportunity.getId(),
@@ -295,17 +285,22 @@ export async function generateOpportunities(processedResults, message, context) 
     // generate stable id per run
     effectiveAuditId = `llm-${Date.now()}`;
   }
-  const { Site } = dataAccess;
-
   let { site } = context;
   let siteId = messageSiteId;
 
-  if (!site) {
-    site = messageSiteId ? await Site.findById(messageSiteId) : null;
+  // Try to find site if not in context
+  if (!site && messageSiteId) {
+    site = await dataAccess.Site.findById(messageSiteId);
   }
+
+  // Ensure we have a valid site
   if (!site) {
+    const errorMessage = messageSiteId
+      ? `Site not found for siteId: ${messageSiteId}`
+      : 'No site provided in context or message';
+
     log.error(`Site not found. siteId in message: ${messageSiteId}`);
-    throw new Error(`Site not found for siteId: ${messageSiteId}`);
+    throw new Error(errorMessage);
   }
 
   siteId = site.getId();
