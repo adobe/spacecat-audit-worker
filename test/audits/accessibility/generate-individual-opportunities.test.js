@@ -3938,6 +3938,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
               },
             ],
           }),
+          getStatus: () => 'NEW',
           setData: sandbox.stub(),
           save: sandbox.stub().resolves(),
         },
