@@ -163,6 +163,30 @@ describe('Redirect Chains Audit', () => {
       it('should handle URLs with existing www', () => {
         expect(ensureFullUrl('www.example.com')).to.equal('https://www.example.com');
       });
+
+      it('should handle domain ending with slash and path starting with slash', () => {
+        expect(ensureFullUrl('/path', 'example.com/')).to.equal('https://www.example.com/path');
+      });
+
+      it('should handle domain ending with slash and path not starting with slash', () => {
+        expect(ensureFullUrl('path', 'example.com/')).to.equal('https://www.example.com/path');
+      });
+
+      it('should handle domain not ending with slash and path not starting with slash', () => {
+        expect(ensureFullUrl('path', 'example.com')).to.equal('https://www.example.com/path');
+      });
+
+      it('should handle domain not ending with slash and path starting with slash', () => {
+        expect(ensureFullUrl('/path', 'example.com')).to.equal('https://www.example.com/path');
+      });
+
+      it('should handle domain with trailing slash and path with leading slash (avoid double slash)', () => {
+        expect(ensureFullUrl('/path', 'https://example.com/')).to.equal('https://example.com/path');
+      });
+
+      it('should handle domain without trailing slash and path without leading slash (add slash)', () => {
+        expect(ensureFullUrl('path', 'https://example.com')).to.equal('https://example.com/path');
+      });
     });
   });
 

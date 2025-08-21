@@ -121,15 +121,31 @@ export function addWWW(url) {
 export function ensureFullUrl(url, domain = '') {
   let addWwwSubdomain = !domain; // if no domain is specified, we might need to add 'www.'
   let reasonableUrl = url;
+
   if (domain && !reasonableUrl.startsWith(domain) && !hasProtocol(reasonableUrl)) {
-    reasonableUrl = domain + reasonableUrl;
+    // Ensure exactly one forward slash between the domain and reasonableUrl
+    const domainEndsWithSlash = domain.endsWith('/');
+    const urlStartsWithSlash = reasonableUrl.startsWith('/');
+
+    if (domainEndsWithSlash && urlStartsWithSlash) {
+      // Both have slashes, so remove one to avoid double slash
+      reasonableUrl = domain + reasonableUrl.substring(1);
+    } else if (!domainEndsWithSlash && !urlStartsWithSlash) {
+      // Neither has a slash, so add one
+      reasonableUrl = `${domain}/${reasonableUrl}`;
+    } else {
+      // One has a slash, so concatenate directly
+      reasonableUrl = domain + reasonableUrl;
+    }
     addWwwSubdomain = true; // add 'www.' if needed
   }
+
   if (hasProtocol(reasonableUrl)) {
     addWwwSubdomain = false; // do not add 'www.' if the URL already has a protocol
   } else {
     reasonableUrl = `https://${reasonableUrl}`;
   }
+
   if (addWwwSubdomain) {
     reasonableUrl = addWWW(reasonableUrl);
   }
