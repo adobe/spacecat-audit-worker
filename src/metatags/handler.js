@@ -52,7 +52,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   try {
     const siteId = opportunity.getSiteId();
     const site = await context.dataAccess.Site.findById(siteId);
-    useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+    useHostnameOnly = site?.getConfig?.()?.useHostnameOnly ?? false;
   } catch (error) {
     log.error('Error in meta-tags configuration:', error);
   }
