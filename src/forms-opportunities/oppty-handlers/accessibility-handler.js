@@ -138,6 +138,8 @@ function getWCAGCriteriaString(criteria) {
 
 /**
  * Transforms axe-core violation format to the expected output format
+ * This is a temporary function to transform sites' accessibility schema to forms' old schema
+ * to prevent impact on UI
  * @param {Object} axeData - The axe-core violation data
  * @returns {Object} Form with accessibility issues containing form, formSource, and a11yIssues
  */
