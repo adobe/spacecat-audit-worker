@@ -1,3 +1,10 @@
+## [1.153.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.153.0...v1.153.1) (2025-08-21)
+
+
+### Bug Fixes
+
+* passing additional data to mystique for form oppties ([#1141](https://github.com/adobe/spacecat-audit-worker/issues/1141)) ([9230bdf](https://github.com/adobe/spacecat-audit-worker/commit/9230bdf2ec3383591e6f0cf3b9d323874894fa0c))
+
 # [1.153.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.152.1...v1.153.0) (2025-08-20)
 
 

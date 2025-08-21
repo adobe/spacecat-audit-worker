@@ -134,6 +134,8 @@ describe('Detect Form Details Handler', () => {
         data: { // Directly include the data property
           form: 'testUrl',
           trackedFormKPIValue: 5,
+          pageViews: 20,
+          formViews: 10,
           metrics: { key: 'value' },
           formNavigation: { source: 'testSource', text: 'testText' },
           formsource: 'testFormSource',
@@ -157,6 +159,8 @@ describe('Detect Form Details Handler', () => {
       cta_source: 'testSource',
       cta_text: 'testText',
       form_source: 'testFormSource',
+      page_views: 20,
+      form_views: 10,
     };
 
     expect(sqsStub.sendMessage).to.have.been.calledWith(
