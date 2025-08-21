@@ -104,7 +104,6 @@
     "jsdom": "26.1.0",
     "robots-parser": "3.0.1",
     "text-readability": "1.1.1",
-    "ts-deepmerge": "7.0.3",
     "urijs": "1.19.11"
   },
   "devDependencies": {
