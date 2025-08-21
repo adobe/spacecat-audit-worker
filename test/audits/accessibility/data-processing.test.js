@@ -1867,6 +1867,7 @@ describe('data-processing utility functions', () => {
         violations: { total: 3 },
         traffic: 50,
         formSource: '#contact-form',
+        source: '#contact-form',
       };
 
       // S3 ListObjectsV2 mock - note the forms-accessibility prefix
@@ -1920,6 +1921,7 @@ describe('data-processing utility functions', () => {
         violations: { total: 2 },
         traffic: 30,
         formSource: '#contact-form', // CSS selector for form
+        source: '#contact-form',
       };
 
       // S3 ListObjectsV2 mock
@@ -1971,6 +1973,7 @@ describe('data-processing utility functions', () => {
         violations: { total: 1 },
         traffic: 25,
         formSource: '.newsletter-signup-form', // CSS class selector for form
+        source: '.newsletter-signup-form',
       };
 
       // S3 ListObjectsV2 mock
@@ -2071,6 +2074,7 @@ describe('data-processing utility functions', () => {
             violations: { total: 1 },
             traffic: 20,
             formSource: '#contact-form',
+            source: '#contact-form',
           }),
         },
       });

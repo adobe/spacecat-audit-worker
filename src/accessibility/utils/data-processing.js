@@ -399,7 +399,7 @@ export async function aggregateAccessibilityData(
     results.forEach((result) => {
       const { data } = result;
       const {
-        violations, traffic, url: siteUrl, formSource: source,
+        violations, traffic, url: siteUrl, source,
       } = data;
 
       // Store the url specific data only for page-level data (no form level data yet)
