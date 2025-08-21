@@ -17,7 +17,7 @@ export function removeTrailingSlash(url) {
 export function getBaseUrl(url) {
   try {
     const urlObj = new URL(url);
-    return `${urlObj.protocol}//${urlObj.hostname}`;
+    return `${urlObj.protocol}//${urlObj.host}`; // includes port if any
   } catch {
     // If URL parsing fails, return the original URL with trailing slash removed
     return removeTrailingSlash(url);

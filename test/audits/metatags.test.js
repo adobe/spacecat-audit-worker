@@ -783,7 +783,7 @@ describe('Meta Tags', () => {
         // Verify URL construction excludes port number
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
-        expect(suggestions[0].data.url).to.equal('https://example.com/page1');
+        expect(suggestions[0].data.url).to.equal('https://example.com:8080/page1');
         expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
@@ -1132,10 +1132,16 @@ describe('Meta Tags', () => {
         expect(result).to.equal('https://example.com');
       });
 
-      it('should handle URLs with port numbers', () => {
+      it('should preserve port numbers in URLs', () => {
         const url = 'https://example.com:8080/path/';
         const result = getBaseUrl(url);
-        expect(result).to.equal('https://example.com');
+        expect(result).to.equal('https://example.com:8080');
+      });
+
+      it('should preserve port numbers for localhost', () => {
+        const url = 'http://localhost:8080/foo';
+        const result = getBaseUrl(url);
+        expect(result).to.equal('http://localhost:8080');
       });
 
       it('should handle malformed URLs by removing trailing slash', () => {
