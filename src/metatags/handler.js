@@ -47,6 +47,9 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   );
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
+  const site = opportunity.getSite?.();
+  const deliveryConfig = site !== null ? site?.getDeliveryConfig() : null;
+  const useHostnameOnly = deliveryConfig ? deliveryConfig.useHostnameOnly ?? false : false;
   const suggestions = [];
   // Generate suggestions data to be inserted in meta-tags opportunity suggestions
   Object.keys(detectedTags)
@@ -56,7 +59,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
           suggestions.push({
             ...detectedTags[endpoint][tag],
             tagName: tag,
-            url: getBaseUrl(auditData.auditResult.finalUrl) + endpoint,
+            url: getBaseUrl(auditData.auditResult.finalUrl, useHostnameOnly) + endpoint,
             rank: getIssueRanking(tag, detectedTags[endpoint][tag].issue),
           });
         }

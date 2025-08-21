@@ -769,6 +769,11 @@ describe('Meta Tags', () => {
 
       it('should handle URLs with port numbers', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        opportunity.getSite = () => ({
+          getId: () => 'site-id',
+          getBaseURL: () => 'http://example.com',
+          getDeliveryConfig: () => ({ useHostnameOnly: true }),
+        });
         const auditDataWithPort = {
           ...testData.auditData,
           auditResult: {
@@ -789,6 +794,11 @@ describe('Meta Tags', () => {
 
       it('should handle URLs with query parameters', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        opportunity.getSite = () => ({
+          getId: () => 'site-id',
+          getBaseURL: () => 'http://example.com',
+          getDeliveryConfig: () => ({ useHostnameOnly: true }),
+        });
         const auditDataWithQuery = {
           ...testData.auditData,
           auditResult: {
@@ -804,6 +814,73 @@ describe('Meta Tags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('https://example.com/page1');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+
+      it('should handle case when getSite method returns undefined', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        opportunity.getSite = () => undefined;
+        const auditDataWithPort = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'http://localhost:8080/path/',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithPort, context);
+        expect(opportunity.save).to.be.calledOnce;
+
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        // Should preserve full URL path since getSite returns undefined
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+
+      it('should handle case when deliveryConfig.useHostnameOnly is undefined', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        opportunity.getSite = () => ({
+          getId: () => 'site-id',
+          getBaseURL: () => 'http://example.com',
+          getDeliveryConfig: () => ({ useHostnameOnly: undefined }),
+        });
+        const auditDataWithPort = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'http://localhost:8080/path/',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithPort, context);
+        expect(opportunity.save).to.be.calledOnce;
+
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        // Should preserve full URL path since useHostnameOnly is undefined (defaults to false)
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+
+      it('should handle case when getSite method returns null', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        opportunity.getSite = () => null;
+        const auditDataWithPort = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'http://localhost:8080/path/',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithPort, context);
+        expect(opportunity.save).to.be.calledOnce;
+
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        // Should preserve full URL path since getSite returns null
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
         expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
     });
