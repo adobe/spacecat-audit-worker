@@ -1350,7 +1350,7 @@ describe('Redirect Chains Audit', () => {
 
         // Verify logging
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 2 affected entries.`);
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Skipping suggestion for network error case: /network-error-page -> /destination-page`);
+        expect(context.log.debug).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Skipping suggestion for network error case: /network-error-page -> /destination-page`);
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Skipped 1 entries due to exclusion criteria.`);
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 1 suggested fixes.`);
       });
