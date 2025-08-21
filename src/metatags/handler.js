@@ -47,13 +47,21 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   );
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
-  log.info(`starting to audit metatags for site url: ${auditData.auditResult.finalUrl}`);
-  const site = opportunity?.getSite?.();
-  log.info(`siteid: ${site?.getId()} for site url: ${auditData.auditResult.finalUrl}`);
-  const deliveryConfig = site?.getDeliveryConfig?.();
-  log.info(`deliveryConfig: ${JSON.stringify(deliveryConfig)} for site url: ${auditData.auditResult.finalUrl}`);
-  const useHostnameOnly = deliveryConfig?.useHostnameOnly ?? false;
-  log.info(`useHostnameOnly: ${useHostnameOnly} for site url: ${auditData.auditResult.finalUrl}`);
+  log.info(`started to audit metatags for site url: ${auditData.auditResult.finalUrl}`);
+  let useHostnameOnly = false; // Safe default
+  try {
+    const siteId = opportunity.getSiteId();
+    const site = await context.dataAccess.Site.findById(siteId);
+    log.info(`siteid: ${siteId} for site url: ${auditData.auditResult.finalUrl}`);
+    const deliveryConfig = site?.getDeliveryConfig?.();
+    log.info(`deliveryConfig: ${JSON.stringify(deliveryConfig)} for site url: ${auditData.auditResult.finalUrl}`);
+    useHostnameOnly = deliveryConfig?.useHostnameOnly ?? false;
+    log.info(`useHostnameOnly: ${useHostnameOnly} for site url: ${auditData.auditResult.finalUrl}`);
+  } catch (error) {
+    log.error('Error in meta-tags configuration:', error);
+    // Keep useHostnameOnly as false
+  }
+
   const suggestions = [];
   // Generate suggestions data to be inserted in meta-tags opportunity suggestions
   Object.keys(detectedTags)

@@ -522,6 +522,7 @@ describe('Meta Tags', () => {
         auditUrl = 'https://example.com';
         opportunity = {
           getId: () => 'opportunity-id',
+          getSiteId: () => 'site-id',
           setAuditId: sinon.stub(),
           save: sinon.stub(),
           getSuggestions: sinon.stub().returns(testData.existingSuggestions),
@@ -541,6 +542,12 @@ describe('Meta Tags', () => {
           Opportunity: {
             allBySiteIdAndStatus: sinon.stub().resolves([]),
             create: sinon.stub(),
+          },
+          Site: {
+            findById: sinon.stub().resolves({
+              getId: () => 'site-id',
+              getDeliveryConfig: () => ({}),
+            }),
           },
           Suggestion: {
             bulkUpdateStatus: sinon.stub(),
@@ -769,9 +776,8 @@ describe('Meta Tags', () => {
 
       it('should handle URLs with port numbers', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
-        opportunity.getSite = () => ({
+        dataAccessStub.Site.findById = sinon.stub().resolves({
           getId: () => 'site-id',
-          getBaseURL: () => 'http://example.com',
           getDeliveryConfig: () => ({ useHostnameOnly: true }),
         });
         const auditDataWithPort = {
@@ -794,9 +800,8 @@ describe('Meta Tags', () => {
 
       it('should handle URLs with query parameters', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
-        opportunity.getSite = () => ({
+        dataAccessStub.Site.findById = sinon.stub().resolves({
           getId: () => 'site-id',
-          getBaseURL: () => 'http://example.com',
           getDeliveryConfig: () => ({ useHostnameOnly: true }),
         });
         const auditDataWithQuery = {
@@ -882,6 +887,28 @@ describe('Meta Tags', () => {
         // Should preserve full URL path since getSite returns null
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
         expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+
+      it('should handle error in site configuration', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        const testError = new Error('Failed to get site');
+        dataAccessStub.Site.findById.rejects(testError);
+        const auditDataWithPort = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'http://localhost:8080/path/',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithPort, context);
+        expect(opportunity.save).to.be.calledOnce;
+        expect(logStub.error).to.be.calledWith('Error in meta-tags configuration:', testError);
+
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        // Should preserve full URL path since error caused useHostnameOnly to stay false
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
       });
     });
 
@@ -1122,6 +1149,7 @@ describe('Meta Tags', () => {
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
           '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
         });
 
