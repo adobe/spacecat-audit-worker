@@ -20,7 +20,7 @@ import { wwwUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
-import { getIssueRanking, removeTrailingSlash } from './opportunity-utils.js';
+import { getIssueRanking, getBaseUrl } from './opportunity-utils.js';
 import {
   DESCRIPTION,
   H1,
@@ -56,7 +56,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
           suggestions.push({
             ...detectedTags[endpoint][tag],
             tagName: tag,
-            url: removeTrailingSlash(auditData.auditResult.finalUrl) + endpoint,
+            url: getBaseUrl(auditData.auditResult.finalUrl) + endpoint,
             rank: getIssueRanking(tag, detectedTags[endpoint][tag].issue),
           });
         }

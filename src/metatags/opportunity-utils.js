@@ -11,12 +11,16 @@
  */
 
 export function removeTrailingSlash(url) {
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+export function getBaseUrl(url) {
   try {
     const urlObj = new URL(url);
     return `${urlObj.protocol}//${urlObj.hostname}`;
   } catch {
-    // If URL parsing fails, just remove trailing slash
-    return url.endsWith('/') ? url.slice(0, -1) : url;
+    // If URL parsing fails, return the original URL with trailing slash removed
+    return removeTrailingSlash(url);
   }
 }
 

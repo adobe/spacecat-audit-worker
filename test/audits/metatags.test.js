@@ -34,7 +34,7 @@ import {
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
 import testData from '../fixtures/meta-tags-data.js';
-import { removeTrailingSlash } from '../../src/metatags/opportunity-utils.js';
+import { removeTrailingSlash, getBaseUrl } from '../../src/metatags/opportunity-utils.js';
 import {
   importTopPages,
   submitForScraping,
@@ -1122,6 +1122,26 @@ describe('Meta Tags', () => {
         const url = '';
         const result = removeTrailingSlash(url);
         expect(result).to.equal('');
+      });
+    });
+
+    describe('getBaseUrl', () => {
+      it('should extract base URL from valid URL', () => {
+        const url = 'https://example.com/path/to/page?query=1';
+        const result = getBaseUrl(url);
+        expect(result).to.equal('https://example.com');
+      });
+
+      it('should handle URLs with port numbers', () => {
+        const url = 'https://example.com:8080/path/';
+        const result = getBaseUrl(url);
+        expect(result).to.equal('https://example.com');
+      });
+
+      it('should handle malformed URLs by removing trailing slash', () => {
+        const url = 'malformed-url.com/path/';
+        const result = getBaseUrl(url);
+        expect(result).to.equal('malformed-url.com/path');
       });
     });
 
