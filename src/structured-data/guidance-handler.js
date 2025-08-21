@@ -55,7 +55,7 @@ export default async function handler(message, context) {
 
   suggestion.setData({
     ...suggestion.getData(),
-    errors: remediations.map((remediation) => (
+    errors: (remediations || []).map((remediation) => (
       {
         aiRationale: remediation.ai_rationale,
         id: remediation.id,

@@ -214,7 +214,7 @@ export async function runAuditAndGenerateSuggestions(context) {
       ...auditResult,
     }, context);
 
-    const opportunity = Opportunity.findByAuditId(audit.getId());
+    const opportunity = await Opportunity.findByAuditId(audit.getId());
     const suggestions = await Suggestion.allByOpportunityIdAndStatus(
       opportunity.getId(),
       SuggestionModel.STATUSES.NEW,
