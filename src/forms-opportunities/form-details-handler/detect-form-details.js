@@ -58,6 +58,12 @@ export default async function handler(message, context) {
         form_details: opptyData.data?.formDetails,
         page_views: opptyData.data?.pageViews,
         form_views: opptyData.data?.formViews,
+        form_navigation: {
+          url: opptyData.data?.formNavigation?.url || '',
+          source: opptyData.data?.formNavigation?.source || '',
+          cta_clicks: opptyData.data?.formNavigation?.clicksOnCTA || 0,
+          page_views: opptyData.data?.formNavigation?.pageViews || 0,
+        },
       },
     };
 
