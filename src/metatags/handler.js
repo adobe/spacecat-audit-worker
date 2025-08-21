@@ -47,6 +47,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   );
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
+  log.info(`Auditing metatags for site: finalUrl: ${auditData.auditResult.finalUrl}`);
   const site = opportunity.getSite?.();
   const deliveryConfig = site !== null ? site?.getDeliveryConfig() : null;
   const useHostnameOnly = deliveryConfig ? deliveryConfig.useHostnameOnly ?? false : false;
