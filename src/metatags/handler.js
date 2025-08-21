@@ -47,10 +47,13 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   );
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
-  log.info(`Auditing metatags for site: finalUrl: ${auditData.auditResult.finalUrl}`);
-  const site = opportunity.getSite?.();
-  const deliveryConfig = site !== null ? site?.getDeliveryConfig() : null;
-  const useHostnameOnly = deliveryConfig ? deliveryConfig.useHostnameOnly ?? false : false;
+  log.info(`starting to audit metatags for site url: ${auditData.auditResult.finalUrl}`);
+  const site = opportunity?.getSite?.();
+  log.info(`siteid: ${site?.getId()} for site url: ${auditData.auditResult.finalUrl}`);
+  const deliveryConfig = site?.getDeliveryConfig?.();
+  log.info(`deliveryConfig: ${JSON.stringify(deliveryConfig)} for site url: ${auditData.auditResult.finalUrl}`);
+  const useHostnameOnly = deliveryConfig?.useHostnameOnly ?? false;
+  log.info(`useHostnameOnly: ${useHostnameOnly} for site url: ${auditData.auditResult.finalUrl}`);
   const suggestions = [];
   // Generate suggestions data to be inserted in meta-tags opportunity suggestions
   Object.keys(detectedTags)
