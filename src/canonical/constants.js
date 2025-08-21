@@ -44,17 +44,17 @@ export const CANONICAL_CHECKS = Object.freeze({
   CANONICAL_URL_4XX: {
     check: 'canonical-url-4xx',
     explanation: 'The canonical URL returns a 4xx error, indicating it is inaccessible, which can harm SEO visibility.',
-    suggestion: () => 'Fix the canonical URL to resolve the 4xx client error and make it accessible.',
+    suggestion: () => 'Update the canonical tag to reference a valid, accessible URL.',
   },
   CANONICAL_URL_5XX: {
     check: 'canonical-url-5xx',
     explanation: 'The canonical URL returns a 5xx server error, indicating it is temporarily or permanently unavailable, affecting SEO performance.',
-    suggestion: () => 'Fix the canonical URL to resolve the 5xx server error and ensure it\'s accessible.',
+    suggestion: () => 'Update the canonical tag to reference a valid, accessible URL.',
   },
   CANONICAL_SELF_REFERENCED: {
     check: 'canonical-self-referenced',
     explanation: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
-    suggestion: (url) => `Update canonical URL to point to itself: <link rel="canonical" href="${url}" />`,
+    suggestion: (url) => `Update the canonical URL to point to itself: <link rel="canonical" href="${url}" />`,
   },
   CANONICAL_URL_ABSOLUTE: {
     check: 'canonical-url-absolute',
@@ -64,12 +64,12 @@ export const CANONICAL_CHECKS = Object.freeze({
   CANONICAL_URL_SAME_DOMAIN: {
     check: 'canonical-url-same-domain',
     explanation: 'The canonical URL should match the domain of the page to avoid signaling to search engines that the content is duplicated elsewhere.',
-    suggestion: (url) => `Update canonical URL to use the same domain as the page: <link rel="canonical" href="${url}" />`,
+    suggestion: (url) => `Update the canonical URL to use the same domain as the page: <link rel="canonical" href="${url}" />`,
   },
   CANONICAL_URL_SAME_PROTOCOL: {
     check: 'canonical-url-same-protocol',
     explanation: 'The canonical URL must use the same protocol (HTTP or HTTPS) as the page to maintain consistency and avoid indexing issues.',
-    suggestion: (url) => `Update canonical URL to use the same protocol (HTTP/HTTPS): <link rel="canonical" href="${url}" />`,
+    suggestion: (url) => `Update the canonical URL to use the same protocol: <link rel="canonical" href="${url}" />`,
   },
   CANONICAL_URL_LOWERCASED: {
     check: 'canonical-url-lowercased',
