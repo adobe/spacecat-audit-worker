@@ -12,7 +12,7 @@
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getObjectKeysFromSubfolders } from './data-processing.js';
 import { getObjectFromKey } from '../../utils/s3-utils.js';
-import { WCAG_CRITERIA_COUNTS, URL_SOURCE_SEPARATOR } from './constants.js';
+import { WCAG_CRITERIA_COUNTS } from './constants.js';
 
 /**
  * Fetches existing URLs from previously failed audits stored in S3.
@@ -238,35 +238,14 @@ export function calculateA11yMetrics(reportData, siteId, baseUrl) {
       };
     },
     extractTopOffenders: (data) => {
-      // Aggregate violations by base URL (handling composite keys for forms)
-      const urlViolationCounts = {};
-
-      for (const [key, urlData] of Object.entries(data)) {
-        if (key !== 'overall' && urlData.violations) {
+      const offenders = [];
+      for (const [url, urlData] of Object.entries(data)) {
+        if (url !== 'overall' && urlData.violations) {
           const count = urlData.violations.total || 0;
-          if (count > 0) {
-            // Extract base URL from composite key if it has a source identifier
-            const url = key.includes(URL_SOURCE_SEPARATOR)
-              ? key.split(URL_SOURCE_SEPARATOR)[0]
-              : key;
-
-            // Aggregate counts for the same base URL
-            if (urlViolationCounts[url]) {
-              urlViolationCounts[url] += count;
-            } else {
-              urlViolationCounts[url] = count;
-            }
-          }
+          if (count > 0) offenders.push({ url, count });
         }
       }
-
-      // Convert to array and sort by count
-      const offenders = Object.entries(urlViolationCounts)
-        .map(([url, count]) => ({ url, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 10);
-
-      return offenders;
+      return offenders.sort((a, b) => b.count - a.count).slice(0, 10);
     },
   });
 }
