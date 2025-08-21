@@ -48,7 +48,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
   const suggestions = [];
-  // Generate suggestions data to be inserted in meta-tags opportunity suggestions
+  // Generate new suggestions data to be inserted in meta-tags opportunity suggestions
   Object.keys(detectedTags)
     .forEach((endpoint) => {
       [TITLE, DESCRIPTION, H1].forEach((tag) => {
