@@ -86,7 +86,6 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
       rank: suggestion.rank,
       data: { ...suggestion },
     }),
-    log,
   });
   log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
 }

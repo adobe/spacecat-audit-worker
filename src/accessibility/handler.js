@@ -228,9 +228,15 @@ export async function processAccessibilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
-  .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  // First step: Prepare and send data to CONTENT_SCRAPER
-  .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
-  // Second step: Process the scraped data to find opportunities
+  .addStep(
+    'processImport',
+    processImportStep,
+    AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
+  )
+  .addStep(
+    'scrapeAccessibilityData',
+    scrapeAccessibilityData,
+    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+  )
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)
   .build();
