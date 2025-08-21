@@ -11,10 +11,8 @@
  */
 
 import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
-import { loadSql } from './report-utils.js';
-import { DEFAULT_PATTERNS } from '../constants/page-patterns.js';
+import { loadSql, fetchRemotePatterns } from './report-utils.js';
 import { PROVIDER_USER_AGENT_PATTERNS, buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../constants/user-agent-patterns.js';
-import { TOPIC_PATTERNS } from '../constants/topic-patterns.js';
 
 function buildDateFilter(startDate, endDate) {
   const formatPart = (date) => ({
@@ -49,12 +47,12 @@ function buildWhereClause(conditions = [], siteFilters = []) {
 }
 
 // Page Type Classification
-function generatePageTypeClassification(site) {
+function generatePageTypeClassification(remotePatterns = null) {
   /* c8 ignore next */
-  const patterns = site?.getConfig()?.getGroupedURLs('cdn-analysis') || DEFAULT_PATTERNS;
+  const patterns = remotePatterns?.pagePatterns || [];
 
   const caseConditions = patterns
-    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.pattern}') THEN '${pattern.name}'`)
+    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.regex}') THEN '${pattern.name}'`)
     .join('\n');
 
   return `CASE\n${caseConditions}\n      ELSE 'Uncategorized'\n    END`;
@@ -70,13 +68,10 @@ function buildCountryExtractionSQL() {
 }
 
 // Topic Classification
-function buildTopicExtractionSQL(site) {
-  const siteUrl = site.getBaseURL();
-  const domain = new URL(siteUrl).hostname.replace('www.', '');
-
-  const patterns = TOPIC_PATTERNS[domain];
-
+function buildTopicExtractionSQL(remotePatterns = null) {
   /* c8 ignore start */
+  const patterns = remotePatterns?.topicPatterns || [];
+
   if (Array.isArray(patterns)) {
     const namedPatterns = [];
     const extractPatterns = [];
@@ -99,9 +94,8 @@ function buildTopicExtractionSQL(site) {
       return `COALESCE(\n    ${extractPatterns.join(',\n    ')},\n    'Other'\n  )`;
     }
   }
-  /* c8 ignore stop */
-
   return "CASE WHEN url IS NOT NULL THEN 'Other' END";
+  /* c8 ignore stop */
 }
 
 async function createAgenticReportQuery(options) {
@@ -115,12 +109,14 @@ async function createAgenticReportQuery(options) {
     siteFilters,
   );
 
+  const remotePatterns = await fetchRemotePatterns(site);
+
   return loadSql('agentic-traffic-report', {
     agentTypeClassification: buildAgentTypeClassificationSQL(),
     userAgentDisplay: buildUserAgentDisplaySQL(),
     countryExtraction: buildCountryExtractionSQL(),
-    topicExtraction: buildTopicExtractionSQL(site),
-    pageCategoryClassification: generatePageTypeClassification(site),
+    topicExtraction: buildTopicExtractionSQL(remotePatterns),
+    pageCategoryClassification: generatePageTypeClassification(remotePatterns),
     databaseName,
     tableName,
     whereClause,

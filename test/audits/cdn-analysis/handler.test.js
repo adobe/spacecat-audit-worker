@@ -28,15 +28,13 @@ describe('CDN Analysis Handler', () => {
   let handlerModule;
   let athenaClientStub;
   let getStaticContentStub;
-  let determineCdnProviderStub;
+  let resolveCdnBucketNameStub;
+  let discoverCdnProvidersStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
     site = {
       getBaseURL: sandbox.stub().returns('https://example.com'),
-      getConfig: sandbox.stub().returns({
-        getCdnLogsConfig: sandbox.stub().returns({ bucketName: 'test-bucket' }),
-      }),
     };
     context = new MockContextBuilder()
       .withSandbox(sandbox)
@@ -54,11 +52,23 @@ describe('CDN Analysis Handler', () => {
       execute: sandbox.stub().resolves(),
     };
     getStaticContentStub = sandbox.stub().resolves('SELECT 1;');
-    determineCdnProviderStub = sandbox.stub().resolves('akamai');
+    resolveCdnBucketNameStub = sandbox.stub().resolves('test-bucket');
+    discoverCdnProvidersStub = sandbox.stub().resolves(['fastly']);
+
     handlerModule = await esmock('../../../src/cdn-analysis/handler.js', {
       '@adobe/spacecat-shared-athena-client': { AWSAthenaClient: { fromContext: () => athenaClientStub } },
       '@adobe/spacecat-shared-utils': { getStaticContent: getStaticContentStub },
-      '../../../src/cdn-analysis/utils/cdn-utils.js': { determineCdnProvider: determineCdnProviderStub },
+      '../../../src/utils/cdn-utils.js': {
+        resolveCdnBucketName: resolveCdnBucketNameStub,
+        extractCustomerDomain: () => 'example_com',
+        isLegacyBucket: () => false,
+        discoverCdnProviders: discoverCdnProvidersStub,
+        buildCdnPaths: () => ({
+          rawLocation: 's3://test-bucket/raw/fastly/',
+          aggregatedOutput: 's3://test-bucket/aggregated/2025/01/15/10/',
+          tempLocation: 's3://test-bucket/temp/athena-results/',
+        }),
+      },
       '../../../src/common/base-audit.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
     });
   });
@@ -69,40 +79,47 @@ describe('CDN Analysis Handler', () => {
 
   it('runs the full cdnLogAnalysisRunner flow', async () => {
     const result = await handlerModule.cdnLogAnalysisRunner('https://example.com', context, site);
-    expect(determineCdnProviderStub).to.have.been.calledOnce;
+
+    expect(resolveCdnBucketNameStub).to.have.been.calledOnce;
+    expect(discoverCdnProvidersStub).to.have.been.calledOnce;
     expect(getStaticContentStub).to.have.been.calledThrice;
     expect(athenaClientStub.execute).to.have.been.calledThrice;
     expect(result).to.have.property('auditResult');
-    expect(result.auditResult).to.include.keys('cdnType', 'database', 'rawTable', 'output', 'completedAt');
-    expect(result.auditResult.cdnType).to.equal('akamai');
-    expect(context.log.info).to.have.been.calledWith('Using AKAMAI provider');
-  });
-
-  it('throws if determineCdnProvider throws', async () => {
-    determineCdnProviderStub.rejects(new Error('S3 error'));
-    await expect(handlerModule.cdnLogAnalysisRunner('https://example.com', context, site))
-      .to.be.rejectedWith('S3 error');
-  });
-
-  it('uses default bucket name if getCdnLogsConfig returns undefined', async () => {
-    site.getConfig = sandbox.stub()
-      .returns({ getCdnLogsConfig: sandbox.stub().returns(undefined) });
-    const result = await handlerModule.cdnLogAnalysisRunner('https://example.com', context, site);
+    expect(result.auditResult).to.include.keys('database', 'providers', 'completedAt');
     expect(result.auditResult.database).to.equal('cdn_logs_example_com');
-    expect(determineCdnProviderStub).to.have.been.calledOnce;
-    expect(getStaticContentStub).to.have.been.calledThrice;
-    expect(athenaClientStub.execute).to.have.been.calledThrice;
+    expect(result.auditResult.providers).to.have.length(1);
+    expect(result.auditResult.providers[0]).to.have.property('cdnType', 'fastly');
   });
 
-  it('throws if athenaClient.execute throws', async () => {
+  it('handles multiple CDN providers', async () => {
+    discoverCdnProvidersStub.resolves(['fastly', 'akamai']);
+
+    const result = await handlerModule.cdnLogAnalysisRunner('https://example.com', context, site);
+
+    expect(result.auditResult.providers).to.have.length(2);
+    expect(athenaClientStub.execute).to.have.been.callCount(5);
+  });
+
+  it('returns error when no bucket found', async () => {
+    resolveCdnBucketNameStub.resolves(null);
+
+    const result = await handlerModule.cdnLogAnalysisRunner('https://example.com', context, site);
+
+    expect(result.auditResult).to.have.property('error', 'No CDN bucket found');
+    expect(result.fullAuditRef).to.be.null;
+  });
+
+  it('handles athena execution errors', async () => {
     athenaClientStub.execute.onFirstCall().rejects(new Error('Athena error'));
+
     await expect(
       handlerModule.cdnLogAnalysisRunner('https://example.com', context, site),
     ).to.be.rejectedWith('Athena error');
   });
 
-  it('throws if loadSql throws', async () => {
+  it('handles SQL loading errors', async () => {
     getStaticContentStub.onFirstCall().rejects(new Error('SQL load error'));
+
     await expect(
       handlerModule.cdnLogAnalysisRunner('https://example.com', context, site),
     ).to.be.rejectedWith('SQL load error');
