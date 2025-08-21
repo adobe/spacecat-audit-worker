@@ -48,11 +48,16 @@ const DOLLAR_PER_TRAFFIC_LOST = 1.00; // 1.00 == $1 per traffic lost
  * "Source" and "Destination" URL pair.  The generated key handles any duplicates that were found.
  * This key is used to uniquely identify the entry when we run the audit repeatedly.
  *
+ * IMPORTANT: This key format must be kept in sync with the backoffice code in
+ * experience-success-studio-backoffice/src/.../pages/opportunities/RedirectChainsOpportunity.js
+ * in the handleAddSuggestion function. Both must use the same KEY_SEPARATOR and format.
+ *
  * @param {Object} result - The result object.
  *                          See the structure returned by `followAnyRedirectForUrl`.
  * @returns {string} The unique key.
  */
 function buildUniqueKey(result) {
+  // Keep the key format in sync with the BackOffice code.  (See comment above.)
   return `${result.referencedBy}${KEY_SEPARATOR}${result.origSrc}${KEY_SEPARATOR}${result.origDest}${KEY_SEPARATOR}${result.ordinalDuplicate}`;
 }
 
@@ -462,7 +467,7 @@ export async function processEntriesInParallel(pageUrls, baseUrl, log, maxConcur
     allResults.push(...batchResults);
 
     // Log progress
-    log.info(`Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(pageUrls.length / BATCH_SIZE)}`);
+    log.info(`${AUDIT_LOGGING_NAME} - Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(pageUrls.length / BATCH_SIZE)}`);
   }
 
   return allResults;
@@ -480,7 +485,7 @@ export async function processEntriesInParallel(pageUrls, baseUrl, log, maxConcur
  *    countTooQualifiedUrls: number,
  *    countHasSameSrcDest: number,
  *    countTooManyRedirects: number,
- *    count400Errors: number,               // HTTP error codes 400+
+ *    countHttpErrors: number,              // HTTP error codes 400+
  *    countNotMatchDestinationUrl: number,
  *    countTotalEntriesWithProblems: number // note that a single entry can have multiple problems
  *    },
@@ -493,7 +498,7 @@ export function analyzeResults(results) {
     countTooQualifiedUrls: 0,
     countHasSameSrcDest: 0,
     countTooManyRedirects: 0,
-    count400Errors: 0,
+    countHttpErrors: 0,
     countNotMatchDestinationUrl: 0,
     countTotalEntriesWithProblems: 0,
   };
@@ -524,7 +529,7 @@ export function analyzeResults(results) {
     }
 
     if (result.status >= 400) {
-      counts.count400Errors += 1;
+      counts.countHttpErrors += 1;
       entryHasProblems = true;
     }
 
@@ -647,7 +652,7 @@ export async function redirectsAuditRunner(baseUrl, context) {
     log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. duplicate Source URLs:        ${counts.countDuplicateSourceUrls}`);
     log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. too qualified URLs:           ${counts.countTooQualifiedUrls}`);
     log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. same Source and Dest URLs:    ${counts.countHasSameSrcDest}`);
-    log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. resulted in HTTP error:       ${counts.count400Errors}`);
+    log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. resulted in HTTP error:       ${counts.countHttpErrors}`);
     log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. Final URL not match Dest URL: ${counts.countNotMatchDestinationUrl}`);
     log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. with too many redirects:      ${counts.countTooManyRedirects}`);
   }
@@ -690,12 +695,13 @@ export function getSuggestedFix(result) {
     finalUrl = finalUrl.replace(baseUrl, '');
   }
   const redirectChain = result.redirectChain || ''; // can be an empty string
+  const errorMsg = result.error || '(not specified)'; // can be a default string
 
   const fixForUnknown = 'No suggested fix available for this entry.'; // not expected to be returned
   const fixForDuplicate = 'Remove this entry since the same Source URL is used later in the redirects file.';
   const fixForTooQualified = `Update the Source URL and/or the Destination URL to use relative paths by removing the base URL: ${baseUrl}`;
   const fixForHasSameSrcDest = 'Remove this entry since the Source URL is the same as the Destination URL.';
-  const fixForManualCheck = `Check the URL: ${finalUrl} since it resulted in an error code. Maybe remove the entry from the redirects file.`;
+  const fixForManualCheck = `Check the URL: ${finalUrl} since it resulted in an error code. Maybe remove the entry from the redirects file. Error message: ${errorMsg}`;
   const fixFor404page = 'Update, or remove, this entry since the Source URL redirects to a 404 page.';
   const fixForFinalMismatch = 'Replace the Destination URL with the Final URL, since the Source URL actually redirects to the Final URL.';
   const fixForMaxRedirectsExceeded = `Redesign the redirects that start from the Source URL. An excessive number of redirects were encountered. Partial redirect chain is: ${redirectChain}`;
@@ -749,7 +755,7 @@ export function getSuggestedFix(result) {
 
 /**
  * For each entry in the audit data, generates a suggested fix based on the issues found for
- * that entry.
+ * that entry.  Note that some entries may be skipped based on certain conditions.
  *
  * @param auditUrl - The URL of the audit
  * @param auditData - The audit data containing the audit result and additional details
@@ -761,6 +767,7 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
 
   const suggestedFixes = []; // {key: '...', fix: '...'}
   const entriesWithIssues = auditData?.auditResult?.details?.issues ?? [];
+  let skippedEntriesCount = 0; // Counter for skipped entries
 
   log.info(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has ${entriesWithIssues.length} affected entries.`);
   log.debug(`${AUDIT_LOGGING_NAME} - Audit data: ${JSON.stringify(auditData)}`);
@@ -768,6 +775,24 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
   for (const row of entriesWithIssues) {
     const suggestedFixResult = getSuggestedFix(row);
     if (suggestedFixResult) {
+      // Check for conditions that should exclude suggestions from being created
+      const shouldSkipSuggestion = (
+        // Network error case: HTTP 418 + "unexpected end of file" + source equals final
+        (row.status === 418 // our internal HTTP error code for unexpected HTTP errors
+         && row.error === 'unexpected end of file' // redirects could not be followed
+         && row.fullSrc === row.fullFinal)
+        // Add any future conditions like: (currentConditionAbove) || (someNewCondition)
+      );
+      if (shouldSkipSuggestion) {
+        skippedEntriesCount += 1;
+        log.debug(`${AUDIT_LOGGING_NAME} - Skipping suggestion for network error case: ${row.origSrc} -> ${row.origDest}`);
+        // eslint-disable-next-line no-continue
+        continue; // Skip this suggestion entirely
+      }
+
+      // IMPORTANT: The data format must be kept in sync with the backoffice code in
+      // experience-success-studio-backoffice/src/.../opportunities/RedirectChainsOpportunity.js
+      // Examples: when creating a new suggestion, and also when updating an existing suggestion.
       suggestedFixes.push({
         key: buildUniqueKey(row), // string
 
@@ -795,6 +820,7 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
       });
     }
   }
+  log.info(`${AUDIT_LOGGING_NAME} - Skipped ${skippedEntriesCount} entries due to exclusion criteria.`);
   log.info(`${AUDIT_LOGGING_NAME} - Generated ${suggestedFixes.length} suggested fixes.`);
   log.debug(`${AUDIT_LOGGING_NAME} - Suggested fixes: ${JSON.stringify(suggestedFixes)}`);
 
@@ -849,7 +875,7 @@ export async function generateOpportunities(auditUrl, auditData, context) {
   );
 
   log.info(`${AUDIT_LOGGING_NAME} - Creating each suggestion for this opportunity.`);
-  const buildKey = (data) => data.key; // we use a simple function since we pre-built each key
+  const buildKey = (data) => data.key; // we use this simple function since we pre-built each key
   await syncSuggestions({
     opportunity,
     newData: auditData.suggestions,

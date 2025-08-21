@@ -1048,7 +1048,7 @@ describe('Redirect Chains Audit', () => {
         ];
 
         const { counts } = analyzeResults(results);
-        expect(counts.count400Errors).to.equal(1);
+        expect(counts.countHttpErrors).to.equal(1);
       });
 
       it('should detect mismatched destination URLs', () => {
@@ -1297,6 +1297,135 @@ describe('Redirect Chains Audit', () => {
 
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 2 affected entries.`);
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 2 suggested fixes.`);
+      });
+
+      it('should skip suggestions with HTTP 418 + "unexpected end of file" + source equals final', () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/network-error-page',
+                  fullSrc: `${baseUrl}/network-error-page`,
+                  origDest: '/destination-page',
+                  fullDest: `${baseUrl}/destination-page`,
+                  fullFinal: `${baseUrl}/network-error-page`, // Same as fullSrc
+                  redirectCount: 0,
+                  status: 418, // HTTP error code for network errors
+                  error: 'unexpected end of file', // Network error message
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  fullFinalMatchesDestUrl: false,
+                },
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/normal-page',
+                  fullSrc: `${baseUrl}/normal-page`,
+                  origDest: '/normal-destination',
+                  fullDest: `${baseUrl}/normal-destination`,
+                  fullFinal: `${baseUrl}/normal-destination`,
+                  redirectCount: 0,
+                  status: 200, // Normal status
+                  error: '', // No error
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  fullFinalMatchesDestUrl: true,
+                },
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result).to.have.property('suggestions');
+        expect(result.suggestions).to.be.an('array').with.lengthOf(1); // Only the normal suggestion should be included
+        expect(result.suggestions[0]).to.have.property('sourceUrl', '/normal-page');
+        expect(result.suggestions[0]).to.have.property('destinationUrl', '/normal-destination');
+
+        // Verify logging
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 2 affected entries.`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Skipping suggestion for network error case: /network-error-page -> /destination-page`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Skipped 1 entries due to exclusion criteria.`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 1 suggested fixes.`);
+      });
+
+      it('should not skip suggestions when only some conditions are met', () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/partial-match-1',
+                  fullSrc: `${baseUrl}/partial-match-1`,
+                  origDest: '/destination',
+                  fullDest: `${baseUrl}/destination`,
+                  fullFinal: `${baseUrl}/partial-match-1`, // Same as fullSrc
+                  redirectCount: 0,
+                  status: 200, // Not 418
+                  error: 'unexpected end of file', // Has the error message
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  fullFinalMatchesDestUrl: false,
+                },
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/partial-match-2',
+                  fullSrc: `${baseUrl}/partial-match-2`,
+                  origDest: '/destination',
+                  fullDest: `${baseUrl}/destination`,
+                  fullFinal: `${baseUrl}/different-final`, // Different from fullSrc
+                  redirectCount: 0,
+                  status: 418, // Has 418 status
+                  error: 'unexpected end of file', // Has the error message
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  fullFinalMatchesDestUrl: false,
+                },
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/partial-match-3',
+                  fullSrc: `${baseUrl}/partial-match-3`,
+                  origDest: '/destination',
+                  fullDest: `${baseUrl}/destination`,
+                  fullFinal: `${baseUrl}/partial-match-3`, // Same as fullSrc
+                  redirectCount: 0,
+                  status: 418, // Has 418 status
+                  error: 'different error message', // Different error message
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  fullFinalMatchesDestUrl: false,
+                },
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result).to.have.property('suggestions');
+        expect(result.suggestions).to.be.an('array').with.lengthOf(3); // All suggestions should be included
+        expect(result.suggestions[0]).to.have.property('sourceUrl', '/partial-match-1');
+        expect(result.suggestions[1]).to.have.property('sourceUrl', '/partial-match-2');
+        expect(result.suggestions[2]).to.have.property('sourceUrl', '/partial-match-3');
+
+        // Verify logging - no skip messages should be present
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 3 affected entries.`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 3 suggested fixes.`);
+
+        // Verify that the correct number of suggestions were generated
+        expect(result.suggestions).to.have.lengthOf(3);
       });
 
       it('should handle empty or missing issues array', () => {
