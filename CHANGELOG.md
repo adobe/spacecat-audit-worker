@@ -1,3 +1,10 @@
+# [1.154.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.153.1...v1.154.0) (2025-08-21)
+
+
+### Features
+
+* keep the a11y individual opportunity if exists and update the suggestions, mark the ones not found with fixed ([#1098](https://github.com/adobe/spacecat-audit-worker/issues/1098)) ([0170fa3](https://github.com/adobe/spacecat-audit-worker/commit/0170fa3f4ec275013123997ee3dbc06ce7bc48b7))
+
 ## [1.153.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.153.0...v1.153.1) (2025-08-21)
 
 
