@@ -372,8 +372,7 @@ export async function createIndividualOpportunitySuggestions(
     return `${data.url}|${issues[0].type}|${issues[0]?.htmlWithIssues[0]?.target_selector || ''}`;
   };
 
-  log.debug(`[A11yIndividual] Creating ${aggregatedData.data.length} suggestions for opportunity ${opportunity.getId()}`);
-  log.info(`[A11yIndividual] New Data ${JSON.stringify(aggregatedData, null, 2)}`);
+  log.info(`[A11yIndividual] ${aggregatedData.data.length} issues aggregated for opportunity ${opportunity.getId()}`);
 
   try {
     await syncSuggestions({
