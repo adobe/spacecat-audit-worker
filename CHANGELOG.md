@@ -1,3 +1,10 @@
+# [1.155.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.154.0...v1.155.0) (2025-08-21)
+
+
+### Features
+
+* Geo Brand Presence presigned url valid 24h ([#1148](https://github.com/adobe/spacecat-audit-worker/issues/1148)) ([3594dba](https://github.com/adobe/spacecat-audit-worker/commit/3594dba87f59089f8c7f62781b8012cee1e2b4cf))
+
 # [1.154.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.153.1...v1.154.0) (2025-08-21)
 
 
