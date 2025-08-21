@@ -403,19 +403,8 @@ export async function aggregateAccessibilityData(
       } = data;
 
       // Store the url specific data only for page-level data (no form level data yet)
-      if (!source) {
-        aggregatedData[siteUrl] = {
-          violations,
-          traffic,
-        };
-      } else {
-        // Creating a composite key to identify various sources like forms, etc. on the same page
-        const compositeKey = `${siteUrl}${URL_SOURCE_SEPARATOR}${source}`;
-        aggregatedData[compositeKey] = {
-          violations,
-          traffic,
-        };
-      }
+      const key = source ? `${siteUrl}${URL_SOURCE_SEPARATOR}${source}` : siteUrl;
+      aggregatedData[key] = { violations, traffic };
 
       // Update overall data
       aggregatedData = updateViolationData(aggregatedData, violations, 'critical');

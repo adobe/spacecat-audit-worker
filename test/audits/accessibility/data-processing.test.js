@@ -1909,7 +1909,7 @@ describe('data-processing utility functions', () => {
       expect(result.message).to.equal('Successfully aggregated 1 files into output-key');
 
       // Verify the correct log identifier is used
-      expect(mockLog.info.calledWith('[Form Opportunity] Saved aggregated accessibility data to output-key')).to.be.true;
+      expect(mockLog.info.calledWith('[FormsA11yAudit] Saved aggregated accessibility data to output-key')).to.be.true;
     });
 
     it('should handle forms-opportunities audit type with form source data', async () => {
@@ -2047,8 +2047,8 @@ describe('data-processing utility functions', () => {
 
       expect(result.success).to.be.false;
       expect(result.aggregatedData).to.be.null;
-      expect(result.message).to.equal('[Form Opportunity] No files could be processed successfully for site test-site');
-      expect(mockLog.error.calledWith('[Form Opportunity] No files could be processed successfully for site test-site')).to.be.true;
+      expect(result.message).to.equal('[FormsA11yAudit] No files could be processed successfully for site test-site');
+      expect(mockLog.error.calledWith('[FormsA11yAudit] No files could be processed successfully for site test-site')).to.be.true;
     });
 
     it('should handle forms-opportunities audit type error with correct log identifier', async () => {
@@ -2090,7 +2090,7 @@ describe('data-processing utility functions', () => {
       expect(result.aggregatedData).to.be.null;
       expect(result.message).to.equal('Error: S3 save failed');
       // Verify the correct log identifier is used in error message
-      expect(mockLog.error.calledWith('[Form Opportunity] Error aggregating accessibility data for site test-site')).to.be.true;
+      expect(mockLog.error.calledWith('[FormsA11yAudit] Error aggregating accessibility data for site test-site')).to.be.true;
     });
   });
 
@@ -5035,7 +5035,7 @@ describe('data-processing utility functions', () => {
       const result = getAuditPrefixes('forms-opportunities');
 
       expect(result).to.deep.equal({
-        logIdentifier: 'Form Opportunity',
+        logIdentifier: 'FormsA11yAudit',
         storagePrefix: 'forms-accessibility',
       });
     });

@@ -769,7 +769,7 @@ export const AUDIT_PREFIXES = {
     storagePrefix: 'accessibility',
   },
   [Audit.AUDIT_TYPES.FORMS_OPPORTUNITIES]: {
-    logIdentifier: 'Form Opportunity',
+    logIdentifier: 'FormsA11yAudit',
     storagePrefix: 'forms-accessibility',
   },
 };
