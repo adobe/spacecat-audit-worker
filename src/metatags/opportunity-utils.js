@@ -14,7 +14,7 @@ export function removeTrailingSlash(url) {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 
-export function getBaseUrl(url, useHostnameOnly = true) {
+export function getBaseUrl(url, useHostnameOnly = false) {
   if (useHostnameOnly) {
     try {
       const urlObj = new URL(url);

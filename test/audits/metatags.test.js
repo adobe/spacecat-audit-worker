@@ -1231,22 +1231,34 @@ describe('Meta Tags', () => {
     });
 
     describe('getBaseUrl', () => {
-      it('should extract base URL from valid URL', () => {
+      it('should extract base URL from valid URL when useHostnameOnly is true', () => {
         const url = 'https://example.com/path/to/page?query=1';
-        const result = getBaseUrl(url);
+        const result = getBaseUrl(url, true);
         expect(result).to.equal('https://example.com');
       });
 
-      it('should preserve port numbers in URLs', () => {
+      it('should preserve port numbers in URLs when useHostnameOnly is true', () => {
         const url = 'https://example.com:8080/path/';
-        const result = getBaseUrl(url);
+        const result = getBaseUrl(url, true);
         expect(result).to.equal('https://example.com:8080');
       });
 
-      it('should preserve port numbers for localhost', () => {
+      it('should preserve port numbers for localhost when useHostnameOnly is true', () => {
         const url = 'http://localhost:8080/foo';
-        const result = getBaseUrl(url);
+        const result = getBaseUrl(url, true);
         expect(result).to.equal('http://localhost:8080');
+      });
+
+      it('should preserve full path by default', () => {
+        const url = 'http://localhost:8080/foo/bar';
+        const result = getBaseUrl(url);
+        expect(result).to.equal('http://localhost:8080/foo/bar');
+      });
+
+      it('should handle malformed URLs by removing trailing slash when useHostnameOnly is true', () => {
+        const url = 'malformed-url.com/path/';
+        const result = getBaseUrl(url, true);
+        expect(result).to.equal('malformed-url.com/path');
       });
 
       it('should handle malformed URLs by removing trailing slash', () => {
