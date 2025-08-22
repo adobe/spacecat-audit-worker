@@ -1,3 +1,15 @@
+# [1.157.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.156.0...v1.157.0) (2025-08-22)
+
+
+### Bug Fixes
+
+* fix lint issues with topic-patterns ([#1154](https://github.com/adobe/spacecat-audit-worker/issues/1154)) ([e3603f0](https://github.com/adobe/spacecat-audit-worker/commit/e3603f0a812f33ef6e39f7f94be3e7de0b05ddf9))
+
+
+### Features
+
+* Even more explicit logging for geo presence audit ([#1153](https://github.com/adobe/spacecat-audit-worker/issues/1153)) ([4f8832e](https://github.com/adobe/spacecat-audit-worker/commit/4f8832e2491bcb4f51587c42632ff0b7f853ced4))
+
 # [1.156.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.155.2...v1.156.0) (2025-08-22)
 
 
