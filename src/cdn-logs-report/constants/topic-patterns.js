@@ -14,7 +14,7 @@ export const TOPIC_PATTERNS = {
   'bulk.com': [{
     regex: '/products/([^/]+)/',
   }],
-   'airindia.com': [
+  'airindia.com': [
     {
       name: 'Booking & Search',
       regex: '^/(book(-flights)?|booking|search|multicity-booking|group-travel|plan(-and-book)?|google-flight-booking|exclusive-deals.*|special-offers.*|add-ons.*|fly-the-all-new-air-india).*',
@@ -60,7 +60,7 @@ export const TOPIC_PATTERNS = {
       regex: '^/(trainee-pilot.*|cadetpilot.*|training.*|course-details.*).*',
     },
   ],
-'adobe.com': [
+  'adobe.com': [
     {
       name: 'Acrobat',
       regex: '(?!.*blog|.*learn)(/?acrobat.|/?acrobat/|/?products/acrobat)',
