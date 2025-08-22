@@ -29,29 +29,29 @@ import { DATA_SOURCES } from '../../common/constants.js';
 // eslint-disable-next-line max-len
 export default async function createLowViewsOpportunities(auditUrl, auditDataObject, scrapedData, context, excludeForms = new Set()) {
   const {
-    dataAccess, log,
+    dataAccess, log, site,
   } = context;
   const { Opportunity } = dataAccess;
 
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
-  log.info(`Syncing high page views low form views opportunity for ${auditData.siteId}`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_VIEWS}] syncing high page views low form views opportunity`);
   let opportunities;
 
   try {
     opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
   } catch (e) {
-    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
+    log.error(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_VIEWS}] fetching opportunities failed with error: ${e.message}`);
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
   const { formVitals } = auditData.auditResult;
   // eslint-disable-next-line max-len
   const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]);
-  log.debug(`forms opportunities high-page-views-low-form-views: ${JSON.stringify(formOpportunities, null, 2)}`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_VIEWS}] opportunities high-page-views-low-form-views: ${JSON.stringify(formOpportunities, null, 2)}`);
 
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
-  log.info(`filtered opportunities: high-page-views-low-form-views:  ${JSON.stringify(filteredOpportunities, null, 2)}`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_VIEWS}] filtered opportunities high-page-views-low-form-views:  ${JSON.stringify(filteredOpportunities, null, 2)}`);
   try {
     for (const opptyData of filteredOpportunities) {
       let highPageViewsLowFormViewsOptty = opportunities.find(
@@ -87,17 +87,18 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         },
       };
 
-      log.info(`Forms Opportunity created high page views low form views ${JSON.stringify(opportunityData, null, 2)}`);
+      log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_VIEWS}] forms opportunity high page views low form views ${JSON.stringify(opportunityData, null, 2)}`);
       if (!highPageViewsLowFormViewsOptty) {
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormViewsOptty = await Opportunity.create(opportunityData);
-        log.debug('Forms Opportunity high page views low form views created');
+        log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_VIEWS}] forms opportunity high page views low form views created for form ${opptyData.form} and form source ${opptyData.formsource}`);
       } else if (highPageViewsLowFormViewsOptty.getOrigin() === ORIGINS.ESS_OPS) {
-        log.debug('Forms Opportunity high page views low form views exists and is from ESS_OPS');
+        log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_VIEWS}] forms opportunity high page views low form views for form ${opptyData.form} and form source ${opptyData.formsource} already exists and is from ESS_OPS manually created, creating the opportunity and marking it as ignore`);
         opportunityData.status = 'IGNORED';
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormViewsOptty = await Opportunity.create(opportunityData);
       } else {
+        log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_VIEWS}] forms opportunity high page views low form views for form ${opptyData.form} and form source ${opptyData.formsource} already exists and overwriting it`);
         highPageViewsLowFormViewsOptty.setAuditId(auditData.auditId);
         highPageViewsLowFormViewsOptty.setData({
           ...highPageViewsLowFormViewsOptty.getData(),
@@ -116,7 +117,7 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
       await sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData);
     }
   } catch (e) {
-    log.error(`Creating Forms opportunity for high page views low form views for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
+    log.error(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_VIEWS}] creating forms opportunity for high page views low form views failed with error: ${e.message}`, e);
   }
-  log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high page views low form views audit type.`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_VIEWS}] successfully synced opportunity for high page views low form views oppty type`);
 }

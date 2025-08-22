@@ -41,7 +41,7 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
     }
 
     if (a11yData?.length === 0) {
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] No a11y data found to create or update opportunity `);
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] no a11y data found to create or update opportunity `);
       return opportunity;
     }
 
@@ -156,7 +156,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
     );
 
     if (!objectKeysResult.success) {
-      log.error(`[Form Opportunity] [Site Id: ${site.getId()}] Failed to get object keys from subfolders: ${objectKeysResult.message}`);
+      log.error(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] failed to get object keys from subfolders: ${objectKeysResult.message}`);
       return;
     }
     const { objectKeys } = objectKeysResult;
@@ -170,7 +170,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
     );
 
     if (results.length === 0) {
-      log.error(`[Form Opportunity] No files could be processed successfully for site ${site.getId()}`);
+      log.error(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] no files could be processed successfully`);
       return;
     }
     const axeResults = results.map((result) => result.data);
@@ -197,7 +197,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
       Body: JSON.stringify(a11yData, null, 2),
       ContentType: 'application/json',
     }));
-    log.info(`[Form Opportunity] Saved aggregated forms-accessibility data to ${outputKey}`);
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] saved aggregated forms-accessibility data to ${outputKey}`);
 
     const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `forms-accessibility/${siteId}/`, log, 10, '-final-result.json');
     log.info(`[Form Opportunity] Found ${lastWeekObjectKeys.length} final-result files in the forms-accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
@@ -222,9 +222,9 @@ export async function createAccessibilityOpportunity(auditData, context) {
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] a11y opportunity created (if issues found) and sent to mystique`);
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] a11y opportunity created (if issues found) and sent to mystique for opportunity detection`);
   } catch (error) {
-    log.error(`[Form Opportunity] [Site Id: ${site.getId()}] Error creating a11y issues: ${error.message}`);
+    log.error(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] error creating a11y issues: ${error.message}`);
   }
 }
 
@@ -235,7 +235,7 @@ export default async function handler(message, context) {
   const { Site } = dataAccess;
   const { auditId, siteId, data } = message;
   const { opportunityId, a11y } = data;
-  log.info(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
+  log.info(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
   try {
     const opportunity = await createOrUpdateOpportunity(
       auditId,
@@ -245,7 +245,7 @@ export default async function handler(message, context) {
       opportunityId,
     );
     if (!opportunity) {
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`);
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] A11y opportunity not detected, skipping guidance`);
       return ok();
     }
     const site = await Site.findById(siteId);
@@ -262,9 +262,9 @@ export default async function handler(message, context) {
       },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.info(`[Form Opportunity] [Site Id: ${siteId}] Sent a11y message to mystique for guidance`);
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] sent a11y message to mystique for guidance: ${JSON.stringify(message, null, 2)}`);
   } catch (error) {
-    log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to process a11y opportunity from mystique: ${error.message}`);
+    log.error(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] failed to process a11y opportunity from mystique: ${error.message}`);
   }
   return ok();
 }

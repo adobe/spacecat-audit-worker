@@ -508,5 +508,5 @@ export async function sendMessageToFormsQualityAgent(auditDataObject, context, o
 
   // eslint-disable-next-line no-await-in-loop
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueFormsQualityAgentMessage);
-  log.info(`forms quality agent message sent to mystique : ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] forms quality agent message sent to mystique for detect form metadata : ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
 }

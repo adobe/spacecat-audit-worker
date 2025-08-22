@@ -14,11 +14,11 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 
 export default async function handler(message, context) {
   const {
-    log, dataAccess, sqs, env,
+    log, dataAccess, sqs, env, site,
   } = context;
   const { Opportunity } = dataAccess;
   const { siteId, data } = message;
-  log.info(`Message received in form details handler: ${JSON.stringify(message, null, 2)}`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] message received from mystique with form metadata in form details handler: ${JSON.stringify(message, null, 2)}`);
   const {
     url, form_source: formsource, form_details: formDetails,
   } = data;
@@ -28,7 +28,7 @@ export default async function handler(message, context) {
   const opportunity = existingOpportunities.find((oppty) => oppty.getData()?.form === url && (!formsource || oppty.getData()?.formsource === formsource));
 
   if (opportunity) {
-    log.info(`Opportunity found: ${JSON.stringify(opportunity)}`);
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity fetched from database to update form metadata: ${JSON.stringify(opportunity)}`);
     opportunity.setUpdatedBy('system');
     opportunity.setData({
       ...opportunity.getData(),
@@ -37,11 +37,10 @@ export default async function handler(message, context) {
 
     // eslint-disable-next-line no-await-in-loop
     await opportunity.save();
-    log.info(`Updated opportunity: ${JSON.stringify(opportunity, null, 2)}`);
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity updated with form metadata: ${JSON.stringify(opportunity, null, 2)}`);
 
     const opptyData = JSON.parse(JSON.stringify(opportunity));
     // sending message to mystique for guidance
-    log.info('sending message to mystique');
     const mystiqueMessage = {
       type: `guidance:${opptyData.type}`,
       siteId: opptyData.siteId,
@@ -69,7 +68,7 @@ export default async function handler(message, context) {
 
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.info(`forms opportunity sent to mystique for guidance: ${JSON.stringify(mystiqueMessage)}`);
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] forms opportunity type guidance: ${opptyData.type} sent to mystique for guidance: ${JSON.stringify(mystiqueMessage)}`);
   }
 
   return ok();

@@ -114,7 +114,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
   };
 
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending ${urlsData.length} urls for scraping: ${urlsData}`);
   return result;
 }
 
@@ -167,7 +167,7 @@ export async function sendA11yUrlsForScrapingStep(context) {
     siteId: site.getId(),
   };
 
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] sending urls for form-accessibility audit`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] sending ${urlsData.length} urls for form-accessibility scraping: ${urlsData}`);
   return result;
 }
 

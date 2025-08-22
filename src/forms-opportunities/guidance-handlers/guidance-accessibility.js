@@ -11,16 +11,17 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
+import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { auditId, siteId, data } = message;
   const { opportunityId, a11y: a11yGuidanceOfIssues } = data;
   const { Opportunity } = dataAccess;
-  log.info(`Message received in accessibility guidance handler: ${JSON.stringify(message, null, 2)}`);
+  log.info(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] message received in accessibility guidance handler: ${JSON.stringify(message, null, 2)}`);
   const opportunity = await Opportunity.findById(opportunityId);
   if (!opportunity) {
-    log.error(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not found`);
+    log.error(`[Form Opportunity] [Site Id: ${siteId} [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] A11y opportunity not found`);
     return ok();
   }
   const a11yData = opportunity.getData()?.accessibility;
@@ -48,6 +49,6 @@ export default async function handler(message, context) {
     accessibility: a11yData,
   });
   await opportunity.save();
-  log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity updated with guidance`);
+  log.info(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] A11y opportunity updated with guidance`);
   return ok();
 }
