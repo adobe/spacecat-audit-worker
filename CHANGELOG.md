@@ -1,3 +1,10 @@
+## [1.155.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.155.0...v1.155.1) (2025-08-22)
+
+
+### Bug Fixes
+
+* check if bucket exist ([#1149](https://github.com/adobe/spacecat-audit-worker/issues/1149)) ([2badb39](https://github.com/adobe/spacecat-audit-worker/commit/2badb39bb60cfe7137b213e670d1f2ac7e100e61))
+
 # [1.155.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.154.0...v1.155.0) (2025-08-21)
 
 
