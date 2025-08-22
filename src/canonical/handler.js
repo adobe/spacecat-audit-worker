@@ -471,7 +471,27 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       }
     }
 
-    const auditPromises = topPages.map(async (page) => {
+    // Exclude login/authentication-related pages from canonical checks
+    const shouldSkipAuthPage = (u) => {
+      const pathname = new URL(u).pathname.toLowerCase();
+      return pathname.includes('/login')
+        || pathname.includes('/signin')
+        || pathname.includes('/authenticate')
+        || pathname.includes('/oauth')
+        || pathname.includes('/sso')
+        || pathname === '/auth'
+        || pathname.startsWith('/auth/');
+    };
+
+    const filteredTopPages = topPages.filter(({ url }) => {
+      if (shouldSkipAuthPage(url)) {
+        log.info(`Skipping canonical checks for auth/login page: ${url}`);
+        return false;
+      }
+      return true;
+    });
+
+    const auditPromises = filteredTopPages.map(async (page) => {
       const { url } = page;
       const checks = [];
 
