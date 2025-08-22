@@ -11,9 +11,7 @@
  */
 
 import {
-  composeAuditURL,
   isArray,
-  prependSchema,
   tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
@@ -21,10 +19,10 @@ import {
   extractDomainAndProtocol,
   getBaseUrlPagesFromSitemapContents,
   getSitemapUrlsFromSitemapIndex,
-  getUrlWithoutPath,
   toggleWWW,
   isLoginPage,
 } from '../support/utils.js';
+import { wwwUrlResolver } from '../common/base-audit.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -577,7 +575,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 
 export default new AuditBuilder()
   .withRunner(sitemapAuditRunner)
-  .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
-    .then((url) => getUrlWithoutPath(prependSchema(url))))
+  .withUrlResolver(wwwUrlResolver)
   .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();
