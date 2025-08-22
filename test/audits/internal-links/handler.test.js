@@ -230,6 +230,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
       })
       .build();
     context.log = {
+      debug: sandbox.stub(),
       info: sandbox.stub(),
       error: sandbox.stub(),
       warn: sandbox.stub(),

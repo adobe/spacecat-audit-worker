@@ -39,6 +39,7 @@ describe('Hreflang Audit', () => {
 
   beforeEach(() => {
     mockLog = {
+      debug: sandbox.stub(),
       info: sandbox.stub(),
       warn: sandbox.stub(),
       error: sandbox.stub(),
@@ -612,6 +613,7 @@ describe('Hreflang Audit', () => {
     const auditUrl = 'https://example.com';
     const mockContext = {
       log: {
+        debug: sinon.stub(),
         info: sinon.stub(),
         warn: sinon.stub(),
         error: sinon.stub(),
@@ -631,6 +633,7 @@ describe('Hreflang Audit', () => {
     };
 
     beforeEach(() => {
+      mockContext.log.debug.reset();
       mockContext.log.info.reset();
       mockContext.log.warn.reset();
       mockContext.log.error.reset();

@@ -1,3 +1,66 @@
+## [1.155.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.155.0...v1.155.1) (2025-08-22)
+
+
+### Bug Fixes
+
+* check if bucket exist ([#1149](https://github.com/adobe/spacecat-audit-worker/issues/1149)) ([2badb39](https://github.com/adobe/spacecat-audit-worker/commit/2badb39bb60cfe7137b213e670d1f2ac7e100e61))
+
+# [1.155.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.154.0...v1.155.0) (2025-08-21)
+
+
+### Features
+
+* Geo Brand Presence presigned url valid 24h ([#1148](https://github.com/adobe/spacecat-audit-worker/issues/1148)) ([3594dba](https://github.com/adobe/spacecat-audit-worker/commit/3594dba87f59089f8c7f62781b8012cee1e2b4cf))
+
+# [1.154.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.153.1...v1.154.0) (2025-08-21)
+
+
+### Features
+
+* keep the a11y individual opportunity if exists and update the suggestions, mark the ones not found with fixed ([#1098](https://github.com/adobe/spacecat-audit-worker/issues/1098)) ([0170fa3](https://github.com/adobe/spacecat-audit-worker/commit/0170fa3f4ec275013123997ee3dbc06ce7bc48b7))
+
+## [1.153.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.153.0...v1.153.1) (2025-08-21)
+
+
+### Bug Fixes
+
+* passing additional data to mystique for form oppties ([#1141](https://github.com/adobe/spacecat-audit-worker/issues/1141)) ([9230bdf](https://github.com/adobe/spacecat-audit-worker/commit/9230bdf2ec3383591e6f0cf3b9d323874894fa0c))
+
+# [1.153.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.152.1...v1.153.0) (2025-08-20)
+
+
+### Features
+
+* add audit to check whether llm agents are blocked in robots txt ([#1074](https://github.com/adobe/spacecat-audit-worker/issues/1074)) ([7377e2a](https://github.com/adobe/spacecat-audit-worker/commit/7377e2af06bbaedf72d3a420a1776236588fa8e8))
+
+## [1.152.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.152.0...v1.152.1) (2025-08-20)
+
+
+### Bug Fixes
+
+* add wcag formatting ([#1143](https://github.com/adobe/spacecat-audit-worker/issues/1143)) ([07af6f0](https://github.com/adobe/spacecat-audit-worker/commit/07af6f0289bc5a18e5f77a10f5b8b54dbcd4bdf6))
+
+# [1.152.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.151.0...v1.152.0) (2025-08-20)
+
+
+### Features
+
+* add a11y validation metrics ([#1117](https://github.com/adobe/spacecat-audit-worker/issues/1117)) ([c91ad0e](https://github.com/adobe/spacecat-audit-worker/commit/c91ad0e4903cce55264a2e855e65eb802f287755))
+
+# [1.151.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.150.0...v1.151.0) (2025-08-20)
+
+
+### Features
+
+* geo-brand-presence upload xlsx to elmo-ui ([#1140](https://github.com/adobe/spacecat-audit-worker/issues/1140)) ([19babf1](https://github.com/adobe/spacecat-audit-worker/commit/19babf1c305a35df8e83a51b54d6d7630f8d1455))
+
+# [1.150.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.149.1...v1.150.0) (2025-08-19)
+
+
+### Features
+
+* make agentic traffic simple structure ([#1138](https://github.com/adobe/spacecat-audit-worker/issues/1138)) ([0c954f4](https://github.com/adobe/spacecat-audit-worker/commit/0c954f459f72c5af0723612de6b0bb054630cbbb))
+
 ## [1.149.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.149.0...v1.149.1) (2025-08-19)
 
 

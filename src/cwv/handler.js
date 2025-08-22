@@ -57,7 +57,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
     auditType,
     kpiDeltas,
   );
-  const { log } = context;
   // Sync suggestions
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
   const maxOrganicForUrls = Math.max(...auditData.auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews));
@@ -80,7 +79,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
         ...entry,
       },
     }),
-    log,
   });
 }
 

@@ -33,6 +33,7 @@ describe('Canonical URL Tests', () => {
   let log;
   beforeEach(() => {
     log = {
+      debug: sinon.stub(),
       info: sinon.stub(),
       error: sinon.stub(),
     };
@@ -1033,6 +1034,7 @@ describe('Canonical URL Tests', () => {
     const auditUrl = 'https://example.com';
     const mockContext = {
       log: {
+        debug: sinon.stub(),
         info: sinon.stub(),
         error: sinon.stub(),
         warn: sinon.stub(),

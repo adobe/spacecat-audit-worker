@@ -9,13 +9,16 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
-import { weeklyBreakdownQueries } from '../utils/query-builder.js';
-
-export const AGENTIC_REPORT_CONFIG = {
-  filePrefix: 'agentictraffic',
-  folderSuffix: 'agentic-traffic',
-  workbookCreator: 'Spacecat Agentic Flat Report',
-  queryFunction: weeklyBreakdownQueries.createAgenticReportQuery,
-  sheetName: 'shared-all',
-};
+export function createOpportunityData() {
+  return {
+    origin: 'AUTOMATION',
+    title: 'Blocked AI agent bots',
+    description: 'Several URLs are blocked from being accessed by LLM user agents.',
+    guidance: {
+      steps: [
+        'Check each URL in the suggestions and ensure that AI user agents are not blocked in robots.txt',
+      ],
+    },
+    tags: ['llm', 'isElmo'],
+  };
+}

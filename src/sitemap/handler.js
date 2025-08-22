@@ -604,7 +604,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
       rank: 0,
       data: issue,
     }),
-    log,
   });
 
   return { ...auditData };
