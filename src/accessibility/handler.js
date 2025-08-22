@@ -22,6 +22,7 @@ import {
   saveA11yMetricsToS3,
 } from './utils/scrape-utils.js';
 import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
+import { wwwUrlResolver } from '../common/base-audit.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
@@ -228,6 +229,7 @@ export async function processAccessibilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
+  .withUrlResolver(wwwUrlResolver)
   .addStep(
     'processImport',
     processImportStep,
