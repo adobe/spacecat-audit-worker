@@ -37,9 +37,11 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     auditContext, log, sqs, env, site, audit, s3Client,
   } = context;
 
-  log.info('GEO BRAND PRESENCE: sending data to mystique');
-  const { calendarWeek, parquetFiles } = auditContext ?? /* c8 ignore next */ {};
+  const { calendarWeek, parquetFiles, success } = auditContext ?? /* c8 ignore next */ {};
   /* c8 ignore start */
+  if (success === false) {
+    log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', site.getId(), site.getBaseURL(), auditContext);
+  }
   if (!calendarWeek || typeof calendarWeek !== 'object' || !calendarWeek.week || !calendarWeek.year) {
     log.error('GEO BRAND PRESENCE: Invalid calendarWeek in auditContext. Cannot send data to Mystique', auditContext);
     return;
@@ -49,6 +51,8 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     return;
   }
   /* c8 ignore stop */
+
+  log.info('GEO BRAND PRESENCE: sending data to mystique');
 
   const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
   const recordSets = await Promise.all(
