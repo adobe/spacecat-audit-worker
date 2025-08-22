@@ -111,6 +111,7 @@ export async function scrapeAccessibilityData(context) {
     siteId,
     jobId: siteId,
     processingType: AUDIT_TYPE_ACCESSIBILITY,
+    allowCache: true,
   };
 }
 
