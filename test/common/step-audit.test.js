@@ -13,6 +13,7 @@
 /* eslint-env mocha */
 
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -326,6 +327,119 @@ describe('Step-based Audit Tests', () => {
 
       await expect(audit.chainStep(step, {}, context))
         .to.be.rejectedWith('Invalid destination configuration for step test');
+    });
+
+    it('handles SCRAPE_CLIENT destination by creating scrape job', async () => {
+      // Mock HTTP request for URL resolution
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      // Mock ScrapeClient
+      const mockScrapeClient = {
+        createScrapeJob: sandbox.stub().resolves('scrape-job-123'),
+      };
+      sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+      // Create an audit with SCRAPE_CLIENT destination
+      const scrapeAudit = new AuditBuilder()
+        .addStep('scrape-step', async () => ({
+          urls: [{ url: baseURL }],
+          siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        }), AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+        .addStep('final', async () => ({ status: 'complete' }))
+        .build();
+
+      const existingAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.findById.resolves(existingAudit);
+
+      const scrapeMessage = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'scrape-step',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+        },
+      };
+
+      const result = await scrapeAudit.run(scrapeMessage, context);
+
+      expect(result.status).to.equal(200);
+
+      // Verify ScrapeClient was created and used
+      expect(ScrapeClient.createFrom).to.have.been.calledOnce;
+      expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+
+      // Verify no SQS message was sent (since SCRAPE_CLIENT uses different flow)
+      expect(context.sqs.sendMessage).not.to.have.been.called;
+
+      // Verify log messages
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Creating new scrapeJob with the ScrapeClient/));
+      expect(context.log.info).to.have.been.calledWith('Crated scrapeJob: scrape-job-123');
+    });
+
+    it('loads scrape result paths when scrapeJobId is provided', async () => {
+      // Mock HTTP request for URL resolution
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      // Mock ScrapeClient - getScrapeResultPaths returns a Map of URL to Path pairs
+      const mockScrapeResultPaths = new Map([
+        ['https://space.cat/', 's3://bucket/path1.json'],
+        ['https://space.cat/page1', 's3://bucket/path2.json'],
+        ['https://space.cat/page2', 's3://bucket/path3.json'],
+      ]);
+      const mockScrapeClient = {
+        getScrapeResultPaths: sandbox.stub().resolves(mockScrapeResultPaths),
+      };
+      sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+      // Create a simple audit for testing scrape result loading
+      let capturedScrapeResultPaths;
+      const scrapeResultAudit = new AuditBuilder()
+        .addStep('process-scrape', async (stepContext) => {
+          // Capture the scrapeResultPaths for verification outside the step
+          capturedScrapeResultPaths = stepContext.scrapeResultPaths;
+          return { status: 'processed' };
+        })
+        .build();
+
+      const existingAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.findById.resolves(existingAudit);
+
+      const messageWithScrapeJobId = {
+        type: 'content-audit',
+        siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+        auditContext: {
+          next: 'process-scrape',
+          auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+          scrapeJobId: 'scrape-job-456',
+        },
+      };
+
+      const result = await scrapeResultAudit.run(messageWithScrapeJobId, context);
+
+      expect(result.status).to.equal(200);
+
+      // Verify ScrapeClient was created and getScrapeResultPaths was called
+      expect(ScrapeClient.createFrom).to.have.been.calledOnce;
+      expect(mockScrapeClient.getScrapeResultPaths).to.have.been.calledWith('scrape-job-456');
+
+      // Verify the step received the scrape result paths correctly
+      expect(capturedScrapeResultPaths).to.be.instanceOf(Map);
+      expect(capturedScrapeResultPaths.size).to.equal(3);
+      expect(capturedScrapeResultPaths.get('https://space.cat/')).to.equal('s3://bucket/path1.json');
+      expect(capturedScrapeResultPaths.get('https://space.cat/page1')).to.equal('s3://bucket/path2.json');
+      expect(capturedScrapeResultPaths.get('https://space.cat/page2')).to.equal('s3://bucket/path3.json');
     });
   });
 });
