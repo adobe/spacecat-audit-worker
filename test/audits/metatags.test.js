@@ -546,7 +546,7 @@ describe('Meta Tags', () => {
           Site: {
             findById: sinon.stub().resolves({
               getId: () => 'site-id',
-              getConfig: () => ({}),
+              getDeliveryConfig: () => ({}),
             }),
           },
           Suggestion: {
@@ -778,7 +778,7 @@ describe('Meta Tags', () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
         dataAccessStub.Site.findById = sinon.stub().resolves({
           getId: () => 'site-id',
-          getConfig: () => ({ useHostnameOnly: true }),
+          getDeliveryConfig: () => ({ useHostnameOnly: true }),
         });
         const auditDataWithPort = {
           ...testData.auditData,
@@ -802,7 +802,7 @@ describe('Meta Tags', () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
         dataAccessStub.Site.findById = sinon.stub().resolves({
           getId: () => 'site-id',
-          getConfig: () => ({ useHostnameOnly: true }),
+          getDeliveryConfig: () => ({ useHostnameOnly: true }),
         });
         const auditDataWithQuery = {
           ...testData.auditData,
@@ -826,7 +826,7 @@ describe('Meta Tags', () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
         dataAccessStub.Site.findById = sinon.stub().resolves({
           getId: () => 'site-id',
-          getConfig: () => ({ useHostnameOnly: undefined }),
+          getDeliveryConfig: () => ({ useHostnameOnly: undefined }),
         });
         const auditDataWithPort = {
           ...testData.auditData,
