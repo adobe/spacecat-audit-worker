@@ -1,3 +1,10 @@
+# [1.156.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.155.2...v1.156.0) (2025-08-22)
+
+
+### Features
+
+* More explicit error logging for geo presence audit ([#1151](https://github.com/adobe/spacecat-audit-worker/issues/1151)) ([ffbe9dd](https://github.com/adobe/spacecat-audit-worker/commit/ffbe9dd0bfe310a5ca1250d8d3cd599a8bfc39c4))
+
 ## [1.155.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.155.1...v1.155.2) (2025-08-22)
 
 
