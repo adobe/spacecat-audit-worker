@@ -11,14 +11,30 @@
  */
 import { createFrom } from '@adobe/spacecat-helix-content-sdk';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
+import { HeadBucketCommand } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
 async function runCdnLogsReport(url, context, site, auditContext) {
-  const { log } = context;
+  const { log, s3Client } = context;
   const s3Config = getS3Config(site, context);
+
+  try {
+    await s3Client.send(new HeadBucketCommand({ Bucket: s3Config.bucket }));
+  } catch (error) {
+    log.error(`S3 bucket ${s3Config.bucket} is not accessible: ${error.message}`);
+    return {
+      auditResult: {
+        success: false,
+        timestamp: new Date().toISOString(),
+        error: `S3 bucket ${s3Config.bucket} is not accessible: ${error.message}`,
+        customer: s3Config.customerName,
+      },
+      fullAuditRef: url,
+    };
+  }
 
   log.info(`Starting CDN logs report audit for ${url}`);
 
