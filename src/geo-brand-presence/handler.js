@@ -37,10 +37,10 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     auditContext, log, sqs, env, site, audit, s3Client,
   } = context;
 
-  const { errors, calendarWeek, parquetFiles } = auditContext ?? /* c8 ignore next */ {};
+  const { calendarWeek, parquetFiles, success } = auditContext ?? /* c8 ignore next */ {};
   /* c8 ignore start */
-  if (errors?.length) {
-    log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', site.getId(), site.getBaseURL(), errors, auditContext);
+  if (success === false) {
+    log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', site.getId(), site.getBaseURL(), auditContext);
   }
   if (!calendarWeek || typeof calendarWeek !== 'object' || !calendarWeek.week || !calendarWeek.year) {
     log.error('GEO BRAND PRESENCE: Invalid calendarWeek in auditContext. Cannot send data to Mystique', auditContext);
