@@ -123,7 +123,7 @@ async function asPresignedJsonUrl(data, bucketName, context) {
   return getPresignedUrl(
     s3Client,
     new GetObjectCommand({ Bucket: bucketName, Key: key }),
-    { expiresIn: 10_800 /* seconds, 3h */ },
+    { expiresIn: 86_400 /* seconds, 24h */ },
   );
 }
 
