@@ -29,6 +29,7 @@ import {
   generateErrorMarkupForIssue,
   generateFirefallSuggestion,
 } from './lib.js';
+import { wwwUrlResolver } from '../common/base-audit.js';
 
 const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 const auditAutoSuggestType = Audit.AUDIT_TYPES.STRUCTURED_DATA_AUTO_SUGGEST;
@@ -287,6 +288,7 @@ export async function submitForScraping(context) {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
     siteId: site.getId(),
     type: 'structured-data',
+    allowCache: true,
   };
 }
 
@@ -348,7 +350,7 @@ export async function runAuditAndGenerateSuggestions(context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver((site) => site.getBaseURL())
+  .withUrlResolver(wwwUrlResolver)
   .addStep('import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
