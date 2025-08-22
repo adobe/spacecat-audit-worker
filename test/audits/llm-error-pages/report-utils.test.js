@@ -16,7 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import {
   getS3Config, createDateRange, generateReportingPeriods, buildSiteFilters,
-  processLlmErrorPagesResults, validateDatabaseAndTable, generatePeriodIdentifier, getWeekRange,
+  processErrorPagesResults, generatePeriodIdentifier, getWeekRange, validateDatabaseAndTable,
 } from '../../../src/llm-error-pages/utils.js';
 
 describe('LLM Error Pages - Report Utils', () => {
@@ -176,7 +176,7 @@ describe('LLM Error Pages - Report Utils', () => {
           },
         ];
 
-        const processed = processLlmErrorPagesResults(mockResults);
+        const processed = processErrorPagesResults(mockResults);
 
         expect(processed.totalErrors).to.equal(6);
         expect(processed.errorPages).to.have.length(3);
@@ -186,7 +186,7 @@ describe('LLM Error Pages - Report Utils', () => {
       });
 
       it('should handle empty results', () => {
-        const processed = processLlmErrorPagesResults([]);
+        const processed = processErrorPagesResults([]);
 
         expect(processed.totalErrors).to.equal(0);
         expect(processed.errorPages).to.have.length(0);
@@ -196,7 +196,7 @@ describe('LLM Error Pages - Report Utils', () => {
       });
 
       it('should handle null results', () => {
-        const processed = processLlmErrorPagesResults(null);
+        const processed = processErrorPagesResults(null);
 
         expect(processed.totalErrors).to.equal(0);
         expect(processed.errorPages).to.have.length(0);
@@ -228,7 +228,7 @@ describe('LLM Error Pages - Report Utils', () => {
           },
         ];
 
-        const processed = processLlmErrorPagesResults(mockResults);
+        const processed = processErrorPagesResults(mockResults);
 
         expect(processed.totalErrors).to.equal(0);
         expect(processed.errorPages).to.have.length(3);
@@ -391,7 +391,7 @@ describe('LLM Error Pages - Report Utils', () => {
         total_requests: i + 1,
       }));
 
-      const processed = processLlmErrorPagesResults(largeResults);
+      const processed = processErrorPagesResults(largeResults);
 
       expect(processed.totalErrors).to.be.a('number');
       expect(processed.errorPages).to.have.length(10000);
@@ -412,7 +412,7 @@ describe('LLM Error Pages - Report Utils', () => {
         },
       ];
 
-      const processed = processLlmErrorPagesResults(specialResults);
+      const processed = processErrorPagesResults(specialResults);
 
       expect(processed.totalErrors).to.equal(4);
       expect(processed.errorPages).to.have.length(3);

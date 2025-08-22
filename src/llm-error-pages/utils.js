@@ -194,13 +194,12 @@ export async function validateDatabaseAndTable(athenaClient, s3Config, log) {
 
   try {
     const validationQuery = `SELECT 1 FROM ${databaseName}.${tableName} LIMIT 1`;
-    log.info(`Validating database and table: ${databaseName}.${tableName}`);
+    log.debug(`Validating database and table: ${databaseName}.${tableName}`);
 
     await athenaClient.query(validationQuery, databaseName, `[Athena Query] Validate ${databaseName}.${tableName}`);
     log.info('Database and table validated successfully');
   } catch (error) {
     const errorMessage = `Database '${databaseName}' or table '${tableName}' does not exist: ${error.message}`;
-    log.error(errorMessage);
     throw new Error(errorMessage);
   }
 }
@@ -297,7 +296,7 @@ export function generateReportingPeriods(referenceDate = new Date()) {
 }
 
 // ============================================================================
-// FILTERING AND PROCESSING UTILITIES
+// FILTERING
 // ============================================================================
 
 export function buildSiteFilters(filters) {
@@ -315,7 +314,11 @@ export function buildSiteFilters(filters) {
   return `(${filterConditions})`;
 }
 
-export function processLlmErrorPagesResults(results) {
+// ============================================================================
+// PROCESSING RESULTS
+// ============================================================================
+
+export function processErrorPagesResults(results) {
   if (!results || results.length === 0) {
     return {
       totalErrors: 0,
@@ -333,8 +336,11 @@ export function processLlmErrorPagesResults(results) {
   const uniqueUserAgents = new Set();
 
   results.forEach((row) => {
+    const totalRequestsParsed = parseInt(row.total_requests, 10);
+    // eslint-disable-next-line no-param-reassign
+    row.total_requests = Number.isNaN(totalRequestsParsed) ? 0 : totalRequestsParsed;
     const status = row.status || 'Unknown';
-    statusCodes[status] = (statusCodes[status] || 0) + (row.total_requests || 0);
+    statusCodes[status] = (statusCodes[status] || 0) + totalRequestsParsed;
     uniqueUrls.add(row.url);
     uniqueUserAgents.add(row.user_agent);
   });
@@ -350,6 +356,74 @@ export function processLlmErrorPagesResults(results) {
       statusCodes,
     },
   };
+}
+
+/**
+ * Categorizes error pages by status code into 404, 403, and 5xx groups
+ * @param {Array} errorPages - Raw error page data from Athena
+ * @returns {Object} - Object with categorized errors
+ */
+export function categorizeErrorsByStatusCode(errorPages) {
+  const categorized = {
+    404: [],
+    403: [],
+    '5xx': [],
+  };
+
+  errorPages.forEach((error) => {
+    const statusCode = error.status?.toString();
+    if (statusCode === '404') {
+      categorized[404].push(error);
+    } else if (statusCode === '403') {
+      categorized[403].push(error);
+    } else if (statusCode && statusCode.startsWith('5')) {
+      categorized['5xx'].push(error);
+    }
+  });
+
+  return categorized;
+}
+
+/**
+ * Consolidates errors by URL + Normalized UserAgent combination
+ * @param {Array} errors - Array of error objects
+ * @returns {Array} - Consolidated errors with aggregated data
+ */
+export function consolidateErrorsByUrl(errors) {
+  const urlMap = new Map();
+
+  errors.forEach((error) => {
+    // Normalize user agent to clean provider name
+    const normalizedUserAgent = normalizeUserAgentToProvider(error.user_agent);
+    const key = `${error.url}|${normalizedUserAgent}`;
+    if (urlMap.has(key)) {
+      const existing = urlMap.get(key);
+      existing.totalRequests += error.total_requests;
+      existing.rawUserAgents.add(error.user_agent); // Track all raw UAs for this provider
+    } else {
+      urlMap.set(key, {
+        url: error.url,
+        status: error.status,
+        userAgent: normalizedUserAgent, // Clean provider name (e.g., "ChatGPT")
+        rawUserAgents: new Set([error.user_agent]), // Raw UA strings
+        totalRequests: error.total_requests,
+      });
+    }
+  });
+
+  return Array.from(urlMap.values()).map((item) => ({
+    ...item,
+    rawUserAgents: Array.from(item.rawUserAgents),
+  }));
+}
+
+/**
+ * Sorts consolidated errors by traffic volume (request count) in descending order
+ * @param {Array} errors - Array of consolidated error objects
+ * @returns {Array} - Sorted errors by traffic volume
+ */
+export function sortErrorsByTrafficVolume(errors) {
+  return errors.sort((a, b) => b.totalRequests - a.totalRequests);
 }
 
 // ============================================================================

@@ -23,16 +23,16 @@ export const SUGGESTION_TEMPLATES = {
   SERVER_ERROR: 'Fix server error for {url} - returning {statusCode} to {userAgent} crawler',
 };
 
-export function buildOpportunityDataForErrorType(errorType, aggregatedData) {
-  const totalErrors = aggregatedData.reduce((sum, item) => sum + item.totalRequests, 0);
-  const uniqueUrls = [...new Set(aggregatedData.map((item) => item.url))].length;
-  const uniqueUserAgents = [...new Set(aggregatedData.map((item) => item.userAgent))].length;
+export function createOpportunityData({ errorCode, errorPages }) {
+  const totalErrors = errorPages.reduce((sum, item) => sum + item.totalRequests, 0);
+  const uniqueUrls = [...new Set(errorPages.map((item) => item.url))].length;
+  const uniqueUserAgents = [...new Set(errorPages.map((item) => item.userAgent))].length;
 
   return {
     runbook: 'https://wiki.corp.adobe.com/pages/editpage.action?pageId=3564012596',
     origin: 'AUTOMATION',
-    title: `LLM ${ERROR_CATEGORY_TYPE[errorType]}`,
-    description: `URLs returning ${errorType} errors to LLM crawlers`,
+    title: `LLM: ${ERROR_CATEGORY_TYPE[errorCode]}`,
+    description: `URLs returning ${errorCode} errors to LLM crawlers`,
     guidance: {
       steps: [
         'Review the list of URLs with errors reported by LLM crawlers',
@@ -41,20 +41,13 @@ export function buildOpportunityDataForErrorType(errorType, aggregatedData) {
         'Verify error resolution in subsequent audit runs',
       ],
     },
-    tags: ['seo', 'llm', 'errors', 'crawlers', 'isElmo'],
+    tags: ['llm', 'errors', 'crawlers', 'isElmo'],
     data: {
-      errorType,
+      errorCode,
       totalErrors,
       uniqueUrls,
       uniqueUserAgents,
       dataSources: [DATA_SOURCES.CDN_LOGS],
     },
   };
-}
-
-export function populateSuggestion(template, url, statusCode, userAgent) {
-  return template
-    .replace(/{url}/g, url)
-    .replace(/{statusCode}/g, statusCode)
-    .replace(/{userAgent}/g, userAgent);
 }
