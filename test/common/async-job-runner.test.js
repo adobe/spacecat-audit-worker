@@ -261,7 +261,7 @@ describe('Job-based Step-Audit Tests', () => {
     try {
       runner.addStep('first', async () => ({}), 'non-existent-destination');
     } catch (e) {
-      expect(e.message).to.equal('Invalid destination: non-existent-destination. Must be one of: content-scraper, import-worker');
+      expect(e.message).to.contain('Invalid destination: non-existent-destination. Must be one of: content-scraper, import-worker, scrape-client');
     }
   });
 
