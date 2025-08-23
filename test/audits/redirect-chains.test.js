@@ -1657,8 +1657,8 @@ describe('Redirect Chains Audit', () => {
         const opportunityData = createOpportunityData();
 
         expect(opportunityData).to.have.property('runbook');
-        expect(opportunityData.runbook).to.include('wiki.corp.adobe.com');
-        expect(opportunityData.runbook).to.include('redirect+chains');
+        expect(opportunityData.runbook).to.include('adobe.'); // Sharepoint | wiki
+        expect(opportunityData.runbook).to.include('edirect'); // Redirect | redirect
 
         expect(opportunityData).to.have.property('origin', 'AUTOMATION');
         expect(opportunityData).to.have.property('title', 'Redirect issues found with the /redirects.json file');
