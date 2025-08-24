@@ -94,6 +94,54 @@ export function getHighOrganicLowCtrOpportunity(experimentationOpportunities) {
 }
 
 /**
+ * Processes custom URLs by matching them with RUM data and creating opportunities
+ * @param {string[]} customUrls - Array of custom URLs to process
+ * @param {Object} rumAPIClient - RUM API client instance
+ * @param {Object} options - Query options for RUM API
+ * @param {Object} context - Audit context containing log and other utilities
+ * @returns {Promise<Array>} Array of experimentation opportunities
+ */
+export async function processCustomUrls(customUrls, rumAPIClient, options, context) {
+  const { log } = context;
+  log.info(`Processing ${customUrls.length} custom URLs for experimentation opportunities`);
+
+  // Query specifically for high-organic-low-ctr with higher limit to find custom URLs
+  const highOrganicLowCtrOpportunities = await rumAPIClient.query(
+    HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
+    { ...options, maxOpportunities: 1000 },
+  );
+
+  const customUrlSet = new Set(customUrls);
+  const opptiesWithRumData = highOrganicLowCtrOpportunities.reduce(
+    (accumulator, currentValue) => {
+      if (customUrlSet.has(currentValue.page)) {
+        accumulator.push(currentValue);
+        customUrlSet.delete(currentValue.page);
+      }
+      return accumulator;
+    },
+    [],
+  );
+
+  const customUrlsWithoutRumData = [...customUrlSet];
+  // For URLs without RUM data, create simple opportunity objects for consistency
+  const opptiesWithoutRumData = customUrlsWithoutRumData.map((url) => ({
+    type: HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
+    page: url,
+  }));
+
+  if (isNonEmptyArray(opptiesWithRumData)) {
+    const urlsWithRUMData = opptiesWithRumData.map((oppty) => oppty.page);
+    log.info(`Found real RUM data for ${opptiesWithRumData.length} high-organic-low-ctr URLs: ${urlsWithRUMData.join(', ')}`);
+  }
+  if (isNonEmptyArray(opptiesWithoutRumData)) {
+    log.info(`No RUM data found for ${opptiesWithoutRumData.length} URLs: ${customUrlsWithoutRumData.join(', ')} - using URLs without performance metrics`);
+  }
+
+  return [...opptiesWithRumData, ...opptiesWithoutRumData];
+}
+
+/**
  * Audit handler container for all the opportunities
  * @param {*} auditUrl
  * @param {*} context
@@ -112,55 +160,25 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   processRageClickOpportunities(experimentationOpportunities);
+  log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   // Handle custom URLs if provided via audit context
   const { data } = context;
-  const customUrls = data ? parseCustomUrls(data) : null;
-
+  const customUrls = data ? parseCustomUrls(data) : [];
   if (isNonEmptyArray(customUrls)) {
-    log.info(`Processing ${customUrls.length} custom URLs for experimentation opportunities`);
-
-    const highOrganicLowCtrOpportunities = getHighOrganicLowCtrOpportunity(
-      experimentationOpportunities,
+    const customUrlOpportunities = await processCustomUrls(
+      customUrls,
+      rumAPIClient,
+      options,
+      context,
     );
-
-    const customUrlSet = new Set(customUrls);
-    const opptiesWithRumData = highOrganicLowCtrOpportunities.reduce(
-      (accumulator, currentValue) => {
-        if (customUrlSet.has(currentValue.page)) {
-          accumulator.push(currentValue);
-          customUrlSet.delete(currentValue.page);
-        }
-        return accumulator;
-      },
-      [],
-    );
-
-    const customUrlsWithoutRumData = [...customUrlSet];
-    // For URLs without RUM data, create simple opportunity objects for consistency
-    const opptiesWithoutRumData = customUrlsWithoutRumData.map((url) => ({
-      type: HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
-      page: url,
-    }));
-    const finalExperimentationOpportunities = [...opptiesWithRumData, ...opptiesWithoutRumData];
-
-    if (isNonEmptyArray(opptiesWithRumData)) {
-      const urlsWithRUMData = opptiesWithRumData.map((oppty) => oppty.page);
-      log.info(`Found real RUM data for ${opptiesWithRumData.length} high-organic-low-ctr URLs: ${urlsWithRUMData.join(', ')}`);
-    }
-    if (isNonEmptyArray(opptiesWithoutRumData)) {
-      log.info(`No RUM data found for ${opptiesWithoutRumData.length} URLs: ${customUrlsWithoutRumData.join(', ')} - using URLs without performance metrics`);
-    }
-
     return {
       auditResult: {
-        experimentationOpportunities: finalExperimentationOpportunities,
+        experimentationOpportunities: customUrlOpportunities,
       },
       fullAuditRef: auditUrl,
     };
   }
-
-  log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   return {
     auditResult: {

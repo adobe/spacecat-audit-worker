@@ -26,6 +26,7 @@ import {
   generateOpportunityAndSuggestions,
   experimentOpportunitiesAuditRunner,
   getHighOrganicLowCtrOpportunity,
+  processCustomUrls,
 } from '../../src/experimentation-opportunities/handler.js';
 
 use(sinonChai);
@@ -111,6 +112,7 @@ describe('Experimentation Opportunities Tests', () => {
 
     context.rumApiClient = {
       queryMulti: sinon.stub().resolves(opportunitiesData),
+      query: sinon.stub().resolves([]), // Add query method for custom URL processing
     };
     context.sqs = {
       sendMessage: sinon.stub().resolves({}),
@@ -368,10 +370,22 @@ describe('Experimentation Opportunities Tests', () => {
         const customUrl2 = 'https://abc.com/page2';
 
         context.data = `${customUrl1},${customUrl2}`;
+        context.rumApiClient.query = sinon.stub().resolves([]);
 
         const result = await experimentOpportunitiesAuditRunner(domain, context);
 
         expect(context.rumApiClient.queryMulti).to.have.been.calledOnce;
+        expect(context.rumApiClient.query).to.have.been.calledOnce;
+        expect(context.rumApiClient.query).to.have.been.calledWith(
+          'high-organic-low-ctr',
+          sinon.match({
+            domain: 'https://abc.com',
+            interval: 7,
+            granularity: 'hourly',
+            maxOpportunities: 1000,
+          }),
+        );
+
         expect(result.auditResult.experimentationOpportunities).to.have.length(2);
 
         const opptyUrls = result.auditResult.experimentationOpportunities.map(
@@ -406,11 +420,30 @@ describe('Experimentation Opportunities Tests', () => {
           'high-inorganic-high-bounce-rate': [],
         };
 
+        const mockQueryResult = [
+          {
+            page: urlWithRumData,
+            pageViews: 5000,
+            trackedPageKPIValue: '0.02',
+            trackedKPISiteAverage: '0.035',
+            type: 'high-organic-low-ctr',
+          },
+        ];
+
         context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
+        context.rumApiClient.query = sinon.stub().resolves(mockQueryResult);
         context.data = `${urlWithRumData},${urlWithoutRumData}`;
 
         const result = await experimentOpportunitiesAuditRunner(domain, context);
-
+        expect(context.rumApiClient.query).to.have.been.calledWith(
+          'high-organic-low-ctr',
+          sinon.match({
+            domain: 'https://abc.com',
+            interval: 7,
+            granularity: 'hourly',
+            maxOpportunities: 1000,
+          }),
+        );
         expect(result.auditResult.experimentationOpportunities).to.have.length(2);
 
         const opptyUrls = result.auditResult.experimentationOpportunities.map(
@@ -430,6 +463,9 @@ describe('Experimentation Opportunities Tests', () => {
         );
         expect(emptyOpportunity.type).to.equal('high-organic-low-ctr');
         expect(emptyOpportunity.page).to.equal(urlWithoutRumData);
+        // Should not have RUM data properties
+        expect(emptyOpportunity.pageViews).to.be.undefined;
+        expect(emptyOpportunity.trackedPageKPIValue).to.be.undefined;
       });
 
       it('should only return high-organic-low-ctr opportunities when using custom URLs', async () => {
@@ -459,7 +495,17 @@ describe('Experimentation Opportunities Tests', () => {
           ],
         };
 
+        // Mock query method to return the high-organic-low-ctr opportunity
+        const mockQueryResult = [
+          {
+            page: customUrl,
+            pageViews: 5000,
+            type: 'high-organic-low-ctr',
+          },
+        ];
+
         context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
+        context.rumApiClient.query = sinon.stub().resolves(mockQueryResult);
         context.data = customUrl;
 
         const result = await experimentOpportunitiesAuditRunner(domain, context);
@@ -563,10 +609,19 @@ describe('Experimentation Opportunities Tests', () => {
           'high-organic-low-ctr': [],
           'high-inorganic-high-bounce-rate': [],
         });
+        context.rumApiClient.query = sinon.stub().resolves([]);
         context.data = `${customUrl1},${customUrl2}`;
-
         const result = await experimentOpportunitiesAuditRunner(domain, context);
 
+        expect(context.rumApiClient.query).to.have.been.calledWith(
+          'high-organic-low-ctr',
+          sinon.match({
+            domain: 'https://abc.com',
+            interval: 7,
+            granularity: 'hourly',
+            maxOpportunities: 1000,
+          }),
+        );
         expect(result.auditResult.experimentationOpportunities).to.have.length(2);
 
         const opptyUrls = result.auditResult.experimentationOpportunities.map(
@@ -578,8 +633,67 @@ describe('Experimentation Opportunities Tests', () => {
         result.auditResult.experimentationOpportunities.forEach((op) => {
           expect(op.type).to.equal('high-organic-low-ctr');
           expect(op.page).to.match(/https:\/\/abc\.com\/new-page[12]/);
+          expect(op.pageViews).to.be.undefined;
+          expect(op.trackedPageKPIValue).to.be.undefined;
         });
       });
+    });
+  });
+
+  describe('processCustomUrls Helper Function', () => {
+    it('should process custom URLs and return combined opportunities', async () => {
+      const customUrls = ['https://abc.com/page1', 'https://abc.com/page2'];
+      const mockRumData = [
+        {
+          page: 'https://abc.com/page1',
+          pageViews: 1000,
+          trackedPageKPIValue: '0.02',
+          type: 'high-organic-low-ctr',
+        },
+      ];
+      const mockRumApiClient = {
+        query: sinon.stub().resolves(mockRumData),
+      };
+      const mockOptions = {
+        domain: 'https://abc.com',
+        interval: 7,
+        granularity: 'hourly',
+      };
+      const mockContext = {
+        log: {
+          info: sinon.stub(),
+        },
+      };
+
+      const result = await processCustomUrls(
+        customUrls,
+        mockRumApiClient,
+        mockOptions,
+        mockContext,
+      );
+      expect(mockRumApiClient.query).to.have.been.calledWith(
+        'high-organic-low-ctr',
+        { ...mockOptions, maxOpportunities: 1000 },
+      );
+      expect(result).to.have.length(2);
+
+      const urlWithRum = result.find((op) => op.page === 'https://abc.com/page1');
+      expect(urlWithRum.pageViews).to.equal(1000);
+      expect(urlWithRum.trackedPageKPIValue).to.equal('0.02');
+
+      const urlWithoutRum = result.find((op) => op.page === 'https://abc.com/page2');
+      expect(urlWithoutRum.type).to.equal('high-organic-low-ctr');
+      expect(urlWithoutRum.pageViews).to.be.undefined;
+    });
+
+    it('should handle URL parsing with spaces and duplicates', async () => {
+      context.data = 'https://abc.com/page1, https://abc.com/page2 ,https://abc.com/page1';
+      context.rumApiClient.query = sinon.stub().resolves([]);
+      const result = await experimentOpportunitiesAuditRunner('https://abc.com', context);
+      expect(result.auditResult.experimentationOpportunities).to.have.length(2);
+      const urls = result.auditResult.experimentationOpportunities.map((op) => op.page);
+      expect(urls).to.include('https://abc.com/page1');
+      expect(urls).to.include('https://abc.com/page2');
     });
   });
 
@@ -747,51 +861,6 @@ describe('Experimentation Opportunities Tests', () => {
         const result = await experimentOpportunitiesAuditRunner('https://abc.com', context);
 
         expect(result.auditResult.experimentationOpportunities[0]).to.not.have.property('opportunityImpact');
-      });
-    });
-
-    describe('experimentOpportunitiesAuditRunner', () => {
-      it('should return correct structure without custom URLs', async () => {
-        const result = await experimentOpportunitiesAuditRunner('https://abc.com', context);
-
-        expect(result).to.have.property('auditResult');
-        expect(result).to.have.property('fullAuditRef', 'https://abc.com');
-        expect(result.auditResult).to.have.property('experimentationOpportunities');
-      });
-
-      it('should log correct messages for custom URLs with mixed data', async () => {
-        const domain = 'https://abc.com';
-        const urlWithRumData = 'https://abc.com/page1';
-        const urlWithoutRumData = 'https://abc.com/page2';
-
-        const mockOpportunities = {
-          'high-organic-low-ctr': [
-            {
-              page: urlWithRumData,
-              type: 'high-organic-low-ctr',
-              pageViews: 1000,
-            },
-          ],
-          rageclick: [],
-          'high-inorganic-high-bounce-rate': [],
-        };
-
-        context.rumApiClient.queryMulti = sinon.stub().resolves(mockOpportunities);
-        context.data = `${urlWithRumData},${urlWithoutRumData}`;
-
-        const result = await experimentOpportunitiesAuditRunner(domain, context);
-
-        expect(result.auditResult.experimentationOpportunities).to.have.length(2);
-        const realOpportunity = result.auditResult.experimentationOpportunities.find(
-          (op) => op.page === urlWithRumData,
-        );
-        const emptyOpportunity = result.auditResult.experimentationOpportunities.find(
-          (op) => op.page === urlWithoutRumData,
-        );
-
-        expect(realOpportunity).to.exist;
-        expect(emptyOpportunity).to.exist;
-        expect(emptyOpportunity.page).to.equal(urlWithoutRumData);
       });
     });
 
