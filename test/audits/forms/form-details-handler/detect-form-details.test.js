@@ -37,6 +37,7 @@ describe('Detect Form Details Handler', () => {
     };
     siteStub = {
       getDeliveryType: sinon.stub().returns('testDeliveryType'),
+      getId: sinon.stub().returns('testSiteId'),
     };
     dataAccessStub = {
       Opportunity: {

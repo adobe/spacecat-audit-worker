@@ -174,6 +174,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
       await sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData);
     }
   } catch (e) {
+    console.log(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_CONVERSION}] creating forms opportunity failed with error: ${e.message}`, e);
     log.error(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_CONVERSION}] creating forms opportunity failed with error: ${e.message}`, e);
   }
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.LOW_CONVERSION}] successfully synced opportunity for high form views low conversions oppty type`);

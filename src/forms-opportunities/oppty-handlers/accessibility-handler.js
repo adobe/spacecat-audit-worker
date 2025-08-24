@@ -47,7 +47,7 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
 
     const filteredA11yData = a11yData.filter((a11y) => a11y.a11yIssues?.length > 0);
     if (filteredA11yData.length === 0) {
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] No a11y issues found to create or update opportunity`);
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] no a11y issues found to create or update opportunity`);
       return opportunity;
     }
 
@@ -98,7 +98,7 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
         accessibility: mergedData,
       });
       opportunity = await opportunity.save();
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] Updated existing a11y opportunity`);
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] updated existing a11y opportunity`);
     }
 
     // If no existing opportunity, create new opportunity
@@ -122,11 +122,11 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
         },
       };
       opportunity = await Opportunity.create(opportunityData);
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] Created new a11y opportunity`);
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] created new a11y opportunity`);
     }
   } catch (e) {
-    log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create/update a11y opportunity with error: ${e.message}`);
-    throw new Error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create/update a11y opportunity with error: ${e.message}`);
+    log.error(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] failed to create/update a11y opportunity with error: ${e.message}`);
+    throw new Error(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] failed to create/update a11y opportunity with error: ${e.message}`);
   }
   return opportunity;
 }
@@ -200,7 +200,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
     log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] saved aggregated forms-accessibility data to ${outputKey}`);
 
     const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `forms-accessibility/${siteId}/`, log, 10, '-final-result.json');
-    log.info(`[Form Opportunity] Found ${lastWeekObjectKeys.length} final-result files in the forms-accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] found ${lastWeekObjectKeys.length} final-result files in the forms-accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
 
     await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
 

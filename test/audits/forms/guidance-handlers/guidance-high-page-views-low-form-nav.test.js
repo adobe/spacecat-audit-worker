@@ -25,6 +25,7 @@ const sandbox = sinon.createSandbox();
 
 describe('Guidance High Page Views Low Form Navigation Handler', () => {
   let logStub;
+  let siteStub;
   let dataAccessStub;
   let context;
   let message;
@@ -34,6 +35,9 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
       info: sinon.stub(),
       error: sinon.stub(),
     };
+    siteStub = {
+      getId: sinon.stub().returns('testSiteId'),
+    };
     dataAccessStub = {
       Opportunity: {
         allBySiteId: sinon.stub().resolves([]),
@@ -42,6 +46,7 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
     };
     context = {
       log: logStub,
+      site: siteStub,
       dataAccess: dataAccessStub,
     };
     message = {

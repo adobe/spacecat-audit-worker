@@ -183,7 +183,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       context.s3Client.send.onFirstCall().resolves({ CommonPrefixes: [] });
       await createAccessibilityOpportunity(latestAudit, context);
-      expect(context.log.error).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] Failed to get object keys from subfolders: No accessibility data found in bucket test-bucket at prefix forms-accessibility/test-site-id/ for site test-site-id with delimiter /');
+      expect(context.log.error).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] [Opportunity Type: form-accessibility] failed to get object keys from subfolders: No accessibility data found in bucket test-bucket at prefix forms-accessibility/test-site-id/ for site test-site-id with delimiter /');
     });
 
     it('should not create opportunities when no content is present', async () => {
@@ -212,7 +212,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
         });
       await createAccessibilityOpportunity(latestAudit, context);
-      expect(context.log.error).to.have.been.calledWith('[Form Opportunity] No files could be processed successfully for site test-site-id');
+      expect(context.log.error).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] [Opportunity Type: form-accessibility] no files could be processed successfully');
     });
 
     it('should not create opportunity if a11yData is empty', async () => {
@@ -251,7 +251,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       await createAccessibilityOpportunity(latestAudit, context);
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
-        `[Form Opportunity] [Site Id: ${siteId}] No a11y data found to create or update opportunity `,
+        `[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: form-accessibility] no a11y data found to create or update opportunity `,
       );
     });
 
@@ -295,7 +295,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       await createAccessibilityOpportunity(latestAudit, context);
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
-        `[Form Opportunity] [Site Id: ${siteId}] No a11y issues found to create or update opportunity`,
+        `[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: form-accessibility] no a11y issues found to create or update opportunity`,
       );
     });
 
@@ -392,7 +392,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.error).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] Error creating a11y issues: S3 error');
+      expect(context.log.error).to.have.been.calledWith('[Form Opportunity] [Site Id: test-site-id] [Opportunity Type: form-accessibility] error creating a11y issues: S3 error');
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     });
 
@@ -444,7 +444,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await createAccessibilityOpportunity(latestAudit, context);
       expect(context.log.error).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: test-site-id] Failed to create/update a11y opportunity with error: Network error',
+        '[Form Opportunity] [Site Id: test-site-id] [Opportunity Type: form-accessibility] failed to create/update a11y opportunity with error: Network error',
       );
     });
 
@@ -620,7 +620,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       await mystiqueDetectedFormAccessibilityHandler(message, context);
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: test-site-id] A11y opportunity not detected, skipping guidance',
+        '[Form Opportunity] [Site Id: test-site-id] [Opportunity Type: form-accessibility] A11y opportunity not detected, skipping guidance',
       );
     });
 
@@ -636,7 +636,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       context.dataAccess.Site.findById.rejects(new Error('Site not found'));
       await mystiqueDetectedFormAccessibilityHandler(message, context);
       expect(context.log.error).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: test-site-id] Failed to process a11y opportunity from mystique: Site not found',
+        '[Form Opportunity] [Site Id: test-site-id] [Opportunity Type: form-accessibility] failed to process a11y opportunity from mystique: Site not found',
       );
     });
 

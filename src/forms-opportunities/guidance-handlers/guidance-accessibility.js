@@ -21,7 +21,7 @@ export default async function handler(message, context) {
   log.info(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] message received in accessibility guidance handler: ${JSON.stringify(message, null, 2)}`);
   const opportunity = await Opportunity.findById(opportunityId);
   if (!opportunity) {
-    log.error(`[Form Opportunity] [Site Id: ${siteId} [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] A11y opportunity not found`);
+    log.error(`[Form Opportunity] [Site Id: ${siteId}] [Opportunity Type: ${FORM_OPPORTUNITY_TYPES.FORM_A11Y}] A11y opportunity not found`);
     return ok();
   }
   const a11yData = opportunity.getData()?.accessibility;

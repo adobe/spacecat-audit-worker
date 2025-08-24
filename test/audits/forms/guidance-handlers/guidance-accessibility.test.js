@@ -21,11 +21,16 @@ describe('Guidance Accessibility Handler', () => {
   let mockOpportunity;
   let mockDataAccess;
   let mockContext;
+  let siteStub;
 
   beforeEach(() => {
     mockLog = {
       info: sinon.spy(),
       error: sinon.spy(),
+    };
+
+    siteStub = {
+      getId: sinon.stub().returns('testSiteId'),
     };
 
     let mockOpportunityData = {
@@ -60,6 +65,7 @@ describe('Guidance Accessibility Handler', () => {
 
     mockContext = {
       log: mockLog,
+      site: siteStub,
       dataAccess: mockDataAccess,
     };
   });
@@ -120,7 +126,7 @@ describe('Guidance Accessibility Handler', () => {
     const result = await handler(message, mockContext);
 
     expect(result.status).to.deep.equal(200);
-    expect(mockLog.error.calledWith('[Form Opportunity] [Site Id: site123] A11y opportunity not found')).to.be.true;
+    expect(mockLog.error.calledWith('[Form Opportunity] [Site Id: site123] [Opportunity Type: form-accessibility] A11y opportunity not found')).to.be.true;
     expect(mockOpportunity.save.called).to.be.false;
   });
 
