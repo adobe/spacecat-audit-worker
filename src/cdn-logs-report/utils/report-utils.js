@@ -11,12 +11,12 @@
  */
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
-
-const TIME_CONSTANTS = {
-  ISO_MONDAY: 1,
-  ISO_SUNDAY: 0,
-  DAYS_PER_WEEK: 7,
-};
+import {
+  format,
+  getWeek,
+  getYear,
+  differenceInDays,
+} from 'date-fns';
 
 const REGEX_PATTERNS = {
   URL_SANITIZATION: /[^a-zA-Z0-9]/g,
@@ -26,7 +26,9 @@ const REGEX_PATTERNS = {
 const CDN_LOGS_PREFIX = 'cdn-logs-';
 
 export function extractCustomerDomain(site) {
-  return new URL(site.getBaseURL()).host
+  const { host } = new URL(site.getBaseURL());
+  const cleanHost = host.startsWith('www.') ? host.substring(4) : host;
+  return cleanHost
     .replace(REGEX_PATTERNS.URL_SANITIZATION, '_')
     .toLowerCase();
 }
@@ -38,7 +40,9 @@ export function getAnalysisBucket(customerDomain) {
 
 export function getS3Config(site) {
   const customerDomain = extractCustomerDomain(site);
-  const customerName = customerDomain.split(/[._]/)[0];
+  const domainParts = customerDomain.split(/[._]/);
+  /* c8 ignore next */
+  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
   const { bucketName: bucket } = site.getConfig().getCdnLogsConfig()
     || { bucketName: getAnalysisBucket(customerDomain) };
 
@@ -100,89 +104,52 @@ export async function ensureTableExists(athenaClient, s3Config, log) {
   }
 }
 
-export function formatDateString(date) {
-  return date.toISOString().split('T')[0];
+/**
+ * Generates period identifier. 7-day periods return week format (w01-2024).
+ * @param {Date} startDate - Period start date
+ * @param {Date} endDate - Period end date
+ * @returns {string} Period identifier
+ * @example generatePeriodIdentifier(new Date('2024-12-16'), new Date('2024-12-22')) // 'w51-2024'
+ */
+export function generatePeriodIdentifier(startDate, endDate) {
+  if (differenceInDays(endDate, startDate) + 1 === 7) {
+    const weekNum = getWeek(startDate, { weekStartsOn: 1 });
+    const year = getYear(startDate);
+    return `w${String(weekNum).padStart(2, '0')}-${year}`;
+  }
+  return `${format(startDate, 'yyyy-MM-dd')}_to_${format(endDate, 'yyyy-MM-dd')}`;
 }
 
-function getWeekNumber(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  /* c8 ignore next */
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-}
+/**
+ * Generates reporting periods data for past weeks
+ * @param {number|Date} [offsetOrDate=-1] - If number: weeks offset. If Date: reference date
+ * @param {Date} [referenceDate=new Date()] - Reference date (when first param is number)
+ * @returns {Object} Object with weeks array and columns
+ */
+export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1) {
+  const refUTC = new Date(Date.UTC(
+    refDate.getUTCFullYear(),
+    refDate.getUTCMonth(),
+    refDate.getUTCDate(),
+  ));
 
-export function getWeekRange(offsetWeeks = 0, referenceDate = new Date()) {
-  const refDate = new Date(referenceDate);
-  const isSunday = refDate.getUTCDay() === TIME_CONSTANTS.ISO_SUNDAY;
-  const daysToMonday = isSunday ? 6 : refDate.getUTCDay() - TIME_CONSTANTS.ISO_MONDAY;
-
-  const weekStart = new Date(refDate);
-  const totalOffset = daysToMonday - (offsetWeeks * TIME_CONSTANTS.DAYS_PER_WEEK);
-  weekStart.setUTCDate(refDate.getUTCDate() - totalOffset);
+  const dayOfWeek = refUTC.getUTCDay();
+  const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const weekStart = new Date(refUTC);
+  weekStart.setUTCDate(refUTC.getUTCDate() - daysToMonday - (Math.abs(offsetWeeks) * 7));
   weekStart.setUTCHours(0, 0, 0, 0);
 
   const weekEnd = new Date(weekStart);
   weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
   weekEnd.setUTCHours(23, 59, 59, 999);
 
-  return { weekStart, weekEnd };
-}
-
-export function createDateRange(startInput, endInput) {
-  const startDate = new Date(startInput);
-  const endDate = new Date(endInput);
-
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-    throw new Error('Invalid date format provided');
-  }
-
-  if (startDate >= endDate) {
-    throw new Error('Start date must be before end date');
-  }
-
-  startDate.setUTCHours(0, 0, 0, 0);
-  endDate.setUTCHours(23, 59, 59, 999);
-
-  return { startDate, endDate };
-}
-
-export function generatePeriodIdentifier(startDate, endDate) {
-  const start = formatDateString(startDate);
-  const end = formatDateString(endDate);
-
-  const diffDays = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000));
-  if (diffDays === 7) {
-    const year = startDate.getUTCFullYear();
-    const weekNum = getWeekNumber(startDate);
-    return `w${String(weekNum).padStart(2, '0')}-${year}`;
-  }
-
-  return `${start}_to_${end}`;
-}
-
-export function generateReportingPeriods(referenceDate = new Date()) {
-  const { weekStart, weekEnd } = getWeekRange(-1, referenceDate);
-
-  const weekNumber = getWeekNumber(weekStart);
-  const year = weekStart.getUTCFullYear();
-
-  const weeks = [{
-    weekNumber,
-    year,
-    weekLabel: `Week ${weekNumber}`,
-    startDate: weekStart,
-    endDate: weekEnd,
-    dateRange: {
-      start: formatDateString(weekStart),
-      end: formatDateString(weekEnd),
-    },
-  }];
+  const weekNumber = getWeek(weekStart, { weekStartsOn: 1 });
+  const year = getYear(weekStart);
 
   return {
-    weeks,
-    referenceDate: referenceDate.toISOString(),
+    weeks: [{
+      startDate: weekStart, endDate: weekEnd, weekNumber, year, weekLabel: `Week ${weekNumber}`,
+    }],
     columns: [`Week ${weekNumber}`],
   };
 }

@@ -11,7 +11,6 @@
  */
 
 import ExcelJS from 'exceljs';
-import { generateReportingPeriods } from './report-utils.js';
 import { SHEET_CONFIGS } from '../constants/sheet-configs.js';
 
 const EXCEL_CONFIG = {
@@ -25,7 +24,7 @@ const EXCEL_CONFIG = {
   CONTENT_TYPE: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 };
 
-export function getSheetConfig(type, periods) {
+export function getSheetConfig(type) {
   const config = SHEET_CONFIGS[type];
   /* c8 ignore start */
   if (!config) {
@@ -35,9 +34,9 @@ export function getSheetConfig(type, periods) {
 
   return {
     /* c8 ignore next */
-    headers: typeof config.getHeaders === 'function' ? config.getHeaders(periods) : config.getHeaders(),
+    headers: config.getHeaders(),
     headerColor: config.headerColor,
-    numberColumns: typeof config.getNumberColumns === 'function' ? config.getNumberColumns(periods) : config.numberColumns,
+    numberColumns: config.numberColumns,
     processData: config.processData,
   };
 }
@@ -53,6 +52,7 @@ function formatColumns(worksheet, config) {
 
     let maxLength = 0;
     column.eachCell({ includeEmpty: false }, (cell) => {
+      /* c8 ignore next */
       const cellValue = cell.value ? cell.value.toString() : '';
       maxLength = Math.max(maxLength, cellValue.length);
     });
@@ -67,14 +67,14 @@ function formatColumns(worksheet, config) {
   }
 }
 
-export function createSheet(workbook, name, data, type, periods) {
+export function createSheet(workbook, name, data, type) {
   const worksheet = workbook.addWorksheet(name);
-  const config = getSheetConfig(type, periods);
+  const config = getSheetConfig(type);
 
   worksheet.addRow(config.headers);
   styleHeaders(worksheet);
 
-  const processedData = config.processData(data, periods);
+  const processedData = config.processData(data);
   processedData.forEach((row) => worksheet.addRow(row));
 
   formatColumns(worksheet, config);
@@ -82,30 +82,16 @@ export function createSheet(workbook, name, data, type, periods) {
   return worksheet;
 }
 
-export async function createExcelReport(reportData, reportConfig, options = {}) {
-  const { referenceDate, customEndDate, site } = options;
-
-  const periods = customEndDate
-    ? generateReportingPeriods(new Date(customEndDate))
-    : generateReportingPeriods(referenceDate);
-
+export async function createExcelReport(reportData, reportConfig) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = reportConfig.workbookCreator;
   workbook.created = new Date();
 
   const sheets = [...reportConfig.sheets];
 
-  if (reportConfig.conditionalSheets) {
-    reportConfig.conditionalSheets.forEach((conditionalSheet) => {
-      if (conditionalSheet.condition(site)) {
-        sheets.push(conditionalSheet.sheet);
-      }
-    });
-  }
-
   for (const sheet of sheets) {
     const data = reportData[sheet.dataKey];
-    createSheet(workbook, sheet.name, data, sheet.type, periods);
+    createSheet(workbook, sheet.name, data, sheet.type);
   }
 
   return workbook;

@@ -16,8 +16,8 @@ import { ok } from '@adobe/spacecat-shared-http-utils';
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { siteId, url, data = {} } = message;
-  const { pageIntent: pageIntentRaw, topic } = data;
+  const { siteId, data = {} } = message;
+  const { pageIntent: pageIntentRaw, topic, url } = data;
 
   if (!hasText(siteId) || !hasText(pageIntentRaw) || !hasText(topic) || !hasText(url)) {
     throw new Error(`Missing required parameters. siteId: ${siteId}, pageIntent: ${pageIntentRaw}, topic: ${topic}, url: ${url}`);

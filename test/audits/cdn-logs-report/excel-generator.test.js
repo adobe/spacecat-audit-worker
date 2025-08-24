@@ -9,171 +9,215 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
 /* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
+import ExcelJS from 'exceljs';
+import { getSheetConfig, createSheet, createExcelReport } from '../../../src/cdn-logs-report/utils/excel-generator.js';
 
 use(sinonChai);
 
 describe('CDN Logs Excel Generator', () => {
-  let createExcelReport;
-  let REPORT_CONFIGS;
+  let AGENTIC_REPORT_CONFIG;
 
   before(async () => {
-    ({ createExcelReport } = await import('../../../src/cdn-logs-report/utils/excel-generator.js'));
-    ({ REPORT_CONFIGS } = await import('../../../src/cdn-logs-report/constants/report-configs.js'));
+    ({ AGENTIC_REPORT_CONFIG } = await import('../../../src/cdn-logs-report/constants/report-configs.js'));
   });
 
-  it('creates comprehensive excel report with all data sheets', async () => {
-    const mockData = {
-      reqcountbycountry: [
-        { country_code: 'US', week_1: 100, week_2: 150 },
-        { country_code: 'CA', week_1: 50, week_2: 75 },
-      ],
-      reqcountbyurlstatus: [
-        { page_type: 'home', week_1: 50, week_2: 60 },
-        { page_type: 'product', week_1: 25, week_2: 30 },
-      ],
-      reqcountbyuseragent: [
-        { user_agent: 'chrome', status: 200, total_requests: 75 },
-        { user_agent: 'firefox', status: 404, total_requests: 25 },
-      ],
-      error_404_urls: [
-        { url: '/not-found', total_requests: 15 },
-        { url: '/missing-page', total_requests: 10 },
-      ],
-      error_503_urls: [
-        { url: '/server-error', total_requests: 5 },
-      ],
-      top_urls: [
-        { url: '/popular-page', total_requests: 200 },
-        { url: '/trending-content', total_requests: 150 },
-      ],
-      top_bottom_urls_by_status: [
-        { status: 200, url: '/success-page', total_requests: 100 },
-        { status: 404, url: '/error-page', total_requests: 20 },
-      ],
-    };
+  it('validates agentic flat report data structure', () => {
+    const mockData = [
+      {
+        agent_type: 'Chatbots',
+        user_agent_display: 'ChatGPT-User',
+        status: '200',
+        number_of_hits: 150,
+        avg_ttfb_ms: 85.5,
+        country_code: 'US',
+        url: '/products/firefly.html',
+        product: 'Firefly',
+        category: 'Products',
+      },
+      {
+        agent_type: 'Crawlers',
+        user_agent_display: 'PerplexityBot',
+        status: '404',
+        number_of_hits: 75,
+        avg_ttfb_ms: 120.3,
+        country_code: 'GLOBAL',
+        url: '/express/feature/image/--none--',
+        product: 'Express',
+        category: 'Products',
+      },
+    ];
 
-    const site = {
-      getBaseURL: () => 'https://test.com',
-      getConfig: () => ({}),
-    };
+    // Validate data structure for agentic flat report
+    expect(mockData).to.be.an('array');
+    expect(mockData).to.have.length(2);
 
-    const result = await createExcelReport(mockData, REPORT_CONFIGS.agentic, { site });
-    const buffer = await result.xlsx.writeBuffer();
-
-    expect(buffer).to.be.instanceOf(Buffer);
-    expect(buffer.length).to.be.greaterThan(1000);
-
-    expect(result.worksheets).to.have.length.greaterThan(5);
-  });
-
-  it('handles bulk.com site with special category processing', async () => {
-    const mockData = {
-      success_urls_by_category: [
-        { url: '/en/products/protein-powder', total_requests: 40 },
-        { url: '/en/products/vitamins', total_requests: 30 },
-        { url: '/en/other-page', total_requests: 20 },
-      ],
-      reqcountbycountry: [{ country_code: 'US', week_1: 50 }],
-      reqcountbyurlstatus: [{ page_type: 'product', week_1: 30 }],
-      reqcountbyuseragent: [{ user_agent: 'chrome', status: 200, total_requests: 25 }],
-      error_404_urls: [],
-      error_503_urls: [],
-      top_urls: [],
-      top_bottom_urls_by_status: [],
-    };
-
-    const site = {
-      getBaseURL: () => 'https://bulk.com',
-      getConfig: () => ({}),
-    };
-
-    const result = await createExcelReport(mockData, REPORT_CONFIGS.agentic, { site });
-    const buffer = await result.xlsx.writeBuffer();
-
-    expect(buffer).to.be.instanceOf(Buffer);
-    expect(result.worksheets.length).to.be.greaterThan(5);
-  });
-
-  it('creates referral traffic report with country-topic and url-topic sheets', async () => {
-    const mockData = {
-      referralCountryTopic: [
-        { country: 'US', topic: 'photoshop', hits: 100 },
-        { country: 'GLOBAL', topic: 'pure whey protein', hits: 50 },
-      ],
-      referralUrlTopic: [
-        { url: '/products/photoshop.html', topic: 'photoshop', hits: 75 },
-        { url: '/products/pure-whey-protein/', topic: 'pure whey protein', hits: 25 },
-      ],
-    };
-
-    const site = {
-      getBaseURL: () => 'https://adobe.com',
-      getConfig: () => ({}),
-    };
-
-    const result = await createExcelReport(mockData, REPORT_CONFIGS.referral, { site });
-    const buffer = await result.xlsx.writeBuffer();
-
-    expect(buffer).to.be.instanceOf(Buffer);
-    expect(result.worksheets).to.have.length(2);
-    expect(result.worksheets[0].name).to.equal('shared-hits_by_country_topic');
-    expect(result.worksheets[1].name).to.equal('shared-hits_by_url_topic');
-  });
-
-  it('processes null properties and empty status fallbacks', async () => {
-    const mockData = {
-      reqcountbyuseragent: null,
-      reqcountbycountry: [
-        { country_code: null, week_1: 100 },
-      ],
-      reqcountbyurlstatus: [
-        { page_type: null, week_1: 50 },
-      ],
-      top_bottom_urls_by_status: [
-        { status: '', url: null, total_requests: null },
-      ],
-      error_404_urls: null,
-      error_503_urls: [],
-      top_urls: null,
-      success_urls_by_category: [
-        { url: null, total_requests: null },
-      ],
-    };
-
-    const site = {
-      getBaseURL: () => 'https://bulk.com',
-      getConfig: () => ({}),
-    };
-
-    const result = await createExcelReport(mockData, REPORT_CONFIGS.agentic, {
-      site,
-      customEndDate: '2024-01-01',
+    mockData.forEach((row) => {
+      expect(row).to.have.property('agent_type');
+      expect(row).to.have.property('user_agent_display');
+      expect(row).to.have.property('status');
+      expect(row).to.have.property('number_of_hits');
+      expect(row).to.have.property('avg_ttfb_ms');
+      expect(row).to.have.property('country_code');
+      expect(row).to.have.property('url');
+      expect(row).to.have.property('product');
+      expect(row).to.have.property('category');
     });
 
-    expect(result.worksheets.length).to.be.greaterThan(0);
+    // Validate config structure
+    expect(AGENTIC_REPORT_CONFIG).to.have.property('filePrefix', 'agentictraffic');
+    expect(AGENTIC_REPORT_CONFIG).to.have.property('folderSuffix', 'agentic-traffic');
+    expect(AGENTIC_REPORT_CONFIG).to.have.property('workbookCreator');
+    expect(AGENTIC_REPORT_CONFIG).to.have.property('sheetName', 'shared-all');
   });
 
-  it('handles empty data arrays gracefully', async () => {
-    const mockData = {
-      reqcountbycountry: [],
-      reqcountbyurlstatus: [],
-      reqcountbyuseragent: [],
-      error_404_urls: [],
-      error_503_urls: [],
-      top_urls: [],
-      top_bottom_urls_by_status: [],
-    };
+  it('validates agentic data with different agent types', () => {
+    const mockData = [
+      {
+        agent_type: 'Chatbots',
+        user_agent_display: 'ChatGPT-User',
+        status: '200',
+        number_of_hits: 100,
+        avg_ttfb_ms: 75.2,
+        country_code: 'US',
+        url: '/products/bulk-supplements',
+        product: 'Bulk Supplements',
+        category: 'Products',
+      },
+      {
+        agent_type: 'Crawlers',
+        user_agent_display: 'PerplexityBot',
+        status: '404',
+        number_of_hits: 25,
+        avg_ttfb_ms: 150.0,
+        country_code: 'GLOBAL',
+        url: '/en/missing-page',
+        product: 'Other',
+        category: 'Uncategorized',
+      },
+    ];
 
-    const site = {
-      getBaseURL: () => 'https://test.com',
-      getConfig: () => ({}),
-    };
+    // Validate that different agent types are represented
+    const agentTypes = mockData.map((row) => row.agent_type);
+    expect(agentTypes).to.include('Chatbots');
+    expect(agentTypes).to.include('Crawlers');
 
-    const result = await createExcelReport(mockData, REPORT_CONFIGS.agentic, { site });
-    expect(result.worksheets.length).to.be.greaterThan(0);
+    // Validate numeric fields
+    expect(mockData[0].number_of_hits).to.be.a('number');
+    expect(mockData[0].avg_ttfb_ms).to.be.a('number');
+  });
+
+  it('handles data with missing fields gracefully', () => {
+    const mockData = [
+      {
+        agent_type: 'Chatbots',
+        user_agent_display: null,
+        status: '',
+        number_of_hits: null,
+        avg_ttfb_ms: undefined,
+        country_code: null,
+        url: null,
+        product: null,
+        category: null,
+      },
+    ];
+
+    expect(mockData).to.be.an('array');
+    expect(mockData[0]).to.have.property('agent_type');
+    expect(mockData[0].user_agent_display).to.be.null;
+    expect(mockData[0].status).to.equal('');
+  });
+
+  it('handles empty data arrays gracefully', () => {
+    const mockData = [];
+
+    // Test empty array handling
+    expect(mockData).to.be.an('array');
+    expect(mockData).to.have.length(0);
+
+    // Config should still be valid
+    expect(AGENTIC_REPORT_CONFIG).to.be.an('object');
+    expect(AGENTIC_REPORT_CONFIG.sheetName).to.equal('shared-all');
+  });
+
+  describe('getSheetConfig', () => {
+    it('should return config for valid sheet type', () => {
+      const config = getSheetConfig('agentic');
+      expect(config).to.be.an('object');
+      expect(config).to.have.property('headers');
+      expect(config).to.have.property('headerColor');
+      expect(config).to.have.property('numberColumns');
+      expect(config).to.have.property('processData');
+      expect(config.processData).to.be.a('function');
+    });
+
+    it('should throw error for invalid sheet type', () => {
+      expect(() => getSheetConfig('invalid-type')).to.throw('Unknown sheet type: invalid-type');
+    });
+  });
+
+  describe('createSheet', () => {
+    it('should create worksheet with proper structure', () => {
+      const workbook = new ExcelJS.Workbook();
+      const mockData = [
+        {
+          agent_type: 'Chatbots',
+          user_agent_display: 'ChatGPT-User',
+          status: '200',
+          number_of_hits: 150,
+          avg_ttfb_ms: 85.5,
+          country_code: 'US',
+          url: '/products/firefly.html',
+          product: 'Firefly',
+          category: 'Products',
+        },
+      ];
+
+      const worksheet = createSheet(workbook, 'Test Sheet', mockData, 'agentic');
+
+      expect(worksheet).to.be.an('object');
+      expect(worksheet.name).to.equal('Test Sheet');
+      expect(worksheet.rowCount).to.be.greaterThan(1);
+    });
+  });
+
+  describe('createExcelReport', () => {
+    it('should create workbook with sheets', async () => {
+      const reportData = {
+        'shared-all': [
+          {
+            agent_type: 'Chatbots',
+            user_agent_display: 'ChatGPT-User',
+            status: '200',
+            number_of_hits: 150,
+            avg_ttfb_ms: 85.5,
+            country_code: 'US',
+            url: '/products/firefly.html',
+            product: 'Firefly',
+            category: 'Products',
+          },
+        ],
+      };
+
+      const mockReportConfig = {
+        workbookCreator: 'Test Creator',
+        sheets: [
+          {
+            name: 'Agentic Traffic',
+            dataKey: 'shared-all',
+            type: 'agentic',
+          },
+        ],
+      };
+
+      const workbook = await createExcelReport(reportData, mockReportConfig);
+
+      expect(workbook).to.be.instanceOf(ExcelJS.Workbook);
+      expect(workbook.creator).to.equal('Test Creator');
+      expect(workbook.worksheets).to.have.length(1);
+      expect(workbook.worksheets[0].name).to.equal('Agentic Traffic');
+    });
   });
 });

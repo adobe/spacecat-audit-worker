@@ -10,14 +10,14 @@
  * governing permissions and limitations under the License.
  */
 import { createFrom } from '@adobe/spacecat-helix-content-sdk';
+import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
-import { runWeeklyReport, runCustomDateRangeReport } from './utils/report-runner.js';
-import { AWSAthenaClient } from '../utils/athena-client.js';
+import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
-async function runCdnLogsReport(url, context, site) {
-  const { log, message = {} } = context;
+async function runCdnLogsReport(url, context, site, auditContext) {
+  const { log } = context;
   const s3Config = getS3Config(site, context);
 
   log.info(`Starting CDN logs report audit for ${url}`);
@@ -48,38 +48,15 @@ async function runCdnLogsReport(url, context, site) {
     customer: s3Config.customerName,
   };
 
-  if (message.type === 'runCustomDateRange') {
-    const { startDate, endDate } = message;
-    if (!startDate || !endDate) {
-      throw new Error('Custom date range requires startDate and endDate in message');
-    }
-
-    log.info(`Running custom report: ${startDate} to ${endDate}`);
-
-    await runCustomDateRangeReport({
-      athenaClient,
-      startDateStr: startDate,
-      endDateStr: endDate,
-      s3Config,
-      log,
-      site,
-      sharepointClient,
-    });
-
-    return {
-      auditResult: {
-        ...auditResultBase,
-        reportType: 'custom',
-        dateRange: { startDate, endDate },
-        sharePointPath: `/sites/elmo-ui-data/${s3Config.customerName}/`,
-      },
-      fullAuditRef: `${SHAREPOINT_URL}/${s3Config.customerName}/`,
-    };
-  }
-
   log.info('Running weekly report...');
+  const weekOffset = auditContext?.weekOffset || -1;
   await runWeeklyReport({
-    athenaClient, s3Config, log, site, sharepointClient,
+    athenaClient,
+    s3Config,
+    log,
+    site,
+    sharepointClient,
+    weekOffset,
   });
 
   return {

@@ -84,7 +84,9 @@ export class StepAudit extends BaseAudit {
   async run(message, context) {
     const { stepNames } = this;
     const { log } = context;
-    const { type, siteId, auditContext = {} } = message;
+    const {
+      type, data, siteId, auditContext = {},
+    } = message;
 
     try {
       const site = await this.siteProvider(siteId, context);
@@ -99,7 +101,12 @@ export class StepAudit extends BaseAudit {
       const stepName = auditContext.next || stepNames[0];
       const isLastStep = stepName === stepNames[stepNames.length - 1];
       const step = this.getStep(stepName);
-      const stepContext = { ...context, site, auditContext };
+      const stepContext = {
+        ...context,
+        auditContext,
+        data,
+        site,
+      };
 
       stepContext.finalUrl = await this.urlResolver(site, context);
 

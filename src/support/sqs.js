@@ -28,8 +28,9 @@ class SQS {
       timestamp: new Date().toISOString(),
     };
 
+    const asJSON = JSON.stringify(body);
     const msgCommand = new SendMessageCommand({
-      MessageBody: JSON.stringify(body),
+      MessageBody: asJSON,
       QueueUrl: queueUrl,
     });
 
@@ -38,7 +39,7 @@ class SQS {
       this.log.info(`Success, message sent. MessageID:  ${data.MessageId}`);
     } catch (e) {
       const { type, code, message: msg } = e;
-      this.log.error(`Message sent failed. Type: ${type}, Code: ${code}, Message: ${msg}`);
+      this.log.error(`Message send failed. Type: ${type}, Code: ${code}, Message: ${msg}`, { length: asJSON.length }, e);
       throw e;
     }
   }
