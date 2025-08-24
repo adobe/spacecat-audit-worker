@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import { DELIVERY_TYPES } from '@adobe/spacecat-shared-utils';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/experimentation-opportunities/opportunitiesdata.json' with { type: 'json' };
 import auditDataMock from '../fixtures/experimentation-opportunities/experimentation-opportunity-audit.json' with { type: 'json' };
@@ -350,5 +351,152 @@ describe('Experimentation Opportunities Tests', () => {
     context.audit.isError = true;
     await generateOpportunityAndSuggestions(context);
     expect(context.sqs.sendMessage).to.not.have.been.called;
+  });
+
+  it('should handle case when auditResult has no experimentationOpportunities property', async () => {
+    context.audit.getAuditResult.returns({});
+    await generateOpportunityAndSuggestions(context);
+    expect(context.sqs.sendMessage).to.not.have.been.called;
+  });
+
+  describe('Use Content API Urls for AEM CS delivery type', () => {
+    it('should modify URL to Content API format when deliveryType is AEM_CS, preferContentApi is true, and pageId is found', async () => {
+      // Setup site with AEM_CS delivery type and preferContentApi true
+      context.site.getDeliveryType = sinon.stub().returns(DELIVERY_TYPES.AEM_CS);
+      context.site.getDeliveryConfig = sinon.stub().returns({
+        preferContentApi: true,
+        authorURL: 'https://author.example.com',
+      });
+
+      // Mock the HTTP request that determineAEMCSPageId makes
+      // Return HTML with the content-page-id meta tag that the function looks for
+      nock('https://abc.com')
+        .get('/content-api-page')
+        .reply(200, `
+          <html>
+            <head>
+              <meta name="content-page-id" content="test-page-id-123"/>
+              <title>Test Page</title>
+            </head>
+            <body>
+              <h1>Test Content</h1>
+            </body>
+          </html>
+        `);
+
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          {
+            type: 'high-organic-low-ctr',
+            page: 'https://abc.com/content-api-page',
+            trackedPageKPIValue: '0.10',
+            trackedKPISiteAverage: '0.20',
+          },
+        ],
+      });
+
+      await generateOpportunityAndSuggestions(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, messageArg] = context.sqs.sendMessage.firstCall.args;
+      expect(messageArg.deliveryType).to.equal(DELIVERY_TYPES.AEM_CS);
+      // The URL should be modified to use the Content API format (lines 65-66 in handler.js)
+      expect(messageArg.data.url).to.equal('https://author.example.com/adobe/experimental/aspm-expires-20251231/pages/test-page-id-123');
+      expect(messageArg.type).to.equal('guidance:high-organic-low-ctr');
+      expect(messageArg.siteId).to.equal(site.getId());
+      expect(messageArg.auditId).to.equal(audit.getId());
+    });
+
+    it('should not modify URL for deliveryType AEM_CS but preferContentApi is false', async () => {
+      // Setup site with AEM_CS delivery type and preferContentApi false
+      context.site.getDeliveryType = sinon.stub().returns(DELIVERY_TYPES.AEM_CS);
+      context.site.getDeliveryConfig = sinon.stub().returns({
+        preferContentApi: false,
+        authorURL: 'https://author.example.com',
+      });
+
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          {
+            type: 'high-organic-low-ctr',
+            page: 'https://abc.com/test-page',
+            trackedPageKPIValue: '0.10',
+            trackedKPISiteAverage: '0.20',
+          },
+        ],
+      });
+
+      await generateOpportunityAndSuggestions(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, messageArg] = context.sqs.sendMessage.firstCall.args;
+      expect(messageArg.data.url).to.equal('https://abc.com/test-page');
+      expect(messageArg.deliveryType).to.equal(DELIVERY_TYPES.AEM_CS);
+    });
+
+    it('should not modify URL when deliveryType is AEM_CS, preferContentApi is true, but no pageId is found', async () => {
+      // Setup site with AEM_CS delivery type and preferContentApi true
+      context.site.getDeliveryType = sinon.stub().returns(DELIVERY_TYPES.AEM_CS);
+      context.site.getDeliveryConfig = sinon.stub().returns({
+        preferContentApi: true,
+        authorURL: 'https://author.example.com',
+      });
+
+      // Mock the HTTP request to return HTML without content-page-id meta tag
+      nock('https://abc.com')
+        .get('/page-without-id')
+        .reply(200, `
+          <html>
+            <head>
+              <title>Test Page Without ID</title>
+            </head>
+            <body>
+              <h1>Test Content</h1>
+            </body>
+          </html>
+        `);
+
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          {
+            type: 'high-organic-low-ctr',
+            page: 'https://abc.com/page-without-id',
+            trackedPageKPIValue: '0.10',
+            trackedKPISiteAverage: '0.20',
+          },
+        ],
+      });
+
+      await generateOpportunityAndSuggestions(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, messageArg] = context.sqs.sendMessage.firstCall.args;
+      expect(messageArg.deliveryType).to.equal(DELIVERY_TYPES.AEM_CS);
+      // URL should remain unchanged when no pageId is found
+      expect(messageArg.data.url).to.equal('https://abc.com/page-without-id');
+    });
+
+    it('should not update the urls when delivery type is non-AEM_CS', async () => {
+      // Setup site with non-AEM_CS delivery type (using default)
+      context.site.getDeliveryType = sinon.stub().returns('aem_edge');
+
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          {
+            type: 'high-organic-low-ctr',
+            page: 'https://abc.com/test-page',
+            trackedPageKPIValue: '0.10',
+            trackedKPISiteAverage: '0.20',
+          },
+        ],
+      });
+
+      await generateOpportunityAndSuggestions(context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, messageArg] = context.sqs.sendMessage.firstCall.args;
+      expect(messageArg.data.url).to.equal('https://abc.com/test-page');
+      expect(messageArg.deliveryType).to.equal('aem_edge');
+    });
   });
 });
