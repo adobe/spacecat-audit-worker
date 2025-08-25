@@ -17,6 +17,31 @@ import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
 /**
+ * Cleans up all OUTDATED suggestions for the opportunity
+ * @param {Object} opportunity - The opportunity object
+ * @param {Object} Suggestion - Suggestion model from dataAccess
+ * @param {Object} log - Logger
+ * @returns {Promise<void>}
+ */
+async function cleanupOutdatedSuggestions(opportunity, Suggestion, log) {
+  try {
+    const allSuggestions = await opportunity.getSuggestions();
+    const outdatedSuggestions = allSuggestions.filter(
+      (suggestion) => suggestion.getStatus() === Suggestion.STATUSES.OUTDATED,
+    );
+
+    if (outdatedSuggestions.length > 0) {
+      await Promise.all(outdatedSuggestions.map((suggestion) => suggestion.remove()));
+      log.info(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions`);
+    } else {
+      log.info(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up`);
+    }
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions: ${error.message}`);
+  }
+}
+
+/**
  * Maps Mystique alt-text suggestions to suggestion DTO format
  * @param {Array} mystiquesuggestions - Array of suggestions from Mystique
  * @param {string} opportunityId - The opportunity ID to associate suggestions with
@@ -231,7 +256,21 @@ export default async function handler(message, context) {
     altTextOppty.setUpdatedBy('system');
     await altTextOppty.save();
 
-    log.info(`[${AUDIT_TYPE}]: Processed ${pageUrls.length} pages. Suggestions: ${suggestions?.length || 0}. Metrics change: removed(${removedMetrics.projectedTrafficLost}), added(${newMetrics.projectedTrafficLost})`);
+    // Cleanup OUTDATED suggestions if this is the last batch
+    if (updatedOpportunityData.mystiqueResponsesReceived
+      >= (updatedOpportunityData.mystiqueResponsesExpected || 0)
+    ) {
+      log.info(`[${AUDIT_TYPE}]: All Mystique batches completed. Starting cleanup of OUTDATED suggestions...`);
+
+      // Small delay to ensure no concurrent operations
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1000);
+      });
+
+      await cleanupOutdatedSuggestions(altTextOppty, Suggestion, log);
+    }
+
+    log.info(`[${AUDIT_TYPE}]: Processed ${pageUrls.length} pages...`);
   } else {
     log.info(`[${AUDIT_TYPE}]: No pageUrls provided in Mystique response`);
   }
