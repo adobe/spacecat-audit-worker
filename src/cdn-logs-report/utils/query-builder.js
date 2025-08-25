@@ -48,14 +48,19 @@ function buildWhereClause(conditions = [], siteFilters = []) {
 
 // Page Type Classification
 function generatePageTypeClassification(remotePatterns = null) {
-  /* c8 ignore next */
+  /* c8 ignore start */
   const patterns = remotePatterns?.pagePatterns || [];
+
+  if (patterns.length === 0) {
+    return "'Uncategorized'";
+  }
 
   const caseConditions = patterns
     .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.regex}') THEN '${pattern.name}'`)
     .join('\n');
 
   return `CASE\n${caseConditions}\n      ELSE 'Uncategorized'\n    END`;
+  /* c8 ignore stop */
 }
 
 // Country Classification
@@ -72,7 +77,7 @@ function buildTopicExtractionSQL(remotePatterns = null) {
   /* c8 ignore start */
   const patterns = remotePatterns?.topicPatterns || [];
 
-  if (Array.isArray(patterns)) {
+  if (Array.isArray(patterns) && patterns.length > 0) {
     const namedPatterns = [];
     const extractPatterns = [];
 

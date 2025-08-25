@@ -52,8 +52,9 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
   const { host } = new URL(site.getBaseURL());
 
   const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName);
-  const cdnProviders = providers?.length > 0 ? providers
-    : await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour });
+  const cdnProviders = isLegacy
+    ? await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour })
+    : providers;
 
   log.info(`Processing ${cdnProviders.length} CDN provider(s) in bucket: ${bucketName}`);
 
@@ -65,7 +66,7 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
   for (const cdnType of cdnProviders) {
     log.info(`Processing ${cdnType.toUpperCase()} provider`);
 
-    const paths = buildCdnPaths(bucketName, cdnType, { year, month, day, hour }, !isLegacy);
+    const paths = buildCdnPaths(bucketName, cdnType, { year, month, day, hour }, isLegacy);
     const rawTable = `raw_logs_${customerDomain}_${cdnType}`;
     const athenaClient = AWSAthenaClient.fromContext(context, paths.tempLocation);
 
