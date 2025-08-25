@@ -162,7 +162,9 @@ describe('Semantic HTML Audit', () => {
       }],
     };
     const context = {
-      log: { info: sinon.spy(), error: sinon.spy(), warn: sinon.spy() },
+      log: {
+        info: sinon.spy(), error: sinon.spy(), warn: sinon.spy(), debug: sinon.spy(),
+      },
       dataAccess: {},
     };
 
