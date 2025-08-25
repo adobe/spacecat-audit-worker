@@ -47,18 +47,18 @@ export default async function handler(message, context) {
   } = message;
   const { suggestions } = data || {};
 
-  log.info(`[${AUDIT_TYPE}]: Received Mystique guidance for readability: ${JSON.stringify(message, null, 2)}`);
+  log.info(`[${AUDIT_TYPE}-suggest]: Received Mystique guidance for readability: ${JSON.stringify(message, null, 2)}`);
 
   // Validate audit exists
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`[${AUDIT_TYPE}]: No audit found for auditId: ${auditId}`);
+    log.warn(`[${AUDIT_TYPE}-suggest]: No audit found for auditId: ${auditId}`);
     return notFound();
   }
   const site = await Site.findById(siteId);
   const auditUrl = site.getBaseURL();
 
-  log.info(`[${AUDIT_TYPE}]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
+  log.info(`[${AUDIT_TYPE}-suggest]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
 
   let readabilityOppty;
   try {
@@ -67,12 +67,12 @@ export default async function handler(message, context) {
       (oppty) => oppty.getAuditId() === auditId && oppty.getData()?.subType === 'readability',
     );
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
-    throw new Error(`[${AUDIT_TYPE}]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}-suggest]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+    throw new Error(`[${AUDIT_TYPE}-suggest]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
   }
 
   if (!readabilityOppty) {
-    const errorMsg = `[${AUDIT_TYPE}]: No existing opportunity found for siteId ${siteId}. Opportunity should be created by main handler before processing suggestions.`;
+    const errorMsg = `[${AUDIT_TYPE}-suggest]: No existing opportunity found for siteId ${siteId}. Opportunity should be created by main handler before processing suggestions.`;
     log.error(errorMsg);
     throw new Error(errorMsg);
   }
@@ -80,7 +80,7 @@ export default async function handler(message, context) {
   const existingData = readabilityOppty.getData() || {};
   const processedSuggestionIds = new Set(existingData.processedSuggestionIds || []);
   if (processedSuggestionIds.has(messageId)) {
-    log.info(`[${AUDIT_TYPE}]: Suggestions with id ${messageId} already processed. Skipping processing.`);
+    log.info(`[${AUDIT_TYPE}-suggest]: Suggestions with id ${messageId} already processed. Skipping processing.`);
     return ok();
   } else {
     processedSuggestionIds.add(messageId);
@@ -111,7 +111,7 @@ export default async function handler(message, context) {
   }
 
   if (mappedSuggestions.length === 0) {
-    log.warn(`[${AUDIT_TYPE}]: No valid readability improvements found in Mystique response for siteId: ${siteId}`);
+    log.warn(`[${AUDIT_TYPE}-suggest]: No valid readability improvements found in Mystique response for siteId: ${siteId}`);
     return ok();
   }
 
@@ -125,7 +125,7 @@ export default async function handler(message, context) {
     lastMystiqueResponse: new Date().toISOString(),
   };
 
-  log.info(`[${AUDIT_TYPE}]: Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
+  log.info(`[${AUDIT_TYPE}-suggest]: Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
 
   // Update opportunity with accumulated data
   try {
@@ -133,10 +133,10 @@ export default async function handler(message, context) {
     readabilityOppty.setData(updatedOpportunityData);
     readabilityOppty.setUpdatedBy('system');
     await readabilityOppty.save();
-    log.info(`[${AUDIT_TYPE}]: Updated opportunity with accumulated data`);
+    log.info(`[${AUDIT_TYPE}-suggest]: Updated opportunity with accumulated data`);
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Updating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
-    throw new Error(`[${AUDIT_TYPE}]: Failed to update opportunity for siteId ${siteId}: ${e.message}`);
+    log.error(`[${AUDIT_TYPE}-suggest]: Updating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
+    throw new Error(`[${AUDIT_TYPE}-suggest]: Failed to update opportunity for siteId ${siteId}: ${e.message}`);
   }
 
   // Process suggestions from Mystique
@@ -152,11 +152,11 @@ export default async function handler(message, context) {
       log,
     });
 
-    log.info(`[${AUDIT_TYPE}]: Successfully processed ${mappedSuggestions.length} suggestions from Mystique for siteId: ${siteId}`);
+    log.info(`[${AUDIT_TYPE}-suggest]: Successfully processed ${mappedSuggestions.length} suggestions from Mystique for siteId: ${siteId}`);
   } else {
-    log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);
+    log.info(`[${AUDIT_TYPE}-suggest]: No suggestions to process for siteId: ${siteId}`);
   }
 
-  log.info(`[${AUDIT_TYPE}]: Successfully processed Mystique guidance for siteId: ${siteId}`);
+  log.info(`[${AUDIT_TYPE}-suggest]: Successfully processed Mystique guidance for siteId: ${siteId}`);
   return ok();
 }
