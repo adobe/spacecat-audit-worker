@@ -231,12 +231,15 @@ describe('Missing Alt Text Guidance Handler', () => {
   });
 
   it('should accumulate metrics when opportunity already has existing data', async () => {
-    // Set up mockOpportunity to return existing data
+    // Set up mockOpportunity to return existing data (NOT first response)
     const existingData = {
       projectedTrafficLost: 50,
       projectedTrafficValue: 50,
       decorativeImagesCount: 2,
       dataSources: ['RUM', 'SITE'],
+      mystiqueResponsesReceived: 1,
+      mystiqueResponsesExpected: 2,
+      processedSuggestionIds: [],
     };
     mockOpportunity.getData.returns(existingData);
 
