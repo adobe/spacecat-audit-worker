@@ -232,7 +232,7 @@ export default async function handler(message, context) {
 
       log.info(`[${AUDIT_TYPE}]: Added ${suggestions.length} new suggestions for ${pageUrls.length} processed pages`);
     } else {
-      log.info(`[${AUDIT_TYPE}]: No new suggestions for ${pageUrls.length} processed pages (all images may be resolved or decorative)`);
+      log.info(`[${AUDIT_TYPE}]: No new suggestions for ${pageUrls.length} processed pages`);
     }
 
     // Update opportunity data: subtract removed metrics, add new metrics
