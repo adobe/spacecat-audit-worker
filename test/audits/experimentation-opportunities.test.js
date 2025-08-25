@@ -189,6 +189,33 @@ describe('Experimentation Opportunities Tests', () => {
       expect(result.urlConfigs[0]).to.deep.include({ url: 'https://abc.com/page2', geo: 'us' });
     });
 
+    it('should log site config and imports information', async () => {
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          { type: 'high-organic-low-ctr', page: 'https://abc.com/page1' },
+        ],
+      });
+
+      await organicKeywordsStep(context);
+
+      expect(context.log.info).to.have.been.calledWith('Site config exists: true, imports count: 0');
+    });
+
+    it('should handle null site config gracefully', async () => {
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          { type: 'high-organic-low-ctr', page: 'https://abc.com/page1' },
+        ],
+      });
+
+      // Mock site.getConfig to return null
+      context.site.getConfig = sinon.stub().returns(null);
+
+      await organicKeywordsStep(context);
+
+      expect(context.log.info).to.have.been.calledWith('Site config exists: false, imports count: 0');
+    });
+
     it('organic keywords step should handle failures in saving the site config', async () => {
       context.audit.getAuditResult.returns(auditDataMock.auditResult);
       context.site.save.rejects(new Error('Failed to save site config'));
