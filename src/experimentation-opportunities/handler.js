@@ -208,6 +208,10 @@ export async function runAuditAndScrapeStep(context) {
 
 async function toggleImport(site, importType, enable, log) {
   const siteConfig = site.getConfig();
+  if (!siteConfig) {
+    log.error(`Cannot toggle import ${importType} for site ${site.getId()}: site config is null`);
+    return;
+  }
   if (enable) {
     siteConfig.enableImport(importType);
   } else {
