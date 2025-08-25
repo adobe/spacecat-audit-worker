@@ -117,6 +117,31 @@ describe('parseCustomUrls Function', () => {
     const result = parseCustomUrls(',,, ,  ,');
     expect(result).to.be.null;
   });
+
+  it('should remove angle brackets from URLs', () => {
+    const result = parseCustomUrls('<https://example.com/page1>,<https://example.com/page2>');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+    ]);
+  });
+
+  it('should handle mixed URLs with and without angle brackets', () => {
+    const result = parseCustomUrls('<https://example.com/page1>,https://example.com/page2,<https://example.com/page3>');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+      'https://example.com/page3',
+    ]);
+  });
+
+  it('should handle angle brackets with whitespace', () => {
+    const result = parseCustomUrls(' < https://example.com/page1 > ,  <https://example.com/page2>  ');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+    ]);
+  });
 });
 
 describe('filterBrokenSuggestedUrls', () => {

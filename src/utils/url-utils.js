@@ -77,6 +77,7 @@ export function parseCustomUrls(data) {
   const urls = data
     .split(',')
     .map((url) => url.trim())
+    .map((url) => url.replace(/^<|>$/g, '')) // Remove < at start and > at end
     .filter((url) => url.length > 0);
 
   return urls.length > 0 ? [...new Set(urls)] : null;
