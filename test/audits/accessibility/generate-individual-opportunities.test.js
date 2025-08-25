@@ -1211,7 +1211,7 @@ describe('createIndividualOpportunity', () => {
     await expect(createIndividualOpportunity(opportunityInstance, auditData, mockContext))
       .to.be.rejectedWith('Test error');
     expect(mockContext.log.error).to.have.been.calledWith(
-      'Failed to create new opportunity for siteId test-site and auditId test-audit: Test error',
+      '[A11yProcessingError] Failed to create new opportunity for siteId test-site and auditId test-audit: Test error',
     );
   });
 });
@@ -1360,7 +1360,7 @@ describe('createIndividualOpportunitySuggestions', () => {
       mockLog,
     )).to.be.rejectedWith('Test error');
     expect(mockContext.log.error).to.have.been.calledWith(
-      'Failed to create suggestions for opportunity test-id: Test error',
+      '[A11yProcessingError] Failed to create suggestions for opportunity test-id: Test error',
     );
   });
 
@@ -2685,7 +2685,7 @@ describe('sendMystiqueMessage', () => {
       log: fakeLog,
     });
     expect(fakeSqs.sendMessage).to.have.been.calledOnce;
-    expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual] Failed to send message to Mystique');
+    expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Failed to send message to Mystique');
     expect(result).to.deep.include({ success: false, url: 'https://example.com' });
     expect(result.error).to.equal('SQS error');
   });
@@ -2712,7 +2712,7 @@ describe('sendMystiqueMessage error path (coverage)', () => {
     expect(result.url).to.equal('https://example.com');
     expect(result.error).to.equal('Simulated SQS failure');
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual] Failed to send message to Mystique for url https://example.com',
+      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://example.com',
     );
   });
 });
@@ -2890,7 +2890,7 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
     // Should return failure due to missing SQS context
     expect(result.success).to.be.false;
     expect(result.error).to.equal('Missing SQS context or queue configuration');
-    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual] Missing required context');
+    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Missing required context');
   });
 
   it('should handle missing env.QUEUE_SPACECAT_TO_MYSTIQUE', async () => {
@@ -2914,7 +2914,7 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
     // Should return failure due to missing queue name
     expect(result.success).to.be.false;
     expect(result.error).to.equal('Missing SQS context or queue configuration');
-    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual] Missing required context');
+    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Missing required context');
   });
 });
 
@@ -3103,7 +3103,7 @@ describe('sendMystiqueMessage error handling', () => {
 
     // Should log the error
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual] Failed to send message to Mystique for url https://example.com',
+      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://example.com',
     );
   });
 
@@ -3134,7 +3134,7 @@ describe('sendMystiqueMessage error handling', () => {
 
     // Should log the error
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual] Failed to send message to Mystique for url https://test.com',
+      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://test.com',
     );
   });
 });
@@ -3274,7 +3274,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-nonexistent: Opportunity not found',
+      '[A11yRemediationGuidance][A11yProcessingError] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-nonexistent: Opportunity not found',
     );
   });
 
@@ -3313,7 +3313,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Site ID mismatch. Expected: site-456, Found: site-different',
+      '[A11yRemediationGuidance][A11yProcessingError] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Site ID mismatch. Expected: site-456, Found: site-different',
     );
   });
 
@@ -3498,7 +3498,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to process accessibility remediation guidance: Database connection failed',
+      '[A11yRemediationGuidance][A11yProcessingError] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to process accessibility remediation guidance: Database connection failed',
     );
   });
 
@@ -3898,7 +3898,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to save suggestion sugg-789: Error: Database connection failed',
+      '[A11yRemediationGuidance][A11yProcessingError] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to save suggestion sugg-789: Error: Database connection failed',
     );
     expect(mockLog.warn).to.have.been.calledWith(
       '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 1 suggestions failed to save: sugg-789',

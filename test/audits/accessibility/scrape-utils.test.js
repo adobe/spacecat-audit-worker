@@ -308,7 +308,7 @@ describe('Scrape Utils', () => {
       const keys = await getKeys(mockS3Client, 'test-bucket', 'site1', mockLog);
 
       expect(keys).to.deep.equal([]);
-      expect(mockLog.error).to.have.been.calledWith(`[A11yAudit] Error getting existing URLs from failed audits for site site1: ${error.message}`);
+      expect(mockLog.error).to.have.been.calledWith(`[A11yAudit][A11yProcessingError] Error getting existing URLs from failed audits for site site1: ${error.message}`);
     });
 
     it('returns all keys even if some are malformed', async () => {
@@ -463,7 +463,7 @@ describe('Scrape Utils', () => {
         error: 'Some updates failed',
       });
       expect(mockLog.error).to.have.been.calledWith(
-        '[A11yAudit] Failed to update 1 opportunities for site site1: [{"status":"rejected","reason":{}}]',
+        '[A11yAudit][A11yProcessingError] Failed to update 1 opportunities for site site1: [{"status":"rejected","reason":{}}]',
       );
     });
 
@@ -476,7 +476,7 @@ describe('Scrape Utils', () => {
         updatedCount: 0,
         error: 'Fetch failed',
       });
-      expect(mockLog.error).to.have.been.calledWith('[A11yAudit] Error updating opportunities to IGNORED for site site1: Fetch failed');
+      expect(mockLog.error).to.have.been.calledWith('[A11yAudit][A11yProcessingError] Error updating opportunities to IGNORED for site site1: Fetch failed');
     });
   });
 
@@ -809,7 +809,7 @@ describe('Scrape Utils', () => {
       expect(result.success).to.be.false;
       expect(result.message).to.equal('Failed to save a11y metrics to S3: S3 write error');
       expect(result.error).to.equal('S3 write error');
-      expect(mockLog.error).to.have.been.calledWith('[A11yAudit] Error saving metrics to S3 for site test-site-id (https://example.com): S3 write error');
+      expect(mockLog.error).to.have.been.calledWith('[A11yAudit][A11yProcessingError] Error saving metrics to S3 for site test-site-id (https://example.com): S3 write error');
     });
 
     it('should use correct S3 key format', async () => {
@@ -1421,7 +1421,7 @@ describe('Scrape Utils', () => {
       expect(result.message).to.equal('Failed to save mystique validation metrics to S3: S3 save failed');
       expect(result.error).to.equal('S3 save failed');
       expect(mockLog.error).to.have.been.calledWith(
-        '[A11yValidation] Error saving mystique validation metrics to S3 for site site-456, opportunity oppty-123: S3 save failed',
+        '[A11yValidation][A11yProcessingError] Error saving mystique validation metrics to S3 for site site-456, opportunity oppty-123: S3 save failed',
       );
     });
 

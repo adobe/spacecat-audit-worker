@@ -70,7 +70,7 @@ export async function deleteOriginalFiles(s3Client, bucketName, objectKeys, log)
 
     log.info(`Deleted ${deletedCount} original files after aggregation`);
   } catch (error) {
-    log.error('Error deleting original files', error);
+    log.error('[A11yProcessingError] Error deleting original files', error);
   }
   return deletedCount;
 }
@@ -85,7 +85,7 @@ export async function getSubfoldersUsingPrefixAndDelimiter(
 ) {
   if (!s3Client || !bucketName || !prefix || !delimiter) {
     log.error(
-      `Invalid input parameters in getObjectKeysUsingPrefix: ensure s3Client, delimiter:${delimiter}, bucketName:${bucketName}, and prefix:${prefix} are provided.`,
+      `[A11yProcessingError] Invalid input parameters in getObjectKeysUsingPrefix: ensure s3Client, delimiter:${delimiter}, bucketName:${bucketName}, and prefix:${prefix} are provided.`,
     );
     throw new Error(
       'Invalid input parameters in getObjectKeysUsingPrefix: ensure s3Client, delimiter, bucketName, and prefix are provided.',
@@ -106,7 +106,7 @@ export async function getSubfoldersUsingPrefixAndDelimiter(
     return commonPrefixes.map((subfolder) => subfolder.Prefix);
   } catch (err) {
     log.error(
-      `Error while fetching S3 object keys using bucket ${bucketName} and prefix ${prefix} with delimiter ${delimiter}`,
+      `[A11yProcessingError] Error while fetching S3 object keys using bucket ${bucketName} and prefix ${prefix} with delimiter ${delimiter}`,
       err,
     );
     throw err;
@@ -253,7 +253,7 @@ export async function processFilesWithRetry(s3Client, bucketName, objectKeys, lo
 
       return { key, data };
     } catch (error) {
-      log.error(`Error processing file ${key}: ${error.message}`);
+      log.error(`[A11yProcessingError] Error processing file ${key}: ${error.message}`);
       throw error; // Re-throw to be caught by retry logic
     }
   };
@@ -266,7 +266,7 @@ export async function processFilesWithRetry(s3Client, bucketName, objectKeys, lo
         log.warn(`Retrying file ${key} (attempt ${retryCount + 1}/${maxRetries}): ${error.message}`);
         return processFileWithRetry(key, retryCount + 1);
       }
-      log.error(`Failed to process file ${key} after ${maxRetries} retries: ${error.message}`);
+      log.error(`[A11yProcessingError] Failed to process file ${key} after ${maxRetries} retries: ${error.message}`);
       return null;
     }
   };
@@ -337,7 +337,7 @@ export async function aggregateAccessibilityData(
 ) {
   if (!s3Client || !bucketName || !siteId || !auditType) {
     const message = 'Missing required parameters for aggregateAccessibilityData';
-    log.error(message);
+    log.error(`[A11yProcessingError] ${message}`);
     return { success: false, aggregatedData: null, message };
   }
 
@@ -391,7 +391,7 @@ export async function aggregateAccessibilityData(
     // Check if we have any successful results to process
     if (results.length === 0) {
       const message = `[${logIdentifier}] No files could be processed successfully for site ${siteId}`;
-      log.error(message);
+      log.error(`[A11yProcessingError] ${message}`);
       return { success: false, aggregatedData: null, message };
     }
 
@@ -453,7 +453,7 @@ export async function aggregateAccessibilityData(
       message: `Successfully aggregated ${objectKeys.length} files into ${outputKey}`,
     };
   } catch (error) {
-    log.error(`[${logIdentifier}] Error aggregating accessibility data for site ${siteId}`, error);
+    log.error(`[${logIdentifier}][A11yProcessingError] Error aggregating accessibility data for site ${siteId}`, error);
     return {
       success: false,
       aggregatedData: null,
@@ -479,7 +479,7 @@ export async function createReportOpportunity(opportunityInstance, auditData, co
     const opportunity = await Opportunity.create(opportunityData);
     return { opportunity };
   } catch (e) {
-    log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
+    log.error(`[A11yProcessingError] Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
     throw new Error(e.message);
   }
 }
@@ -496,7 +496,7 @@ export async function createReportOpportunitySuggestion(
     const suggestion = await opportunity.addSuggestions(suggestions);
     return { suggestion };
   } catch (e) {
-    log.error(`Failed to create new suggestion for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
+    log.error(`[A11yProcessingError] Failed to create new suggestion for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
     throw new Error(e.message);
   }
 }
@@ -515,11 +515,11 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
     finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
     if (finalResultFiles.length === 0) {
       const errorMessage = `[A11yAudit] No final result files found for ${siteId}`;
-      log.error(errorMessage);
+      log.error(`[A11yProcessingError] ${errorMessage}`);
       return urlsToScrape;
     }
   } catch (error) {
-    log.error(`[A11yAudit] Error getting final result files for ${siteId}: ${error.message}`);
+    log.error(`[A11yAudit][A11yProcessingError] Error getting final result files for ${siteId}: ${error.message}`);
     return urlsToScrape;
   }
 
@@ -530,11 +530,11 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
     latestFinalResultFile = await getObjectFromKey(s3Client, bucketName, latestFinalResultFileKey, log);
     if (!latestFinalResultFile) {
       const errorMessage = `[A11yAudit] No latest final result file found for ${siteId}`;
-      log.error(errorMessage);
+      log.error(`[A11yProcessingError] ${errorMessage}`);
       return urlsToScrape;
     }
   } catch (error) {
-    log.error(`[A11yAudit] Error getting latest final result file for ${siteId}: ${error.message}`);
+    log.error(`[A11yAudit][A11yProcessingError] Error getting latest final result file for ${siteId}: ${error.message}`);
     return urlsToScrape;
   }
 
@@ -551,7 +551,7 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
 
   if (urlsToScrape.length === 0) {
     const errorMessage = `[A11yAudit] No URLs found for ${siteId}`;
-    log.error(errorMessage);
+    log.error(`[A11yProcessingError] ${errorMessage}`);
     return urlsToScrape;
   }
 
@@ -605,7 +605,7 @@ export async function generateReportOpportunity(
   try {
     opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
   } catch (error) {
-    log.error(`Failed to create report opportunity for ${reportName}`, error.message);
+    log.error(`[A11yProcessingError] Failed to create report opportunity for ${reportName}`, error.message);
     throw new Error(error.message);
   }
 
@@ -620,7 +620,7 @@ export async function generateReportOpportunity(
       log,
     );
   } catch (error) {
-    log.error(`Failed to create report opportunity suggestion for ${reportName}`, error.message);
+    log.error(`[A11yProcessingError] Failed to create report opportunity suggestion for ${reportName}`, error.message);
     throw new Error(error.message);
   }
 
@@ -714,21 +714,21 @@ export async function generateReportOpportunities(
   try {
     relatedReportsUrls.inDepthReportUrl = await generateReportOpportunity(reportData, generateInDepthReportMarkdown, createInDepthReportOpportunity, 'in-depth report');
   } catch (error) {
-    log.error('Failed to generate in-depth report opportunity', error.message);
+    log.error('[A11yProcessingError] Failed to generate in-depth report opportunity', error.message);
     throw new Error(error.message);
   }
 
   try {
     relatedReportsUrls.enhancedReportUrl = await generateReportOpportunity(reportData, generateEnhancedReportMarkdown, createEnhancedReportOpportunity, 'enhanced report');
   } catch (error) {
-    log.error('Failed to generate enhanced report opportunity', error.message);
+    log.error('[A11yProcessingError] Failed to generate enhanced report opportunity', error.message);
     throw new Error(error.message);
   }
 
   try {
     relatedReportsUrls.fixedVsNewReportUrl = await generateReportOpportunity(reportData, generateFixedNewReportMarkdown, createFixedVsNewReportOpportunity, 'fixed vs new report');
   } catch (error) {
-    log.error('Failed to generate fixed vs new report opportunity', error.message);
+    log.error('[A11yProcessingError] Failed to generate fixed vs new report opportunity', error.message);
     throw new Error(error.message);
   }
 
@@ -736,7 +736,7 @@ export async function generateReportOpportunities(
     reportData.mdData.relatedReportsUrls = relatedReportsUrls;
     await generateReportOpportunity(reportData, generateBaseReportMarkdown, createBaseReportOpportunity, 'base report', false);
   } catch (error) {
-    log.error('Failed to generate base report opportunity', error.message);
+    log.error('[A11yProcessingError] Failed to generate base report opportunity', error.message);
     throw new Error(error.message);
   }
 
