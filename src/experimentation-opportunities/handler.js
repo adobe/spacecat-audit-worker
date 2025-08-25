@@ -12,6 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { determineAEMCSPageId, DELIVERY_TYPES } from '@adobe/spacecat-shared-utils';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
@@ -28,6 +29,7 @@ const DAYS = 7;
 const HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE = 'high-organic-low-ctr';
 const RAGECLICK_OPPTY_TYPE = 'rageclick';
 const HIGH_INORGANIC_HIGH_BOUNCE_RATE_OPPTY_TYPE = 'high-inorganic-high-bounce-rate';
+const AEM_CS_CONTENT_API_PREFIX = '/adobe/experimental/aspm-expires-20251231/pages/';
 
 const OPPTY_QUERIES = [
   RAGECLICK_OPPTY_TYPE,
@@ -52,6 +54,32 @@ function processRageClickOpportunities(opportunities) {
     });
 }
 
+async function toMystiqueMessage(oppty, site, audit) {
+  const deliveryType = site.getDeliveryType();
+  let url = oppty.page;
+  if (deliveryType === DELIVERY_TYPES.AEM_CS) {
+    const { preferContentApi, authorURL } = site.getDeliveryConfig();
+    if (preferContentApi) {
+      const pageId = await determineAEMCSPageId(url);
+      if (pageId) {
+        url = `${authorURL}${AEM_CS_CONTENT_API_PREFIX}${pageId}`;
+      }
+    }
+  }
+  return {
+    type: 'guidance:high-organic-low-ctr',
+    siteId: site.getId(),
+    auditId: audit.getId(),
+    deliveryType,
+    time: new Date().toISOString(),
+    data: {
+      url,
+      ctr: oppty.trackedPageKPIValue,
+      siteAverageCtr: oppty.trackedKPISiteAverage,
+    },
+  };
+}
+
 export async function generateOpportunityAndSuggestions(context) {
   const {
     log, sqs, env, site, audit,
@@ -59,22 +87,13 @@ export async function generateOpportunityAndSuggestions(context) {
   const auditResult = audit.getAuditResult();
   log.info('auditResult in generateOpportunityAndSuggestions: ', JSON.stringify(auditResult, null, 2));
 
-  const messages = auditResult?.experimentationOpportunities?.filter(
+  const opportunities = auditResult?.experimentationOpportunities?.filter(
     (oppty) => oppty.type === HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
-  ).map((oppty) => ({
-    type: 'guidance:high-organic-low-ctr',
-    siteId: site.getId(),
-    auditId: audit.getId(),
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      url: oppty.page,
-      ctr: oppty.trackedPageKPIValue,
-      siteAverageCtr: oppty.trackedKPISiteAverage,
-    },
-  }));
+  ) || [];
 
-  for (const message of messages) {
+  for (const oppty of opportunities) {
+    // eslint-disable-next-line no-await-in-loop
+    const message = await toMystiqueMessage(oppty, site, audit);
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
