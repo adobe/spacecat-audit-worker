@@ -1,3 +1,71 @@
+## [1.157.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.1...v1.157.2) (2025-08-23)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1157](https://github.com/adobe/spacecat-audit-worker/issues/1157)) ([5a6b46e](https://github.com/adobe/spacecat-audit-worker/commit/5a6b46e1b48bc6e965a40c0bfcf1c3cf0ae616f6))
+
+## [1.157.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.0...v1.157.1) (2025-08-23)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.57.0 ([#1156](https://github.com/adobe/spacecat-audit-worker/issues/1156)) ([6245cbd](https://github.com/adobe/spacecat-audit-worker/commit/6245cbded547876fd7059e57d11b5ad09935098f))
+
+# [1.157.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.156.0...v1.157.0) (2025-08-22)
+
+
+### Bug Fixes
+
+* fix lint issues with topic-patterns ([#1154](https://github.com/adobe/spacecat-audit-worker/issues/1154)) ([e3603f0](https://github.com/adobe/spacecat-audit-worker/commit/e3603f0a812f33ef6e39f7f94be3e7de0b05ddf9))
+
+
+### Features
+
+* Even more explicit logging for geo presence audit ([#1153](https://github.com/adobe/spacecat-audit-worker/issues/1153)) ([4f8832e](https://github.com/adobe/spacecat-audit-worker/commit/4f8832e2491bcb4f51587c42632ff0b7f853ced4))
+
+# [1.156.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.155.2...v1.156.0) (2025-08-22)
+
+
+### Features
+
+* More explicit error logging for geo presence audit ([#1151](https://github.com/adobe/spacecat-audit-worker/issues/1151)) ([ffbe9dd](https://github.com/adobe/spacecat-audit-worker/commit/ffbe9dd0bfe310a5ca1250d8d3cd599a8bfc39c4))
+
+## [1.155.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.155.1...v1.155.2) (2025-08-22)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1144](https://github.com/adobe/spacecat-audit-worker/issues/1144)) ([53428eb](https://github.com/adobe/spacecat-audit-worker/commit/53428eb641a77d60564e921d6ee44d7e33192732))
+
+## [1.155.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.155.0...v1.155.1) (2025-08-22)
+
+
+### Bug Fixes
+
+* check if bucket exist ([#1149](https://github.com/adobe/spacecat-audit-worker/issues/1149)) ([2badb39](https://github.com/adobe/spacecat-audit-worker/commit/2badb39bb60cfe7137b213e670d1f2ac7e100e61))
+
+# [1.155.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.154.0...v1.155.0) (2025-08-21)
+
+
+### Features
+
+* Geo Brand Presence presigned url valid 24h ([#1148](https://github.com/adobe/spacecat-audit-worker/issues/1148)) ([3594dba](https://github.com/adobe/spacecat-audit-worker/commit/3594dba87f59089f8c7f62781b8012cee1e2b4cf))
+
+# [1.154.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.153.1...v1.154.0) (2025-08-21)
+
+
+### Features
+
+* keep the a11y individual opportunity if exists and update the suggestions, mark the ones not found with fixed ([#1098](https://github.com/adobe/spacecat-audit-worker/issues/1098)) ([0170fa3](https://github.com/adobe/spacecat-audit-worker/commit/0170fa3f4ec275013123997ee3dbc06ce7bc48b7))
+
+## [1.153.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.153.0...v1.153.1) (2025-08-21)
+
+
+### Bug Fixes
+
+* passing additional data to mystique for form oppties ([#1141](https://github.com/adobe/spacecat-audit-worker/issues/1141)) ([9230bdf](https://github.com/adobe/spacecat-audit-worker/commit/9230bdf2ec3383591e6f0cf3b9d323874894fa0c))
+
 # [1.153.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.152.1...v1.153.0) (2025-08-20)
 
 
