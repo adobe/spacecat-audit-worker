@@ -23,11 +23,11 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
  * @param {Object} log - Logger
  * @returns {Promise<void>}
  */
-async function cleanupOutdatedSuggestions(opportunity, Suggestion, log) {
+async function cleanupOutdatedSuggestions(opportunity, log) {
   try {
     const allSuggestions = await opportunity.getSuggestions();
     const outdatedSuggestions = allSuggestions.filter(
-      (suggestion) => suggestion.getStatus() === Suggestion.STATUSES.OUTDATED,
+      (suggestion) => suggestion.getStatus() === SuggestionModel.STATUSES.OUTDATED,
     );
 
     if (outdatedSuggestions.length > 0) {
@@ -127,7 +127,7 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
 
   // Mark suggestions as OUTDATED
   if (suggestionsToRemove.length > 0) {
-    await Suggestion.bulkUpdateStatus(suggestionsToRemove, Suggestion.STATUSES.OUTDATED);
+    await Suggestion.bulkUpdateStatus(suggestionsToRemove, SuggestionModel.STATUSES.OUTDATED);
     log.info(`[${AUDIT_TYPE}]: Marked ${suggestionsToRemove.length} suggestions as OUTDATED for ${pageUrls.length} pages`);
   }
 
@@ -267,7 +267,7 @@ export default async function handler(message, context) {
         setTimeout(resolve, 1000);
       });
 
-      await cleanupOutdatedSuggestions(altTextOppty, Suggestion, log);
+      await cleanupOutdatedSuggestions(altTextOppty, log);
     }
 
     log.info(`[${AUDIT_TYPE}]: Processed ${pageUrls.length} pages...`);
