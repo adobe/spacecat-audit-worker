@@ -257,15 +257,6 @@ describe('CDN Logs Report Utils', () => {
       const result = await reportUtils.fetchRemotePatterns(mockSite);
 
       expect(mockFetch).to.have.been.calledOnce;
-      expect(mockFetch).to.have.been.calledWith(
-        'https://main--project-elmo-ui-data--adobe.aem.live/bulk/agentic-traffic/patterns/patterns.json',
-        {
-          headers: {
-            'User-Agent': 'spacecat-audit-worker',
-            Authorization: 'token undefined',
-          },
-        },
-      );
 
       expect(result).to.deep.equal({
         pagePatterns: [

@@ -63,7 +63,6 @@ describe('CDN Logs Report Handler', () => {
       databaseName: 'test_db',
       tableName: 'test_table',
       customerName: 'test_customer',
-      bucket: 'test-bucket',
       getAthenaTempLocation: () => 's3://temp-location',
     });
 

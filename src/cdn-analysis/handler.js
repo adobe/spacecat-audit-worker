@@ -13,7 +13,7 @@
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { resolveCdnBucketName, extractCustomerDomain, buildCdnPaths, isLegacyBucket, discoverCdnProviders } from '../utils/cdn-utils.js';
+import { resolveCdnBucketName, extractCustomerDomain, buildCdnPaths, getBucketInfo, discoverCdnProviders } from '../utils/cdn-utils.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -51,8 +51,9 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
   const { year, month, day, hour } = getHourParts();
   const { host } = new URL(site.getBaseURL());
 
-  const isLegacy = isLegacyBucket(site);
-  const cdnProviders = await discoverCdnProviders(s3Client, bucketName, site, log);
+  const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName);
+  const cdnProviders = providers?.length > 0 ? providers
+    : await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour });
 
   log.info(`Processing ${cdnProviders.length} CDN provider(s) in bucket: ${bucketName}`);
 

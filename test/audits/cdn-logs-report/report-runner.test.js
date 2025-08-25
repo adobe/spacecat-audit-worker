@@ -79,7 +79,7 @@ describe('Report Runner', () => {
           getConfig: () => ({
             getLlmoCdnlogsFilter: () => [],
             getLlmoDataFolder: () => 'test-folder',
-
+            getCdnLogsConfig: () => ({ filters: [] }),
           }),
         },
         sharepointClient: {},
@@ -108,7 +108,7 @@ describe('Report Runner', () => {
           getConfig: () => ({
             getLlmoCdnlogsFilter: () => [],
             getLlmoDataFolder: () => 'test-folder',
-
+            getCdnLogsConfig: () => ({ filters: [] }),
           }),
         },
         sharepointClient: {},
@@ -137,8 +137,8 @@ describe('Report Runner', () => {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getLlmoCdnlogsFilter: () => [],
+            getCdnLogsConfig: () => ({ filters: [] }),
             getLlmoDataFolder: () => 'test-folder',
-
           }),
         },
         sharepointClient: {},

@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
-import { HeadBucketCommand } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';

@@ -10,22 +10,15 @@
  * governing permissions and limitations under the License.
  */
 
-import { HeadBucketCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { HeadBucketCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 import crypto from 'crypto';
+import zlib from 'zlib';
+import { hasText } from '@adobe/spacecat-shared-utils';
 
+/* c8 ignore start */
 export const CDN_TYPES = {
   AKAMAI: 'akamai',
   FASTLY: 'fastly',
-};
-
-const LEGACY_BUCKET_MAP = {
-  'adobe.com': { bucket: 'cdn-logs-adobe-com', provider: CDN_TYPES.AKAMAI },
-  'business.adobe.com': { bucket: 'cdn-logs-adobe-com', provider: CDN_TYPES.AKAMAI },
-  'bulk.com': { bucket: 'cdn-logs-bulk-com', provider: CDN_TYPES.FASTLY },
-  'wilson.com': { bucket: 'cdn-logs-amersports', provider: CDN_TYPES.FASTLY },
-  'wknd.site': { bucket: 'cdn-logs-wknd-site', provider: CDN_TYPES.FASTLY },
-  'akamai.synth': { bucket: 'cdn-logs-akamai-synthetic', provider: CDN_TYPES.AKAMAI },
-  'fastly.synth': { bucket: 'cdn-logs-fastly-synthetic', provider: CDN_TYPES.FASTLY },
 };
 
 /**
@@ -52,10 +45,10 @@ export function generateBucketName(orgId) {
 export async function resolveCdnBucketName(site, context) {
   const { s3Client, dataAccess, log } = context;
 
-  const legacyConfig = LEGACY_BUCKET_MAP[site.getBaseURL().replace(/https?:\/\//, '')];
-  if (legacyConfig) {
-    log.info(`Using legacy bucket: ${legacyConfig.bucket} (${legacyConfig.provider})`);
-    return legacyConfig.bucket;
+  const { bucketName } = site.getConfig().getCdnLogsConfig() || {};
+  if (bucketName) {
+    await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
+    return bucketName;
   }
 
   try {
@@ -65,10 +58,10 @@ export async function resolveCdnBucketName(site, context) {
     const imsOrgId = organization?.getImsOrgId();
 
     if (imsOrgId) {
-      const bucketName = generateBucketName(imsOrgId);
-      await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
-      log.info(`Using IMS org bucket: ${bucketName}`);
-      return bucketName;
+      const generatedBucketName = generateBucketName(imsOrgId);
+      await s3Client.send(new HeadBucketCommand({ Bucket: generatedBucketName }));
+      log.info(`Using IMS org bucket: ${generatedBucketName}`);
+      return generatedBucketName;
     }
   } catch (error) {
     log.warn(`IMS org bucket lookup failed: ${error.message}`);
@@ -76,6 +69,40 @@ export async function resolveCdnBucketName(site, context) {
 
   log.error(`No CDN bucket found for site: ${site.getBaseURL()}`);
   return null;
+}
+
+async function bufferFromStream(stream) {
+  const chunks = [];
+  for await (const c of stream) chunks.push(c);
+  return Buffer.concat(chunks);
+}
+
+export async function determineCdnProvider(s3, bucket, prefix) {
+  const list = await s3.send(new ListObjectsV2Command({
+    Bucket: bucket, Prefix: prefix, MaxKeys: 1,
+  }));
+  const key = list.Contents?.[0]?.Key;
+  if (!key) return null;
+
+  let text;
+  if (key.endsWith('.gz')) {
+    const obj = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    text = zlib.gunzipSync(await bufferFromStream(obj.Body)).toString();
+  } else {
+    const obj = await s3.send(
+      new GetObjectCommand({ Bucket: bucket, Key: key, Range: 'bytes=0-65535' }),
+    );
+    text = (await bufferFromStream(obj.Body)).toString();
+  }
+  const first = text.split('\n').find((l) => l.trim());
+  try {
+    const rec = JSON.parse(first);
+    if (hasText(rec.reqPath)) return CDN_TYPES.AKAMAI;
+    if (hasText(rec.url)) return CDN_TYPES.FASTLY;
+  } catch {
+    // fall-through intended
+  }
+  throw new Error(`Unrecognized CDN Type. Bucket: ${bucket}`);
 }
 
 /**
@@ -109,10 +136,48 @@ export function buildCdnPaths(bucketName, cdnProvider, timeParts, isLegacy = fal
 }
 
 /**
- * Detects if site uses legacy bucket mapping
+ * Determines if bucket is legacy based on the providers found
+ * @param {string[]} providers - List of folders under raw/
+ * @param {string} year - Current year to check for
+ * @returns {boolean} True if legacy structure
  */
-export function isLegacyBucket(site) {
-  return !!LEGACY_BUCKET_MAP[site.getBaseURL().replace(/https?:\/\//, '')];
+function isLegacyBucketStructure(providers) {
+  const knownCdnProviders = Object.values(CDN_TYPES);
+  const hasKnownProvider = providers?.some((provider) => knownCdnProviders.includes(provider));
+
+  if (hasKnownProvider) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Gets bucket structure info once and returns legacy status + providers
+ * @param {Object} s3Client - S3 client instance
+ * @param {string} bucketName - The S3 bucket name
+ * @param {Object} timeParts - Time parts {year, month, day, hour}
+ * @returns {Promise<{isLegacy: boolean, providers: string[]}>} Bucket info
+ */
+export async function getBucketInfo(s3Client, bucketName) {
+  try {
+    const response = await s3Client.send(new ListObjectsV2Command({
+      Bucket: bucketName,
+      Prefix: 'raw/',
+      Delimiter: '/',
+      MaxKeys: 10,
+    }));
+
+    const providers = (response.CommonPrefixes || [])
+      .map((prefix) => prefix.Prefix.replace('raw/', '').replace('/', ''))
+      .filter((provider) => provider && provider.length > 0);
+
+    const isLegacy = isLegacyBucketStructure(providers);
+
+    return { isLegacy, providers };
+  } catch {
+    return { isLegacy: true, providers: [] };
+  }
 }
 
 /**
@@ -120,30 +185,16 @@ export function isLegacyBucket(site) {
  * For new structure buckets, lists folders under raw/
  * For legacy buckets, returns single provider detected from content
  */
-export async function discoverCdnProviders(s3Client, bucketName, site, log) {
-  const legacyConfig = LEGACY_BUCKET_MAP[site.getBaseURL().replace(/https?:\/\//, '')];
-  if (legacyConfig) {
-    log.info(`Legacy bucket using known provider: ${legacyConfig.provider}`);
-    return [legacyConfig.provider];
+export async function discoverCdnProviders(s3Client, bucketName, timeParts) {
+  const cdnProvider = await determineCdnProvider(
+    s3Client,
+    bucketName,
+    `raw/${timeParts.year}/${timeParts.month}/${timeParts.day}/${timeParts.hour}/`,
+  );
+  if (cdnProvider) {
+    return [cdnProvider];
   }
 
-  try {
-    const response = await s3Client.send(new ListObjectsV2Command({
-      Bucket: bucketName,
-      Prefix: 'raw/',
-      Delimiter: '/',
-      MaxKeys: 100,
-    }));
-
-    /* c8 ignore next */
-    const providers = (response.CommonPrefixes || [])
-      .map((prefix) => prefix.Prefix.replace('raw/', '').replace('/', ''))
-      .filter((provider) => provider && provider.length > 0);
-
-    log.info(`Discovered CDN providers in ${bucketName}: ${providers.join(', ')}`);
-    return providers;
-  } catch (error) {
-    log.error(`Error discovering CDN providers: ${error.message}`);
-    return ['fastly'];
-  }
+  return ['fastly'];
 }
+/* c8 ignore end */

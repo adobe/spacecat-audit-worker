@@ -35,7 +35,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
 
   log.info(`Running agentic report for ${periodIdentifier} (week offset: ${weekOffset})`);
   /* c8 ignore next */
-  const filters = site.getConfig()?.getLlmoCdnlogsFilter() || [];
+  const filters = site.getConfig().getCdnLogsConfig()?.filters || [];
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();
   const outputLocation = `${llmoFolder}/${AGENTIC_REPORT_CONFIG.folderSuffix}`;
 

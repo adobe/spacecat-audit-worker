@@ -20,7 +20,7 @@ import {
   generateBucketName,
   resolveCdnBucketName,
   buildCdnPaths,
-  isLegacyBucket,
+  getBucketInfo,
   discoverCdnProviders,
 } from '../../src/utils/cdn-utils.js';
 
@@ -90,22 +90,27 @@ describe('CDN Utils', () => {
       };
     });
 
-    it('returns legacy bucket for known legacy site', async () => {
+    it('uses configured bucket when available', async () => {
       const site = {
-        getBaseURL: () => 'https://adobe.com',
+        getBaseURL: () => 'https://example.com',
         getOrganizationId: () => 'org-id',
+        getConfig: () => ({
+          getCdnLogsConfig: () => ({ bucketName: 'configured-bucket' }),
+        }),
       };
+
+      s3Client.send.resolves(); // HeadBucket succeeds
 
       const bucketName = await resolveCdnBucketName(site, context);
 
-      expect(bucketName).to.equal('cdn-logs-adobe-com');
-      expect(context.log.info).to.have.been.calledWith('Using legacy bucket: cdn-logs-adobe-com (akamai)');
+      expect(bucketName).to.equal('configured-bucket');
     });
 
     it('uses IMS org bucket when available', async () => {
       const site = {
         getBaseURL: () => 'https://example.com',
         getOrganizationId: () => 'org-id',
+        getConfig: () => ({ getCdnLogsConfig: () => null }),
       };
       const organization = { getImsOrgId: () => 'ims-org-id' };
 
@@ -122,6 +127,7 @@ describe('CDN Utils', () => {
       const site = {
         getBaseURL: () => 'https://unknown.com',
         getOrganizationId: () => 'org-id',
+        getConfig: () => ({ getCdnLogsConfig: () => null }),
       };
 
       dataAccess.Organization.findById.resolves(null);
@@ -136,6 +142,7 @@ describe('CDN Utils', () => {
       const site = {
         getBaseURL: () => 'https://example.com',
         getOrganizationId: () => 'org-id',
+        getConfig: () => ({ getCdnLogsConfig: () => null }),
       };
       const organization = { getImsOrgId: () => 'ims-org-id' };
 
@@ -177,74 +184,104 @@ describe('CDN Utils', () => {
     });
   });
 
-  describe('isLegacyBucket', () => {
-    it('returns true for legacy sites', () => {
-      const site = { getBaseURL: () => 'https://adobe.com' };
-      expect(isLegacyBucket(site)).to.be.true;
+  describe('getBucketInfo', () => {
+    let s3Client;
+
+    beforeEach(() => {
+      s3Client = { send: sandbox.stub() };
     });
 
-    it('returns false for non-legacy sites', () => {
-      const site = { getBaseURL: () => 'https://example.com' };
-      expect(isLegacyBucket(site)).to.be.false;
+    it('detects new structure with akamai and fastly', async () => {
+      s3Client.send.resolves({
+        CommonPrefixes: [
+          { Prefix: 'raw/akamai/' },
+          { Prefix: 'raw/fastly/' },
+        ],
+      });
+
+      const result = await getBucketInfo(s3Client, 'test-bucket');
+
+      expect(result.isLegacy).to.be.false;
+      expect(result.providers).to.deep.equal(['akamai', 'fastly']);
+    });
+
+    it('detects legacy structure with year folders', async () => {
+      s3Client.send.resolves({
+        CommonPrefixes: [
+          { Prefix: 'raw/2025/' },
+          { Prefix: 'raw/2024/' },
+        ],
+      });
+
+      const result = await getBucketInfo(s3Client, 'test-bucket');
+
+      expect(result.isLegacy).to.be.true;
+      expect(result.providers).to.deep.equal(['2025', '2024']);
+    });
+
+    it('detects legacy structure with cdn folders', async () => {
+      s3Client.send.resolves({
+        CommonPrefixes: [
+          { Prefix: 'raw/cdn/' },
+        ],
+      });
+
+      const result = await getBucketInfo(s3Client, 'test-bucket');
+
+      expect(result.isLegacy).to.be.true;
+      expect(result.providers).to.deep.equal(['cdn']);
+    });
+
+    it('handles empty response as legacy', async () => {
+      s3Client.send.resolves({ CommonPrefixes: [] });
+
+      const result = await getBucketInfo(s3Client, 'test-bucket');
+
+      expect(result.isLegacy).to.be.true;
+      expect(result.providers).to.deep.equal([]);
+    });
+
+    it('handles S3 errors as legacy', async () => {
+      s3Client.send.rejects(new Error('S3 error'));
+
+      const result = await getBucketInfo(s3Client, 'test-bucket');
+
+      expect(result.isLegacy).to.be.true;
+      expect(result.providers).to.deep.equal([]);
+    });
+
+    it('filters out empty prefixes', async () => {
+      s3Client.send.resolves({
+        CommonPrefixes: [
+          { Prefix: 'raw/akamai/' },
+          { Prefix: 'raw//' },
+          { Prefix: 'raw/fastly/' },
+        ],
+      });
+
+      const result = await getBucketInfo(s3Client, 'test-bucket');
+
+      expect(result.providers).to.deep.equal(['akamai', 'fastly']);
     });
   });
 
   describe('discoverCdnProviders', () => {
     let s3Client;
-    let log;
+    const timeParts = {
+      year: '2025', month: '01', day: '15', hour: '10',
+    };
 
     beforeEach(() => {
       s3Client = { send: sandbox.stub() };
-      log = { info: sandbox.spy(), error: sandbox.spy() };
     });
 
-    it('returns known provider for legacy bucket', async () => {
-      const site = { getBaseURL: () => 'https://adobe.com' };
+    it('returns fastly as default', async () => {
+      // Mock the S3 call for determineCdnProvider to return no files
+      s3Client.send.resolves({ Contents: [] });
 
-      const providers = await discoverCdnProviders(s3Client, 'cdn-logs-adobe-com', site, log);
-
-      expect(providers).to.deep.equal(['akamai']);
-      expect(log.info).to.have.been.calledWith('Legacy bucket using known provider: akamai');
-    });
-
-    it('discovers providers from S3 structure', async () => {
-      const site = { getBaseURL: () => 'https://example.com' };
-      s3Client.send.resolves({
-        CommonPrefixes: [
-          { Prefix: 'raw/fastly/' },
-          { Prefix: 'raw/akamai/' },
-        ],
-      });
-
-      const providers = await discoverCdnProviders(s3Client, 'test-bucket', site, log);
-
-      expect(providers).to.deep.equal(['fastly', 'akamai']);
-      expect(log.info).to.have.been.calledWith('Discovered CDN providers in test-bucket: fastly, akamai');
-    });
-
-    it('returns default when discovery fails', async () => {
-      const site = { getBaseURL: () => 'https://example.com' };
-      s3Client.send.rejects(new Error('S3 error'));
-
-      const providers = await discoverCdnProviders(s3Client, 'test-bucket', site, log);
+      const providers = await discoverCdnProviders(s3Client, 'test-bucket', timeParts);
 
       expect(providers).to.deep.equal(['fastly']);
-      expect(log.error).to.have.been.calledWith('Error discovering CDN providers: S3 error');
-    });
-
-    it('filters empty providers', async () => {
-      const site = { getBaseURL: () => 'https://example.com' };
-      s3Client.send.resolves({
-        CommonPrefixes: [
-          { Prefix: 'raw/fastly/' },
-          { Prefix: 'raw//' },
-          { Prefix: 'raw/akamai/' },
-        ],
-      });
-
-      const providers = await discoverCdnProviders(s3Client, 'test-bucket', site, log);
-
-      expect(providers).to.deep.equal(['fastly', 'akamai']);
     });
   });
 });

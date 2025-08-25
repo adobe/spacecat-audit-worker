@@ -30,6 +30,7 @@ describe('CDN Analysis Handler', () => {
   let getStaticContentStub;
   let resolveCdnBucketNameStub;
   let discoverCdnProvidersStub;
+  let getBucketInfoStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -54,6 +55,7 @@ describe('CDN Analysis Handler', () => {
     getStaticContentStub = sandbox.stub().resolves('SELECT 1;');
     resolveCdnBucketNameStub = sandbox.stub().resolves('test-bucket');
     discoverCdnProvidersStub = sandbox.stub().resolves(['fastly']);
+    getBucketInfoStub = sandbox.stub().resolves({ isLegacy: false, providers: ['fastly'] });
 
     handlerModule = await esmock('../../../src/cdn-analysis/handler.js', {
       '@adobe/spacecat-shared-athena-client': { AWSAthenaClient: { fromContext: () => athenaClientStub } },
@@ -61,7 +63,7 @@ describe('CDN Analysis Handler', () => {
       '../../../src/utils/cdn-utils.js': {
         resolveCdnBucketName: resolveCdnBucketNameStub,
         extractCustomerDomain: () => 'example_com',
-        isLegacyBucket: () => false,
+        getBucketInfo: getBucketInfoStub,
         discoverCdnProviders: discoverCdnProvidersStub,
         buildCdnPaths: () => ({
           rawLocation: 's3://test-bucket/raw/fastly/',
@@ -81,7 +83,7 @@ describe('CDN Analysis Handler', () => {
     const result = await handlerModule.cdnLogAnalysisRunner('https://example.com', context, site);
 
     expect(resolveCdnBucketNameStub).to.have.been.calledOnce;
-    expect(discoverCdnProvidersStub).to.have.been.calledOnce;
+    expect(getBucketInfoStub).to.have.been.calledOnce;
     expect(getStaticContentStub).to.have.been.calledThrice;
     expect(athenaClientStub.execute).to.have.been.calledThrice;
     expect(result).to.have.property('auditResult');
@@ -92,12 +94,24 @@ describe('CDN Analysis Handler', () => {
   });
 
   it('handles multiple CDN providers', async () => {
-    discoverCdnProvidersStub.resolves(['fastly', 'akamai']);
+    getBucketInfoStub.resolves({ isLegacy: false, providers: ['fastly', 'akamai'] });
 
     const result = await handlerModule.cdnLogAnalysisRunner('https://example.com', context, site);
 
     expect(result.auditResult.providers).to.have.length(2);
     expect(athenaClientStub.execute).to.have.been.callCount(5);
+  });
+
+  it('falls back to discoverCdnProviders when getBucketInfo returns empty providers', async () => {
+    getBucketInfoStub.resolves({ isLegacy: true, providers: [] });
+    discoverCdnProvidersStub.resolves(['akamai']);
+
+    const result = await handlerModule.cdnLogAnalysisRunner('https://example.com', context, site);
+
+    expect(getBucketInfoStub).to.have.been.calledOnce;
+    expect(discoverCdnProvidersStub).to.have.been.calledOnce;
+    expect(result.auditResult.providers).to.have.length(1);
+    expect(result.auditResult.providers[0]).to.have.property('cdnType', 'akamai');
   });
 
   it('returns error when no bucket found', async () => {
