@@ -64,6 +64,7 @@ export async function wwwUrlResolver(site, context) {
 
   const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
   if (isValidUrl(overrideBaseURL)) {
+    log.info(`Resolved URL ${overrideBaseURL} for ${site.getBaseURL()} using overrideBaseURL`);
     return overrideBaseURL.replace(/^https?:\/\//, '');
   }
 
