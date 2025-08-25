@@ -124,7 +124,7 @@ export async function processCustomUrls(customUrls, rumAPIClient, options, conte
   );
 
   const customUrlsWithoutRumData = [...customUrlSet];
-  // For URLs without RUM data, create simple opportunity objects for consistency
+  // For URLs without RUM data, create simple opportunity objects
   const opptiesWithoutRumData = customUrlsWithoutRumData.map((url) => ({
     type: HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
     page: url,
