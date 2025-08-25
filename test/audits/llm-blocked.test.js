@@ -50,6 +50,7 @@ describe('LLM Blocked Audit', () => {
           getId: () => 'test-audit-id',
         },
         log: {
+          debug: sandbox.stub(),
           info: sandbox.stub(),
           error: sandbox.stub(),
           warn: sandbox.stub(),
