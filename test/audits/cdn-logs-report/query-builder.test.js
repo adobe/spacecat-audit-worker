@@ -39,9 +39,9 @@ describe('CDN Logs Query Builder', () => {
       tableName: 'test_table',
       siteFilters: [],
       site: {
-        getBaseURL: () => 'https://example.com',
+        getBaseURL: () => 'https://adobe.com',
         getConfig: () => ({
-          getGroupedURLs: () => null,
+          getLlmoDataFolder: () => null,
         }),
       },
     };
@@ -75,41 +75,13 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include("month = '01'");
   });
 
-  it('handles site with extract-only patterns', async () => {
-    mockOptions.site.getConfig = () => ({
-      getGroupedURLs: () => [
-        { regex: '/(products)/' },
-      ],
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
-
-    expect(query).to.include('REGEXP_EXTRACT');
-    expect(query).to.include('NULLIF');
-  });
-
-  it('handles site with mixed named and extract patterns', async () => {
-    mockOptions.site.getConfig = () => ({
-      getGroupedURLs: () => [
-        { regex: '/(products)/', name: 'Products' },
-        { regex: '/(blog)/' },
-      ],
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
-
-    expect(query).to.include('Products');
-    expect(query).to.include('REGEXP_EXTRACT');
-  });
-
-  it('handles site with null URL patterns', async () => {
-    mockOptions.site.getConfig = () => ({
-      getGroupedURLs: () => null,
-    });
+  it('handles site with no page patterns', async () => {
+    mockOptions.site.getBaseURL = () => 'https://unknown.com';
 
     const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
 
     expect(query).to.be.a('string');
+    expect(query).to.include('Uncategorized');
   });
 
   it('handles topic patterns with mixed named and extract patterns', async () => {

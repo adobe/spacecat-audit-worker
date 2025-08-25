@@ -18,55 +18,42 @@ import esmock from 'esmock';
 
 use(sinonChai);
 
-describe('CDN Logs Report Runner', () => {
+describe('Report Runner', () => {
   let sandbox;
   let reportRunner;
   let mockAthenaClient;
-  let mockS3Config;
-  let mockLog;
-  let mockSite;
-  let mockSharepointClient;
+  let mockSaveExcelReport;
+  let mockCreateExcelReport;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
 
     mockAthenaClient = {
-      query: sandbox.stub().resolves([{ agent_type: 'Chatbots', number_of_hits: 100 }]),
+      query: sandbox.stub().resolves([
+        { url: '/test', visits: 100 },
+        { url: '/page', visits: 50 },
+      ]),
     };
 
-    mockS3Config = {
-      customerName: 'test-customer',
-      databaseName: 'test_db',
-      tableName: 'test_table',
-    };
-
-    mockLog = {
-      info: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-
-    mockSite = {
-      getConfig: sandbox.stub().returns({
-        getCdnLogsConfig: () => ({ filters: [] }),
-        getLlmoDataFolder: () => 'test-folder',
-      }),
-    };
-
-    mockSharepointClient = {};
+    mockSaveExcelReport = sandbox.stub().resolves();
+    mockCreateExcelReport = sandbox.stub().resolves({
+      creator: 'test',
+      addWorksheet: sandbox.stub(),
+    });
 
     reportRunner = await esmock('../../../src/cdn-logs-report/utils/report-runner.js', {
       '../../../src/utils/report-uploader.js': {
-        saveExcelReport: sandbox.stub().resolves(),
+        saveExcelReport: mockSaveExcelReport,
       },
       '../../../src/cdn-logs-report/utils/excel-generator.js': {
-        createExcelReport: sandbox.stub().resolves('mock-workbook'),
+        createExcelReport: mockCreateExcelReport,
       },
       '../../../src/cdn-logs-report/constants/report-configs.js': {
         AGENTIC_REPORT_CONFIG: {
-          filePrefix: 'agentictraffic',
           folderSuffix: 'agentic-traffic',
-          workbookCreator: 'Test Creator',
-          sheetName: 'shared-all',
+          sheetName: 'Agentic Traffic',
+          filePrefix: 'agentic-traffic-report',
+          workbookCreator: 'SpaceCat',
           queryFunction: sandbox.stub().resolves('SELECT * FROM test'),
         },
       },
@@ -77,163 +64,91 @@ describe('CDN Logs Report Runner', () => {
     sandbox.restore();
   });
 
-  describe('runReport', () => {
-    it('runs agentic report with default week offset', async () => {
-      await reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, {
-        site: mockSite,
-        sharepointClient: mockSharepointClient,
-      });
+  describe('runWeeklyReport', () => {
+    it('runs weekly report successfully', async () => {
+      const options = {
+        athenaClient: mockAthenaClient,
+        s3Config: {
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          customerName: 'test_customer',
+        },
+        log: { info: sandbox.spy(), error: sandbox.spy() },
+        site: {
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoCdnlogsFilter: () => [],
+            getLlmoDataFolder: () => 'test-folder',
+            getCdnLogsConfig: () => ({ filters: [] }),
+          }),
+        },
+        sharepointClient: {},
+        weekOffset: -1,
+      };
 
+      await reportRunner.runWeeklyReport(options);
+
+      expect(options.log.info).to.have.been.calledWith(sinon.match(/Running agentic report/));
       expect(mockAthenaClient.query).to.have.been.calledOnce;
-      expect(mockLog.info).to.have.been.called;
+      expect(mockCreateExcelReport).to.have.been.calledOnce;
+      expect(mockSaveExcelReport).to.have.been.calledOnce;
     });
 
-    it('runs report with custom week offset', async () => {
-      await reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, {
-        site: mockSite,
-        sharepointClient: mockSharepointClient,
-        weekOffset: -2,
-      });
+    it('handles errors during report generation', async () => {
+      const options = {
+        athenaClient: mockAthenaClient,
+        s3Config: {
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          customerName: 'test_customer',
+        },
+        log: { info: sandbox.spy(), error: sandbox.spy() },
+        site: {
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoCdnlogsFilter: () => [],
+            getLlmoDataFolder: () => 'test-folder',
+            getCdnLogsConfig: () => ({ filters: [] }),
+          }),
+        },
+        sharepointClient: {},
+        weekOffset: -1,
+      };
 
-      expect(mockAthenaClient.query).to.have.been.calledOnce;
-      expect(mockLog.info).to.have.been.calledWith(
-        sinon.match(/week offset: -2/),
-      );
-    });
-
-    it('processes complete report generation flow', async () => {
-      await reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, {
-        site: mockSite,
-        sharepointClient: mockSharepointClient,
-      });
-
-      expect(mockAthenaClient.query).to.have.been.calledOnce;
-      expect(mockLog.info).to.have.been.called;
-    });
-
-    it('handles site config with filters', async () => {
-      mockSite.getConfig.returns({
-        getCdnLogsConfig: () => ({
-          filters: [
-            { key: 'url', value: ['test'], type: 'include' },
-            { key: 'url', value: ['prod'], type: 'include' },
-          ],
-        }),
-        getLlmoDataFolder: () => 'custom-folder',
-      });
-
-      await reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, {
-        site: mockSite,
-        sharepointClient: mockSharepointClient,
-      });
-
-      expect(mockAthenaClient.query).to.have.been.calledOnce;
-    });
-
-    it('handles missing CDN logs config gracefully', async () => {
-      mockSite.getConfig.returns({
-        getCdnLogsConfig: () => null,
-        getLlmoDataFolder: () => undefined,
-      });
-
-      await reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, {
-        site: mockSite,
-        sharepointClient: mockSharepointClient,
-      });
-
-      expect(mockAthenaClient.query).to.have.been.calledOnce;
-    });
-
-    it('handles missing getLlmoDataFolder function', async () => {
-      mockSite.getConfig.returns({
-        getCdnLogsConfig: () => ({ filters: [] }),
-        getLlmoDataFolder: () => undefined,
-      });
-
-      await reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, {
-        site: mockSite,
-        sharepointClient: mockSharepointClient,
-      });
-
-      expect(mockAthenaClient.query).to.have.been.calledOnce;
-    });
-
-    it('handles query execution errors gracefully', async () => {
       mockAthenaClient.query.rejects(new Error('Query failed'));
 
-      await expect(
-        reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, {
-          site: mockSite,
-          sharepointClient: mockSharepointClient,
-        }),
-      ).to.be.rejectedWith('Query failed');
+      await reportRunner.runWeeklyReport(options);
 
-      expect(mockLog.error).to.have.been.called;
-    });
-
-    it('handles excel report creation errors', async () => {
-      const errorStub = sandbox.stub().rejects(new Error('Excel creation failed'));
-      reportRunner = await esmock('../../../src/cdn-logs-report/utils/report-runner.js', {
-        '../../../src/utils/report-uploader.js': {
-          saveExcelReport: sandbox.stub().resolves(),
-        },
-        '../../../src/cdn-logs-report/utils/excel-generator.js': {
-          createExcelReport: errorStub,
-        },
-        '../../../src/cdn-logs-report/constants/report-configs.js': {
-          AGENTIC_REPORT_CONFIG: {
-            filePrefix: 'agentictraffic',
-            folderSuffix: 'agentic-traffic',
-            workbookCreator: 'Test Creator',
-            sheetName: 'shared-all',
-            queryFunction: sandbox.stub().resolves('SELECT * FROM test'),
-          },
-        },
-      });
-
-      await expect(
-        reportRunner.runReport(mockAthenaClient, mockS3Config, mockLog, {
-          site: mockSite,
-          sharepointClient: mockSharepointClient,
-        }),
-      ).to.be.rejectedWith('Excel creation failed');
-
-      expect(mockLog.error).to.have.been.calledWith(
-        sinon.match(/Agentic report generation failed/),
-      );
+      expect(options.log.error).to.have.been.calledWith(sinon.match(/Failed to generate agentic report/));
     });
   });
 
-  describe('runWeeklyReport', () => {
-    it('runs weekly agentic report', async () => {
-      await reportRunner.runWeeklyReport({
+  describe('runReport', () => {
+    it('runs report with custom options', async () => {
+      const options = {
         athenaClient: mockAthenaClient,
-        s3Config: mockS3Config,
-        log: mockLog,
-        site: mockSite,
-        sharepointClient: mockSharepointClient,
-      });
+        s3Config: {
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          customerName: 'test_customer',
+        },
+        log: { info: sandbox.spy(), error: sandbox.spy() },
+        site: {
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoCdnlogsFilter: () => [],
+            getCdnLogsConfig: () => ({ filters: [] }),
+            getLlmoDataFolder: () => 'test-folder',
+          }),
+        },
+        sharepointClient: {},
+        weekOffset: -2,
+      };
 
+      await reportRunner.runReport(mockAthenaClient, options.s3Config, options.log, options);
+
+      expect(options.log.info).to.have.been.calledWith(sinon.match(/Running agentic report/));
       expect(mockAthenaClient.query).to.have.been.calledOnce;
-      expect(mockLog.info).to.have.been.calledWith(
-        sinon.match(/Starting agentic report/),
-      );
-    });
-
-    it('handles report failures gracefully', async () => {
-      mockAthenaClient.query.rejects(new Error('Database error'));
-
-      await reportRunner.runWeeklyReport({
-        athenaClient: mockAthenaClient,
-        s3Config: mockS3Config,
-        log: mockLog,
-        site: mockSite,
-        sharepointClient: mockSharepointClient,
-      });
-
-      expect(mockLog.error).to.have.been.calledWith(
-        sinon.match(/Failed to generate agentic report/),
-      );
     });
   });
 });

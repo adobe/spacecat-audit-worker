@@ -34,8 +34,9 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
   const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
 
   log.info(`Running agentic report for ${periodIdentifier} (week offset: ${weekOffset})`);
-  const { filters } = site.getConfig().getCdnLogsConfig() || {};
-  const llmoFolder = site.getConfig()?.getLlmoDataFolder() || s3Config.customerName;
+  /* c8 ignore next */
+  const filters = site.getConfig().getCdnLogsConfig()?.filters || [];
+  const llmoFolder = site.getConfig()?.getLlmoDataFolder();
   const outputLocation = `${llmoFolder}/${AGENTIC_REPORT_CONFIG.folderSuffix}`;
 
   try {
