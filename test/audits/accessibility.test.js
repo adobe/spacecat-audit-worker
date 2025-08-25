@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../shared.js';
+import { getUniqueUrlCount } from '../../src/accessibility/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -782,6 +783,7 @@ describe('Accessibility Audit Handler', () => {
         'test-site-id',
         mockContext.log,
         sinon.match(/accessibility\/test-site-id\/\d{4}-\d{2}-\d{2}-final-result\.json/),
+        'accessibility',
         sinon.match(/\d{4}-\d{2}-\d{2}/),
       );
 
@@ -1080,6 +1082,7 @@ describe('Accessibility Audit Handler', () => {
         'test-site-id',
         mockContext.log,
         'accessibility/test-site-id/2024-03-15-final-result.json',
+        'accessibility',
         '2024-03-15',
       );
 
@@ -1264,6 +1267,123 @@ describe('Accessibility Audit Handler', () => {
         mockAggregationResult.finalResultFiles.current,
         mockContext,
       );
+    });
+  });
+
+  describe('getUniqueUrlCount', () => {
+    it('should return 0 for null or undefined data', () => {
+      // Act & Assert
+      expect(getUniqueUrlCount(null)).to.equal(0);
+      expect(getUniqueUrlCount(undefined)).to.equal(0);
+    });
+
+    it('should return 0 for empty data object', () => {
+      // Arrange
+      const data = {};
+
+      // Act
+      const result = getUniqueUrlCount(data);
+
+      // Assert
+      expect(result).to.equal(0);
+    });
+
+    it('should count unique URLs from regular site data', () => {
+      // Arrange
+      const data = {
+        overall: { violations: { total: 5 } },
+        'https://example.com/page1': { violations: { total: 3 } },
+        'https://example.com/page2': { violations: { total: 2 } },
+        'https://example.com/page3': { violations: { total: 1 } },
+      };
+
+      // Act
+      const result = getUniqueUrlCount(data);
+
+      // Assert
+      expect(result).to.equal(3); // page1, page2, page3 (excluding 'overall')
+    });
+
+    it('should count unique URLs from forms analysis data with composite keys', () => {
+      // Arrange
+      const data = {
+        overall: { violations: { total: 10 } },
+        'https://example.com/page1?source=contact-form': { violations: { total: 5 } },
+        'https://example.com/page1?source=newsletter-form': { violations: { total: 3 } },
+        'https://example.com/page2?source=feedback-form': { violations: { total: 2 } },
+        'https://example.com/page3?source=subscribe-form': { violations: { total: 1 } },
+      };
+
+      // Act
+      const result = getUniqueUrlCount(data);
+
+      // Assert
+      expect(result).to.equal(3); // page1 (from 2 forms), page2, page3
+    });
+
+    it('should count unique URLs from mixed site and forms data', () => {
+      // Arrange
+      const data = {
+        overall: { violations: { total: 15 } },
+        'https://example.com/page1': { violations: { total: 5 } },
+        'https://example.com/page1?source=contact-form': { violations: { total: 3 } },
+        'https://example.com/page1?source=newsletter-form': { violations: { total: 2 } },
+        'https://example.com/page2': { violations: { total: 4 } },
+        'https://example.com/page2?source=feedback-form': { violations: { total: 1 } },
+        'https://example.com/page3': { violations: { total: 3 } },
+      };
+
+      // Act
+      const result = getUniqueUrlCount(data);
+
+      // Assert
+      expect(result).to.equal(3); // page1 (site + 2 forms), page2 (site + 1 form), page3
+    });
+
+    it('should handle data with only overall key', () => {
+      // Arrange
+      const data = {
+        overall: { violations: { total: 0 } },
+      };
+
+      // Act
+      const result = getUniqueUrlCount(data);
+
+      // Assert
+      expect(result).to.equal(0); // No URLs, only overall summary
+    });
+
+    it('should handle data with malformed composite keys', () => {
+      // Arrange
+      const data = {
+        overall: { violations: { total: 5 } },
+        'https://example.com/page1?source=': { violations: { total: 3 } }, // Empty form source
+        'https://example.com/page2?source=form1': { violations: { total: 2 } },
+        'https://example.com/page3': { violations: { total: 1 } },
+      };
+
+      // Act
+      const result = getUniqueUrlCount(data);
+
+      // Assert
+      expect(result).to.equal(3); // page1, page2, page3 (malformed key still counts as page1)
+    });
+
+    it('should handle data with complex form source identifiers', () => {
+      // Arrange
+      const data = {
+        overall: { violations: { total: 10 } },
+        'https://example.com/page1?source=contact-form-v2': { violations: { total: 5 } },
+        'https://example.com/page1?source=newsletter-signup-form': { violations: { total: 3 } },
+        'https://example.com/page2?source=user-registration-form': { violations: { total: 2 } },
+        'https://example.com/page3?source=checkout-form-step1': { violations: { total: 1 } },
+      };
+
+      // Act
+      const result = getUniqueUrlCount(data);
+
+      // Assert
+      expect(result).to.equal(3); // page1 (2 forms), page2, page3
     });
   });
 });

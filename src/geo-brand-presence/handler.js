@@ -37,18 +37,25 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     auditContext, log, sqs, env, site, audit, s3Client,
   } = context;
 
-  log.info('GEO BRAND PRESENCE: sending data to mystique');
-  const { calendarWeek, parquetFiles } = auditContext ?? /* c8 ignore next */ {};
+  const siteId = site.getId();
+  const baseURL = site.getBaseURL();
+
+  const { calendarWeek, parquetFiles, success } = auditContext ?? /* c8 ignore next */ {};
   /* c8 ignore start */
+  if (success === false) {
+    log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
+  }
   if (!calendarWeek || typeof calendarWeek !== 'object' || !calendarWeek.week || !calendarWeek.year) {
-    log.error('GEO BRAND PRESENCE: Invalid calendarWeek in auditContext. Cannot send data to Mystique', auditContext);
+    log.error('GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
     return;
   }
   if (!Array.isArray(parquetFiles) || !parquetFiles.every((x) => typeof x === 'string')) {
-    log.error('GEO BRAND PRESENCE: Invalid parquetFiles in auditContext. Cannot send data to Mystique', auditContext);
+    log.error('GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
     return;
   }
   /* c8 ignore stop */
+
+  log.info('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s)', siteId, baseURL);
 
   const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
   const recordSets = await Promise.all(
@@ -60,20 +67,20 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
   }
 
-  log.info('GEO BRAND PRESENCE: Found %d keyword prompts', prompts.length);
+  log.info('GEO BRAND PRESENCE: Found %d keyword prompts for site id %s (%s)', prompts.length, siteId, baseURL);
   /* c8 ignore next 4 */
   if (prompts.length === 0) {
-    log.info('GEO BRAND PRESENCE: No keyword prompts found, skipping message to mystique');
+    log.warn('GEO BRAND PRESENCE: No keyword prompts found for site id %s (%s), skipping message to mystique', siteId, baseURL);
     return;
   }
 
   const url = await asPresignedJsonUrl(prompts, bucket, { ...context, getPresignedUrl });
-  log.info('GEO BRAND PRESENCE: Presigned URL for prompts: %s', url);
+  log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
   await Promise.all(OPPTY_TYPES.map(async (opptyType) => {
     const message = {
       type: opptyType,
-      siteId: site.getId(),
-      url: site.getBaseURL(),
+      siteId,
+      url: baseURL,
       auditId: audit.getId(),
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
@@ -82,7 +89,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       data: { url },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info('GEO BRAND PRESENCE: %s Message sent to Mystique:', opptyType, message);
+    log.info('GEO BRAND PRESENCE: %s Message sent to Mystique for site id %s (%s):', opptyType, siteId, baseURL, message);
   }));
 }
 
@@ -123,7 +130,7 @@ async function asPresignedJsonUrl(data, bucketName, context) {
   return getPresignedUrl(
     s3Client,
     new GetObjectCommand({ Bucket: bucketName, Key: key }),
-    { expiresIn: 10_800 /* seconds, 3h */ },
+    { expiresIn: 86_400 /* seconds, 24h */ },
   );
 }
 

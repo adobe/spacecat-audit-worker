@@ -129,7 +129,6 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
         description: data.description,
       },
     }),
-    log,
   });
 
   return { ...auditData };

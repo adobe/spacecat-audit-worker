@@ -369,7 +369,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         recommendedAction: suggestion.recommendedAction,
       },
     }),
-    log,
   });
 
   log.info(`Hreflang opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);

@@ -36,6 +36,7 @@ describe('CDN Logs Report Audit', () => {
     databaseName: 'test_db',
     tableName: 'test_table',
     customerName: 'test_customer',
+    bucket: 'test-bucket',
     getAthenaTempLocation: () => 's3://temp-location',
   });
 
@@ -61,6 +62,9 @@ describe('CDN Logs Report Audit', () => {
         helixContent: {
           write: mockHelixWrite,
         },
+        s3Client: {
+          send: sandbox.stub().resolves(),
+        },
       })
       .build();
 
@@ -68,6 +72,7 @@ describe('CDN Logs Report Audit', () => {
       databaseName: 'test_db',
       tableName: 'test_table',
       customerName: 'test_customer',
+      bucket: 'test-bucket',
       getAthenaTempLocation: () => 's3://temp-location',
     });
 
@@ -121,5 +126,18 @@ describe('CDN Logs Report Audit', () => {
     expect(result.auditResult.database).to.equal('test_db');
     expect(result.auditResult.customer).to.equal('test_customer');
     expect(result.fullAuditRef).to.include('test_customer');
+  });
+
+  it('returns error when S3 bucket is not accessible', async () => {
+    context.s3Client.send.rejects(new Error('AccessDenied: Bucket not accessible'));
+
+    const result = await runCdnLogsReport('https://example.com', context, site);
+
+    expect(context.log.error).to.have.been.calledWith('S3 bucket test-bucket is not accessible: AccessDenied: Bucket not accessible');
+    expect(result.auditResult.success).to.be.false;
+    expect(result.auditResult.error).to.include('S3 bucket test-bucket is not accessible');
+    expect(result.auditResult.customer).to.equal('test_customer');
+    expect(result.fullAuditRef).to.equal('https://example.com');
+    expect(context.log.info).to.not.have.been.calledWith('Running weekly report...');
   });
 });
