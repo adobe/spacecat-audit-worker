@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: 'false'
       - name: Setup Node & NPM
@@ -41,7 +41,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: 'false'
 
@@ -70,7 +70,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: 'false'
 
@@ -95,7 +95,7 @@ jobs:
     if: github.ref != 'refs/heads/main'
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: 'false'
 
