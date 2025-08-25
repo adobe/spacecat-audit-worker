@@ -12,7 +12,7 @@
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
-import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
+import { addAltTextSuggestions, getProjectedMetrics, clearAltTextSuggestions } from './opportunityHandler.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
@@ -83,6 +83,18 @@ export default async function handler(message, context) {
     return ok();
   } else {
     processedSuggestionIds.add(messageId);
+  }
+
+  // Check if this is the first response for this audit run
+  const isFirstResponse = (existingData.mystiqueResponsesReceived || 0) === 0;
+  if (isFirstResponse) {
+    log.info(`[${AUDIT_TYPE}]: First response received - clearing old suggestions`);
+    await clearAltTextSuggestions({ opportunity: altTextOppty, log });
+
+    // Reset metrics for fresh start
+    existingData.projectedTrafficLost = 0;
+    existingData.projectedTrafficValue = 0;
+    existingData.decorativeImagesCount = 0;
   }
 
   // Map Mystique suggestions
