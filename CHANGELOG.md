@@ -1,3 +1,10 @@
+## [1.157.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.2...v1.157.3) (2025-08-25)
+
+
+### Bug Fixes
+
+* enhance canonical checks ([#1136](https://github.com/adobe/spacecat-audit-worker/issues/1136)) ([808284c](https://github.com/adobe/spacecat-audit-worker/commit/808284c3599d0e9c5777a13e1dd79793cc97dd43))
+
 ## [1.157.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.1...v1.157.2) (2025-08-23)
 
 
