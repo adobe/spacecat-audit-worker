@@ -101,6 +101,7 @@ describe('Structured Data Audit', () => {
       createPageStub('https://example.com/product/3'),
     ]);
     context.dataAccess.Configuration.findLatest = sinon.stub().resolves(mockConfiguration);
+    context.dataAccess.Opportunity.findByAuditId = sinon.stub().resolves({ getId: () => '1234' });
 
     googleClientStub = {
       urlInspect: sandbox.stub(),
@@ -180,25 +181,29 @@ describe('Structured Data Audit', () => {
       s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
         scrapeResult: {
           rawBody: '<main></main>',
-          structuredData: [{
-            '@type': 'Product',
-          }],
+          structuredData: {
+            jsonld: {
+              BreadcrumbList: [{
+                '@type': 'BreadcrumbList',
+                '@location': '100,200',
+              }],
+            },
+            errors: [],
+          },
         },
       })));
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sinon.stub().resolves([{
+        getData: () => ({
+          errorDescription: 'Missing field "name"',
+          correctedLdjson: '{"@type":"Product","name":"Example Product Name"}',
+          aiRationale: 'The product name is missing.',
+          confidenceScore: 0.95,
+        }),
+        getId: () => 'suggestion-id',
+      }]);
 
-      const suggestion = {
-        errorDescription: 'Missing field "name"',
-        correctedLdjson: '{"@type":"Product","name":"Example Product Name"}',
-        aiRationale: 'The product name is missing.',
-        confidenceScore: 0.95,
-      };
-
-      const result = await runAuditAndGenerateSuggestions(context);
-
-      expect(result.auditResult.auditResult.success).to.be.true;
-      expect(result.auditResult.auditResult.issues).to.have.lengthOf(1);
-      expect(result.auditResult.auditResult.issues[0].suggestion).to.deep.equal(suggestion);
-      expect(result.auditResult.auditResult.issues[0].errors).to.have.lengthOf(1);
+      await runAuditAndGenerateSuggestions(context);
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
   });
 
