@@ -230,7 +230,7 @@ async function getLangFromScrape(s3Client, bucketName, s3BucketPrefix, pathname,
 }
 
 function isImportEnabled(importType, imports) {
-  return imports.find((importConfig) => importConfig.type === importType)?.enabled;
+  return imports?.find((importConfig) => importConfig.type === importType)?.enabled;
 }
 
 export async function organicKeywordsStep(context) {
@@ -245,7 +245,9 @@ export async function organicKeywordsStep(context) {
   const urls = getHighOrganicLowCtrOpportunity(auditResult.experimentationOpportunities)
     .map((oppty) => oppty.page);
   log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
-  const imports = site.getConfig().getImports();
+  const siteConfig = site.getConfig();
+  const imports = siteConfig?.getImports() || [];
+  log.info(`Site config exists: ${!!siteConfig}, imports count: ${imports.length}`);
   if (!isImportEnabled(IMPORT_ORGANIC_KEYWORDS, imports)) {
     log.info(`Enabling ${IMPORT_ORGANIC_KEYWORDS} for site ${site.getId()}`);
     await toggleImport(site, IMPORT_ORGANIC_KEYWORDS, true, log);
