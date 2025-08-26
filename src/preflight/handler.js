@@ -263,7 +263,7 @@ export const preflightAudit = async (context) => {
       },
     }));
 
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. ${JSON.stringify(resultWithProfiling)}`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. resultWithProfiling: ${JSON.stringify(resultWithProfiling)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const anyProcessing = (handlerResults || []).some((r) => r && r.processing === true);
