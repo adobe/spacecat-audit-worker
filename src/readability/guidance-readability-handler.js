@@ -40,7 +40,7 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const {
-    Opportunity, Site, Audit, AsyncJob,
+    Opportunity, Site, AsyncJob,
   } = dataAccess;
   const {
     auditId, siteId, data, id: messageId,
@@ -49,16 +49,26 @@ export default async function handler(message, context) {
 
   log.info(`[read-suggest]: Received Mystique guidance for readability: ${JSON.stringify(message, null, 2)}`);
 
-  // Validate audit exists
-  const audit = await Audit.findById(auditId);
-  if (!audit) {
-    log.warn(`[read-suggest]: No audit found for auditId: ${auditId}`);
-    return notFound();
-  }
+  // For preflight audits, auditId is actually a jobId (AsyncJob ID), not an Audit entity ID
+  // We'll validate the AsyncJob exists later when we try to update it
+  log.info(`[read-suggest]: Processing guidance for auditId: ${auditId} (AsyncJob ID), siteId: ${siteId}`);
+
   const site = await Site.findById(siteId);
+  if (!site) {
+    log.error(`[read-suggest]: Site not found for siteId: ${siteId}`);
+    return notFound('Site not found');
+  }
   const auditUrl = site.getBaseURL();
 
   log.info(`[read-suggest]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
+
+  // Validate that the AsyncJob (preflight job) exists
+  const asyncJob = await AsyncJob.findById(auditId);
+  if (!asyncJob) {
+    log.error(`[read-suggest]: AsyncJob not found for auditId: ${auditId}. This may indicate the preflight job was deleted or expired.`);
+    return notFound('AsyncJob not found');
+  }
+  log.info(`[read-suggest]: Found AsyncJob with status: ${asyncJob.getStatus()}`);
 
   let readabilityOppty;
   try {
@@ -165,8 +175,7 @@ export default async function handler(message, context) {
       log.info(`[read-suggest]: All ${updatedOpportunityData.mystiqueResponsesExpected} `
         + `Mystique responses received. Updating AsyncJob ${auditId} to COMPLETED.`);
 
-      // Find the AsyncJob (auditId is the jobId for preflight audits)
-      const asyncJob = await AsyncJob.findById(auditId);
+      // Use the AsyncJob we already validated earlier
       if (asyncJob) {
         // Get current job result
         const currentResult = asyncJob.getResult() || [];
@@ -234,9 +243,6 @@ export default async function handler(message, context) {
 
         log.info(`[read-suggest]: Successfully updated AsyncJob ${auditId} `
           + 'with completed readability suggestions');
-      } else {
-        log.warn(`[read-suggest]: AsyncJob ${auditId} not found when trying to update `
-          + 'with completed suggestions');
       }
     } catch (error) {
       log.error(`[read-suggest]: Error updating AsyncJob ${auditId} with completed suggestions: `
