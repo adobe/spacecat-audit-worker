@@ -192,7 +192,7 @@ export default async function handler(message, context) {
                     const suggestionData = matchingSuggestion.getData();
                     const recommendation = suggestionData.data?.recommendations?.[0] || {};
 
-                    return {
+                    const updatedOpportunity = {
                       ...opportunity,
                       suggestionStatus: 'completed',
                       suggestionMessage: 'AI-powered readability improvement '
@@ -207,6 +207,10 @@ export default async function handler(message, context) {
                       aiRationale: recommendation.aiRationale,
                       mystiqueProcessingCompleted: new Date().toISOString(),
                     };
+
+                    log.info(`[read-suggest]: Updated opportunity with Mystique suggestions: ${JSON.stringify(updatedOpportunity, null, 2)}`);
+
+                    return updatedOpportunity;
                   }
 
                   return opportunity;
