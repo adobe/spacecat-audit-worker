@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.157.3",
+  "version": "1.157.6",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -43,7 +43,6 @@
     "static": [
       "static/prompts/broken-backlinks.prompt",
       "static/prompts/broken-backlinks-followup.prompt",
-      "static/prompts/structured-data-suggest.prompt",
       "static/schemaorg-current-https.jsonld",
       "src/cdn-analysis/sql",
       "src/cdn-logs-report/sql",
@@ -79,9 +78,9 @@
     "@adobe/spacecat-shared-athena-client": "1.3.0",
     "@adobe/spacecat-shared-data-access": "2.57.0",
     "@adobe/spacecat-shared-google-client": "1.4.41",
-    "@adobe/spacecat-shared-gpt-client": "1.5.20",
+    "@adobe/spacecat-shared-gpt-client": "1.5.21",
     "@adobe/spacecat-shared-http-utils": "1.16.0",
-    "@adobe/spacecat-shared-rum-api-client": "2.36.4",
+    "@adobe/spacecat-shared-rum-api-client": "2.36.5",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-utils": "1.48.0",
     "@adobe/structured-data-validator": "1.5.0",
