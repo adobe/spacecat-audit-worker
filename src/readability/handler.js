@@ -75,27 +75,28 @@ async function checkForExistingSuggestions(
           // Find matching suggestion by original text
           const matchingSuggestion = suggestions.find((suggestion) => {
             const suggestionData = suggestion.getData();
-            const { originalText } = suggestionData;
-            return originalText === opportunity.textContent;
+            const recommendation = suggestionData.data?.recommendations?.[0];
+            return recommendation?.originalText === opportunity.textContent;
           });
 
           if (matchingSuggestion) {
             const suggestionData = matchingSuggestion.getData();
-            const improvedScore = suggestionData.improvedFleschScore;
-            const originalScore = suggestionData.originalFleschScore
+            const recommendation = suggestionData.data?.recommendations?.[0];
+            const improvedScore = recommendation?.improvedFleschScore;
+            const originalScore = recommendation?.originalFleschScore
               || opportunity.fleschReadingEase;
 
             audit.opportunities[index] = {
               ...opportunity,
               suggestionStatus: 'completed',
               suggestionMessage: 'AI-powered readability improvement generated successfully.',
-              // originalText: suggestionData.originalText,
-              improvedText: suggestionData.improvedText,
+              // originalText: recommendation.originalText,
+              improvedText: recommendation?.improvedText,
               // originalFleschScore: originalScore,
               improvedFleschScore: improvedScore,
               readabilityImprovement: improvedScore - originalScore,
-              aiSuggestion: suggestionData.seoRecommendation,
-              aiRationale: suggestionData.aiRationale,
+              aiSuggestion: recommendation?.seoRecommendation,
+              aiRationale: recommendation?.aiRationale,
               mystiqueProcessingCompleted: suggestionData.lastMystiqueResponse
                 || new Date().toISOString(),
             };

@@ -189,17 +189,29 @@ export default async function handler(message, context) {
                 const allSuggestions = await readabilityOppty.getSuggestions();
 
                 // Update opportunities with suggestion data
+                log.info(`[read-suggest]: Processing ${auditItem.opportunities.length} readability opportunities for AsyncJob update`);
                 const updatedOpportunities = auditItem.opportunities.map((opportunity) => {
+                  log.info(`[read-suggest]: Looking for suggestion matching opportunity text: "${opportunity.textContent?.substring(0, 80)}..."`);
+                  log.info(`[read-suggest]: Found ${allSuggestions.length} stored suggestions`);
+
                   const matchingSuggestion = allSuggestions.find((suggestion) => {
                     const suggestionData = suggestion.getData();
-                    const recommendations = suggestionData.data?.recommendations || [];
-                    return recommendations.some((rec) => rec.originalText
-                      === opportunity.textContent);
+                    log.info(`[read-suggest]: Checking suggestion with data: ${JSON.stringify(suggestionData, null, 2)}`);
+
+                    // All suggestions are stored as { data: { recommendations: [suggestion] } }
+                    const recommendation = suggestionData.data?.recommendations?.[0];
+                    if (recommendation) {
+                      log.info(`[read-suggest]: Comparing "${recommendation.originalText?.substring(0, 80)}..."`
+                          + ` vs "${opportunity.textContent?.substring(0, 80)}..."`);
+                      return recommendation.originalText === opportunity.textContent;
+                    }
+                    return false;
                   });
 
                   if (matchingSuggestion) {
                     const suggestionData = matchingSuggestion.getData();
-                    const recommendation = suggestionData.data?.recommendations?.[0] || {};
+                    // All suggestions use the standard format
+                    const recommendation = suggestionData.data.recommendations[0];
 
                     const updatedOpportunity = {
                       ...opportunity,
@@ -220,6 +232,8 @@ export default async function handler(message, context) {
                     log.info(`[read-suggest]: Updated opportunity with Mystique suggestions: ${JSON.stringify(updatedOpportunity, null, 2)}`);
 
                     return updatedOpportunity;
+                  } else {
+                    log.warn(`[read-suggest]: No matching suggestion found for opportunity: "${opportunity.textContent?.substring(0, 80)}..."`);
                   }
 
                   return opportunity;
