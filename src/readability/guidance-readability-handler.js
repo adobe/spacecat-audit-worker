@@ -30,7 +30,7 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
       improvedText: suggestion.improved_paragraph,
       originalFleschScore: suggestion.current_flesch_score,
       improvedFleschScore: suggestion.improved_flesch_score,
-      aiSuggestion: suggestion.seo_recommendation,
+      seoRecommendation: suggestion.seo_recommendation,
       aiRationale: suggestion.ai_rationale,
       targetFleschScore: suggestion.target_flesch_score,
     };
@@ -98,7 +98,7 @@ export default async function handler(message, context) {
       improvedText: data.improved_paragraph,
       originalFleschScore: data.current_flesch_score,
       improvedFleschScore: data.improved_flesch_score,
-      aiSuggestion: data.seo_recommendation,
+      seoRecommendation: data.seo_recommendation,
       aiRationale: data.ai_rationale,
       targetFleschScore: data.target_flesch_score,
     });
@@ -197,13 +197,13 @@ export default async function handler(message, context) {
                       suggestionStatus: 'completed',
                       suggestionMessage: 'AI-powered readability improvement '
                         + 'generated successfully. DOGADOGADOGA',
-                      originalText: recommendation.originalText,
+                      // originalText: recommendation.originalText,
                       improvedText: recommendation.improvedText,
-                      originalFleschScore: opportunity.fleschReadingEase,
+                      // originalFleschScore: opportunity.fleschReadingEase,
                       improvedFleschScore: recommendation.improvedFleschScore,
                       readabilityImprovement: recommendation.improvedFleschScore
                         - (recommendation.originalFleschScore || opportunity.fleschReadingEase),
-                      aiSuggestion: recommendation.aiSuggestion,
+                      aiSuggestion: recommendation.seoRecommendation,
                       aiRationale: recommendation.aiRationale,
                       mystiqueProcessingCompleted: new Date().toISOString(),
                     };
