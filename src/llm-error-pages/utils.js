@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStaticContent, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { getStaticContent } from '@adobe/spacecat-shared-utils';
 
 // ============================================================================
 // CONSTANTS
@@ -36,9 +36,6 @@ const REGEX_PATTERNS = {
 };
 
 const CDN_LOGS_PREFIX = 'cdn-logs-';
-
-const VALIDATION_TIMEOUT = 10000; // 10 seconds
-const MAX_CONCURRENT_VALIDATIONS = 20;
 
 // ============================================================================
 // LLM USER AGENT UTILITIES
@@ -125,10 +122,13 @@ function buildWhereClause(conditions = [], llmProviders = null, siteFilters = []
     allConditions.push(siteFilters);
   }
 
-  return allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : '';
+  // Error status filter - get all error status codes (400-599)
+  allConditions.push('status BETWEEN 400 AND 599');
+
+  return `WHERE ${allConditions.join(' AND ')}`;
 }
 
-export async function buildLlmErrorPagesQuery(options) {
+export function buildLlmErrorPagesQuery(options) {
   const {
     databaseName,
     tableName,
@@ -144,9 +144,6 @@ export async function buildLlmErrorPagesQuery(options) {
   if (startDate && endDate) {
     conditions.push(buildDateFilter(startDate, endDate));
   }
-
-  // Error status filter - get all error status codes (400-599)
-  conditions.push('status BETWEEN 400 AND 599');
 
   const whereClause = buildWhereClause(conditions, llmProviders, siteFilters);
 
@@ -187,21 +184,6 @@ export function getS3Config(site) {
     tableName: `aggregated_logs_${customerDomain}`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
   };
-}
-
-export async function validateDatabaseAndTable(athenaClient, s3Config, log) {
-  const { tableName, databaseName } = s3Config;
-
-  try {
-    const validationQuery = `SELECT 1 FROM ${databaseName}.${tableName} LIMIT 1`;
-    log.debug(`Validating database and table: ${databaseName}.${tableName}`);
-
-    await athenaClient.query(validationQuery, databaseName, `[Athena Query] Validate ${databaseName}.${tableName}`);
-    log.info('Database and table validated successfully');
-  } catch (error) {
-    const errorMessage = `Database '${databaseName}' or table '${tableName}' does not exist: ${error.message}`;
-    throw new Error(errorMessage);
-  }
 }
 
 // ============================================================================
@@ -340,7 +322,7 @@ export function processErrorPagesResults(results) {
     // eslint-disable-next-line no-param-reassign
     row.total_requests = Number.isNaN(totalRequestsParsed) ? 0 : totalRequestsParsed;
     const status = row.status || 'Unknown';
-    statusCodes[status] = (statusCodes[status] || 0) + totalRequestsParsed;
+    statusCodes[status] = (statusCodes[status] || 0) + row.total_requests;
     uniqueUrls.add(row.url);
     uniqueUserAgents.add(row.user_agent);
   });
@@ -424,117 +406,4 @@ export function consolidateErrorsByUrl(errors) {
  */
 export function sortErrorsByTrafficVolume(errors) {
   return errors.sort((a, b) => b.totalRequests - a.totalRequests);
-}
-
-// ============================================================================
-// URL VALIDATION UTILITIES
-// ============================================================================
-
-/**
- * Validates a single URL with simple status consistency check
- * @param {Object} error - Error object with url, userAgent, rawUserAgents, status
- * @param {Object} log - Logger instance
- * @returns {Promise<Object|null>} - Validated error object or null if invalid
- */
-export async function validateSingleUrl(error, log) {
-  const {
-    url, userAgent, rawUserAgents, status,
-  } = error;
-
-  try {
-    const testUserAgent = rawUserAgents[0]; // Use first raw user agent
-
-    // For 403 errors, check if it's universally blocked
-    if (status === '403') {
-      const simpleResponse = await fetch(url, { timeout: VALIDATION_TIMEOUT });
-      if (simpleResponse.status === 403) {
-        log.debug(`URL ${url} returns 403 even with simple GET - universally blocked, excluding`);
-        return null; // Exclude universal 403s
-      }
-    }
-
-    // Test with LLM user agent to verify status consistency
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'User-Agent': testUserAgent,
-      },
-      timeout: VALIDATION_TIMEOUT,
-    });
-
-    // Status consistency check - remove if status changed
-    if (response.status.toString() !== status) {
-      log.debug(`URL ${url} status mismatch - expected ${status}, got ${response.status} - removing`);
-      return null;
-    }
-
-    // URL passed validation
-    log.debug(`URL ${url} validated successfully - ${userAgent} status ${status}`);
-    return {
-      ...error,
-      validatedAt: new Date().toISOString(),
-    };
-  } catch (validationError) {
-    // Network errors, timeouts, etc. - still include in opportunities
-    log.warn(`Validation failed for ${url} (${userAgent}): ${validationError.message} - including anyway`);
-    return {
-      ...error,
-      validatedAt: new Date().toISOString(),
-      validationError: validationError.message,
-    };
-  }
-}
-
-/**
- * Validates URLs in batches with concurrency control
- * @param {Array} errors - Array of error objects to validate
- * @param {Object} log - Logger instance
- * @returns {Promise<Array>} - Array of validated error objects
- */
-export async function validateUrlsBatch(errors, log) {
-  log.info(`Starting URL validation for ${errors.length} URLs`);
-
-  const validatedUrls = [];
-
-  // Create batch processing promises to avoid await-in-loop
-  const batchPromises = [];
-  for (let i = 0; i < errors.length; i += MAX_CONCURRENT_VALIDATIONS) {
-    const batch = errors.slice(i, i + MAX_CONCURRENT_VALIDATIONS);
-    const batchIndex = Math.floor(i / MAX_CONCURRENT_VALIDATIONS) + 1;
-    const totalBatches = Math.ceil(errors.length / MAX_CONCURRENT_VALIDATIONS);
-
-    log.info(`Preparing validation batch ${batchIndex}/${totalBatches} (${batch.length} URLs)`);
-
-    // Create promise for this batch
-    const batchPromise = Promise.allSettled(
-      batch.map((error) => validateSingleUrl(error, log)),
-    ).then((batchResults) => ({
-      batchIndex,
-      batch,
-      results: batchResults,
-    }));
-
-    batchPromises.push(batchPromise);
-  }
-
-  // Process all batches
-  const allBatchResults = await Promise.allSettled(batchPromises);
-
-  // Collect valid results from all batches
-  allBatchResults.forEach((batchResult) => {
-    if (batchResult.status === 'fulfilled') {
-      const { batchIndex, results } = batchResult.value;
-      log.info(`Processing results for batch ${batchIndex} (${results.length} URLs)`);
-
-      results.forEach((result) => {
-        if (result.status === 'fulfilled' && result.value !== null) {
-          validatedUrls.push(result.value);
-        }
-      });
-    } else {
-      log.error(`Batch processing failed: ${batchResult.reason}`);
-    }
-  });
-  log.info(`URL validation complete: ${validatedUrls.length}/${errors.length} URLs passed validation`);
-  return validatedUrls;
 }

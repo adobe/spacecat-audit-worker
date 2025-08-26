@@ -34,7 +34,7 @@ export async function createOpportunityForErrorCategory(
   context,
 ) {
   const {
-    log, sqs, env, site, dataAccess,
+    log, sqs, env, site, dataAccess, audit,
   } = context;
   const { Opportunity } = dataAccess;
 
@@ -68,7 +68,7 @@ export async function createOpportunityForErrorCategory(
       // Create new opportunity
       const opportunityData = {
         siteId,
-        auditId: context.auditId,
+        auditId: audit?.getId(),
         runbook: opportunityInstance.runbook,
         type: 'llm-error-pages',
         origin: opportunityInstance.origin,
@@ -109,7 +109,7 @@ export async function createOpportunityForErrorCategory(
 
     if (suggestionsToRemove.length > 0) {
       log.info(`Removing ${suggestionsToRemove.length} outdated suggestions for ${errorCode} errors`);
-      await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.delete()));
+      await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.remove()));
     }
 
     const suggestionType = errorCode === '404' ? 'REDIRECT_UPDATE' : 'CODE_CHANGE';
@@ -148,14 +148,15 @@ export async function createOpportunityForErrorCategory(
 
     // Send SQS message to Mystique for 404 errors only
     if (errorCode === '404' && sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
+      const top500Errors = errorPages.slice(0, 500);
       const message = {
         type: 'guidance:broken-links',
         siteId: site.getId(),
-        auditId: opportunity.auditId || 'unknown',
+        auditId: audit?.getId() || 'llm-error-pages-audit',
         deliveryType: site?.getDeliveryType?.() || 'aem_edge',
         time: new Date().toISOString(),
         data: {
-          brokenLinks: errorPages.map((errorPage) => ({
+          brokenLinks: top500Errors.map((errorPage) => ({
             urlFrom: errorPage.userAgent,
             urlTo: baseUrl ? `${baseUrl}${errorPage.url}` : errorPage.url,
             suggestionId: `llm-${errorPage.url}-${errorPage.userAgent}`,
@@ -182,10 +183,6 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
   try {
     const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
-
-    // Validate database and table exist
-    /* c8 ignore next */
-    // await validateDatabaseAndTable(athenaClient, s3Config, log);
 
     let startDate;
     let endDate;
