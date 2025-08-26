@@ -15,7 +15,6 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import {
   getS3Config,
   generateReportingPeriods,
-  createDateRange,
   buildSiteFilters,
   processErrorPagesResults,
   buildLlmErrorPagesQuery,
@@ -27,6 +26,9 @@ import {
 import { wwwUrlResolver } from '../common/index.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
+import { validateUrlsBatch } from './utils.js';
+import ExcelJS from 'exceljs';
 
 export async function createOpportunityForErrorCategory(
   errorCode,
@@ -187,22 +189,11 @@ async function runLlmErrorPagesAudit(url, context, site) {
     let startDate;
     let endDate;
     let periodIdentifier;
-
-    // Handle date range - custom dates or default to previous week
-    if (message.startDate && message.endDate) {
-      const parsedRange = createDateRange(message.startDate, message.endDate);
-      startDate = parsedRange.startDate;
-      endDate = parsedRange.endDate;
-      periodIdentifier = `${message.startDate}_to_${message.endDate}`;
-      log.info(`Running custom date range audit: ${message.startDate} to ${message.endDate}`);
-    } else {
-      // Default to previous week
-      const week = generateReportingPeriods().weeks[0];
-      startDate = week.startDate;
-      endDate = week.endDate;
-      periodIdentifier = `w${week.weekNumber}-${week.year}`;
-      log.info(`Running weekly audit for ${periodIdentifier}`);
-    }
+    const week = generateReportingPeriods().weeks[0];
+    startDate = week.startDate;
+    endDate = week.endDate;
+    periodIdentifier = `w${week.weekNumber}-${week.year}`;
+    log.info(`Running weekly audit for ${periodIdentifier}`);
 
     // Get site configuration
     const cdnLogsConfig = site.getConfig()?.getCdnLogsConfig?.() || {};
@@ -232,23 +223,85 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
     const categorizedResults = categorizeErrorsByStatusCode(processedResults.errorPages);
 
-    // Attach site to context for downstream opportunity generation
-    const downstreamContext = { ...context, site };
+    // Prepare SharePoint client and output location
+    const sharepointClient = await createLLMOSharepointClient(context);
+    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
+    const outputLocation = `${llmoFolder}/agentic-traffic`;
 
-    // Process categories in parallel since each has its own opportunity
-    const processingPromises = Object.entries(categorizedResults)
-      .filter(([, errors]) => errors.length > 0)
-      .map(async ([errorCode, errors]) => {
-        try {
-          const consolidatedErrorPages = consolidateErrorsByUrl(errors);
-          const sortedErrors = sortErrorsByTrafficVolume(consolidatedErrorPages);
-          await createOpportunityForErrorCategory(errorCode, sortedErrors, downstreamContext);
-        } catch (error) {
-          log.error(`Failed to process ${errorCode} category: ${error.message}`, error);
-        }
+    const toPathOnly = (maybeUrl) => {
+      try {
+        const parsed = new URL(maybeUrl, site.getBaseURL?.() || 'https://example.com');
+        return parsed.pathname + (parsed.search || '');
+      } catch {
+        return maybeUrl; // already a path
+      }
+    };
+
+    const buildFilename = (code) => `agentictraffic-${periodIdentifier}-${code}-ui.xlsx`;
+
+    const writeCategoryExcel = async (code, errors) => {
+      if (!errors || errors.length === 0) return;
+      const consolidated = consolidateErrorsByUrl(errors);
+      const sorted = sortErrorsByTrafficVolume(consolidated);
+      const validated = await validateUrlsBatch(sorted, log);
+
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('data');
+      sheet.addRow(['User Agent', 'URL', 'Number of Hits', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+      validated.forEach((e) => {
+        sheet.addRow([
+          e.userAgent,
+          toPathOnly(e.url),
+          e.totalRequests,
+          '',
+          '',
+          '',
+        ]);
       });
 
-    await Promise.all(processingPromises);
+      const filename = buildFilename(code);
+      await saveExcelReport({
+        workbook,
+        outputLocation,
+        log,
+        sharepointClient,
+        filename,
+      });
+      log.info(`Uploaded Excel for ${code}: ${filename} (${validated.length} rows)`);
+    };
+
+    // Generate and upload Excel files for each category
+    await Promise.all([
+      writeCategoryExcel('404', categorizedResults[404]),
+      writeCategoryExcel('403', categorizedResults[403]),
+      writeCategoryExcel('5xx', categorizedResults['5xx']),
+    ]);
+
+    // Send SQS message to Mystique for 404 errors only (no DB dependencies)
+    const errors404 = categorizedResults[404] || [];
+    if (errors404.length > 0 && context.sqs && context.env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
+      const baseUrl = site.getBaseURL?.() || '';
+      const consolidated404 = consolidateErrorsByUrl(errors404);
+      const sorted404 = sortErrorsByTrafficVolume(consolidated404);
+      const validated404 = await validateUrlsBatch(sorted404, log);
+      const messagePayload = {
+        type: 'guidance:broken-links',
+        siteId: site.getId(),
+        auditId: context.auditId || 'unknown',
+        deliveryType: site?.getDeliveryType?.() || 'aem_edge',
+        time: new Date().toISOString(),
+        periodIdentifier,
+        llmoFolder,
+        data: {
+          brokenLinks: validated404.map((e) => ({
+            urlFrom: e.userAgent,
+            urlTo: baseUrl ? `${baseUrl}${toPathOnly(e.url)}` : toPathOnly(e.url),
+          })),
+        },
+      };
+      await context.sqs.sendMessage(context.env.QUEUE_SPACECAT_TO_MYSTIQUE, messagePayload);
+      log.info(`Queued ${validated404.length} validated 404 URLs to Mystique for AI processing`);
+    }
 
     log.info(`Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
 

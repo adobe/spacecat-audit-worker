@@ -11,6 +11,9 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import ExcelJS from 'exceljs';
+import { createLLMOSharepointClient } from '../utils/report-uploader.js';
+import { generateReportingPeriods } from './utils.js';
 
 /**
  * Handles Mystique responses for LLM error pages and updates suggestions with AI data
@@ -20,13 +23,11 @@ import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
+  const { Site } = dataAccess;
+  const { siteId, periodIdentifier: inputPeriodIdentifier, llmoFolder: inputLlmoFolder, data } = message;
   const {
-    Audit, Suggestion, Site, Opportunity,
-  } = dataAccess;
-  const { auditId, siteId, data } = message;
-  const {
-    suggestedUrls, aiRationale, confidenceScore, opportunityId,
-    brokenUrl, userAgent, statusCode, totalRequests,
+    suggestedUrls = [], aiRationale = '', confidenceScore = 0,
+    brokenUrl, userAgent,
   } = data;
 
   log.info(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
@@ -38,49 +39,90 @@ export default async function handler(message, context) {
     return notFound('Site not found');
   }
 
-  // Validate audit exists
-  const audit = await Audit.findById(auditId);
-  if (!audit) {
-    log.warn(`No audit found for auditId: ${auditId}`);
-    return notFound('Audit not found');
+  // Read-modify-write the weekly 404 Excel file in SharePoint
+  try {
+    const sharepointClient = await createLLMOSharepointClient(context);
+    const week = generateReportingPeriods().weeks[0];
+    const derivedPeriod = `w${week.weekNumber}-${week.year}`;
+    const periodId = inputPeriodIdentifier || derivedPeriod;
+    const folderName = inputLlmoFolder || site.getConfig()?.getLlmoDataFolder?.() || site.getBaseURL();
+    const outputLocation = `${folderName}/agentic-traffic`;
+    const filename = `agentictraffic-${periodId}-404-ui.xlsx`;
+    const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
+
+    const doc = sharepointClient.getDocument(documentPath);
+    let workbook = new ExcelJS.Workbook();
+    let sheet;
+    try {
+      const existingBuffer = await doc.downloadRawDocument();
+      await workbook.xlsx.load(existingBuffer);
+      sheet = workbook.worksheets[0] || workbook.addWorksheet('data');
+    } catch {
+      // If file doesn't exist yet, create a new workbook and sheet with headers
+      workbook = new ExcelJS.Workbook();
+      sheet = workbook.addWorksheet('data');
+      sheet.addRow(['User Agent', 'URL', 'Number of Hits', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+    }
+
+    const headers = ['User Agent', 'URL', 'Number of Hits', 'Suggested URLs', 'AI Rationale', 'Confidence score'];
+    if (sheet.rowCount === 0) {
+      sheet.addRow(headers);
+    }
+
+    const toPathOnly = (maybeUrl) => {
+      try {
+        const parsed = new URL(maybeUrl, site.getBaseURL?.() || 'https://example.com');
+        return parsed.pathname + (parsed.search || '');
+      } catch {
+        return maybeUrl;
+      }
+    };
+
+    const keyUa = userAgent;
+    const keyUrl = toPathOnly(brokenUrl);
+
+    // Suggested URLs newlines
+    const suggested = suggestedUrls.join('\n');
+
+    // Try to find existing row and update it; otherwise append with empty hits
+    let updated = false;
+    for (let i = 2; i <= sheet.rowCount; i += 1) {
+      const uaCell = sheet.getCell(i, 1).value?.toString?.() || '';
+      const urlCell = sheet.getCell(i, 2).value?.toString?.() || '';
+      if (uaCell === keyUa && urlCell === keyUrl) {
+        const hitsCell = sheet.getCell(i, 3).value || '';
+        sheet.getRow(i).values = [
+          ,
+          keyUa,
+          keyUrl,
+          hitsCell, // preserve existing number of hits
+          suggested,
+          aiRationale,
+          confidenceScore,
+        ];
+        updated = true;
+        break;
+      }
+    }
+    if (!updated) {
+      sheet.addRow([
+        keyUa,
+        keyUrl,
+        '', // hits unknown in guidance stage
+        suggested,
+        aiRationale,
+        confidenceScore,
+      ]);
+    }
+
+    // Overwrite the file
+    const buffer = await workbook.xlsx.writeBuffer();
+    await doc.uploadRawDocument(buffer);
+    log.info(`Updated Excel 404 file with Mystique guidance: ${filename}`);
+  } catch (e) {
+    log.error(`Failed to update 404 Excel on Mystique callback: ${e.message}`);
+    return badRequest('Failed to persist guidance');
   }
-
-  // Validate opportunity exists
-  const opportunity = await Opportunity.findById(opportunityId);
-  if (!opportunity) {
-    log.error(`[LLMErrorPagesGuidance] Opportunity not found for ID: ${opportunityId}`);
-    return notFound('Opportunity not found');
-  }
-
-  // Verify the opportunity belongs to the correct site
-  if (opportunity.getSiteId() !== siteId) {
-    const errorMsg = `[LLMErrorPagesGuidance] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
-    log.error(errorMsg);
-    return badRequest('Site ID mismatch');
-  }
-
-  // Create suggestion from Mystique response
-  const suggestionData = {
-    opportunityId,
-    type: 'ERROR_REMEDIATION',
-    rank: confidenceScore || 1, // Use AI confidence score for ranking
-    status: 'NEW',
-    data: {
-      url: brokenUrl,
-      statusCode,
-      userAgent,
-      totalRequests,
-      suggestion: `Fix 404 error for ${brokenUrl} (${userAgent} crawler)`,
-      suggestedUrls: suggestedUrls || [],
-      aiRationale: aiRationale || '',
-      confidenceScore: confidenceScore || 0,
-      suggestionType: 'REDIRECT_URLS',
-      aiProcessedAt: new Date().toISOString(),
-    },
-  };
-
-  const newSuggestion = await Suggestion.create(suggestionData);
-  log.info(`[LLMErrorPagesGuidance] Created new suggestion ${newSuggestion.getId()} for ${brokenUrl}: ${suggestedUrls?.length || 0} suggested URLs, confidence: ${confidenceScore}`);
 
   return ok();
 }
