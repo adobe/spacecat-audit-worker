@@ -23,8 +23,8 @@ export const DEFAULT_COUNTRY_PATTERNS = [
   // Matches countries/regions prefix: /countries/us/, /regions/fr/, https://example.com/country/de/
   { name: 'countries_prefix', regex: '^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)(?:countries?|regions?)/([a-z]{2})(?:/|$)' },
 
-  // Matches language/country format: /en/us/, /fr/fr/, https://example.com/de/de/page
-  { name: 'lang_country', regex: '^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)[a-z]{2}/([a-z]{2})(?:/|$)' },
+  // Matches country/language format: /in/en/, /us/en/, https://example.com/de/en/page
+  { name: 'country_lang', regex: '^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)([a-z]{2})/[a-z]{2}(?:/|$)' },
 
   // Matches 2-letter country codes: /us/, /fr/, /de/, https://example.com/gb/page
   { name: 'path_2letter_full', regex: '^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)?([a-z]{2})(?:/|$)' },
