@@ -188,15 +188,47 @@ export default async function handler(message, context) {
                 // Get all suggestions for this opportunity
                 const allSuggestions = await readabilityOppty.getSuggestions();
 
-                // Update opportunities with suggestion data
-                log.info(`[read-suggest]: Processing ${auditItem.opportunities.length} readability opportunities for AsyncJob update`);
-                const updatedOpportunities = auditItem.opportunities.map((opportunity) => {
-                  log.info(`[read-suggest]: Looking for suggestion matching opportunity text: "${opportunity.textContent?.substring(0, 80)}..."`);
+                // The AsyncJob may have 0 opportunities if cleared during async processing
+                // We need to reconstruct them from the stored suggestions
+                log.info(`[read-suggest]: AsyncJob has ${auditItem.opportunities.length} readability opportunities stored`);
+                log.info(`[read-suggest]: Found ${allSuggestions.length} stored suggestions to use for reconstruction`);
+
+                let opportunitiesToProcess = auditItem.opportunities;
+
+                // If AsyncJob has no opportunities but we have suggestions,
+                // reconstruct from suggestions
+                if (auditItem.opportunities.length === 0 && allSuggestions.length > 0) {
+                  log.info(`[read-suggest]: Reconstructing opportunities from ${allSuggestions.length} stored suggestions`);
+                  opportunitiesToProcess = allSuggestions.map((suggestion) => {
+                    const suggestionData = suggestion.getData();
+                    const recommendation = suggestionData.data?.recommendations?.[0];
+                    if (recommendation) {
+                      return {
+                        check: 'poor-readability',
+                        issue: `Text element is difficult to read: "${recommendation.originalText?.substring(0, 100)}..."`
+                          .replace(/\n/g, ' '),
+                        seoImpact: 'Moderate',
+                        fleschReadingEase: recommendation.originalFleschScore,
+                        textContent: recommendation.originalText,
+                        seoRecommendation: 'Improve readability by using shorter sentences, '
+                          + 'simpler words, and clearer structure',
+                      };
+                    }
+                    return null;
+                  }).filter(Boolean);
+                  log.info(`[read-suggest]: Reconstructed ${opportunitiesToProcess.length} `
+                    + 'opportunities from suggestions');
+                }
+
+                const updatedOpportunities = opportunitiesToProcess.map((opportunity) => {
+                  log.info('[read-suggest]: Looking for suggestion matching opportunity text: '
+                    + `"${opportunity.textContent?.substring(0, 80)}..."`);
                   log.info(`[read-suggest]: Found ${allSuggestions.length} stored suggestions`);
 
                   const matchingSuggestion = allSuggestions.find((suggestion) => {
                     const suggestionData = suggestion.getData();
-                    log.info(`[read-suggest]: Checking suggestion with data: ${JSON.stringify(suggestionData, null, 2)}`);
+                    log.info('[read-suggest]: Checking suggestion with data: '
+                      + `${JSON.stringify(suggestionData, null, 2)}`);
 
                     // All suggestions are stored as { data: { recommendations: [suggestion] } }
                     const recommendation = suggestionData.data?.recommendations?.[0];
