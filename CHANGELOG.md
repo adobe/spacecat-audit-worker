@@ -1,3 +1,24 @@
+## [1.157.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.4...v1.157.5) (2025-08-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.36.5 ([#1162](https://github.com/adobe/spacecat-audit-worker/issues/1162)) ([0078520](https://github.com/adobe/spacecat-audit-worker/commit/00785207cf06e7a4e050ac5e9c8b1e0cbadb44bd))
+
+## [1.157.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.3...v1.157.4) (2025-08-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-gpt-client to v1.5.21 ([#1161](https://github.com/adobe/spacecat-audit-worker/issues/1161)) ([f139ebc](https://github.com/adobe/spacecat-audit-worker/commit/f139ebc8c07bcdf3cf837627147b01454b97bf02))
+
+## [1.157.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.2...v1.157.3) (2025-08-25)
+
+
+### Bug Fixes
+
+* enhance canonical checks ([#1136](https://github.com/adobe/spacecat-audit-worker/issues/1136)) ([808284c](https://github.com/adobe/spacecat-audit-worker/commit/808284c3599d0e9c5777a13e1dd79793cc97dd43))
+
 ## [1.157.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.1...v1.157.2) (2025-08-23)
 
 
