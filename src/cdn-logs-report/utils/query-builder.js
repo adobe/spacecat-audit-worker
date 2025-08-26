@@ -112,7 +112,7 @@ async function createAgenticReportQuery(options) {
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
-  const siteFilters = buildSiteFilters(filters);
+  const siteFilters = buildSiteFilters(filters, site);
 
   const lastWeek = periods.weeks[periods.weeks.length - 1];
   const whereClause = buildWhereClause(
@@ -151,7 +151,7 @@ async function createReferralReportQuery(options) {
   } = options;
 
   const filters = site.getConfig().getLlmoCdnlogsFilter();
-  const siteFilters = buildSiteFilters(filters);
+  const siteFilters = buildSiteFilters(filters, site);
   const lastWeek = periods.weeks[periods.weeks.length - 1];
   const whereClause = buildWhereClauseReferral(
     [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
