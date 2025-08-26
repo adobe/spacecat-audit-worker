@@ -1,3 +1,10 @@
+## [1.157.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.5...v1.157.6) (2025-08-26)
+
+
+### Bug Fixes
+
+* structured data auto-suggest to mystique ([#1126](https://github.com/adobe/spacecat-audit-worker/issues/1126)) ([661a605](https://github.com/adobe/spacecat-audit-worker/commit/661a605dd4dbfa8f578f8b5615f5050f0bd715c7))
+
 ## [1.157.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.4...v1.157.5) (2025-08-25)
 
 
