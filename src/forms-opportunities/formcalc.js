@@ -194,6 +194,8 @@ export function getHighPageViewsLowFormCtrMetrics(formVitalsCollection) {
           CTA: {
             url: maxPageviewUrl.url,
             source: y.source,
+            pageViews: x,
+            clicksOnCTA: y.clicks,
           },
         });
       }

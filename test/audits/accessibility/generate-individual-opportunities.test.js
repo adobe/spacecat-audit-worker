@@ -22,7 +22,6 @@ import {
   formatIssue,
   aggregateAccessibilityIssues,
   createIndividualOpportunity,
-  deleteExistingAccessibilityOpportunities,
   calculateAccessibilityMetrics,
 } from '../../../src/accessibility/utils/generate-individual-opportunities.js';
 import * as constants from '../../../src/accessibility/utils/constants.js';
@@ -1212,7 +1211,7 @@ describe('createIndividualOpportunity', () => {
     await expect(createIndividualOpportunity(opportunityInstance, auditData, mockContext))
       .to.be.rejectedWith('Test error');
     expect(mockContext.log.error).to.have.been.calledWith(
-      'Failed to create new opportunity for siteId test-site and auditId test-audit: Test error',
+      '[A11yProcessingError] Failed to create new opportunity for siteId test-site and auditId test-audit: Test error',
     );
   });
 });
@@ -1252,6 +1251,9 @@ describe('createIndividualOpportunitySuggestions', () => {
         Opportunity: {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
+        },
+        Suggestion: {
+          bulkUpdateStatus: sandbox.stub().resolves(),
         },
         Configuration: {
           findLatest: sandbox.stub().resolves({
@@ -1295,6 +1297,11 @@ describe('createIndividualOpportunitySuggestions', () => {
             {
               type: 'color-contrast',
               occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
             },
           ],
         },
@@ -1305,6 +1312,11 @@ describe('createIndividualOpportunitySuggestions', () => {
             {
               type: 'image-alt',
               occurrences: 3,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-invalid-attr]',
+                },
+              ],
             },
           ],
         },
@@ -1325,7 +1337,6 @@ describe('createIndividualOpportunitySuggestions', () => {
     expect(callArgs.context).to.equal(mockContext);
     expect(callArgs.buildKey).to.be.a('function');
     expect(callArgs.mapNewSuggestion).to.be.a('function');
-    expect(callArgs.log).to.equal(mockContext.log);
   });
 
   it('should handle errors during suggestion creation', async () => {
@@ -1349,7 +1360,7 @@ describe('createIndividualOpportunitySuggestions', () => {
       mockLog,
     )).to.be.rejectedWith('Test error');
     expect(mockContext.log.error).to.have.been.calledWith(
-      'Failed to create suggestions for opportunity test-id: Test error',
+      '[A11yProcessingError] Failed to create suggestions for opportunity test-id: Test error',
     );
   });
 
@@ -1363,10 +1374,20 @@ describe('createIndividualOpportunitySuggestions', () => {
             {
               type: 'color-contrast',
               occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
             },
             {
               type: 'image-alt',
               occurrences: 3,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-invalid-attr]',
+                },
+              ],
             },
           ],
         },
@@ -1397,10 +1418,20 @@ describe('createIndividualOpportunitySuggestions', () => {
           {
             type: 'color-contrast',
             occurrences: 5,
+            htmlWithIssues: [
+              {
+                target_selector: 'div[aria-fake]',
+              },
+            ],
           },
           {
             type: 'image-alt',
             occurrences: 3,
+            htmlWithIssues: [
+              {
+                target_selector: 'div[aria-invalid-attr]',
+              },
+            ],
           },
         ],
         isCreateTicketClicked: false,
@@ -1414,7 +1445,15 @@ describe('createIndividualOpportunitySuggestions', () => {
         {
           url: 'https://example.com/page1',
           type: 'url',
-          issues: [],
+          issues: [{
+            type: 'color-contrast',
+            occurrences: 5,
+            htmlWithIssues: [
+              {
+                target_selector: 'div[aria-fake]',
+              },
+            ],
+          }],
         },
       ],
     };
@@ -1432,7 +1471,164 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the buildKey function
     const result = buildKey(aggregatedData.data[0]);
 
+    expect(result).to.equal('https://example.com/page1|color-contrast|div[aria-fake]');
+  });
+
+  it('should call buildKey function with empty issues array', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [], // Empty issues array
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the buildKey function with empty issues
+    const result = buildKey(aggregatedData.data[0]);
+
     expect(result).to.equal('https://example.com/page1');
+  });
+
+  it('should call buildKey function with no issues property', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page2',
+          type: 'url',
+          // No issues property at all
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the buildKey function with no issues property
+    const result = buildKey(aggregatedData.data[0]);
+
+    expect(result).to.equal('https://example.com/page2');
+  });
+
+  it('should call buildKey function with missing target_selector', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page3',
+          type: 'url',
+          issues: [{
+            type: 'image-alt',
+            occurrences: 3,
+            htmlWithIssues: [
+              {
+                // Missing target_selector property
+                update_from: '<img src="test.jpg">',
+              },
+            ],
+          }],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the buildKey function with missing target_selector
+    const result = buildKey(aggregatedData.data[0]);
+
+    expect(result).to.equal('https://example.com/page3|image-alt|');
+  });
+
+  it('should call buildKey function with null target_selector', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page4',
+          type: 'url',
+          issues: [{
+            type: 'button-name',
+            occurrences: 2,
+            htmlWithIssues: [
+              {
+                target_selector: null, // Explicitly null
+                update_from: '<button></button>',
+              },
+            ],
+          }],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the buildKey function with null target_selector
+    const result = buildKey(aggregatedData.data[0]);
+
+    expect(result).to.equal('https://example.com/page4|button-name|');
+  });
+
+  it('should call buildKey function with empty htmlWithIssues array', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page5',
+          type: 'url',
+          issues: [{
+            type: 'label',
+            occurrences: 1,
+            htmlWithIssues: [], // Empty htmlWithIssues array
+          }],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the buildKey function with empty htmlWithIssues
+    const result = buildKey(aggregatedData.data[0]);
+
+    expect(result).to.equal('https://example.com/page5|label|');
   });
 
   it('should handle suggestions with no issues in debug logging', async () => {
@@ -1443,12 +1639,16 @@ describe('createIndividualOpportunitySuggestions', () => {
           url: 'https://example.com/page1',
           issues: null, // This will trigger the else branch in the ternary operator
         }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-1',
       },
       {
         getData: () => ({
           url: 'https://example.com/page2',
           // no issues property at all - should be undefined
         }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-2',
       },
     ]);
 
@@ -1527,81 +1727,6 @@ describe('createIndividualOpportunitySuggestions', () => {
     );
     expect(result).to.deep.equal({ success: true });
     expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
-  });
-});
-
-describe('deleteExistingAccessibilityOpportunities', () => {
-  let sandbox;
-  let mockLog;
-  let mockDataAccess;
-
-  beforeEach(() => {
-    sandbox = sinon.createSandbox();
-    mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-    mockDataAccess = {
-      Opportunity: {
-        allBySiteId: sandbox.stub(),
-      },
-    };
-  });
-
-  afterEach(() => {
-    sandbox.restore();
-  });
-
-  it('should delete existing opportunities of specified type', async () => {
-    const mockOpportunity = {
-      getId: sandbox.stub().returns('test-id'),
-      remove: sandbox.stub().resolves(),
-      getType: sandbox.stub().returns('test-type'),
-    };
-    mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-
-    const result = await deleteExistingAccessibilityOpportunities(
-      mockDataAccess,
-      'test-site',
-      'test-type',
-      mockLog,
-    );
-
-    expect(result).to.equal(1);
-    expect(mockOpportunity.remove).to.have.been.calledOnce;
-    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Found 1 existing opportunities of type test-type - deleting');
-  });
-
-  it('should handle no existing opportunities', async () => {
-    mockDataAccess.Opportunity.allBySiteId.resolves([]);
-
-    const result = await deleteExistingAccessibilityOpportunities(
-      mockDataAccess,
-      'test-site',
-      'test-type',
-      mockLog,
-    );
-
-    expect(result).to.equal(0);
-    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] No existing opportunities of type test-type found - proceeding with creation');
-  });
-
-  it('should handle errors during deletion', async () => {
-    const mockOpportunity = {
-      getId: sandbox.stub().returns('test-id'),
-      remove: sandbox.stub().rejects(new Error('Test error')),
-      getType: sandbox.stub().returns('test-type'),
-    };
-    mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-
-    const errorMessage = 'Failed to delete existing opportunities: Test error';
-    await expect(deleteExistingAccessibilityOpportunities(
-      mockDataAccess,
-      'test-site',
-      'test-type',
-      mockLog,
-    )).to.be.rejectedWith(errorMessage);
   });
 });
 
@@ -1684,6 +1809,15 @@ describe('createAccessibilityIndividualOpportunities', () => {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
           allBySiteId: sandbox.stub().resolves([]),
+          STATUSES: {
+            NEW: 'NEW',
+            IN_PROGRESS: 'IN_PROGRESS',
+            IGNORED: 'IGNORED',
+            RESOLVED: 'RESOLVED',
+          },
+        },
+        Suggestion: {
+          bulkUpdateStatus: sandbox.stub().resolves(),
         },
         Configuration: {
           findLatest: sandbox.stub().resolves({
@@ -1913,117 +2047,6 @@ describe('createAccessibilityIndividualOpportunities', () => {
     expect(result.error).to.include('Audit Error');
   });
 
-  // it('should handle multiple pages with issues', async () => {
-  //   const accessibilityData = {
-  //     'https://example.com/page1': {
-  //       violations: {
-  //         critical: {
-  //           items: {
-  //             'aria-hidden-focus': {
-  //               description: 'Page 1 issue',
-  //               successCriteriaTags: ['wcag412'],
-  //               count: 2,
-  //             },
-  //           },
-  //         },
-  //       },
-  //     },
-  //     'https://example.com/page2': {
-  //       violations: {
-  //         critical: {
-  //           items: {
-  //             'aria-hidden-focus': {
-  //               description: 'Page 2 issue',
-  //               successCriteriaTags: ['wcag412'],
-  //               count: 3,
-  //             },
-  //           },
-  //         },
-  //       },
-  //     },
-  //   };
-
-  //   const result = await createAccessibilityIndividualOpportunities(
-  //     accessibilityData,
-  //     mockContext,
-  //   );
-
-  //   expect(result).to.exist;
-  //   if (result.status === 'OPPORTUNITIES_FAILED') {
-  //     expect.fail(`Function failed with error: ${result.error}`);
-  //   }
-  //   expect(result.opportunities).to.have.lengthOf(1);
-  //   expect(result.opportunities[0].status).to.equal('OPPORTUNITY_CREATED');
-  //   expect(result.opportunities[0].suggestionsCount).to.equal(2);
-  //   expect(result.opportunities[0].totalIssues).to.equal(5);
-  //   expect(result.opportunities[0].pagesWithIssues).to.equal(2);
-  // });
-
-  it('should handle errors during opportunity deletion', async () => {
-    const accessibilityData = {
-      'https://example.com/page1': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                description: 'Test issue',
-                successCriteriaTags: ['wcag412'],
-                count: 1,
-                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
-                target: ['div[aria-hidden] button'],
-              },
-            },
-          },
-        },
-      },
-    };
-
-    mockContext.dataAccess.Opportunity.allBySiteId.rejects(new Error('Delete Error'));
-
-    const result = await createAccessibilityIndividualOpportunities(
-      accessibilityData,
-      mockContext,
-    );
-
-    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
-    expect(result.error).to.include('Delete Error');
-  });
-
-  it('should handle errors during opportunity removal', async () => {
-    const accessibilityData = {
-      'https://example.com/page1': {
-        violations: {
-          critical: {
-            items: {
-              'aria-hidden-focus': {
-                description: 'Test issue',
-                successCriteriaTags: ['wcag412'],
-                count: 1,
-                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
-                target: ['div[aria-hidden] button'],
-              },
-            },
-          },
-        },
-      },
-    };
-
-    const mockExistingOpportunity = {
-      getId: sandbox.stub().returns('existing-id'),
-      remove: sandbox.stub().rejects(new Error('Remove Error')),
-      getType: sandbox.stub().returns('a11y-assistive'),
-    };
-    mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
-
-    const result = await createAccessibilityIndividualOpportunities(
-      accessibilityData,
-      mockContext,
-    );
-
-    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
-    expect(result.error).to.include('Remove Error');
-  });
-
   it('should handle errors during opportunity creation with existing opportunities', async () => {
     const accessibilityData = {
       'https://example.com/page1': {
@@ -2045,11 +2068,13 @@ describe('createAccessibilityIndividualOpportunities', () => {
 
     const mockExistingOpportunity = {
       getId: sandbox.stub().returns('existing-id'),
-      remove: sandbox.stub().resolves(),
       getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('NEW'),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().rejects(new Error('Create Error')),
     };
     mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
-    mockContext.dataAccess.Opportunity.create.rejects(new Error('Create Error'));
 
     const result = await createAccessibilityIndividualOpportunities(
       accessibilityData,
@@ -2081,8 +2106,12 @@ describe('createAccessibilityIndividualOpportunities', () => {
 
     const mockExistingOpportunity = {
       getId: sandbox.stub().returns('existing-id'),
-      remove: sandbox.stub().resolves(),
       getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('NEW'),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([]),
     };
     mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
     mockSyncSuggestions.rejects(new Error('Sync Error'));
@@ -2382,6 +2411,183 @@ describe('createAccessibilityIndividualOpportunities', () => {
       sinon.match.string,
     );
   });
+
+  it('should update existing opportunity with IN_PROGRESS status', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const mockExistingOpportunity = {
+      getId: sandbox.stub().returns('existing-id'),
+      getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('IN_PROGRESS'), // Key difference - tests line 512
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+
+    mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
+    mockSyncSuggestions.resolves();
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
+    expect(result.opportunities).to.have.lengthOf(1);
+    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_UPDATED'); // Tests line 674
+    expect(result.opportunities[0].opportunityId).to.equal('existing-id');
+    expect(mockExistingOpportunity.setAuditId).to.have.been.called;
+    expect(mockExistingOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+    expect(mockExistingOpportunity.save).to.have.been.called;
+    // Verify the log message contains "Updated" (tests line 667-670)
+    expect(mockContext.log.info).to.have.been.calledWith(
+      sinon.match(/Updated opportunity for a11y-assistive/),
+    );
+  });
+
+  it('should successfully update existing opportunity with NEW status and return OPPORTUNITY_UPDATED', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const mockExistingOpportunity = {
+      getId: sandbox.stub().returns('existing-id'),
+      getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('NEW'),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(), // Key: this succeeds
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+
+    mockContext.dataAccess.Opportunity.allBySiteId.resolves([mockExistingOpportunity]);
+    // Ensure syncSuggestions succeeds
+    mockSyncSuggestions.resolves();
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
+    expect(result.opportunities).to.have.lengthOf(1);
+    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_UPDATED'); // Tests line 674
+    expect(result.opportunities[0].opportunityType).to.equal('a11y-assistive');
+    expect(result.opportunities[0].opportunityId).to.equal('existing-id');
+    // Verify the log message contains "Updated" (tests line 667)
+    expect(mockContext.log.info).to.have.been.calledWith(
+      sinon.match(/Updated opportunity for a11y-assistive/),
+    );
+  });
+
+  it('should update first active opportunity found when multiple exist', async () => {
+    const accessibilityData = {
+      'https://example.com/page1': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const mockFirstOpportunity = {
+      getId: sandbox.stub().returns('first-id'),
+      getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('NEW'),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+
+    const mockSecondOpportunity = {
+      getId: sandbox.stub().returns('second-id'),
+      getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('IN_PROGRESS'),
+      setAuditId: sandbox.stub(),
+      setUpdatedBy: sandbox.stub(),
+      save: sandbox.stub().resolves(),
+      getSuggestions: sandbox.stub().resolves([]),
+    };
+
+    const mockIgnoredOpportunity = {
+      getId: sandbox.stub().returns('ignored-id'),
+      getType: sandbox.stub().returns('a11y-assistive'),
+      getStatus: sandbox.stub().returns('IGNORED'),
+    };
+
+    // Return multiple opportunities - should pick the first active one (NEW or IN_PROGRESS)
+    mockContext.dataAccess.Opportunity.allBySiteId.resolves([
+      mockIgnoredOpportunity, // This should be skipped (IGNORED status)
+      mockFirstOpportunity, // This should be selected (first active one)
+      mockSecondOpportunity, // This should be ignored (not first)
+    ]);
+    mockSyncSuggestions.resolves();
+
+    const result = await createAccessibilityIndividualOpportunities(
+      accessibilityData,
+      mockContext,
+    );
+
+    expect(result).to.exist;
+    if (result.status === 'OPPORTUNITIES_FAILED') {
+      expect.fail(`Function failed with error: ${result.error}`);
+    }
+    expect(result.opportunities).to.have.lengthOf(1);
+    expect(result.opportunities[0].opportunityId).to.equal('first-id');
+    expect(result.opportunities[0].status).to.equal('OPPORTUNITY_UPDATED');
+    // Verify that first active opportunity was updated
+    expect(mockFirstOpportunity.setAuditId).to.have.been.called;
+    expect(mockFirstOpportunity.save).to.have.been.called;
+    // Verify second opportunity was not touched
+    expect(mockSecondOpportunity.setAuditId).to.not.have.been.called;
+  });
 });
 
 describe('createMystiqueMessage', () => {
@@ -2479,7 +2685,7 @@ describe('sendMystiqueMessage', () => {
       log: fakeLog,
     });
     expect(fakeSqs.sendMessage).to.have.been.calledOnce;
-    expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual] Failed to send message to Mystique');
+    expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Failed to send message to Mystique');
     expect(result).to.deep.include({ success: false, url: 'https://example.com' });
     expect(result.error).to.equal('SQS error');
   });
@@ -2506,7 +2712,7 @@ describe('sendMystiqueMessage error path (coverage)', () => {
     expect(result.url).to.equal('https://example.com');
     expect(result.error).to.equal('Simulated SQS failure');
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual] Failed to send message to Mystique for url https://example.com',
+      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://example.com',
     );
   });
 });
@@ -2684,7 +2890,7 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
     // Should return failure due to missing SQS context
     expect(result.success).to.be.false;
     expect(result.error).to.equal('Missing SQS context or queue configuration');
-    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual] Missing required context');
+    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Missing required context');
   });
 
   it('should handle missing env.QUEUE_SPACECAT_TO_MYSTIQUE', async () => {
@@ -2708,7 +2914,7 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
     // Should return failure due to missing queue name
     expect(result.success).to.be.false;
     expect(result.error).to.equal('Missing SQS context or queue configuration');
-    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual] Missing required context');
+    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Missing required context');
   });
 });
 
@@ -2730,19 +2936,40 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
         {
           getData: () => ({
             url: 'https://example.com/page1',
+            type: 'url',
             issues: [
-              { type: 'aria-allowed-attr' },
-              { type: 'button-name' },
+              {
+                type: 'color-contrast',
+                occurrences: 5,
+                htmlWithIssues: [
+                  {
+                    target_selector: 'div[aria-fake]',
+                  },
+                ],
+              },
             ],
           }),
+          getStatus: () => 'NEW',
+          getId: () => 'suggestion-1',
         },
         {
           getData: () => ({
             url: 'https://example.com/page2',
+            type: 'url',
             issues: [
-              { type: 'color-contrast' },
+              {
+                type: 'aria-allowed-attr',
+                occurrences: 2,
+                htmlWithIssues: [
+                  {
+                    target_selector: 'button[aria-label="test"]',
+                  },
+                ],
+              },
             ],
           }),
+          getStatus: () => 'NEW',
+          getId: () => 'suggestion-2',
         },
       ]),
     };
@@ -2763,6 +2990,9 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
         Opportunity: {
           create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
+        },
+        Suggestion: {
+          bulkUpdateStatus: sandbox.stub().resolves(),
         },
         Configuration: {
           findLatest: sandbox.stub().resolves({
@@ -2804,7 +3034,21 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
   it('should process suggestions and send messages to Mystique', async () => {
     const aggregatedData = {
       data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
+            },
+          ],
+        },
       ],
     };
 
@@ -2859,7 +3103,7 @@ describe('sendMystiqueMessage error handling', () => {
 
     // Should log the error
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual] Failed to send message to Mystique for url https://example.com',
+      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://example.com',
     );
   });
 
@@ -2890,7 +3134,7 @@ describe('sendMystiqueMessage error handling', () => {
 
     // Should log the error
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual] Failed to send message to Mystique for url https://test.com',
+      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://test.com',
     );
   });
 });
@@ -3030,7 +3274,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-nonexistent: Opportunity not found',
+      '[A11yRemediationGuidance][A11yProcessingError] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-nonexistent: Opportunity not found',
     );
   });
 
@@ -3069,7 +3313,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Site ID mismatch. Expected: site-456, Found: site-different',
+      '[A11yRemediationGuidance][A11yProcessingError] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Site ID mismatch. Expected: site-456, Found: site-different',
     );
   });
 
@@ -3254,7 +3498,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to process accessibility remediation guidance: Database connection failed',
+      '[A11yRemediationGuidance][A11yProcessingError] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to process accessibility remediation guidance: Database connection failed',
     );
   });
 
@@ -3654,7 +3898,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     expect(mockLog.error).to.have.been.calledWith(
-      '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to save suggestion sugg-789: Error: Database connection failed',
+      '[A11yRemediationGuidance][A11yProcessingError] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Failed to save suggestion sugg-789: Error: Database connection failed',
     );
     expect(mockLog.warn).to.have.been.calledWith(
       '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 1 suggestions failed to save: sugg-789',
@@ -3694,6 +3938,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
               },
             ],
           }),
+          getStatus: () => 'NEW',
           setData: sandbox.stub(),
           save: sandbox.stub().resolves(),
         },

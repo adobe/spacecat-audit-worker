@@ -83,6 +83,8 @@ describe('Form Calc functions', () => {
         CTA: {
           url: 'https://www.surest.com/about-us',
           source: '#teaser-related02 .cmp-teaser__action-link',
+          clicksOnCTA: 800,
+          pageViews: 108400,
         },
       },
     ]);
