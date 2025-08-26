@@ -1,3 +1,10 @@
+## [1.157.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.8...v1.157.9) (2025-08-26)
+
+
+### Bug Fixes
+
+* proper country lang pattern ([#1155](https://github.com/adobe/spacecat-audit-worker/issues/1155)) ([35d2822](https://github.com/adobe/spacecat-audit-worker/commit/35d282295a8da72068bec11f5d769dc429014bb1))
+
 ## [1.157.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.7...v1.157.8) (2025-08-26)
 
 
