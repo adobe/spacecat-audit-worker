@@ -375,4 +375,138 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(mockOpportunity.setData).to.not.have.been.called;
     expect(mockOpportunity.save).to.not.have.been.called;
   });
+
+  it('should handle clearing existing suggestions and calculating their metrics', async () => {
+    // Set up existing suggestions that need to be removed
+    const existingSuggestions = [
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-1',
+            pageUrl: 'https://example.com/page1',
+            imageUrl: 'https://example.com/image1.jpg',
+          }],
+        }),
+        getStatus: () => 'NEW',
+      },
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-2',
+            pageUrl: 'https://example.com/page2',
+            imageUrl: 'https://example.com/image2.jpg',
+          }],
+        }),
+        getStatus: () => 'SKIPPED',
+      },
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-3',
+            pageUrl: 'https://example.com/page1',
+            imageUrl: 'https://example.com/image3.jpg',
+          }],
+        }),
+        getStatus: () => 'FIXED',
+      },
+    ];
+
+    mockOpportunity.getSuggestions.returns(existingSuggestions);
+
+    // Set up getProjectedMetrics to return metrics for removed suggestions
+    getProjectedMetricsStub.resetBehavior();
+    getProjectedMetricsStub.onFirstCall().resolves({
+      projectedTrafficLost: 50,
+      projectedTrafficValue: 75,
+    });
+    getProjectedMetricsStub.onSecondCall().resolves({
+      projectedTrafficLost: 100,
+      projectedTrafficValue: 150,
+    });
+
+    const result = await guidanceHandler(mockMessage, context);
+
+    expect(result.status).to.equal(200);
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
+      [existingSuggestions[0]],
+      'OUTDATED',
+    );
+    expect(getProjectedMetricsStub).to.have.been.calledTwice;
+
+    const firstCall = getProjectedMetricsStub.getCall(0);
+    expect(firstCall.args[0].images).to.deep.include({
+      pageUrl: 'https://example.com/page1',
+      src: 'https://example.com/image1.jpg',
+    });
+
+    expect(context.log.info).to.have.been.calledWith(
+      '[alt-text]: Marked 1 suggestions as OUTDATED for 1 pages',
+    );
+  });
+
+  it('should handle case when no existing suggestions need to be removed', async () => {
+    // Set up existing suggestions that are all SKIPPED or FIXED
+    const existingSuggestions = [
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-1',
+            pageUrl: 'https://example.com/page1',
+            imageUrl: 'https://example.com/image1.jpg',
+          }],
+        }),
+        getStatus: () => 'SKIPPED',
+      },
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-2',
+            pageUrl: 'https://example.com/page2',
+            imageUrl: 'https://example.com/image2.jpg',
+          }],
+        }),
+        getStatus: () => 'FIXED',
+      },
+    ];
+
+    mockOpportunity.getSuggestions.returns(existingSuggestions);
+
+    const result = await guidanceHandler(mockMessage, context);
+
+    expect(result.status).to.equal(200);
+
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(getProjectedMetricsStub).to.have.been.called;
+  });
+
+  it('should trigger cleanup when all Mystique batches are completed', async () => {
+    const cleanupOutdatedSuggestionsStub = sandbox.stub().resolves();
+
+    const guidanceHandlerWithCleanup = await esmock('../../../src/image-alt-text/guidance-missing-alt-text-handler.js', {
+      '../../../src/image-alt-text/opportunityHandler.js': {
+        addAltTextSuggestions: addAltTextSuggestionsStub,
+        getProjectedMetrics: getProjectedMetricsStub,
+        cleanupOutdatedSuggestions: cleanupOutdatedSuggestionsStub,
+      },
+    });
+
+    const existingData = {
+      projectedTrafficLost: 100,
+      projectedTrafficValue: 100,
+      decorativeImagesCount: 2,
+      mystiqueResponsesReceived: 1,
+      mystiqueResponsesExpected: 2,
+    };
+    mockOpportunity.getData.returns(existingData);
+
+    const result = await guidanceHandlerWithCleanup(mockMessage, context);
+
+    expect(result.status).to.equal(200);
+
+    expect(cleanupOutdatedSuggestionsStub).to.have.been.calledWith(mockOpportunity, context.log);
+
+    expect(context.log.info).to.have.been.calledWith(
+      sinon.match(/All Mystique batches completed/),
+    );
+  });
 });

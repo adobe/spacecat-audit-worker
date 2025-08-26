@@ -120,7 +120,6 @@ export default async function handler(message, context) {
   const {
     auditId, siteId, data, id: messageId,
   } = message;
-  // Extract data from Mystique response
   const { suggestions, pageUrls } = data || {};
 
   log.info(`[${AUDIT_TYPE}]: Received Mystique guidance for alt-text: ${JSON.stringify(message, null, 2)}`);
@@ -231,6 +230,9 @@ export default async function handler(message, context) {
     altTextOppty.setUpdatedBy('system');
     await altTextOppty.save();
 
+    log.info(`[${AUDIT_TYPE}]: 
+      Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
+
     // Cleanup OUTDATED suggestions if this is the last batch
     if (updatedOpportunityData.mystiqueResponsesReceived
       >= (updatedOpportunityData.mystiqueResponsesExpected || 0)
@@ -246,9 +248,9 @@ export default async function handler(message, context) {
       await cleanupOutdatedSuggestions(altTextOppty, log);
     }
 
-    log.info(`[${AUDIT_TYPE}]: Processed ${pageUrls.length} pages...`);
+    log.info(`[${AUDIT_TYPE}]: Successfully processed ${suggestions.length} suggestions from Mystique for siteId: ${siteId}`);
   } else {
-    log.info(`[${AUDIT_TYPE}]: No pageUrls provided in Mystique response`);
+    log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);
   }
 
   log.info(`[${AUDIT_TYPE}]: Successfully processed Mystique guidance for siteId: ${siteId}`);
