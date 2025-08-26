@@ -199,20 +199,29 @@ export default async function handler(message, context) {
                 // reconstruct from suggestions
                 if (auditItem.opportunities.length === 0 && allSuggestions.length > 0) {
                   log.info(`[read-suggest]: Reconstructing opportunities from ${allSuggestions.length} stored suggestions`);
-                  opportunitiesToProcess = allSuggestions.map((suggestion) => {
+                  opportunitiesToProcess = allSuggestions.map((suggestion, index) => {
                     const suggestionData = suggestion.getData();
+                    log.info(`[read-suggest]: Examining suggestion ${index}: ${JSON.stringify(suggestionData, null, 2)}`);
+
                     const recommendation = suggestionData.data?.recommendations?.[0];
                     if (recommendation) {
-                      return {
+                      log.info(`[read-suggest]: Found recommendation with originalText: "${recommendation.originalText?.substring(0, 50)}..."`);
+
+                      const reconstructedOpportunity = {
                         check: 'poor-readability',
-                        issue: `Text element is difficult to read: "${recommendation.originalText?.substring(0, 100)}..."`
+                        issue: `Text element is difficult to read: "${(recommendation.originalText || 'Unknown text')?.substring(0, 100)}..."`
                           .replace(/\n/g, ' '),
                         seoImpact: 'Moderate',
-                        fleschReadingEase: recommendation.originalFleschScore,
+                        fleschReadingEase: recommendation.originalFleschScore || 0,
                         textContent: recommendation.originalText,
                         seoRecommendation: 'Improve readability by using shorter sentences, '
                           + 'simpler words, and clearer structure',
                       };
+
+                      log.info(`[read-suggest]: Successfully reconstructed opportunity: ${JSON.stringify(reconstructedOpportunity, null, 2)}`);
+                      return reconstructedOpportunity;
+                    } else {
+                      log.warn(`[read-suggest]: No recommendation found in suggestion ${index} - suggestionData structure: ${JSON.stringify(suggestionData, null, 2)}`);
                     }
                     return null;
                   }).filter(Boolean);
