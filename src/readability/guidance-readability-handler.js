@@ -196,7 +196,7 @@ export default async function handler(message, context) {
                       ...opportunity,
                       suggestionStatus: 'completed',
                       suggestionMessage: 'AI-powered readability improvement '
-                        + 'generated successfully.',
+                        + 'generated successfully. DOGADOGADOGA',
                       originalText: recommendation.originalText,
                       improvedText: recommendation.improvedText,
                       originalFleschScore: opportunity.fleschReadingEase,
