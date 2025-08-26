@@ -29,6 +29,7 @@ Resources:
           IMS_CLIENT_CODE: !Ref IMS_CLIENT_CODE
           IMS_CLIENT_SECRET: !Ref IMS_CLIENT_SECRET
           DYNAMO_TABLE_NAME_DATA: !Ref DYNAMO_TABLE_NAME_DATA
+          QUEUE_SPACECAT_TO_MYSTIQUE: !Ref QUEUE_SPACECAT_TO_MYSTIQUE
       Role: arn:aws:iam::682033462621:role/spacecat-role-lambda-generic
       Events:
         ApiEvent:
@@ -93,3 +94,6 @@ Parameters:
   DYNAMO_TABLE_NAME_DATA:
     Type: String
     Description: DynamoDB Table Name for Data
+  QUEUE_SPACECAT_TO_MYSTIQUE:
+    Type: String
+    Description: Queue Name for Spacecat to Mystique
