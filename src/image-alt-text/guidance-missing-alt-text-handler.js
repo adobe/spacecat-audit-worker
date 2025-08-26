@@ -72,7 +72,7 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
     const pageUrl = suggestion.getData()?.recommendations?.[0]?.pageUrl;
     return pageUrl && pageUrlSet.has(pageUrl);
   }).filter((suggestion) => {
-    const IGNORED_STATUSES = ['SKIPPED', 'FIXED'];
+    const IGNORED_STATUSES = ['SKIPPED', 'FIXED', 'OUTDATED'];
     return !IGNORED_STATUSES.includes(suggestion.getStatus());
   });
 
