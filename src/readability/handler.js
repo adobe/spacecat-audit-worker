@@ -75,13 +75,13 @@ async function checkForExistingSuggestions(
           // Find matching suggestion by original text
           const matchingSuggestion = suggestions.find((suggestion) => {
             const suggestionData = suggestion.getData();
-            const recommendation = suggestionData.data?.recommendations?.[0];
+            const recommendation = suggestionData.recommendations?.[0];
             return recommendation?.originalText === opportunity.textContent;
           });
 
           if (matchingSuggestion) {
             const suggestionData = matchingSuggestion.getData();
-            const recommendation = suggestionData.data?.recommendations?.[0];
+            const recommendation = suggestionData.recommendations?.[0];
             const improvedScore = recommendation?.improvedFleschScore;
             const originalScore = recommendation?.originalFleschScore
               || opportunity.fleschReadingEase;

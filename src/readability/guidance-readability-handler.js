@@ -203,7 +203,7 @@ export default async function handler(message, context) {
                     const suggestionData = suggestion.getData();
                     log.info(`[read-suggest]: Examining suggestion ${index}: ${JSON.stringify(suggestionData, null, 2)}`);
 
-                    const recommendation = suggestionData.data?.recommendations?.[0];
+                    const recommendation = suggestionData.recommendations?.[0];
                     if (recommendation) {
                       log.info(`[read-suggest]: Found recommendation with originalText: "${recommendation.originalText?.substring(0, 50)}..."`);
 
@@ -239,8 +239,8 @@ export default async function handler(message, context) {
                     log.info('[read-suggest]: Checking suggestion with data: '
                       + `${JSON.stringify(suggestionData, null, 2)}`);
 
-                    // All suggestions are stored as { data: { recommendations: [suggestion] } }
-                    const recommendation = suggestionData.data?.recommendations?.[0];
+                    // All suggestions are stored as { recommendations: [suggestion] }
+                    const recommendation = suggestionData.recommendations?.[0];
                     if (recommendation) {
                       log.info(`[read-suggest]: Comparing "${recommendation.originalText?.substring(0, 80)}..."`
                           + ` vs "${opportunity.textContent?.substring(0, 80)}..."`);
@@ -252,7 +252,7 @@ export default async function handler(message, context) {
                   if (matchingSuggestion) {
                     const suggestionData = matchingSuggestion.getData();
                     // All suggestions use the standard format
-                    const recommendation = suggestionData.data.recommendations[0];
+                    const recommendation = suggestionData.recommendations[0];
 
                     const updatedOpportunity = {
                       ...opportunity,
