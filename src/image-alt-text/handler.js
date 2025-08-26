@@ -11,7 +11,7 @@
  */
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { sendAltTextOpportunityToMystique, chunkArray } from './opportunityHandler.js';
+import { sendAltTextOpportunityToMystique, chunkArray, cleanupOutdatedSuggestions } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { checkGoogleConnection } from '../common/opportunity-utils.js';
 import { MYSTIQUE_BATCH_SIZE } from './constants.js';
@@ -133,6 +133,13 @@ export async function processAltTextWithMystique(context) {
     );
 
     log.info(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
+
+    // Clean up outdated suggestions
+    // Small delay to ensure no concurrent operations
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1000);
+    });
+    await cleanupOutdatedSuggestions(altTextOppty, log);
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
     throw error;

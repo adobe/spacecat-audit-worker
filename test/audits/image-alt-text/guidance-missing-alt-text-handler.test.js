@@ -478,35 +478,4 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
     expect(getProjectedMetricsStub).to.have.been.called;
   });
-
-  it('should trigger cleanup when all Mystique batches are completed', async () => {
-    const cleanupOutdatedSuggestionsStub = sandbox.stub().resolves();
-
-    const guidanceHandlerWithCleanup = await esmock('../../../src/image-alt-text/guidance-missing-alt-text-handler.js', {
-      '../../../src/image-alt-text/opportunityHandler.js': {
-        addAltTextSuggestions: addAltTextSuggestionsStub,
-        getProjectedMetrics: getProjectedMetricsStub,
-        cleanupOutdatedSuggestions: cleanupOutdatedSuggestionsStub,
-      },
-    });
-
-    const existingData = {
-      projectedTrafficLost: 100,
-      projectedTrafficValue: 100,
-      decorativeImagesCount: 2,
-      mystiqueResponsesReceived: 1,
-      mystiqueResponsesExpected: 2,
-    };
-    mockOpportunity.getData.returns(existingData);
-
-    const result = await guidanceHandlerWithCleanup(mockMessage, context);
-
-    expect(result.status).to.equal(200);
-
-    expect(cleanupOutdatedSuggestionsStub).to.have.been.calledWith(mockOpportunity, context.log);
-
-    expect(context.log.info).to.have.been.calledWith(
-      sinon.match(/All Mystique batches completed/),
-    );
-  });
 });

@@ -12,7 +12,7 @@
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
-import { addAltTextSuggestions, getProjectedMetrics, cleanupOutdatedSuggestions } from './opportunityHandler.js';
+import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
@@ -232,22 +232,6 @@ export default async function handler(message, context) {
 
     log.info(`[${AUDIT_TYPE}]: 
       Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
-
-    // Cleanup OUTDATED suggestions if this is the last batch
-    if (updatedOpportunityData.mystiqueResponsesReceived
-      >= (updatedOpportunityData.mystiqueResponsesExpected || 0)
-    ) {
-      log.info(`[${AUDIT_TYPE}]: All Mystique batches completed. 
-        Starting cleanup of OUTDATED suggestions for ${siteId} and auditId: ${auditId}`);
-
-      // Small delay to ensure no concurrent operations
-      await new Promise((resolve) => {
-        setTimeout(resolve, 1000);
-      });
-
-      await cleanupOutdatedSuggestions(altTextOppty, log);
-    }
-
     log.info(`[${AUDIT_TYPE}]: Successfully processed ${suggestions.length} suggestions from Mystique for siteId: ${siteId}`);
   } else {
     log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);
