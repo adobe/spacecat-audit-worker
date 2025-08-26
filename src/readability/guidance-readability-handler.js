@@ -11,10 +11,8 @@
  */
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
+import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { addReadabilitySuggestions } from './opportunity-handler.js';
-
-const AUDIT_TYPE = AuditModel.AUDIT_TYPES.READABILITY;
 
 /**
  * Maps Mystique readability suggestions to the same format used in opportunityHandler.js
@@ -41,24 +39,26 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Opportunity, Site, Audit } = dataAccess;
+  const {
+    Opportunity, Site, Audit, AsyncJob,
+  } = dataAccess;
   const {
     auditId, siteId, data, id: messageId,
   } = message;
   const { suggestions } = data || {};
 
-  log.info(`[${AUDIT_TYPE}-suggest]: Received Mystique guidance for readability: ${JSON.stringify(message, null, 2)}`);
+  log.info(`[read-suggest]: Received Mystique guidance for readability: ${JSON.stringify(message, null, 2)}`);
 
   // Validate audit exists
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.warn(`[${AUDIT_TYPE}-suggest]: No audit found for auditId: ${auditId}`);
+    log.warn(`[read-suggest]: No audit found for auditId: ${auditId}`);
     return notFound();
   }
   const site = await Site.findById(siteId);
   const auditUrl = site.getBaseURL();
 
-  log.info(`[${AUDIT_TYPE}-suggest]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
+  log.info(`[read-suggest]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
 
   let readabilityOppty;
   try {
@@ -67,12 +67,12 @@ export default async function handler(message, context) {
       (oppty) => oppty.getAuditId() === auditId && oppty.getData()?.subType === 'readability',
     );
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}-suggest]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
-    throw new Error(`[${AUDIT_TYPE}-suggest]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
+    log.error(`[read-suggest]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+    throw new Error(`[read-suggest]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
   }
 
   if (!readabilityOppty) {
-    const errorMsg = `[${AUDIT_TYPE}-suggest]: No existing opportunity found for siteId ${siteId}. Opportunity should be created by main handler before processing suggestions.`;
+    const errorMsg = `[read-suggest]: No existing opportunity found for siteId ${siteId}. Opportunity should be created by main handler before processing suggestions.`;
     log.error(errorMsg);
     throw new Error(errorMsg);
   }
@@ -80,7 +80,7 @@ export default async function handler(message, context) {
   const existingData = readabilityOppty.getData() || {};
   const processedSuggestionIds = new Set(existingData.processedSuggestionIds || []);
   if (processedSuggestionIds.has(messageId)) {
-    log.info(`[${AUDIT_TYPE}-suggest]: Suggestions with id ${messageId} already processed. Skipping processing.`);
+    log.info(`[read-suggest]: Suggestions with id ${messageId} already processed. Skipping processing.`);
     return ok();
   } else {
     processedSuggestionIds.add(messageId);
@@ -111,7 +111,7 @@ export default async function handler(message, context) {
   }
 
   if (mappedSuggestions.length === 0) {
-    log.warn(`[${AUDIT_TYPE}-suggest]: No valid readability improvements found in Mystique response for siteId: ${siteId}`);
+    log.warn(`[read-suggest]: No valid readability improvements found in Mystique response for siteId: ${siteId}`);
     return ok();
   }
 
@@ -125,7 +125,7 @@ export default async function handler(message, context) {
     lastMystiqueResponse: new Date().toISOString(),
   };
 
-  log.info(`[${AUDIT_TYPE}-suggest]: Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
+  log.info(`[read-suggest]: Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
 
   // Update opportunity with accumulated data
   try {
@@ -133,10 +133,10 @@ export default async function handler(message, context) {
     readabilityOppty.setData(updatedOpportunityData);
     readabilityOppty.setUpdatedBy('system');
     await readabilityOppty.save();
-    log.info(`[${AUDIT_TYPE}-suggest]: Updated opportunity with accumulated data`);
+    log.info('[read-suggest]: Updated opportunity with accumulated data');
   } catch (e) {
-    log.error(`[${AUDIT_TYPE}-suggest]: Updating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
-    throw new Error(`[${AUDIT_TYPE}-suggest]: Failed to update opportunity for siteId ${siteId}: ${e.message}`);
+    log.error(`[read-suggest]: Updating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
+    throw new Error(`[read-suggest]: Failed to update opportunity for siteId ${siteId}: ${e.message}`);
   }
 
   // Process suggestions from Mystique
@@ -152,11 +152,95 @@ export default async function handler(message, context) {
       log,
     });
 
-    log.info(`[${AUDIT_TYPE}-suggest]: Successfully processed ${mappedSuggestions.length} suggestions from Mystique for siteId: ${siteId}`);
+    log.info(`[read-suggest]: Successfully processed ${mappedSuggestions.length} suggestions from Mystique for siteId: ${siteId}`);
   } else {
-    log.info(`[${AUDIT_TYPE}-suggest]: No suggestions to process for siteId: ${siteId}`);
+    log.info(`[read-suggest]: No suggestions to process for siteId: ${siteId}`);
   }
 
-  log.info(`[${AUDIT_TYPE}-suggest]: Successfully processed Mystique guidance for siteId: ${siteId}`);
+  // Check if all Mystique responses have been received and update AsyncJob if complete
+  const allResponsesReceived = updatedOpportunityData.mystiqueResponsesReceived
+    >= updatedOpportunityData.mystiqueResponsesExpected;
+  if (allResponsesReceived && updatedOpportunityData.mystiqueResponsesExpected > 0) {
+    try {
+      log.info(`[read-suggest]: All ${updatedOpportunityData.mystiqueResponsesExpected} `
+        + `Mystique responses received. Updating AsyncJob ${auditId} to COMPLETED.`);
+
+      // Find the AsyncJob (auditId is the jobId for preflight audits)
+      const asyncJob = await AsyncJob.findById(auditId);
+      if (asyncJob) {
+        // Get current job result
+        const currentResult = asyncJob.getResult() || [];
+
+        // Update the readability audit opportunities with the completed suggestions
+        const updatedResult = await Promise.all(currentResult.map(async (pageResult) => {
+          if (pageResult.audits) {
+            const updatedAudits = await Promise.all(pageResult.audits.map(async (auditItem) => {
+              if (auditItem.name === 'readability') {
+                // Get all suggestions for this opportunity
+                const allSuggestions = await readabilityOppty.getSuggestions();
+
+                // Update opportunities with suggestion data
+                const updatedOpportunities = auditItem.opportunities.map((opportunity) => {
+                  const matchingSuggestion = allSuggestions.find((suggestion) => {
+                    const suggestionData = suggestion.getData();
+                    const recommendations = suggestionData.data?.recommendations || [];
+                    return recommendations.some((rec) => rec.originalText
+                      === opportunity.textContent);
+                  });
+
+                  if (matchingSuggestion) {
+                    const suggestionData = matchingSuggestion.getData();
+                    const recommendation = suggestionData.data?.recommendations?.[0] || {};
+
+                    return {
+                      ...opportunity,
+                      suggestionStatus: 'completed',
+                      suggestionMessage: 'AI-powered readability improvement '
+                        + 'generated successfully.',
+                      originalText: recommendation.originalText,
+                      improvedText: recommendation.improvedText,
+                      originalFleschScore: opportunity.fleschReadingEase,
+                      improvedFleschScore: recommendation.improvedFleschScore,
+                      readabilityImprovement: recommendation.improvedFleschScore
+                        - (recommendation.originalFleschScore || opportunity.fleschReadingEase),
+                      seoRecommendation: recommendation.seoRecommendation,
+                      aiRationale: recommendation.aiRationale,
+                      mystiqueProcessingCompleted: new Date().toISOString(),
+                    };
+                  }
+
+                  return opportunity;
+                });
+
+                return { ...auditItem, opportunities: updatedOpportunities };
+              }
+              return auditItem;
+            }));
+
+            return { ...pageResult, audits: updatedAudits };
+          }
+          return pageResult;
+        }));
+
+        // Update AsyncJob with completed results
+        asyncJob.setResult(updatedResult);
+        asyncJob.setStatus('COMPLETED');
+        asyncJob.setEndedAt(new Date().toISOString());
+        await asyncJob.save();
+
+        log.info(`[read-suggest]: Successfully updated AsyncJob ${auditId} `
+          + 'with completed readability suggestions');
+      } else {
+        log.warn(`[read-suggest]: AsyncJob ${auditId} not found when trying to update `
+          + 'with completed suggestions');
+      }
+    } catch (error) {
+      log.error(`[read-suggest]: Error updating AsyncJob ${auditId} with completed suggestions: `
+        + `${error.message}`, error);
+      // Don't throw - the suggestions were still processed successfully
+    }
+  }
+
+  log.info(`[read-suggest]: Successfully processed Mystique guidance for siteId: ${siteId}`);
   return ok();
 }

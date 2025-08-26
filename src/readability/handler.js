@@ -75,30 +75,27 @@ async function checkForExistingSuggestions(
           // Find matching suggestion by original text
           const matchingSuggestion = suggestions.find((suggestion) => {
             const suggestionData = suggestion.getData();
-            const originalText = suggestionData.originalText || suggestionData.original_paragraph;
+            const { originalText } = suggestionData;
             return originalText === opportunity.textContent;
           });
 
           if (matchingSuggestion) {
             const suggestionData = matchingSuggestion.getData();
-            const improvedScore = suggestionData.improvedFleschScore
-              || suggestionData.improved_flesch_score;
+            const improvedScore = suggestionData.improvedFleschScore;
             const originalScore = suggestionData.originalFleschScore
-              || suggestionData.current_flesch_score
               || opportunity.fleschReadingEase;
 
             audit.opportunities[index] = {
               ...opportunity,
               suggestionStatus: 'completed',
               suggestionMessage: 'AI-powered readability improvement generated successfully.',
-              originalText: suggestionData.originalText || suggestionData.original_paragraph,
-              improvedText: suggestionData.improvedText || suggestionData.improved_paragraph,
+              originalText: suggestionData.originalText,
+              improvedText: suggestionData.improvedText,
               originalFleschScore: originalScore,
               improvedFleschScore: improvedScore,
               readabilityImprovement: improvedScore - originalScore,
-              seoRecommendation: suggestionData.seoRecommendation
-                || suggestionData.seo_recommendation,
-              aiRationale: suggestionData.aiRationale || suggestionData.ai_rationale,
+              seoRecommendation: suggestionData.seoRecommendation,
+              aiRationale: suggestionData.aiRationale,
               mystiqueProcessingCompleted: suggestionData.lastMystiqueResponse
                 || new Date().toISOString(),
             };
