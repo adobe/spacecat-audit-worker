@@ -1,3 +1,10 @@
+## [1.159.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.159.0...v1.159.1) (2025-08-26)
+
+
+### Bug Fixes
+
+* reduce size of excel by grouping urls for status 2xx and 3xx ([#1166](https://github.com/adobe/spacecat-audit-worker/issues/1166)) ([f155645](https://github.com/adobe/spacecat-audit-worker/commit/f155645aac910625b513b9bca57677b9e7be74dc))
+
 # [1.159.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.158.0...v1.159.0) (2025-08-26)
 
 
