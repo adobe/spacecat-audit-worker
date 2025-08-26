@@ -1,3 +1,17 @@
+# [1.159.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.158.0...v1.159.0) (2025-08-26)
+
+
+### Features
+
+* multi-cdn support and config simplification for classification ([#1147](https://github.com/adobe/spacecat-audit-worker/issues/1147)) ([fad7dc4](https://github.com/adobe/spacecat-audit-worker/commit/fad7dc499f21b2145958f7195bf22195d21ddef6))
+
+# [1.158.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.9...v1.158.0) (2025-08-26)
+
+
+### Features
+
+* add error label in the error logs for easier query ([#1160](https://github.com/adobe/spacecat-audit-worker/issues/1160)) ([8ac1c3b](https://github.com/adobe/spacecat-audit-worker/commit/8ac1c3bc5b455e6012df25a3f32ef409e06987a4))
+
 ## [1.157.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.157.8...v1.157.9) (2025-08-26)
 
 

@@ -43,7 +43,7 @@ export async function getExistingObjectKeysFromFailedAudits(s3Client, bucketName
     log.info(`[A11yAudit] Found ${objectKeys.length} existing URLs from failed audits for site ${siteId}.`);
     return objectKeys;
   } catch (error) {
-    log.error(`[A11yAudit] Error getting existing URLs from failed audits for site ${siteId}: ${error.message}`);
+    log.error(`[A11yAudit][A11yProcessingError] Error getting existing URLs from failed audits for site ${siteId}: ${error.message}`);
     return []; // Return empty array on error to prevent downstream issues
   }
 }
@@ -154,7 +154,7 @@ export async function updateStatusToIgnored(
     const failedUpdates = updateResults.filter((result) => result.status === 'rejected');
 
     if (failedUpdates.length > 0) {
-      log.error(`[A11yAudit] Failed to update ${failedUpdates.length} opportunities for site ${siteId}: ${JSON.stringify(failedUpdates)}`);
+      log.error(`[A11yAudit][A11yProcessingError] Failed to update ${failedUpdates.length} opportunities for site ${siteId}: ${JSON.stringify(failedUpdates)}`);
     }
 
     return {
@@ -163,7 +163,7 @@ export async function updateStatusToIgnored(
       error: failedUpdates.length > 0 ? 'Some updates failed' : undefined,
     };
   } catch (error) {
-    log.error(`[A11yAudit] Error updating opportunities to IGNORED for site ${siteId}: ${error.message}`);
+    log.error(`[A11yAudit][A11yProcessingError] Error updating opportunities to IGNORED for site ${siteId}: ${error.message}`);
     return {
       success: false,
       updatedCount: 0,
@@ -300,7 +300,7 @@ export async function saveA11yMetricsToS3(reportData, context) {
       s3Key,
     };
   } catch (error) {
-    log.error(`[A11yAudit] Error saving metrics to S3 for site ${siteId} (${baseUrl}): ${error.message}`);
+    log.error(`[A11yAudit][A11yProcessingError] Error saving metrics to S3 for site ${siteId} (${baseUrl}): ${error.message}`);
     return {
       success: false,
       message: `Failed to save a11y metrics to S3: ${error.message}`,
@@ -394,7 +394,7 @@ export async function saveMystiqueValidationMetricsToS3(
       s3Key,
     };
   } catch (error) {
-    log.error(`[A11yValidation] Error saving mystique validation metrics to S3 for site ${siteId}, opportunity ${opportunityId}: ${error.message}`);
+    log.error(`[A11yValidation][A11yProcessingError] Error saving mystique validation metrics to S3 for site ${siteId}, opportunity ${opportunityId}: ${error.message}`);
     return {
       success: false,
       message: `Failed to save mystique validation metrics to S3: ${error.message}`,

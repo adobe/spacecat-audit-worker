@@ -21,14 +21,14 @@ export default async function handler(message, context) {
     const result = await handleAccessibilityRemediationGuidance(message, context);
 
     if (!result.success) {
-      log.error(`[A11yIndividual] Failed to process guidance: ${result.error}`);
+      log.error(`[A11yIndividual][A11yProcessingError] Failed to process guidance: ${result.error}`);
       return ok(); // Still return ok to avoid retries
     }
 
     log.info('Successfully processed accessibility remediation guidance');
     return ok();
   } catch (error) {
-    log.error(`[A11yIndividual] Error processing accessibility remediation guidance: ${error.message}`);
+    log.error(`[A11yIndividual][A11yProcessingError] Error processing accessibility remediation guidance: ${error.message}`);
     return ok(); // Return ok to avoid retries
   }
 }
