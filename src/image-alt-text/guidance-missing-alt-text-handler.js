@@ -12,34 +12,9 @@
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
-import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
+import { addAltTextSuggestions, getProjectedMetrics, cleanupOutdatedSuggestions } from './opportunityHandler.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
-
-/**
- * Cleans up all OUTDATED suggestions for the opportunity
- * @param {Object} opportunity - The opportunity object
- * @param {Object} Suggestion - Suggestion model from dataAccess
- * @param {Object} log - Logger
- * @returns {Promise<void>}
- */
-async function cleanupOutdatedSuggestions(opportunity, log) {
-  try {
-    const allSuggestions = await opportunity.getSuggestions();
-    const outdatedSuggestions = allSuggestions.filter(
-      (suggestion) => suggestion.getStatus() === SuggestionModel.STATUSES.OUTDATED,
-    );
-
-    if (outdatedSuggestions.length > 0) {
-      await Promise.all(outdatedSuggestions.map((suggestion) => suggestion.remove()));
-      log.info(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions`);
-    } else {
-      log.info(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up`);
-    }
-  } catch (error) {
-    log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions: ${error.message}`);
-  }
-}
 
 /**
  * Maps Mystique alt-text suggestions to suggestion DTO format
@@ -260,7 +235,8 @@ export default async function handler(message, context) {
     if (updatedOpportunityData.mystiqueResponsesReceived
       >= (updatedOpportunityData.mystiqueResponsesExpected || 0)
     ) {
-      log.info(`[${AUDIT_TYPE}]: All Mystique batches completed. Starting cleanup of OUTDATED suggestions...`);
+      log.info(`[${AUDIT_TYPE}]: All Mystique batches completed. 
+        Starting cleanup of OUTDATED suggestions for ${siteId} and auditId: ${auditId}`);
 
       // Small delay to ensure no concurrent operations
       await new Promise((resolve) => {
