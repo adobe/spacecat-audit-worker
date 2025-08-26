@@ -30,7 +30,7 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
       improvedText: suggestion.improved_paragraph,
       originalFleschScore: suggestion.current_flesch_score,
       improvedFleschScore: suggestion.improved_flesch_score,
-      seoRecommendation: suggestion.seo_recommendation,
+      aiSuggestion: suggestion.seo_recommendation,
       aiRationale: suggestion.ai_rationale,
       targetFleschScore: suggestion.target_flesch_score,
     };
@@ -98,7 +98,7 @@ export default async function handler(message, context) {
       improvedText: data.improved_paragraph,
       originalFleschScore: data.current_flesch_score,
       improvedFleschScore: data.improved_flesch_score,
-      seoRecommendation: data.seo_recommendation,
+      aiSuggestion: data.seo_recommendation,
       aiRationale: data.ai_rationale,
       targetFleschScore: data.target_flesch_score,
     });
@@ -203,7 +203,7 @@ export default async function handler(message, context) {
                       improvedFleschScore: recommendation.improvedFleschScore,
                       readabilityImprovement: recommendation.improvedFleschScore
                         - (recommendation.originalFleschScore || opportunity.fleschReadingEase),
-                      seoRecommendation: recommendation.seoRecommendation,
+                      aiSuggestion: recommendation.aiSuggestion,
                       aiRationale: recommendation.aiRationale,
                       mystiqueProcessingCompleted: new Date().toISOString(),
                     };
