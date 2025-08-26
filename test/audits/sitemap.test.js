@@ -1640,3 +1640,81 @@ describe('filterValidUrls with status code tracking', () => {
     expect(normalRedirect.urlsSuggested).to.equal('https://example.com/valid-page');
   });
 });
+
+describe('filterValidUrls with HEAD to GET fallback', () => {
+  beforeEach(() => {
+    nock.cleanAll();
+  });
+
+  it('should fallback to GET when HEAD returns 404 but GET returns 200', async () => {
+    const urls = ['https://example.com/head-404-get-200'];
+
+    // HEAD returns 404, but GET returns 200
+    nock('https://example.com').head('/head-404-get-200').reply(404);
+    nock('https://example.com').get('/head-404-get-200').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.deep.equal(['https://example.com/head-404-get-200']);
+    expect(result.notOk).to.be.empty;
+  });
+
+  it('should still return 404 when both HEAD and GET return 404', async () => {
+    const urls = ['https://example.com/truly-not-found'];
+
+    // Both HEAD and GET return 404
+    nock('https://example.com').head('/truly-not-found').reply(404);
+    nock('https://example.com').get('/truly-not-found').reply(404);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.be.empty;
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/truly-not-found',
+        statusCode: 404,
+      },
+    ]);
+  });
+
+  it('should not fallback to GET when HEAD returns non-404 status', async () => {
+    const urls = ['https://example.com/head-403'];
+
+    // HEAD returns 403, no GET fallback should happen
+    nock('https://example.com').head('/head-403').reply(403);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.be.empty;
+    expect(result.notOk).to.be.empty;
+    expect(result.otherStatusCodes).to.deep.equal([
+      {
+        url: 'https://example.com/head-403',
+        statusCode: 403,
+      },
+    ]);
+  });
+
+  it('should apply HEAD to GET fallback for redirect URL validation', async () => {
+    const urls = ['https://example.com/redirect-to-head-404-get-200'];
+
+    // Original URL redirects
+    nock('https://example.com')
+      .head('/redirect-to-head-404-get-200')
+      .reply(301, '', { Location: 'https://example.com/target-page' });
+
+    // Target page returns 404 for HEAD but 200 for GET
+    nock('https://example.com').head('/target-page').reply(404);
+    nock('https://example.com').get('/target-page').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect-to-head-404-get-200',
+        statusCode: 301,
+        urlsSuggested: 'https://example.com/target-page',
+      },
+    ]);
+  });
+});

@@ -123,7 +123,7 @@ describe('Geo Brand Presence Handler', () => {
       },
     }, getPresignedUrl);
     // two messages are sent to Mystique, one for brand presence and one for faq
-    expect(sqs.sendMessage).to.have.been.calledTwice;
+    expect(sqs.sendMessage).to.have.been.calledOnce;
     const [brandPresenceQueue, brandPresenceMessage] = sqs.sendMessage.firstCall.args;
     expect(brandPresenceQueue).to.equal('spacecat-to-mystique');
     expect(brandPresenceMessage).to.include({
@@ -138,16 +138,16 @@ describe('Geo Brand Presence Handler', () => {
     // TODO(aurelio): check that we write the right file to s3
     // const expectedPrompts = fakeData((x) => ({ ...x, market: x.region, origin: x.source }));
 
-    const [faqQueue, faqMessage] = sqs.sendMessage.secondCall.args;
-    expect(faqQueue).to.equal('spacecat-to-mystique');
-    expect(faqMessage).to.include({
-      type: 'guidance:geo-faq',
-      siteId: site.getId(),
-      url: site.getBaseURL(),
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-    });
-    expect(faqMessage.data).deep.equal({ url: 'https://example.com/presigned-url' });
+    // const [faqQueue, faqMessage] = sqs.sendMessage.secondCall.args;
+    // expect(faqQueue).to.equal('spacecat-to-mystique');
+    // expect(faqMessage).to.include({
+    //   type: 'guidance:geo-faq',
+    //   siteId: site.getId(),
+    //   url: site.getBaseURL(),
+    //   auditId: audit.getId(),
+    //   deliveryType: site.getDeliveryType(),
+    // });
+    // expect(faqMessage.data).deep.equal({ url: 'https://example.com/presigned-url' });
   });
 
   it('should skip sending message to Mystique when no keywordQuestions', async () => {

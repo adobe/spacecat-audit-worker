@@ -19,27 +19,61 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   bing: '(?i)Bingbot',
 };
 
+/**
+ * User agent display name mappings for better readability in reports
+ * Each entry maps a LIKE pattern to a display name
+ */
+export const USER_AGENT_DISPLAY_PATTERNS = [
+  // ChatGPT/OpenAI
+  { pattern: '%chatgpt-user%', displayName: 'ChatGPT-User' },
+  { pattern: '%gptbot%', displayName: 'GPTBot' },
+  { pattern: '%oai-searchbot%', displayName: 'OAI-SearchBot' },
+
+  // Perplexity
+  { pattern: '%perplexitybot%', displayName: 'PerplexityBot' },
+  { pattern: '%perplexity-user%', displayName: 'Perplexity-User' },
+
+  // Other providers TODO: add these if needed
+  // { pattern: '%googlebot%', displayName: 'Googlebot' },
+  // { pattern: '%bingbot%', displayName: 'Bingbot' },
+  // { pattern: '%claude%', displayName: 'Claude' },
+  // { pattern: '%anthropic%', displayName: 'Anthropic' },
+  // { pattern: '%gemini%', displayName: 'Gemini' },
+  // { pattern: '%copilot%', displayName: 'Copilot' },
+];
+
 export function getProviderPattern(provider) {
   return PROVIDER_USER_AGENT_PATTERNS[provider?.toLowerCase()] || null;
 }
 
-export function buildAgentTypeClassificationSQL(provider = null) {
-  const allPatterns = [
+/**
+ * Builds SQL CASE statement for user agent display names
+ * @returns {string} SQL CASE statement
+ */
+export function buildUserAgentDisplaySQL() {
+  const cases = USER_AGENT_DISPLAY_PATTERNS
+    .map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.displayName}'`)
+    .join('\n    ');
+
+  return `CASE 
+    ${cases}
+    ELSE SUBSTR(user_agent, 1, 100)
+  END`;
+}
+
+export function buildAgentTypeClassificationSQL() {
+  const patterns = [
     // ChatGPT/OpenAI
-    { pattern: '%gptbot%', result: 'Crawlers', provider: 'chatgpt' },
-    { pattern: '%oai-searchbot%', result: 'Crawlers', provider: 'chatgpt' },
-    { pattern: '%chatgpt-user%', result: 'Chatbots', provider: 'chatgpt' },
-    { pattern: '%chatgpt%', result: 'Chatbots', provider: 'chatgpt' },
+    { pattern: '%gptbot%', result: 'Crawlers' },
+    { pattern: '%oai-searchbot%', result: 'Crawlers' },
+    { pattern: '%chatgpt-user%', result: 'Chatbots' },
+    { pattern: '%chatgpt%', result: 'Chatbots' },
     // Perplexity
-    { pattern: '%perplexitybot%', result: 'Crawlers', provider: 'perplexity' },
-    { pattern: '%perplexity-user%', result: 'Chatbots', provider: 'perplexity' },
-    { pattern: '%perplexity%', result: 'Chatbots', provider: 'perplexity' },
-    // Others
-    { pattern: '%googlebot%', result: 'Crawlers', provider: 'google' },
-    { pattern: '%bingbot%', result: 'Crawlers', provider: 'bing' },
+    { pattern: '%perplexitybot%', result: 'Crawlers' },
+    { pattern: '%perplexity-user%', result: 'Chatbots' },
+    { pattern: '%perplexity%', result: 'Chatbots' },
   ];
 
-  const patterns = provider ? allPatterns.filter((p) => p.provider === provider) : allPatterns;
   const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');
 
   return `CASE\n          ${cases}\n          ELSE 'Other'\n        END`;

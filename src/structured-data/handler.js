@@ -137,7 +137,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         errors: data.errors,
       },
     }),
-    log,
   });
 
   return { ...auditData };

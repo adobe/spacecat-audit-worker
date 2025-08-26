@@ -165,7 +165,6 @@ export const generateSuggestionData = async (context) => {
         traffic_domain: backlink.traffic_domain,
       },
     }),
-    log,
   });
   const suggestions = await Suggestion.allByOpportunityIdAndStatus(
     opportunity.getId(),
