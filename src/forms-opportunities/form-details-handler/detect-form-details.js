@@ -17,24 +17,45 @@ export default async function handler(message, context) {
     log, dataAccess, sqs, env,
   } = context;
   const { Opportunity } = dataAccess;
-  const { siteId, data } = message;
+  const { data } = message;
   log.info(`Message received in form details handler: ${JSON.stringify(message, null, 2)}`);
   const {
-    url, form_source: formsource, form_details: formDetails,
+    form_details: formDetails, auditId: id,
   } = data;
 
-  const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  // eslint-disable-next-line max-len
-  const opportunity = existingOpportunities.find((oppty) => oppty.getData()?.form === url && (!formsource || oppty.getData()?.formsource === formsource));
-
+  const opportunity = await Opportunity.findById(id);
   if (opportunity) {
     log.info(`Opportunity found: ${JSON.stringify(opportunity)}`);
-    opportunity.setUpdatedBy('system');
-    opportunity.setData({
-      ...opportunity.getData(),
-      formDetails,
-    });
+    if (opportunity.getType() === 'forms-accessibility') {
+      const opportunityData = opportunity.getData();
+      const updatedAccessibility = opportunityData.accessibility.map((item) => {
+        // eslint-disable-next-line max-len
+        const matchingFormDetail = formDetails.find((detail) => detail.url === item.form && detail.form_source === item.formSource);
+        if (matchingFormDetail) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars,camelcase
+          const { url, form_source, ...cleanedFormDetail } = matchingFormDetail;
+          return { ...item, formDetails: cleanedFormDetail };
+        }
+        return item;
+      });
+      opportunity.setData({
+        accessibility: updatedAccessibility,
+      });
+    } else {
+      const opportunityData = opportunity.getData();
+      // eslint-disable-next-line max-len
+      const matchingFormDetail = formDetails.find((detail) => detail.url === opportunityData.form && detail.form_source === opportunityData.formsource);
+      if (matchingFormDetail) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars,camelcase
+        const { form, form_source, ...cleanedFormDetail } = matchingFormDetail;
+        opportunity.setData({
+          ...opportunityData,
+          formDetails: cleanedFormDetail,
+        });
+      }
+    }
 
+    opportunity.setUpdatedBy('system');
     // eslint-disable-next-line no-await-in-loop
     await opportunity.save();
     log.info(`Updated opportunity: ${JSON.stringify(opportunity, null, 2)}`);
@@ -54,6 +75,7 @@ export default async function handler(message, context) {
         metrics: opptyData.data?.metrics || {},
         cta_source: opptyData.data?.formNavigation?.source || '',
         cta_text: opptyData.data?.formNavigation?.text || '',
+        opportunityId: opptyData.id || '',
         form_source: opptyData.data?.formsource || '',
         form_details: opptyData.data?.formDetails,
         page_views: opptyData.data?.pageViews,

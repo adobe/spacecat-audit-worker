@@ -897,10 +897,14 @@ const testData = {
       ],
     },
   },
-  mystiqueMessageForFormDetails: {
-    form_source: '',
-    url: 'https://www.surest.com/newsletter',
-  },
+  mystiqueMessageForFormDetails:
+    {
+      url: 'test-base-url',
+      form_details: [{
+        form_source: '',
+        url: 'https://www.surest.com/newsletter',
+      }],
+    },
   opportunityData: {
     siteId: 'site-id',
     auditId: 'audit-id',

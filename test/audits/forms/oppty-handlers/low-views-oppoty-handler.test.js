@@ -69,6 +69,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
       site: {
+        getBaseURL: sinon.stub().returns('test-base-url'),
         getId: sinon.stub().returns('test-site-id'),
         getDeliveryType: sinon.stub().returns('eds'),
       },

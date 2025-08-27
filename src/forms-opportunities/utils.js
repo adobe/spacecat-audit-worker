@@ -489,24 +489,32 @@ export async function calculateProjectedConversionValue(context, siteId, opportu
   }
 }
 
-export async function sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData) {
-  const auditData = JSON.parse(JSON.stringify(auditDataObject));
-  const {
-    log, sqs, site, env,
-  } = context;
-  const mystiqueFormsQualityAgentMessage = {
-    type: 'detect:form-details',
-    siteId: auditData.siteId,
-    auditId: auditData.auditId,
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      url: opportunityData.data.form,
-      form_source: opportunityData.data.formsource,
-    },
-  };
+export async function sendMessageToFormsQualityAgent(context, opportunity, formsList) {
+  if (opportunity) {
+    const opportunityData = JSON.parse(JSON.stringify(opportunity));
+    const {
+      log, sqs, site, env,
+    } = context;
 
-  // eslint-disable-next-line no-await-in-loop
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueFormsQualityAgentMessage);
-  log.info(`forms quality agent message sent to mystique : ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
+    const data = {
+      url: site.getBaseURL(),
+      form_details: formsList.map(({ form, formSource }) => ({
+        url: form,
+        form_source: formSource,
+      })),
+    };
+
+    const mystiqueFormsQualityAgentMessage = {
+      type: 'detect:form-details',
+      siteId: opportunityData.siteId,
+      auditId: opportunityData.id,
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data,
+    };
+
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueFormsQualityAgentMessage);
+    log.info(`forms quality agent message sent to mystique : ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
+  }
 }
