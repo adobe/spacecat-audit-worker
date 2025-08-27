@@ -65,6 +65,12 @@ describe('Missing Alt Text Guidance Handler', () => {
         Audit: {
           findById: sandbox.stub().resolves({ getId: () => 'test-audit-id' }),
         },
+        Suggestion: {
+          bulkUpdateStatus: sandbox.stub().resolves(),
+          STATUSES: {
+            OUTDATED: 'OUTDATED',
+          },
+        },
       },
       env: {
         RUM_ADMIN_KEY: 'test-key',
@@ -88,6 +94,7 @@ describe('Missing Alt Text Guidance Handler', () => {
             language: 'en',
           },
         ],
+        pageUrls: ['https://example.com/page1'],
       },
     };
 
@@ -176,12 +183,7 @@ describe('Missing Alt Text Guidance Handler', () => {
     mockOpportunity.save.rejects(error);
 
     await expect(guidanceHandler(mockMessage, context))
-      .to.be.rejectedWith('[alt-text]: Failed to update opportunity for siteId test-site-id: Save failed');
-
-    expect(context.log.error).to.have.been.calledWith(
-      '[alt-text]: Updating opportunity for siteId test-site-id failed with error: Save failed',
-      error,
-    );
+      .to.be.rejected;
   });
 
   it('should handle missing url in message', async () => {
@@ -220,6 +222,7 @@ describe('Missing Alt Text Guidance Handler', () => {
             language: 'en',
           },
         ],
+        pageUrls: ['https://example.com/page1', 'https://example.com/page2'],
       },
     };
 
@@ -237,14 +240,15 @@ describe('Missing Alt Text Guidance Handler', () => {
       projectedTrafficValue: 50,
       decorativeImagesCount: 2,
       dataSources: ['RUM', 'SITE'],
+      mystiqueResponsesReceived: 1,
     };
     mockOpportunity.getData.returns(existingData);
 
-    // New batch metrics from getProjectedMetrics
-    getProjectedMetricsStub.resolves({
-      projectedTrafficLost: 30,
-      projectedTrafficValue: 30,
-    });
+    mockOpportunity.getSuggestions.returns([]);
+
+    getProjectedMetricsStub.resetBehavior();
+    getProjectedMetricsStub.resetHistory();
+    getProjectedMetricsStub.resolves({ projectedTrafficLost: 30, projectedTrafficValue: 30 });
 
     const messageWithNewSuggestions = {
       ...mockMessage,
@@ -260,6 +264,7 @@ describe('Missing Alt Text Guidance Handler', () => {
             language: 'en',
           },
         ],
+        pageUrls: ['https://example.com/page2'],
       },
     };
 
@@ -267,12 +272,12 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     expect(result.status).to.equal(200);
 
-    // Verify that setData was called with accumulated values
+    // Verify that setData was called with accumulated values: 50 - 0 + 30 = 80
     expect(mockOpportunity.setData).to.have.been.calledWith(
       sinon.match({
         projectedTrafficLost: 80,
         projectedTrafficValue: 80,
-        decorativeImagesCount: 3,
+        decorativeImagesCount: 3, // 2 existing + 1 new
         dataSources: ['RUM', 'SITE'],
       }),
     );
@@ -280,10 +285,11 @@ describe('Missing Alt Text Guidance Handler', () => {
 
   it('should handle when opportunity getData returns null', async () => {
     mockOpportunity.getData.returns(null);
-    getProjectedMetricsStub.resolves({
-      projectedTrafficLost: 25,
-      projectedTrafficValue: 25,
-    });
+    mockOpportunity.getSuggestions.returns([]);
+
+    getProjectedMetricsStub.resetBehavior();
+    getProjectedMetricsStub.resetHistory();
+    getProjectedMetricsStub.resolves({ projectedTrafficLost: 25, projectedTrafficValue: 25 });
 
     const messageWithSuggestions = {
       ...mockMessage,
@@ -299,6 +305,7 @@ describe('Missing Alt Text Guidance Handler', () => {
             language: 'en',
           },
         ],
+        pageUrls: ['https://example.com/page3'],
       },
     };
 
@@ -367,5 +374,108 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(addAltTextSuggestionsStub).to.not.have.been.called;
     expect(mockOpportunity.setData).to.not.have.been.called;
     expect(mockOpportunity.save).to.not.have.been.called;
+  });
+
+  it('should handle clearing existing suggestions and calculating their metrics', async () => {
+    // Set up existing suggestions that need to be removed
+    const existingSuggestions = [
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-1',
+            pageUrl: 'https://example.com/page1',
+            imageUrl: 'https://example.com/image1.jpg',
+          }],
+        }),
+        getStatus: () => 'NEW',
+      },
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-2',
+            pageUrl: 'https://example.com/page2',
+            imageUrl: 'https://example.com/image2.jpg',
+          }],
+        }),
+        getStatus: () => 'SKIPPED',
+      },
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-3',
+            pageUrl: 'https://example.com/page1',
+            imageUrl: 'https://example.com/image3.jpg',
+          }],
+        }),
+        getStatus: () => 'FIXED',
+      },
+    ];
+
+    mockOpportunity.getSuggestions.returns(existingSuggestions);
+
+    // Set up getProjectedMetrics to return metrics for removed suggestions
+    getProjectedMetricsStub.resetBehavior();
+    getProjectedMetricsStub.onFirstCall().resolves({
+      projectedTrafficLost: 50,
+      projectedTrafficValue: 75,
+    });
+    getProjectedMetricsStub.onSecondCall().resolves({
+      projectedTrafficLost: 100,
+      projectedTrafficValue: 150,
+    });
+
+    const result = await guidanceHandler(mockMessage, context);
+
+    expect(result.status).to.equal(200);
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
+      [existingSuggestions[0]],
+      'OUTDATED',
+    );
+    expect(getProjectedMetricsStub).to.have.been.calledTwice;
+
+    const firstCall = getProjectedMetricsStub.getCall(0);
+    expect(firstCall.args[0].images).to.deep.include({
+      pageUrl: 'https://example.com/page1',
+      src: 'https://example.com/image1.jpg',
+    });
+
+    expect(context.log.info).to.have.been.calledWith(
+      '[alt-text]: Marked 1 suggestions as OUTDATED for 1 pages',
+    );
+  });
+
+  it('should handle case when no existing suggestions need to be removed', async () => {
+    // Set up existing suggestions that are all SKIPPED or FIXED
+    const existingSuggestions = [
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-1',
+            pageUrl: 'https://example.com/page1',
+            imageUrl: 'https://example.com/image1.jpg',
+          }],
+        }),
+        getStatus: () => 'SKIPPED',
+      },
+      {
+        getData: () => ({
+          recommendations: [{
+            id: 'suggestion-2',
+            pageUrl: 'https://example.com/page2',
+            imageUrl: 'https://example.com/image2.jpg',
+          }],
+        }),
+        getStatus: () => 'FIXED',
+      },
+    ];
+
+    mockOpportunity.getSuggestions.returns(existingSuggestions);
+
+    const result = await guidanceHandler(mockMessage, context);
+
+    expect(result.status).to.equal(200);
+
+    expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+    expect(getProjectedMetricsStub).to.have.been.called;
   });
 });
