@@ -218,6 +218,7 @@ export async function runAuditAndGenerateSuggestions(context) {
       opportunity.getId(),
       SuggestionModel.STATUSES.NEW,
     );
+    log.info(`Suggestions are: ${suggestions.toString()}`);
     await Promise.all(suggestions.map(async (suggestion) => {
       const message = {
         type: 'guidance:structured-data',
@@ -232,6 +233,7 @@ export async function runAuditAndGenerateSuggestions(context) {
           errors: suggestion.getData()?.errors,
         },
       };
+      log.info(`Sending message to Mystique: ${message}`);
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     }));
     const endTime = process.hrtime(startTime);
