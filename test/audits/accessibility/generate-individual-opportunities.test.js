@@ -3146,7 +3146,18 @@ describe('handleAccessibilityRemediationGuidance', () => {
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-    testModule = await import('../../../src/accessibility/utils/generate-individual-opportunities.js');
+    testModule = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com/page1',
+            issuesList: [
+              { suggestionId: 'sugg-789' },
+            ],
+          },
+        ]),
+      },
+    });
     mockLog = {
       info: sandbox.stub(),
       debug: sandbox.stub(),
@@ -3909,10 +3920,21 @@ describe('handleAccessibilityRemediationGuidance', () => {
   });
 
   it('should log success message when metrics are saved successfully (line 889 coverage)', async () => {
-    // Mock the scrape-utils module to ensure saveMystiqueValidationMetricsToS3 succeeds
+    // Mock both the scrape-utils and mystique-data-processing modules
+    // to ensure saveMystiqueValidationMetricsToS3 succeeds
     const mockScrapeUtils = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '../../../src/accessibility/utils/scrape-utils.js': {
         saveMystiqueValidationMetricsToS3: sandbox.stub().resolves(),
+      },
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com/page1',
+            issuesList: [
+              { suggestionId: 'sugg-789' },
+            ],
+          },
+        ]),
       },
     });
 
