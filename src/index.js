@@ -60,13 +60,14 @@ import accessibilityRemediationGuidance from './accessibility/guidance-handlers/
 import cdnAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
-import detectPageIntent from './page-intent/handler.detect.js';
-import updatePageIntent from './page-intent/handler.update.js';
+import getPageIntent from './page-intent/handler.js';
+import pageIntentCompletion from './page-intent/handler.completion.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
+import customerAnalysis from './llmo-customer-analysis/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -113,11 +114,12 @@ const HANDLERS = {
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
-  'detect:page-intent': detectPageIntent,
   'detect:form-details': detectFormDetails,
-  'page-intent': updatePageIntent,
+  'page-intent': getPageIntent,
+  'page-intent-completion': pageIntentCompletion,
   'llmo-referral-traffic': llmoReferralTraffic,
   'optimization-report-callback': optimizationReportCallback,
+  'customer-analysis': customerAnalysis,
   hreflang,
   dummy: (message) => ok(message),
 };
