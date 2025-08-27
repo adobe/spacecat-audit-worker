@@ -142,6 +142,8 @@ describe('createLowNavigationOpportunities handler method', () => {
         formNavigation: {
           source: '#teaser-related02 .cmp-teaser__action-link',
           url: 'https://www.surest.com/about-us',
+          clicksOnCTA: 800,
+          pageViews: 108400,
         },
       },
       guidance: {
@@ -231,6 +233,8 @@ describe('createLowNavigationOpportunities handler method', () => {
         formNavigation: {
           source: '#teaser-related02 .cmp-teaser__action-link',
           url: 'https://www.suriframe-example.com/newsletter',
+          clicksOnCTA: 800,
+          pageViews: 108400,
         },
       },
       guidance: {

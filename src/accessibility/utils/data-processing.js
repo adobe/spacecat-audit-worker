@@ -30,6 +30,7 @@ import {
   generateFixedNewReportMarkdown,
   generateBaseReportMarkdown,
 } from './generate-md-reports.js';
+import { AUDIT_PREFIXES, URL_SOURCE_SEPARATOR } from './constants.js';
 
 /**
  * Deletes the original JSON files after they've been processed
@@ -69,7 +70,7 @@ export async function deleteOriginalFiles(s3Client, bucketName, objectKeys, log)
 
     log.info(`Deleted ${deletedCount} original files after aggregation`);
   } catch (error) {
-    log.error('Error deleting original files', error);
+    log.error('[A11yProcessingError] Error deleting original files', error);
   }
   return deletedCount;
 }
@@ -84,7 +85,7 @@ export async function getSubfoldersUsingPrefixAndDelimiter(
 ) {
   if (!s3Client || !bucketName || !prefix || !delimiter) {
     log.error(
-      `Invalid input parameters in getObjectKeysUsingPrefix: ensure s3Client, delimiter:${delimiter}, bucketName:${bucketName}, and prefix:${prefix} are provided.`,
+      `[A11yProcessingError] Invalid input parameters in getObjectKeysUsingPrefix: ensure s3Client, delimiter:${delimiter}, bucketName:${bucketName}, and prefix:${prefix} are provided.`,
     );
     throw new Error(
       'Invalid input parameters in getObjectKeysUsingPrefix: ensure s3Client, delimiter, bucketName, and prefix are provided.',
@@ -105,7 +106,7 @@ export async function getSubfoldersUsingPrefixAndDelimiter(
     return commonPrefixes.map((subfolder) => subfolder.Prefix);
   } catch (err) {
     log.error(
-      `Error while fetching S3 object keys using bucket ${bucketName} and prefix ${prefix} with delimiter ${delimiter}`,
+      `[A11yProcessingError] Error while fetching S3 object keys using bucket ${bucketName} and prefix ${prefix} with delimiter ${delimiter}`,
       err,
     );
     throw err;
@@ -179,6 +180,7 @@ export async function getObjectKeysFromSubfolders(
 
   // filter subfolders to match the current date because the name of the subfolder is a timestamp
   // we do this in case there are leftover subfolders from previous runs that fail to be deleted
+  // TODO: Also include form-accessibility folders until both audits run together
   const getCurrentSubfolders = subfolders.filter((timestamp) => {
     const timestampValue = timestamp.split('/').filter((item) => item !== '').pop();
     return new Date(parseInt(timestampValue, 10)).toISOString().split('T')[0] === version;
@@ -251,7 +253,7 @@ export async function processFilesWithRetry(s3Client, bucketName, objectKeys, lo
 
       return { key, data };
     } catch (error) {
-      log.error(`Error processing file ${key}: ${error.message}`);
+      log.error(`[A11yProcessingError] Error processing file ${key}: ${error.message}`);
       throw error; // Re-throw to be caught by retry logic
     }
   };
@@ -264,7 +266,7 @@ export async function processFilesWithRetry(s3Client, bucketName, objectKeys, lo
         log.warn(`Retrying file ${key} (attempt ${retryCount + 1}/${maxRetries}): ${error.message}`);
         return processFileWithRetry(key, retryCount + 1);
       }
-      log.error(`Failed to process file ${key} after ${maxRetries} retries: ${error.message}`);
+      log.error(`[A11yProcessingError] Failed to process file ${key} after ${maxRetries} retries: ${error.message}`);
       return null;
     }
   };
@@ -299,12 +301,26 @@ export async function processFilesWithRetry(s3Client, bucketName, objectKeys, lo
 }
 
 /**
+ * Gets the storage prefix and logIdentifier for the audit type
+ * @param {string} auditType - the audit type
+ * @returns {object} the storage prefix and logIdentifier
+ */
+export function getAuditPrefixes(auditType) {
+  const prefixes = AUDIT_PREFIXES[auditType];
+  if (!prefixes) {
+    throw new Error(`Unsupported audit type: ${auditType}`);
+  }
+  return prefixes;
+}
+
+/**
  * Aggregates accessibility audit data from multiple JSON files in S3 and creates a summary
  * @param {import('@aws-sdk/client-s3').S3Client} s3Client - an S3 client
  * @param {string} bucketName - the name of the S3 bucket
  * @param {string} siteId - the site ID to look for
  * @param {import('@azure/logger').Logger} log - a logger instance
  * @param {string} outputKey - the key for the aggregated output file
+ * @param {string} auditType - the type of audit (accessibility or forms-accessibility)
  * @param {string} version - the version/date to filter by
  * @param {number} maxRetries - maximum number of retries for failed promises (default: 1)
  * @returns {Promise<{success: boolean, aggregatedData: object, message: string}>} - result
@@ -315,12 +331,13 @@ export async function aggregateAccessibilityData(
   siteId,
   log,
   outputKey,
+  auditType,
   version,
   maxRetries = 2,
 ) {
-  if (!s3Client || !bucketName || !siteId) {
+  if (!s3Client || !bucketName || !siteId || !auditType) {
     const message = 'Missing required parameters for aggregateAccessibilityData';
-    log.error(message);
+    log.error(`[A11yProcessingError] ${message}`);
     return { success: false, aggregatedData: null, message };
   }
 
@@ -341,19 +358,25 @@ export async function aggregateAccessibilityData(
     },
   };
 
+  const { storagePrefix, logIdentifier } = getAuditPrefixes(auditType);
+
   try {
     // Get object keys from subfolders
     const objectKeysResult = await getObjectKeysFromSubfolders(
       s3Client,
       bucketName,
-      'accessibility',
+      storagePrefix,
       siteId,
       version,
       log,
     );
+
+    // Check if the call succeeded
     if (!objectKeysResult.success) {
       return { success: false, aggregatedData: null, message: objectKeysResult.message };
     }
+
+    // Combine object keys from both sources
     const { objectKeys } = objectKeysResult;
 
     // Process files with retry logic
@@ -367,21 +390,21 @@ export async function aggregateAccessibilityData(
 
     // Check if we have any successful results to process
     if (results.length === 0) {
-      const message = `No files could be processed successfully for site ${siteId}`;
-      log.error(message);
+      const message = `[${logIdentifier}] No files could be processed successfully for site ${siteId}`;
+      log.error(`[A11yProcessingError] ${message}`);
       return { success: false, aggregatedData: null, message };
     }
 
     // Process the results
     results.forEach((result) => {
       const { data } = result;
-      const { violations, traffic, url: siteUrl } = data;
+      const {
+        violations, traffic, url: siteUrl, source,
+      } = data;
 
-      // Store the url specific data
-      aggregatedData[siteUrl] = {
-        violations,
-        traffic,
-      };
+      // Store the url specific data only for page-level data (no form level data yet)
+      const key = source ? `${siteUrl}${URL_SOURCE_SEPARATOR}${source}` : siteUrl;
+      aggregatedData[key] = { violations, traffic };
 
       // Update overall data
       aggregatedData = updateViolationData(aggregatedData, violations, 'critical');
@@ -399,12 +422,12 @@ export async function aggregateAccessibilityData(
       ContentType: 'application/json',
     }));
 
-    log.info(`Saved aggregated accessibility data to ${outputKey}`);
+    log.info(`[${logIdentifier}] Saved aggregated accessibility data to ${outputKey}`);
 
-    // check if there are any other final-result files in the accessibility/siteId folder
+    // check if there are any other final-result files in the {storagePrefix}/siteId folder
     // if there are, we will use the latest one for comparison later on
-    const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
-    log.info(`[A11yAudit] Found ${lastWeekObjectKeys.length} final-result files in the accessibility/siteId folder with keys: ${lastWeekObjectKeys}`);
+    const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `${storagePrefix}/${siteId}/`, log, 10, '-final-result.json');
+    log.info(`[${logIdentifier}] Found ${lastWeekObjectKeys.length} final-result files in the ${storagePrefix}/siteId folder with keys: ${lastWeekObjectKeys}`);
 
     // get last week file and start creating the report
     const lastWeekFile = lastWeekObjectKeys.length < 2
@@ -416,7 +439,7 @@ export async function aggregateAccessibilityData(
         log,
       );
     if (lastWeekFile) {
-      log.info(`[A11yAudit] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
+      log.info(`[${logIdentifier}] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
     }
 
     await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
@@ -430,7 +453,7 @@ export async function aggregateAccessibilityData(
       message: `Successfully aggregated ${objectKeys.length} files into ${outputKey}`,
     };
   } catch (error) {
-    log.error(`Error aggregating accessibility data for site ${siteId}`, error);
+    log.error(`[${logIdentifier}][A11yProcessingError] Error aggregating accessibility data for site ${siteId}`, error);
     return {
       success: false,
       aggregatedData: null,
@@ -456,7 +479,7 @@ export async function createReportOpportunity(opportunityInstance, auditData, co
     const opportunity = await Opportunity.create(opportunityData);
     return { opportunity };
   } catch (e) {
-    log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
+    log.error(`[A11yProcessingError] Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
     throw new Error(e.message);
   }
 }
@@ -473,7 +496,7 @@ export async function createReportOpportunitySuggestion(
     const suggestion = await opportunity.addSuggestions(suggestions);
     return { suggestion };
   } catch (e) {
-    log.error(`Failed to create new suggestion for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
+    log.error(`[A11yProcessingError] Failed to create new suggestion for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
     throw new Error(e.message);
   }
 }
@@ -492,11 +515,11 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
     finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
     if (finalResultFiles.length === 0) {
       const errorMessage = `[A11yAudit] No final result files found for ${siteId}`;
-      log.error(errorMessage);
+      log.error(`[A11yProcessingError] ${errorMessage}`);
       return urlsToScrape;
     }
   } catch (error) {
-    log.error(`[A11yAudit] Error getting final result files for ${siteId}: ${error.message}`);
+    log.error(`[A11yAudit][A11yProcessingError] Error getting final result files for ${siteId}: ${error.message}`);
     return urlsToScrape;
   }
 
@@ -507,11 +530,11 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
     latestFinalResultFile = await getObjectFromKey(s3Client, bucketName, latestFinalResultFileKey, log);
     if (!latestFinalResultFile) {
       const errorMessage = `[A11yAudit] No latest final result file found for ${siteId}`;
-      log.error(errorMessage);
+      log.error(`[A11yProcessingError] ${errorMessage}`);
       return urlsToScrape;
     }
   } catch (error) {
-    log.error(`[A11yAudit] Error getting latest final result file for ${siteId}: ${error.message}`);
+    log.error(`[A11yAudit][A11yProcessingError] Error getting latest final result file for ${siteId}: ${error.message}`);
     return urlsToScrape;
   }
 
@@ -528,7 +551,7 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
 
   if (urlsToScrape.length === 0) {
     const errorMessage = `[A11yAudit] No URLs found for ${siteId}`;
-    log.error(errorMessage);
+    log.error(`[A11yProcessingError] ${errorMessage}`);
     return urlsToScrape;
   }
 
@@ -582,7 +605,7 @@ export async function generateReportOpportunity(
   try {
     opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
   } catch (error) {
-    log.error(`Failed to create report opportunity for ${reportName}`, error.message);
+    log.error(`[A11yProcessingError] Failed to create report opportunity for ${reportName}`, error.message);
     throw new Error(error.message);
   }
 
@@ -597,7 +620,7 @@ export async function generateReportOpportunity(
       log,
     );
   } catch (error) {
-    log.error(`Failed to create report opportunity suggestion for ${reportName}`, error.message);
+    log.error(`[A11yProcessingError] Failed to create report opportunity suggestion for ${reportName}`, error.message);
     throw new Error(error.message);
   }
 
@@ -691,21 +714,21 @@ export async function generateReportOpportunities(
   try {
     relatedReportsUrls.inDepthReportUrl = await generateReportOpportunity(reportData, generateInDepthReportMarkdown, createInDepthReportOpportunity, 'in-depth report');
   } catch (error) {
-    log.error('Failed to generate in-depth report opportunity', error.message);
+    log.error('[A11yProcessingError] Failed to generate in-depth report opportunity', error.message);
     throw new Error(error.message);
   }
 
   try {
     relatedReportsUrls.enhancedReportUrl = await generateReportOpportunity(reportData, generateEnhancedReportMarkdown, createEnhancedReportOpportunity, 'enhanced report');
   } catch (error) {
-    log.error('Failed to generate enhanced report opportunity', error.message);
+    log.error('[A11yProcessingError] Failed to generate enhanced report opportunity', error.message);
     throw new Error(error.message);
   }
 
   try {
     relatedReportsUrls.fixedVsNewReportUrl = await generateReportOpportunity(reportData, generateFixedNewReportMarkdown, createFixedVsNewReportOpportunity, 'fixed vs new report');
   } catch (error) {
-    log.error('Failed to generate fixed vs new report opportunity', error.message);
+    log.error('[A11yProcessingError] Failed to generate fixed vs new report opportunity', error.message);
     throw new Error(error.message);
   }
 
@@ -713,7 +736,7 @@ export async function generateReportOpportunities(
     reportData.mdData.relatedReportsUrls = relatedReportsUrls;
     await generateReportOpportunity(reportData, generateBaseReportMarkdown, createBaseReportOpportunity, 'base report', false);
   } catch (error) {
-    log.error('Failed to generate base report opportunity', error.message);
+    log.error('[A11yProcessingError] Failed to generate base report opportunity', error.message);
     throw new Error(error.message);
   }
 
