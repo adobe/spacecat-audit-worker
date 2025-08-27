@@ -24,7 +24,9 @@ import { generateReportingPeriods } from './utils.js';
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site } = dataAccess;
-  const { siteId, periodIdentifier: inputPeriodIdentifier, llmoFolder: inputLlmoFolder, data } = message;
+  const {
+    siteId, periodIdentifier: inputPeriodIdentifier, llmoFolder: inputLlmoFolder, data,
+  } = message;
   const {
     suggestedUrls = [], aiRationale = '', confidenceScore = 0,
     brokenUrl, userAgent,
@@ -45,7 +47,9 @@ export default async function handler(message, context) {
     const week = generateReportingPeriods().weeks[0];
     const derivedPeriod = `w${week.weekNumber}-${week.year}`;
     const periodId = inputPeriodIdentifier || derivedPeriod;
-    const folderName = inputLlmoFolder || site.getConfig()?.getLlmoDataFolder?.() || site.getBaseURL();
+    const folderName = inputLlmoFolder
+      || site.getConfig()?.getLlmoDataFolder?.()
+      || site.getBaseURL?.();
     const outputLocation = `${folderName}/agentic-traffic`;
     const filename = `agentictraffic-${periodId}-404-ui.xlsx`;
     const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
@@ -92,7 +96,7 @@ export default async function handler(message, context) {
       if (uaCell === keyUa && urlCell === keyUrl) {
         const hitsCell = sheet.getCell(i, 3).value || '';
         sheet.getRow(i).values = [
-          ,
+          '',
           keyUa,
           keyUrl,
           hitsCell, // preserve existing number of hits

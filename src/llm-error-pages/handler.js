@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import ExcelJS from 'exceljs';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
@@ -24,161 +25,12 @@ import {
   categorizeErrorsByStatusCode,
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
-import { syncSuggestions } from '../utils/data-access.js';
 import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
-import { validateUrlsBatch } from './utils.js';
-import ExcelJS from 'exceljs';
-
-export async function createOpportunityForErrorCategory(
-  errorCode,
-  errorPages,
-  context,
-) {
-  const {
-    log, sqs, env, site, dataAccess, audit,
-  } = context;
-  const { Opportunity } = dataAccess;
-
-  if (!errorPages || errorPages.length === 0) {
-    log.info(`No validated errors for ${errorCode} category - skipping opportunity creation`);
-    return;
-  }
-
-  log.info(`Creating opportunity for ${errorCode} errors with ${errorPages.length} suggestions`);
-
-  const siteId = site.getId();
-  const baseUrl = site.getBaseURL?.() || 'unknown';
-
-  log.info(`Creating opportunity with siteId: ${siteId}`);
-
-  const opportunityInstance = createOpportunityData({ errorCode, errorPages });
-
-  let opportunity;
-  try {
-    // Look for existing opportunity with same type and error code
-    const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    opportunity = opportunities.find((oppty) => oppty.getType() === 'llm-error-pages'
-      && oppty.getData()?.errorCode === errorCode);
-  } catch (e) {
-    log.error(`Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
-    throw new Error(`Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
-  }
-
-  try {
-    if (!opportunity) {
-      // Create new opportunity
-      const opportunityData = {
-        siteId,
-        auditId: audit?.getId(),
-        runbook: opportunityInstance.runbook,
-        type: 'llm-error-pages',
-        origin: opportunityInstance.origin,
-        title: opportunityInstance.title,
-        description: opportunityInstance.description,
-        guidance: opportunityInstance.guidance,
-        tags: opportunityInstance.tags,
-        data: opportunityInstance.data,
-      };
-      opportunity = await Opportunity.create(opportunityData);
-      log.info(`Created new opportunity ${opportunity.getId()} for ${errorCode} errors`);
-    } else {
-      // Update existing opportunity
-      log.info(`Found existing opportunity ${opportunity.getId()} for ${errorCode} errors, updating...`);
-
-      // Update opportunity data
-      opportunity.setData({
-        ...opportunity.getData(),
-        totalErrors: opportunityInstance.data.totalErrors,
-        uniqueUrls: opportunityInstance.data.uniqueUrls,
-        uniqueUserAgents: opportunityInstance.data.uniqueUserAgents,
-        dataSources: opportunityInstance.data.dataSources,
-      });
-
-      opportunity.setUpdatedBy('system');
-      await opportunity.save();
-      log.info(`Updated existing opportunity ${opportunity.getId()}`);
-    }
-
-    // Handle suggestions based on error code
-    log.info(`Processing suggestions for ${errorCode} errors`);
-
-    // Clean up existing suggestions for this error code
-    const existingSuggestions = await opportunity.getSuggestions();
-    const suggestionsToRemove = existingSuggestions.filter(
-      (suggestion) => suggestion.getData()?.statusCode === errorCode,
-    );
-
-    if (suggestionsToRemove.length > 0) {
-      log.info(`Removing ${suggestionsToRemove.length} outdated suggestions for ${errorCode} errors`);
-      await Promise.all(suggestionsToRemove.map((suggestion) => suggestion.remove()));
-    }
-
-    const suggestionType = errorCode === '404' ? 'REDIRECT_UPDATE' : 'CODE_CHANGE';
-    const template = 'Fix {errorCode} error for {url} - {userAgent} crawler affected';
-
-    // Create suggestions
-    const mapNewSuggestion = (errorPage, index) => ({
-      opportunityId: opportunity.getId(),
-      type: suggestionType,
-      rank: index + 1,
-      status: 'NEW',
-      data: {
-        url: errorPage.url,
-        statusCode: errorPage.status,
-        totalRequests: errorPage.totalRequests,
-        userAgent: errorPage.userAgent,
-        rawUserAgents: errorPage.rawUserAgents,
-        suggestedUrls: [],
-        aiRationale: null,
-        confidenceScore: null,
-        suggestion: template.replace('{url}', errorPage.url).replace('{userAgent}', errorPage.userAgent).replace('{errorCode}', errorCode),
-      },
-    });
-
-    // Create suggestions
-    await syncSuggestions({
-      opportunity,
-      newData: errorPages,
-      buildKey: (errorPage) => `${errorPage.url}|${errorPage.status}|${errorPage.userAgent}`,
-      context,
-      mapNewSuggestion,
-      log,
-    });
-
-    log.info(`Created ${errorPages.length} suggestions for ${errorCode} errors`);
-
-    // Send SQS message to Mystique for 404 errors only
-    if (errorCode === '404' && sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-      const top500Errors = errorPages.slice(0, 500);
-      const message = {
-        type: 'guidance:broken-links',
-        siteId: site.getId(),
-        auditId: audit?.getId() || 'llm-error-pages-audit',
-        deliveryType: site?.getDeliveryType?.() || 'aem_edge',
-        time: new Date().toISOString(),
-        data: {
-          brokenLinks: top500Errors.map((errorPage) => ({
-            urlFrom: errorPage.userAgent,
-            urlTo: baseUrl ? `${baseUrl}${errorPage.url}` : errorPage.url,
-            suggestionId: `llm-${errorPage.url}-${errorPage.userAgent}`,
-          })),
-          alternativeUrls: [],
-          opportunityId: opportunity.getId(),
-        },
-      };
-
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-      log.info(`Queued ${errorPages.length} validated 404 URLs to Mystique for AI processing in single message`);
-    }
-  } catch (e) {
-    log.error(`Failed to create/update opportunity for siteId ${siteId} and errorCode ${errorCode}: ${e.message}`);
-    throw e;
-  }
-}
 
 async function runLlmErrorPagesAudit(url, context, site) {
-  const { log, message = {} } = context;
+  const {
+    log, audit, sqs, env,
+  } = context;
   const s3Config = getS3Config(site);
 
   log.info(`Starting LLM error pages audit for ${url}`);
@@ -186,13 +38,10 @@ async function runLlmErrorPagesAudit(url, context, site) {
   try {
     const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
 
-    let startDate;
-    let endDate;
-    let periodIdentifier;
     const week = generateReportingPeriods().weeks[0];
-    startDate = week.startDate;
-    endDate = week.endDate;
-    periodIdentifier = `w${week.weekNumber}-${week.year}`;
+    const { startDate } = week;
+    const { endDate } = week;
+    const periodIdentifier = `w${week.weekNumber}-${week.year}`;
     log.info(`Running weekly audit for ${periodIdentifier}`);
 
     // Get site configuration
@@ -243,12 +92,11 @@ async function runLlmErrorPagesAudit(url, context, site) {
       if (!errors || errors.length === 0) return;
       const consolidated = consolidateErrorsByUrl(errors);
       const sorted = sortErrorsByTrafficVolume(consolidated);
-      const validated = await validateUrlsBatch(sorted, log);
 
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('data');
       sheet.addRow(['User Agent', 'URL', 'Number of Hits', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
-      validated.forEach((e) => {
+      sorted.forEach((e) => {
         sheet.addRow([
           e.userAgent,
           toPathOnly(e.url),
@@ -267,7 +115,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
         sharepointClient,
         filename,
       });
-      log.info(`Uploaded Excel for ${code}: ${filename} (${validated.length} rows)`);
+      log.info(`Uploaded Excel for ${code}: ${filename} (${sorted.length} rows)`);
     };
 
     // Generate and upload Excel files for each category
@@ -279,28 +127,29 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
     // Send SQS message to Mystique for 404 errors only (no DB dependencies)
     const errors404 = categorizedResults[404] || [];
-    if (errors404.length > 0 && context.sqs && context.env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
+    if (errors404.length > 0 && sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
       const baseUrl = site.getBaseURL?.() || '';
       const consolidated404 = consolidateErrorsByUrl(errors404);
       const sorted404 = sortErrorsByTrafficVolume(consolidated404);
-      const validated404 = await validateUrlsBatch(sorted404, log);
-      const messagePayload = {
+      const message = {
         type: 'guidance:broken-links',
         siteId: site.getId(),
-        auditId: context.auditId || 'unknown',
+        auditId: audit?.getId() || 'llm-error-pages-audit',
         deliveryType: site?.getDeliveryType?.() || 'aem_edge',
         time: new Date().toISOString(),
-        periodIdentifier,
-        llmoFolder,
         data: {
-          brokenLinks: validated404.map((e) => ({
-            urlFrom: e.userAgent,
-            urlTo: baseUrl ? `${baseUrl}${toPathOnly(e.url)}` : toPathOnly(e.url),
+          brokenLinks: sorted404.map((errorPage) => ({
+            urlFrom: errorPage.userAgent,
+            urlTo: baseUrl ? `${baseUrl}${errorPage.url}` : errorPage.url,
+            suggestionId: `llm-${errorPage.url}-${errorPage.userAgent}`,
           })),
+          alternativeUrls: [],
+          opportunityId: `llm-error-pages-404-opportunity-${periodIdentifier}`,
         },
       };
-      await context.sqs.sendMessage(context.env.QUEUE_SPACECAT_TO_MYSTIQUE, messagePayload);
-      log.info(`Queued ${validated404.length} validated 404 URLs to Mystique for AI processing`);
+
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+      log.info(`Queued ${sorted404.length} validated 404 URLs to Mystique for AI processing in single message`);
     }
 
     log.info(`Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
