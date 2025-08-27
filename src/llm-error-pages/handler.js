@@ -29,7 +29,7 @@ import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-upl
 
 async function runLlmErrorPagesAudit(url, context, site) {
   const {
-    log, audit, sqs, env,
+    log, audit, sqs, env, dataAccess,
   } = context;
   const s3Config = getS3Config(site);
 
@@ -95,12 +95,11 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('data');
-      sheet.addRow(['User Agent', 'URL', 'Number of Hits', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+      sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
       sorted.forEach((e) => {
         sheet.addRow([
           e.userAgent,
           toPathOnly(e.url),
-          e.totalRequests,
           '',
           '',
           '',
@@ -131,20 +130,22 @@ async function runLlmErrorPagesAudit(url, context, site) {
       const baseUrl = site.getBaseURL?.() || '';
       const consolidated404 = consolidateErrorsByUrl(errors404);
       const sorted404 = sortErrorsByTrafficVolume(consolidated404);
+      const { SiteTopPage } = dataAccess;
+      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
       const message = {
-        type: 'guidance:broken-links',
+        type: 'guidance:llm-error-pages',
         siteId: site.getId(),
         auditId: audit?.getId() || 'llm-error-pages-audit',
         deliveryType: site?.getDeliveryType?.() || 'aem_edge',
         time: new Date().toISOString(),
         data: {
-          brokenLinks: sorted404.map((errorPage) => ({
+          brokenLinks: sorted404.map((errorPage, index) => ({
             urlFrom: errorPage.userAgent,
             urlTo: baseUrl ? `${baseUrl}${errorPage.url}` : errorPage.url,
-            suggestionId: `llm-${errorPage.url}-${errorPage.userAgent}`,
+            suggestionId: `llm-404-suggestion-${periodIdentifier}-${index}`,
           })),
-          alternativeUrls: [],
-          opportunityId: `llm-error-pages-404-opportunity-${periodIdentifier}`,
+          alternativeUrls: topPages.map((topPage) => topPage.getUrl()),
+          opportunityId: `llm-404-${periodIdentifier}`,
         },
       };
 

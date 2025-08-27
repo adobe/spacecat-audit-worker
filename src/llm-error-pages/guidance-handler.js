@@ -23,22 +23,37 @@ import { generateReportingPeriods } from './utils.js';
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Site } = dataAccess;
+  const { Audit, Site } = dataAccess;
+  const { auditId, siteId, data } = message;
   const {
-    siteId, periodIdentifier: inputPeriodIdentifier, llmoFolder: inputLlmoFolder, data,
-  } = message;
-  const {
-    suggestedUrls = [], aiRationale = '', confidenceScore = 0,
-    brokenUrl, userAgent,
+    brokenLinks, opportunityId,
   } = data;
-
   log.info(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
 
-  // Validate site exists
   const site = await Site.findById(siteId);
   if (!site) {
     log.error(`Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
+  }
+
+  const audit = await Audit.findById(auditId);
+  if (!audit) {
+    log.warn(`No audit found for auditId: ${auditId}`);
+    return notFound();
+  }
+  const { Opportunity } = dataAccess;
+  const opportunity = await Opportunity.findById(opportunityId);
+
+  if (!opportunity) {
+    log.error(`[LLM Error Pages Guidance] Opportunity not found for ID: ${opportunityId}`);
+    return notFound('Opportunity not found');
+  }
+
+  // Verify the opportunity belongs to the correct site
+  if (opportunity.getSiteId() !== siteId) {
+    const errorMsg = `[${opportunity.getType()} Guidance] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
+    log.error(errorMsg);
+    return badRequest('Site ID mismatch');
   }
 
   // Read-modify-write the weekly 404 Excel file in SharePoint
@@ -46,12 +61,9 @@ export default async function handler(message, context) {
     const sharepointClient = await createLLMOSharepointClient(context);
     const week = generateReportingPeriods().weeks[0];
     const derivedPeriod = `w${week.weekNumber}-${week.year}`;
-    const periodId = inputPeriodIdentifier || derivedPeriod;
-    const folderName = inputLlmoFolder
-      || site.getConfig()?.getLlmoDataFolder?.()
-      || site.getBaseURL?.();
+    const folderName = site.getConfig()?.getLlmoDataFolder?.() || site.getBaseURL?.();
     const outputLocation = `${folderName}/agentic-traffic`;
-    const filename = `agentictraffic-${periodId}-404-ui.xlsx`;
+    const filename = `agentictraffic-${derivedPeriod}-404-ui.xlsx`;
     const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
 
     const doc = sharepointClient.getDocument(documentPath);
@@ -65,12 +77,7 @@ export default async function handler(message, context) {
       // If file doesn't exist yet, create a new workbook and sheet with headers
       workbook = new ExcelJS.Workbook();
       sheet = workbook.addWorksheet('data');
-      sheet.addRow(['User Agent', 'URL', 'Number of Hits', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
-    }
-
-    const headers = ['User Agent', 'URL', 'Number of Hits', 'Suggested URLs', 'AI Rationale', 'Confidence score'];
-    if (sheet.rowCount === 0) {
-      sheet.addRow(headers);
+      sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
     }
 
     const toPathOnly = (maybeUrl) => {
@@ -82,42 +89,64 @@ export default async function handler(message, context) {
       }
     };
 
-    const keyUa = userAgent;
-    const keyUrl = toPathOnly(brokenUrl);
+    // Create a map of broken URLs for quick lookup
+    const brokenUrlsMap = new Map();
+    brokenLinks.forEach((brokenLink) => {
+      const {
+        suggestedUrls, aiRationale, urlFrom, urlTo,
+      } = brokenLink;
+      const keyUrl = toPathOnly(urlTo);
+      brokenUrlsMap.set(keyUrl, {
+        userAgent: urlFrom,
+        suggestedUrls: suggestedUrls || [],
+        aiRationale: aiRationale || '',
+      });
+    });
 
-    // Suggested URLs newlines
-    const suggested = suggestedUrls.join('\n');
-
-    // Try to find existing row and update it; otherwise append with empty hits
-    let updated = false;
+    // First, collect all existing URLs from the Excel file into a Set for O(1) lookup
+    const existingUrls = new Set();
     for (let i = 2; i <= sheet.rowCount; i += 1) {
-      const uaCell = sheet.getCell(i, 1).value?.toString?.() || '';
       const urlCell = sheet.getCell(i, 2).value?.toString?.() || '';
-      if (uaCell === keyUa && urlCell === keyUrl) {
-        const hitsCell = sheet.getCell(i, 3).value || '';
-        sheet.getRow(i).values = [
-          '',
-          keyUa,
-          keyUrl,
-          hitsCell, // preserve existing number of hits
-          suggested,
-          aiRationale,
-          confidenceScore,
-        ];
-        updated = true;
-        break;
+      if (urlCell) {
+        const pathOnlyUrl = toPathOnly(urlCell);
+        existingUrls.add(pathOnlyUrl);
+
+        // Look up the URL in brokenUrls and update if found
+        const brokenUrlData = brokenUrlsMap.get(pathOnlyUrl);
+        if (brokenUrlData) {
+          const suggested = brokenUrlData.suggestedUrls.join('\n');
+          sheet.getRow(i).values = [
+            brokenUrlData.userAgent,
+            pathOnlyUrl,
+            suggested,
+            brokenUrlData.aiRationale,
+            '',
+          ];
+          log.info(`Updated row ${i} for URL: ${pathOnlyUrl} with broken URL data`);
+        }
       }
     }
-    if (!updated) {
-      sheet.addRow([
-        keyUa,
-        keyUrl,
-        '', // hits unknown in guidance stage
-        suggested,
-        aiRationale,
-        confidenceScore,
-      ]);
-    }
+
+    // Add new rows only for broken links that weren't in the Excel file
+    brokenLinks.forEach((brokenLink) => {
+      const {
+        suggestedUrls, aiRationale, urlFrom, urlTo,
+      } = brokenLink;
+      const keyUrl = toPathOnly(urlTo);
+
+      // Only add if this URL doesn't already exist
+      if (!existingUrls.has(keyUrl)) {
+        const suggested = suggestedUrls?.join('\n') || '';
+        sheet.addRow([
+          urlFrom,
+          keyUrl,
+          suggested,
+          aiRationale || '',
+          '',
+        ]);
+        log.info(`Added new row for URL: ${keyUrl}`);
+      }
+    });
 
     // Overwrite the file
     const buffer = await workbook.xlsx.writeBuffer();
