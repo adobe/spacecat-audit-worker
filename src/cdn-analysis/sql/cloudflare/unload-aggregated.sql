@@ -2,7 +2,7 @@ UNLOAD (
   SELECT
     ClientRequestURI AS url,
     ClientRequestUserAgent AS user_agent,
-    CAST(EdgeResponseStatus AS INTEGER) AS status,
+    EdgeResponseStatus AS status,
     try(url_extract_host(ClientRequestReferer)) AS referer,
     ClientRequestHost AS host,
     CAST(EdgeTimeToFirstByteMs AS DOUBLE) AS time_to_first_byte,
