@@ -196,6 +196,6 @@ export const generateSuggestionData = async (context) => {
 export default new AuditBuilder()
   .withUrlResolver((site) => site.resolveFinalURL())
   .addStep('audit-and-import-top-pages', runAuditAndImportTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('generate-suggestion-data', generateSuggestionData)
   .build();
