@@ -22,9 +22,36 @@ import {
   saveA11yMetricsToS3,
 } from './utils/scrape-utils.js';
 import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
+import { URL_SOURCE_SEPARATOR } from './utils/constants.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
+
+/**
+ * Extracts unique URLs from aggregated data, handling both direct site URLs
+ * and composite keys with source identifiers (url{separator}sourceId).
+ *
+ * @param {Object} data - The aggregated accessibility data
+ * @returns {number} Count of unique URLs processed
+ */
+export function getUniqueUrlCount(data) {
+  if (!data) return 0;
+
+  const uniqueUrls = Object.keys(data).reduce((urlSet, key) => {
+    // Skip the 'overall' key as it's not a URL
+    if (key === 'overall') return urlSet;
+
+    // Extract base URL from compositeKey if it has a source identifier, otherwise use the key as-is
+    const url = key.includes(URL_SOURCE_SEPARATOR)
+      ? key.split(URL_SOURCE_SEPARATOR)[0]
+      : key;
+    urlSet.add(url);
+
+    return urlSet;
+  }, new Set());
+
+  return uniqueUrls.size;
+}
 
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
@@ -49,7 +76,7 @@ export async function scrapeAccessibilityData(context) {
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
-    log.error(errorMsg);
+    log.error(`[A11yProcessingError] ${errorMsg}`);
     return {
       status: 'PROCESSING_FAILED',
       error: errorMsg,
@@ -126,7 +153,7 @@ export async function processAccessibilityOpportunities(context) {
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
-    log.error(errorMsg);
+    log.error(`[A11yProcessingError] ${errorMsg}`);
     return {
       status: 'PROCESSING_FAILED',
       error: errorMsg,
@@ -144,18 +171,19 @@ export async function processAccessibilityOpportunities(context) {
       siteId,
       log,
       outputKey,
+      AUDIT_TYPE_ACCESSIBILITY,
       version,
     );
 
     if (!aggregationResult.success) {
-      log.error(`[A11yAudit] No data aggregated for site ${siteId} (${site.getBaseURL()}): ${aggregationResult.message}`);
+      log.error(`[A11yAudit][A11yProcessingError] No data aggregated for site ${siteId} (${site.getBaseURL()}): ${aggregationResult.message}`);
       return {
         status: 'NO_OPPORTUNITIES',
         message: aggregationResult.message,
       };
     }
   } catch (error) {
-    log.error(`[A11yAudit] Error processing accessibility data for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+    log.error(`[A11yAudit][A11yProcessingError] Error processing accessibility data for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,
@@ -173,7 +201,7 @@ export async function processAccessibilityOpportunities(context) {
       AUDIT_TYPE_ACCESSIBILITY,
     );
   } catch (error) {
-    log.error(`[A11yAudit] Error generating report opportunities for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+    log.error(`[A11yAudit][A11yProcessingError] Error generating report opportunities for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,
@@ -188,7 +216,7 @@ export async function processAccessibilityOpportunities(context) {
     );
     log.debug(`[A11yAudit] Individual opportunities created successfully for site ${siteId} (${site.getBaseURL()})`);
   } catch (error) {
-    log.error(`[A11yAudit] Error creating individual opportunities for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+    log.error(`[A11yAudit][A11yProcessingError] Error creating individual opportunities for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,
@@ -197,13 +225,15 @@ export async function processAccessibilityOpportunities(context) {
 
   // step 3 save a11y metrics to s3
   try {
+    // TODO: Get forms a11y metrics from the forms-accessibility/siteId/version-final-result.json
+    //  file, merge with the current metrics and save to s3
     const metricsResult = await saveA11yMetricsToS3(
       aggregationResult.finalResultFiles.current,
       context,
     );
     log.debug(`[A11yAudit] Saved a11y metrics for site ${siteId} - Result:`, metricsResult);
   } catch (error) {
-    log.error(`[A11yAudit] Error saving a11y metrics to s3 for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+    log.error(`[A11yAudit][A11yProcessingError] Error saving a11y metrics to s3 for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,
@@ -212,10 +242,10 @@ export async function processAccessibilityOpportunities(context) {
 
   // Extract key metrics for the audit result summary
   const totalIssues = aggregationResult.finalResultFiles.current.overall.violations.total;
-  // Subtract 1 for the 'overall' key to get actual URL count
-  const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length - 1;
+  // Get the actual count of unique URLs processed (handles both site and form URLs)
+  const urlsProcessed = getUniqueUrlCount(aggregationResult.finalResultFiles.current);
 
-  log.info(`[A11yAudit] Found ${totalIssues} issues across ${urlsProcessed} URLs for site ${siteId} (${site.getBaseURL()})`);
+  log.info(`[A11yAudit] Found ${totalIssues} issues across ${urlsProcessed} unique URLs for site ${siteId} (${site.getBaseURL()})`);
 
   // Return the final audit result with metrics and status
   return {
@@ -228,9 +258,15 @@ export async function processAccessibilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
-  .addStep('processImport', processImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  // First step: Prepare and send data to CONTENT_SCRAPER
-  .addStep('scrapeAccessibilityData', scrapeAccessibilityData, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
-  // Second step: Process the scraped data to find opportunities
+  .addStep(
+    'processImport',
+    processImportStep,
+    AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
+  )
+  .addStep(
+    'scrapeAccessibilityData',
+    scrapeAccessibilityData,
+    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+  )
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)
   .build();

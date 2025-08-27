@@ -9,28 +9,31 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { createFrom } from '@adobe/spacecat-helix-content-sdk';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
+import { createLLMOSharepointClient } from '../utils/report-uploader.js';
 
-async function runCdnLogsReport(url, context, site) {
+async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
-  const s3Config = getS3Config(site, context);
+  const s3Config = await getS3Config(site, context);
+
+  if (!s3Config?.bucket) {
+    return {
+      auditResult: {
+        success: false,
+        error: 'No CDN bucket found',
+        completedAt: new Date().toISOString(),
+      },
+      fullAuditRef: url,
+    };
+  }
 
   log.info(`Starting CDN logs report audit for ${url}`);
 
-  const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
-
-  const sharepointClient = await createFrom({
-    clientId: process.env.SHAREPOINT_CLIENT_ID,
-    clientSecret: process.env.SHAREPOINT_CLIENT_SECRET,
-    authority: process.env.SHAREPOINT_AUTHORITY,
-    domainId: process.env.SHAREPOINT_DOMAIN_ID,
-  }, { url: SHAREPOINT_URL, type: 'onedrive' });
-
+  const sharepointClient = await createLLMOSharepointClient(context);
   const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
 
   // create db if not exists
@@ -40,26 +43,24 @@ async function runCdnLogsReport(url, context, site) {
 
   await ensureTableExists(athenaClient, s3Config, log);
 
-  const auditResultBase = {
-    success: true,
-    timestamp: new Date().toISOString(),
-    database: s3Config.databaseName,
-    table: s3Config.tableName,
-    customer: s3Config.customerName,
-  };
-
   log.info('Running weekly report...');
+  const weekOffset = auditContext?.weekOffset || -1;
   await runWeeklyReport({
-    athenaClient, s3Config, log, site, sharepointClient,
+    athenaClient,
+    s3Config,
+    log,
+    site,
+    sharepointClient,
+    weekOffset,
   });
 
   return {
     auditResult: {
-      ...auditResultBase,
-      reportType: 'cdn-report-weekly',
-      sharePointPath: `/sites/elmo-ui-data/${s3Config.customerName}/`,
+      database: s3Config.databaseName,
+      table: s3Config.tableName,
+      customer: s3Config.customerName,
     },
-    fullAuditRef: `${SHAREPOINT_URL}/${s3Config.customerName}/`,
+    fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}/agentic-traffic/`,
   };
 }
 
