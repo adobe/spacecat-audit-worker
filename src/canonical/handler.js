@@ -83,8 +83,19 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
   }
 
   try {
-    log.info(`Fetching URL: ${url}`);
+    log.info(`Fetching URL: ${url} with options: ${JSON.stringify(options)}`);
     const response = await fetch(url, options);
+    if (!response.ok || response.status >= 400) {
+      log.error(`Failed to fetch URL: ${url}, status code: ${response.status}`);
+      return {
+        canonicalUrl: null,
+        checks: [{
+          check: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+          success: false,
+          explanation: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.explanation,
+        }],
+      };
+    }
     // finalUrl is the URL after any redirects
     const finalUrl = response.url;
     const html = await response.text();
