@@ -125,6 +125,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         await highPageViewsLowFormNavOppty.save();
       }
 
+      log.info(`test123 ${JSON.stringify(highPageViewsLowFormNavOppty, null, 2)}`);
       // eslint-disable-next-line no-await-in-loop
       await sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData);
     }
