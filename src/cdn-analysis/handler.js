@@ -64,48 +64,52 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
   // Process each CDN provider
   // eslint-disable-next-line no-await-in-loop
   for (const cdnType of cdnProviders) {
-    log.info(`Processing ${cdnType.toUpperCase()} provider`);
+    // Skip CloudFlare for hourly analysis - only process daily at end of day
+    if (cdnType === 'cloudflare' && hour !== '23') {
+      log.info(`Skipping ${cdnType.toUpperCase()} - only processed daily at end of day (hour 23)`);
+    } else {
+      log.info(`Processing ${cdnType.toUpperCase()} provider`);
 
-    const paths = buildCdnPaths(bucketName, cdnType, { year, month, day, hour }, isLegacy);
-    const rawTable = `raw_logs_${customerDomain}_${cdnType}`;
-    const athenaClient = AWSAthenaClient.fromContext(context, paths.tempLocation);
+      const paths = buildCdnPaths(bucketName, cdnType, { year, month, day, hour }, isLegacy);
+      const rawTable = `raw_logs_${customerDomain}_${cdnType}`;
+      const athenaClient = AWSAthenaClient.fromContext(context, paths.tempLocation);
 
-    if (results.length === 0) {
+      if (results.length === 0) {
+        // eslint-disable-next-line no-await-in-loop
+        const sqlDb = await loadSql(cdnType, 'create-database', { database });
+        // eslint-disable-next-line no-await-in-loop
+        await athenaClient.execute(sqlDb, database, `[Athena Query] Create database ${database}`);
+      }
+
       // eslint-disable-next-line no-await-in-loop
-      const sqlDb = await loadSql(cdnType, 'create-database', { database });
+      const sqlRaw = await loadSql(cdnType, 'create-raw-table', {
+        database,
+        rawTable,
+        rawLocation: paths.rawLocation,
+      });
       // eslint-disable-next-line no-await-in-loop
-      await athenaClient.execute(sqlDb, database, `[Athena Query] Create database ${database}`);
+      await athenaClient.execute(sqlRaw, database, `[Athena Query] Create raw logs table ${database}.${rawTable}`);
+
+      // eslint-disable-next-line no-await-in-loop
+      const sqlUnload = await loadSql(cdnType, 'unload-aggregated', {
+        database,
+        rawTable,
+        year,
+        month,
+        day,
+        hour,
+        bucket: bucketName,
+        host,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await athenaClient.execute(sqlUnload, database, `[Athena Query] Filter and unload ${cdnType} to ${paths.aggregatedOutput}`);
+
+      results.push({
+        cdnType,
+        rawTable,
+        output: paths.aggregatedOutput,
+      });
     }
-
-    // eslint-disable-next-line no-await-in-loop
-    const sqlRaw = await loadSql(cdnType, 'create-raw-table', {
-      database,
-      rawTable,
-      rawLocation: paths.rawLocation,
-    });
-    // eslint-disable-next-line no-await-in-loop
-    await athenaClient.execute(sqlRaw, database, `[Athena Query] Create raw logs table ${database}.${rawTable}`);
-
-    // unload aggregated hour for this provider
-    // eslint-disable-next-line no-await-in-loop
-    const sqlUnload = await loadSql(cdnType, 'unload-aggregated', {
-      database,
-      rawTable,
-      year,
-      month,
-      day,
-      hour,
-      bucket: bucketName,
-      host,
-    });
-    // eslint-disable-next-line no-await-in-loop
-    await athenaClient.execute(sqlUnload, database, `[Athena Query] Filter and unload ${cdnType} to ${paths.aggregatedOutput}`);
-
-    results.push({
-      cdnType,
-      rawTable,
-      output: paths.aggregatedOutput,
-    });
   }
 
   return {
