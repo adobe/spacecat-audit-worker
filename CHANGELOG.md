@@ -1,3 +1,24 @@
+## [1.161.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.161.1...v1.161.2) (2025-08-27)
+
+
+### Bug Fixes
+
+* minor type issues ([#1177](https://github.com/adobe/spacecat-audit-worker/issues/1177)) ([0ec3e77](https://github.com/adobe/spacecat-audit-worker/commit/0ec3e77f6a3adec3c8f7dc307ee4832a3d3dbfc6))
+
+## [1.161.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.161.0...v1.161.1) (2025-08-27)
+
+
+### Bug Fixes
+
+* preflight canonical check failing with extensions ([#1172](https://github.com/adobe/spacecat-audit-worker/issues/1172)) ([9a33421](https://github.com/adobe/spacecat-audit-worker/commit/9a334219104e5dd10b05b6dc97e71da189ac81d0))
+
+# [1.161.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.160.0...v1.161.0) (2025-08-27)
+
+
+### Features
+
+* add Cloudflare CDN support ([#1173](https://github.com/adobe/spacecat-audit-worker/issues/1173)) ([20ec3a1](https://github.com/adobe/spacecat-audit-worker/commit/20ec3a121fda6e34590f29f56e112e0f675850c4))
+
 # [1.160.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.159.2...v1.160.0) (2025-08-27)
 
 

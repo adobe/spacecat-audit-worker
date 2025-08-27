@@ -138,4 +138,23 @@ describe('CDN Analysis Handler', () => {
       handlerModule.cdnLogAnalysisRunner('https://example.com', context, site),
     ).to.be.rejectedWith('SQL load error');
   });
+
+  it('skips CloudFlare processing for non-23 hours but processes other CDNs', async () => {
+    getBucketInfoStub.resolves({ isLegacy: false, providers: ['cloudflare', 'fastly'] });
+
+    const originalDateNow = Date.now;
+    const mockTime = new Date('2024-12-25T15:30:00Z').getTime();
+    Date.now = sandbox.stub().returns(mockTime);
+
+    const result = await handlerModule.cdnLogAnalysisRunner('https://example.com', context, site);
+
+    expect(result.auditResult.providers).to.have.length(1);
+    expect(result.auditResult.providers[0]).to.have.property('cdnType', 'fastly');
+
+    expect(context.log.info).to.have.been.calledWith(
+      'Skipping CLOUDFLARE - only processed daily at end of day (hour 23)',
+    );
+
+    Date.now = originalDateNow;
+  });
 });
