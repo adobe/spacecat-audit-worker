@@ -84,8 +84,8 @@ describe('CDN Analysis Handler', () => {
 
     expect(resolveCdnBucketNameStub).to.have.been.calledOnce;
     expect(getBucketInfoStub).to.have.been.calledOnce;
-    expect(getStaticContentStub).to.have.been.calledThrice;
-    expect(athenaClientStub.execute).to.have.been.calledThrice;
+    expect(getStaticContentStub).to.have.been.callCount(4);
+    expect(athenaClientStub.execute).to.have.been.callCount(4);
     expect(result).to.have.property('auditResult');
     expect(result.auditResult).to.include.keys('database', 'providers', 'completedAt');
     expect(result.auditResult.database).to.equal('cdn_logs_example_com');
@@ -99,7 +99,7 @@ describe('CDN Analysis Handler', () => {
     const result = await handlerModule.cdnLogAnalysisRunner('https://example.com', context, site);
 
     expect(result.auditResult.providers).to.have.length(2);
-    expect(athenaClientStub.execute).to.have.been.callCount(5);
+    expect(athenaClientStub.execute).to.have.been.callCount(7);
   });
 
   it('falls back to discoverCdnProviders when getBucketInfo returns empty providers', async () => {

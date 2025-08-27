@@ -113,7 +113,6 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
         day,
         hour,
         bucket: bucketName,
-        host,
       });
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlUnloadReferral, database, `[Athena Query] (Referral) Filter and unload ${cdnType} to ${paths.aggregatedReferralOutput}`);
