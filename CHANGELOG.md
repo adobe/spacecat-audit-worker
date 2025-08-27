@@ -1,3 +1,10 @@
+## [1.159.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.159.1...v1.159.2) (2025-08-27)
+
+
+### Bug Fixes
+
+* page-specific clearing for alt-text suggestions ([#1159](https://github.com/adobe/spacecat-audit-worker/issues/1159)) ([267b04f](https://github.com/adobe/spacecat-audit-worker/commit/267b04ffebf14f0fd5874057487f76e4519c1a0e))
+
 ## [1.159.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.159.0...v1.159.1) (2025-08-26)
 
 
