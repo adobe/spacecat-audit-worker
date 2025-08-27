@@ -697,7 +697,7 @@ export function getSuggestedFix(result) {
   const redirectChain = result.redirectChain || ''; // can be an empty string
   const errorMsg = result.error || '(not specified)'; // can be a default string
 
-  const fixForUnknown = 'No suggested fix available for this entry.'; // not expected to be returned
+  const fixForUnknown = `No suggested fix available for this entry. Error message: ${errorMsg}`; // not expected to be returned
   const fixForDuplicate = 'Remove this entry since the same Source URL is used later in the redirects file.';
   const fixForTooQualified = `Update the Source URL and/or the Destination URL to use relative paths by removing the base URL: ${baseUrl}`;
   const fixForHasSameSrcDest = 'Remove this entry since the Source URL is the same as the Destination URL.';
