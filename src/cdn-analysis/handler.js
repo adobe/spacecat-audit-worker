@@ -104,10 +104,25 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlUnload, database, `[Athena Query] Filter and unload ${cdnType} to ${paths.aggregatedOutput}`);
 
+      // eslint-disable-next-line no-await-in-loop
+      const sqlUnloadReferral = await loadSql(cdnType, 'unload-aggregated-referral', {
+        database,
+        rawTable,
+        year,
+        month,
+        day,
+        hour,
+        bucket: bucketName,
+        host,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await athenaClient.execute(sqlUnloadReferral, database, `[Athena Query] (Referral) Filter and unload ${cdnType} to ${paths.aggregatedReferralOutput}`);
+
       results.push({
         cdnType,
         rawTable,
         output: paths.aggregatedOutput,
+        outputReferral: paths.aggregatedReferralOutput,
       });
     }
   }

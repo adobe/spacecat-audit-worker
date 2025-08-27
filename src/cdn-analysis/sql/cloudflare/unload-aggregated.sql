@@ -18,17 +18,8 @@ UNLOAD (
     -- This avoids scanning daily files 24 times while maintaining downstream compatibility
     -- The 'hour' column in output provides hourly breakdown within the daily aggregation
 
-    -- agentic and LLM-attributed traffic filter based on user-agent, referer and utm tag
-    AND (
-      -- match known LLM-related user-agents
-      REGEXP_LIKE(ClientRequestUserAgent, '(?i)ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot')
-
-      -- match known referer hostnames for LLM-attributed real-user traffic
-      OR REGEXP_LIKE(COALESCE(ClientRequestReferer, ''), '(?i)chatgpt\.com|openai\.com|perplexity\.ai|claude\.ai|gemini\.google\.com|copilot\.microsoft\.com')
-
-      -- match known query parameters for LLM-attributed real-user traffic
-      OR ClientRequestURI LIKE '%utm_source=chatgpt.com%'
-    )
+    -- match known LLM-related user-agents
+    AND REGEXP_LIKE(ClientRequestUserAgent, '(?i)ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot')
 
     -- only count text/html responses with robots.txt and sitemaps
     AND (

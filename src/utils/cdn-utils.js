@@ -122,6 +122,7 @@ export function buildCdnPaths(bucketName, cdnProvider, timeParts, isLegacy = fal
       rawLogsPrefix: `raw/${cdnProvider}/${year}/${month}/${day}/${hour}/`,
       rawLocation: `s3://${bucketName}/raw/${cdnProvider}/`,
       aggregatedOutput: `s3://${bucketName}/aggregated/${year}/${month}/${day}/${hour}/`,
+      aggregatedReferralOutput: `s3://${bucketName}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
       tempLocation: `s3://${bucketName}/temp/athena-results/`,
     };
   } else {
@@ -130,6 +131,7 @@ export function buildCdnPaths(bucketName, cdnProvider, timeParts, isLegacy = fal
       rawLogsPrefix: `raw/${year}/${month}/${day}/${hour}/`,
       rawLocation: `s3://${bucketName}/raw/`,
       aggregatedOutput: `s3://${bucketName}/aggregated/${year}/${month}/${day}/${hour}/`,
+      aggregatedReferralOutput: `s3://${bucketName}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
       tempLocation: `s3://${bucketName}/temp/athena-results/`,
     };
   }
