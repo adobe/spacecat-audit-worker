@@ -65,7 +65,7 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
   // eslint-disable-next-line no-await-in-loop
   for (const cdnType of cdnProviders) {
     // Skip CloudFlare for hourly analysis - only process daily at end of day
-    if (cdnType === 'cloudflare' && hour !== '23') {
+    if (cdnType.toLocaleLowerCase === 'cloudflare' && hour !== '23') {
       log.info(`Skipping ${cdnType.toUpperCase()} - only processed daily at end of day (hour 23)`);
     } else {
       log.info(`Processing ${cdnType.toUpperCase()} provider`);
