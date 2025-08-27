@@ -109,8 +109,15 @@ export async function runAuditAndImportTopPages(context) {
 }
 
 export async function submitForScraping(context) {
-  const { site, dataAccess } = context;
+  const {
+    site, dataAccess, audit, log,
+  } = context;
   const { SiteTopPage } = dataAccess;
+  const auditResult = audit.getAuditResult();
+  if (auditResult.success === false) {
+    log.info('Audit failed, skipping suggestions generation');
+    throw new Error('Audit failed, skipping suggestions generation');
+  }
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   return {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
