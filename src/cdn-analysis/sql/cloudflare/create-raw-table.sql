@@ -1,26 +1,26 @@
 CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
-  EdgeStartTimestamp      STRING,
-  ClientCountry           STRING,
-  ClientRequestHost       STRING,
-  ClientRequestURI        STRING,
-  ClientRequestMethod     STRING,
-  ClientRequestProtocol   STRING,
-  ClientRequestUserAgent  STRING,
-  EdgeResponseStatus      INT,
-  ClientRequestReferer    STRING,
-  EdgeResponseContentType STRING,
-  EdgeTimeToFirstByteMs   DOUBLE
+  EdgeStartTimestamp      string,
+  ClientCountry           string,
+  ClientRequestHost       string,
+  ClientRequestURI        string,
+  ClientRequestMethod     string,
+  ClientRequestProtocol   string,
+  ClientRequestUserAgent  string,
+  EdgeResponseStatus      int,
+  ClientRequestReferer    string,
+  EdgeResponseContentType string,
+  EdgeTimeToFirstByteMs   int
 )
 PARTITIONED BY (
-  year  STRING,
-  month STRING,
-  day   STRING
+  year  string,
+  month string,
+  day   string
 )
 ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe'
 LOCATION '{{rawLocation}}'
 TBLPROPERTIES (
   'projection.enabled'        = 'true',
-  'storage.location.template' = '{{rawLocation}}${year}${month}${day}/',
+  'storage.location.template' = '{{rawLocation}}${year}/${month}/${day}/',
   'projection.year.type'      = 'integer',
   'projection.year.range'     = '2024,2030',
   'projection.month.type'     = 'integer',
