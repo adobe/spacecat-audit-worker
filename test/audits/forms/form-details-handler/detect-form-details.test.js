@@ -200,58 +200,6 @@ describe('Detect Form Details Handler', () => {
     expect(response.status).to.equal(ok().status);
   });
 
-  // it('should set correct values in mystiqueMessage', async () => {
-  //   // Explicitly mock the values returned by getData
-  //   dataAccessStub.Opportunity.allBySiteId.resolves([
-  //     {
-  //       getType: () => 'testOpportunityType',
-  //       getData: () => ({
-  //         form: 'testUrl',
-  //         trackedFormKPIValue: 5,
-  //         metrics: { key: 'value' },
-  //         formNavigation: { source: 'testSource', text: 'testText' },
-  //         formsource: 'testFormSource',
-  //       }),
-  //       data: { // Directly include the data property
-  //         form: 'testUrl',
-  //         trackedFormKPIValue: 5,
-  //         pageViews: 20,
-  //         formViews: 10,
-  //         metrics: { key: 'value' },
-  //         formNavigation: { source: 'testSource', text: 'testText' },
-  //         formsource: 'testFormSource',
-  //       },
-  //       getSiteId: () => 'testSiteId',
-  //       getAuditId: () => 'testAuditId',
-  //       getDeliveryType: () => 'testDeliveryType',
-  //       setAuditId: sinon.stub(),
-  //       setUpdatedBy: sinon.stub(),
-  //       setData: sinon.stub(),
-  //       save: sinon.stub().resolvesThis(),
-  //     },
-  //   ]);
-  //
-  //   await handler(message, context);
-  //
-  //   const expectedData = {
-  //     url: 'testUrl',
-  //     cr: 5,
-  //     metrics: { key: 'value' },
-  //     cta_source: 'testSource',
-  //     cta_text: 'testText',
-  //     form_source: 'testFormSource',
-  //     page_views: 20,
-  //     form_views: 10,
-  //   };
-  //
-  //   expect(sqsStub.sendMessage).to.have.been.calledWith(
-  //     'mockQueue',
-  //     sinon.match({
-  //       data: expectedData,
-  //     }),
-  //   );
-  // });
-
   it('should update accessibility data for forms-accessibility type', async () => {
     dataAccessStub.Opportunity.findById.resolves({
       getType: () => 'forms-accessibility',
