@@ -25,6 +25,7 @@ import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
 import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
+import redirectChains from './redirect-chains/handler.js';
 import paid from './paid/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
@@ -65,6 +66,7 @@ import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-h
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
 import hreflang from './hreflang/handler.js';
+import optimizationReportCallback from './optimization-report/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -74,6 +76,7 @@ const HANDLERS = {
   'lhs-desktop': lhsDesktop,
   404: notfound,
   sitemap,
+  'redirect-chains': redirectChains,
   paid,
   'paid-traffic-analysis-weekly': paidTrafficAnalysisWeekly,
   'paid-traffic-analysis-monthly': paidTrafficAnalysisMonthly,
@@ -114,6 +117,7 @@ const HANDLERS = {
   'detect:form-details': detectFormDetails,
   'page-intent': updatePageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
+  'optimization-report-callback': optimizationReportCallback,
   hreflang,
   dummy: (message) => ok(message),
 };
