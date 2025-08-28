@@ -213,7 +213,11 @@ export async function runAuditAndGenerateSuggestions(context) {
       auditResult,
     }, context);
 
-    const opportunity = await Opportunity.findByAuditId(audit.id);
+    const opportunity = await Opportunity.findByAuditId(audit.getId());
+    if (!opportunity) {
+      log.error(`SDA: No opportunity found for audit ID ${audit.getId()}`);
+      throw new Error(`No opportunity found for audit ID ${audit.getId()}`);
+    }
     const suggestions = await Suggestion.allByOpportunityIdAndStatus(
       opportunity.getId(),
       SuggestionModel.STATUSES.NEW,
@@ -232,7 +236,7 @@ export async function runAuditAndGenerateSuggestions(context) {
           errors: suggestion.getData()?.errors,
         },
       };
-      log.info(`Sending message to Mystique: ${message}`);
+      log.debug(`Sending message to Mystique: ${message}`);
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     }));
     const endTime = process.hrtime(startTime);
