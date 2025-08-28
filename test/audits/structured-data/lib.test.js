@@ -964,7 +964,7 @@ This is an error description
           },
         })
         .build(message);
-      flag = { shouldLogSuppression: true };
+      flag = { logSuppressionMessage: true };
     });
 
     afterEach(() => {
