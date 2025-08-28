@@ -21,7 +21,7 @@ import { Site } from '@adobe/spacecat-shared-data-access';
 import {
   sitemapProductCoverageAuditRunner,
   generateSuggestions,
-  generateOpportunities,
+  generateOpportunity,
 } from '../../src/sitemap-product-coverage/handler.js';
 import { createOpportunityData } from '../../src/sitemap-product-coverage/opportunity-data-mapper.js';
 import { ERROR_CODES } from '../../src/sitemap/common.js';
@@ -35,7 +35,7 @@ describe('Sitemap Product Coverage Audit', () => {
   let context;
   let sitemapProductCoverageAuditRunnerMocked;
   let generateSuggestionsMocked;
-  let generateOpportunitiesMocked;
+  let generateOpportunityMocked;
   let syncSuggestionsMock;
   const sandbox = sinon.createSandbox();
 
@@ -247,7 +247,7 @@ describe('Sitemap Product Coverage Audit', () => {
 
     sitemapProductCoverageAuditRunnerMocked = mockedHandler.sitemapProductCoverageAuditRunner;
     generateSuggestionsMocked = mockedHandler.generateSuggestions;
-    generateOpportunitiesMocked = mockedHandler.generateOpportunities;
+    generateOpportunityMocked = mockedHandler.generateOpportunity;
   });
 
   beforeEach(() => {
@@ -625,7 +625,7 @@ describe('Sitemap Product Coverage Audit', () => {
     });
   });
 
-  describe('generateOpportunities', () => {
+  describe('generateOpportunity', () => {
     it('should skip opportunity creation when audit fails', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
@@ -634,7 +634,7 @@ describe('Sitemap Product Coverage Audit', () => {
         },
       };
 
-      const result = await generateOpportunitiesMocked(auditUrl, auditData, context);
+      const result = await generateOpportunityMocked(auditUrl, auditData, context);
 
       expect(result).to.deep.equal(auditData);
     });
@@ -648,7 +648,7 @@ describe('Sitemap Product Coverage Audit', () => {
         suggestions: [],
       };
 
-      const result = await generateOpportunitiesMocked(auditUrl, auditData, context);
+      const result = await generateOpportunityMocked(auditUrl, auditData, context);
 
       expect(result).to.deep.equal(auditData);
     });
@@ -661,9 +661,136 @@ describe('Sitemap Product Coverage Audit', () => {
         },
       };
 
-      const result = await generateOpportunitiesMocked(auditUrl, auditData, context);
+      const result = await generateOpportunityMocked(auditUrl, auditData, context);
 
       expect(result).to.deep.equal(auditData);
+    });
+
+    it('should resolve existing opportunity when no suggestions are found', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditResult: {
+          success: true,
+        },
+        suggestions: [], // No suggestions - should trigger resolution of existing opportunity
+      };
+
+      // Mock existing opportunity
+      const mockExistingOpportunity = {
+        getId: () => 'existing-opportunity-123',
+        getType: () => 'sitemap-product-coverage',
+        setStatus: sinon.stub().resolves(),
+        getSuggestions: sinon.stub().resolves([
+          { id: 'suggestion-1' },
+          { id: 'suggestion-2' },
+        ]),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      // Mock the Opportunity.allBySiteIdAndStatus to return existing opportunity
+      const mockOpportunity = {
+        allBySiteIdAndStatus: sinon.stub().resolves([mockExistingOpportunity]),
+      };
+
+      // Mock the Suggestion.bulkUpdateStatus
+      const mockSuggestion = {
+        bulkUpdateStatus: sinon.stub().resolves(),
+      };
+
+      // Update context with mocked data access
+      const contextWithDataAccess = {
+        ...context,
+        dataAccess: {
+          Opportunity: mockOpportunity,
+          Suggestion: mockSuggestion,
+        },
+      };
+
+      const result = await generateOpportunityMocked(auditUrl, auditData, contextWithDataAccess);
+
+      expect(result).to.deep.equal(auditData);
+
+      // Verify that existing opportunity was resolved
+      expect(mockOpportunity.allBySiteIdAndStatus).to.have.been.calledWith(
+        'test-site-id',
+        sinon.match.any, // Oppty.STATUSES.NEW
+      );
+      expect(mockExistingOpportunity.setStatus).to.have.been.called;
+      expect(mockExistingOpportunity.getSuggestions).to.have.been.called;
+      expect(mockSuggestion.bulkUpdateStatus).to.have.been.calledWith(
+        [{ id: 'suggestion-1' }, { id: 'suggestion-2' }],
+        sinon.match.any, // SuggestionDataAccess.STATUSES.OUTDATED
+      );
+      expect(mockExistingOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+      expect(mockExistingOpportunity.save).to.have.been.called;
+    });
+
+    it('should handle errors during opportunity resolution gracefully', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditResult: {
+          success: true,
+        },
+        suggestions: [], // No suggestions - should trigger resolution attempt
+      };
+
+      // Mock existing opportunity that throws error during save
+      const mockExistingOpportunity = {
+        getId: () => 'existing-opportunity-123',
+        getType: () => 'sitemap-product-coverage',
+        setStatus: sinon.stub().resolves(),
+        getSuggestions: sinon.stub().resolves([]),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().rejects(new Error('Save failed')),
+      };
+
+      const mockOpportunity = {
+        allBySiteIdAndStatus: sinon.stub().resolves([mockExistingOpportunity]),
+      };
+
+      const contextWithDataAccess = {
+        ...context,
+        dataAccess: {
+          Opportunity: mockOpportunity,
+          Suggestion: { bulkUpdateStatus: sinon.stub().resolves() },
+        },
+      };
+
+      const result = await generateOpportunityMocked(auditUrl, auditData, contextWithDataAccess);
+
+      expect(result).to.deep.equal(auditData);
+      expect(context.log.error).to.have.been.calledWith('Failed to resolve opportunity: Save failed');
+    });
+
+    it('should handle no existing opportunity when no suggestions are found', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditResult: {
+          success: true,
+        },
+        suggestions: [], // No suggestions
+      };
+
+      // Mock no existing opportunities
+      const mockOpportunity = {
+        allBySiteIdAndStatus: sinon.stub().resolves([]), // No existing opportunities
+      };
+
+      const contextWithDataAccess = {
+        ...context,
+        dataAccess: {
+          Opportunity: mockOpportunity,
+        },
+      };
+
+      const result = await generateOpportunityMocked(auditUrl, auditData, contextWithDataAccess);
+
+      expect(result).to.deep.equal(auditData);
+      expect(context.log.info).to.have.been.calledWith('No existing opportunity found - nothing to resolve');
     });
 
     it('should create opportunity when audit succeeds with suggestions and test mapNewSuggestion callback (lines 280-283)', async () => {
@@ -681,7 +808,7 @@ describe('Sitemap Product Coverage Audit', () => {
         ],
       };
 
-      const result = await generateOpportunitiesMocked(auditUrl, auditData, context);
+      const result = await generateOpportunityMocked(auditUrl, auditData, context);
 
       expect(result).to.deep.equal(auditData);
 
@@ -708,7 +835,7 @@ describe('Sitemap Product Coverage Audit', () => {
       // Test basic function structure and exports
       expect(sitemapProductCoverageAuditRunner).to.be.a('function');
       expect(generateSuggestions).to.be.a('function');
-      expect(generateOpportunities).to.be.a('function');
+      expect(generateOpportunity).to.be.a('function');
     });
 
     it('should handle configuration edge cases', async () => {

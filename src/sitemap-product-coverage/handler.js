@@ -11,7 +11,7 @@
  */
 
 import { composeAuditURL, prependSchema } from '@adobe/spacecat-shared-utils';
-import { Site } from '@adobe/spacecat-shared-data-access';
+import { Site, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getUrlWithoutPath } from '../support/utils.js';
 import { requestSaaS } from '../utils/saas.js';
@@ -262,6 +262,7 @@ export function generateSuggestions(auditUrl, auditData, context) {
   log.info(`Generating suggestions for audit URL: ${auditUrl}`);
 
   if (success && Object.keys(issues).length > 0) {
+    log.info(`Found ${Object.keys(issues).length} locale(s) with missing products in sitemap`);
     const suggestions = Object.entries(issues).map(([locale, urls]) => {
       const issueCount = urls.length;
       return {
@@ -276,8 +277,8 @@ export function generateSuggestions(auditUrl, auditData, context) {
   return auditData;
 }
 
-export async function generateOpportunities(auditUrl, auditData, context) {
-  const { log } = context;
+export async function generateOpportunity(auditUrl, auditData, context) {
+  const { log, dataAccess } = context;
 
   if (auditData.auditResult.success === false) {
     log.info(`The ${auditType} audit itself failed, skipping opportunity creation.`);
@@ -285,7 +286,44 @@ export async function generateOpportunities(auditUrl, auditData, context) {
   }
 
   if (!auditData.suggestions || !auditData.suggestions.length) {
-    log.info(`The ${auditType} has no suggested fixes found, skipping opportunity creation.`);
+    log.info(`The ${auditType} has no suggested fixes found`);
+    const { Opportunity } = dataAccess;
+    let existingOpportunity;
+
+    try {
+      const opportunities = await Opportunity.allBySiteIdAndStatus(
+        auditData.siteId,
+        Oppty.STATUSES.NEW,
+      );
+      existingOpportunity = opportunities.find((oppty) => oppty.getType() === auditType);
+    } catch (e) {
+      log.error(`Fetching opportunities for siteId ${auditData.siteId} failed: ${e.message}`);
+      return { ...auditData };
+    }
+
+    if (existingOpportunity) {
+      log.info(`${auditType} issues have been resolved, updating opportunity status to RESOLVED`);
+
+      try {
+        await existingOpportunity.setStatus(Oppty.STATUSES.RESOLVED);
+        const suggestions = await existingOpportunity.getSuggestions();
+        if (suggestions && suggestions.length > 0) {
+          const { Suggestion } = dataAccess;
+          await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
+          log.info(`Updated ${suggestions.length} suggestions to OUTDATED status`);
+        }
+
+        existingOpportunity.setUpdatedBy('system');
+        await existingOpportunity.save();
+
+        log.info(`Successfully resolved opportunity ${existingOpportunity.getId()}`);
+      } catch (error) {
+        log.error(`Failed to resolve opportunity: ${error.message}`);
+      }
+    } else {
+      log.info('No existing opportunity found - nothing to resolve');
+    }
+
     return { ...auditData };
   }
 
@@ -297,7 +335,7 @@ export async function generateOpportunities(auditUrl, auditData, context) {
     auditType,
   );
 
-  const buildKey = (data) => data.key;
+  const buildKey = (data) => data.locale;
   await syncSuggestions({
     opportunity,
     newData: auditData.suggestions,
@@ -319,5 +357,5 @@ export default new AuditBuilder()
   .withRunner(sitemapProductCoverageAuditRunner)
   .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
     .then((url) => getUrlWithoutPath(prependSchema(url))))
-  .withPostProcessors([generateSuggestions, generateOpportunities])
+  .withPostProcessors([generateSuggestions, generateOpportunity])
   .build();
