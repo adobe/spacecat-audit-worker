@@ -940,6 +940,7 @@ This is an error description
 
   describe('includeIssue', () => {
     let context;
+    let flag;
     const suppressionMessage = 'One of the following conditions needs to be met: Required attribute "creator" is missing or Required attribute "creditText" is missing or Required attribute "copyrightNotice" is missing or Required attribute "license" is missing';
     const Site = {
       DELIVERY_TYPES: {
@@ -963,6 +964,7 @@ This is an error description
           },
         })
         .build(message);
+      flag = { shouldLogSuppression: true };
     });
 
     afterEach(() => {
@@ -976,7 +978,7 @@ This is an error description
         rootType: 'ImageObject',
         issueMessage: 'some message',
       };
-      const result = includeIssue(context, issue);
+      const result = includeIssue(context, issue, flag);
       expect(result).to.be.false;
     });
 
@@ -987,7 +989,7 @@ This is an error description
         rootType: 'Product',
         issueMessage: 'some message',
       };
-      const result = includeIssue(context, issue);
+      const result = includeIssue(context, issue, flag);
       expect(result).to.be.true;
     });
 
@@ -998,7 +1000,7 @@ This is an error description
         rootType: 'ImageObject',
         issueMessage: suppressionMessage,
       };
-      const result = includeIssue(context, issue);
+      const result = includeIssue(context, issue, flag);
       expect(result).to.be.true;
       expect(context.log.warn).not.to.be.called;
     });
@@ -1010,7 +1012,7 @@ This is an error description
         rootType: 'ImageObject',
         issueMessage: 'non-matching message',
       };
-      const result = includeIssue(context, issue);
+      const result = includeIssue(context, issue, flag);
       expect(result).to.be.true;
       expect(context.log.warn).not.to.be.called;
     });
@@ -1022,7 +1024,7 @@ This is an error description
         rootType: 'ImageObject',
         issueMessage: 'non-matching message',
       };
-      const result = includeIssue(context, issue);
+      const result = includeIssue(context, issue, flag);
       expect(result).to.be.true;
       expect(context.log.warn).not.to.be.called;
     });
@@ -1034,7 +1036,7 @@ This is an error description
         rootType: 'ImageObject',
         issueMessage: suppressionMessage,
       };
-      const result = includeIssue(context, issue);
+      const result = includeIssue(context, issue, flag);
       expect(result).to.be.false;
       expect(context.log.warn).to.be.calledWith('SDA: Suppressing issue', suppressionMessage);
     });
@@ -1046,7 +1048,7 @@ This is an error description
         rootType: 'ImageObject',
         issueMessage: suppressionMessage,
       };
-      const result = includeIssue(context, issue);
+      const result = includeIssue(context, issue, flag);
       expect(result).to.be.false;
       expect(context.log.warn).to.be.calledWith('SDA: Suppressing issue', suppressionMessage);
     });
@@ -1058,7 +1060,7 @@ This is an error description
         rootType: 'ImageObject',
         issueMessage: 'Some other error',
       };
-      const result = includeIssue(context, issue);
+      const result = includeIssue(context, issue, flag);
       expect(result).to.be.true;
     });
 
@@ -1069,8 +1071,22 @@ This is an error description
         rootType: 'ImageObject',
         issueMessage: 'Some other error',
       };
-      const result = includeIssue(context, issue);
+      const result = includeIssue(context, issue, flag);
       expect(result).to.be.true;
+    });
+
+    it('logs once and flips flag when suppression matches (AEM_CS)', () => {
+      context.site.getDeliveryType = sinon.stub().returns(Site.DELIVERY_TYPES.AEM_CS);
+      const issue = {
+        severity: 'ERROR',
+        rootType: 'ImageObject',
+        issueMessage: suppressionMessage,
+      };
+      const result = includeIssue(context, issue, flag);
+
+      expect(result).to.be.false;
+      expect(flag.shouldLogSuppression).to.be.false;
+      expect(context.log.warn).to.be.calledWith('SDA: Suppressing issue', suppressionMessage);
     });
   });
 });
