@@ -128,6 +128,37 @@ async function createAgenticReportQuery(options) {
   });
 }
 
+function buildWhereClauseReferral(conditions = [], siteFilters = []) {
+  const allConditions = [...conditions];
+
+  if (siteFilters && siteFilters.length > 0) {
+    allConditions.push(siteFilters);
+  }
+
+  /* c8 ignore next */
+  return allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : '';
+}
+
+async function createReferralReportQuery(options) {
+  const {
+    periods, databaseName, tableName, siteFilters = [],
+  } = options;
+
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClauseReferral(
+    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
+    siteFilters,
+  );
+
+  return loadSql('referral-traffic-report', {
+    databaseName,
+    tableName,
+    whereClause,
+    countryExtraction: buildCountryExtractionSQL(),
+  });
+}
+
 export const weeklyBreakdownQueries = {
   createAgenticReportQuery,
+  createReferralReportQuery,
 };

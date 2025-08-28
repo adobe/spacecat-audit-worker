@@ -9,12 +9,15 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+/* eslint-disable no-await-in-loop */
+
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { createLLMOSharepointClient } from '../utils/report-uploader.js';
+import { getConfigs } from './constants/report-configs.js';
 
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log } = context;
@@ -41,26 +44,35 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   const sqlDbDescription = `[Athena Query] Create database ${s3Config.databaseName}`;
   await athenaClient.execute(sqlDb, s3Config.databaseName, sqlDbDescription);
 
-  await ensureTableExists(athenaClient, s3Config, log);
+  const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain);
 
-  log.info('Running weekly report...');
-  const weekOffset = auditContext?.weekOffset || -1;
-  await runWeeklyReport({
-    athenaClient,
-    s3Config,
-    log,
-    site,
-    sharepointClient,
-    weekOffset,
-  });
+  const results = [];
+  for (const reportConfig of reportConfigs) {
+    await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
+
+    log.info(`Running weekly report: ${reportConfig.name}...`);
+    const weekOffset = auditContext?.weekOffset || -1;
+    await runWeeklyReport({
+      athenaClient,
+      s3Config,
+      reportConfig,
+      log,
+      site,
+      sharepointClient,
+      weekOffset,
+    });
+
+    results.push({
+      name: reportConfig.name,
+      table: reportConfig.tableName,
+      database: s3Config.databaseName,
+      customer: s3Config.customerName,
+    });
+  }
 
   return {
-    auditResult: {
-      database: s3Config.databaseName,
-      table: s3Config.tableName,
-      customer: s3Config.customerName,
-    },
-    fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}/agentic-traffic/`,
+    auditResult: results,
+    fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };
 }
 

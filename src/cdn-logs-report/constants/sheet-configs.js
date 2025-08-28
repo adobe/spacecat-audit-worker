@@ -9,8 +9,12 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+/* eslint-disable camelcase */
 
+import { classifyTrafficSource } from '@adobe/spacecat-shared-rum-api-client/src/common/traffic.js';
 import { validateCountryCode } from '../utils/report-utils.js';
+
+const HEADER_COLOR = 'FFE6E6FA';
 
 const capitalizeFirstLetter = (str) => {
   if (!str || typeof str !== 'string') return str;
@@ -30,7 +34,7 @@ export const SHEET_CONFIGS = {
       'Product',
       'Category',
     ],
-    headerColor: 'FFE6E6FA',
+    headerColor: HEADER_COLOR,
     numberColumns: [2, 3, 4],
     processData: (data) => data?.map((row) => [
       row.agent_type || 'Other',
@@ -43,5 +47,54 @@ export const SHEET_CONFIGS = {
       capitalizeFirstLetter(row.product) || 'Other',
       row.category || 'Uncategorized',
     ]) || [],
+  },
+  referral: {
+    getHeaders: () => [
+      'path',
+      'trf_type',
+      'trf_channel',
+      'trf_platform',
+      'device',
+      'date',
+      'pageviews',
+      'consent',
+      'bounced',
+      'region',
+      'user_intent',
+    ],
+    headerColor: HEADER_COLOR,
+    numberColumns: [6],
+    processData: (data, site) => data.map((row) => {
+      const {
+        path,
+        referrer,
+        utm_source,
+        utm_medium,
+        tracking_param,
+        device,
+        date,
+        pageviews,
+        region,
+      } = row;
+
+      const url = `${site.getBaseURL()}${path.startsWith('/') ? path : `/${path}`}`;
+      const {
+        type, category, vendor,
+      } = classifyTrafficSource(url, referrer, utm_source, utm_medium, tracking_param);
+
+      return [
+        path,
+        type,
+        category,
+        vendor,
+        device,
+        date,
+        pageviews,
+        '',
+        '',
+        validateCountryCode(region),
+        '',
+      ];
+    }),
   },
 };

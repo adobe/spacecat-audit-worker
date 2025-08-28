@@ -39,10 +39,28 @@ UNLOAD (
       -- only the tracking_param, not the value (no PII)
       -- for the tracking_param list, please refer to https://github.com/adobe/helix-rum-enhancer/blob/main/plugins/martech.js#L13-L22
       -- list is limited to have feature parity with rum-enhancer
-      REGEXP_EXTRACT(
-        url,
-        '(?i)(gclid|gclsrc|wbraid|gbraid|dclid|msclkid|fbclid|fbad_id|fbpxl_id|twclid|twsrc|twterm|li_fat_id|epik|ttclid)'
-      ) AS tracking_param
+      CASE
+        WHEN REGEXP_LIKE(
+          url,
+          '(?i)(gclid|gclsrc|wbraid|gbraid|dclid|msclkid|fb(?:cl|ad_|pxl_)id|tw(?:clid|src|term)|li_fat_id|epik|ttclid)'
+        ) THEN 'paid'
+        WHEN REGEXP_LIKE(
+          url,
+          '(?i)(mc_(?:c|e)id|mkt_tok)'
+        ) THEN 'email'
+        ELSE NULL
+      END AS tracking_param,
+      
+      -- device bucket from User-Agent
+      CASE
+        WHEN regexp_like(coalesce(user_agent, ''),
+          '(?i)(mobi|iphone|ipod|ipad|android(?!.*tv)|windows phone|blackberry|bb10|opera mini|fennec|ucbrowser|silk|kindle|playbook|tablet)'
+        )
+          THEN 'mobile'
+        ELSE 'desktop'
+      END AS device,
+      
+      CONCAT('{{year}}', '-', '{{month}}', '-', '{{day}}') as date
 
     FROM base
     WHERE
@@ -81,8 +99,8 @@ UNLOAD (
            ahrefs|semrush|mj12bot|dotbot|rogerbot|seznambot|linkdex|blexbot|screaming frog|
            googlebot|bingbot|duckduckbot|baiduspider|yandex(bot|images)|sogou|exabot|
            twitterbot|facebookexternalhit|linkedinbot|pinterest|quora link preview|whatsapp|telegrambot|discordbot|
-           curl|wget|python-requests|httpie|okhttp|aiohttp|libwww-perl|lwp::simple|
-           java|go-http-client|php|ruby|perl|axios|node-fetch
+           curl|wget|python|httpie|okhttp|aiohttp|libwww-perl|lwp::simple|
+           java|go-http-client|php|ruby|perl|axios|node|synthetics|probe|ahc
         )'
       )
   )
