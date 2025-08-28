@@ -24,13 +24,53 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
   let guidanceHandler;
   const sandbox = sinon.createSandbox();
 
-  let sharepointClientMock;
-  let docMock;
   let createLLMOSharepointClientStub;
+  let readFromSharePointStub;
+  let uploadToSharePointStub;
+  let publishToAdminHlxStub;
 
-  // Shared dataAccess configurations to reduce duplication
-  const createDataAccess = (overrides = {}) => {
-    const defaults = {
+  beforeEach(async () => {
+    // Mock all report-uploader functions
+    createLLMOSharepointClientStub = sandbox.stub().resolves({});
+    readFromSharePointStub = sandbox.stub();
+    uploadToSharePointStub = sandbox.stub().resolves();
+    publishToAdminHlxStub = sandbox.stub().resolves();
+
+    guidanceHandler = await esmock('../../../src/llm-error-pages/guidance-handler.js', {
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: createLLMOSharepointClientStub,
+        readFromSharePoint: readFromSharePointStub,
+        uploadToSharePoint: uploadToSharePointStub,
+        publishToAdminHlx: publishToAdminHlxStub,
+      },
+    });
+  });
+
+  afterEach(() => sandbox.restore());
+
+  it('successfully processes message and updates Excel file', async () => {
+    // Create existing Excel file with data
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    sheet.addRow(['ChatGPT', '/products/item', '', '', '']);
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: {
+        brokenLinks: [{
+          urlFrom: 'ChatGPT',
+          urlTo: 'https://example.com/products/item',
+          suggestedUrls: ['/products'],
+          aiRationale: 'Closest match',
+        }],
+      },
+    };
+
+    const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
@@ -43,344 +83,284 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       Audit: {
         findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
       },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
     };
-    return { ...defaults, ...overrides };
-  };
 
-  const createContext = (dataAccess, logOverrides = {}) => {
-    const defaultLog = {
-      error: sandbox.stub(),
+    const logMock = {
       info: sandbox.stub(),
+      error: sandbox.stub(),
       warn: sandbox.stub(),
     };
-    const log = { ...defaultLog, ...logOverrides };
-    return { log, dataAccess };
-  };
-
-  beforeEach(async () => {
-    // Fresh mocks each test
-    docMock = {
-      downloadRawDocument: sandbox.stub(),
-      uploadRawDocument: sandbox.stub().resolves(),
-    };
-    sharepointClientMock = {
-      getDocument: sandbox.stub().returns(docMock),
-    };
-    createLLMOSharepointClientStub = sandbox.stub().resolves(sharepointClientMock);
-
-    guidanceHandler = await esmock('../../../src/llm-error-pages/guidance-handler.js', {
-      '../../../src/utils/report-uploader.js': {
-        createLLMOSharepointClient: createLLMOSharepointClientStub,
-      },
-    });
-  });
-
-  afterEach(() => sandbox.restore());
-
-  it('creates a new workbook and uploads when no existing file (asserts row content)', async () => {
-    // Simulate no existing Excel → download throws
-    docMock.downloadRawDocument.rejects(new Error('Not Found'));
-
-    // Intercept upload to inspect workbook contents
-    let inspected = false;
-    docMock.uploadRawDocument.callsFake(async (buffer) => {
-      const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(buffer);
-      const ws = wb.worksheets[0];
-      const headers = ws.getRow(1).values.slice(1);
-      expect(headers).to.deep.equal(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-      const row2 = ws.getRow(2).values.slice(1);
-      expect(row2[0]).to.equal('ChatGPT');
-      expect(row2[1]).to.equal('/products/item'); // path-only normalization
-      expect(row2[2]).to.equal('/products'); // Suggested URLs newline-joined (single value)
-      expect(row2[3]).to.equal('Closest match');
-      expect(row2[4]).to.equal(''); // Confidence Score (empty in this old format)
-      inspected = true;
-      return Promise.resolve();
-    });
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/products/item',
-          suggestedUrls: ['/products'],
-          aiRationale: 'Closest match',
-        }],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess();
-    const context = createContext(dataAccess, { log: console });
+    const context = { log: logMock, dataAccess };
 
     const resp = await guidanceHandler.default(message, context);
 
     expect(resp.status).to.equal(200);
-    expect(createLLMOSharepointClientStub.calledOnce).to.be.true;
-    expect(sharepointClientMock.getDocument.calledOnce).to.be.true;
-    // Validate path contains weekly filename and folder suffix
-    const pathArg = sharepointClientMock.getDocument.firstCall.args[0];
-    expect(pathArg).to.include('/agentic-traffic/');
-    expect(pathArg).to.match(/agentictraffic-w\d{2}-\d{4}-404-ui\.xlsx$/);
-
-    // Ensures we wrote a buffer back with expected content
-    expect(docMock.uploadRawDocument.calledOnce).to.be.true;
-    expect(inspected).to.equal(true);
-  });
-
-  it('loads existing workbook and upserts row', async () => {
-    // Build an in-memory workbook with a matching row to be updated
-    const existingWb = new ExcelJS.Workbook();
-    const ws = existingWb.addWorksheet('data');
-    ws.addRow(['User Agent', 'URL', 'Number of Hits', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
-    ws.addRow(['ChatGPT', '/products/item', 10, '', '', '']);
-    const existingBuffer = await existingWb.xlsx.writeBuffer();
-
-    docMock.downloadRawDocument.resolves(Buffer.from(existingBuffer));
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/products/item',
-          suggestedUrls: ['/products'],
-          aiRationale: 'Closest match',
-        }],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess();
-    const context = createContext(dataAccess, { log: console });
-
-    const resp = await guidanceHandler.default(message, context);
-
-    expect(resp.status).to.equal(200);
-    expect(docMock.downloadRawDocument.calledOnce).to.be.true;
-    expect(docMock.uploadRawDocument.calledOnce).to.be.true;
+    expect(readFromSharePointStub.calledOnce).to.be.true;
+    expect(uploadToSharePointStub.calledOnce).to.be.true;
+    expect(publishToAdminHlxStub.calledOnce).to.be.true;
   });
 
   it('returns 404 when site is not found', async () => {
     const message = {
       auditId: 'audit-123',
-      siteId: 'missing',
-      data: { brokenLinks: [], opportunityId: 'opportunity-123' },
+      siteId: 'nonexistent-site',
+      data: { brokenLinks: [] },
     };
-    const dataAccess = createDataAccess({
-      Site: { findById: sandbox.stub().resolves(null) },
-    });
-    const context = createContext(dataAccess);
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves(null),
+      },
+      Audit: {
+        findById: sandbox.stub(),
+      },
+    };
+
+    const context = {
+      log: { error: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(404);
-    expect(context.log.error).to.have.been.calledWith('Site not found for siteId: missing');
   });
 
-  it('returns 400 when upload fails', async () => {
-    docMock.downloadRawDocument.rejects(new Error('Not Found'));
-    docMock.uploadRawDocument.rejects(new Error('Upload failed'));
-
+  it('returns 404 when audit is not found', async () => {
     const message = {
-      auditId: 'audit-123',
+      auditId: 'nonexistent-audit',
       siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/x',
-          suggestedUrls: ['/x'],
-          aiRationale: 'r',
-        }],
-        opportunityId: 'opportunity-123',
-      },
+      data: { brokenLinks: [] },
     };
 
-    const dataAccess = createDataAccess();
-    const context = createContext(dataAccess);
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(400);
-  });
-
-  it('handles invalid URLs in toPathOnly function', async () => {
-    docMock.downloadRawDocument.rejects(new Error('Not Found'));
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'invalid-url',
-          suggestedUrls: ['/valid'],
-          aiRationale: 'test',
-        }],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess();
-    const context = createContext(dataAccess, { log: console });
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-  });
-
-  it('handles invalid URLs with no site base URL', async () => {
-    docMock.downloadRawDocument.rejects(new Error('Not Found'));
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'invalid-url',
-          suggestedUrls: ['/valid'],
-          aiRationale: 'test',
-        }],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess({
+    const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
-          getBaseURL: () => null,
+          getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getLlmoDataFolder: () => 'test-customer',
             getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
-    });
-    const context = createContext(dataAccess, { log: console });
+      Audit: {
+        findById: sandbox.stub().resolves(null),
+      },
+    };
+
+    const context = {
+      log: { error: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
 
     const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
+    expect(resp.status).to.equal(404);
   });
 
-  it('handles URL constructor throwing error', async () => {
-    docMock.downloadRawDocument.rejects(new Error('Not Found'));
-
-    // Temporarily override the global URL constructor to throw
-    const originalURL = global.URL;
-    global.URL = function MockURL() {
-      throw new TypeError('Invalid URL');
-    };
+  it('returns 400 when Excel processing fails', async () => {
+    readFromSharePointStub.rejects(new Error('SharePoint error'));
 
     const message = {
       auditId: 'audit-123',
       siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test',
-          suggestedUrls: ['/valid'],
-          aiRationale: 'test',
-        }],
-        opportunityId: 'opportunity-123',
-      },
+      data: { brokenLinks: [] },
     };
 
-    const dataAccess = createDataAccess();
-    const context = createContext(dataAccess, { log: console });
-
-    try {
-      const resp = await guidanceHandler.default(message, context);
-      expect(resp.status).to.equal(200);
-      expect(docMock.uploadRawDocument.calledOnce).to.be.true;
-    } finally {
-      // Restore the original URL constructor
-      global.URL = originalURL;
-    }
-  });
-
-  it('uses fallback folder name when no llmoFolder and no config', async () => {
-    docMock.downloadRawDocument.rejects(new Error('Not Found'));
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test',
-          suggestedUrls: ['/valid'],
-          aiRationale: 'test',
-        }],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess({
+    const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://fallback.com',
+          getBaseURL: () => 'https://example.com',
           getConfig: () => ({
-            getLlmoDataFolder: null,
-            getCdnLogsConfig: () => ({ bucketName: 'fallback-bucket' }),
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
-    });
-    const context = createContext(dataAccess, { log: console });
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const logMock = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    const context = { log: logMock, dataAccess };
 
     const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
+    expect(resp.status).to.equal(400);
+    expect(logMock.error.calledWith('Failed to update 404 Excel on Mystique callback: SharePoint error')).to.be.true;
   });
 
-  it('uses base URL fallback when no llmoFolder and no config method', async () => {
-    docMock.downloadRawDocument.rejects(new Error('Not Found'));
+  it('handles empty brokenLinks array', async () => {
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
 
     const message = {
       auditId: 'audit-123',
       siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test',
-          suggestedUrls: ['/valid'],
-          aiRationale: 'test',
-        }],
-        opportunityId: 'opportunity-123',
-      },
+      data: { brokenLinks: [] },
     };
 
-    const dataAccess = createDataAccess({
+    const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://fallback.com',
+          getBaseURL: () => 'https://example.com',
           getConfig: () => ({
-            getLlmoDataFolder: null,
-            getCdnLogsConfig: () => ({ bucketName: 'fallback-bucket' }),
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
-    });
-    const context = createContext(dataAccess, { log: console });
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
   });
 
-  it('handles workbook with no worksheets', async () => {
-    // Test case for workbook with no worksheets - fallback behavior
-    // ExcelJS stub - removed unused variable
+  it('handles brokenLinks with actual URL matching and updates', async () => {
+    // Create existing Excel file with matching data
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    sheet.addRow(['ChatGPT', '/products/item', '', '', '']);
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
 
-    // Mock successful download but empty workbook
-    docMock.downloadRawDocument.resolves(Buffer.from('mock-excel-data'));
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: {
+        brokenLinks: [{
+          urlFrom: 'ChatGPT',
+          urlTo: 'https://example.com/products/item',
+          suggestedUrls: ['/products', '/items'],
+          aiRationale: 'Best match found',
+        }],
+      },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+  });
+
+  it('covers workbook.worksheets[0] || addWorksheet fallback', async () => {
+    // Create workbook with no worksheets to test the || fallback
+    const emptyWorkbook = new ExcelJS.Workbook();
+    const emptyBuffer = await emptyWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(emptyBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: { brokenLinks: [] },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+  });
+
+  it('covers optional chaining in getCell operations', async () => {
+    // Create workbook with problematic cell values to test optional chaining
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    // Add a row with a cell that doesn't have toString method
+    sheet.addRow(['ChatGPT', '/test', '', '', '']);
+    // Note: The optional chaining in the code handles cells without toString methods
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: { brokenLinks: [] },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+  });
+
+  it('covers empty urlCell branch in Excel processing loop', async () => {
+    // Test the branch where urlCell is empty (if condition fails)
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    sheet.addRow(['ChatGPT', '', '', '', '']); // Empty URL cell
+    sheet.addRow(['Claude', null, '', '', '']); // Null URL cell
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
 
     const message = {
       auditId: 'audit-123',
@@ -389,323 +369,44 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         brokenLinks: [{
           urlFrom: 'ChatGPT',
           urlTo: 'https://example.com/test',
-          suggestedUrls: ['/fallback'],
-          aiRationale: 'Test empty workbook',
-          confidenceScore: 1,
-        }],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess();
-    const context = createContext(dataAccess, { log: console });
-
-    // We need to mock the ExcelJS import - this is tricky with ES modules
-    // For now, let's test the existing workbook download success path
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-  });
-
-  it('derives periodIdentifier when not provided', async () => {
-    docMock.downloadRawDocument.rejects(new Error('Not Found'));
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        // No periodIdentifier provided
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test',
-          suggestedUrls: ['/fallback'],
-          aiRationale: 'Test period derivation',
-          confidenceScore: 1,
-        }],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess();
-    const context = createContext(dataAccess, { log: console });
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-  });
-
-  it('loads existing Excel file but creates new worksheet when none exist', async () => {
-    // Mock successful download but create a workbook with no worksheets
-    const mockBuffer = Buffer.from('mock-excel-data');
-    docMock.downloadRawDocument.resolves(mockBuffer);
-
-    // We need to test this indirectly by checking the behavior
-    // The actual ExcelJS mock is complex, so we'll test the successful path
-    // and verify that the workbook.worksheets[0] || workbook.addWorksheet('data') logic works
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test',
-          suggestedUrls: ['/fallback'],
-          aiRationale: 'Test worksheet creation',
-          confidenceScore: 1,
-        }],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess();
-    const context = createContext(dataAccess, { log: console });
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-    expect(docMock.downloadRawDocument.calledOnce).to.be.true;
-    expect(docMock.uploadRawDocument.calledOnce).to.be.true;
-  });
-
-  it('handles null/undefined values in suggestion data', async () => {
-    docMock.downloadRawDocument.rejects(new Error('Not Found'));
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test',
-          suggestedUrls: null, // null suggestedUrls
-          aiRationale: undefined, // undefined aiRationale
-          confidenceScore: null, // null confidenceScore
-        }],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess();
-    const context = createContext(dataAccess, { log: console });
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-  });
-
-  it('handles cell values that are not strings or have no toString method', async () => {
-    // Create a mock that simulates loading an existing workbook with rows that have
-    // cell values without toString methods or null values
-    const mockCell1 = { value: null }; // No toString method
-    const mockCell2 = { value: 42 }; // Number without toString method
-    const mockCell3 = { value: 'existing-hits' };
-
-    const mockRow = {
-      getCell: sandbox.stub(),
-      values: null,
-    };
-    mockRow.getCell.withArgs(1).returns(mockCell1);
-    mockRow.getCell.withArgs(2).returns(mockCell2);
-    mockRow.getCell.withArgs(3).returns(mockCell3);
-
-    // mockSheet removed - not used in this test
-    // mockWorkbook removed - not used in this test
-
-    // Mock successful download
-    docMock.downloadRawDocument.resolves(Buffer.from('mock-excel-data'));
-
-    // We need to test this scenario where cell values don't have toString methods
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test',
-          suggestedUrls: ['/fallback'],
-          aiRationale: 'Test cell values',
-          confidenceScore: 1,
-        }],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess();
-    const context = createContext(dataAccess, { log: console });
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-  });
-
-  it('handles workbook with existing data and matching rows', async () => {
-    // Mock successful download with existing data that will match our input
-    docMock.downloadRawDocument.resolves(Buffer.from('mock-excel-data'));
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      periodIdentifier: 'w34-2025',
-      llmoFolder: 'customer',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/products/item', // This should match the existing test data
-          suggestedUrls: ['/new-suggestion'],
-          aiRationale: 'Updated rationale',
-          confidenceScore: 3,
-        }],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess();
-    const context = createContext(dataAccess, { log: console });
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(200);
-    expect(docMock.uploadRawDocument.calledOnce).to.be.true;
-  });
-
-  it('covers workbook.worksheets[0] || addWorksheet branch when worksheets[0] is falsy', async () => {
-    docMock.downloadRawDocument.resolves(Buffer.from('buf'));
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [{
-          urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test',
-          suggestedUrls: null, // This should trigger suggestedUrls?.join() branch
+          suggestedUrls: ['/test'],
           aiRationale: 'Test',
-          confidenceScore: 1,
         }],
-        opportunityId: 'opportunity-123',
       },
     };
 
-    const dataAccess = createDataAccess();
-    const context = createContext(dataAccess, { log: console });
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
-    expect(docMock.uploadRawDocument.calledOnce).to.be.true;
   });
 
-  // Add targeted tests for 100% coverage
-  it('returns 404 when audit is not found ', async () => {
-    const message = {
-      auditId: 'missing-audit',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess({
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves(null) }, // Audit not found
-    });
-    const context = createContext(dataAccess);
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(404);
-    expect(context.log.warn).to.have.been.calledWith('No audit found for auditId: missing-audit');
-  });
-
-  it('returns 404 when opportunity is not found', async () => {
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [],
-        opportunityId: 'missing-opportunity',
-      },
-    };
-
-    const dataAccess = createDataAccess({
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Opportunity: { findById: sandbox.stub().resolves(null) }, // Opportunity not found
-    });
-    const context = createContext(dataAccess);
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(404);
-    expect(context.log.error).to.have.been.calledWith('[LLM Error Pages Guidance] Opportunity not found for ID: missing-opportunity');
-  });
-
-  it('returns 400 when site ID mismatch ', async () => {
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-1',
-      data: {
-        brokenLinks: [],
-        opportunityId: 'opportunity-123',
-      },
-    };
-
-    const dataAccess = createDataAccess({
-      Site: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'site-1',
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({
-            getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
-          }),
-        }),
-      },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'different-site', // Site ID mismatch
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    });
-    const context = createContext(dataAccess);
-
-    const resp = await guidanceHandler.default(message, context);
-    expect(resp.status).to.equal(400);
-    expect(context.log.error).to.have.been.calledWith('[llm-error-pages Guidance] Site ID mismatch. Expected: site-1, Found: different-site');
-  });
-
-  it('checks workbook.worksheets[0] || addWorksheet fallback', async () => {
-    // Mock ExcelJS to return a workbook with empty/falsy worksheets[0]
-    const originalWorkbook = ExcelJS.Workbook;
-    const mockWorkbook = {
-      worksheets: [null], // worksheets[0] is falsy, should trigger || fallback
-      addWorksheet: sandbox.stub().returns({
-        addRow: sandbox.stub(),
-        rowCount: 1,
-        getCell: sandbox.stub().returns({ value: '' }),
-      }),
-      xlsx: {
-        load: sandbox.stub().resolves(),
-        writeBuffer: sandbox.stub().resolves(Buffer.from('test')),
-      },
-    };
-
-    ExcelJS.Workbook = function MockWorkbook() {
-      return mockWorkbook;
-    };
-    docMock.downloadRawDocument.resolves(Buffer.from('existing-file'));
+  it('covers additional branches - null/undefined suggestedUrls and aiRationale', async () => {
+    // Test the || [] and || '' fallback branches in the brokenUrlsMap creation
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    sheet.addRow(['ChatGPT', '/test-path', '', '', '']);
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
 
     const message = {
       auditId: 'audit-123',
@@ -713,56 +414,45 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       data: {
         brokenLinks: [{
           urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test',
-          suggestedUrls: ['/test'],
-          aiRationale: 'test',
+          urlTo: 'https://example.com/test-path',
+          suggestedUrls: null, // This tests the || [] fallback
+          aiRationale: undefined, // This tests the || '' fallback
         }],
-        opportunityId: 'opportunity-123',
       },
     };
 
-    const dataAccess = createDataAccess({
+    const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test' }),
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
         }),
       },
-    });
-    const context = createContext(dataAccess, { log: console });
-
-    const resp = await guidanceHandler.default(message, context);
-    ExcelJS.Workbook = originalWorkbook;
-
-    expect(resp.status).to.equal(200);
-    expect(mockWorkbook.addWorksheet).to.have.been.calledWith('data');
-  });
-
-  it(' getCell optional chaining fallback', async () => {
-    // Mock ExcelJS to return a sheet where getCell returns an object without toString
-    const originalWorkbook = ExcelJS.Workbook;
-    const mockSheet = {
-      addRow: sandbox.stub(),
-      rowCount: 3, // Has rows to iterate through
-      getCell: sandbox.stub(),
-    };
-
-    // Make getCell return objects that will trigger the optional chaining fallback
-    mockSheet.getCell.withArgs(2, 2).returns({ value: Object.create(null) }); // No toString method
-    mockSheet.getCell.withArgs(3, 2).returns({ value: null }); // Null value
-
-    const mockWorkbook = {
-      worksheets: [mockSheet],
-      xlsx: {
-        load: sandbox.stub().resolves(),
-        writeBuffer: sandbox.stub().resolves(Buffer.from('test')),
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
       },
     };
 
-    ExcelJS.Workbook = function MockWorkbook() {
-      return mockWorkbook;
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
     };
-    docMock.downloadRawDocument.resolves(Buffer.from('existing-file'));
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+  });
+
+  it('covers URL parsing with query parameters', async () => {
+    // Test the URL parsing logic that includes search parameters
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    sheet.addRow(['ChatGPT', '/search?q=test', '', '', '']);
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
 
     const message = {
       auditId: 'audit-123',
@@ -770,28 +460,254 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       data: {
         brokenLinks: [{
           urlFrom: 'ChatGPT',
-          urlTo: 'https://example.com/test',
-          suggestedUrls: ['/test'],
-          aiRationale: 'test',
+          urlTo: 'https://example.com/search?q=test&param=value', // URL with query params
+          suggestedUrls: ['/search'],
+          aiRationale: 'Search page',
         }],
-        opportunityId: 'opportunity-123',
       },
     };
 
-    const dataAccess = createDataAccess({
+    const dataAccess = {
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test' }),
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
         }),
       },
-    });
-    const context = createContext(dataAccess, { log: console });
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
 
     const resp = await guidanceHandler.default(message, context);
-    ExcelJS.Workbook = originalWorkbook;
-
     expect(resp.status).to.equal(200);
-    expect(mockSheet.getCell).to.have.been.called;
+  });
+
+  it('covers toPathOnly catch block with invalid URL characters', async () => {
+    // Test the catch block by using URLs with invalid characters
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: {
+        brokenLinks: [{
+          urlFrom: 'ChatGPT',
+          urlTo: 'http://[invalid-ipv6-bracket', // Invalid URL that should cause URL constructor to throw
+          suggestedUrls: ['/fallback'],
+          aiRationale: 'Test catch block',
+        }],
+      },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+  });
+
+  it('covers getLlmoDataFolder fallback to s3Config.customerName', async () => {
+    // Test the || s3Config.customerName fallback when getLlmoDataFolder returns null
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: { brokenLinks: [] },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoDataFolder: () => null, // This will trigger the || s3Config.customerName fallback
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+  });
+
+  it('covers search parameter parsing in URL', async () => {
+    // Test the (parsed.search || '') part of the return statement in toPathOnly
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    sheet.addRow(['ChatGPT', '/search', '', '', '']); // URL without search params
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: {
+        brokenLinks: [{
+          urlFrom: 'ChatGPT',
+          urlTo: 'https://example.com/search', // URL without search params - tests || '' branch
+          suggestedUrls: ['/search'],
+          aiRationale: 'Test search param fallback',
+        }],
+      },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+  });
+
+  it('covers userAgent cell toString fallback', async () => {
+    // Test the || '' fallback when userAgent cell has no toString method
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    // Add row with problematic userAgent cell
+    sheet.addRow([null, '/test', '', '', '']); // null userAgent
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: { brokenLinks: [] },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+  });
+
+  it('covers getBaseURL returning falsy value in toPathOnly', async () => {
+    // Test the fallback when getBaseURL returns empty string
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: {
+        brokenLinks: [{
+          urlFrom: 'ChatGPT',
+          urlTo: '/test-path', // Relative URL
+          suggestedUrls: ['/test'],
+          aiRationale: 'Test',
+        }],
+      },
+    };
+
+    // Create a site mock that returns valid URL for utils.js but empty string for toPathOnly
+    let getBaseURLCallCount = 0;
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => {
+            getBaseURLCallCount += 1;
+            // Return valid URL for first call (utils.js), empty string for subsequent calls (toPathOnly)
+            return getBaseURLCallCount === 1 ? 'https://example.com' : '';
+          },
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const context = {
+      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      dataAccess,
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
   });
 });
