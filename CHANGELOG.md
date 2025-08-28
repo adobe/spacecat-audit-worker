@@ -1,3 +1,10 @@
+## [1.164.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.164.0...v1.164.1) (2025-08-28)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-scrape-client to v2.1.1 ([#1186](https://github.com/adobe/spacecat-audit-worker/issues/1186)) ([16bcd99](https://github.com/adobe/spacecat-audit-worker/commit/16bcd996a943014de1440fefe8ae9826f7674ecf))
+
 # [1.164.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.163.2...v1.164.0) (2025-08-28)
 
 
