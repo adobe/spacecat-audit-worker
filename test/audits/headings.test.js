@@ -75,7 +75,7 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/page3';
     nock('https://example.com')
       .get('/page3')
-      .reply(200, '<h1>Title</h1><h2>Section</h2><h3>Subsection</h3>');
+      .reply(200, '<h1>Title</h1><p>Content for title</p><h2>Section</h2><p>Content for section</p><h3>Subsection</h3><p>Content for subsection</p>');
 
     const result = await validatePageHeadings(url, log);
     expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
@@ -121,6 +121,493 @@ describe('Headings Audit', () => {
       .filter((c) => c.check === HEADINGS_CHECKS.HEADING_MISSING_H1.check
       || c.check === HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check);
     expect(h1Checks).to.have.lengthOf(0);
+  });
+
+  it('detects duplicate heading text content', async () => {
+    const url = 'https://example.com/duplicate-text';
+    nock('https://example.com')
+      .get('/duplicate-text')
+      .reply(200, `
+        <h1>Our Services</h1>
+        <div class="section">
+          <h2>Our Services</h2>
+          <p>Content here...</p>
+        </div>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    expect(result.checks).to.deep.include({
+      check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
+      success: false,
+      explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+      text: 'Our Services',
+      duplicates: ['H1', 'H2'],
+      count: 2,
+    });
+  });
+
+  it('detects multiple sets of duplicate heading text', async () => {
+    const url = 'https://example.com/multiple-duplicates';
+    nock('https://example.com')
+      .get('/multiple-duplicates')
+      .reply(200, `
+        <h1>Our Services</h1>
+        <div class="section">
+          <h2>Our Services</h2>
+          <p>Content here...</p>
+        </div>
+        <h2>Featured Products</h2>
+        <div class="products">
+          <h3>Featured Products</h3>
+          <p>Product list...</p>
+        </div>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+
+    // Should detect both duplicate sets
+    const duplicateChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check);
+    expect(duplicateChecks).to.have.lengthOf(2);
+
+    // Check first duplicate set
+    expect(duplicateChecks).to.deep.include({
+      check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
+      success: false,
+      explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+      text: 'Our Services',
+      duplicates: ['H1', 'H2'],
+      count: 2,
+    });
+
+    // Check second duplicate set
+    expect(duplicateChecks).to.deep.include({
+      check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
+      success: false,
+      explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+      text: 'Featured Products',
+      duplicates: ['H2', 'H3'],
+      count: 2,
+    });
+  });
+
+  it('detects case-insensitive duplicate heading text', async () => {
+    const url = 'https://example.com/case-insensitive';
+    nock('https://example.com')
+      .get('/case-insensitive')
+      .reply(200, '<h1>About Us</h1><h2>ABOUT US</h2><h3>about us</h3>');
+
+    const result = await validatePageHeadings(url, log);
+    expect(result.checks).to.deep.include({
+      check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
+      success: false,
+      explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+      text: 'About Us',
+      duplicates: ['H1', 'H2', 'H3'],
+      count: 3,
+    });
+  });
+
+  it('handles whitespace in duplicate heading text detection', async () => {
+    const url = 'https://example.com/whitespace';
+    nock('https://example.com')
+      .get('/whitespace')
+      .reply(200, '<h1>  Contact  </h1><h2>Contact</h2><h3> Contact </h3>');
+
+    const result = await validatePageHeadings(url, log);
+    expect(result.checks).to.deep.include({
+      check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
+      success: false,
+      explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+      text: 'Contact',
+      duplicates: ['H1', 'H2', 'H3'],
+      count: 3,
+    });
+  });
+
+  it('passes with unique heading text content', async () => {
+    const url = 'https://example.com/unique-headings';
+    nock('https://example.com')
+      .get('/unique-headings')
+      .reply(200, '<h1>Welcome</h1><h2>Services</h2><h3>Products</h3><h4>Contact</h4>');
+
+    const result = await validatePageHeadings(url, log);
+    const duplicateChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check);
+    expect(duplicateChecks).to.have.lengthOf(0);
+  });
+
+  it('ignores empty headings in duplicate text detection', async () => {
+    const url = 'https://example.com/empty-ignored';
+    nock('https://example.com')
+      .get('/empty-ignored')
+      .reply(200, '<h1>Title</h1><h2></h2><h3></h3><h4>Title</h4>');
+
+    const result = await validatePageHeadings(url, log);
+
+    // Should detect duplicate "Title" text but ignore empty headings
+    const duplicateChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check);
+    expect(duplicateChecks).to.have.lengthOf(1);
+    expect(duplicateChecks[0]).to.deep.include({
+      text: 'Title',
+      duplicates: ['H1', 'H4'],
+      count: 2,
+    });
+
+    // Should also detect empty headings separately
+    const emptyChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_EMPTY.check);
+    expect(emptyChecks).to.have.lengthOf(2);
+  });
+
+  it('detects headings without content before next heading', async () => {
+    const url = 'https://example.com/no-content';
+    nock('https://example.com')
+      .get('/no-content')
+      .reply(200, `
+        <h1>Our Services</h1>
+        <h2>Consulting</h2>
+        <p>Some content here</p>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    expect(result.checks).to.deep.include({
+      check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
+      success: false,
+      explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
+      heading: 'H1',
+      nextHeading: 'H2',
+    });
+  });
+
+  it('passes when headings have content between them', async () => {
+    const url = 'https://example.com/with-content';
+    nock('https://example.com')
+      .get('/with-content')
+      .reply(200, `
+        <h1>Our Services</h1>
+        <p>We provide excellent services.</p>
+        <h2>Consulting</h2>
+        <ul><li>Strategy planning</li></ul>
+        <h3>Implementation</h3>
+        <p>Our implementation process</p>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    const noContentChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_NO_CONTENT.check);
+    expect(noContentChecks).to.have.lengthOf(0);
+  });
+
+  it('detects multiple headings without content', async () => {
+    const url = 'https://example.com/multiple-no-content';
+    nock('https://example.com')
+      .get('/multiple-no-content')
+      .reply(200, `
+        <h1>Title</h1>
+        <h2>Section A</h2>
+        <h3>Subsection</h3>
+        <p>Finally some content</p>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    const noContentChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_NO_CONTENT.check);
+    expect(noContentChecks).to.have.lengthOf(2);
+
+    expect(noContentChecks).to.deep.include({
+      check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
+      success: false,
+      explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
+      heading: 'H1',
+      nextHeading: 'H2',
+    });
+
+    expect(noContentChecks).to.deep.include({
+      check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
+      success: false,
+      explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
+      heading: 'H2',
+      nextHeading: 'H3',
+    });
+  });
+
+  it('recognizes various content types as valid', async () => {
+    const url = 'https://example.com/various-content';
+    nock('https://example.com')
+      .get('/various-content')
+      .reply(200, `
+        <h1>Images</h1>
+        <img src="test.jpg" alt="Test image">
+        <h2>Lists</h2>
+        <ul><li>Item 1</li></ul>
+        <h3>Tables</h3>
+        <table><tr><td>Data</td></tr></table>
+        <h4>Divs with content</h4>
+        <div>Some text content</div>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    const noContentChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_NO_CONTENT.check);
+    expect(noContentChecks).to.have.lengthOf(0);
+  });
+
+  it('ignores whitespace-only content', async () => {
+    const url = 'https://example.com/whitespace-only';
+    nock('https://example.com')
+      .get('/whitespace-only')
+      .reply(200, `
+        <h1>Title</h1>
+        <p>   </p>
+        <div>
+        
+        </div>
+        <h2>Next heading</h2>
+        <p>Real content</p>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    expect(result.checks).to.deep.include({
+      check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
+      success: false,
+      explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
+      heading: 'H1',
+      nextHeading: 'H2',
+    });
+  });
+
+  it('recognizes self-closing elements as content', async () => {
+    const url = 'https://example.com/self-closing';
+    nock('https://example.com')
+      .get('/self-closing')
+      .reply(200, `
+        <h1>Visual Content</h1>
+        <hr>
+        <h2>More Visual</h2>
+        <br>
+        <h3>Images</h3>
+        <img src="test.jpg" alt="Test">
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    const noContentChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_NO_CONTENT.check);
+    expect(noContentChecks).to.have.lengthOf(0);
+  });
+
+  it('handles nested content correctly', async () => {
+    const url = 'https://example.com/nested-content';
+    nock('https://example.com')
+      .get('/nested-content')
+      .reply(200, `
+        <h1>Section</h1>
+        <div>
+          <p>Nested content</p>
+        </div>
+        <h2>Another Section</h2>
+        <section>
+          <div>
+            <span>Deeply nested content</span>
+          </div>
+        </section>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    const noContentChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_NO_CONTENT.check);
+    expect(noContentChecks).to.have.lengthOf(0);
+  });
+
+  it('handles single heading without next heading', async () => {
+    const url = 'https://example.com/single-heading';
+    nock('https://example.com')
+      .get('/single-heading')
+      .reply(200, '<h1>Only heading</h1><p>Some content</p>');
+
+    const result = await validatePageHeadings(url, log);
+    const noContentChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_NO_CONTENT.check);
+    expect(noContentChecks).to.have.lengthOf(0);
+  });
+
+  it('detects headings without content in complex nested structures', async () => {
+    const url = 'https://example.com/complex-nested';
+    nock('https://example.com')
+      .get('/complex-nested')
+      .reply(200, `
+        <h1>Main Title</h1>
+        <div>
+          <section>
+            <div></div>
+            <span></span>
+          </section>
+        </div>
+        <h2>Empty Section</h2>
+        <p>Content here</p>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    expect(result.checks).to.deep.include({
+      check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
+      success: false,
+      explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
+      heading: 'H1',
+      nextHeading: 'H2',
+    });
+  });
+
+  it('recognizes content in deeply nested child elements', async () => {
+    const url = 'https://example.com/deep-nested-content';
+    nock('https://example.com')
+      .get('/deep-nested-content')
+      .reply(200, `
+        <h1>Section</h1>
+        <div>
+          <section>
+            <div>
+              <p>Deep content</p>
+            </div>
+          </section>
+        </div>
+        <h2>Next Section</h2>
+        <p>More content</p>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    const noContentChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_NO_CONTENT.check);
+    expect(noContentChecks).to.have.lengthOf(0);
+  });
+
+  it('recognizes self-closing elements in nested children and text nodes', async () => {
+    const url = 'https://example.com/nested-self-closing';
+    nock('https://example.com')
+      .get('/nested-self-closing')
+      .reply(200, `
+        <h1>Title</h1>
+        <div>
+          <section>
+            <img src="test.jpg" alt="Test">
+          </section>
+        </div>
+        Some direct text node
+        <h2>Next Title</h2>
+        <div>
+          <section>
+            <hr>
+          </section>
+        </div>
+        More text content
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    const noContentChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_NO_CONTENT.check);
+    expect(noContentChecks).to.have.lengthOf(0);
+  });
+
+  it('detects content in custom elements with child content (covers lines 112-113)', async () => {
+    const url = 'https://example.com/custom-with-children';
+    nock('https://example.com')
+      .get('/custom-with-children')
+      .reply(200, `
+        <h1>Main Title</h1>
+        <unknown-element>
+          <unknown-child>Text content inside unknown element</unknown-child>
+        </unknown-element>
+        <h2>Next Section</h2>
+        <mystery-tag>
+          <mystery-child>
+            <img src="test.jpg" alt="Test image">
+          </mystery-child>
+        </mystery-tag>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    const noContentChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_NO_CONTENT.check);
+    expect(noContentChecks).to.have.lengthOf(0);
+  });
+
+  it('handles complex DOM structure with various node types (covers branch coverage)', async () => {
+    const url = 'https://example.com/complex-dom';
+
+    nock('https://example.com')
+      .get('/complex-dom')
+      .reply(200, `
+        <h1>Main Title</h1>
+        <div>
+          <!-- Comment node -->
+          <script type="text/javascript">/* Script content */</script>
+          <!-- More comments -->
+          <style>/* CSS content */</style>
+          <noscript></noscript>
+          <template></template>
+        </div>
+        <!-- Text node between headings -->
+        Some loose text
+        <h2>Next Section</h2>
+        <div>
+          <unknown-element>
+            <empty-child></empty-child>
+            <!-- Another comment -->
+            <another-empty></another-empty>
+          </unknown-element>
+        </div>
+        <p>Valid content</p>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    expect(result.checks).to.be.an('array');
+    // This should find content between h1 and h2 (loose text), so no HEADING_NO_CONTENT errors
+    const noContentChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_NO_CONTENT.check);
+    expect(noContentChecks).to.have.lengthOf(0);
+  });
+
+  it('handles whitespace-only content between headings', async () => {
+    const url = 'https://example.com/whitespace-only';
+
+    nock('https://example.com')
+      .get('/whitespace-only')
+      .reply(200, `
+        <h1>Main Title</h1>
+        
+        
+        <h2>Next Section</h2>
+        <p>Valid content</p>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    expect(result.checks).to.be.an('array');
+    // Should detect no content between h1 and h2 due to whitespace-only content
+    const noContentChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_NO_CONTENT.check);
+    expect(noContentChecks).to.have.lengthOf(1);
+  });
+
+  it('handles edge cases with empty DOM elements', async () => {
+    const url = 'https://example.com/edge-cases';
+
+    nock('https://example.com')
+      .get('/edge-cases')
+      .reply(200, `
+        <h1>Test Title</h1>
+        <div></div>
+        <span></span>
+        <h2>Next Section</h2>
+        <p>Content</p>
+      `);
+
+    const result = await validatePageHeadings(url, log);
+    expect(result.checks).to.be.an('array');
+
+    // Should detect no content between h1 and h2 due to empty elements
+    const noContentChecks = result.checks
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_NO_CONTENT.check);
+    expect(noContentChecks).to.have.lengthOf(1);
   });
 
   it('generateSuggestions returns suggestions for failed checks and skips success', () => {
@@ -220,26 +707,20 @@ describe('Headings Audit', () => {
     expect(result.auditResult.check).to.equal(HEADINGS_CHECKS.TOPPAGES.check);
   });
 
-  it('validatePageHeadings returns URL_UNDEFINED when url is falsy', async () => {
+  it('validatePageHeadings returns empty checks when url is falsy (validation errors only logged)', async () => {
     const result = await validatePageHeadings('', log);
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.URL_UNDEFINED.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.URL_UNDEFINED.explanation,
-    });
+    expect(result.checks).to.be.an('array').that.is.empty;
+    expect(result.url).to.equal('');
   });
 
-  it('validatePageHeadings returns FETCH_ERROR on network failure', async () => {
+  it('validatePageHeadings returns empty checks on network failure (fetch errors only logged)', async () => {
     nock('https://example.com')
       .get('/fail')
       .replyWithError('Network error');
 
     const res = await validatePageHeadings('https://example.com/fail', log);
-    expect(res.checks).to.deep.include({
-      check: HEADINGS_CHECKS.FETCH_ERROR.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.FETCH_ERROR.explanation,
-    });
+    expect(res.checks).to.be.an('array').that.is.empty;
+    expect(res.url).to.equal('https://example.com/fail');
   });
 
   it('headingsAuditRunner filters out fetch errors from final results', async () => {
@@ -266,9 +747,9 @@ describe('Headings Audit', () => {
 
     const result = await headingsAuditRunner(baseURL, context, site);
 
-    // Should not contain fetch errors in final audit result
-    expect(result.auditResult[HEADINGS_CHECKS.FETCH_ERROR.check]).to.be.undefined;
+    // Should return success status and not expose fetch errors
     expect(result.auditResult.status).to.equal('success');
+    expect(result.auditResult.message).to.equal('No heading issues detected');
   });
 
   it('generateSuggestions skips when auditResult has status success and covers default action', () => {
@@ -300,6 +781,43 @@ describe('Headings Audit', () => {
     const out = generateSuggestions(auditUrl, auditData, context);
     expect(out.suggestions).to.have.lengthOf(1);
     expect(out.suggestions[0].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
+  });
+
+  it('generateSuggestions handles duplicate text check with proper recommended action', () => {
+    const auditUrl = 'https://example.com';
+    const auditData = {
+      auditResult: {
+        [HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check]: {
+          success: false,
+          explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+          urls: ['https://example.com/page1', 'https://example.com/page2'],
+        },
+      },
+    };
+    const context = { log: { info: sinon.spy() } };
+    const out = generateSuggestions(auditUrl, auditData, context);
+
+    expect(out.suggestions).to.have.lengthOf(2);
+    expect(out.suggestions[0].recommendedAction).to.equal('Ensure each heading has unique, descriptive text content that clearly identifies its section.');
+    expect(out.suggestions[1].recommendedAction).to.equal('Ensure each heading has unique, descriptive text content that clearly identifies its section.');
+  });
+
+  it('generateSuggestions handles no content check with proper recommended action', () => {
+    const auditUrl = 'https://example.com';
+    const auditData = {
+      auditResult: {
+        [HEADINGS_CHECKS.HEADING_NO_CONTENT.check]: {
+          success: false,
+          explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
+          urls: ['https://example.com/page1'],
+        },
+      },
+    };
+    const context = { log: { info: sinon.spy() } };
+    const out = generateSuggestions(auditUrl, auditData, context);
+
+    expect(out.suggestions).to.have.lengthOf(1);
+    expect(out.suggestions[0].recommendedAction).to.equal('Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.');
   });
 
   it('headingsAuditRunner handles exceptions gracefully', async () => {
@@ -482,7 +1000,6 @@ describe('Headings Audit', () => {
       return acc;
     }, {});
 
-    delete aggregatedResults[HEADINGS_CHECKS.FETCH_ERROR.check];
     const baseURL = 'https://example.com';
     const finalResult = {
       fullAuditRef: baseURL,
@@ -546,11 +1063,8 @@ describe('Headings Audit', () => {
       .replyWithError('Network fetch error');
 
     const res = await validatePageHeadings('https://example.com/fail', log);
-    expect(res.checks).to.deep.include({
-      check: HEADINGS_CHECKS.FETCH_ERROR.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.FETCH_ERROR.explanation,
-    });
+    expect(res.checks).to.be.an('array').that.is.empty;
+    expect(res.url).to.equal('https://example.com/fail');
   });
 
   it('validatePageHeadings handles single heading correctly', async () => {
@@ -568,7 +1082,7 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/custom';
     nock('https://example.com')
       .get('/custom')
-      .reply(200, '<h1>Title</h1><custom-heading>Custom</custom-heading><h2>Section</h2>');
+      .reply(200, '<h1>Title</h1><p>Some content</p><custom-heading>Custom</custom-heading><h2>Section</h2><p>More content</p>');
 
     const result = await validatePageHeadings(url, log);
     // Should skip the custom heading and continue processing

@@ -20,36 +20,38 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 
-const auditType = Audit.AUDIT_TYPES.SEMANTIC_HTML;
+const auditType = Audit.AUDIT_TYPES.HEADINGS;
 
 export const HEADINGS_CHECKS = Object.freeze({
   HEADING_ORDER_INVALID: {
     check: 'heading-order-invalid',
-    explanation: 'Heading levels should increase by only one level at a time (for example, h1 → h2). Avoid jumping levels such as h1 → h3.',
-    suggestion: 'Adjust heading levels to maintain a proper hierarchy (for example, promote h3 to h2).',
+    explanation: 'Heading levels should increase by one (h1→h2), not jump levels (h1→h3).',
+    suggestion: 'Adjust heading levels to maintain proper hierarchy.',
   },
   HEADING_EMPTY: {
     check: 'heading-empty',
-    explanation: 'Heading elements (h1–h6) should not be empty. Provide descriptive text content for each heading.',
-    suggestion: 'Add descriptive text to the empty heading element or remove it if not needed.',
+    explanation: 'Heading elements should not be empty.',
+    suggestion: 'Add descriptive text or remove the empty heading.',
   },
   HEADING_MISSING_H1: {
     check: 'heading-missing-h1',
-    explanation: 'Pages should have exactly one h1 element to establish the main topic and improve SEO and accessibility.',
-    suggestion: 'Add an h1 element to the page that describes the main content or purpose.',
+    explanation: 'Pages should have exactly one h1 element for SEO and accessibility.',
+    suggestion: 'Add an h1 element describing the main content.',
   },
   HEADING_MULTIPLE_H1: {
     check: 'heading-multiple-h1',
-    explanation: 'Pages should have only one h1 element. Multiple h1 elements can confuse search engines and screen readers.',
-    suggestion: 'Change additional h1 elements to h2 or other appropriate heading levels.',
+    explanation: 'Pages should have only one h1 element.',
+    suggestion: 'Change additional h1 elements to h2 or appropriate levels.',
   },
-  URL_UNDEFINED: {
-    check: 'url-defined',
-    explanation: 'The URL is undefined or null, which prevents the headings validation process.',
+  HEADING_DUPLICATE_TEXT: {
+    check: 'heading-duplicate-text',
+    explanation: 'Headings should have unique text content (WCAG 2.2 2.4.6).',
+    suggestion: 'Ensure each heading has unique, descriptive text.',
   },
-  FETCH_ERROR: {
-    check: 'headings-fetch-error',
-    explanation: 'Error fetching the page content for headings validation.',
+  HEADING_NO_CONTENT: {
+    check: 'heading-no-content',
+    explanation: 'Headings should be followed by content before the next heading.',
+    suggestion: 'Add meaningful content after each heading.',
   },
   TOPPAGES: {
     check: 'top-pages',
@@ -59,6 +61,69 @@ export const HEADINGS_CHECKS = Object.freeze({
 
 function getHeadingLevel(tagName) {
   return Number(tagName.charAt(1));
+}
+
+/**
+ * Safely extract text content from an element
+ * @param {Element} element - The DOM element
+ * @returns {string} - The trimmed text content, or empty string if null/undefined
+ */
+function getTextContent(element) {
+  return (element.textContent || '').trim();
+}
+
+/**
+ * Check if there is meaningful content between two DOM elements
+ * @param {Element} startElement - The starting element (heading)
+ * @param {Element} endElement - The ending element (next heading)
+ * @returns {boolean} - True if meaningful content exists between the elements
+ */
+function hasContentBetweenElements(startElement, endElement) {
+  const contentTags = new Set([
+    'P', 'DIV', 'SPAN', 'UL', 'OL', 'DL', 'LI', 'IMG', 'FIGURE', 'VIDEO', 'AUDIO',
+    'TABLE', 'FORM', 'FIELDSET', 'SECTION', 'ARTICLE', 'ASIDE', 'NAV', 'MAIN',
+    'BLOCKQUOTE', 'PRE', 'CODE', 'HR', 'BR', 'CANVAS', 'SVG', 'IFRAME',
+  ]);
+
+  let currentElement = startElement.nextSibling;
+
+  while (currentElement && currentElement !== endElement) {
+    // Check if it's an element node
+    if (currentElement.nodeType === 1) { // Element node
+      const tagName = currentElement.tagName.toUpperCase();
+
+      // If it's a content tag, check if it has meaningful content
+      if (contentTags.has(tagName)) {
+        const textContent = (currentElement.textContent || '').trim();
+        // Consider it meaningful if it has text content or is a self-closing content element
+        if (textContent.length > 0 || ['IMG', 'HR', 'BR', 'CANVAS', 'SVG', 'IFRAME'].includes(tagName)) {
+          return true;
+        }
+      }
+
+      // Recursively check child elements for content
+      if (currentElement.children && currentElement.children.length > 0) {
+        const hasChildContent = Array.from(currentElement.children).some((child) => {
+          const childTextContent = getTextContent(child);
+          const childTagName = child.tagName.toUpperCase();
+          return childTextContent.length > 0
+                 || ['IMG', 'HR', 'BR', 'CANVAS', 'SVG', 'IFRAME'].includes(childTagName);
+        });
+        if (hasChildContent) {
+          return true;
+        }
+      }
+    } else if (currentElement.nodeType === 3) { // Text node
+      const textContent = getTextContent(currentElement);
+      if (textContent.length > 0) {
+        return true;
+      }
+    }
+
+    currentElement = currentElement.nextSibling;
+  }
+
+  return false;
 }
 
 /**
@@ -72,13 +137,11 @@ function getHeadingLevel(tagName) {
  */
 export async function validatePageHeadings(url, log) {
   if (!url) {
+    log.error('URL is undefined or null, cannot validate headings');
+    // Return empty result - URL validation errors should only be logged
     return {
       url,
-      checks: [{
-        check: HEADINGS_CHECKS.URL_UNDEFINED.check,
-        success: false,
-        explanation: HEADINGS_CHECKS.URL_UNDEFINED.explanation,
-      }],
+      checks: [],
     };
   }
 
@@ -111,8 +174,10 @@ export async function validatePageHeadings(url, log) {
       log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
     }
 
+    // Check for empty headings and collect text content for duplicate detection
+    const headingTexts = new Map();
     for (const heading of headings) {
-      const text = (heading.textContent || '').trim();
+      const text = getTextContent(heading);
       if (text.length === 0) {
         checks.push({
           check: HEADINGS_CHECKS.HEADING_EMPTY.check,
@@ -121,6 +186,50 @@ export async function validatePageHeadings(url, log) {
           tagName: heading.tagName,
         });
         log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
+      } else {
+        // Track heading text content for duplicate detection
+        const lowerText = text.toLowerCase();
+        if (!headingTexts.has(lowerText)) {
+          headingTexts.set(lowerText, []);
+        }
+        headingTexts.get(lowerText).push({
+          text,
+          tagName: heading.tagName,
+          element: heading,
+        });
+      }
+    }
+
+    // Check for duplicate heading text content
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for (const [lowerText, headingsWithSameText] of headingTexts) {
+      if (headingsWithSameText.length > 1) {
+        checks.push({
+          check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
+          success: false,
+          explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+          text: headingsWithSameText[0].text,
+          duplicates: headingsWithSameText.map((h) => h.tagName),
+          count: headingsWithSameText.length,
+        });
+        log.info(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`);
+      }
+    }
+
+    // Check for headings without content before the next heading
+    for (let i = 0; i < headings.length - 1; i += 1) {
+      const currentHeading = headings[i];
+      const nextHeading = headings[i + 1];
+
+      if (!hasContentBetweenElements(currentHeading, nextHeading)) {
+        checks.push({
+          check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
+          success: false,
+          explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
+          heading: currentHeading.tagName,
+          nextHeading: nextHeading.tagName,
+        });
+        log.info(`Heading without content detected at ${url}: ${currentHeading.tagName} has no content before ${nextHeading.tagName}`);
       }
     }
 
@@ -146,13 +255,10 @@ export async function validatePageHeadings(url, log) {
     return { url, checks };
   } catch (error) {
     log.error(`Error validating headings for ${url}: ${error.message}`);
+    // Return empty result - fetch errors should only be logged, not exposed in API
     return {
       url,
-      checks: [{
-        check: HEADINGS_CHECKS.FETCH_ERROR.check,
-        success: false,
-        explanation: HEADINGS_CHECKS.FETCH_ERROR.explanation,
-      }],
+      checks: [],
     };
   }
 }
@@ -243,6 +349,10 @@ function generateRecommendedAction(checkType) {
       return 'Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).';
     case HEADINGS_CHECKS.HEADING_EMPTY.check:
       return 'Provide meaningful text content for the empty heading or remove the element.';
+    case HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check:
+      return 'Ensure each heading has unique, descriptive text content that clearly identifies its section.';
+    case HEADINGS_CHECKS.HEADING_NO_CONTENT.check:
+      return 'Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.';
     default:
       return 'Review heading structure and content to follow heading best practices.';
   }

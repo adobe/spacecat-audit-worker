@@ -74,7 +74,7 @@ describe('Hreflang Audit', () => {
     });
 
     it('should not flag missing hreflang tags as an issue', async () => {
-      const html = '<html><head></head></html>';
+      const html = '<html lang=""><head></head></html>';
 
       nock(baseURL)
         .get('/')
@@ -88,7 +88,7 @@ describe('Hreflang Audit', () => {
 
     it('should detect invalid language codes', async () => {
       const html = `
-        <html>
+        <html lang="">
           <head>
             <link rel="alternate" hreflang="invalid-code" href="https://example.com/invalid">
           </head>
@@ -132,7 +132,7 @@ describe('Hreflang Audit', () => {
 
     it('should detect missing x-default for international sites', async () => {
       const html = `
-        <html>
+        <html lang="">
           <head>
             <link rel="alternate" hreflang="en" href="https://example.com/en">
             <link rel="alternate" hreflang="es" href="https://example.com/es">
@@ -219,13 +219,11 @@ describe('Hreflang Audit', () => {
       expect(notInHead).to.be.true;
     });
 
-    it('should handle undefined URL', async () => {
+    it('should handle undefined URL (validation errors only logged)', async () => {
       const result = await validatePageHreflang(null, mockLog);
 
-      const urlUndefined = result.checks.some((check) => check.check
-        === HREFLANG_CHECKS.URL_UNDEFINED.check
-        && !check.success);
-      expect(urlUndefined).to.be.true;
+      expect(result.checks).to.be.an('array').that.is.empty;
+      expect(result.url).to.be.null;
     });
 
     it('should handle fetch errors gracefully without reporting them as audit issues', async () => {
