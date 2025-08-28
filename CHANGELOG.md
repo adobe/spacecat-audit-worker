@@ -1,3 +1,66 @@
+## [1.163.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.163.1...v1.163.2) (2025-08-28)
+
+
+### Bug Fixes
+
+* A11y modify the placement of sentCount metric computation ([#1174](https://github.com/adobe/spacecat-audit-worker/issues/1174)) ([fd210e0](https://github.com/adobe/spacecat-audit-worker/commit/fd210e0c60f5bcf4699ba18f853b2d3de24f5c44))
+
+## [1.163.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.163.0...v1.163.1) (2025-08-28)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1181](https://github.com/adobe/spacecat-audit-worker/issues/1181)) ([a31c832](https://github.com/adobe/spacecat-audit-worker/commit/a31c8323d04471d5f0696996dbed5d9df8990d87))
+
+# [1.163.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.162.0...v1.163.0) (2025-08-28)
+
+
+### Features
+
+* added dummy forwarder for callback handler ([#1180](https://github.com/adobe/spacecat-audit-worker/issues/1180)) ([c195c17](https://github.com/adobe/spacecat-audit-worker/commit/c195c172b4b498a51103345f8980f7edfd23dd2c))
+
+# [1.162.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.161.3...v1.162.0) (2025-08-27)
+
+
+### Features
+
+* add new redirect-chains audit ([#1000](https://github.com/adobe/spacecat-audit-worker/issues/1000)) ([202df49](https://github.com/adobe/spacecat-audit-worker/commit/202df497082cf3c327b92948ccef2abd4e263a73))
+
+## [1.161.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.161.2...v1.161.3) (2025-08-27)
+
+
+### Bug Fixes
+
+* preflight with azure client ([#1175](https://github.com/adobe/spacecat-audit-worker/issues/1175)) ([b4d32c8](https://github.com/adobe/spacecat-audit-worker/commit/b4d32c81f6a6c525c87182c2576279b72f56e81b))
+
+## [1.161.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.161.1...v1.161.2) (2025-08-27)
+
+
+### Bug Fixes
+
+* minor type issues ([#1177](https://github.com/adobe/spacecat-audit-worker/issues/1177)) ([0ec3e77](https://github.com/adobe/spacecat-audit-worker/commit/0ec3e77f6a3adec3c8f7dc307ee4832a3d3dbfc6))
+
+## [1.161.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.161.0...v1.161.1) (2025-08-27)
+
+
+### Bug Fixes
+
+* preflight canonical check failing with extensions ([#1172](https://github.com/adobe/spacecat-audit-worker/issues/1172)) ([9a33421](https://github.com/adobe/spacecat-audit-worker/commit/9a334219104e5dd10b05b6dc97e71da189ac81d0))
+
+# [1.161.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.160.0...v1.161.0) (2025-08-27)
+
+
+### Features
+
+* add Cloudflare CDN support ([#1173](https://github.com/adobe/spacecat-audit-worker/issues/1173)) ([20ec3a1](https://github.com/adobe/spacecat-audit-worker/commit/20ec3a121fda6e34590f29f56e112e0f675850c4))
+
+# [1.160.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.159.2...v1.160.0) (2025-08-27)
+
+
+### Features
+
+* expand allowed a11y issue types ([#1170](https://github.com/adobe/spacecat-audit-worker/issues/1170)) ([b40724f](https://github.com/adobe/spacecat-audit-worker/commit/b40724f5bbfad8d37715217f4786147c0f5c6521))
+
 ## [1.159.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.159.1...v1.159.2) (2025-08-27)
 
 

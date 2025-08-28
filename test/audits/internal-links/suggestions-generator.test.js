@@ -14,7 +14,7 @@
 import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinonChai from 'sinon-chai';
-import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
+import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import sinon from 'sinon';
 import nock from 'nock';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
@@ -41,7 +41,7 @@ describe('generateSuggestionData', async function test() {
   let auditData;
   let brokenInternalLinksData;
   let configuration;
-  let firefallClient;
+  let azureOpenAIClient;
 
   let message;
   let context;
@@ -59,6 +59,10 @@ describe('generateSuggestionData', async function test() {
       .withOverrides({
         env: {
           S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          AZURE_OPENAI_ENDPOINT: 'https://test-openai-endpoint.com/',
+          AZURE_API_VERSION: '2024-02-15',
+          AZURE_COMPLETION_DEPLOYMENT: 'test-deployment',
+          AZURE_OPENAPI_KEY: 'test-openapi-key',
         },
         s3Client: {
           send: sandbox.stub(),
@@ -107,10 +111,10 @@ describe('generateSuggestionData', async function test() {
     };
     context.dataAccess.Configuration.findLatest.resolves(configuration);
 
-    firefallClient = {
+    azureOpenAIClient = {
       fetchChatCompletion: sandbox.stub(),
     };
-    sandbox.stub(FirefallClient, 'createFrom').returns(firefallClient);
+    sandbox.stub(AzureOpenAIClient, 'createFrom').returns(azureOpenAIClient);
   });
 
   afterEach(() => {
@@ -127,13 +131,13 @@ describe('generateSuggestionData', async function test() {
     context.s3Client.send.resolves(mockFileResponse);
     configuration.isHandlerEnabledForSite.returns(true);
     expect(configuration.isHandlerEnabledForSite()).to.equal(true);
-    firefallClient.fetchChatCompletion.resolves({
+    azureOpenAIClient.fetchChatCompletion.resolves({
       choices: [{
         message: { content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }) },
         finish_reason: 'stop',
       }],
     });
-    firefallClient.fetchChatCompletion.onCall(3).resolves({
+    azureOpenAIClient.fetchChatCompletion.onCall(3).resolves({
       choices: [{
         message: { content: JSON.stringify({ some_other_property: 'some other value' }) },
         finish_reason: 'stop',
@@ -143,7 +147,7 @@ describe('generateSuggestionData', async function test() {
     await generateSuggestionData('https://example.com', auditData, context, site);
     expect(context.log.info.getCall(1).args[0]).to.equal(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No site data found, skipping suggestions generation`);
 
-    expect(firefallClient.fetchChatCompletion).to.not.have.been.called;
+    expect(azureOpenAIClient.fetchChatCompletion).to.not.have.been.called;
   });
 
   it('processes suggestions for broken internal links, defaults to base URL if none found', async () => {
@@ -156,13 +160,13 @@ describe('generateSuggestionData', async function test() {
     });
     context.s3Client.send.resolves(mockFileResponse);
     configuration.isHandlerEnabledForSite.returns(true);
-    firefallClient.fetchChatCompletion.resolves({
+    azureOpenAIClient.fetchChatCompletion.resolves({
       choices: [{
         message: { content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }) },
         finish_reason: 'stop',
       }],
     });
-    firefallClient.fetchChatCompletion.onCall(3).resolves({
+    azureOpenAIClient.fetchChatCompletion.onCall(3).resolves({
       choices: [{
         message: { content: JSON.stringify({ some_other_property: 'some other value' }) },
         finish_reason: 'stop',
@@ -171,7 +175,7 @@ describe('generateSuggestionData', async function test() {
 
     const result = await generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
 
-    expect(firefallClient.fetchChatCompletion).to.have.been.callCount(4);
+    expect(azureOpenAIClient.fetchChatCompletion).to.have.been.callCount(4);
     expect(result).to.deep.equal([
       {
         urlTo: 'https://example.com/broken1',
@@ -198,7 +202,7 @@ describe('generateSuggestionData', async function test() {
     });
     context.s3Client.send.resolves(mockFileResponse);
     configuration.isHandlerEnabledForSite.returns(true);
-    firefallClient.fetchChatCompletion.resolves({
+    azureOpenAIClient.fetchChatCompletion.resolves({
       choices: [{
         message: {
           content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
@@ -208,7 +212,7 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    firefallClient.fetchChatCompletion.onCall(1).resolves({
+    azureOpenAIClient.fetchChatCompletion.onCall(1).resolves({
       choices: [{
         message: {
           content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
@@ -218,7 +222,7 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    firefallClient.fetchChatCompletion.onCall(6).resolves({
+    azureOpenAIClient.fetchChatCompletion.onCall(6).resolves({
       choices: [{
         message: {
           content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
@@ -228,7 +232,7 @@ describe('generateSuggestionData', async function test() {
       }],
     });
 
-    firefallClient.fetchChatCompletion.onCall(7).resolves({
+    azureOpenAIClient.fetchChatCompletion.onCall(7).resolves({
       choices: [{
         message: {
           content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
@@ -240,7 +244,7 @@ describe('generateSuggestionData', async function test() {
 
     const result = await generateSuggestionData('https://example.com', brokenInternalLinksData, context, site);
 
-    expect(firefallClient.fetchChatCompletion).to.have.been.callCount(8);
+    expect(azureOpenAIClient.fetchChatCompletion).to.have.been.callCount(8);
     expect(result).to.deep.equal([
       {
         urlTo: 'https://example.com/broken1',
@@ -265,9 +269,9 @@ describe('generateSuggestionData', async function test() {
     });
     context.s3Client.send.resolves(mockFileResponse);
     configuration.isHandlerEnabledForSite.returns(true);
-    firefallClient.fetchChatCompletion.onCall(0).rejects(new Error('Firefall error'));
-    firefallClient.fetchChatCompletion.onCall(2).rejects(new Error('Firefall error'));
-    firefallClient.fetchChatCompletion.onCall(4).resolves({
+    azureOpenAIClient.fetchChatCompletion.onCall(0).rejects(new Error('Firefall error'));
+    azureOpenAIClient.fetchChatCompletion.onCall(2).rejects(new Error('Firefall error'));
+    azureOpenAIClient.fetchChatCompletion.onCall(4).resolves({
       choices: [{
         message: {
           content: JSON.stringify({ some_other_property: 'some other value' }),
@@ -276,8 +280,8 @@ describe('generateSuggestionData', async function test() {
         finish_reason: 'stop',
       }],
     });
-    firefallClient.fetchChatCompletion.onCall(7).rejects(new Error('Firefall error'));
-    firefallClient.fetchChatCompletion.resolves({
+    azureOpenAIClient.fetchChatCompletion.onCall(7).rejects(new Error('Firefall error'));
+    azureOpenAIClient.fetchChatCompletion.resolves({
       choices: [{
         message: {
           content: JSON.stringify({ suggested_urls: ['https://fix.com'], aiRationale: 'Rationale' }),
