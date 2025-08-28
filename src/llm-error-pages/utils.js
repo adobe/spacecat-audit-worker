@@ -346,19 +346,18 @@ export function processErrorPagesResults(results) {
  * @returns {Object} - Object with categorized errors
  */
 export function categorizeErrorsByStatusCode(errorPages) {
-  const categorized = {
-    404: [],
-    403: [],
-    '5xx': [],
-  };
+  const categorized = {};
 
   errorPages.forEach((error) => {
     const statusCode = error.status?.toString();
     if (statusCode === '404') {
+      if (!categorized[404]) categorized[404] = [];
       categorized[404].push(error);
     } else if (statusCode === '403') {
+      if (!categorized[403]) categorized[403] = [];
       categorized[403].push(error);
     } else if (statusCode && statusCode.startsWith('5')) {
+      if (!categorized['5xx']) categorized['5xx'] = [];
       categorized['5xx'].push(error);
     }
   });

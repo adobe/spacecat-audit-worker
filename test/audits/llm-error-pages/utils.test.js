@@ -294,7 +294,6 @@ describe('LLM Error Pages Utils', () => {
       }, './src/llm-error-pages/sql/llm-error-pages.sql');
     });
 
-    // Test for missing coverage: cross-month/year date range (line 109)
     it('should handle cross-month/year date range', async () => {
       const crossMonthOptions = {
         databaseName: 'test_db',
@@ -447,7 +446,6 @@ describe('LLM Error Pages Utils', () => {
       expect(result.weekStart.getTime()).to.equal(expectedStart.getTime());
     });
 
-    // Test for missing coverage: getWeekRange with different offset scenarios (line 212)
     it('should handle different offset scenarios', () => {
       const referenceDate = new Date('2024-01-15'); // Monday
 
@@ -656,7 +654,6 @@ describe('LLM Error Pages Utils', () => {
       expect(typeof result.errorPages[0].total_requests).to.equal('number');
     });
 
-    // Test for missing coverage: row.status defaults to 'Unknown' (line 327)
     it('should handle missing or falsy status values', () => {
       const mockResults = [
         {
@@ -720,9 +717,11 @@ describe('LLM Error Pages Utils', () => {
 
       const result = categorizeErrorsByStatusCode(mockErrors);
 
-      expect(result['404']).to.have.length(0);
-      expect(result['403']).to.have.length(0);
-      expect(result['5xx']).to.have.length(0);
+      // Since there are no valid status codes, no keys should be created
+      expect(result['404']).to.be.undefined;
+      expect(result['403']).to.be.undefined;
+      expect(result['5xx']).to.be.undefined;
+      expect(Object.keys(result)).to.have.length(0);
     });
   });
 
