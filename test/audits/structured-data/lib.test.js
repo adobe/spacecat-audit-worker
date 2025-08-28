@@ -1075,7 +1075,7 @@ This is an error description
       expect(result).to.be.true;
     });
 
-    it('logs once and flips flag when suppression matches (AEM_CS)', () => {
+    it('logs once and flips the shouldLogSuppression flag', () => {
       context.site.getDeliveryType = sinon.stub().returns(Site.DELIVERY_TYPES.AEM_CS);
       const issue = {
         severity: 'ERROR',
@@ -1085,8 +1085,8 @@ This is an error description
       const result = includeIssue(context, issue, flag);
 
       expect(result).to.be.false;
-      expect(flag.shouldLogSuppression).to.be.false;
       expect(context.log.warn).to.be.calledWith('SDA: Suppressing issue', suppressionMessage);
+      expect(flag.shouldLogSuppression).to.be.false;
     });
   });
 });
