@@ -132,6 +132,17 @@ async function runLlmErrorPagesAudit(url, context, site) {
       const sorted404 = sortErrorsByTrafficVolume(consolidated404);
       const { SiteTopPage } = dataAccess;
       const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+      // Consolidate by URL and combine user agents
+      const urlToUserAgentsMap = new Map();
+      sorted404.forEach((errorPage) => {
+        const fullUrl = baseUrl ? `${baseUrl}${errorPage.url}` : errorPage.url;
+        if (!urlToUserAgentsMap.has(fullUrl)) {
+          urlToUserAgentsMap.set(fullUrl, new Set());
+        }
+        urlToUserAgentsMap.get(fullUrl).add(errorPage.userAgent);
+      });
+
       const message = {
         type: 'guidance:llm-error-pages',
         siteId: site.getId(),
@@ -139,18 +150,20 @@ async function runLlmErrorPagesAudit(url, context, site) {
         deliveryType: site?.getDeliveryType?.() || 'aem_edge',
         time: new Date().toISOString(),
         data: {
-          brokenLinks: sorted404.map((errorPage, index) => ({
-            urlFrom: errorPage.userAgent,
-            urlTo: baseUrl ? `${baseUrl}${errorPage.url}` : errorPage.url,
-            suggestionId: `llm-404-suggestion-${periodIdentifier}-${index}`,
-          })),
+          brokenLinks: Array.from(urlToUserAgentsMap.entries())
+            .map(([fullUrl, userAgents], index) => ({
+              urlFrom: Array.from(userAgents).join(', '),
+              urlTo: fullUrl,
+              suggestionId: `llm-404-suggestion-${periodIdentifier}-${index}`,
+            }))
+            .filter((link) => link.urlFrom.length > 0),
           alternativeUrls: topPages.map((topPage) => topPage.getUrl()),
           opportunityId: `llm-404-${periodIdentifier}`,
         },
       };
 
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-      log.info(`Queued ${sorted404.length} validated 404 URLs to Mystique for AI processing in single message`);
+      log.info(`Queued ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
     }
 
     log.info(`Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);

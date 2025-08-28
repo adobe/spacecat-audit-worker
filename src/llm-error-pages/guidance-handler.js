@@ -12,8 +12,8 @@
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import ExcelJS from 'exceljs';
-import { createLLMOSharepointClient } from '../utils/report-uploader.js';
-import { generateReportingPeriods } from './utils.js';
+import { createLLMOSharepointClient, readFromSharePoint, uploadToSharePoint } from '../utils/report-uploader.js';
+import { generateReportingPeriods, getS3Config } from './utils.js';
 
 /**
  * Handles Mystique responses for LLM error pages and updates suggestions with AI data
@@ -23,9 +23,10 @@ import { generateReportingPeriods } from './utils.js';
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Audit, Site } = dataAccess;
-  const { auditId, siteId, data } = message;
+  const { Site } = dataAccess;
+  const { siteId, data } = message;
   const { brokenLinks } = data;
+
   log.info(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   const site = await Site.findById(siteId);
@@ -33,36 +34,30 @@ export default async function handler(message, context) {
     log.error(`Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
+  const s3Config = getS3Config(site);
 
-  const audit = await Audit.findById(auditId);
-  if (!audit) {
-    log.warn(`No audit found for auditId: ${auditId}`);
-    return notFound();
-  }
+  // const audit = await Audit.findById(auditId);
+  // if (!audit) {
+  //   log.warn(`No audit found for auditId: ${auditId}`);
+  //   return notFound();
+  // }
 
   // Read-modify-write the weekly 404 Excel file in SharePoint
   try {
     const sharepointClient = await createLLMOSharepointClient(context);
     const week = generateReportingPeriods().weeks[0];
     const derivedPeriod = `w${week.weekNumber}-${week.year}`;
-    const folderName = site.getConfig()?.getLlmoDataFolder?.() || site.getBaseURL?.();
-    const outputLocation = `${folderName}/agentic-traffic`;
+    const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
+    const outputDir = `${llmoFolder}/agentic-traffic`;
     const filename = `agentictraffic-${derivedPeriod}-404-ui.xlsx`;
-    const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
 
-    const doc = sharepointClient.getDocument(documentPath);
-    let workbook = new ExcelJS.Workbook();
-    let sheet;
-    try {
-      const existingBuffer = await doc.downloadRawDocument();
-      await workbook.xlsx.load(existingBuffer);
-      sheet = workbook.worksheets[0] || workbook.addWorksheet('data');
-    } catch {
-      // If file doesn't exist yet, create a new workbook and sheet with headers
-      workbook = new ExcelJS.Workbook();
-      sheet = workbook.addWorksheet('data');
-      sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-    }
+    const workbook = new ExcelJS.Workbook();
+    const existingBuffer = await readFromSharePoint(filename, outputDir, sharepointClient, log);
+    console.log('existingBuffer', existingBuffer);
+    await workbook.xlsx.load(existingBuffer);
+    console.log('workbook', workbook);
+    const sheet = workbook.worksheets[0] || workbook.addWorksheet('data');
+    console.log('sheet', sheet);
 
     const toPathOnly = (maybeUrl) => {
       try {
@@ -81,26 +76,25 @@ export default async function handler(message, context) {
       } = brokenLink;
       const keyUrl = toPathOnly(urlTo);
       brokenUrlsMap.set(keyUrl, {
-        userAgent: urlFrom,
+        userAgents: urlFrom,
         suggestedUrls: suggestedUrls || [],
         aiRationale: aiRationale || '',
       });
     });
 
-    // First, collect all existing URLs from the Excel file into a Set for O(1) lookup
-    const existingUrls = new Set();
+    // Process each row in the Excel file and update with broken links data if found
     for (let i = 2; i <= sheet.rowCount; i += 1) {
       const urlCell = sheet.getCell(i, 2).value?.toString?.() || '';
+      const userAgentCell = sheet.getCell(i, 1).value?.toString?.() || '';
       if (urlCell) {
         const pathOnlyUrl = toPathOnly(urlCell);
-        existingUrls.add(pathOnlyUrl);
 
         // Look up the URL in brokenUrls and update if found
         const brokenUrlData = brokenUrlsMap.get(pathOnlyUrl);
-        if (brokenUrlData) {
+        if (brokenUrlData && brokenUrlData.userAgents.includes(userAgentCell)) {
           const suggested = brokenUrlData.suggestedUrls.join('\n');
           sheet.getRow(i).values = [
-            brokenUrlData.userAgent,
+            userAgentCell,
             pathOnlyUrl,
             suggested,
             brokenUrlData.aiRationale,
@@ -111,30 +105,9 @@ export default async function handler(message, context) {
       }
     }
 
-    // Add new rows only for broken links that weren't in the Excel file
-    brokenLinks.forEach((brokenLink) => {
-      const {
-        suggestedUrls, aiRationale, urlFrom, urlTo,
-      } = brokenLink;
-      const keyUrl = toPathOnly(urlTo);
-
-      // Only add if this URL doesn't already exist
-      if (!existingUrls.has(keyUrl)) {
-        const suggested = suggestedUrls?.join('\n') || '';
-        sheet.addRow([
-          urlFrom,
-          keyUrl,
-          suggested,
-          aiRationale || '',
-          '',
-        ]);
-        log.info(`Added new row for URL: ${keyUrl}`);
-      }
-    });
-
     // Overwrite the file
     const buffer = await workbook.xlsx.writeBuffer();
-    await doc.uploadRawDocument(buffer);
+    await uploadToSharePoint(buffer, filename, outputDir, sharepointClient, log);
     log.info(`Updated Excel 404 file with Mystique guidance: ${filename}`);
   } catch (e) {
     log.error(`Failed to update 404 Excel on Mystique callback: ${e.message}`);
