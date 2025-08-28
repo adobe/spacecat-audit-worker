@@ -12,7 +12,9 @@
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import ExcelJS from 'exceljs';
-import { createLLMOSharepointClient, readFromSharePoint, uploadToSharePoint } from '../utils/report-uploader.js';
+import {
+  createLLMOSharepointClient, publishToAdminHlx, readFromSharePoint, uploadToSharePoint,
+} from '../utils/report-uploader.js';
 import { generateReportingPeriods, getS3Config } from './utils.js';
 
 /**
@@ -23,8 +25,8 @@ import { generateReportingPeriods, getS3Config } from './utils.js';
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Site } = dataAccess;
-  const { siteId, data } = message;
+  const { Site, Audit } = dataAccess;
+  const { siteId, data, auditId } = message;
   const { brokenLinks } = data;
 
   log.info(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
@@ -36,11 +38,11 @@ export default async function handler(message, context) {
   }
   const s3Config = getS3Config(site);
 
-  // const audit = await Audit.findById(auditId);
-  // if (!audit) {
-  //   log.warn(`No audit found for auditId: ${auditId}`);
-  //   return notFound();
-  // }
+  const audit = await Audit.findById(auditId);
+  if (!audit) {
+    log.warn(`No audit found for auditId: ${auditId}`);
+    return notFound();
+  }
 
   // Read-modify-write the weekly 404 Excel file in SharePoint
   try {
@@ -53,11 +55,8 @@ export default async function handler(message, context) {
 
     const workbook = new ExcelJS.Workbook();
     const existingBuffer = await readFromSharePoint(filename, outputDir, sharepointClient, log);
-    console.log('existingBuffer', existingBuffer);
     await workbook.xlsx.load(existingBuffer);
-    console.log('workbook', workbook);
     const sheet = workbook.worksheets[0] || workbook.addWorksheet('data');
-    console.log('sheet', sheet);
 
     const toPathOnly = (maybeUrl) => {
       try {
@@ -93,13 +92,15 @@ export default async function handler(message, context) {
         const brokenUrlData = brokenUrlsMap.get(pathOnlyUrl);
         if (brokenUrlData && brokenUrlData.userAgents.includes(userAgentCell)) {
           const suggested = brokenUrlData.suggestedUrls.join('\n');
-          sheet.getRow(i).values = [
+          const row = sheet.getRow(i);
+          row.values = [
             userAgentCell,
             pathOnlyUrl,
             suggested,
             brokenUrlData.aiRationale,
             '',
           ];
+          row.commit();
           log.info(`Updated row ${i} for URL: ${pathOnlyUrl} with broken URL data`);
         }
       }
@@ -108,6 +109,7 @@ export default async function handler(message, context) {
     // Overwrite the file
     const buffer = await workbook.xlsx.writeBuffer();
     await uploadToSharePoint(buffer, filename, outputDir, sharepointClient, log);
+    await publishToAdminHlx(filename, outputDir, log);
     log.info(`Updated Excel 404 file with Mystique guidance: ${filename}`);
   } catch (e) {
     log.error(`Failed to update 404 Excel on Mystique callback: ${e.message}`);

@@ -28,6 +28,42 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
   let docMock;
   let createLLMOSharepointClientStub;
 
+  // Shared dataAccess configurations to reduce duplication
+  const createDataAccess = (overrides = {}) => {
+    const defaults = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
+    };
+    return { ...defaults, ...overrides };
+  };
+
+  const createContext = (dataAccess, logOverrides = {}) => {
+    const defaultLog = {
+      error: sandbox.stub(),
+      info: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    const log = { ...defaultLog, ...logOverrides };
+    return { log, dataAccess };
+  };
+
   beforeEach(async () => {
     // Fresh mocks each test
     docMock = {
@@ -84,23 +120,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    const dataAccess = createDataAccess();
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
 
@@ -141,23 +162,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    const dataAccess = createDataAccess();
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
 
@@ -172,18 +178,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       siteId: 'missing',
       data: { brokenLinks: [], opportunityId: 'opportunity-123' },
     };
-    const dataAccess = {
+    const dataAccess = createDataAccess({
       Site: { findById: sandbox.stub().resolves(null) },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'missing',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: { error: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() }, dataAccess };
+    });
+    const context = createContext(dataAccess);
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(404);
@@ -208,23 +206,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: { error: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() }, dataAccess };
+    const dataAccess = createDataAccess();
+    const context = createContext(dataAccess);
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(400);
@@ -247,23 +230,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    const dataAccess = createDataAccess();
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
@@ -286,23 +254,18 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
+    const dataAccess = createDataAccess({
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => null,
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
         }),
       },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    });
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
@@ -331,23 +294,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    const dataAccess = createDataAccess();
+    const context = createContext(dataAccess, { log: console });
 
     try {
       const resp = await guidanceHandler.default(message, context);
@@ -376,23 +324,18 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
+    const dataAccess = createDataAccess({
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://fallback.com',
-          getConfig: () => null,
+          getConfig: () => ({
+            getLlmoDataFolder: null,
+            getCdnLogsConfig: () => ({ bucketName: 'fallback-bucket' }),
+          }),
         }),
       },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    });
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
@@ -415,23 +358,18 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
+    const dataAccess = createDataAccess({
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://fallback.com',
-          getConfig: () => ({ getLlmoDataFolder: null }),
+          getConfig: () => ({
+            getLlmoDataFolder: null,
+            getCdnLogsConfig: () => ({ bucketName: 'fallback-bucket' }),
+          }),
         }),
       },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    });
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
@@ -459,23 +397,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    const dataAccess = createDataAccess();
+    const context = createContext(dataAccess, { log: console });
 
     // We need to mock the ExcelJS import - this is tricky with ES modules
     // For now, let's test the existing workbook download success path
@@ -502,23 +425,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    const dataAccess = createDataAccess();
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
@@ -548,23 +456,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    const dataAccess = createDataAccess();
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
@@ -590,23 +483,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    const dataAccess = createDataAccess();
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
@@ -649,23 +527,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    const dataAccess = createDataAccess();
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
@@ -692,23 +555,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    const dataAccess = createDataAccess();
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
@@ -733,23 +581,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: {
-        findById: sandbox.stub().resolves({
-          getBaseURL: () => 'https://example.com',
-          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
-        }),
-      },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    const dataAccess = createDataAccess();
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
@@ -767,18 +600,20 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: { findById: sandbox.stub().resolves({ getId: () => 'site-1' }) },
-      Audit: { findById: sandbox.stub().resolves(null) }, // Audit not found
-      Opportunity: {
+    const dataAccess = createDataAccess({
+      Site: {
         findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
+          getId: () => 'site-1',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
         }),
       },
-    };
-    const context = { log: { warn: sandbox.stub(), error: sandbox.stub(), info: sandbox.stub() }, dataAccess };
+      Audit: { findById: sandbox.stub().resolves(null) }, // Audit not found
+    });
+    const context = createContext(dataAccess);
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(404);
@@ -795,12 +630,20 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: { findById: sandbox.stub().resolves({ getId: () => 'site-1' }) },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
+    const dataAccess = createDataAccess({
+      Site: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'site-1',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
       Opportunity: { findById: sandbox.stub().resolves(null) }, // Opportunity not found
-    };
-    const context = { log: { warn: sandbox.stub(), error: sandbox.stub(), info: sandbox.stub() }, dataAccess };
+    });
+    const context = createContext(dataAccess);
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(404);
@@ -817,9 +660,17 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
-      Site: { findById: sandbox.stub().resolves({ getId: () => 'site-1' }) },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
+    const dataAccess = createDataAccess({
+      Site: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'site-1',
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getLlmoDataFolder: () => 'test-customer',
+            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
       Opportunity: {
         findById: sandbox.stub().resolves({
           getId: () => 'opportunity-123',
@@ -827,8 +678,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
           getType: () => 'llm-error-pages',
         }),
       },
-    };
-    const context = { log: { warn: sandbox.stub(), error: sandbox.stub(), info: sandbox.stub() }, dataAccess };
+    });
+    const context = createContext(dataAccess);
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(400);
@@ -870,23 +721,15 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
+    const dataAccess = createDataAccess({
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getLlmoDataFolder: () => 'test' }),
         }),
       },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    });
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
     ExcelJS.Workbook = originalWorkbook;
@@ -935,23 +778,15 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = {
+    const dataAccess = createDataAccess({
       Site: {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({ getLlmoDataFolder: () => 'test' }),
         }),
       },
-      Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: {
-        findById: sandbox.stub().resolves({
-          getId: () => 'opportunity-123',
-          getSiteId: () => 'site-1',
-          getType: () => 'llm-error-pages',
-        }),
-      },
-    };
-    const context = { log: console, dataAccess };
+    });
+    const context = createContext(dataAccess, { log: console });
 
     const resp = await guidanceHandler.default(message, context);
     ExcelJS.Workbook = originalWorkbook;
