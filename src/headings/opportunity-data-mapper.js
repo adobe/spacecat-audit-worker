@@ -16,7 +16,7 @@ export function createOpportunityData() {
   return {
     runbook: '',
     origin: 'AUTOMATION',
-    title: 'Semantic HTML heading issues affecting accessibility and SEO',
+    title: 'Heading structure issues affecting accessibility and SEO',
     description: 'Ensure heading elements (h1–h6) are used in a logical, hierarchical order without skipping levels, and that no heading is empty. Proper heading structure improves accessibility and helps search engines understand page content.',
     guidance: {
       steps: [

@@ -22,7 +22,7 @@ import { getTopPagesForSiteId } from '../canonical/handler.js';
 
 const auditType = Audit.AUDIT_TYPES.SEMANTIC_HTML;
 
-export const SEMANTIC_HTML_CHECKS = Object.freeze({
+export const HEADINGS_CHECKS = Object.freeze({
   HEADING_ORDER_INVALID: {
     check: 'heading-order-invalid',
     explanation: 'Heading levels should increase by only one level at a time (for example, h1 → h2). Avoid jumping levels such as h1 → h3.',
@@ -45,11 +45,11 @@ export const SEMANTIC_HTML_CHECKS = Object.freeze({
   },
   URL_UNDEFINED: {
     check: 'url-defined',
-    explanation: 'The URL is undefined or null, which prevents the semantic HTML validation process.',
+    explanation: 'The URL is undefined or null, which prevents the headings validation process.',
   },
   FETCH_ERROR: {
-    check: 'semantic-html-fetch-error',
-    explanation: 'Error fetching the page content for semantic HTML validation.',
+    check: 'headings-fetch-error',
+    explanation: 'Error fetching the page content for headings validation.',
   },
   TOPPAGES: {
     check: 'top-pages',
@@ -70,20 +70,20 @@ function getHeadingLevel(tagName) {
  * @param {Object} log
  * @returns {Promise<{url: string, checks: Array}>}
  */
-export async function validatePageSemanticHtml(url, log) {
+export async function validatePageHeadings(url, log) {
   if (!url) {
     return {
       url,
       checks: [{
-        check: SEMANTIC_HTML_CHECKS.URL_UNDEFINED.check,
+        check: HEADINGS_CHECKS.URL_UNDEFINED.check,
         success: false,
-        explanation: SEMANTIC_HTML_CHECKS.URL_UNDEFINED.explanation,
+        explanation: HEADINGS_CHECKS.URL_UNDEFINED.explanation,
       }],
     };
   }
 
   try {
-    log.info(`Checking semantic HTML for URL: ${url}`);
+    log.info(`Checking headings for URL: ${url}`);
     const response = await fetch(url);
     const html = await response.text();
     const dom = new JSDOM(html);
@@ -96,16 +96,16 @@ export async function validatePageSemanticHtml(url, log) {
 
     if (h1Elements.length === 0) {
       checks.push({
-        check: SEMANTIC_HTML_CHECKS.HEADING_MISSING_H1.check,
+        check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
         success: false,
-        explanation: SEMANTIC_HTML_CHECKS.HEADING_MISSING_H1.explanation,
+        explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
       });
       log.info(`Missing h1 element detected at ${url}`);
     } else if (h1Elements.length > 1) {
       checks.push({
-        check: SEMANTIC_HTML_CHECKS.HEADING_MULTIPLE_H1.check,
+        check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
         success: false,
-        explanation: SEMANTIC_HTML_CHECKS.HEADING_MULTIPLE_H1.explanation,
+        explanation: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation,
         count: h1Elements.length,
       });
       log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
@@ -115,9 +115,9 @@ export async function validatePageSemanticHtml(url, log) {
       const text = (heading.textContent || '').trim();
       if (text.length === 0) {
         checks.push({
-          check: SEMANTIC_HTML_CHECKS.HEADING_EMPTY.check,
+          check: HEADINGS_CHECKS.HEADING_EMPTY.check,
           success: false,
-          explanation: SEMANTIC_HTML_CHECKS.HEADING_EMPTY.explanation,
+          explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
           tagName: heading.tagName,
         });
         log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
@@ -132,9 +132,9 @@ export async function validatePageSemanticHtml(url, log) {
         const curLevel = getHeadingLevel(cur.tagName);
         if (curLevel - prevLevel > 1) {
           checks.push({
-            check: SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.check,
+            check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
             success: false,
-            explanation: SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.explanation,
+            explanation: HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation,
             previous: `h${prevLevel}`,
             current: `h${curLevel}`,
           });
@@ -145,63 +145,63 @@ export async function validatePageSemanticHtml(url, log) {
 
     return { url, checks };
   } catch (error) {
-    log.error(`Error validating semantic HTML for ${url}: ${error.message}`);
+    log.error(`Error validating headings for ${url}: ${error.message}`);
     return {
       url,
       checks: [{
-        check: SEMANTIC_HTML_CHECKS.FETCH_ERROR.check,
+        check: HEADINGS_CHECKS.FETCH_ERROR.check,
         success: false,
-        explanation: SEMANTIC_HTML_CHECKS.FETCH_ERROR.explanation,
+        explanation: HEADINGS_CHECKS.FETCH_ERROR.explanation,
       }],
     };
   }
 }
 
 /**
- * Main semantic HTML audit runner
+ * Main headings audit runner
  * @param {string} baseURL
  * @param {Object} context
  * @param {Object} site
  * @returns {Promise<Object>}
  */
-export async function semanticHtmlAuditRunner(baseURL, context, site) {
+export async function headingsAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess } = context;
-  log.info(`Starting Semantic HTML Audit with siteId: ${siteId}`);
+  log.info(`Starting Headings Audit with siteId: ${siteId}`);
 
   try {
     // Get top 200 pages
     const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
     const topPages = allTopPages.slice(0, 200);
 
-    log.info(`Processing ${topPages.length} top pages for semantic HTML audit (limited to 200)`);
+    log.info(`Processing ${topPages.length} top pages for headings audit (limited to 200)`);
 
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
       return {
         fullAuditRef: baseURL,
         auditResult: {
-          check: SEMANTIC_HTML_CHECKS.TOPPAGES.check,
+          check: HEADINGS_CHECKS.TOPPAGES.check,
           success: false,
-          explanation: SEMANTIC_HTML_CHECKS.TOPPAGES.explanation,
+          explanation: HEADINGS_CHECKS.TOPPAGES.explanation,
         },
       };
     }
 
     // Validate headings for each page
     const auditPromises = topPages
-      .map(async (page) => validatePageSemanticHtml(page.getUrl(), log));
+      .map(async (page) => validatePageHeadings(page.getUrl(), log));
     await Promise.allSettled(auditPromises);
 
-    log.info(`Successfully completed Semantic HTML Audit for site: ${baseURL}`);
+    log.info(`Successfully completed Headings Audit for site: ${baseURL}`);
 
-    // Return success status - semantic validation completed
+    // Return success status - headings validation completed
     return {
       fullAuditRef: baseURL,
-      auditResult: { status: 'success', message: 'No semantic HTML heading issues detected' },
+      auditResult: { status: 'success', message: 'No heading issues detected' },
     };
   } catch (error) {
-    log.error(`Semantic HTML audit failed: ${error.message}`);
+    log.error(`Headings audit failed: ${error.message}`);
     return {
       fullAuditRef: baseURL,
       auditResult: { error: `Audit failed with error: ${error.message}`, success: false },
@@ -212,7 +212,7 @@ export async function semanticHtmlAuditRunner(baseURL, context, site) {
 export function generateSuggestions(auditUrl, auditData, context) {
   const { log } = context;
   if (auditData.auditResult?.status === 'success' || auditData.auditResult?.error) {
-    log.info(`Semantic HTML audit for ${auditUrl} has no issues or failed, skipping suggestions generation`);
+    log.info(`Headings audit for ${auditUrl} has no issues or failed, skipping suggestions generation`);
     return { ...auditData };
   }
 
@@ -233,25 +233,25 @@ export function generateSuggestions(auditUrl, auditData, context) {
     }
   });
 
-  log.info(`Generated ${suggestions.length} semantic HTML suggestions for ${auditUrl}`);
+  log.info(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`);
   return { ...auditData, suggestions };
 }
 
 function generateRecommendedAction(checkType) {
   switch (checkType) {
-    case SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.check:
+    case HEADINGS_CHECKS.HEADING_ORDER_INVALID.check:
       return 'Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).';
-    case SEMANTIC_HTML_CHECKS.HEADING_EMPTY.check:
+    case HEADINGS_CHECKS.HEADING_EMPTY.check:
       return 'Provide meaningful text content for the empty heading or remove the element.';
     default:
-      return 'Review heading structure and content to follow semantic HTML best practices.';
+      return 'Review heading structure and content to follow heading best practices.';
   }
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
   if (!auditData.suggestions?.length) {
-    log.info('Semantic HTML audit has no issues, skipping opportunity creation');
+    log.info('Headings audit has no issues, skipping opportunity creation');
     return { ...auditData };
   }
 
@@ -285,12 +285,12 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     log,
   });
 
-  log.info(`Semantic HTML opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
+  log.info(`Headings opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
   return { ...auditData };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
-  .withRunner(semanticHtmlAuditRunner)
+  .withRunner(headingsAuditRunner)
   .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();

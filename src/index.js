@@ -66,7 +66,7 @@ import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-h
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
 import hreflang from './hreflang/handler.js';
-import semanticHtml from './semantic-html/handler.js';
+import headings from './headings/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -118,7 +118,7 @@ const HANDLERS = {
   'page-intent': updatePageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
   hreflang,
-  'semantic-html': semanticHtml,
+  headings,
   dummy: (message) => ok(message),
 };
 

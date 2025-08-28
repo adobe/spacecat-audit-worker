@@ -17,16 +17,16 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import {
-  SEMANTIC_HTML_CHECKS,
-  validatePageSemanticHtml,
+  HEADINGS_CHECKS,
+  validatePageHeadings,
   generateSuggestions,
   opportunityAndSuggestions,
-  semanticHtmlAuditRunner,
-} from '../../src/semantic-html/handler.js';
+  headingsAuditRunner,
+} from '../../src/headings/handler.js';
 
 chaiUse(sinonChai);
 
-describe('Semantic HTML Audit', () => {
+describe('Headings Audit', () => {
   let log;
 
   beforeEach(() => {
@@ -45,12 +45,12 @@ describe('Semantic HTML Audit', () => {
       .get('/page')
       .reply(200, '<h1></h1><h2>Valid</h2>');
 
-    const result = await validatePageSemanticHtml(url, log);
+    const result = await validatePageHeadings(url, log);
     expect(result.url).to.equal(url);
     expect(result.checks).to.deep.include({
-      check: SEMANTIC_HTML_CHECKS.HEADING_EMPTY.check,
+      check: HEADINGS_CHECKS.HEADING_EMPTY.check,
       success: false,
-      explanation: SEMANTIC_HTML_CHECKS.HEADING_EMPTY.explanation,
+      explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
       tagName: 'H1',
     });
   });
@@ -61,11 +61,11 @@ describe('Semantic HTML Audit', () => {
       .get('/page2')
       .reply(200, '<h1>Title</h1><h3>Section</h3>');
 
-    const result = await validatePageSemanticHtml(url, log);
+    const result = await validatePageHeadings(url, log);
     expect(result.checks).to.deep.include({
-      check: SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.check,
+      check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
       success: false,
-      explanation: SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.explanation,
+      explanation: HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation,
       previous: 'h1',
       current: 'h3',
     });
@@ -77,7 +77,7 @@ describe('Semantic HTML Audit', () => {
       .get('/page3')
       .reply(200, '<h1>Title</h1><h2>Section</h2><h3>Subsection</h3>');
 
-    const result = await validatePageSemanticHtml(url, log);
+    const result = await validatePageHeadings(url, log);
     expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
   });
 
@@ -87,11 +87,11 @@ describe('Semantic HTML Audit', () => {
       .get('/no-h1')
       .reply(200, '<h2>Section</h2><h3>Subsection</h3>');
 
-    const result = await validatePageSemanticHtml(url, log);
+    const result = await validatePageHeadings(url, log);
     expect(result.checks).to.deep.include({
-      check: SEMANTIC_HTML_CHECKS.HEADING_MISSING_H1.check,
+      check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
       success: false,
-      explanation: SEMANTIC_HTML_CHECKS.HEADING_MISSING_H1.explanation,
+      explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
     });
   });
 
@@ -101,11 +101,11 @@ describe('Semantic HTML Audit', () => {
       .get('/multiple-h1')
       .reply(200, '<h1>First Title</h1><h2>Section</h2><h1>Second Title</h1>');
 
-    const result = await validatePageSemanticHtml(url, log);
+    const result = await validatePageHeadings(url, log);
     expect(result.checks).to.deep.include({
-      check: SEMANTIC_HTML_CHECKS.HEADING_MULTIPLE_H1.check,
+      check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
       success: false,
-      explanation: SEMANTIC_HTML_CHECKS.HEADING_MULTIPLE_H1.explanation,
+      explanation: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation,
       count: 2,
     });
   });
@@ -116,10 +116,10 @@ describe('Semantic HTML Audit', () => {
       .get('/single-h1')
       .reply(200, '<h1>Main Title</h1><h2>Section</h2><h3>Subsection</h3>');
 
-    const result = await validatePageSemanticHtml(url, log);
+    const result = await validatePageHeadings(url, log);
     const h1Checks = result.checks
-      .filter((c) => c.check === SEMANTIC_HTML_CHECKS.HEADING_MISSING_H1.check
-      || c.check === SEMANTIC_HTML_CHECKS.HEADING_MULTIPLE_H1.check);
+      .filter((c) => c.check === HEADINGS_CHECKS.HEADING_MISSING_H1.check
+      || c.check === HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check);
     expect(h1Checks).to.have.lengthOf(0);
   });
 
@@ -127,12 +127,12 @@ describe('Semantic HTML Audit', () => {
     const auditUrl = 'https://example.com';
     const auditData = {
       auditResult: {
-        [SEMANTIC_HTML_CHECKS.HEADING_EMPTY.check]: {
+        [HEADINGS_CHECKS.HEADING_EMPTY.check]: {
           success: false,
           explanation: 'Heading empty',
           urls: ['https://example.com/a'],
         },
-        [SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.check]: {
+        [HEADINGS_CHECKS.HEADING_ORDER_INVALID.check]: {
           success: false,
           explanation: 'Order invalid',
           urls: ['https://example.com/b'],
@@ -158,7 +158,7 @@ describe('Semantic HTML Audit', () => {
       id: 'audit-id',
       siteId: 'site-id',
       suggestions: [{
-        type: 'CODE_CHANGE', checkType: SEMANTIC_HTML_CHECKS.HEADING_EMPTY.check, explanation: 'x', url: `${auditUrl}/a`,
+        type: 'CODE_CHANGE', checkType: HEADINGS_CHECKS.HEADING_EMPTY.check, explanation: 'x', url: `${auditUrl}/a`,
       }],
     };
     const context = {
@@ -191,7 +191,7 @@ describe('Semantic HTML Audit', () => {
     expect(out).to.deep.equal(auditData);
   });
 
-  it('semanticHtmlAuditRunner aggregates results and returns success when no issues', async () => {
+  it('headingsAuditRunner aggregates results and returns success when no issues', async () => {
     const baseURL = 'https://example.com';
     const site = { getId: () => 'site-1' };
     const context = {
@@ -205,44 +205,44 @@ describe('Semantic HTML Audit', () => {
       .get('/a')
       .reply(200, '<h1>Title</h1><h2>Section</h2>');
 
-    const result = await semanticHtmlAuditRunner(baseURL, context, site);
+    const result = await headingsAuditRunner(baseURL, context, site);
     expect(result.auditResult.status).to.equal('success');
   });
 
-  it('semanticHtmlAuditRunner returns TOPPAGES when no pages', async () => {
+  it('headingsAuditRunner returns TOPPAGES when no pages', async () => {
     const baseURL = 'https://example.com';
     const site = { getId: () => 'site-1' };
     const context = {
       log: { info: sinon.spy(), error: sinon.spy() },
       dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]) } },
     };
-    const result = await semanticHtmlAuditRunner(baseURL, context, site);
-    expect(result.auditResult.check).to.equal(SEMANTIC_HTML_CHECKS.TOPPAGES.check);
+    const result = await headingsAuditRunner(baseURL, context, site);
+    expect(result.auditResult.check).to.equal(HEADINGS_CHECKS.TOPPAGES.check);
   });
 
-  it('validatePageSemanticHtml returns URL_UNDEFINED when url is falsy', async () => {
-    const result = await validatePageSemanticHtml('', log);
+  it('validatePageHeadings returns URL_UNDEFINED when url is falsy', async () => {
+    const result = await validatePageHeadings('', log);
     expect(result.checks).to.deep.include({
-      check: SEMANTIC_HTML_CHECKS.URL_UNDEFINED.check,
+      check: HEADINGS_CHECKS.URL_UNDEFINED.check,
       success: false,
-      explanation: SEMANTIC_HTML_CHECKS.URL_UNDEFINED.explanation,
+      explanation: HEADINGS_CHECKS.URL_UNDEFINED.explanation,
     });
   });
 
-  it('validatePageSemanticHtml returns FETCH_ERROR on network failure', async () => {
+  it('validatePageHeadings returns FETCH_ERROR on network failure', async () => {
     nock('https://example.com')
       .get('/fail')
       .replyWithError('Network error');
 
-    const res = await validatePageSemanticHtml('https://example.com/fail', log);
+    const res = await validatePageHeadings('https://example.com/fail', log);
     expect(res.checks).to.deep.include({
-      check: SEMANTIC_HTML_CHECKS.FETCH_ERROR.check,
+      check: HEADINGS_CHECKS.FETCH_ERROR.check,
       success: false,
-      explanation: SEMANTIC_HTML_CHECKS.FETCH_ERROR.explanation,
+      explanation: HEADINGS_CHECKS.FETCH_ERROR.explanation,
     });
   });
 
-  it('semanticHtmlAuditRunner filters out fetch errors from final results', async () => {
+  it('headingsAuditRunner filters out fetch errors from final results', async () => {
     const baseURL = 'https://example.com';
     const site = { getId: () => 'site-1' };
     const context = {
@@ -264,10 +264,10 @@ describe('Semantic HTML Audit', () => {
       .get('/bad')
       .replyWithError('Network error');
 
-    const result = await semanticHtmlAuditRunner(baseURL, context, site);
+    const result = await headingsAuditRunner(baseURL, context, site);
 
     // Should not contain fetch errors in final audit result
-    expect(result.auditResult[SEMANTIC_HTML_CHECKS.FETCH_ERROR.check]).to.be.undefined;
+    expect(result.auditResult[HEADINGS_CHECKS.FETCH_ERROR.check]).to.be.undefined;
     expect(result.auditResult.status).to.equal('success');
   });
 
@@ -299,10 +299,10 @@ describe('Semantic HTML Audit', () => {
     const context = { log: { info: sinon.spy() } };
     const out = generateSuggestions(auditUrl, auditData, context);
     expect(out.suggestions).to.have.lengthOf(1);
-    expect(out.suggestions[0].recommendedAction).to.equal('Review heading structure and content to follow semantic HTML best practices.');
+    expect(out.suggestions[0].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
   });
 
-  it('semanticHtmlAuditRunner handles exceptions gracefully', async () => {
+  it('headingsAuditRunner handles exceptions gracefully', async () => {
     const baseURL = 'https://example.com';
     const site = { getId: () => 'site-1' };
     const context = {
@@ -312,12 +312,12 @@ describe('Semantic HTML Audit', () => {
       },
     };
 
-    const result = await semanticHtmlAuditRunner(baseURL, context, site);
+    const result = await headingsAuditRunner(baseURL, context, site);
     expect(result.auditResult.error).to.include('Audit failed with error: Database error');
     expect(result.auditResult.success).to.be.false;
   });
 
-  it('semanticHtmlAuditRunner handles semantic issues', async () => {
+  it('headingsAuditRunner handles heading issues', async () => {
     const baseURL = 'https://example.com';
     const site = { getId: () => 'site-1' };
     const context = {
@@ -332,7 +332,7 @@ describe('Semantic HTML Audit', () => {
       },
     };
 
-    // Create pages with clear semantic HTML issues that will definitely be detected
+    // Create pages with clear heading issues that will definitely be detected
     nock('https://example.com')
       .get('/page1')
       .reply(200, `
@@ -357,14 +357,14 @@ describe('Semantic HTML Audit', () => {
         </html>
       `); // Clear empty heading
 
-    const result = await semanticHtmlAuditRunner(baseURL, context, site);
+    const result = await headingsAuditRunner(baseURL, context, site);
 
     // Verify the result structure (integration test may return success status)
     expect(result.fullAuditRef).to.equal(baseURL);
     expect(result.auditResult).to.exist;
   });
 
-  it('aggregates semantic HTML results correctly', async () => {
+  it('aggregates headings results correctly', async () => {
     const results = [
       {
         status: 'fulfilled',
@@ -372,9 +372,9 @@ describe('Semantic HTML Audit', () => {
           url: 'https://example.com/page1',
           checks: [
             {
-              check: SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.check,
+              check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
               success: false,
-              explanation: SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.explanation,
+              explanation: HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation,
             },
           ],
         },
@@ -385,9 +385,9 @@ describe('Semantic HTML Audit', () => {
           url: 'https://example.com/page2',
           checks: [
             {
-              check: SEMANTIC_HTML_CHECKS.HEADING_EMPTY.check,
+              check: HEADINGS_CHECKS.HEADING_EMPTY.check,
               success: false,
-              explanation: SEMANTIC_HTML_CHECKS.HEADING_EMPTY.explanation,
+              explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
             },
           ],
         },
@@ -415,10 +415,10 @@ describe('Semantic HTML Audit', () => {
     }, {});
 
     // Should have aggregated results with URLs for each check type
-    expect(aggregatedResults).to.have.property(SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.check);
-    expect(aggregatedResults).to.have.property(SEMANTIC_HTML_CHECKS.HEADING_EMPTY.check);
-    expect(aggregatedResults[SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.check].urls).to.include('https://example.com/page1');
-    expect(aggregatedResults[SEMANTIC_HTML_CHECKS.HEADING_EMPTY.check].urls).to.include('https://example.com/page2');
+    expect(aggregatedResults).to.have.property(HEADINGS_CHECKS.HEADING_ORDER_INVALID.check);
+    expect(aggregatedResults).to.have.property(HEADINGS_CHECKS.HEADING_EMPTY.check);
+    expect(aggregatedResults[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls).to.include('https://example.com/page1');
+    expect(aggregatedResults[HEADINGS_CHECKS.HEADING_EMPTY.check].urls).to.include('https://example.com/page2');
 
     const baseURL = 'https://example.com';
     const auditResult = { ...aggregatedResults };
@@ -432,7 +432,7 @@ describe('Semantic HTML Audit', () => {
     expect(returnValue.fullAuditRef).to.equal(baseURL);
   });
 
-  it('processes semantic HTML audit results', () => {
+  it('processes headings audit results', () => {
     const mockResults = [
       {
         status: 'fulfilled',
@@ -440,7 +440,7 @@ describe('Semantic HTML Audit', () => {
           url: 'https://example.com/test-page-1',
           checks: [
             {
-              check: SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.check,
+              check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
               success: false,
               explanation: 'Mock explanation for heading order',
             },
@@ -453,7 +453,7 @@ describe('Semantic HTML Audit', () => {
           url: 'https://example.com/test-page-2',
           checks: [
             {
-              check: SEMANTIC_HTML_CHECKS.HEADING_EMPTY.check,
+              check: HEADINGS_CHECKS.HEADING_EMPTY.check,
               success: false,
               explanation: 'Mock explanation for empty heading',
             },
@@ -482,17 +482,17 @@ describe('Semantic HTML Audit', () => {
       return acc;
     }, {});
 
-    delete aggregatedResults[SEMANTIC_HTML_CHECKS.FETCH_ERROR.check];
+    delete aggregatedResults[HEADINGS_CHECKS.FETCH_ERROR.check];
     const baseURL = 'https://example.com';
     const finalResult = {
       fullAuditRef: baseURL,
       auditResult: { ...aggregatedResults },
     };
 
-    expect(aggregatedResults).to.have.property(SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.check);
-    expect(aggregatedResults).to.have.property(SEMANTIC_HTML_CHECKS.HEADING_EMPTY.check);
-    expect(aggregatedResults[SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.check].urls).to.include('https://example.com/test-page-1');
-    expect(aggregatedResults[SEMANTIC_HTML_CHECKS.HEADING_EMPTY.check].urls).to.include('https://example.com/test-page-2');
+    expect(aggregatedResults).to.have.property(HEADINGS_CHECKS.HEADING_ORDER_INVALID.check);
+    expect(aggregatedResults).to.have.property(HEADINGS_CHECKS.HEADING_EMPTY.check);
+    expect(aggregatedResults[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls).to.include('https://example.com/test-page-1');
+    expect(aggregatedResults[HEADINGS_CHECKS.HEADING_EMPTY.check].urls).to.include('https://example.com/test-page-2');
 
     // Verify the final result structure
     expect(finalResult.fullAuditRef).to.equal(baseURL);
@@ -500,7 +500,7 @@ describe('Semantic HTML Audit', () => {
     expect(Object.keys(finalResult.auditResult)).to.have.length.greaterThan(0);
   });
 
-  it('validates semantic HTML with test pages', async () => {
+  it('validates headings with test pages', async () => {
     const baseURL = 'https://example.com';
     const site = { getId: () => 'site-1' };
     const context = {
@@ -514,7 +514,7 @@ describe('Semantic HTML Audit', () => {
       },
     };
 
-    // Create HTML with obvious semantic issue
+    // Create HTML with obvious heading issue
     nock('https://example.com')
       .get('/test-page')
       .reply(200, `<!DOCTYPE html>
@@ -527,7 +527,7 @@ describe('Semantic HTML Audit', () => {
 </body>
 </html>`);
 
-    const result = await semanticHtmlAuditRunner(baseURL, context, site);
+    const result = await headingsAuditRunner(baseURL, context, site);
 
     expect(result.fullAuditRef).to.equal(baseURL);
     expect(result.auditResult).to.exist;
@@ -540,37 +540,37 @@ describe('Semantic HTML Audit', () => {
     }
   });
 
-  it('validatePageSemanticHtml handles non-response text error', async () => {
+  it('validatePageHeadings handles non-response text error', async () => {
     nock('https://example.com')
       .get('/fail')
       .replyWithError('Network fetch error');
 
-    const res = await validatePageSemanticHtml('https://example.com/fail', log);
+    const res = await validatePageHeadings('https://example.com/fail', log);
     expect(res.checks).to.deep.include({
-      check: SEMANTIC_HTML_CHECKS.FETCH_ERROR.check,
+      check: HEADINGS_CHECKS.FETCH_ERROR.check,
       success: false,
-      explanation: SEMANTIC_HTML_CHECKS.FETCH_ERROR.explanation,
+      explanation: HEADINGS_CHECKS.FETCH_ERROR.explanation,
     });
   });
 
-  it('validatePageSemanticHtml handles single heading correctly', async () => {
+  it('validatePageHeadings handles single heading correctly', async () => {
     const url = 'https://example.com/single';
     nock('https://example.com')
       .get('/single')
       .reply(200, '<h1>Single heading</h1>');
 
-    const result = await validatePageSemanticHtml(url, log);
+    const result = await validatePageHeadings(url, log);
     expect(result.checks.filter((c) => c
-      .check === SEMANTIC_HTML_CHECKS.HEADING_ORDER_INVALID.check)).to.have.lengthOf(0);
+      .check === HEADINGS_CHECKS.HEADING_ORDER_INVALID.check)).to.have.lengthOf(0);
   });
 
-  it('validatePageSemanticHtml skips invalid heading levels gracefully', async () => {
+  it('validatePageHeadings skips invalid heading levels gracefully', async () => {
     const url = 'https://example.com/custom';
     nock('https://example.com')
       .get('/custom')
       .reply(200, '<h1>Title</h1><custom-heading>Custom</custom-heading><h2>Section</h2>');
 
-    const result = await validatePageSemanticHtml(url, log);
+    const result = await validatePageHeadings(url, log);
     // Should skip the custom heading and continue processing
     expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
   });
