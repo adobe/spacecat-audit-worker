@@ -144,9 +144,9 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
               check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
               success: true,
             });
-            const canonicalPath = new URL(canonicalUrl).pathname;
-            const finalPath = new URL(finalUrl).pathname;
             const normalize = (u) => (typeof u === 'string' && u.endsWith('/') ? u.slice(0, -1) : u);
+            const canonicalPath = normalize(new URL(canonicalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
+            const finalPath = normalize(new URL(finalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
             const normalizedCanonical = normalize(canonicalUrl);
             const normalizedFinal = normalize(finalUrl);
             if ((isPreview && canonicalPath === finalPath)
