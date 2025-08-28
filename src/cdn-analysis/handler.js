@@ -13,18 +13,10 @@
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { determineCdnProvider } from './utils/cdn-utils.js';
+import { resolveCdnBucketName, extractCustomerDomain, buildCdnPaths, getBucketInfo, discoverCdnProviders } from '../utils/cdn-utils.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
-
-function extractCustomerDomain(site) {
-  const { host } = new URL(site.getBaseURL());
-  return {
-    host,
-    hostEscaped: host.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(),
-  };
-}
 
 function getHourParts() {
   const previousHour = new Date(Date.now() - ONE_HOUR_MS);
@@ -44,62 +36,89 @@ async function loadSql(provider, filename, variables) {
 export async function cdnLogAnalysisRunner(auditUrl, context, site) {
   const { log, s3Client } = context;
 
-  // derive customer, time, config
-  const { host, hostEscaped } = extractCustomerDomain(site);
+  const bucketName = await resolveCdnBucketName(site, context);
+  if (!bucketName) {
+    return {
+      auditResult: {
+        error: 'No CDN bucket found',
+        completedAt: new Date().toISOString(),
+      },
+      fullAuditRef: null,
+    };
+  }
+
+  const customerDomain = extractCustomerDomain(site);
   const { year, month, day, hour } = getHourParts();
-  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig()
-    || { bucketName: `cdn-logs-${hostEscaped.replace(/[._]/g, '-')}` };
+  const { host } = new URL(site.getBaseURL());
 
-  // names & locations
-  const rawLogsPrefix = `raw/${year}/${month}/${day}/${hour}/`;
-  const database = `cdn_logs_${hostEscaped}`;
-  const rawTable = `raw_logs_${hostEscaped}`;
-  const rawLocation = `s3://${bucket}/raw/`;
-  const tempLocation = `s3://${bucket}/temp/athena-results/`;
-  const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
+  const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName);
+  const cdnProviders = isLegacy
+    ? await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour })
+    : providers;
 
-  // detect CDN provider
-  const cdnType = await determineCdnProvider(s3Client, bucket, rawLogsPrefix);
-  log.info(`Using ${cdnType.toUpperCase()} provider`);
+  log.info(`Processing ${cdnProviders.length} CDN provider(s) in bucket: ${bucketName}`);
 
-  // create database
-  const sqlDb = await loadSql(cdnType, 'create-database', { database });
-  const sqlDbDescription = `[Athena Query] Create database ${database}`;
-  await athenaClient.execute(sqlDb, database, sqlDbDescription);
+  const database = `cdn_logs_${customerDomain}`;
+  const results = [];
 
-  // create raw table
-  const sqlRaw = await loadSql(cdnType, 'create-raw-table', {
-    database,
-    rawTable,
-    rawLocation,
-  });
-  const sqlRawDescription = `[Athena Query] Create raw logs table ${database}.${rawTable} from ${rawLocation}`;
-  await athenaClient.execute(sqlRaw, database, sqlRawDescription);
+  // Process each CDN provider
+  // eslint-disable-next-line no-await-in-loop
+  for (const cdnType of cdnProviders) {
+    // Skip CloudFlare for hourly analysis - only process daily at end of day
+    if (cdnType.toLowerCase() === 'cloudflare' && hour !== '23') {
+      log.info(`Skipping ${cdnType.toUpperCase()} - only processed daily at end of day (hour 23)`);
+    } else {
+      log.info(`Processing ${cdnType.toUpperCase()} provider`);
 
-  // unload aggregated hour
-  const sqlUnload = await loadSql(cdnType, 'unload-aggregated', {
-    database,
-    rawTable,
-    year,
-    month,
-    day,
-    hour,
-    bucket,
-    host,
-  });
-  const output = `s3://${bucket}/aggregated/${year}/${month}/${day}/${hour}/`;
-  const sqlUnloadDescription = `[Athena Query] Filter the raw logs and unload to ${output}`;
-  await athenaClient.execute(sqlUnload, database, sqlUnloadDescription);
+      const paths = buildCdnPaths(bucketName, cdnType, { year, month, day, hour }, isLegacy);
+      const rawTable = `raw_logs_${customerDomain}_${cdnType}`;
+      const athenaClient = AWSAthenaClient.fromContext(context, paths.tempLocation);
+
+      if (results.length === 0) {
+        // eslint-disable-next-line no-await-in-loop
+        const sqlDb = await loadSql(cdnType, 'create-database', { database });
+        // eslint-disable-next-line no-await-in-loop
+        await athenaClient.execute(sqlDb, database, `[Athena Query] Create database ${database}`);
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      const sqlRaw = await loadSql(cdnType, 'create-raw-table', {
+        database,
+        rawTable,
+        rawLocation: paths.rawLocation,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await athenaClient.execute(sqlRaw, database, `[Athena Query] Create raw logs table ${database}.${rawTable}`);
+
+      // eslint-disable-next-line no-await-in-loop
+      const sqlUnload = await loadSql(cdnType, 'unload-aggregated', {
+        database,
+        rawTable,
+        year,
+        month,
+        day,
+        hour,
+        bucket: bucketName,
+        host,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await athenaClient.execute(sqlUnload, database, `[Athena Query] Filter and unload ${cdnType} to ${paths.aggregatedOutput}`);
+
+      results.push({
+        cdnType,
+        rawTable,
+        output: paths.aggregatedOutput,
+      });
+    }
+  }
 
   return {
     auditResult: {
-      cdnType,
       database,
-      rawTable,
-      output,
+      providers: results,
       completedAt: new Date().toISOString(),
     },
-    fullAuditRef: output,
+    fullAuditRef: results.map((r) => r.output).join(', '),
   };
 }
 

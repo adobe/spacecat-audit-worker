@@ -25,6 +25,7 @@ import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
 import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
+import redirectChains from './redirect-chains/handler.js';
 import paid from './paid/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
@@ -39,6 +40,7 @@ import formsOpportunities from './forms-opportunities/handler.js';
 import metaTags from './metatags/handler.js';
 import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
+import structuredDataGuidance from './structured-data/guidance-handler.js';
 import siteDetection from './site-detection/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
@@ -65,6 +67,7 @@ import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
 import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
 import hreflang from './hreflang/handler.js';
+import optimizationReportCallback from './optimization-report/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -74,6 +77,7 @@ const HANDLERS = {
   'lhs-desktop': lhsDesktop,
   404: notfound,
   sitemap,
+  'redirect-chains': redirectChains,
   paid,
   'paid-traffic-analysis-weekly': paidTrafficAnalysisWeekly,
   'paid-traffic-analysis-monthly': paidTrafficAnalysisMonthly,
@@ -105,6 +109,7 @@ const HANDLERS = {
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
+  'guidance:structured-data-remediation': structuredDataGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
@@ -114,6 +119,7 @@ const HANDLERS = {
   'llmo-referral-traffic': llmoReferralTraffic,
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,
+  'optimization-report-callback': optimizationReportCallback,
   hreflang,
   dummy: (message) => ok(message),
 };

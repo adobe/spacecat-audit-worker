@@ -19,102 +19,13 @@ import { isPreviewPage } from '../utils/url-utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import { CANONICAL_CHECKS } from './constants.js';
 
 /**
  * @import {type RequestOptions} from "@adobe/fetch"
 */
 
 const auditType = Audit.AUDIT_TYPES.CANONICAL;
-
-export const CANONICAL_CHECKS = Object.freeze({
-  CANONICAL_TAG_MISSING: {
-    check: 'canonical-tag-missing',
-    explanation: 'The canonical tag is missing, which can lead to duplicate content issues and negatively affect SEO rankings.',
-    suggestion: (url) => `Add a canonical tag to the head section: <link rel="canonical" href="${url}" />`,
-  },
-  CANONICAL_TAG_MULTIPLE: {
-    check: 'canonical-tag-multiple',
-    explanation: 'Multiple canonical tags detected, which confuses search engines and can dilute page authority.',
-    suggestion: () => 'Remove duplicate canonical tags and keep only one canonical tag in the head section.',
-  },
-  CANONICAL_TAG_EMPTY: {
-    check: 'canonical-tag-empty',
-    explanation: 'The canonical tag is empty. It should point to the preferred version of the page to avoid content duplication.',
-    suggestion: (url) => `Set the canonical URL in the href attribute: <link rel="canonical" href="${url}" />`,
-  },
-  CANONICAL_TAG_OUTSIDE_HEAD: {
-    check: 'canonical-tag-outside-head',
-    explanation: 'The canonical tag must be placed in the head section of the HTML document to ensure it is recognized by search engines.',
-    suggestion: () => 'Move the canonical tag to the <head> section of the HTML document.',
-  },
-  CANONICAL_URL_STATUS_OK: {
-    check: 'canonical-url-status-ok',
-    explanation: 'The canonical URL should return a 200 status code to ensure it is accessible and indexable by search engines.',
-    suggestion: () => 'Ensure the canonical URL returns a 200 status code and is accessible.',
-  },
-  CANONICAL_URL_NO_REDIRECT: {
-    check: 'canonical-url-no-redirect',
-    explanation: 'The canonical URL should be a direct link without redirects to ensure search engines recognize the intended page.',
-    suggestion: () => 'Update the canonical URL to point directly to the final destination without redirects.',
-  },
-  CANONICAL_URL_4XX: {
-    check: 'canonical-url-4xx',
-    explanation: 'The canonical URL returns a 4xx error, indicating it is inaccessible, which can harm SEO visibility.',
-    suggestion: () => 'Fix the canonical URL to resolve the 4xx client error and make it accessible.',
-  },
-  CANONICAL_URL_5XX: {
-    check: 'canonical-url-5xx',
-    explanation: 'The canonical URL returns a 5xx server error, indicating it is temporarily or permanently unavailable, affecting SEO performance.',
-    suggestion: () => 'Fix the canonical URL to resolve the 5xx server error and ensure it\'s accessible.',
-  },
-  CANONICAL_SELF_REFERENCED: {
-    check: 'canonical-self-referenced',
-    explanation: 'The canonical URL should point to itself to indicate that it is the preferred version of the content.',
-    suggestion: (url) => `Update canonical URL to point to itself: <link rel="canonical" href="${url}" />`,
-  },
-  CANONICAL_URL_ABSOLUTE: {
-    check: 'canonical-url-absolute',
-    explanation: 'Canonical URLs must be absolute to avoid ambiguity in URL resolution and ensure proper indexing by search engines.',
-    suggestion: (url) => `Use an absolute URL for the canonical tag: <link rel="canonical" href="${url}" />`,
-  },
-  CANONICAL_URL_SAME_DOMAIN: {
-    check: 'canonical-url-same-domain',
-    explanation: 'The canonical URL should match the domain of the page to avoid signaling to search engines that the content is duplicated elsewhere.',
-    suggestion: (url) => `Update canonical URL to use the same domain as the page: <link rel="canonical" href="${url}" />`,
-  },
-  CANONICAL_URL_SAME_PROTOCOL: {
-    check: 'canonical-url-same-protocol',
-    explanation: 'The canonical URL must use the same protocol (HTTP or HTTPS) as the page to maintain consistency and avoid indexing issues.',
-    suggestion: (url) => `Update canonical URL to use the same protocol (HTTP/HTTPS): <link rel="canonical" href="${url}" />`,
-  },
-  CANONICAL_URL_LOWERCASED: {
-    check: 'canonical-url-lowercased',
-    explanation: 'Canonical URLs should be in lowercase to prevent duplicate content issues since URLs are case-sensitive.',
-    suggestion: (url) => `Update canonical URL to use lowercase: <link rel="canonical" href="${url.toLowerCase()}" />`,
-  },
-  CANONICAL_URL_FETCH_ERROR: {
-    check: 'canonical-url-fetch-error',
-    explanation: 'There was an error fetching the canonical URL, which prevents validation of the canonical tag.',
-    suggestion: () => 'Check if the canonical URL is accessible and fix any connectivity issues.',
-  },
-  CANONICAL_URL_INVALID: {
-    check: 'canonical-url-invalid',
-    explanation: 'The canonical URL is malformed or invalid.',
-    suggestion: (url) => `Fix the malformed canonical URL and ensure it follows proper URL format: <link rel="canonical" href="${url}" />`,
-  },
-  TOPPAGES: {
-    check: 'top-pages',
-    explanation: 'No top pages found',
-  },
-  URL_UNDEFINED: {
-    check: 'url-defined',
-    explanation: 'The URL is undefined or null, which prevents the canonical tag validation process.',
-  },
-  UNEXPECTED_STATUS_CODE: {
-    check: 'unexpected-status-code',
-    explanation: 'The response returned an unexpected status code, indicating an unforeseen issue with the canonical URL.',
-  },
-});
 
 /**
  * Retrieves the top pages for a given site.
@@ -174,6 +85,8 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
   try {
     log.info(`Fetching URL: ${url}`);
     const response = await fetch(url, options);
+    // finalUrl is the URL after any redirects
+    const finalUrl = response.url;
     const html = await response.text();
     const dom = new JSDOM(html);
     const { document } = dom.window;
@@ -220,7 +133,7 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
         } else {
           try {
             canonicalUrl = href.startsWith('/')
-              ? new URL(href, url).toString()
+              ? new URL(href, finalUrl).toString()
               : new URL(href).toString();
 
             if (!href.endsWith('/') && canonicalUrl.endsWith('/')) {
@@ -231,9 +144,13 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
               check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
               success: true,
             });
-            const canonicalPath = new URL(canonicalUrl).pathname;
-            const urlPath = new URL(url).pathname;
-            if ((isPreview && canonicalPath === urlPath) || canonicalUrl === url) {
+            const normalize = (u) => (typeof u === 'string' && u.endsWith('/') ? u.slice(0, -1) : u);
+            const canonicalPath = normalize(new URL(canonicalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
+            const finalPath = normalize(new URL(finalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
+            const normalizedCanonical = normalize(canonicalUrl);
+            const normalizedFinal = normalize(finalUrl);
+            if ((isPreview && canonicalPath === finalPath)
+                || normalizedCanonical === normalizedFinal) {
               checks.push({
                 check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
                 success: true,
@@ -274,7 +191,6 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
       }
     }
 
-    log.info(`Checks: ${JSON.stringify(checks)}`);
     return { canonicalUrl, checks };
   } catch (error) {
     const errorMessage = `Error validating canonical tag for ${url}: ${error.message}`;
@@ -315,16 +231,17 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
     return checks;
   }
 
-  // Check if the canonical URL is in lowercase
+  // Check if the canonical URL is fully uppercased
   if (canonicalUrl) {
     if (typeof canonicalUrl === 'string') {
-      if (canonicalUrl !== canonicalUrl.toLowerCase()) {
+      const isAllCaps = canonicalUrl === canonicalUrl.toUpperCase();
+      if (isAllCaps) {
         checks.push({
           check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
           success: false,
           explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
         });
-        log.info(`Canonical URL is not lowercased: ${canonicalUrl}`);
+        log.info(`Canonical URL is fully uppercased: ${canonicalUrl}`);
       } else {
         checks.push({
           check: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.check,
@@ -554,7 +471,27 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       }
     }
 
-    const auditPromises = topPages.map(async (page) => {
+    // Exclude login/authentication-related pages from canonical checks
+    const shouldSkipAuthPage = (u) => {
+      const pathname = new URL(u).pathname.toLowerCase();
+      return pathname.includes('/login')
+        || pathname.includes('/signin')
+        || pathname.includes('/authenticate')
+        || pathname.includes('/oauth')
+        || pathname.includes('/sso')
+        || pathname === '/auth'
+        || pathname.startsWith('/auth/');
+    };
+
+    const filteredTopPages = topPages.filter(({ url }) => {
+      if (shouldSkipAuthPage(url)) {
+        log.info(`Skipping canonical checks for auth/login page: ${url}`);
+        return false;
+      }
+      return true;
+    });
+
+    const auditPromises = filteredTopPages.map(async (page) => {
       const { url } = page;
       const checks = [];
 
@@ -723,7 +660,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         recommendedAction: suggestion.recommendedAction,
       },
     }),
-    log,
   });
 
   log.info(`Canonical opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);

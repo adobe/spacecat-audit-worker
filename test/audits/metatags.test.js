@@ -34,7 +34,7 @@ import {
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
 import testData from '../fixtures/meta-tags-data.js';
-import { removeTrailingSlash } from '../../src/metatags/opportunity-utils.js';
+import { removeTrailingSlash, getBaseUrl } from '../../src/metatags/opportunity-utils.js';
 import {
   importTopPages,
   submitForScraping,
@@ -364,8 +364,8 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
+          'www.test-site.com/page1',
           'scrapes/site-id/page1/scrape.json',
-          'scrapes/site-id/',
           logStub,
         );
 
@@ -401,8 +401,8 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
+          'https://www.test-site.com',
           'scrapes/site-id/scrape.json',
-          'scrapes/site-id/',
           logStub,
         );
 
@@ -427,8 +427,8 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
+          'https://www.test-site.com/page1',
           'scrapes/site-id/page1/scrape.json',
-          'scrapes/site-id/',
           logStub,
         );
 
@@ -461,8 +461,8 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
+          'https://www.test-site.com/404',
           'scrapes/site-id/404/scrape.json',
-          'scrapes/site-id/',
           logStub,
         );
 
@@ -495,8 +495,8 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
+          'https://www.test-site.com/valid-page',
           'scrapes/site-id/valid-page/scrape.json',
-          'scrapes/site-id/',
           logStub,
         );
 
@@ -522,6 +522,7 @@ describe('Meta Tags', () => {
         auditUrl = 'https://example.com';
         opportunity = {
           getId: () => 'opportunity-id',
+          getSiteId: () => 'site-id',
           setAuditId: sinon.stub(),
           save: sinon.stub(),
           getSuggestions: sinon.stub().returns(testData.existingSuggestions),
@@ -541,6 +542,12 @@ describe('Meta Tags', () => {
           Opportunity: {
             allBySiteIdAndStatus: sinon.stub().resolves([]),
             create: sinon.stub(),
+          },
+          Site: {
+            findById: sinon.stub().resolves({
+              getId: () => 'site-id',
+              getDeliveryConfig: () => ({}),
+            }),
           },
           Suggestion: {
             bulkUpdateStatus: sinon.stub(),
@@ -746,6 +753,162 @@ describe('Meta Tags', () => {
         expect(opportunity.save).to.be.calledOnce;
         expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
+
+      it('should handle malformed URLs in audit data', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        const auditDataWithMalformedUrl = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'malformed-url.com/path/', // Malformed URL without protocol
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithMalformedUrl, context);
+        expect(opportunity.save).to.be.calledOnce;
+
+        // Verify URL construction falls back to removeTrailingSlash
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        expect(suggestions[0].data.url).to.equal('malformed-url.com/path/page1');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+
+      it('should handle URLs with port numbers', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        dataAccessStub.Site.findById = sinon.stub().resolves({
+          getId: () => 'site-id',
+          getDeliveryConfig: () => ({ useHostnameOnly: true }),
+        });
+        const auditDataWithPort = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'https://example.com:8080/path/',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithPort, context);
+        expect(opportunity.save).to.be.calledOnce;
+
+        // Verify URL construction excludes port number
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        expect(suggestions[0].data.url).to.equal('https://example.com:8080/page1');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+
+      it('should handle URLs with query parameters', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        dataAccessStub.Site.findById = sinon.stub().resolves({
+          getId: () => 'site-id',
+          getDeliveryConfig: () => ({ useHostnameOnly: true }),
+        });
+        const auditDataWithQuery = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'https://example.com/path/?param=value',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithQuery, context);
+        expect(opportunity.save).to.be.calledOnce;
+
+        // Verify URL construction excludes query parameters
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        expect(suggestions[0].data.url).to.equal('https://example.com/page1');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+
+      it('should handle case when config.useHostnameOnly is undefined', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        dataAccessStub.Site.findById = sinon.stub().resolves({
+          getId: () => 'site-id',
+          getDeliveryConfig: () => ({ useHostnameOnly: undefined }),
+        });
+        const auditDataWithPort = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'http://localhost:8080/path/',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithPort, context);
+        expect(opportunity.save).to.be.calledOnce;
+
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        // Should preserve full URL path since useHostnameOnly is undefined
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+
+      it('should handle case when getSite method returns undefined', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        opportunity.getSite = () => undefined;
+        const auditDataWithPort = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'http://localhost:8080/path/',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithPort, context);
+        expect(opportunity.save).to.be.calledOnce;
+
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        // Should preserve full URL path since getSite returns undefined
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+
+      it('should handle case when getSite method returns null', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        opportunity.getSite = () => null;
+        const auditDataWithPort = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'http://localhost:8080/path/',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithPort, context);
+        expect(opportunity.save).to.be.calledOnce;
+
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        // Should preserve full URL path since getSite returns null
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+      });
+
+      it('should handle error in site configuration', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        const testError = new Error('Failed to get site');
+        dataAccessStub.Site.findById.rejects(testError);
+        const auditDataWithPort = {
+          ...testData.auditData,
+          auditResult: {
+            ...testData.auditData.auditResult,
+            finalUrl: 'http://localhost:8080/path/',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithPort, context);
+        expect(opportunity.save).to.be.calledOnce;
+        expect(logStub.error).to.be.calledWith('Error in meta-tags configuration:', testError);
+
+        const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
+        const suggestions = addSuggestionsCall.args[0];
+        // Should preserve full URL path since error caused useHostnameOnly to stay false
+        expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
+      });
     });
 
     describe('runAuditAndGenerateSuggestions', () => {
@@ -899,6 +1062,13 @@ describe('Meta Tags', () => {
           ContentType: 'application/json',
         };
 
+        const scrapeResultPaths = new Map([
+          ['https://www.test-site.com/blog/page1', 'scrapes/site-id/blog/page1/scrape.json'],
+          ['https://www.test-site.com/blog/page2', 'scrapes/site-id/blog/page2/scrape.json'],
+          ['https://www.test-site.com/blog/page3', 'scrapes/site-id/blog/page3/scrape.json'],
+          ['https://www.test-site.com/', 'scrapes/site-id/scrape.json'],
+        ]);
+
         // Setup S3 client responses
         s3ClientStub.send = sinon.stub();
         s3ClientStub.send
@@ -943,6 +1113,7 @@ describe('Meta Tags', () => {
           env: {
             S3_SCRAPER_BUCKET_NAME: 'test-bucket',
           },
+          scrapeResultPaths,
         };
       });
 
@@ -951,41 +1122,57 @@ describe('Meta Tags', () => {
       });
 
       it('should successfully run audit and generate suggestions', async () => {
-        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
-        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockGetRUMDomainkey = sinon.stub()
+          .resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub()
+          .resolves(5000);
         const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '../../src/support/utils.js': {
+            getRUMDomainkey: mockGetRUMDomainkey,
+            calculateCPCValue: mockCalculateCPCValue,
+          },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
-          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({
-            '/blog/page1': {
-              title: {
-                aiSuggestion: 'AI Suggested Title 1',
-                aiRationale: 'AI Rationale 1',
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub()
+            .resolves({
+              '/blog/page1': {
+                title: {
+                  aiSuggestion: 'AI Suggested Title 1',
+                  aiRationale: 'AI Rationale 1',
+                },
               },
-            },
-            '/blog/page2': {
-              title: {
-                aiSuggestion: 'AI Suggested Title 2',
-                aiRationale: 'AI Rationale 2',
+              '/blog/page2': {
+                title: {
+                  aiSuggestion: 'AI Suggested Title 2',
+                  aiRationale: 'AI Rationale 2',
+                },
               },
-            },
-          }),
+            }),
         });
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
-        expect(result).to.deep.equal({ status: 'complete' });
+        expect(result)
+          .to
+          .deep
+          .equal({ status: 'complete' });
         expect(s3ClientStub.send).to.have.been.called;
         expect(metatagsOppty.save).to.have.been.called;
       });
 
       it('should handle case when no tags are extracted', async () => {
-        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
-        const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const mockGetRUMDomainkey = sinon.stub()
+          .resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub()
+          .resolves(2);
         const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '../../src/support/utils.js': {
+            getRUMDomainkey: mockGetRUMDomainkey,
+            calculateCPCValue: mockCalculateCPCValue,
+          },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
-          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+          '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub()
+            .resolves({}),
         });
 
         // Override all S3 responses to have null tags
@@ -1004,27 +1191,55 @@ describe('Meta Tags', () => {
 
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
-        expect(result).to.deep.equal({ status: 'complete' });
-        expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
-        expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
-      }).timeout(10000);
+        expect(result)
+          .to
+          .deep
+          .equal({ status: 'complete' });
+        expect(logStub.error)
+          .to
+          .have
+          .been
+          .calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
+        expect(logStub.error)
+          .to
+          .have
+          .been
+          .calledWith('Failed to extract tags from scraped content for bucket test-bucket');
+      })
+        .timeout(10000);
 
       it('should handle RUM API errors gracefully', async () => {
-        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
-        const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const mockGetRUMDomainkey = sinon.stub()
+          .resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub()
+          .resolves(2);
         const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '../../src/support/utils.js': {
+            getRUMDomainkey:
+            mockGetRUMDomainkey,
+            calculateCPCValue: mockCalculateCPCValue,
+          },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
-          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub()
+            .resolves({}),
         });
         // Override RUM API response to simulate error
-        RUMAPIClientStub.createFrom().query.rejects(new Error('RUM API Error'));
+        RUMAPIClientStub.createFrom()
+          .query
+          .rejects(new Error('RUM API Error'));
 
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
-        expect(result).to.deep.equal({ status: 'complete' });
-        expect(logStub.warn).to.have.been.calledWith('Error while calculating projected traffic for site-id', sinon.match.instanceOf(Error));
+        expect(result)
+          .to
+          .deep
+          .equal({ status: 'complete' });
+        expect(logStub.warn)
+          .to
+          .have
+          .been
+          .calledWith('Error while calculating projected traffic for site-id', sinon.match.instanceOf(Error));
       });
 
       it('should submit top pages for scraping when getIncludedURLs returns null', async () => {
@@ -1035,7 +1250,11 @@ describe('Meta Tags', () => {
         });
         context.site.getConfig = getConfigStub;
         const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
+          '../../src/support/utils.js': {
+            getRUMDomainkey:
+            mockGetRUMDomainkey,
+            calculateCPCValue: mockCalculateCPCValue,
+          },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
           '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
@@ -1062,6 +1281,44 @@ describe('Meta Tags', () => {
         const url = '';
         const result = removeTrailingSlash(url);
         expect(result).to.equal('');
+      });
+    });
+
+    describe('getBaseUrl', () => {
+      it('should extract base URL from valid URL when useHostnameOnly is true', () => {
+        const url = 'https://example.com/path/to/page?query=1';
+        const result = getBaseUrl(url, true);
+        expect(result).to.equal('https://example.com');
+      });
+
+      it('should preserve port numbers in URLs when useHostnameOnly is true', () => {
+        const url = 'https://example.com:8080/path/';
+        const result = getBaseUrl(url, true);
+        expect(result).to.equal('https://example.com:8080');
+      });
+
+      it('should preserve port numbers for localhost when useHostnameOnly is true', () => {
+        const url = 'http://localhost:8080/foo';
+        const result = getBaseUrl(url, true);
+        expect(result).to.equal('http://localhost:8080');
+      });
+
+      it('should preserve full path by default', () => {
+        const url = 'http://localhost:8080/foo/bar';
+        const result = getBaseUrl(url);
+        expect(result).to.equal('http://localhost:8080/foo/bar');
+      });
+
+      it('should handle malformed URLs by removing trailing slash when useHostnameOnly is true', () => {
+        const url = 'malformed-url.com/path/';
+        const result = getBaseUrl(url, true);
+        expect(result).to.equal('malformed-url.com/path');
+      });
+
+      it('should handle malformed URLs by removing trailing slash', () => {
+        const url = 'malformed-url.com/path/';
+        const result = getBaseUrl(url);
+        expect(result).to.equal('malformed-url.com/path');
       });
     });
 
