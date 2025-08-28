@@ -139,7 +139,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     }),
   });
 
-  return { ...auditData };
+  return { auditData, opportunity };
 }
 
 export async function importTopPages(context) {
@@ -183,7 +183,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   const {
     site, finalUrl, log, dataAccess, audit, sqs, env,
   } = context;
-  const { SiteTopPage, Suggestion, Opportunity } = dataAccess;
+  const { SiteTopPage, Suggestion } = dataAccess;
 
   const startTime = process.hrtime();
   const siteId = site.getId();
@@ -204,22 +204,17 @@ export async function runAuditAndGenerateSuggestions(context) {
     const dataTypesToIgnore = ['pdf', 'ps', 'dwf', 'kml', 'kmz', 'xls', 'xlsx', 'ppt', 'pptx', 'doc', 'docx', 'rtf', 'swf'];
     topPages = topPages.filter((page) => !dataTypesToIgnore.some((dataType) => page.url.endsWith(`.${dataType}`)));
 
-    let auditResult = await processStructuredData(finalUrl, context, topPages, scrapeCache);
+    const auditResult = await processStructuredData(finalUrl, context, topPages, scrapeCache);
 
     // Create opportunities and suggestions
-    auditResult = await opportunityAndSuggestions(finalUrl, {
+    const oppAndAudit = await opportunityAndSuggestions(finalUrl, {
       siteId: site.getId(),
       auditId: audit.getId(),
       auditResult,
     }, context);
 
-    const opportunity = await Opportunity.findByAuditId(audit.getId());
-    if (!opportunity) {
-      log.error(`SDA: No opportunity found for audit ID ${audit.getId()}`);
-      throw new Error(`No opportunity found for audit ID ${audit.getId()}`);
-    }
     const suggestions = await Suggestion.allByOpportunityIdAndStatus(
-      opportunity.getId(),
+      oppAndAudit?.opportunity?.getId(),
       SuggestionModel.STATUSES.NEW,
     );
     await Promise.all(suggestions.map(async (suggestion) => {
@@ -230,7 +225,7 @@ export async function runAuditAndGenerateSuggestions(context) {
         deliveryType: site.getDeliveryType(),
         time: new Date().toISOString(),
         data: {
-          opportunityId: opportunity?.getId(),
+          opportunityId: oppAndAudit?.opportunity?.getId(),
           suggestionId: suggestion.getId(),
           url: suggestion.getData()?.url,
           errors: suggestion.getData()?.errors,
