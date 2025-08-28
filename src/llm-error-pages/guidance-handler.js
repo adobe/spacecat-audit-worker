@@ -25,9 +25,7 @@ export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Site } = dataAccess;
   const { auditId, siteId, data } = message;
-  const {
-    brokenLinks, opportunityId,
-  } = data;
+  const { brokenLinks } = data;
   log.info(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   const site = await Site.findById(siteId);
@@ -40,20 +38,6 @@ export default async function handler(message, context) {
   if (!audit) {
     log.warn(`No audit found for auditId: ${auditId}`);
     return notFound();
-  }
-  const { Opportunity } = dataAccess;
-  const opportunity = await Opportunity.findById(opportunityId);
-
-  if (!opportunity) {
-    log.error(`[LLM Error Pages Guidance] Opportunity not found for ID: ${opportunityId}`);
-    return notFound('Opportunity not found');
-  }
-
-  // Verify the opportunity belongs to the correct site
-  if (opportunity.getSiteId() !== siteId) {
-    const errorMsg = `[${opportunity.getType()} Guidance] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
-    log.error(errorMsg);
-    return badRequest('Site ID mismatch');
   }
 
   // Read-modify-write the weekly 404 Excel file in SharePoint
