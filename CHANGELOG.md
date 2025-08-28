@@ -1,3 +1,10 @@
+# [1.163.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.162.0...v1.163.0) (2025-08-28)
+
+
+### Features
+
+* added dummy forwarder for callback handler ([#1180](https://github.com/adobe/spacecat-audit-worker/issues/1180)) ([c195c17](https://github.com/adobe/spacecat-audit-worker/commit/c195c172b4b498a51103345f8980f7edfd23dd2c))
+
 # [1.162.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.161.3...v1.162.0) (2025-08-27)
 
 
