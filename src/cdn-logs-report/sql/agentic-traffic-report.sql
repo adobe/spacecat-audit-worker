@@ -11,24 +11,52 @@ WITH classified_data AS (
     {{pageCategoryClassification}} as category
   FROM {{databaseName}}.{{tableName}}
   {{whereClause}}
+),
+aggregated_data AS (
+  SELECT 
+    agent_type,
+    user_agent_display,
+    status,
+    SUM(count) as number_of_hits,
+    ROUND(SUM(time_to_first_byte * count) / SUM(count), 2) as avg_ttfb_ms,
+    country_code,
+    url,
+    product,
+    category
+  FROM classified_data
+  GROUP BY 
+    agent_type,
+    user_agent_display,
+    status,
+    country_code,
+    url,
+    product,
+    category
 )
 SELECT 
   agent_type,
   user_agent_display,
   status,
-  SUM(count) as number_of_hits,
-  ROUND(SUM(time_to_first_byte * count) / SUM(count), 2) as avg_ttfb_ms,
+  SUM(number_of_hits) as number_of_hits,
+  ROUND(SUM(avg_ttfb_ms * number_of_hits) / SUM(number_of_hits), 2) as avg_ttfb_ms,
   country_code,
-  url,
+  CASE 
+    WHEN number_of_hits < 10 AND status >= 200 AND status <= 399 THEN 'Other'
+    ELSE url
+  END as url,
   product,
   category
-FROM classified_data
+FROM aggregated_data
 GROUP BY 
   agent_type,
   user_agent_display,
   status,
   country_code,
-  url,
+  CASE 
+    WHEN number_of_hits < 10 AND status >= 200 AND status <= 399 THEN 'Other'
+    ELSE url
+  END,
   product,
   category
 ORDER BY number_of_hits DESC
+

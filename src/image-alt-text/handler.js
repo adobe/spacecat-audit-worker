@@ -11,7 +11,7 @@
  */
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { sendAltTextOpportunityToMystique, clearAltTextSuggestions, chunkArray } from './opportunityHandler.js';
+import { sendAltTextOpportunityToMystique, chunkArray, cleanupOutdatedSuggestions } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { checkGoogleConnection } from '../common/opportunity-utils.js';
 import { MYSTIQUE_BATCH_SIZE } from './constants.js';
@@ -64,22 +64,19 @@ export async function processAltTextWithMystique(context) {
     );
 
     if (altTextOppty) {
-      log.info(`[${AUDIT_TYPE}]: Clearing existing suggestions before sending to Mystique`);
-      await clearAltTextSuggestions({ opportunity: altTextOppty, log });
+      log.info(`[${AUDIT_TYPE}]: Updating opportunity for new audit run`);
 
-      // Reset opportunity data to start fresh for new audit run
+      // Reset only Mystique-related data, keep existing metrics
+      const existingData = altTextOppty.getData() || {};
       const resetData = {
-        projectedTrafficLost: 0,
-        projectedTrafficValue: 0,
-        decorativeImagesCount: 0,
-        dataSources: altTextOppty.getData()?.dataSources || [], // Preserve data sources
+        ...existingData,
         mystiqueResponsesReceived: 0,
         mystiqueResponsesExpected: urlBatches.length,
         processedSuggestionIds: [],
       };
       altTextOppty.setData(resetData);
       await altTextOppty.save();
-      log.info(`[${AUDIT_TYPE}]: Reset opportunity data for fresh audit run`);
+      log.info(`[${AUDIT_TYPE}]: Updated opportunity data for new audit run`);
     } else {
       log.info(`[${AUDIT_TYPE}]: Creating new opportunity for site ${siteId}`);
       const opportunityDTO = {
@@ -136,6 +133,13 @@ export async function processAltTextWithMystique(context) {
     );
 
     log.info(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
+
+    // Clean up outdated suggestions
+    // Small delay to ensure no concurrent operations
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1000);
+    });
+    await cleanupOutdatedSuggestions(altTextOppty, log);
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
     throw error;
