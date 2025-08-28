@@ -707,13 +707,13 @@ describe('Headings Audit', () => {
     expect(result.auditResult.check).to.equal(HEADINGS_CHECKS.TOPPAGES.check);
   });
 
-  it('validatePageHeadings returns empty checks when url is falsy (validation errors only logged)', async () => {
+  it('validatePageHeadings returns empty checks when url is falsy', async () => {
     const result = await validatePageHeadings('', log);
     expect(result.checks).to.be.an('array').that.is.empty;
     expect(result.url).to.equal('');
   });
 
-  it('validatePageHeadings returns empty checks on network failure (fetch errors only logged)', async () => {
+  it('validatePageHeadings returns empty checks on network failure', async () => {
     nock('https://example.com')
       .get('/fail')
       .replyWithError('Network error');

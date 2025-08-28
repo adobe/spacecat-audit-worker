@@ -118,7 +118,7 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.called;
     });
 
-    it('should handle invalid base URL correctly (validation errors only logged)', () => {
+    it('should handle invalid base URL correctly', () => {
       const canonicalUrl = 'https://example.com';
       const baseUrl = 'invalid-url';
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
@@ -127,7 +127,7 @@ describe('Canonical URL Tests', () => {
       expect(log.error).to.have.been.calledWith(`Invalid URL: ${baseUrl}`);
     });
 
-    it('should return an error when URL is undefined or null (validation errors only logged)', async () => {
+    it('should return an error when URL is undefined or null', async () => {
       const result = await validateCanonicalTag(null, log);
 
       expect(result.canonicalUrl).to.be.null;
@@ -268,7 +268,7 @@ describe('Canonical URL Tests', () => {
       ]);
     });
 
-    it('should handle invalid canonical URL (validation errors only logged)', () => {
+    it('should handle invalid canonical URL ', () => {
       const canonicalUrl = {};
       const baseUrl = 'http://example.com';
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
@@ -277,7 +277,7 @@ describe('Canonical URL Tests', () => {
       expect(log.error).to.have.been.calledWith('Canonical URL is not a string: object');
     });
 
-    it('should handle invalid base URL (validation errors only logged)', () => {
+    it('should handle invalid base URL ', () => {
       const canonicalUrl = 'https://example.com';
       const baseUrl = 'invalid-url';
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
@@ -408,7 +408,7 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.calledWith(`Canonical URL ${url} references itself`);
     });
 
-    it('should handle try-catch for invalid canonical URL (validation errors only logged)', () => {
+    it('should handle try-catch for invalid canonical URL ', () => {
       const invalidCanonicalUrl = 'http://%';
       const baseUrl = 'https://example.com';
 

@@ -219,7 +219,7 @@ describe('Hreflang Audit', () => {
       expect(notInHead).to.be.true;
     });
 
-    it('should handle undefined URL (validation errors only logged)', async () => {
+    it('should handle undefined URL', async () => {
       const result = await validatePageHreflang(null, mockLog);
 
       expect(result.checks).to.be.an('array').that.is.empty;
