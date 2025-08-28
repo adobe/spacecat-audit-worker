@@ -51,8 +51,9 @@ describe('Optimization Report Handler', () => {
     it('should successfully forward message to report jobs queue', async () => {
       const message = {
         type: 'optimization-report-callback',
-        siteId: 'test-site-123',
         data: {
+          siteId: 'test-site-123',
+          reportId: 'report-001',
           reportType: 'performance',
           timestamp: '2023-12-01T10:00:00Z',
         },
@@ -71,17 +72,17 @@ describe('Optimization Report Handler', () => {
 
       // Verify logging
       expect(context.log.info).to.have.been.calledWith(
-        'Processing optimization report callback for site: test-site-123',
+        'Processing optimization report callback for site: test-site-123 with report id: report-001',
       );
       expect(context.log.info).to.have.been.calledWith(
-        'Successfully sent message to report jobs queue for site: test-site-123',
+        'Successfully sent message to report jobs queue for site: test-site-123 and report id: report-001',
       );
     });
 
     it('should handle message with minimal data', async () => {
       const message = {
         type: 'optimization-report-callback',
-        siteId: 'minimal-site',
+        data: { siteId: 'minimal-site' },
       };
 
       context.sqs.sendMessage.resolves();
@@ -97,21 +98,18 @@ describe('Optimization Report Handler', () => {
     it('should handle message with complex nested data', async () => {
       const message = {
         type: 'optimization-report-callback',
-        siteId: 'complex-site',
-        metadata: {
-          user: {
-            id: 'user-123',
-            preferences: {
-              theme: 'dark',
-              language: 'en',
+        data: {
+          siteId: 'complex-site',
+          reportId: 'rep-123',
+          metadata: {
+            user: {
+              id: 'user-123',
+              preferences: { theme: 'dark', language: 'en' },
             },
+            report: { sections: ['performance', 'accessibility', 'seo'], format: 'pdf' },
           },
-          report: {
-            sections: ['performance', 'accessibility', 'seo'],
-            format: 'pdf',
-          },
+          timestamp: '2023-12-01T10:00:00Z',
         },
-        timestamp: '2023-12-01T10:00:00Z',
       };
 
       context.sqs.sendMessage.resolves();
@@ -127,7 +125,7 @@ describe('Optimization Report Handler', () => {
     it('should throw error when REPORT_JOBS_QUEUE_URL is not set', async () => {
       const message = {
         type: 'optimization-report-callback',
-        siteId: 'test-site-123',
+        data: { siteId: 'test-site-123' },
       };
 
       // Override context to remove the queue URL
@@ -146,7 +144,7 @@ describe('Optimization Report Handler', () => {
 
       expect(contextWithoutQueue.sqs.sendMessage).to.not.have.been.called;
       expect(contextWithoutQueue.log.error).to.have.been.calledWith(
-        'Failed to send message to report jobs queue for site: test-site-123',
+        'Failed to send message to report jobs queue for site: test-site-123 and report id: undefined',
         sinon.match.instanceOf(Error),
       );
     });
@@ -154,7 +152,7 @@ describe('Optimization Report Handler', () => {
     it('should throw error when REPORT_JOBS_QUEUE_URL is empty string', async () => {
       const message = {
         type: 'optimization-report-callback',
-        siteId: 'test-site-123',
+        data: { siteId: 'test-site-123' },
       };
 
       // Override context with empty queue URL
@@ -177,7 +175,7 @@ describe('Optimization Report Handler', () => {
     it('should handle SQS sendMessage failure', async () => {
       const message = {
         type: 'optimization-report-callback',
-        siteId: 'test-site-123',
+        data: { siteId: 'test-site-123' },
       };
 
       const sqsError = new Error('SQS service unavailable');
@@ -191,7 +189,7 @@ describe('Optimization Report Handler', () => {
         message,
       );
       expect(context.log.error).to.have.been.calledWith(
-        'Failed to send message to report jobs queue for site: test-site-123',
+        'Failed to send message to report jobs queue for site: test-site-123 and report id: undefined',
         sqsError,
       );
     });
@@ -199,16 +197,18 @@ describe('Optimization Report Handler', () => {
     it('should preserve all message properties when forwarding', async () => {
       const originalMessage = {
         type: 'optimization-report-callback',
-        siteId: 'test-site-123',
-        customField: 'custom-value',
-        nestedObject: {
-          key1: 'value1',
-          key2: 'value2',
+        data: {
+          siteId: 'test-site-123',
+          customField: 'custom-value',
+          nestedObject: {
+            key1: 'value1',
+            key2: 'value2',
+          },
+          arrayField: [1, 2, 3, 'string'],
+          booleanField: true,
+          nullField: null,
+          undefinedField: undefined,
         },
-        arrayField: [1, 2, 3, 'string'],
-        booleanField: true,
-        nullField: null,
-        undefinedField: undefined,
       };
 
       context.sqs.sendMessage.resolves();
@@ -225,8 +225,7 @@ describe('Optimization Report Handler', () => {
     it('should handle message without siteId', async () => {
       const message = {
         type: 'optimization-report-callback',
-        // siteId is intentionally missing
-        data: 'some-data',
+        data: { someField: 'some-data' },
       };
 
       context.sqs.sendMessage.resolves();
@@ -238,7 +237,7 @@ describe('Optimization Report Handler', () => {
         message,
       );
       expect(context.log.info).to.have.been.calledWith(
-        'Processing optimization report callback for site: undefined',
+        'Processing optimization report callback for site: undefined with report id: undefined',
       );
     });
   });

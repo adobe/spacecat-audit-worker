@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Adobe. All rights reserved.
+ * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -19,9 +19,10 @@
  */
 async function optimizationReportCallback(message, context) {
   const { log, sqs, env } = context;
-  const { siteId } = message;
+  const { data } = message;
+  const { siteId, reportId } = data;
 
-  log.info(`Processing optimization report callback for site: ${siteId}`);
+  log.info(`Processing optimization report callback for site: ${siteId} with report id: ${reportId}`);
 
   try {
     // Get the report jobs queue URL from environment variables
@@ -34,9 +35,9 @@ async function optimizationReportCallback(message, context) {
     // Send the message to the report jobs queue without modification
     await sqs.sendMessage(reportJobsQueueUrl, message);
 
-    log.info(`Successfully sent message to report jobs queue for site: ${siteId}`);
+    log.info(`Successfully sent message to report jobs queue for site: ${siteId} and report id: ${reportId}`);
   } catch (error) {
-    log.error(`Failed to send message to report jobs queue for site: ${siteId}`, error);
+    log.error(`Failed to send message to report jobs queue for site: ${siteId} and report id: ${reportId}`, error);
     throw error;
   }
 }
