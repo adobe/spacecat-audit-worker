@@ -213,12 +213,11 @@ export async function runAuditAndGenerateSuggestions(context) {
       auditResult,
     }, context);
 
-    const opportunity = await Opportunity.findByAuditId(audit.getId());
+    const opportunity = await Opportunity.findByAuditId(audit.id);
     const suggestions = await Suggestion.allByOpportunityIdAndStatus(
       opportunity.getId(),
       SuggestionModel.STATUSES.NEW,
     );
-    log.info(`Suggestions are: ${suggestions.toString()}`);
     await Promise.all(suggestions.map(async (suggestion) => {
       const message = {
         type: 'guidance:structured-data',
