@@ -19,5 +19,4 @@ export const DATA_SOURCES = {
   RUM: 'RUM',
   SITE: 'Site',
   PAGE: 'Page',
-  CDN_LOGS: 'CDN_LOGS',
 };
