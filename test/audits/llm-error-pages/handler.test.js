@@ -40,11 +40,13 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
       customerName: 'test-customer',
       databaseName: 'test_db',
       tableName: 'test_table',
-      getAthenaTempLocation: () => 's3://test-bucket/temp/'
+      getAthenaTempLocation: () => 's3://test-bucket/temp/',
     });
 
     mockGenerateReportingPeriods = sandbox.stub().returns({
-      weeks: [{ weekNumber: 34, year: 2025, startDate: new Date('2025-08-18T00:00:00Z'), endDate: new Date('2025-08-24T23:59:59Z') }]
+      weeks: [{
+        weekNumber: 34, year: 2025, startDate: new Date('2025-08-18T00:00:00Z'), endDate: new Date('2025-08-24T23:59:59Z'),
+      }],
     });
 
     mockBuildSiteFilters = sandbox.stub().returns('');
@@ -52,11 +54,17 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     mockProcessResults = sandbox.stub().returns({
       totalErrors: 3,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4 },
-        { user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3 },
-        { user_agent: 'Chrome/120 Claude/1.0', url: '/api/data', status: 503, total_requests: 5 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+        },
+        {
+          user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3,
+        },
+        {
+          user_agent: 'Chrome/120 Claude/1.0', url: '/api/data', status: 503, total_requests: 5,
+        },
       ],
-      summary: { uniqueUrls: 3, uniqueUserAgents: 3, statusCodes: { 404: 4, 403: 3, 503: 5 } }
+      summary: { uniqueUrls: 3, uniqueUserAgents: 3, statusCodes: { 404: 4, 403: 3, 503: 5 } },
     });
 
     mockBuildQuery = sandbox.stub().resolves('SELECT ...');
@@ -113,13 +121,15 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const topPages = [{ getUrl: () => 'https://example.com/' }, { getUrl: () => 'https://example.com/products/' }];
     const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = { 
-      SiteTopPage: { 
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages) 
-      } 
+    const dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+      },
     };
 
-    const ctx = { log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess };
+    const ctx = {
+      log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess,
+    };
 
     const result = await handler.runner('https://example.com', ctx, site);
 
@@ -135,7 +145,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     expect(msg.data).to.have.property('brokenLinks');
     expect(msg.data).to.have.property('alternativeUrls');
 
-      expect(result.auditResult.success).to.be.true;
+    expect(result.auditResult.success).to.be.true;
     expect(result.auditResult.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
   });
 
@@ -149,11 +159,13 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
       getDeliveryType: () => 'aem_edge',
     };
 
-    const ctx = { log: console, env: {}, sqs: null, dataAccess: {} };
+    const ctx = {
+      log: console, env: {}, sqs: null, dataAccess: {},
+    };
 
     const result = await handler.runner('https://example.com', ctx, site);
 
-      expect(result.auditResult.success).to.be.false;
+    expect(result.auditResult.success).to.be.false;
     expect(result.auditResult.error).to.equal('Database connection failed');
     expect(result.auditResult.database).to.equal('test_db');
     expect(result.auditResult.table).to.equal('test_table');
@@ -165,9 +177,11 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     mockProcessResults.returns({
       totalErrors: 1,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: '://invalid-url-with-no-protocol', status: 404, total_requests: 1 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: '://invalid-url-with-no-protocol', status: 404, total_requests: 1,
+        },
       ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 1 } }
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 1 } },
     });
 
     mockAthenaClient.query.resolves([]);
@@ -179,7 +193,9 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
       getDeliveryType: () => 'aem_edge',
     };
 
-    const ctx = { log: console, env: {}, sqs: null, dataAccess: {} };
+    const ctx = {
+      log: console, env: {}, sqs: null, dataAccess: {},
+    };
 
     const result = await handler.runner('https://example.com', ctx, site);
 
@@ -192,21 +208,25 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     mockProcessResults.returns({
       totalErrors: 1,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: '\x00invalid-url-with-null-char', status: 404, total_requests: 1 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: '\x00invalid-url-with-null-char', status: 404, total_requests: 1,
+        },
       ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 1 } }
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 1 } },
     });
 
     mockAthenaClient.query.resolves([]);
 
     const site = {
-      getBaseURL: () => null,  // No base URL
+      getBaseURL: () => null, // No base URL
       getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
 
-    const ctx = { log: console, env: {}, sqs: null, dataAccess: {} };
+    const ctx = {
+      log: console, env: {}, sqs: null, dataAccess: {},
+    };
 
     const result = await handler.runner('https://example.com', ctx, site);
 
@@ -219,16 +239,18 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     mockProcessResults.returns({
       totalErrors: 1,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: 'any-url', status: 404, total_requests: 1 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: 'any-url', status: 404, total_requests: 1,
+        },
       ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 1 } }
-      });
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 1 } },
+    });
 
-      mockAthenaClient.query.resolves([]);
+    mockAthenaClient.query.resolves([]);
 
     // Temporarily override the global URL constructor to throw
     const originalURL = global.URL;
-    global.URL = function() {
+    global.URL = function MockURL() {
       throw new TypeError('Invalid URL');
     };
 
@@ -239,7 +261,9 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
       getDeliveryType: () => 'aem_edge',
     };
 
-    const ctx = { log: console, env: {}, sqs: null, dataAccess: {} };
+    const ctx = {
+      log: console, env: {}, sqs: null, dataAccess: {},
+    };
 
     try {
       const result = await handler.runner('https://example.com', ctx, site);
@@ -255,13 +279,17 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     mockProcessResults.returns({
       totalErrors: 2,
       errorPages: [
-        { user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3 },
-        { user_agent: 'Chrome/120 Claude/1.0', url: '/api/data', status: 503, total_requests: 5 }
+        {
+          user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3,
+        },
+        {
+          user_agent: 'Chrome/120 Claude/1.0', url: '/api/data', status: 503, total_requests: 5,
+        },
       ],
-      summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 403: 3, 503: 5 } }
+      summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 403: 3, 503: 5 } },
     });
 
-      mockAthenaClient.query.resolves([]);
+    mockAthenaClient.query.resolves([]);
 
     const site = {
       getBaseURL: () => 'https://example.com',
@@ -271,11 +299,13 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     };
 
     const sqs = { sendMessage: sandbox.stub().resolves() };
-    const ctx = { log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess: {} };
+    const ctx = {
+      log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess: {},
+    };
 
     const result = await handler.runner('https://example.com', ctx, site);
 
-      expect(result.auditResult.success).to.be.true;
+    expect(result.auditResult.success).to.be.true;
     expect(sqs.sendMessage.called).to.be.false; // No SQS message sent (no 404s)
     expect(mockSaveExcelReport.callCount).to.equal(2); // 403 and 5xx files generated
   });
@@ -284,12 +314,14 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     mockProcessResults.returns({
       totalErrors: 1,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+        },
       ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } }
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
     });
 
-      mockAthenaClient.query.resolves([]);
+    mockAthenaClient.query.resolves([]);
 
     const site = {
       getBaseURL: () => 'https://example.com',
@@ -298,7 +330,9 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
       getDeliveryType: () => 'aem_edge',
     };
 
-    const ctx = { log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs: null, dataAccess: {} }; // No SQS
+    const ctx = {
+      log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs: null, dataAccess: {},
+    }; // No SQS
 
     const result = await handler.runner('https://example.com', ctx, site);
 
@@ -310,12 +344,14 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     mockProcessResults.returns({
       totalErrors: 1,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+        },
       ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } }
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
     });
 
-      mockAthenaClient.query.resolves([]);
+    mockAthenaClient.query.resolves([]);
 
     const site = {
       getBaseURL: () => 'https://example.com',
@@ -325,11 +361,13 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     };
 
     const sqs = { sendMessage: sandbox.stub().resolves() };
-    const ctx = { log: console, env: {}, sqs, dataAccess: {} }; // No QUEUE_SPACECAT_TO_MYSTIQUE
+    const ctx = {
+      log: console, env: {}, sqs, dataAccess: {},
+    }; // No QUEUE_SPACECAT_TO_MYSTIQUE
 
     const result = await handler.runner('https://example.com', ctx, site);
 
-      expect(result.auditResult.success).to.be.true;
+    expect(result.auditResult.success).to.be.true;
     expect(sqs.sendMessage.called).to.be.false; // No SQS message sent
     expect(mockSaveExcelReport.callCount).to.equal(1); // Only 404 file generated
   });
@@ -338,19 +376,21 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     mockProcessResults.returns({
       totalErrors: 1,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+        },
       ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } }
-      });
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
+    });
 
-      mockAthenaClient.query.resolves([]);
+    mockAthenaClient.query.resolves([]);
 
     const topPages = [{ getUrl: () => 'https://example.com/' }];
     const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = { 
-      SiteTopPage: { 
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages) 
-      } 
+    const dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+      },
     };
 
     const site = {
@@ -360,13 +400,15 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
       getDeliveryType: () => 'aem_edge',
     };
 
-    const ctx = { log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess };
+    const ctx = {
+      log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess,
+    };
 
     const result = await handler.runner('https://example.com', ctx, site);
 
-      expect(result.auditResult.success).to.be.true;
+    expect(result.auditResult.success).to.be.true;
     expect(sqs.sendMessage.calledOnce).to.be.true;
-    
+
     // Check that the message uses the URL directly (no baseUrl prefix)
     const msg = sqs.sendMessage.firstCall.args[1];
     expect(msg.data.brokenLinks[0].urlTo).to.equal('/p1'); // No baseUrl prefix
@@ -376,12 +418,14 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     mockProcessResults.returns({
       totalErrors: 1,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+        },
       ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } }
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
     });
 
-      mockAthenaClient.query.resolves([]);
+    mockAthenaClient.query.resolves([]);
 
     const site = {
       getBaseURL: () => 'https://example.com',
@@ -390,11 +434,13 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
       getDeliveryType: () => 'aem_edge',
     };
 
-    const ctx = { log: console, env: {}, sqs: null, dataAccess: {} };
+    const ctx = {
+      log: console, env: {}, sqs: null, dataAccess: {},
+    };
 
     const result = await handler.runner('https://example.com', ctx, site);
 
-      expect(result.auditResult.success).to.be.true;
+    expect(result.auditResult.success).to.be.true;
     expect(mockSaveExcelReport.callCount).to.equal(1); // Only 404 file generated
   });
 
@@ -402,19 +448,21 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     mockProcessResults.returns({
       totalErrors: 1,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+        },
       ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } }
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
     });
 
     mockAthenaClient.query.resolves([]);
 
     const topPages = [{ getUrl: () => 'https://example.com/' }];
     const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = { 
-      SiteTopPage: { 
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages) 
-      } 
+    const dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+      },
     };
 
     const site = {
@@ -425,13 +473,15 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     };
 
     // No audit provided (null)
-    const ctx = { log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess };
+    const ctx = {
+      log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess,
+    };
 
     const result = await handler.runner('https://example.com', ctx, site);
 
     expect(result.auditResult.success).to.be.true;
     expect(sqs.sendMessage.calledOnce).to.be.true;
-    
+
     // Check that the message uses fallback values
     const msg = sqs.sendMessage.firstCall.args[1];
     expect(msg.auditId).to.equal('llm-error-pages-audit'); // Fallback auditId
@@ -440,21 +490,21 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
   it('handles empty categorized results with 404 fallback', async () => {
     // Mock categorizeErrorsByStatusCode to return an object without 404 key
-    const mockCategorizeErrors = sandbox.stub().returns({
-      403: [{ user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3 }],
-      '5xx': [{ user_agent: 'Chrome/120 Claude/1.0', url: '/api/data', status: 503, total_requests: 5 }],
-      // No 404 key - this will test the || [] fallback
-    });
+    // This tests the || [] fallback when 404 key doesn't exist
 
     // We need to mock the import - this is tricky with ES modules
     // Instead, let's create a scenario where 404s are filtered out
     mockProcessResults.returns({
       totalErrors: 2,
       errorPages: [
-        { user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3 },
-        { user_agent: 'Chrome/120 Claude/1.0', url: '/api/data', status: 503, total_requests: 5 }
+        {
+          user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3,
+        },
+        {
+          user_agent: 'Chrome/120 Claude/1.0', url: '/api/data', status: 503, total_requests: 5,
+        },
       ],
-      summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 403: 3, 503: 5 } }
+      summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 403: 3, 503: 5 } },
     });
 
     mockAthenaClient.query.resolves([]);
@@ -467,7 +517,9 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     };
 
     const sqs = { sendMessage: sandbox.stub().resolves() };
-    const ctx = { log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess: {} };
+    const ctx = {
+      log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess: {},
+    };
 
     const result = await handler.runner('https://example.com', ctx, site);
 
@@ -476,25 +528,25 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     expect(mockSaveExcelReport.callCount).to.equal(2); // 403 and 5xx files generated
   });
 
-
-
   it('covers audit object without getId method branch', async () => {
     mockProcessResults.returns({
       totalErrors: 1,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+        },
       ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } }
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
     });
 
     mockAthenaClient.query.resolves([]);
 
     const topPages = [{ getUrl: () => 'https://example.com/' }];
     const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = { 
-      SiteTopPage: { 
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages) 
-      } 
+    const dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+      },
     };
 
     const site = {
@@ -504,13 +556,12 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
       getDeliveryType: () => 'aem_edge',
     };
 
-    // Create an audit object that exists but has no getId method
-    const auditWithoutGetId = { someProperty: 'value' }; // No getId method
-    const ctx = { 
-      log: console, 
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, 
-      sqs, 
-      dataAccess
+    // Test case for when audit is not provided in context
+    const ctx = {
+      log: console,
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
+      sqs,
+      dataAccess,
       // Don't include audit in context
     };
 
@@ -518,7 +569,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     expect(result.auditResult.success).to.be.true;
     expect(sqs.sendMessage.calledOnce).to.be.true;
-    
+
     // Check that the message uses fallback auditId
     const msg = sqs.sendMessage.firstCall.args[1];
     expect(msg.auditId).to.equal('llm-error-pages-audit'); // Fallback auditId
@@ -529,19 +580,21 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     mockProcessResults.returns({
       totalErrors: 1,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+        },
       ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } }
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
     });
 
     mockAthenaClient.query.resolves([]);
 
     const topPages = [{ getUrl: () => 'https://example.com/' }];
     const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = { 
-      SiteTopPage: { 
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages) 
-      } 
+    const dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+      },
     };
 
     const site = {
@@ -553,11 +606,11 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     // Pass audit as a parameter to the runner function
     const auditWithoutGetId = {}; // Empty object, no getId method
-    const ctx = { 
-      log: console, 
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, 
-      sqs, 
-      dataAccess
+    const ctx = {
+      log: console,
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
+      sqs,
+      dataAccess,
     };
 
     // Call runner with audit as fourth parameter
@@ -565,7 +618,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     expect(result.auditResult.success).to.be.true;
     expect(sqs.sendMessage.calledOnce).to.be.true;
-    
+
     // Check that the message uses fallback auditId when audit?.getId() is undefined
     const msg = sqs.sendMessage.firstCall.args[1];
     expect(msg.auditId).to.equal('llm-error-pages-audit'); // Fallback auditId
@@ -575,19 +628,21 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     mockProcessResults.returns({
       totalErrors: 1,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+        },
       ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } }
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
     });
 
-      mockAthenaClient.query.resolves([]);
+    mockAthenaClient.query.resolves([]);
 
     const topPages = [{ getUrl: () => 'https://example.com/' }];
     const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = { 
-      SiteTopPage: { 
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages) 
-      } 
+    const dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+      },
     };
 
     const site = {
@@ -597,44 +652,43 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
       getDeliveryType: () => 'aem_edge',
     };
 
-    const ctx = { 
-      log: console, 
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, 
-      sqs, 
-      dataAccess
+    const ctx = {
+      log: console,
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
+      sqs,
+      dataAccess,
     };
 
     // Pass null as audit parameter to test audit?.getId() branch
     const result = await handler.runner('https://example.com', ctx, site, null);
 
-      expect(result.auditResult.success).to.be.true;
+    expect(result.auditResult.success).to.be.true;
     expect(sqs.sendMessage.calledOnce).to.be.true;
-    
+
     // Check that the message uses fallback auditId when audit is null
     const msg = sqs.sendMessage.firstCall.args[1];
     expect(msg.auditId).to.equal('llm-error-pages-audit'); // Fallback auditId
   });
 
   it('covers final branches 129 & 139 with direct data manipulation', async () => {
-
-
-    
     mockProcessResults.returns({
       totalErrors: 1,
       errorPages: [
-        { user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4 }
+        {
+          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+        },
       ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } }
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
     });
 
     mockAthenaClient.query.resolves([]);
 
     const topPages = [{ getUrl: () => 'https://example.com/' }];
     const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = { 
-      SiteTopPage: { 
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages) 
-      } 
+    const dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+      },
     };
 
     const site = {
@@ -645,15 +699,15 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     };
 
     const auditWithGetId = {
-      getId: () => 'audit-123'
+      getId: () => 'audit-123',
     };
 
-    const ctx = { 
-      log: console, 
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, 
-      sqs, 
+    const ctx = {
+      log: console,
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
+      sqs,
       dataAccess,
-      audit: auditWithGetId  // Put audit in context, not as separate parameter
+      audit: auditWithGetId, // Put audit in context, not as separate parameter
     };
 
     // This should hit both branches since:
@@ -664,7 +718,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     expect(result.auditResult.success).to.be.true;
     expect(sqs.sendMessage.calledOnce).to.be.true;
-    
+
     // Check that the message uses the actual audit ID (not fallback)
     const msg = sqs.sendMessage.firstCall.args[1];
     expect(msg.auditId).to.equal('audit-123'); // Real audit ID from getId()
@@ -672,56 +726,19 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
   it('covers categorizedResults[404] undefined fallback', async () => {
     // We need categorizedResults to NOT have a 404 property, triggering the || [] fallback
-    
+
     // Mock processErrorPagesResults to return non-404 errors only
     mockProcessResults.returns({
       totalErrors: 2,
       errorPages: [
-        { user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3 },
-        { user_agent: 'Chrome/120 Claude/1.0', url: '/api/data', status: 503, total_requests: 5 }
+        {
+          user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3,
+        },
+        {
+          user_agent: 'Chrome/120 Claude/1.0', url: '/api/data', status: 503, total_requests: 5,
+        },
       ],
-      summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 403: 3, 503: 5 } }
-    });
-
-      mockAthenaClient.query.resolves([]);
-
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = {};
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const ctx = { 
-      log: console, 
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, 
-      sqs, 
-      dataAccess
-    };
-
-    // Since we only have 403/5xx errors, categorizeErrorsByStatusCode will return:
-    // { 403: [...], '5xx': [...] } - NO 404 property
-    // This triggers: const errors404 = categorizedResults[404] || [];
-    const result = await handler.runner('https://example.com', ctx, site);
-
-      expect(result.auditResult.success).to.be.true;
-    expect(sqs.sendMessage.called).to.be.false; // No SQS message sent (empty 404 array)
-    expect(mockSaveExcelReport.callCount).to.equal(2); // Only 403 and 5xx files generated
-  });
-
-  it('triggers 404 undefined fallback with modified categorizeErrorsByStatusCode', async () => {
-    // Now that categorizeErrorsByStatusCode only creates keys when there are errors,
-    // this test will ensure the 404 key doesn't exist, triggering the || [] fallback
-    
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        { user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3 }
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 403: 3 } }
+      summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 403: 3, 503: 5 } },
     });
 
     mockAthenaClient.query.resolves([]);
@@ -736,11 +753,54 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
       getDeliveryType: () => 'aem_edge',
     };
 
-    const ctx = { 
-      log: console, 
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, 
-      sqs, 
-      dataAccess
+    const ctx = {
+      log: console,
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
+      sqs,
+      dataAccess,
+    };
+
+    // Since we only have 403/5xx errors, categorizeErrorsByStatusCode will return:
+    // { 403: [...], '5xx': [...] } - NO 404 property
+    // This triggers: const errors404 = categorizedResults[404] || [];
+    const result = await handler.runner('https://example.com', ctx, site);
+
+    expect(result.auditResult.success).to.be.true;
+    expect(sqs.sendMessage.called).to.be.false; // No SQS message sent (empty 404 array)
+    expect(mockSaveExcelReport.callCount).to.equal(2); // Only 403 and 5xx files generated
+  });
+
+  it('triggers 404 undefined fallback with modified categorizeErrorsByStatusCode', async () => {
+    // Now that categorizeErrorsByStatusCode only creates keys when there are errors,
+    // this test will ensure the 404 key doesn't exist, triggering the || [] fallback
+
+    mockProcessResults.returns({
+      totalErrors: 1,
+      errorPages: [
+        {
+          user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3,
+        },
+      ],
+      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 403: 3 } },
+    });
+
+    mockAthenaClient.query.resolves([]);
+
+    const sqs = { sendMessage: sandbox.stub().resolves() };
+    const dataAccess = {};
+
+    const site = {
+      getBaseURL: () => 'https://example.com',
+      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getId: () => 'site-1',
+      getDeliveryType: () => 'aem_edge',
+    };
+
+    const ctx = {
+      log: console,
+      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
+      sqs,
+      dataAccess,
     };
 
     // With only 403 errors, categorizeErrorsByStatusCode returns: { 403: [...] }
@@ -752,6 +812,4 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
     expect(sqs.sendMessage.called).to.be.false; // No SQS message sent (404 array is empty from fallback)
     expect(mockSaveExcelReport.callCount).to.equal(1); // Only 403 file generated
   });
-
-
 });

@@ -1,5 +1,13 @@
 /*
  * Copyright 2025 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
  */
 
 /* eslint-env mocha */
@@ -76,17 +84,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -129,17 +141,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -151,19 +167,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
   });
 
   it('returns 404 when site is not found', async () => {
-    const message = { 
+    const message = {
       auditId: 'audit-123',
-      siteId: 'missing', 
-      data: { brokenLinks: [], opportunityId: 'opportunity-123' }
+      siteId: 'missing',
+      data: { brokenLinks: [], opportunityId: 'opportunity-123' },
     };
-    const dataAccess = { 
+    const dataAccess = {
       Site: { findById: sandbox.stub().resolves(null) },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'missing',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'missing',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: { error: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() }, dataAccess };
 
@@ -190,17 +208,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: { error: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() }, dataAccess };
 
@@ -225,17 +247,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -260,17 +286,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => null,
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => null,
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -280,10 +310,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
 
   it('handles URL constructor throwing error', async () => {
     docMock.downloadRawDocument.rejects(new Error('Not Found'));
-    
+
     // Temporarily override the global URL constructor to throw
     const originalURL = global.URL;
-    global.URL = function() {
+    global.URL = function MockURL() {
       throw new TypeError('Invalid URL');
     };
 
@@ -301,17 +331,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -342,17 +376,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://fallback.com',
-        getConfig: () => null
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://fallback.com',
+          getConfig: () => null,
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -377,17 +415,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://fallback.com',
-        getConfig: () => ({ getLlmoDataFolder: null })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://fallback.com',
+          getConfig: () => ({ getLlmoDataFolder: null }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -396,18 +438,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
   });
 
   it('handles workbook with no worksheets', async () => {
-    // Create a mock workbook with no worksheets to test the fallback
-    const mockWorkbook = {
-      worksheets: [], // Empty worksheets array
-      addWorksheet: sandbox.stub().returns({}),
-      xlsx: {
-        load: sandbox.stub().resolves()
-      }
-    };
-    
-    const ExcelJSStub = {
-      Workbook: sandbox.stub().returns(mockWorkbook)
-    };
+    // Test case for workbook with no worksheets - fallback behavior
+    // ExcelJS stub - removed unused variable
 
     // Mock successful download but empty workbook
     docMock.downloadRawDocument.resolves(Buffer.from('mock-excel-data'));
@@ -427,17 +459,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -466,17 +502,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -508,17 +548,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -546,17 +590,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -570,7 +618,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const mockCell1 = { value: null }; // No toString method
     const mockCell2 = { value: 42 }; // Number without toString method
     const mockCell3 = { value: 'existing-hits' };
-    
+
     const mockRow = {
       getCell: sandbox.stub(),
       values: null,
@@ -579,20 +627,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     mockRow.getCell.withArgs(2).returns(mockCell2);
     mockRow.getCell.withArgs(3).returns(mockCell3);
 
-    const mockSheet = {
-      rowCount: 3,
-      getRow: sandbox.stub().returns(mockRow),
-      addRow: sandbox.stub(),
-    };
-
-    const mockWorkbook = {
-      worksheets: [mockSheet],
-      addWorksheet: sandbox.stub(),
-      xlsx: {
-        load: sandbox.stub().resolves(),
-        writeBuffer: sandbox.stub().resolves(Buffer.from('updated-excel')),
-      },
-    };
+    // mockSheet removed - not used in this test
+    // mockWorkbook removed - not used in this test
 
     // Mock successful download
     docMock.downloadRawDocument.resolves(Buffer.from('mock-excel-data'));
@@ -613,25 +649,27 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
   });
-
-
 
   it('handles workbook with existing data and matching rows', async () => {
     // Mock successful download with existing data that will match our input
@@ -654,17 +692,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -691,17 +733,21 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       },
     };
 
-    const dataAccess = { 
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' })
-      }) },
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test-customer' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
@@ -720,18 +766,20 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         opportunityId: 'opportunity-123',
       },
     };
-    
+
     const dataAccess = {
       Site: { findById: sandbox.stub().resolves({ getId: () => 'site-1' }) },
       Audit: { findById: sandbox.stub().resolves(null) }, // Audit not found
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: { warn: sandbox.stub(), error: sandbox.stub(), info: sandbox.stub() }, dataAccess };
-    
+
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(404);
     expect(context.log.warn).to.have.been.calledWith('No audit found for auditId: missing-audit');
@@ -746,14 +794,14 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         opportunityId: 'missing-opportunity',
       },
     };
-    
+
     const dataAccess = {
       Site: { findById: sandbox.stub().resolves({ getId: () => 'site-1' }) },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves(null) } // Opportunity not found
+      Opportunity: { findById: sandbox.stub().resolves(null) }, // Opportunity not found
     };
     const context = { log: { warn: sandbox.stub(), error: sandbox.stub(), info: sandbox.stub() }, dataAccess };
-    
+
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(404);
     expect(context.log.error).to.have.been.calledWith('[LLM Error Pages Guidance] Opportunity not found for ID: missing-opportunity');
@@ -768,18 +816,20 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         opportunityId: 'opportunity-123',
       },
     };
-    
+
     const dataAccess = {
       Site: { findById: sandbox.stub().resolves({ getId: () => 'site-1' }) },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'different-site', // Site ID mismatch
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'different-site', // Site ID mismatch
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: { warn: sandbox.stub(), error: sandbox.stub(), info: sandbox.stub() }, dataAccess };
-    
+
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(400);
     expect(context.log.error).to.have.been.calledWith('[llm-error-pages Guidance] Site ID mismatch. Expected: site-1, Found: different-site');
@@ -800,8 +850,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         writeBuffer: sandbox.stub().resolves(Buffer.from('test')),
       },
     };
-    
-    ExcelJS.Workbook = function() { return mockWorkbook; };
+
+    ExcelJS.Workbook = function MockWorkbook() {
+      return mockWorkbook;
+    };
     docMock.downloadRawDocument.resolves(Buffer.from('existing-file'));
 
     const message = {
@@ -819,22 +871,26 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const dataAccess = {
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test' })
-      }) },
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
     const resp = await guidanceHandler.default(message, context);
     ExcelJS.Workbook = originalWorkbook;
-    
+
     expect(resp.status).to.equal(200);
     expect(mockWorkbook.addWorksheet).to.have.been.calledWith('data');
   });
@@ -847,11 +903,11 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       rowCount: 3, // Has rows to iterate through
       getCell: sandbox.stub(),
     };
-    
+
     // Make getCell return objects that will trigger the optional chaining fallback
     mockSheet.getCell.withArgs(2, 2).returns({ value: Object.create(null) }); // No toString method
     mockSheet.getCell.withArgs(3, 2).returns({ value: null }); // Null value
-    
+
     const mockWorkbook = {
       worksheets: [mockSheet],
       xlsx: {
@@ -859,8 +915,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         writeBuffer: sandbox.stub().resolves(Buffer.from('test')),
       },
     };
-    
-    ExcelJS.Workbook = function() { return mockWorkbook; };
+
+    ExcelJS.Workbook = function MockWorkbook() {
+      return mockWorkbook;
+    };
     docMock.downloadRawDocument.resolves(Buffer.from('existing-file'));
 
     const message = {
@@ -878,22 +936,26 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const dataAccess = {
-      Site: { findById: sandbox.stub().resolves({ 
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({ getLlmoDataFolder: () => 'test' })
-      }) },
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({ getLlmoDataFolder: () => 'test' }),
+        }),
+      },
       Audit: { findById: sandbox.stub().resolves({ getId: () => 'audit-123' }) },
-      Opportunity: { findById: sandbox.stub().resolves({ 
-        getId: () => 'opportunity-123',
-        getSiteId: () => 'site-1',
-        getType: () => 'llm-error-pages'
-      }) }
+      Opportunity: {
+        findById: sandbox.stub().resolves({
+          getId: () => 'opportunity-123',
+          getSiteId: () => 'site-1',
+          getType: () => 'llm-error-pages',
+        }),
+      },
     };
     const context = { log: console, dataAccess };
 
     const resp = await guidanceHandler.default(message, context);
     ExcelJS.Workbook = originalWorkbook;
-    
+
     expect(resp.status).to.equal(200);
     expect(mockSheet.getCell).to.have.been.called;
   });
