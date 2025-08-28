@@ -184,11 +184,11 @@ describe('Image Alt Text Handler', () => {
       );
     });
 
-    it('should call clearAltTextSuggestions when existing opportunity is found', async () => {
+    it('should update opportunity data when existing opportunity is found', async () => {
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
         getId: () => 'opportunity-id',
-        getData: () => ({}),
+        getData: () => ({ existingData: 'value' }), // Return some existing data
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
       };
@@ -203,16 +203,51 @@ describe('Image Alt Text Handler', () => {
 
       await handlerModule.processAltTextWithMystique(context);
 
-      expect(clearAltTextSuggestionsStub).to.have.been.calledWith({
-        opportunity: mockOpportunity,
-        log: context.log,
-      });
+      // Should NOT call clearAltTextSuggestions anymore
+      expect(clearAltTextSuggestionsStub).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
-        '[alt-text]: Clearing existing suggestions before sending to Mystique',
+        '[alt-text]: Updating opportunity for new audit run',
+      );
+
+      // Should call setData with preserved existing data
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({
+          existingData: 'value', // Existing data preserved
+          mystiqueResponsesReceived: 0,
+          mystiqueResponsesExpected: sinon.match.number,
+          processedSuggestionIds: [],
+        }),
       );
     });
 
-    it('should not call clearAltTextSuggestions when no existing opportunity is found', async () => {
+    it('should handle when existing opportunity getData returns null', async () => {
+      const mockOpportunity = {
+        getType: () => AUDIT_TYPE,
+        getId: () => 'opportunity-id',
+        getData: () => null,
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
+
+      context.site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+      };
+
+      await handlerModule.processAltTextWithMystique(context);
+
+      expect(mockOpportunity.setData).to.have.been.calledWith(
+        sinon.match({
+          mystiqueResponsesReceived: 0,
+          mystiqueResponsesExpected: sinon.match.number,
+          processedSuggestionIds: [],
+        }),
+      );
+    });
+
+    it('should create new opportunity when no existing opportunity is found', async () => {
       // Ensure no existing opportunities are returned
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
 
@@ -224,8 +259,8 @@ describe('Image Alt Text Handler', () => {
       await handlerModule.processAltTextWithMystique(context);
 
       expect(clearAltTextSuggestionsStub).to.not.have.been.called;
-      expect(context.log.info).to.not.have.been.calledWith(
-        '[alt-text]: Clearing existing suggestions before sending to Mystique',
+      expect(context.log.info).to.have.been.calledWith(
+        '[alt-text]: Creating new opportunity for site site-id',
       );
     });
 

@@ -263,3 +263,27 @@ export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, lo
 
   log.info(`[${AUDIT_TYPE}]: Added ${newSuggestionDTOs.length} new suggestions`);
 }
+
+/**
+ * Cleans up all OUTDATED suggestions for the opportunity
+ * @param {Object} opportunity - The opportunity object
+ * @param {Object} log - Logger
+ * @returns {Promise<void>}
+ */
+export async function cleanupOutdatedSuggestions(opportunity, log) {
+  try {
+    const allSuggestions = await opportunity.getSuggestions();
+    const outdatedSuggestions = allSuggestions.filter(
+      (suggestion) => suggestion.getStatus() === SuggestionModel.STATUSES.OUTDATED,
+    );
+
+    if (outdatedSuggestions.length > 0) {
+      await Promise.all(outdatedSuggestions.map((suggestion) => suggestion.remove()));
+      log.info(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions`);
+    } else {
+      log.info(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up`);
+    }
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions: ${error.message}`);
+  }
+}

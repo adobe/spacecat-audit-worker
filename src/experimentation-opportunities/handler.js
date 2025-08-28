@@ -13,9 +13,10 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { getCountryCodeFromLang } from '../utils/url-utils.js';
+import { getCountryCodeFromLang, parseCustomUrls } from '../utils/url-utils.js';
 import {
   getObjectFromKey,
 } from '../utils/s3-utils.js';
@@ -74,6 +75,11 @@ export async function generateOpportunityAndSuggestions(context) {
     },
   }));
 
+  if (!messages) {
+    log.info(`No experimentation opportunities found or audit result is undefined. Site ID: ${site.getId()}, Audit ID: ${audit.getId()}`);
+    return;
+  }
+
   for (const message of messages) {
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
@@ -81,10 +87,58 @@ export async function generateOpportunityAndSuggestions(context) {
   }
 }
 
-function getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities) {
+export function getHighOrganicLowCtrOpportunity(experimentationOpportunities) {
   return experimentationOpportunities?.filter(
     (oppty) => oppty.type === HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
-  )?.map((oppty) => oppty.page);
+  );
+}
+
+/**
+ * Processes custom URLs by matching them with RUM data and creating opportunities
+ * @param {string[]} customUrls - Array of custom URLs to process
+ * @param {Object} rumAPIClient - RUM API client instance
+ * @param {Object} options - Query options for RUM API
+ * @param {Object} context - Audit context containing log and other utilities
+ * @returns {Promise<Array>} Array of experimentation opportunities
+ */
+export async function processCustomUrls(customUrls, rumAPIClient, options, context) {
+  const { log } = context;
+  log.info(`Processing ${customUrls.length} custom URLs for experimentation opportunities`);
+
+  // Query specifically for high-organic-low-ctr with higher limit to find custom URLs
+  const highOrganicLowCtrOpportunities = await rumAPIClient.query(
+    HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
+    { ...options, maxOpportunities: 1000 },
+  );
+
+  const customUrlSet = new Set(customUrls);
+  const opptiesWithRumData = highOrganicLowCtrOpportunities.reduce(
+    (accumulator, currentValue) => {
+      if (customUrlSet.has(currentValue.page)) {
+        accumulator.push(currentValue);
+        customUrlSet.delete(currentValue.page);
+      }
+      return accumulator;
+    },
+    [],
+  );
+
+  const customUrlsWithoutRumData = [...customUrlSet];
+  // For URLs without RUM data, create simple opportunity objects
+  const opptiesWithoutRumData = customUrlsWithoutRumData.map((url) => ({
+    type: HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
+    page: url,
+  }));
+
+  if (isNonEmptyArray(opptiesWithRumData)) {
+    const urlsWithRUMData = opptiesWithRumData.map((oppty) => oppty.page);
+    log.info(`Found real RUM data for ${opptiesWithRumData.length} high-organic-low-ctr URLs: ${urlsWithRUMData.join(', ')}`);
+  }
+  if (isNonEmptyArray(opptiesWithoutRumData)) {
+    log.info(`No RUM data found for ${opptiesWithoutRumData.length} URLs: ${customUrlsWithoutRumData.join(', ')} - using URLs without performance metrics`);
+  }
+
+  return [...opptiesWithRumData, ...opptiesWithoutRumData];
 }
 
 /**
@@ -94,7 +148,6 @@ function getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities) {
  * @param {*} site
  * @returns
  */
-
 export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
   const { log } = context;
 
@@ -109,6 +162,24 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
   processRageClickOpportunities(experimentationOpportunities);
   log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
+  // Handle custom URLs if provided via audit context
+  const { data } = context;
+  const customUrls = data ? parseCustomUrls(data) : [];
+  if (isNonEmptyArray(customUrls)) {
+    const customUrlOpportunities = await processCustomUrls(
+      customUrls,
+      rumAPIClient,
+      options,
+      context,
+    );
+    return {
+      auditResult: {
+        experimentationOpportunities: customUrlOpportunities,
+      },
+      fullAuditRef: auditUrl,
+    };
+  }
+
   return {
     auditResult: {
       experimentationOpportunities,
@@ -119,6 +190,7 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
 
 export async function runAuditAndScrapeStep(context) {
   const { site, finalUrl } = context;
+
   const result = await experimentOpportunitiesAuditRunner(finalUrl, context);
 
   return {
@@ -127,15 +199,19 @@ export async function runAuditAndScrapeStep(context) {
     type: 'experimentation-opportunities',
     processingType: 'default',
     jobId: site.getId(),
-    urls: getHighOrganicLowCtrOpportunityUrls(
+    urls: getHighOrganicLowCtrOpportunity(
       result.auditResult?.experimentationOpportunities,
-    ).map((url) => ({ url })),
+    )?.map((oppty) => ({ url: oppty.page })),
     siteId: site.getId(),
   };
 }
 
 async function toggleImport(site, importType, enable, log) {
   const siteConfig = site.getConfig();
+  if (!siteConfig) {
+    log.error(`Cannot toggle import ${importType} for site ${site.getId()}: site config is null`);
+    return;
+  }
   if (enable) {
     siteConfig.enableImport(importType);
   } else {
@@ -158,7 +234,7 @@ async function getLangFromScrape(s3Client, bucketName, s3BucketPrefix, pathname,
 }
 
 function isImportEnabled(importType, imports) {
-  return imports.find((importConfig) => importConfig.type === importType)?.enabled;
+  return imports?.find((importConfig) => importConfig.type === importType)?.enabled;
 }
 
 export async function organicKeywordsStep(context) {
@@ -170,9 +246,12 @@ export async function organicKeywordsStep(context) {
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const s3BucketPrefix = `scrapes/${site.getId()}`;
   const auditResult = audit.getAuditResult();
-  const urls = getHighOrganicLowCtrOpportunityUrls(auditResult.experimentationOpportunities);
+  const urls = getHighOrganicLowCtrOpportunity(auditResult.experimentationOpportunities)
+    .map((oppty) => oppty.page);
   log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
-  const imports = site.getConfig().getImports();
+  const siteConfig = site.getConfig();
+  const imports = siteConfig?.getImports() || [];
+  log.info(`Site config exists: ${!!siteConfig}, imports count: ${imports.length}`);
   if (!isImportEnabled(IMPORT_ORGANIC_KEYWORDS, imports)) {
     log.info(`Enabling ${IMPORT_ORGANIC_KEYWORDS} for site ${site.getId()}`);
     await toggleImport(site, IMPORT_ORGANIC_KEYWORDS, true, log);

@@ -119,7 +119,6 @@ export function buildCdnPaths(bucketName, cdnProvider, timeParts, isLegacy = fal
 
   if (!isLegacy) {
     return {
-      rawLogsPrefix: `raw/${cdnProvider}/${year}/${month}/${day}/${hour}/`,
       rawLocation: `s3://${bucketName}/raw/${cdnProvider}/`,
       aggregatedOutput: `s3://${bucketName}/aggregated/${year}/${month}/${day}/${hour}/`,
       tempLocation: `s3://${bucketName}/temp/athena-results/`,
@@ -127,7 +126,6 @@ export function buildCdnPaths(bucketName, cdnProvider, timeParts, isLegacy = fal
   } else {
     // Legacy structure: cdn-logs-domain/raw/2025/01/01/00/
     return {
-      rawLogsPrefix: `raw/${year}/${month}/${day}/${hour}/`,
       rawLocation: `s3://${bucketName}/raw/`,
       aggregatedOutput: `s3://${bucketName}/aggregated/${year}/${month}/${day}/${hour}/`,
       tempLocation: `s3://${bucketName}/temp/athena-results/`,

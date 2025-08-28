@@ -15,7 +15,7 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import nock from 'nock';
-import { isPreviewPage, getCountryCodeFromLang } from '../../src/utils/url-utils.js';
+import { isPreviewPage, getCountryCodeFromLang, parseCustomUrls } from '../../src/utils/url-utils.js';
 import * as utils from '../../src/utils/url-utils.js';
 
 describe('isPreviewPage', () => {
@@ -42,6 +42,105 @@ describe('isPreviewPage', () => {
   it('should return the default country if the language code is not present', () => {
     expect(getCountryCodeFromLang(null)).to.equal('us');
     expect(getCountryCodeFromLang(undefined)).to.equal('us');
+  });
+});
+
+describe('parseCustomUrls Function', () => {
+  it('should return null for empty or invalid input', () => {
+    expect(parseCustomUrls(null)).to.be.null;
+    expect(parseCustomUrls(undefined)).to.be.null;
+    expect(parseCustomUrls('')).to.be.null;
+    expect(parseCustomUrls('   ')).to.be.null;
+    expect(parseCustomUrls(123)).to.be.null;
+    expect(parseCustomUrls([])).to.be.null;
+  });
+
+  it('should handle single URL', () => {
+    const result = parseCustomUrls('https://example.com/page1');
+    expect(result).to.deep.equal(['https://example.com/page1']);
+  });
+
+  it('should handle comma-separated URLs', () => {
+    const result = parseCustomUrls('https://example.com/page1,https://example.com/page2,https://example.com/page3');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+      'https://example.com/page3',
+    ]);
+  });
+
+  it('should trim whitespace from URLs', () => {
+    const result = parseCustomUrls(' https://example.com/page1 ,  https://example.com/page2  ');
+    expect(result).to.deep.equal(['https://example.com/page1', 'https://example.com/page2']);
+  });
+
+  it('should remove duplicates', () => {
+    const result = parseCustomUrls('https://example.com/page1,https://example.com/page1,https://example.com/page2');
+    expect(result).to.deep.equal(['https://example.com/page1', 'https://example.com/page2']);
+  });
+
+  it('should handle empty entries in comma-separated values', () => {
+    const result = parseCustomUrls('https://example.com/page1,,https://example.com/page2, ,https://example.com/page3');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+      'https://example.com/page3',
+    ]);
+  });
+
+  it('should handle URLs with query parameters', () => {
+    const result = parseCustomUrls('https://example.com/page1?param=value,https://example.com/page2?a=1&b=2');
+    expect(result).to.deep.equal([
+      'https://example.com/page1?param=value',
+      'https://example.com/page2?a=1&b=2',
+    ]);
+  });
+
+  it('should handle URLs with fragments', () => {
+    const result = parseCustomUrls('https://example.com/page1#section,https://example.com/page2#top');
+    expect(result).to.deep.equal([
+      'https://example.com/page1#section',
+      'https://example.com/page2#top',
+    ]);
+  });
+
+  it('should handle mixed URL formats', () => {
+    const result = parseCustomUrls('https://example.com/page1,http://other.com/page2,https://third.com/page3');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'http://other.com/page2',
+      'https://third.com/page3',
+    ]);
+  });
+
+  it('should return null for string with only empty values', () => {
+    const result = parseCustomUrls(',,, ,  ,');
+    expect(result).to.be.null;
+  });
+
+  it('should remove angle brackets from URLs', () => {
+    const result = parseCustomUrls('<https://example.com/page1>,<https://example.com/page2>');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+    ]);
+  });
+
+  it('should handle mixed URLs with and without angle brackets', () => {
+    const result = parseCustomUrls('<https://example.com/page1>,https://example.com/page2,<https://example.com/page3>');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+      'https://example.com/page3',
+    ]);
+  });
+
+  it('should handle angle brackets with whitespace', () => {
+    const result = parseCustomUrls(' < https://example.com/page1 > ,  <https://example.com/page2>  ');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+    ]);
   });
 });
 

@@ -17,34 +17,110 @@ import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
 /**
- * Maps Mystique alt-text suggestions to the same format used in opportunityHandler.js
+ * Maps Mystique alt-text suggestions to suggestion DTO format
  * @param {Array} mystiquesuggestions - Array of suggestions from Mystique
- * @returns {Array} Array of suggestions in the same format as opportunityHandler
+ * @param {string} opportunityId - The opportunity ID to associate suggestions with
+ * @returns {Array} Array of suggestion DTOs ready for addition
  */
-function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
+function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunityId) {
   return mystiquesuggestions.map((suggestion) => {
     const suggestionId = `${suggestion.pageUrl}/${suggestion.imageId}`;
 
     return {
-      id: suggestionId,
-      pageUrl: suggestion.pageUrl,
-      imageUrl: suggestion.imageUrl,
-      altText: suggestion.altText,
-      isAppropriate: suggestion.isAppropriate,
-      isDecorative: suggestion.isDecorative,
-      xpath: suggestion.xpath,
-      language: suggestion.language,
+      opportunityId,
+      type: SuggestionModel.TYPES.CONTENT_UPDATE,
+      data: {
+        recommendations: [{
+          id: suggestionId,
+          pageUrl: suggestion.pageUrl,
+          imageUrl: suggestion.imageUrl,
+          altText: suggestion.altText,
+          isAppropriate: suggestion.isAppropriate,
+          isDecorative: suggestion.isDecorative,
+          xpath: suggestion.xpath,
+          language: suggestion.language,
+        }],
+      },
+      rank: 1,
     };
   });
 }
 
+/**
+ * Clears existing suggestions for specific pages and calculates their metrics for removal
+ * @param {Object} opportunity - The opportunity object
+ * @param {Array} pageUrls - Array of page URLs to clear suggestions for
+ * @param {string} auditUrl - Base audit URL
+ * @param {Object} context - Context object
+ * @param {Object} Suggestion - Suggestion model from dataAccess
+ * @param {Object} log - Logger
+ * @returns {Promise<Object>} Metrics for removed suggestions
+ */
+async function clearSuggestionsForPagesAndCalculateMetrics(
+  opportunity,
+  pageUrls,
+  auditUrl,
+  context,
+  Suggestion,
+  log,
+) {
+  const existingSuggestions = await opportunity.getSuggestions();
+  const pageUrlSet = new Set(pageUrls);
+
+  // Find suggestions to remove for these pages
+  const suggestionsToRemove = existingSuggestions.filter((suggestion) => {
+    const pageUrl = suggestion.getData()?.recommendations?.[0]?.pageUrl;
+    return pageUrl && pageUrlSet.has(pageUrl);
+  }).filter((suggestion) => {
+    const IGNORED_STATUSES = ['SKIPPED', 'FIXED', 'OUTDATED'];
+    return !IGNORED_STATUSES.includes(suggestion.getStatus());
+  });
+
+  // Extract images from suggestions being removed
+  const removedImages = suggestionsToRemove.map((suggestion) => {
+    const rec = suggestion.getData()?.recommendations?.[0];
+    return {
+      pageUrl: rec?.pageUrl,
+      src: rec?.imageUrl,
+    };
+  }).filter((img) => img.pageUrl);
+
+  // Calculate metrics for removed suggestions using getProjectedMetrics
+  const removedMetrics = removedImages.length > 0
+    ? await getProjectedMetrics({
+      images: removedImages,
+      auditUrl,
+      context,
+      log,
+    })
+    : { projectedTrafficLost: 0, projectedTrafficValue: 0 };
+
+  // Calculate decorative count separately
+  const removedDecorativeCount = suggestionsToRemove
+    .map((s) => s.getData()?.recommendations?.[0]?.isDecorative)
+    .filter((isDecorative) => isDecorative === true).length;
+
+  // Mark suggestions as OUTDATED
+  if (suggestionsToRemove.length > 0) {
+    await Suggestion.bulkUpdateStatus(suggestionsToRemove, SuggestionModel.STATUSES.OUTDATED);
+    log.info(`[${AUDIT_TYPE}]: Marked ${suggestionsToRemove.length} suggestions as OUTDATED for ${pageUrls.length} pages`);
+  }
+
+  return {
+    ...removedMetrics,
+    decorativeImagesCount: removedDecorativeCount,
+  };
+}
+
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Opportunity, Site, Audit } = dataAccess;
+  const {
+    Opportunity, Site, Audit, Suggestion,
+  } = dataAccess;
   const {
     auditId, siteId, data, id: messageId,
   } = message;
-  const { suggestions } = data || {};
+  const { suggestions, pageUrls } = data || {};
 
   log.info(`[${AUDIT_TYPE}]: Received Mystique guidance for alt-text: ${JSON.stringify(message, null, 2)}`);
 
@@ -81,67 +157,81 @@ export default async function handler(message, context) {
   if (processedSuggestionIds.has(messageId)) {
     log.info(`[${AUDIT_TYPE}]: Suggestions with id ${messageId} already processed. Skipping processing.`);
     return ok();
-  } else {
-    processedSuggestionIds.add(messageId);
   }
 
-  // Map Mystique suggestions
-  const mappedSuggestions = mapMystiqueSuggestionsToOpportunityFormat(suggestions || []);
+  // Process the Mystique response
+  if (pageUrls && Array.isArray(pageUrls) && pageUrls.length > 0) {
+    // Clear existing suggestions for the processed pages and calculate their metrics
+    const removedMetrics = await clearSuggestionsForPagesAndCalculateMetrics(
+      altTextOppty,
+      pageUrls,
+      auditUrl,
+      context,
+      Suggestion,
+      log,
+    );
 
-  // Calculate projected metrics based on Mystique suggestions
-  const batchProjectedMetrics = await getProjectedMetrics({
-    images: mappedSuggestions.map((suggestion) => ({
-      pageUrl: suggestion.pageUrl,
-      src: suggestion.imageUrl,
-    })),
-    auditUrl,
-    context,
-    log,
-  });
+    let newMetrics = {
+      projectedTrafficLost: 0,
+      projectedTrafficValue: 0,
+      decorativeImagesCount: 0,
+    };
 
-  const batchDecorativeImagesCount = mappedSuggestions.filter((
-    suggestion,
-  ) => suggestion.isDecorative === true).length;
+    if (suggestions && suggestions.length > 0) {
+      const mappedSuggestions = mapMystiqueSuggestionsToSuggestionDTOs(
+        suggestions,
+        altTextOppty.getId(),
+      );
+      await addAltTextSuggestions({
+        opportunity: altTextOppty,
+        newSuggestionDTOs: mappedSuggestions,
+        log,
+      });
 
-  // Accumulate metrics with existing data
-  const updatedOpportunityData = {
-    projectedTrafficLost: (existingData.projectedTrafficLost || 0)
-    + batchProjectedMetrics.projectedTrafficLost,
-    projectedTrafficValue: (existingData.projectedTrafficValue || 0)
-    + batchProjectedMetrics.projectedTrafficValue,
-    decorativeImagesCount: (existingData.decorativeImagesCount || 0) + batchDecorativeImagesCount,
-    dataSources: existingData.dataSources,
-    mystiqueResponsesReceived: (existingData.mystiqueResponsesReceived || 0) + 1,
-    mystiqueResponsesExpected: existingData.mystiqueResponsesExpected || 0,
-    processedSuggestionIds: [...processedSuggestionIds],
-  };
-  log.info(`[${AUDIT_TYPE}]: Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
+      // Calculate metrics for new suggestions using getProjectedMetrics
+      const newImages = suggestions.map((suggestion) => ({
+        pageUrl: suggestion.pageUrl,
+        src: suggestion.imageUrl,
+      }));
+      newMetrics = await getProjectedMetrics({
+        images: newImages,
+        auditUrl,
+        context,
+        log,
+      });
 
-  // Update opportunity with accumulated metrics
-  try {
+      // Calculate decorative count separately
+      const newDecorativeCount = suggestions.filter((s) => s.isDecorative === true).length;
+      newMetrics.decorativeImagesCount = newDecorativeCount;
+
+      log.info(`[${AUDIT_TYPE}]: Added ${suggestions.length} new suggestions for ${pageUrls.length} processed pages`);
+    } else {
+      log.info(`[${AUDIT_TYPE}]: No new suggestions for ${pageUrls.length} processed pages`);
+    }
+
+    // Update opportunity data: subtract removed metrics, add new metrics
+    const updatedOpportunityData = {
+      ...existingData,
+      projectedTrafficLost: Math.max(0, (existingData.projectedTrafficLost || 0)
+      - removedMetrics.projectedTrafficLost + newMetrics.projectedTrafficLost),
+      projectedTrafficValue: Math.max(0, (existingData.projectedTrafficValue || 0)
+      - removedMetrics.projectedTrafficValue + newMetrics.projectedTrafficValue),
+      decorativeImagesCount: Math.max(
+        0,
+        (existingData.decorativeImagesCount || 0)
+        - removedMetrics.decorativeImagesCount + newMetrics.decorativeImagesCount,
+      ),
+      mystiqueResponsesReceived: (existingData.mystiqueResponsesReceived || 0) + 1,
+      processedSuggestionIds: [...processedSuggestionIds, messageId],
+    };
+
     altTextOppty.setAuditId(auditId);
     altTextOppty.setData(updatedOpportunityData);
     altTextOppty.setUpdatedBy('system');
     await altTextOppty.save();
-    log.info(`[${AUDIT_TYPE}]: Updated opportunity with accumulated metrics`);
-  } catch (e) {
-    log.error(`[${AUDIT_TYPE}]: Updating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
-    throw new Error(`[${AUDIT_TYPE}]: Failed to update opportunity for siteId ${siteId}: ${e.message}`);
-  }
 
-  // Process suggestions from Mystique
-  if (suggestions && suggestions.length > 0) {
-    await addAltTextSuggestions({
-      opportunity: altTextOppty,
-      newSuggestionDTOs: mappedSuggestions.map((suggestion) => ({
-        opportunityId: altTextOppty.getId(),
-        type: SuggestionModel.TYPES.CONTENT_UPDATE,
-        data: { recommendations: [suggestion] },
-        rank: 1,
-      })),
-      log,
-    });
-
+    log.info(`[${AUDIT_TYPE}]: 
+      Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
     log.info(`[${AUDIT_TYPE}]: Successfully processed ${suggestions.length} suggestions from Mystique for siteId: ${siteId}`);
   } else {
     log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);

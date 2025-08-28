@@ -165,7 +165,6 @@ describe('CDN Utils', () => {
       const paths = buildCdnPaths('test-bucket', 'fastly', timeParts, false);
 
       expect(paths).to.deep.equal({
-        rawLogsPrefix: 'raw/fastly/2025/01/15/10/',
         rawLocation: 's3://test-bucket/raw/fastly/',
         aggregatedOutput: 's3://test-bucket/aggregated/2025/01/15/10/',
         tempLocation: 's3://test-bucket/temp/athena-results/',
@@ -176,7 +175,6 @@ describe('CDN Utils', () => {
       const paths = buildCdnPaths('test-bucket', 'akamai', timeParts, true);
 
       expect(paths).to.deep.equal({
-        rawLogsPrefix: 'raw/2025/01/15/10/',
         rawLocation: 's3://test-bucket/raw/',
         aggregatedOutput: 's3://test-bucket/aggregated/2025/01/15/10/',
         tempLocation: 's3://test-bucket/temp/athena-results/',
