@@ -1,3 +1,16 @@
+# [1.164.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.163.2...v1.164.0) (2025-08-28)
+
+
+### Bug Fixes
+
+* audit id error for structured data suggestions ([#1182](https://github.com/adobe/spacecat-audit-worker/issues/1182)) ([262e535](https://github.com/adobe/spacecat-audit-worker/commit/262e53547ea35d8121210338ddfbb580694a9f03))
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.17.0 ([#1185](https://github.com/adobe/spacecat-audit-worker/issues/1185)) ([962dadb](https://github.com/adobe/spacecat-audit-worker/commit/962dadb19a47ecb98245a5477aa951695a0d343c))
+
+
+### Features
+
+* implement scrapeClient for audit steps ([#1118](https://github.com/adobe/spacecat-audit-worker/issues/1118)) ([9562240](https://github.com/adobe/spacecat-audit-worker/commit/956224004a10a695f922efaa3f3725ff81c5fdee))
+
 ## [1.163.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.163.1...v1.163.2) (2025-08-28)
 
 
