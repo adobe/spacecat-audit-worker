@@ -1086,7 +1086,7 @@ This is an error description
 
       expect(result).to.be.false;
       expect(context.log.warn).to.be.calledWith('SDA: Suppressing issue', suppressionMessage);
-      expect(flag.shouldLogSuppression).to.be.false;
+      expect(flag.logSuppressionMessage).to.be.false;
     });
   });
 });
