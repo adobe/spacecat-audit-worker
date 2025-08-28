@@ -1075,7 +1075,7 @@ This is an error description
       expect(result).to.be.true;
     });
 
-    it('logs once and flips the shouldLogSuppression flag', () => {
+    it('logs once and flips the logSuppressionMessage flag', () => {
       context.site.getDeliveryType = sinon.stub().returns(Site.DELIVERY_TYPES.AEM_CS);
       const issue = {
         severity: 'ERROR',
