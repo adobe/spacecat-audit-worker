@@ -48,7 +48,7 @@ describe('Paid-Traffic Analysis Cache Warmer', () => {
     mockEnv = {
       RUM_METRICS_DATABASE: 'rum_db',
       RUM_METRICS_COMPACT_TABLE: 'compact_table',
-      S3_BUCKET_NAME: 'test-bucket',
+      S3_IMPORTER_BUCKET_NAME: 'test-bucket',
       PAID_DATA_THRESHOLD: '2000',
       CWV_THRESHOLDS: '{"lcp": 2500, "cls": 0.1}',
       MAX_CONCURRENT_REQUESTS: '3',
@@ -198,7 +198,7 @@ describe('Paid-Traffic Analysis Cache Warmer', () => {
       });
 
       const envWithOnlyBucket = {
-        S3_BUCKET_NAME: 'test-bucket',
+        S3_IMPORTER_BUCKET_NAME: 'test-bucket',
       };
 
       await warmCacheForSite(
@@ -255,7 +255,7 @@ describe('Paid-Traffic Analysis Cache Warmer', () => {
     it('should throw error when bucket name is missing', async () => {
       const envWithoutBucket = {
         ...mockEnv,
-        S3_BUCKET_NAME: '', // Empty string to ensure both undefined and empty are tested
+        S3_IMPORTER_BUCKET_NAME: '', // Empty string to ensure both undefined and empty are tested
       };
 
       await expect(
@@ -266,18 +266,18 @@ describe('Paid-Traffic Analysis Cache Warmer', () => {
           mockSite,
           { yearInt: 2025, weekInt: 2, monthInt: 0 },
         ),
-      ).to.be.rejectedWith('S3_BUCKET_NAME must be provided for caching');
+      ).to.be.rejectedWith('S3_IMPORTER_BUCKET_NAME must be provided for caching');
 
       // Also test with undefined
       await expect(
         warmCacheForSite(
           mockContext,
           mockLog,
-          { ...mockEnv, S3_BUCKET_NAME: undefined },
+          { ...mockEnv, S3_IMPORTER_BUCKET_NAME: undefined },
           mockSite,
           { yearInt: 2025, weekInt: 2, monthInt: 0 },
         ),
-      ).to.be.rejectedWith('S3_BUCKET_NAME must be provided for caching');
+      ).to.be.rejectedWith('S3_IMPORTER_BUCKET_NAME must be provided for caching');
 
       expect(mockAthenaQuery).not.to.have.been.called;
     });
