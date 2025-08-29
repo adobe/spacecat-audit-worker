@@ -86,7 +86,7 @@ describe('Paid Traffic Analysis Handler', () => {
           QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
           RUM_METRICS_DATABASE: 'rum_db',
           RUM_METRICS_COMPACT_TABLE: 'compact_table',
-          S3_BUCKET_NAME: 'test-bucket',
+          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
           PAID_DATA_THRESHOLD: 2000,
           MAX_CONCURRENT_REQUESTS: 5,
         },

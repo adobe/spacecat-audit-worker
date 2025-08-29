@@ -56,14 +56,14 @@ function getConfig(env) {
   const {
     RUM_METRICS_DATABASE: rumMetricsDatabase,
     RUM_METRICS_COMPACT_TABLE: rumMetricsCompactTable,
-    S3_BUCKET_NAME: bucketName,
+    S3_IMPORTER_BUCKET_NAME: bucketName,
     PAID_DATA_THRESHOLD: paidDataThreshold,
     CWV_THRESHOLDS: cwvThresholds,
     MAX_CONCURRENT_REQUESTS: maxConcurrentRequests,
   } = env;
 
   if (!bucketName) {
-    throw new Error('S3_BUCKET_NAME must be provided for caching');
+    throw new Error('S3_IMPORTER_BUCKET_NAME must be provided for caching');
   }
 
   const concurrentLimit = maxConcurrentRequests ?? 5;
