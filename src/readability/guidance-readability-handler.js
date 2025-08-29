@@ -11,7 +11,7 @@
  */
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { AsyncJob as AsyncJobEntity, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { addReadabilitySuggestions } from './opportunity-handler.js';
 
 /**
@@ -260,12 +260,11 @@ export default async function handler(message, context) {
                       suggestionMessage: 'AI-powered readability improvement '
                         + 'generated successfully.',
                       // originalText: recommendation.originalText,
-                      improvedText: recommendation.improvedText,
                       // originalFleschScore: opportunity.fleschReadingEase,
                       improvedFleschScore: recommendation.improvedFleschScore,
                       readabilityImprovement: recommendation.improvedFleschScore
                         - (recommendation.originalFleschScore || opportunity.fleschReadingEase),
-                      aiSuggestion: recommendation.seoRecommendation,
+                      aiSuggestion: recommendation.improvedText,
                       aiRationale: recommendation.aiRationale,
                       mystiqueProcessingCompleted: new Date().toISOString(),
                     };
@@ -292,7 +291,7 @@ export default async function handler(message, context) {
 
         // Update AsyncJob with completed results
         asyncJob.setResult(updatedResult);
-        asyncJob.setStatus('COMPLETED');
+        asyncJob.setStatus(AsyncJobEntity.Status.COMPLETED);
         asyncJob.setEndedAt(new Date().toISOString());
         await asyncJob.save();
 
