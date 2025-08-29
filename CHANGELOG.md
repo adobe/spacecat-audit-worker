@@ -1,3 +1,11 @@
+## [1.165.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.165.1...v1.165.2) (2025-08-29)
+
+
+### Bug Fixes
+
+* revert metatags audit scrape jobs due to preflight regression ([#1196](https://github.com/adobe/spacecat-audit-worker/issues/1196)) ([3ac720a](https://github.com/adobe/spacecat-audit-worker/commit/3ac720a7287b3f13290d338dfd62b0a1da3d09ae))
+* use correct bucket env ([#1197](https://github.com/adobe/spacecat-audit-worker/issues/1197)) ([acf7ab4](https://github.com/adobe/spacecat-audit-worker/commit/acf7ab4cf1c5e344f0769988f24394ff9a764362))
+
 ## [1.165.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.165.0...v1.165.1) (2025-08-29)
 
 
