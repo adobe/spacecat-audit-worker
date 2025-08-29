@@ -13,7 +13,6 @@ import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { sendAltTextOpportunityToMystique, chunkArray, cleanupOutdatedSuggestions } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
-import { checkGoogleConnection } from '../common/opportunity-utils.js';
 import { MYSTIQUE_BATCH_SIZE } from './constants.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -42,7 +41,6 @@ export async function processAltTextWithMystique(context) {
   try {
     const { Opportunity } = dataAccess;
     const siteId = site.getId();
-    const auditUrl = site.getBaseURL();
 
     // Get top pages and included URLs
     const { SiteTopPage } = dataAccess;
@@ -112,12 +110,6 @@ export async function processAltTextWithMystique(context) {
         },
         tags: ['seo', 'accessibility'],
       };
-
-      const isGoogleConnected = await checkGoogleConnection(auditUrl, context);
-      if (!isGoogleConnected) {
-        opportunityDTO.data.dataSources = opportunityDTO.data.dataSources
-          .filter((source) => source !== DATA_SOURCES.GSC);
-      }
 
       altTextOppty = await Opportunity.create(opportunityDTO);
       log.info(`[${AUDIT_TYPE}]: Created new opportunity with ID ${altTextOppty.getId()}`);
