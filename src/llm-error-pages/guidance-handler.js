@@ -15,7 +15,7 @@ import ExcelJS from 'exceljs';
 import {
   createLLMOSharepointClient, publishToAdminHlx, readFromSharePoint, uploadToSharePoint,
 } from '../utils/report-uploader.js';
-import { generateReportingPeriods, getS3Config } from './utils.js';
+import { generateReportingPeriods, getS3Config, toPathOnly } from './utils.js';
 
 /**
  * Handles Mystique responses for LLM error pages and updates suggestions with AI data
@@ -58,14 +58,7 @@ export default async function handler(message, context) {
     await workbook.xlsx.load(existingBuffer);
     const sheet = workbook.worksheets[0] || workbook.addWorksheet('data');
 
-    const toPathOnly = (maybeUrl) => {
-      try {
-        const parsed = new URL(maybeUrl, site.getBaseURL?.() || 'https://example.com');
-        return parsed.pathname + (parsed.search || '');
-      } catch {
-        return maybeUrl;
-      }
-    };
+    const baseUrl = site.getBaseURL?.() || 'https://example.com';
 
     // Create a map of broken URLs for quick lookup
     const brokenUrlsMap = new Map();
@@ -73,7 +66,7 @@ export default async function handler(message, context) {
       const {
         suggestedUrls, aiRationale, urlFrom, urlTo,
       } = brokenLink;
-      const keyUrl = toPathOnly(urlTo);
+      const keyUrl = toPathOnly(urlTo, baseUrl);
       brokenUrlsMap.set(keyUrl, {
         userAgents: urlFrom,
         suggestedUrls: suggestedUrls || [],
@@ -86,7 +79,7 @@ export default async function handler(message, context) {
       const urlCell = sheet.getCell(i, 2).value?.toString?.() || '';
       const userAgentCell = sheet.getCell(i, 1).value?.toString?.() || '';
       if (urlCell) {
-        const pathOnlyUrl = toPathOnly(urlCell);
+        const pathOnlyUrl = toPathOnly(urlCell, baseUrl);
 
         // Look up the URL in brokenUrls and update if found
         const brokenUrlData = brokenUrlsMap.get(pathOnlyUrl);

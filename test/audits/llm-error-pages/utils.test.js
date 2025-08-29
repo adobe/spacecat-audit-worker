@@ -33,6 +33,7 @@ import {
   categorizeErrorsByStatusCode,
   consolidateErrorsByUrl,
   sortErrorsByTrafficVolume,
+  toPathOnly,
 } from '../../../src/llm-error-pages/utils.js';
 
 use(sinonChai);
@@ -791,6 +792,34 @@ describe('LLM Error Pages Utils', () => {
     it('should handle empty array', () => {
       const result = sortErrorsByTrafficVolume([]);
       expect(result).to.have.length(0);
+    });
+  });
+
+  // ============================================================================
+  // URL HELPERS TESTS
+  // ============================================================================
+
+  describe('toPathOnly', () => {
+    it('returns path + query from absolute URL', () => {
+      const result = toPathOnly('https://example.com/path/to/page?x=1&y=2');
+      expect(result).to.equal('/path/to/page?x=1&y=2');
+    });
+
+    it('returns same string when already a path', () => {
+      const result = toPathOnly('/just/a/path');
+      expect(result).to.equal('/just/a/path');
+    });
+
+    it('resolves relative path against provided baseUrl', () => {
+      const result = toPathOnly('relative/page?foo=bar', 'https://base.example');
+      expect(result).to.equal('/relative/page?foo=bar');
+    });
+
+    it('handles invalid URL-like strings safely', () => {
+      const invalid = '://not-a-valid-url';
+      const result = toPathOnly(invalid);
+      // With base fallback, this is treated as a path
+      expect(result).to.equal('/://not-a-valid-url');
     });
   });
 });
