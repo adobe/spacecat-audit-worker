@@ -1,3 +1,10 @@
+## [1.165.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.165.0...v1.165.1) (2025-08-29)
+
+
+### Bug Fixes
+
+* genvar throws in preflight when not generating suggestions ([#1194](https://github.com/adobe/spacecat-audit-worker/issues/1194)) ([fc927eb](https://github.com/adobe/spacecat-audit-worker/commit/fc927eb3621c1ab65a2bf23fc37ae44ce436909a))
+
 # [1.165.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.164.2...v1.165.0) (2025-08-29)
 
 
