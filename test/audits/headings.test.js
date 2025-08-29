@@ -690,9 +690,10 @@ describe('Headings Audit', () => {
 
     nock('https://example.com')
       .get('/a')
-      .reply(200, '<h1>Title</h1><h2>Section</h2>');
+      .reply(200, '<h1>Title</h1><p>Content</p><h2>Section</h2><p>More content</p>');
 
     const result = await headingsAuditRunner(baseURL, context, site);
+    // This should now work since we have proper content between headings
     expect(result.auditResult.status).to.equal('success');
   });
 
@@ -741,7 +742,7 @@ describe('Headings Audit', () => {
     // Mock one successful response and one failure
     nock('https://example.com')
       .get('/good')
-      .reply(200, '<h1>Title</h1><h2>Section</h2>')
+      .reply(200, '<h1>Title</h1><p>Content</p><h2>Section</h2><p>More content</p>')
       .get('/bad')
       .replyWithError('Network error');
 
@@ -1135,7 +1136,7 @@ describe('Headings Audit', () => {
     expect(result.fullAuditRef).to.equal(baseURL);
 
     expect(logSpy.info).to.have.been.calledWith(
-      sinon.match(/Found 3 issues across 2 check types/),
+      sinon.match(/Found 6 issues across 3 check types/),
     );
   });
 
@@ -1253,7 +1254,7 @@ describe('Headings Audit', () => {
 
     nock('https://example.com')
       .get('/error-page')
-      .reply(500, 'Internal Server Error');
+      .replyWithError('Network error'); // This will cause validatePageHeadings to return empty checks
 
     const result = await headingsAuditRunner(baseURL, context, site);
 
@@ -1289,8 +1290,11 @@ describe('Headings Audit', () => {
     expect(result.auditResult).to.have.property(HEADINGS_CHECKS.HEADING_EMPTY.check);
     expect(result.auditResult).to.not.have.property('status');
 
+    // The HTML '<h1>Title</h1><h2></h2>' triggers 2 issues:
+    // 1. Empty heading (h2)
+    // 2. No content between h1 and h2
     expect(logSpy.info).to.have.been.calledWith(
-      sinon.match(/Found 1 issues across 1 check types/),
+      sinon.match(/Found 2 issues across 2 check types/),
     );
   });
 });
