@@ -17,7 +17,6 @@ import sinonChai from 'sinon-chai';
 import {
   CDN_TYPES,
   extractCustomerDomain,
-  generateBucketName,
   resolveCdnBucketName,
   buildCdnPaths,
   getBucketInfo,
@@ -42,6 +41,8 @@ describe('CDN Utils', () => {
       expect(CDN_TYPES).to.deep.equal({
         AKAMAI: 'akamai',
         FASTLY: 'fastly',
+        CLOUDFLARE: 'cloudflare',
+        CLOUDFRONT: 'cloudfront',
       });
     });
   });
@@ -60,16 +61,6 @@ describe('CDN Utils', () => {
     it('sanitizes special characters', () => {
       const site = { getBaseURL: () => 'https://test-site.example.com' };
       expect(extractCustomerDomain(site)).to.equal('test_site_example_com');
-    });
-  });
-
-  describe('generateBucketName', () => {
-    it('generates consistent bucket name from org ID', () => {
-      const orgId = 'test-org-id';
-      const bucketName = generateBucketName(orgId);
-
-      expect(bucketName).to.match(/^cdn-logs-[a-f0-9]{16}$/);
-      expect(generateBucketName(orgId)).to.equal(bucketName);
     });
   });
 
@@ -161,22 +152,22 @@ describe('CDN Utils', () => {
       year: '2025', month: '01', day: '15', hour: '10',
     };
 
-    it('builds new structure paths correctly', () => {
-      const paths = buildCdnPaths('test-bucket', 'fastly', timeParts, false);
+    it('builds standardized Adobe bucket paths with IMS org correctly', () => {
+      const paths = buildCdnPaths('cdn-logs-adobe-prod', 'fastly', timeParts, 'ims-org-123');
 
       expect(paths).to.deep.equal({
-        rawLocation: 's3://test-bucket/raw/fastly/',
-        aggregatedOutput: 's3://test-bucket/aggregated/2025/01/15/10/',
-        aggregatedReferralOutput: 's3://test-bucket/aggregated-referral/2025/01/15/10/',
-        tempLocation: 's3://test-bucket/temp/athena-results/',
+        rawLocation: 's3://cdn-logs-adobe-prod/ims-org-123/raw/fastly/',
+        aggregatedOutput: 's3://cdn-logs-adobe-prod/ims-org-123/aggregated/2025/01/15/10/',
+        aggregatedReferralOutput: 's3://cdn-logs-adobe-prod/ims-org-123/aggregated-referral/2025/01/15/10/',
+        tempLocation: 's3://cdn-logs-adobe-prod/temp/athena-results/',
       });
     });
 
-    it('builds legacy structure paths correctly', () => {
-      const paths = buildCdnPaths('test-bucket', 'akamai', timeParts, true);
+    it('builds legacy bucket paths with service provider correctly', () => {
+      const paths = buildCdnPaths('test-bucket', 'fastly', timeParts);
 
       expect(paths).to.deep.equal({
-        rawLocation: 's3://test-bucket/raw/',
+        rawLocation: 's3://test-bucket/raw/fastly/',
         aggregatedOutput: 's3://test-bucket/aggregated/2025/01/15/10/',
         aggregatedReferralOutput: 's3://test-bucket/aggregated-referral/2025/01/15/10/',
         tempLocation: 's3://test-bucket/temp/athena-results/',

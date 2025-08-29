@@ -19,7 +19,37 @@ import { hasText } from '@adobe/spacecat-shared-utils';
 export const CDN_TYPES = {
   AKAMAI: 'akamai',
   FASTLY: 'fastly',
+  CLOUDFLARE: 'cloudflare',
+  CLOUDFRONT: 'cloudfront',
 };
+
+export const SERVICE_PROVIDER_TYPES = {
+  AEM_CS_FASTLY: 'aem-cs-fastly',
+  COMMERCE_FASTLY: 'commerce-fastly',
+  BYOCDN_FASTLY: 'byocdn-fastly',
+  BYOCDN_AKAMAI: 'byocdn-akamai',
+  BYOCDN_CLOUDFLARE: 'byocdn-cloudflare',
+  BYOCDN_CLOUDFRONT: 'byocdn-cloudfront',
+};
+
+// Maps service providers to underlying CDN providers
+export const SERVICE_TO_CDN_MAPPING = {
+  [SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY]: CDN_TYPES.FASTLY,
+  [SERVICE_PROVIDER_TYPES.COMMERCE_FASTLY]: CDN_TYPES.FASTLY,
+  [SERVICE_PROVIDER_TYPES.BYOCDN_FASTLY]: CDN_TYPES.FASTLY,
+  [SERVICE_PROVIDER_TYPES.BYOCDN_AKAMAI]: CDN_TYPES.AKAMAI,
+  [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFLARE]: CDN_TYPES.CLOUDFLARE,
+  [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
+};
+
+/**
+ * Maps service provider to CDN provider for SQL purposes
+ * @param {string} serviceProvider - Service provider name
+ * @returns {string} CDN provider name
+ */
+export function mapServiceToCdnProvider(serviceProvider) {
+  return SERVICE_TO_CDN_MAPPING[serviceProvider] || serviceProvider;
+}
 
 /**
  * Extracts and sanitizes customer domain from site
@@ -40,17 +70,51 @@ export function generateBucketName(orgId) {
 }
 
 /**
+ * Generates new standardized bucket name based on environment
+ */
+export function generateStandardBucketName(env = 'prod') {
+  return `cdn-logs-adobe-${env}`;
+}
+
+/**
+ * Validates if a bucket name is a standard Adobe CDN bucket for allowed environments
+ * @param {string} bucketName - The bucket name to validate
+ * @returns {boolean} True if it's a valid Adobe CDN bucket for prod/dev/stage
+ */
+export function isStandardAdobeCdnBucket(bucketName) {
+  const allowedEnvironments = ['prod', 'dev', 'stage'];
+  return allowedEnvironments.some((env) => bucketName === `cdn-logs-adobe-${env}`);
+}
+
+/**
  * Resolves bucket name for a site - handles both legacy and new buckets
  */
 export async function resolveCdnBucketName(site, context) {
-  const { s3Client, dataAccess, log } = context;
+  const {
+    s3Client, dataAccess, log, env,
+  } = context;
 
+  // If the bucket name is configured, use it
   const { bucketName } = site.getConfig().getCdnLogsConfig() || {};
   if (bucketName) {
     await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
     return bucketName;
   }
 
+  // Try standardized environment-based bucket first (if env is available)
+  if (env?.AWS_ENV) {
+    const environment = env.AWS_ENV;
+    const standardBucket = generateStandardBucketName(environment);
+    try {
+      await s3Client.send(new HeadBucketCommand({ Bucket: standardBucket }));
+      log.info(`Using standardized bucket: ${standardBucket}`);
+      return standardBucket;
+    } catch (error) {
+      log.info(`Standardized bucket ${standardBucket} not found, trying legacy approach`, error);
+    }
+  }
+
+  // Fall back to IMS org-based bucket generation
   try {
     const organizationId = site.getOrganizationId();
     const { Organization } = dataAccess;
@@ -106,39 +170,39 @@ export async function determineCdnProvider(s3, bucket, prefix) {
 }
 
 /**
- * Builds CDN path structure - supports both legacy and new format
+ * Builds CDN path structure - supports legacy and new format
  * @param {string} bucketName - S3 bucket name
- * @param {string} cdnProvider - CDN provider (akamai/fastly)
+ * @param {string} serviceProvider - service provider
  * @param {Object} timeParts - Time parts {year, month, day, hour}
- * @param {boolean} isLegacy - Whether to use new structure with CDN provider folders
+ * @param {string} imsOrgId - IMS Organization ID (for new structure)
  */
-export function buildCdnPaths(bucketName, cdnProvider, timeParts, isLegacy = false) {
+export function buildCdnPaths(bucketName, serviceProvider, timeParts, imsOrgId = null) {
   const {
     year, month, day, hour,
   } = timeParts;
 
-  if (!isLegacy) {
+  // New standardized bucket structure: cdn-logs-adobe-{env}/{imsOrgId}/raw/{serviceProvider}/
+  if (isStandardAdobeCdnBucket(bucketName) && imsOrgId) {
     return {
-      rawLocation: `s3://${bucketName}/raw/${cdnProvider}/`,
-      aggregatedOutput: `s3://${bucketName}/aggregated/${year}/${month}/${day}/${hour}/`,
-      aggregatedReferralOutput: `s3://${bucketName}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
-      tempLocation: `s3://${bucketName}/temp/athena-results/`,
-    };
-  } else {
-    // Legacy structure: cdn-logs-domain/raw/2025/01/01/00/
-    return {
-      rawLocation: `s3://${bucketName}/raw/`,
-      aggregatedOutput: `s3://${bucketName}/aggregated/${year}/${month}/${day}/${hour}/`,
-      aggregatedReferralOutput: `s3://${bucketName}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
+      rawLocation: `s3://${bucketName}/${imsOrgId}/raw/${serviceProvider}/`,
+      aggregatedOutput: `s3://${bucketName}/${imsOrgId}/aggregated/${year}/${month}/${day}/${hour}/`,
+      aggregatedReferralOutput: `s3://${bucketName}/${imsOrgId}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
       tempLocation: `s3://${bucketName}/temp/athena-results/`,
     };
   }
+
+  // Legacy structure: cdn-logs-{hash}/raw/ or cdn-logs-{domain}/raw/{serviceProvider}/
+  return {
+    rawLocation: `s3://${bucketName}/raw/${serviceProvider}/`,
+    aggregatedOutput: `s3://${bucketName}/aggregated/${year}/${month}/${day}/${hour}/`,
+    aggregatedReferralOutput: `s3://${bucketName}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
+    tempLocation: `s3://${bucketName}/temp/athena-results/`,
+  };
 }
 
 /**
  * Determines if bucket is legacy based on the providers found
  * @param {string[]} providers - List of folders under raw/
- * @param {string} year - Current year to check for
  * @returns {boolean} True if legacy structure
  */
 function isLegacyBucketStructure(providers) {
@@ -153,14 +217,31 @@ function isLegacyBucketStructure(providers) {
 }
 
 /**
- * Gets bucket structure info once and returns legacy status + providers
+ * Gets bucket structure info once and returns legacy status + service providers
  * @param {Object} s3Client - S3 client instance
  * @param {string} bucketName - The S3 bucket name
- * @param {Object} timeParts - Time parts {year, month, day, hour}
+ * @param {string} imsOrgId - IMS Organization ID (for new structure)
  * @returns {Promise<{isLegacy: boolean, providers: string[]}>} Bucket info
  */
-export async function getBucketInfo(s3Client, bucketName) {
+export async function getBucketInfo(s3Client, bucketName, imsOrgId = null) {
   try {
+    // For standardized Adobe buckets with IMS org, check under {imsOrgId}/raw/
+    if (isStandardAdobeCdnBucket(bucketName) && imsOrgId) {
+      const response = await s3Client.send(new ListObjectsV2Command({
+        Bucket: bucketName,
+        Prefix: `${imsOrgId}/raw/`,
+        Delimiter: '/',
+        MaxKeys: 10,
+      }));
+
+      const providers = (response.CommonPrefixes || [])
+        .map((prefix) => prefix.Prefix.replace(`${imsOrgId}/raw/`, '').replace('/', ''))
+        .filter((provider) => provider && provider.length > 0);
+
+      return { isLegacy: false, providers };
+    }
+
+    // For legacy buckets (both hash-based and domain-based), check under raw/
     const response = await s3Client.send(new ListObjectsV2Command({
       Bucket: bucketName,
       Prefix: 'raw/',
@@ -182,15 +263,12 @@ export async function getBucketInfo(s3Client, bucketName) {
 
 /**
  * Discovers all CDN providers in a bucket's raw folder
- * For new structure buckets, lists folders under raw/
  * For legacy buckets, returns single provider detected from content
  */
 export async function discoverCdnProviders(s3Client, bucketName, timeParts) {
-  const cdnProvider = await determineCdnProvider(
-    s3Client,
-    bucketName,
-    `raw/${timeParts.year}/${timeParts.month}/${timeParts.day}/${timeParts.hour}/`,
-  );
+  const prefix = `raw/${timeParts.year}/${timeParts.month}/${timeParts.day}/${timeParts.hour}/`;
+
+  const cdnProvider = await determineCdnProvider(s3Client, bucketName, prefix);
   if (cdnProvider) {
     return [cdnProvider];
   }

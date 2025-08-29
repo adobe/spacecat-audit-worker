@@ -20,7 +20,9 @@ import {
 import {
   extractCustomerDomain,
   resolveCdnBucketName,
+  isStandardAdobeCdnBucket,
 } from '../../utils/cdn-utils.js';
+import { getImsOrgId } from '../../utils/data-access.js';
 
 export async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
@@ -30,10 +32,21 @@ export async function getS3Config(site, context) {
 
   const bucket = await resolveCdnBucketName(site, context);
 
+  let imsOrgId = null;
+  if (bucket && isStandardAdobeCdnBucket(bucket)) {
+    const { dataAccess, log } = context;
+    imsOrgId = await getImsOrgId(site, dataAccess, log);
+  }
+
+  const aggregatedLocation = bucket && isStandardAdobeCdnBucket(bucket) && imsOrgId
+    ? `s3://${bucket}/${imsOrgId}/aggregated/`
+    : `s3://${bucket}/aggregated/`;
+
   return {
     bucket,
     customerName,
     customerDomain,
+    aggregatedLocation,
     databaseName: `cdn_logs_${customerDomain}`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
   };
