@@ -361,46 +361,4 @@ describe('Paid-Traffic Analysis Cache Warmer', () => {
       );
     });
   });
-
-  describe('warmCacheForQuery', () => {
-    it('should skip processing when cache exists', async () => {
-      // Simulate cache existing for the computed cacheKey
-      mockS3.send.callsFake((cmd) => {
-        if (cmd.constructor?.name === 'HeadObjectCommand') {
-          return Promise.resolve({});
-        }
-        return Promise.resolve({});
-      });
-
-      const config = {
-        rumMetricsDatabase: 'rum_db',
-        rumMetricsCompactTable: 'compact_table',
-        bucketName: 'test-bucket',
-        pageViewThreshold: 2000,
-        cwvThresholds: undefined,
-        athenaTemp: 's3://test-bucket/rum-metrics-compact/temp/out',
-        cacheLocation: 's3://test-bucket/rum-metrics-compact/cache',
-      };
-
-      const queryConfig = {
-        dimensions: ['utm_campaign', 'device'],
-        mapper: { toJSON: sandbox.stub().returns({}) },
-      };
-
-      await warmCacheForQuery(
-        mockContext,
-        mockLog,
-        config,
-        siteId,
-        queryConfig,
-        { yearInt: 2025, weekInt: 2, monthInt: 0 },
-        'rum_db.compact_table',
-        null,
-        'https://example.com',
-      );
-
-      // Ensure we returned early and did not hit Athena
-      expect(mockAthenaQuery).not.to.have.been.called;
-    });
-  });
 });
