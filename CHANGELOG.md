@@ -1,3 +1,10 @@
+# [1.165.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.164.2...v1.165.0) (2025-08-29)
+
+
+### Features
+
+* pre-warm cache either weekly or monthly per single site on call to perform ai analysis ([#1192](https://github.com/adobe/spacecat-audit-worker/issues/1192)) ([0d20246](https://github.com/adobe/spacecat-audit-worker/commit/0d20246526de7c5a500574d8aa4c7bf9bc2ff84f))
+
 ## [1.164.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.164.1...v1.164.2) (2025-08-28)
 
 
