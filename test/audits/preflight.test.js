@@ -875,6 +875,22 @@ describe('Preflight Audit', () => {
       expect(finalJobEntity.setResult).to.have.been.called;
     });
 
+    it('handles genvar errors gracefully', async () => {
+      genvarClient.generateSuggestions.throws(new Error('Genvar failure'));
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_SUGGEST,
+          urls: ['https://main--example--page.aem.page'],
+          checks: ['metatags'],
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(true);
+      await preflightAuditFunction(context);
+      expect(genvarClient.generateSuggestions).to.have.been.called;
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] site: site-123, job: job-123, step: suggest. Meta tags audit failed: Genvar failure');
+    });
+
     it('completes successfully when finalUrl has trailing slash but input URL gets normalized', async () => {
       context.promiseToken = 'mock-promise-token';
       const head = '<head><title>Root Page</title></head>';
