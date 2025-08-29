@@ -1088,4 +1088,209 @@ describe('Headings Audit', () => {
     // Should skip the custom heading and continue processing
     expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
   });
+
+  it('headingsAuditRunner aggregates multiple issue types correctly (coverage test)', async () => {
+    const baseURL = 'https://example.com';
+    const site = { getId: () => 'site-1' };
+    const logSpy = { info: sinon.spy(), error: sinon.spy() };
+    const context = {
+      log: logSpy,
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => `${baseURL}/page1` },
+            { getUrl: () => `${baseURL}/page2` },
+            { getUrl: () => `${baseURL}/page3` },
+          ]),
+        },
+      },
+    };
+
+    // Mock pages with different types of heading issues to trigger aggregation
+    nock('https://example.com')
+      .get('/page1')
+      .reply(200, '<h1>Title</h1><h4>Jump to h4</h4>') // H1→H4 jump (order invalid)
+      .get('/page2')
+      .reply(200, '<h1>Title</h1><h2></h2>') // Empty h2 (empty heading)
+      .get('/page3')
+      .reply(200, '<h1>Title</h1><h3>Another jump</h3>'); // H1→H3 jump (order invalid)
+
+    const result = await headingsAuditRunner(baseURL, context, site);
+
+    expect(result.auditResult).to.not.have.property('status');
+    expect(result.auditResult).to.have.property(HEADINGS_CHECKS.HEADING_ORDER_INVALID.check);
+    expect(result.auditResult).to.have.property(HEADINGS_CHECKS.HEADING_EMPTY.check);
+
+    const orderIssue = result.auditResult[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check];
+    expect(orderIssue.success).to.be.false;
+    expect(orderIssue.urls).to.have.lengthOf(2);
+    expect(orderIssue.urls).to.include(`${baseURL}/page1`);
+    expect(orderIssue.urls).to.include(`${baseURL}/page3`);
+
+    const emptyIssue = result.auditResult[HEADINGS_CHECKS.HEADING_EMPTY.check];
+    expect(emptyIssue.success).to.be.false;
+    expect(emptyIssue.urls).to.have.lengthOf(1);
+    expect(emptyIssue.urls).to.include(`${baseURL}/page2`);
+
+    expect(result.fullAuditRef).to.equal(baseURL);
+
+    expect(logSpy.info).to.have.been.calledWith(
+      sinon.match(/Found 3 issues across 2 check types/),
+    );
+  });
+
+  it('headingsAuditRunner prevents duplicate URLs in aggregation (coverage test)', async () => {
+    const baseURL = 'https://example.com';
+    const site = { getId: () => 'site-1' };
+    const context = {
+      log: { info: sinon.spy(), error: sinon.spy() },
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => `${baseURL}/duplicate-issues` },
+          ]),
+        },
+      },
+    };
+
+    nock('https://example.com')
+      .get('/duplicate-issues')
+      .reply(200, `
+        <h1>Title</h1>
+        <h3>First jump</h3>
+        <h2>Back to h2</h2>  
+        <h4>Second jump</h4>
+      `);
+
+    const result = await headingsAuditRunner(baseURL, context, site);
+
+    const orderIssue = result.auditResult[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check];
+    expect(orderIssue.urls).to.have.lengthOf(1); // Should not duplicate the same URL
+    expect(orderIssue.urls).to.include(`${baseURL}/duplicate-issues`);
+  });
+
+  it('headingsAuditRunner handles fulfilled results with no issues (coverage test)', async () => {
+    const baseURL = 'https://example.com';
+    const site = { getId: () => 'site-1' };
+    const logSpy = { info: sinon.spy(), error: sinon.spy() };
+    const context = {
+      log: logSpy,
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => `${baseURL}/perfect-page` },
+          ]),
+        },
+      },
+    };
+
+    nock('https://example.com')
+      .get('/perfect-page')
+      .reply(200, `
+        <h1>Main Title</h1>
+        <p>Content for main title</p>
+        <h2>Section</h2>
+        <p>Content for section</p>
+        <h3>Subsection</h3>
+        <p>Content for subsection</p>
+      `);
+
+    const result = await headingsAuditRunner(baseURL, context, site);
+
+    expect(result.auditResult.status).to.equal('success');
+    expect(result.auditResult.message).to.equal('No heading issues detected');
+    expect(result.fullAuditRef).to.equal(baseURL);
+
+    expect(logSpy.info).to.have.been.calledWith(
+      sinon.match(/Found 0 issues across 0 check types/),
+    );
+  });
+
+  it('headingsAuditRunner handles rejected promises gracefully (coverage test)', async () => {
+    const baseURL = 'https://example.com';
+    const site = { getId: () => 'site-1' };
+    const logSpy = { info: sinon.spy(), error: sinon.spy() };
+    const context = {
+      log: logSpy,
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => `${baseURL}/working-page` },
+            { getUrl: () => `${baseURL}/failing-page` },
+          ]),
+        },
+      },
+    };
+
+    nock('https://example.com')
+      .get('/working-page')
+      .reply(200, '<h1>Title</h1><h4>Jump to h4</h4>') // Has issue
+      .get('/failing-page')
+      .replyWithError('Network error'); // Will cause promise rejection
+
+    const result = await headingsAuditRunner(baseURL, context, site);
+
+    expect(result.auditResult).to.have.property(HEADINGS_CHECKS.HEADING_ORDER_INVALID.check);
+    const orderIssue = result.auditResult[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check];
+    expect(orderIssue.urls).to.include(`${baseURL}/working-page`);
+    expect(orderIssue.urls).to.not.include(`${baseURL}/failing-page`);
+  });
+
+  it('headingsAuditRunner handles server errors gracefully (coverage test)', async () => {
+    const baseURL = 'https://example.com';
+    const site = { getId: () => 'site-1' };
+    const logSpy = { info: sinon.spy(), error: sinon.spy() };
+    const context = {
+      log: logSpy,
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => `${baseURL}/error-page` },
+          ]),
+        },
+      },
+    };
+
+    nock('https://example.com')
+      .get('/error-page')
+      .reply(500, 'Internal Server Error');
+
+    const result = await headingsAuditRunner(baseURL, context, site);
+
+    expect(result.auditResult.status).to.equal('success');
+    expect(result.auditResult.message).to.equal('No heading issues detected');
+
+    expect(logSpy.info).to.have.been.calledWith(
+      sinon.match(/Found 0 issues across 0 check types/),
+    );
+  });
+
+  it('headingsAuditRunner skips successful checks (coverage test)', async () => {
+    const baseURL = 'https://example.com';
+    const site = { getId: () => 'site-1' };
+    const logSpy = { info: sinon.spy(), error: sinon.spy() };
+    const context = {
+      log: logSpy,
+      dataAccess: {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => `${baseURL}/mixed-page` },
+          ]),
+        },
+      },
+    };
+
+    nock('https://example.com')
+      .get('/mixed-page')
+      .reply(200, '<h1>Title</h1><h2></h2>');
+
+    const result = await headingsAuditRunner(baseURL, context, site);
+
+    expect(result.auditResult).to.have.property(HEADINGS_CHECKS.HEADING_EMPTY.check);
+    expect(result.auditResult).to.not.have.property('status');
+
+    expect(logSpy.info).to.have.been.calledWith(
+      sinon.match(/Found 1 issues across 1 check types/),
+    );
+  });
 });

@@ -138,7 +138,6 @@ function hasContentBetweenElements(startElement, endElement) {
 export async function validatePageHeadings(url, log) {
   if (!url) {
     log.error('URL is undefined or null, cannot validate headings');
-    // Return empty result - URL validation errors should only be logged
     return {
       url,
       checks: [],
@@ -255,7 +254,6 @@ export async function validatePageHeadings(url, log) {
     return { url, checks };
   } catch (error) {
     log.error(`Error validating headings for ${url}: ${error.message}`);
-    // Return empty result - fetch errors should only be logged, not exposed in API
     return {
       url,
       checks: [],
@@ -296,15 +294,52 @@ export async function headingsAuditRunner(baseURL, context, site) {
 
     // Validate headings for each page
     const auditPromises = topPages
-      .map(async (page) => validatePageHeadings(page.getUrl(), log));
-    await Promise.allSettled(auditPromises);
+      .map(async (page) => validatePageHeadings(page.url, log));
+    const auditResults = await Promise.allSettled(auditPromises);
 
-    log.info(`Successfully completed Headings Audit for site: ${baseURL}`);
+    // Aggregate results by check type
+    const aggregatedResults = {};
+    let totalIssuesFound = 0;
 
-    // Return success status - headings validation completed
+    auditResults.forEach((result) => {
+      if (result.status === 'fulfilled' && result.value) {
+        const { url, checks } = result.value;
+
+        checks.forEach((check) => {
+          if (!check.success) {
+            totalIssuesFound += 1;
+            const checkType = check.check;
+
+            if (!aggregatedResults[checkType]) {
+              aggregatedResults[checkType] = {
+                success: false,
+                explanation: check.explanation,
+                urls: [],
+              };
+            }
+
+            // Add URL if not already present
+            if (!aggregatedResults[checkType].urls.includes(url)) {
+              aggregatedResults[checkType].urls.push(url);
+            }
+          }
+        });
+      }
+    });
+
+    log.info(`Successfully completed Headings Audit for site: ${baseURL}. Found ${totalIssuesFound} issues across ${Object.keys(aggregatedResults).length} check types.`);
+
+    // Return success if no issues found, otherwise return the aggregated results
+    if (totalIssuesFound === 0) {
+      return {
+        fullAuditRef: baseURL,
+        auditResult: { status: 'success', message: 'No heading issues detected' },
+      };
+    }
+
     return {
       fullAuditRef: baseURL,
-      auditResult: { status: 'success', message: 'No heading issues detected' },
+      auditResult: aggregatedResults,
     };
   } catch (error) {
     log.error(`Headings audit failed: ${error.message}`);
