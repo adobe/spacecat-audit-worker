@@ -23,6 +23,7 @@ import {
   consolidateErrorsByUrl,
   sortErrorsByTrafficVolume,
   categorizeErrorsByStatusCode,
+  toPathOnly,
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
@@ -77,14 +78,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
     const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
     const outputLocation = `${llmoFolder}/agentic-traffic`;
 
-    const toPathOnly = (maybeUrl) => {
-      try {
-        const parsed = new URL(maybeUrl, site.getBaseURL?.() || 'https://example.com');
-        return parsed.pathname + (parsed.search || '');
-      } catch {
-        return maybeUrl; // already a path
-      }
-    };
+    const baseUrl = site.getBaseURL?.() || 'https://example.com';
 
     const buildFilename = (code) => `agentictraffic-${periodIdentifier}-${code}-ui.xlsx`;
 
@@ -99,7 +93,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
       sorted.forEach((e) => {
         sheet.addRow([
           e.userAgent,
-          toPathOnly(e.url),
+          toPathOnly(e.url, baseUrl),
           '',
           '',
           '',
@@ -127,7 +121,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
     // Send SQS message to Mystique for 404 errors only (no DB dependencies)
     const errors404 = categorizedResults[404] || [];
     if (errors404.length > 0 && sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-      const baseUrl = site.getBaseURL?.() || '';
+      const messageBaseUrl = site.getBaseURL?.() || '';
       const consolidated404 = consolidateErrorsByUrl(errors404);
       const sorted404 = sortErrorsByTrafficVolume(consolidated404);
       const { SiteTopPage } = dataAccess;
@@ -136,7 +130,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
       // Consolidate by URL and combine user agents
       const urlToUserAgentsMap = new Map();
       sorted404.forEach((errorPage) => {
-        const fullUrl = baseUrl ? `${baseUrl}${errorPage.url}` : errorPage.url;
+        const fullUrl = messageBaseUrl ? `${messageBaseUrl}${errorPage.url}` : errorPage.url;
         if (!urlToUserAgentsMap.has(fullUrl)) {
           urlToUserAgentsMap.set(fullUrl, new Set());
         }

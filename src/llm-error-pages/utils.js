@@ -406,3 +406,23 @@ export function consolidateErrorsByUrl(errors) {
 export function sortErrorsByTrafficVolume(errors) {
   return errors.sort((a, b) => b.totalRequests - a.totalRequests);
 }
+
+// =========================================================================
+// URL HELPERS
+// =========================================================================
+
+/**
+ * Returns path + query for a given URL or path. If input is already a path,
+ * returns it unchanged.
+ * @param {string} maybeUrl
+ * @param {string} [baseUrl]
+ * @returns {string}
+ */
+export function toPathOnly(maybeUrl, baseUrl) {
+  try {
+    const parsed = new URL(maybeUrl, baseUrl || 'https://example.com');
+    return parsed.pathname + (parsed.search || '');
+  } catch {
+    return maybeUrl;
+  }
+}
