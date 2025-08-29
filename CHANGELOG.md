@@ -1,3 +1,51 @@
+## [1.164.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.164.1...v1.164.2) (2025-08-28)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.37.0 ([#1188](https://github.com/adobe/spacecat-audit-worker/issues/1188)) ([6877dfd](https://github.com/adobe/spacecat-audit-worker/commit/6877dfd8d5b038b9fc410a48072cf680fda1b1f5))
+
+## [1.164.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.164.0...v1.164.1) (2025-08-28)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-scrape-client to v2.1.1 ([#1186](https://github.com/adobe/spacecat-audit-worker/issues/1186)) ([16bcd99](https://github.com/adobe/spacecat-audit-worker/commit/16bcd996a943014de1440fefe8ae9826f7674ecf))
+
+# [1.164.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.163.2...v1.164.0) (2025-08-28)
+
+
+### Bug Fixes
+
+* audit id error for structured data suggestions ([#1182](https://github.com/adobe/spacecat-audit-worker/issues/1182)) ([262e535](https://github.com/adobe/spacecat-audit-worker/commit/262e53547ea35d8121210338ddfbb580694a9f03))
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.17.0 ([#1185](https://github.com/adobe/spacecat-audit-worker/issues/1185)) ([962dadb](https://github.com/adobe/spacecat-audit-worker/commit/962dadb19a47ecb98245a5477aa951695a0d343c))
+
+
+### Features
+
+* implement scrapeClient for audit steps ([#1118](https://github.com/adobe/spacecat-audit-worker/issues/1118)) ([9562240](https://github.com/adobe/spacecat-audit-worker/commit/956224004a10a695f922efaa3f3725ff81c5fdee))
+
+## [1.163.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.163.1...v1.163.2) (2025-08-28)
+
+
+### Bug Fixes
+
+* A11y modify the placement of sentCount metric computation ([#1174](https://github.com/adobe/spacecat-audit-worker/issues/1174)) ([fd210e0](https://github.com/adobe/spacecat-audit-worker/commit/fd210e0c60f5bcf4699ba18f853b2d3de24f5c44))
+
+## [1.163.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.163.0...v1.163.1) (2025-08-28)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1181](https://github.com/adobe/spacecat-audit-worker/issues/1181)) ([a31c832](https://github.com/adobe/spacecat-audit-worker/commit/a31c8323d04471d5f0696996dbed5d9df8990d87))
+
+# [1.163.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.162.0...v1.163.0) (2025-08-28)
+
+
+### Features
+
+* added dummy forwarder for callback handler ([#1180](https://github.com/adobe/spacecat-audit-worker/issues/1180)) ([c195c17](https://github.com/adobe/spacecat-audit-worker/commit/c195c172b4b498a51103345f8980f7edfd23dd2c))
+
 # [1.162.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.161.3...v1.162.0) (2025-08-27)
 
 
