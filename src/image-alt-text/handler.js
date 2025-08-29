@@ -105,7 +105,6 @@ export async function processAltTextWithMystique(context) {
             DATA_SOURCES.RUM,
             DATA_SOURCES.SITE,
             DATA_SOURCES.AHREFS,
-            DATA_SOURCES.GSC,
           ],
           mystiqueResponsesReceived: 0,
           mystiqueResponsesExpected: urlBatches.length,
