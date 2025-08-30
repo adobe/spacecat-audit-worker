@@ -41,7 +41,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
 
   try {
     const { databaseName, tableName } = s3Config;
-    const siteFilters = buildSiteFilters(filters);
+    const siteFilters = buildSiteFilters(filters, site);
 
     const queryOptions = {
       periods,
