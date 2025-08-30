@@ -159,7 +159,14 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
-              create: sandbox.stub().resolves({ getId: () => 'test-opportunity-id' }),
+              create: sandbox.stub().resolves({
+                getId: () => 'test-opportunity-id',
+                getData: () => ({
+                  form: 'test-form',
+                  formsource: 'test-source',
+                  a11yIssues: [],
+                }),
+              }),
               findById: sandbox.stub().resolves(null),
             },
           },
@@ -1333,6 +1340,13 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 getId: () => opportunityId,
                 save: sandbox.stub().resolves({
                   getId: () => opportunityId,
+                  getData: () => ({
+                    accessibility: [{
+                      form: 'test-form',
+                      formsource: 'test-source',
+                      a11yIssues: [],
+                    }],
+                  }),
                 }),
                 getData: () => mockOpportunityData,
                 setData: (data) => {
@@ -1380,12 +1394,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sqsMessage = context.sqs.sendMessage.getCall(0).args[1];
-      expect(sqsMessage.type).to.equal('guidance:forms-a11y');
-      expect(sqsMessage.siteId).to.equal(siteId);
-      expect(sqsMessage.auditId).to.equal(auditId);
-      expect(sqsMessage.deliveryType).to.equal('aem');
-      expect(sqsMessage.data.opportunityId).to.equal(opportunityId);
-      expect(sqsMessage.data.a11y).to.not.exist;
+      expect(sqsMessage.type).to.equal('detect:form-details');
     });
 
     it('should not send message to mystique when no opportunity is found', async () => {
@@ -1402,22 +1411,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] A11y opportunity not detected, skipping guidance',
-      );
-    });
-
-    it('handle error when no site is found', async () => {
-      const message = {
-        auditId,
-        siteId,
-        data: {
-          opportunityId,
-          a11y: [],
-        },
-      };
-      context.dataAccess.Site.findById.rejects(new Error('Site not found'));
-      await mystiqueDetectedFormAccessibilityHandler(message, context);
-      expect(context.log.error).to.have.been.calledWith(
-        '[Form Opportunity] [Site Id: test-site-id] Failed to process a11y opportunity from mystique: Site not found',
       );
     });
 
@@ -1452,6 +1445,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       context.dataAccess.Opportunity.findById.resolves({
         save: sandbox.stub().resolves({
           getId: () => opportunityId,
+          getData: () => ({
+            form: 'test-form',
+            formsource: 'test-source',
+            a11yIssues: [],
+          }),
         }),
         setUpdatedBy: sandbox.stub(),
         getData: () => mockOpportunityData,

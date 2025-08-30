@@ -13,7 +13,7 @@
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
-import { getSuccessCriteriaDetails } from '../utils.js';
+import { getSuccessCriteriaDetails, sendMessageToFormsQualityAgent } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import { aggregateAccessibilityData } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR } from '../../accessibility/utils/constants.js';
@@ -255,10 +255,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
 }
 
 export default async function handler(message, context) {
-  const {
-    log, env, sqs, dataAccess,
-  } = context;
-  const { Site } = dataAccess;
+  const { log } = context;
   const { auditId, siteId, data } = message;
   const { opportunityId, a11y } = data;
   log.info(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
@@ -274,21 +271,12 @@ export default async function handler(message, context) {
       log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`);
       return ok();
     }
-    const site = await Site.findById(siteId);
-    // send message to mystique for guidance
-    const mystiqueMessage = {
-      type: 'guidance:forms-a11y',
-      siteId,
-      auditId,
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      data: {
-        url: site.getBaseURL(),
-        opportunityId: opportunity?.getId(),
-      },
-    };
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.info(`[Form Opportunity] [Site Id: ${siteId}] Sent a11y message to mystique for guidance`);
+
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] a11y opportunity: ${JSON.stringify(opportunity, null, 2)}`);
+    const opportunityData = opportunity.getData();
+    const a11yData = opportunityData.accessibility;
+    const formsList = a11yData.map((item) => ({ form: item.form, formSource: item.formSource }));
+    await sendMessageToFormsQualityAgent(context, opportunity, formsList);
   } catch (error) {
     log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to process a11y opportunity from mystique: ${error.message}`);
   }

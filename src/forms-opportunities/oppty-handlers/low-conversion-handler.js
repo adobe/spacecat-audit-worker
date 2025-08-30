@@ -172,8 +172,10 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         log.debug('Forms Opportunity high form views low conversion updated');
       }
 
+      // eslint-disable-next-line max-len
+      const formsList = [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
       // eslint-disable-next-line no-await-in-loop
-      await sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData);
+      await sendMessageToFormsQualityAgent(context, highFormViewsLowConversionsOppty, formsList);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);

@@ -112,8 +112,10 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         await highPageViewsLowFormViewsOptty.save();
       }
 
+      // eslint-disable-next-line max-len
+      const formsList = [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
       // eslint-disable-next-line no-await-in-loop
-      await sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData);
+      await sendMessageToFormsQualityAgent(context, highPageViewsLowFormViewsOptty, formsList);
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for high page views low form views for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
