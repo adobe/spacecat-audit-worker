@@ -274,6 +274,9 @@ export default async function handler(message, context) {
       log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not detected, skipping guidance`);
       return ok();
     }
+
+    log.info(`test1234 ${JSON.stringify(opportunity, null, 2)}`);
+
     const site = await Site.findById(siteId);
     // send message to mystique for guidance
     const mystiqueMessage = {
