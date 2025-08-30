@@ -123,10 +123,20 @@ export async function prepareScrapingStep(context) {
   } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.('broken-internal-links') || [];
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages`);
+  // Combine and deduplicate URLs
+  const topPageUrls = topPages.map((page) => page.getUrl());
+  const allUrls = [...topPageUrls, ...includedURLs];
+  const uniqueUrls = [...new Set(allUrls)];
 
-  const urls = topPages.map((page) => ({ url: page.getUrl() }));
+  if (uniqueUrls.length === 0) {
+    throw new Error('No URLs found for site neither top pages nor included URLs');
+  }
+
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] total unique URLs for scraping: ${uniqueUrls.length}`);
+
+  const urls = uniqueUrls.map((url) => ({ url }));
   return {
     urls,
     siteId: site.getId(),
