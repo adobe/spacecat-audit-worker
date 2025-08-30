@@ -745,3 +745,27 @@ export async function generateReportOpportunities(
     message: 'All report opportunities created successfully',
   };
 }
+
+/**
+ * Sends a message to run an import job to the provided SQS queue.
+ *
+ * @param {Object} sqs
+ * @param {string} queueUrl
+ * @param {string} importType
+ * @param {string} siteId
+ * @param {Object} [data] - Optional data object for import-specific data
+ * @param {Object} context
+ */
+export async function sendRunImportMessage(
+  sqs,
+  queueUrl,
+  importType,
+  siteId,
+  data = undefined,
+) {
+  return sqs.sendMessage(queueUrl, {
+    type: importType,
+    siteId,
+    ...(data && { data }),
+  });
+}
