@@ -17,7 +17,6 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import { load as cheerioLoad } from 'cheerio';
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { isIsoDate } from '@adobe/spacecat-shared-utils';
@@ -47,11 +46,6 @@ function assertAuditData(auditData) {
     'best-practices': 0.5,
     seo: 0.5,
   });
-}
-
-function normalizeTag(html) {
-  const $ = cheerioLoad(html);
-  return $.html($('script')[0]);
 }
 
 describe('CSP Post-processor', () => {
@@ -644,7 +638,7 @@ describe('CSP Post-processor', () => {
       nock('https://adobe.com').get('/404.html').reply(200, htmlContent404);
 
       const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
-      expect(normalizeTag(cspResult)).to.deep.equal(normalizeTag(expectedCsp));
+      expect(cspResult).to.deep.equal(expectedCsp);
 
       expect(context.log.error).not.to.have.been.calledWithMatch(sinon.match('Error fetching one or more pages. Skipping CSP auto-suggest.'));
     });
@@ -693,7 +687,7 @@ describe('CSP Post-processor', () => {
       nock('https://adobe.com').get('/404.html').reply(200, '');
 
       const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
-      expect(normalizeTag(cspResult)).to.deep.equal(normalizeTag(expectedCsp));
+      expect(cspResult).to.deep.equal(expectedCsp);
 
       expect(context.log.error).not.to.have.been.calledWithMatch(sinon.match('Error fetching one or more pages. Skipping CSP auto-suggest.'));
     });
