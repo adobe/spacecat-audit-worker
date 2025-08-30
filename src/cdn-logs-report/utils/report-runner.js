@@ -10,11 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import {
-  generatePeriodIdentifier,
-  generateReportingPeriods,
-  buildSiteFilters,
-} from './report-utils.js';
+import { generatePeriodIdentifier, generateReportingPeriods } from './report-utils.js';
 import { saveExcelReport } from '../../utils/report-uploader.js';
 import { createExcelReport } from './excel-generator.js';
 
@@ -34,20 +30,17 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
 
   log.info(`Running ${reportConfig.name} report for ${periodIdentifier} (week offset: ${weekOffset})`);
   /* c8 ignore next */
-  const filters = site.getConfig().getCdnLogsConfig()?.filters || [];
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();
   const outputLocation = `${llmoFolder}/${reportConfig.folderSuffix}`;
 
   try {
     const { databaseName } = s3Config;
     const { tableName } = reportConfig;
-    const siteFilters = buildSiteFilters(filters);
 
     const queryOptions = {
       periods,
       databaseName,
       tableName,
-      siteFilters,
       site,
     };
 

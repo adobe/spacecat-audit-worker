@@ -30,7 +30,7 @@ export function getConfigs(bucket, customerDomain) {
       createTableSql: 'create-aggregated-referral-table',
       aggregatedLocation: `s3://${bucket}/aggregated-referral/`,
       tableName: `aggregated_referral_logs_${customerDomain}`,
-      filePrefix: 'referraltraffic',
+      filePrefix: 'referral-traffic',
       folderSuffix: 'referral-traffic-cdn',
       workbookCreator: 'Spacecat Referral Flat Report',
       queryFunction: weeklyBreakdownQueries.createReferralReportQuery,

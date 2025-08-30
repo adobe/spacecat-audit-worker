@@ -11,7 +11,7 @@
  */
 
 import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
-import { loadSql, fetchRemotePatterns } from './report-utils.js';
+import { loadSql, fetchRemotePatterns, buildSiteFilters } from './report-utils.js';
 import { PROVIDER_USER_AGENT_PATTERNS, buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../constants/user-agent-patterns.js';
 
 function buildDateFilter(startDate, endDate) {
@@ -105,8 +105,11 @@ function buildTopicExtractionSQL(remotePatterns = null) {
 
 async function createAgenticReportQuery(options) {
   const {
-    periods, databaseName, tableName, site, siteFilters = [],
+    periods, databaseName, tableName, site,
   } = options;
+
+  const filters = site.getConfig().getCdnLogsConfig()?.filters || [];
+  const siteFilters = buildSiteFilters(filters);
 
   const lastWeek = periods.weeks[periods.weeks.length - 1];
   const whereClause = buildWhereClause(
@@ -141,9 +144,12 @@ function buildWhereClauseReferral(conditions = [], siteFilters = []) {
 
 async function createReferralReportQuery(options) {
   const {
-    periods, databaseName, tableName, siteFilters = [],
+    periods, databaseName, tableName, site,
   } = options;
 
+  /* c8 ignore next */
+  const filters = site.getConfig().getCdnLogsConfig()?.filters || [];
+  const siteFilters = buildSiteFilters(filters);
   const lastWeek = periods.weeks[periods.weeks.length - 1];
   const whereClause = buildWhereClauseReferral(
     [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],

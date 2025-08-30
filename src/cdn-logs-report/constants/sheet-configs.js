@@ -64,37 +64,64 @@ export const SHEET_CONFIGS = {
     ],
     headerColor: HEADER_COLOR,
     numberColumns: [6],
-    processData: (data, site) => data.map((row) => {
-      const {
-        path,
-        referrer,
-        utm_source,
-        utm_medium,
-        tracking_param,
-        device,
-        date,
-        pageviews,
-        region,
-      } = row;
+    processData: (data, site) => {
+      if (!Array.isArray(data)) throw new Error(`Referral traffic postprocessing failed, provided data: ${data}`);
 
-      const url = `${site.getBaseURL()}${path.startsWith('/') ? path : `/${path}`}`;
-      const {
-        type, category, vendor,
-      } = classifyTrafficSource(url, referrer, utm_source, utm_medium, tracking_param);
+      const grouped = {};
 
-      return [
-        path,
-        type,
-        category,
-        vendor,
-        device,
-        date,
-        pageviews,
-        '',
-        '',
-        validateCountryCode(region),
-        '',
-      ];
-    }),
+      data.forEach((row) => {
+        const {
+          path,
+          referrer,
+          utm_source,
+          utm_medium,
+          tracking_param,
+          device,
+          date,
+          pageviews,
+          region,
+        } = row;
+
+        const url = `${site.getBaseURL()}${path.startsWith('/') ? path : `/${path}`}`;
+        const sanitizedPath = path.split('?')[0];
+
+        const {
+          type, category, vendor,
+        } = classifyTrafficSource(url, referrer, utm_source, utm_medium, tracking_param);
+
+        const key = JSON.stringify([
+          sanitizedPath,
+          type,
+          category,
+          vendor,
+          device,
+          date,
+          validateCountryCode(region),
+        ]);
+
+        if (!grouped[key]) {
+          grouped[key] = [
+            sanitizedPath,
+            type,
+            category,
+            vendor,
+            device,
+            date,
+            0, // placeholder for aggregated pageviews
+            '',
+            '',
+            validateCountryCode(region),
+            '',
+          ];
+        }
+
+        /* c8 ignore next */
+        grouped[key][6] += Number(pageviews) || 0;
+      });
+
+      return Object.values(grouped)
+        .filter((row) => ['paid', 'earned'].includes(row[1]))
+        .sort((a, b) => b[6] - a[6]); // sort by pageviews (descending)
+    },
   },
 };

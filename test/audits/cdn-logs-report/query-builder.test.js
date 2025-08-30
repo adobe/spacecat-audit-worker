@@ -42,6 +42,15 @@ describe('CDN Logs Query Builder', () => {
         getBaseURL: () => 'https://adobe.com',
         getConfig: () => ({
           getLlmoDataFolder: () => null,
+          getCdnLogsConfig: () => ({
+            filters: [{
+              value: [
+                'www.another.com',
+              ],
+              key: 'host',
+            },
+            ],
+          }),
         }),
       },
     };
@@ -61,11 +70,16 @@ describe('CDN Logs Query Builder', () => {
   });
 
   it('handles site filters correctly', async () => {
-    mockOptions.siteFilters = "url LIKE '%test%'";
+    mockOptions.site.getConfig = () => ({
+      getLlmoDataFolder: () => null,
+      getCdnLogsConfig: () => ({
+        filters: [{ value: ['test'], key: 'url' }],
+      }),
+    });
 
     const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
 
-    expect(query).to.include("url LIKE '%test%'");
+    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
   });
 
   it('includes date filtering for the specified week', async () => {
@@ -110,7 +124,10 @@ describe('CDN Logs Query Builder', () => {
   it('handles empty conditions in where clause', async () => {
     const { weeklyBreakdownQueries: localQueries } = await import('../../../src/cdn-logs-report/utils/query-builder.js');
 
-    mockOptions.siteFilters = [];
+    mockOptions.site.getConfig = () => ({
+      getLlmoDataFolder: () => null,
+      getCdnLogsConfig: () => ({}),
+    });
 
     const query = await localQueries.createAgenticReportQuery(mockOptions);
 
