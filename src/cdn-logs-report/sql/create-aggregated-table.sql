@@ -5,7 +5,8 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{databaseName}}.{{tableName}} (
   referer string,
   host string,
   time_to_first_byte double,
-  count bigint
+  count bigint,
+  cdn_provider string
 )
 PARTITIONED BY (
   year string,
