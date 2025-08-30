@@ -169,6 +169,8 @@ describe('Backlinks Tests', function () {
   });
 
   it('should submit urls for scraping step', async () => {
+    context.audit.getAuditResult.returns({ success: true });
+
     const result = await submitForScraping(context);
 
     expect(result).to.deep.equal({
@@ -176,6 +178,16 @@ describe('Backlinks Tests', function () {
       type: 'broken-backlinks',
       urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
     });
+  });
+
+  it('should not submit urls for scraping step when audit was not successful', async () => {
+    context.audit.getAuditResult.returns({ success: false });
+
+    try {
+      await submitForScraping(context);
+    } catch (error) {
+      expect(error.message).to.equal('Audit failed, skipping suggestions generation');
+    }
   });
 
   it('should filter out broken backlinks that return ok (even with redirection)', async () => {
