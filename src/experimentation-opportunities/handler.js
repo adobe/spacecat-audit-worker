@@ -24,7 +24,7 @@ import {
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const IMPORT_ORGANIC_KEYWORDS = 'organic-keywords';
 
-const DAYS = 7;
+const DAYS = 120;
 
 const HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE = 'high-organic-low-ctr';
 const RAGECLICK_OPPTY_TYPE = 'rageclick';
