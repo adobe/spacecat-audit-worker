@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 /* eslint-disable object-curly-newline */
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { getStaticContent, isInteger, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { resolveCdnBucketName, extractCustomerDomain, buildCdnPaths, getBucketInfo, discoverCdnProviders } from '../utils/cdn-utils.js';
@@ -18,22 +18,39 @@ import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
-function getHourParts() {
+const pad2 = (n) => String(n).padStart(2, '0');
+
+function isValidAuditContext(auditContext) {
+  if (!isNonEmptyObject(auditContext)) return false;
+  return ['year', 'month', 'day', 'hour'].every((k) => isInteger(auditContext[k]));
+}
+
+function getHourParts(auditContext) {
+  if (isValidAuditContext(auditContext)) {
+    const { year, month, day, hour } = auditContext;
+    return {
+      year: String(year),
+      month: pad2(month),
+      day: pad2(day),
+      hour: pad2(hour),
+    };
+  }
+
   const previousHour = new Date(Date.now() - ONE_HOUR_MS);
 
-  const year = previousHour.getUTCFullYear().toString();
-  const month = String(previousHour.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(previousHour.getUTCDate()).padStart(2, '0');
-  const hour = String(previousHour.getUTCHours()).padStart(2, '0');
-
-  return { year, month, day, hour };
+  return {
+    year: String(previousHour.getUTCFullYear()),
+    month: pad2(previousHour.getUTCMonth() + 1),
+    day: pad2(previousHour.getUTCDate()),
+    hour: pad2(previousHour.getUTCHours()),
+  };
 }
 
 async function loadSql(provider, filename, variables) {
   return getStaticContent(variables, `./src/cdn-analysis/sql/${provider}/${filename}.sql`);
 }
 
-export async function cdnLogAnalysisRunner(auditUrl, context, site) {
+export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext) {
   const { log, s3Client } = context;
 
   const bucketName = await resolveCdnBucketName(site, context);
@@ -48,7 +65,7 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
   }
 
   const customerDomain = extractCustomerDomain(site);
-  const { year, month, day, hour } = getHourParts();
+  const { year, month, day, hour } = getHourParts(auditContext);
   const { host } = new URL(site.getBaseURL());
 
   const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName);
@@ -104,10 +121,24 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site) {
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlUnload, database, `[Athena Query] Filter and unload ${cdnType} to ${paths.aggregatedOutput}`);
 
+      // eslint-disable-next-line no-await-in-loop
+      const sqlUnloadReferral = await loadSql(cdnType, 'unload-aggregated-referral', {
+        database,
+        rawTable,
+        year,
+        month,
+        day,
+        hour,
+        bucket: bucketName,
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await athenaClient.execute(sqlUnloadReferral, database, `[Athena Query] (Referral) Filter and unload ${cdnType} to ${paths.aggregatedReferralOutput}`);
+
       results.push({
         cdnType,
         rawTable,
         output: paths.aggregatedOutput,
+        outputReferral: paths.aggregatedReferralOutput,
       });
     }
   }

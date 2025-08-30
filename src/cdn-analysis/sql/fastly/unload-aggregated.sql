@@ -13,17 +13,8 @@ UNLOAD (
     AND day   = '{{day}}'
     AND hour  = '{{hour}}'
     
-    -- agentic and LLM-attributed traffic filter based on user-agent, referer and utm tag
-    AND (
-      -- match known LLM-related user-agents
-      REGEXP_LIKE(request_user_agent, '(?i)ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot')
-
-      -- match known referer hostnames for LLM-attributed real-user traffic
-      OR REGEXP_LIKE(COALESCE(request_referer, ''), '(?i)chatgpt\.com|openai\.com|perplexity\.ai|claude\.ai|gemini\.google\.com|copilot\.microsoft\.com')
-
-      -- match known query parameters for LLM-attributed real-user traffic
-      OR url LIKE '%utm_source=chatgpt.com%'
-    )
+     -- match known LLM-related user-agents
+    AND REGEXP_LIKE(request_user_agent, '(?i)ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot')
 
     -- only count text/html responses with robots.txt and sitemaps
     AND (

@@ -167,6 +167,7 @@ describe('CDN Utils', () => {
       expect(paths).to.deep.equal({
         rawLocation: 's3://test-bucket/raw/fastly/',
         aggregatedOutput: 's3://test-bucket/aggregated/2025/01/15/10/',
+        aggregatedReferralOutput: 's3://test-bucket/aggregated-referral/2025/01/15/10/',
         tempLocation: 's3://test-bucket/temp/athena-results/',
       });
     });
@@ -177,6 +178,7 @@ describe('CDN Utils', () => {
       expect(paths).to.deep.equal({
         rawLocation: 's3://test-bucket/raw/',
         aggregatedOutput: 's3://test-bucket/aggregated/2025/01/15/10/',
+        aggregatedReferralOutput: 's3://test-bucket/aggregated-referral/2025/01/15/10/',
         tempLocation: 's3://test-bucket/temp/athena-results/',
       });
     });
