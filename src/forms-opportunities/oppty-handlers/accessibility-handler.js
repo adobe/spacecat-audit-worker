@@ -17,6 +17,10 @@ import { getSuccessCriteriaDetails } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import { aggregateAccessibilityData } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR } from '../../accessibility/utils/constants.js';
+import {
+  aggregateAccessibilityIssues,
+  createIndividualOpportunitySuggestions,
+} from '../../accessibility/utils/generate-individual-opportunities.js';
 
 const filterAccessibilityOpportunities = (opportunities) => opportunities.filter((opportunity) => opportunity.getTags()?.includes('Forms Accessibility'));
 
@@ -180,6 +184,77 @@ export function transformAxeViolationsToA11yData(axeData) {
   };
 }
 
+/**
+ * Creates individual suggestions for form accessibility issues
+ * This method processes the aggregated form data and creates individual suggestions
+ * similar to how accessibility individual opportunities work
+ *
+ * @param {Object} aggregatedData - The aggregated form accessibility data
+ * @param {Object} opportunity - The existing form opportunity to attach suggestions to
+ * @param {Object} context - The context object containing log and other utilities
+ * @returns {Promise<void>}
+ */
+async function createFormAccessibilityIndividualSuggestions(aggregatedData, opportunity, context) {
+  const { log } = context;
+
+  try {
+    log.info('[FormIndividualSuggestions] Creating individual suggestions for form accessibility');
+
+    // Transform the aggregated form data to the format expected by aggregateAccessibilityIssues
+    // The aggregated data has format: { url1: {violations: {...}}, url2: {violations: {...}} }
+    // We need to transform it to match the accessibility data structure
+    const transformedAccessibilityData = {};
+
+    Object.entries(aggregatedData).forEach(([key, data]) => {
+      // Skip the 'overall' key as it contains summary data
+      if (key === 'overall') return;
+
+      const { violations } = data;
+      if (violations) {
+        transformedAccessibilityData[key] = { violations };
+      }
+    });
+
+    // Use aggregateAccessibilityIssues with 'form-accessibility' opportunity type
+    const aggregatedIssues = aggregateAccessibilityIssues(transformedAccessibilityData, 'form-accessibility');
+
+    // Early return if no actionable issues found
+    if (!aggregatedIssues || !aggregatedIssues.data || aggregatedIssues.data.length === 0) {
+      log.info('[FormIndividualSuggestions] No individual form accessibility suggestions to create');
+      return;
+    }
+
+    log.info(`[FormIndividualSuggestions] Found ${aggregatedIssues.data.length} opportunity types with individual suggestions`);
+
+    // Process each opportunity type that has data
+    // Use Promise.all to handle multiple opportunity types in parallel
+    await Promise.all(
+      aggregatedIssues.data.map(async (opportunityTypeData) => {
+        // Each item is an object with one key (the opportunity type) and an array of URLs
+        const [opportunityType, typeData] = Object.entries(opportunityTypeData)[0];
+
+        if (opportunityType === 'form-accessibility') {
+          log.info(`[FormIndividualSuggestions] Creating ${typeData.length} individual suggestions for form accessibility`);
+
+          // Create suggestions using the existing individual opportunity suggestion creation logic
+          const typeSpecificData = { data: typeData };
+          await createIndividualOpportunitySuggestions(
+            opportunity,
+            typeSpecificData,
+            context,
+            log,
+          );
+
+          log.info('[FormIndividualSuggestions] Successfully created individual suggestions for form accessibility');
+        }
+      }),
+    );
+  } catch (error) {
+    log.error(`[FormIndividualSuggestions] Error creating individual suggestions: ${error.message}`);
+    // Don't throw error to avoid breaking the existing flow
+  }
+}
+
 export async function createAccessibilityOpportunity(auditData, context) {
   const {
     log, site, s3Client, env, sqs,
@@ -232,6 +307,11 @@ export async function createAccessibilityOpportunity(auditData, context) {
 
     // Create opportunity
     const opportunity = await createOrUpdateOpportunity(auditId, siteId, a11yData, context);
+
+    // Create individual suggestions for the opportunity (if opportunity was created/updated)
+    if (opportunity) {
+      await createFormAccessibilityIndividualSuggestions(aggregatedData, opportunity, context);
+    }
 
     // Send message to mystique for detection
     const mystiqueMessage = {

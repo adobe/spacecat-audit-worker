@@ -1131,6 +1131,30 @@ describe('aggregateAccessibilityIssues', () => {
     expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].target_selector)
       .to.equal('p[aria-made-up]');
   });
+
+  it('should return original url if URL parsing fails', () => {
+    const input = {
+      'https://example.com:port': {
+        violations: {
+          critical: {
+            items: {
+              'aria-allowed-attr': {
+                description: 'Multiple elements with invalid ARIA',
+                successCriteriaTags: ['wcag412'],
+                count: 3,
+                htmlWithIssues: ['<div aria-fake="true">Content 1</div>'],
+                target: ['div[aria-fake]'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.have.lengthOf(1);
+    expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com:port');
+  });
 });
 
 describe('createIndividualOpportunity', () => {
@@ -1727,6 +1751,65 @@ describe('createIndividualOpportunitySuggestions', () => {
     );
     expect(result).to.deep.equal({ success: true });
     expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
+  });
+
+  it('should handle source parameter in url', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          source: '#contact-form',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 1,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the mapNewSuggestion function
+    const result = mapNewSuggestion(aggregatedData.data[0]);
+
+    expect(result).to.deep.equal({
+      opportunityId: 'test-id',
+      type: 'CODE_CHANGE',
+      rank: 1,
+      data: {
+        url: 'https://example.com/page1',
+        type: 'url',
+        source: '#contact-form',
+        issues: [
+          {
+            type: 'color-contrast',
+            occurrences: 1,
+            htmlWithIssues: [
+              {
+                target_selector: 'div[aria-fake]',
+              },
+            ],
+          },
+        ],
+        isCreateTicketClicked: false,
+      },
+    });
   });
 });
 
@@ -2405,11 +2488,8 @@ describe('createAccessibilityIndividualOpportunities', () => {
       mockContext,
     );
 
-    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
-    expect(result.error).to.include('No opportunity creator found for type: a11y-unknown');
-    expect(mockContext.log.error).to.have.been.calledWith(
-      sinon.match.string,
-    );
+    expect(result.status).to.equal('NO_OPPORTUNITIES');
+    expect(result.message).to.include('No accessibility issues found in tracked categories');
   });
 
   it('should update existing opportunity with IN_PROGRESS status', async () => {

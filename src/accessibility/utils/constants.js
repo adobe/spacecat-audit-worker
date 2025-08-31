@@ -726,6 +726,26 @@ export const accessibilityOpportunitiesMap = {
     'link-name',
     'select-name',
   ],
+  'form-accessibility': [
+    // All existing 'a11y-assistive' rules
+    'aria-hidden-focus',
+    'aria-allowed-attr',
+    'aria-required-attr',
+    'aria-prohibited-attr',
+    'aria-roles',
+    'aria-valid-attr-value',
+    'aria-required-parent',
+    'button-name',
+    'link-name',
+    'select-name',
+    // Form-specific axe-core rules
+    'label',
+    'label-title-only',
+    'input-button-name',
+    'input-image-alt',
+    'form-field-multiple-labels',
+    'autocomplete-valid',
+  ],
 };
 
 /**
