@@ -1,3 +1,10 @@
+## [1.166.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.166.2...v1.166.3) (2025-08-31)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-helix-content-sdk to v1.4.20 ([#1202](https://github.com/adobe/spacecat-audit-worker/issues/1202)) ([5064453](https://github.com/adobe/spacecat-audit-worker/commit/506445326252cbb5d669b9731e610e0552139dac))
+
 ## [1.166.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.166.1...v1.166.2) (2025-08-31)
 
 
