@@ -17,7 +17,7 @@ import {
   syncSuggestions,
   keepSameDataFunction,
 } from '../../utils/data-access.js';
-import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
+import { successCriteriaLinks, accessibilityOpportunitiesMap, URL_SOURCE_SEPARATOR } from './constants.js';
 import { getAuditData } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
@@ -33,22 +33,12 @@ import { saveMystiqueValidationMetricsToS3 } from './scrape-utils.js';
  * @returns {string|null} returns.source - The extracted source value, or null
  */
 function extractSourceFromUrl(url) {
-  let pageUrl = url;
-  let source = null;
-
-  try {
-    const urlObj = new URL(url);
-    source = urlObj.searchParams.get('source');
-    if (source) {
-      urlObj.searchParams.delete('source');
-      pageUrl = urlObj.toString();
-    }
-  } catch {
-    // If URL parsing fails, use original URL
-    pageUrl = url;
+  if (url.includes(URL_SOURCE_SEPARATOR)) {
+    const [pageUrl, source] = url.split(URL_SOURCE_SEPARATOR);
+    return { url: pageUrl, source };
   }
 
-  return { url: pageUrl, source };
+  return { url, source: null };
 }
 
 /**
