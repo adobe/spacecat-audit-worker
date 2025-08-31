@@ -1743,6 +1743,65 @@ describe('createIndividualOpportunitySuggestions', () => {
       },
     });
   });
+
+  it('should handle source parameter in url', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          source: '#contact-form',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 1,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the mapNewSuggestion function
+    const result = mapNewSuggestion(aggregatedData.data[0]);
+
+    expect(result).to.deep.equal({
+      opportunityId: 'test-id',
+      type: 'CODE_CHANGE',
+      rank: 1,
+      data: {
+        url: 'https://example.com/page1',
+        type: 'url',
+        source: '#contact-form',
+        issues: [
+          {
+            type: 'color-contrast',
+            occurrences: 1,
+            htmlWithIssues: [
+              {
+                target_selector: 'div[aria-fake]',
+              },
+            ],
+          },
+        ],
+        isCreateTicketClicked: false,
+      },
+    });
+  });
 });
 
 describe('calculateAccessibilityMetrics', () => {
