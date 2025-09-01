@@ -69,14 +69,16 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
         error: 'No CDN bucket found',
         completedAt: new Date().toISOString(),
       },
-      fullAuditRef: null,
+      fullAuditRef: auditUrl,
     };
   }
 
   const customerDomain = extractCustomerDomain(site);
   const { year, month, day, hour } = getHourParts(auditContext);
   const { host } = new URL(site.getBaseURL());
-  const imsOrgId = await getImsOrgId(site, dataAccess, log);
+  const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
+  // for non-adobe customers, use the orgId from the config
+  const imsOrgId = await getImsOrgId(site, dataAccess, log) || orgId;
 
   const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName, imsOrgId);
   const serviceProviders = isLegacy
@@ -148,6 +150,8 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
         day,
         hour,
         bucket: bucketName,
+        serviceProvider,
+        aggregatedReferralOutput: paths.aggregatedReferralOutput,
       });
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlUnloadReferral, database, `[Athena Query] (Referral) Filter and unload ${cdnType} to ${paths.aggregatedReferralOutput}`);

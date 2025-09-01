@@ -11,7 +11,6 @@
  */
 
 import { HeadBucketCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
-import crypto from 'crypto';
 import zlib from 'zlib';
 import { hasText } from '@adobe/spacecat-shared-utils';
 
@@ -61,15 +60,6 @@ export function extractCustomerDomain(site) {
 }
 
 /**
- * Generates bucket name from IMS org ID using hash algorithm
- */
-export function generateBucketName(orgId) {
-  const hash = crypto.createHash('sha256').update(orgId).digest('hex');
-  const hashSuffix = hash.substring(0, 16);
-  return `cdn-logs-${hashSuffix}`;
-}
-
-/**
  * Generates new standardized bucket name based on environment
  */
 export function generateStandardBucketName(env = 'prod') {
@@ -91,11 +81,12 @@ export function isStandardAdobeCdnBucket(bucketName) {
  */
 export async function resolveCdnBucketName(site, context) {
   const {
-    s3Client, dataAccess, log, env,
+    s3Client, log, env,
   } = context;
 
   // If the bucket name is configured, use it
-  const { bucketName } = site.getConfig().getCdnLogsConfig() || {};
+  const { bucketName } = site.getConfig().getCdnLogsConfig()
+    || site.getConfig()?.getLlmoCdnBucketConfig() || {};
   if (bucketName) {
     await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
     return bucketName;
@@ -110,25 +101,8 @@ export async function resolveCdnBucketName(site, context) {
       log.info(`Using standardized bucket: ${standardBucket}`);
       return standardBucket;
     } catch (error) {
-      log.info(`Standardized bucket ${standardBucket} not found, trying legacy approach`, error);
+      log.info(`Standardized bucket ${standardBucket} not found`, error);
     }
-  }
-
-  // Fall back to IMS org-based bucket generation
-  try {
-    const organizationId = site.getOrganizationId();
-    const { Organization } = dataAccess;
-    const organization = await Organization.findById(organizationId);
-    const imsOrgId = organization?.getImsOrgId();
-
-    if (imsOrgId) {
-      const generatedBucketName = generateBucketName(imsOrgId);
-      await s3Client.send(new HeadBucketCommand({ Bucket: generatedBucketName }));
-      log.info(`Using IMS org bucket: ${generatedBucketName}`);
-      return generatedBucketName;
-    }
-  } catch (error) {
-    log.warn(`IMS org bucket lookup failed: ${error.message}`);
   }
 
   log.error(`No CDN bucket found for site: ${site.getBaseURL()}`);
@@ -163,6 +137,7 @@ export async function determineCdnProvider(s3, bucket, prefix) {
     const rec = JSON.parse(first);
     if (hasText(rec.reqPath)) return CDN_TYPES.AKAMAI;
     if (hasText(rec.url)) return CDN_TYPES.FASTLY;
+    if (hasText(rec.ClientRequestURI)) return CDN_TYPES.CLOUDFLARE;
   } catch {
     // fall-through intended
   }
@@ -191,9 +166,8 @@ export function buildCdnPaths(bucketName, serviceProvider, timeParts, imsOrgId =
     };
   }
 
-  // Legacy structure: cdn-logs-{hash}/raw/ or cdn-logs-{domain}/raw/{serviceProvider}/
   return {
-    rawLocation: `s3://${bucketName}/raw/${serviceProvider}/`,
+    rawLocation: `s3://${bucketName}/raw/`,
     aggregatedOutput: `s3://${bucketName}/aggregated/${year}/${month}/${day}/${hour}/`,
     aggregatedReferralOutput: `s3://${bucketName}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
     tempLocation: `s3://${bucketName}/temp/athena-results/`,
@@ -206,7 +180,7 @@ export function buildCdnPaths(bucketName, serviceProvider, timeParts, imsOrgId =
  * @returns {boolean} True if legacy structure
  */
 function isLegacyBucketStructure(providers) {
-  const knownCdnProviders = Object.values(CDN_TYPES);
+  const knownCdnProviders = Object.values(SERVICE_PROVIDER_TYPES);
   const hasKnownProvider = providers?.some((provider) => knownCdnProviders.includes(provider));
 
   if (hasKnownProvider) {
@@ -241,7 +215,7 @@ export async function getBucketInfo(s3Client, bucketName, imsOrgId = null) {
       return { isLegacy: false, providers };
     }
 
-    // For legacy buckets (both hash-based and domain-based), check under raw/
+    // For legacy buckets (domain-based), check under raw/
     const response = await s3Client.send(new ListObjectsV2Command({
       Bucket: bucketName,
       Prefix: 'raw/',

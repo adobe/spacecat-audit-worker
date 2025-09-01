@@ -78,6 +78,7 @@ describe('CDN Utils', () => {
         s3Client,
         dataAccess,
         log: { info: sandbox.spy(), warn: sandbox.spy(), error: sandbox.spy() },
+        env: { AWS_ENV: 'prod' },
       };
     });
 
@@ -97,31 +98,35 @@ describe('CDN Utils', () => {
       expect(bucketName).to.equal('configured-bucket');
     });
 
-    it('uses IMS org bucket when available', async () => {
+    it('uses standardized bucket when available', async () => {
       const site = {
         getBaseURL: () => 'https://example.com',
         getOrganizationId: () => 'org-id',
-        getConfig: () => ({ getCdnLogsConfig: () => null }),
+        getConfig: () => ({
+          getCdnLogsConfig: () => null,
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        }),
       };
-      const organization = { getImsOrgId: () => 'ims-org-id' };
 
-      dataAccess.Organization.findById.resolves(organization);
       s3Client.send.resolves();
 
       const bucketName = await resolveCdnBucketName(site, context);
 
-      expect(bucketName).to.match(/^cdn-logs-[a-f0-9]{16}$/);
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Using IMS org bucket/));
+      expect(bucketName).to.match(/^cdn-logs-adobe-(prod|stage)$/);
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Using standardized bucket/));
     });
 
     it('returns null when no bucket found', async () => {
       const site = {
         getBaseURL: () => 'https://unknown.com',
         getOrganizationId: () => 'org-id',
-        getConfig: () => ({ getCdnLogsConfig: () => null }),
+        getConfig: () => ({
+          getCdnLogsConfig: () => null,
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        }),
       };
 
-      dataAccess.Organization.findById.resolves(null);
+      s3Client.send.rejects(new Error('Bucket not found'));
 
       const bucketName = await resolveCdnBucketName(site, context);
 
@@ -129,21 +134,22 @@ describe('CDN Utils', () => {
       expect(context.log.error).to.have.been.calledWith('No CDN bucket found for site: https://unknown.com');
     });
 
-    it('handles IMS org bucket lookup failure', async () => {
+    it('handles standardized bucket lookup failure', async () => {
       const site = {
         getBaseURL: () => 'https://example.com',
         getOrganizationId: () => 'org-id',
-        getConfig: () => ({ getCdnLogsConfig: () => null }),
+        getConfig: () => ({
+          getCdnLogsConfig: () => null,
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        }),
       };
-      const organization = { getImsOrgId: () => 'ims-org-id' };
 
-      dataAccess.Organization.findById.resolves(organization);
       s3Client.send.rejects(new Error('Bucket not found'));
 
       const bucketName = await resolveCdnBucketName(site, context);
 
       expect(bucketName).to.be.null;
-      expect(context.log.warn).to.have.been.calledWith(sinon.match(/IMS org bucket lookup failed/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Standardized bucket.*not found/));
     });
   });
 
@@ -153,10 +159,10 @@ describe('CDN Utils', () => {
     };
 
     it('builds standardized Adobe bucket paths with IMS org correctly', () => {
-      const paths = buildCdnPaths('cdn-logs-adobe-prod', 'fastly', timeParts, 'ims-org-123');
+      const paths = buildCdnPaths('cdn-logs-adobe-prod', 'byocdn-fastly', timeParts, 'ims-org-123');
 
       expect(paths).to.deep.equal({
-        rawLocation: 's3://cdn-logs-adobe-prod/ims-org-123/raw/fastly/',
+        rawLocation: 's3://cdn-logs-adobe-prod/ims-org-123/raw/byocdn-fastly/',
         aggregatedOutput: 's3://cdn-logs-adobe-prod/ims-org-123/aggregated/2025/01/15/10/',
         aggregatedReferralOutput: 's3://cdn-logs-adobe-prod/ims-org-123/aggregated-referral/2025/01/15/10/',
         tempLocation: 's3://cdn-logs-adobe-prod/temp/athena-results/',
@@ -167,7 +173,7 @@ describe('CDN Utils', () => {
       const paths = buildCdnPaths('test-bucket', 'fastly', timeParts);
 
       expect(paths).to.deep.equal({
-        rawLocation: 's3://test-bucket/raw/fastly/',
+        rawLocation: 's3://test-bucket/raw/',
         aggregatedOutput: 's3://test-bucket/aggregated/2025/01/15/10/',
         aggregatedReferralOutput: 's3://test-bucket/aggregated-referral/2025/01/15/10/',
         tempLocation: 's3://test-bucket/temp/athena-results/',
@@ -185,15 +191,15 @@ describe('CDN Utils', () => {
     it('detects new structure with akamai and fastly', async () => {
       s3Client.send.resolves({
         CommonPrefixes: [
-          { Prefix: 'raw/akamai/' },
-          { Prefix: 'raw/fastly/' },
+          { Prefix: 'raw/byocdn-akamai/' },
+          { Prefix: 'raw/aem-cs-fastly/' },
         ],
       });
 
       const result = await getBucketInfo(s3Client, 'test-bucket');
 
       expect(result.isLegacy).to.be.false;
-      expect(result.providers).to.deep.equal(['akamai', 'fastly']);
+      expect(result.providers).to.deep.equal(['byocdn-akamai', 'aem-cs-fastly']);
     });
 
     it('detects legacy structure with year folders', async () => {

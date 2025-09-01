@@ -18,9 +18,10 @@ import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { createLLMOSharepointClient } from '../utils/report-uploader.js';
 import { getConfigs } from './constants/report-configs.js';
+import { getImsOrgId } from '../utils/data-access.js';
 
 async function runCdnLogsReport(url, context, site, auditContext) {
-  const { log } = context;
+  const { log, dataAccess } = context;
   const s3Config = await getS3Config(site, context);
 
   if (!s3Config?.bucket) {
@@ -38,13 +39,18 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
   const sharepointClient = await createLLMOSharepointClient(context);
   const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+  /* c8 ignore start */
+  const { orgId } = site.getConfig().getLlmoCdnBucketConfig() || {};
+  // for non-adobe customers, use the orgId from the config
+  const imsOrgId = await getImsOrgId(site, dataAccess, log) || orgId;
+  /* c8 ignore stop */
 
   // create db if not exists
   const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
   const sqlDbDescription = `[Athena Query] Create database ${s3Config.databaseName}`;
   await athenaClient.execute(sqlDb, s3Config.databaseName, sqlDbDescription);
 
-  const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain);
+  const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, imsOrgId);
 
   const results = [];
   for (const reportConfig of reportConfigs) {

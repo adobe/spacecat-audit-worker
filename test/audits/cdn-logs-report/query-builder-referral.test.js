@@ -76,4 +76,15 @@ describe('CDN Logs Query Builder (Referral)', () => {
 
     expect(query).to.equal(expectedQuery);
   });
+
+  it('handles llmo cdn logs site filters correctly', async () => {
+    options.site.getConfig = () => ({
+      getCdnLogsConfig: () => ({}),
+      getLlmoCdnlogsFilter: () => ([{ value: ['test'], key: 'url' }]
+      ),
+    });
+
+    const query = await createReferralReportQuery(options);
+    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
+  });
 });

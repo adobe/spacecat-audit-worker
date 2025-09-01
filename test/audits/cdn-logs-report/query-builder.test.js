@@ -42,6 +42,7 @@ describe('CDN Logs Query Builder', () => {
         getBaseURL: () => 'https://adobe.com',
         getConfig: () => ({
           getLlmoDataFolder: () => null,
+          getLlmoCdnlogsFilter: () => [],
           getCdnLogsConfig: () => ({
             filters: [{
               value: [
@@ -75,6 +76,20 @@ describe('CDN Logs Query Builder', () => {
       getCdnLogsConfig: () => ({
         filters: [{ value: ['test'], key: 'url' }],
       }),
+    });
+
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
+
+    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
+  });
+
+  it('handles llmo cdn logs site filters correctly', async () => {
+    mockOptions.site.getConfig = () => ({
+      getLlmoDataFolder: () => null,
+      getCdnLogsConfig: () => ({}),
+      getLlmoCdnlogsFilter: () => (
+        [{ value: ['test'], key: 'url' }]
+      ),
     });
 
     const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
@@ -126,6 +141,7 @@ describe('CDN Logs Query Builder', () => {
 
     mockOptions.site.getConfig = () => ({
       getLlmoDataFolder: () => null,
+      getLlmoCdnlogsFilter: () => [],
       getCdnLogsConfig: () => ({}),
     });
 

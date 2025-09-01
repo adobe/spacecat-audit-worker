@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { retrieveSiteBySiteId, syncSuggestions } from '../../src/utils/data-access.js';
+import { retrieveSiteBySiteId, syncSuggestions, getImsOrgId } from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
@@ -351,6 +351,48 @@ describe('data-access', () => {
         buildKey,
         mapNewSuggestion,
       })).to.be.rejectedWith('Failed to create suggestions for siteId');
+    });
+  });
+
+  describe('getImsOrgId', () => {
+    let mockSite;
+    let mockDataAccess;
+    let mockLog;
+
+    beforeEach(() => {
+      mockSite = {
+        getOrganizationId: () => 'test-org-id',
+        getBaseURL: () => 'https://example.com',
+      };
+      mockDataAccess = {
+        Organization: {
+          findById: sinon.stub().resolves({ getImsOrgId: () => 'test-ims-org-id' }),
+        },
+      };
+      mockLog = {
+        warn: sinon.spy(),
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('returns the IMS org ID', async () => {
+      const result = await getImsOrgId(mockSite, mockDataAccess, mockLog);
+      expect(result).to.equal('test-ims-org-id');
+    });
+
+    it('returns null when the IMS org ID is not found', async () => {
+      mockDataAccess.Organization.findById.resolves({ getImsOrgId: () => null });
+      const result = await getImsOrgId(mockSite, mockDataAccess, mockLog);
+      expect(result).to.be.null;
+    });
+
+    it('returns null when the organization ID is not found', async () => {
+      mockSite.getOrganizationId = () => null;
+      const result = await getImsOrgId(mockSite, mockDataAccess, mockLog);
+      expect(result).to.be.null;
     });
   });
 });

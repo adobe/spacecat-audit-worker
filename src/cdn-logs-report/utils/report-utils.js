@@ -20,33 +20,19 @@ import {
 import {
   extractCustomerDomain,
   resolveCdnBucketName,
-  isStandardAdobeCdnBucket,
 } from '../../utils/cdn-utils.js';
-import { getImsOrgId } from '../../utils/data-access.js';
 
 export async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
   const domainParts = customerDomain.split(/[._]/);
   /* c8 ignore next */
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-
   const bucket = await resolveCdnBucketName(site, context);
-
-  let imsOrgId = null;
-  if (bucket && isStandardAdobeCdnBucket(bucket)) {
-    const { dataAccess, log } = context;
-    imsOrgId = await getImsOrgId(site, dataAccess, log);
-  }
-
-  const aggregatedLocation = bucket && isStandardAdobeCdnBucket(bucket) && imsOrgId
-    ? `s3://${bucket}/${imsOrgId}/aggregated/`
-    : `s3://${bucket}/aggregated/`;
 
   return {
     bucket,
     customerName,
     customerDomain,
-    aggregatedLocation,
     databaseName: `cdn_logs_${customerDomain}`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
   };
@@ -151,7 +137,7 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
   };
 }
 
-export function buildSiteFilters(filters) {
+export function buildSiteFilters(filters = []) {
   if (!filters || filters.length === 0) return '';
 
   const clauses = filters.map(({ key, value, type }) => {
