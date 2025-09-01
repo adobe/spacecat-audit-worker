@@ -93,12 +93,12 @@ export async function resolveCdnBucketName(site, context) {
   }
 
   // Try standardized environment-based bucket first (if env is available)
+  log.info(`Trying standardized bucket for environment: ${env?.AWS_ENV}`);
   if (env?.AWS_ENV) {
     const environment = env.AWS_ENV;
     const standardBucket = generateStandardBucketName(environment);
     try {
       await s3Client.send(new HeadBucketCommand({ Bucket: standardBucket }));
-      log.info(`Using standardized bucket: ${standardBucket}`);
       return standardBucket;
     } catch (error) {
       log.info(`Standardized bucket ${standardBucket} not found`, error);
@@ -199,6 +199,7 @@ function isLegacyBucketStructure(providers) {
  */
 export async function getBucketInfo(s3Client, bucketName, imsOrgId = null) {
   try {
+    let providers = [];
     // For standardized Adobe buckets with IMS org, check under {imsOrgId}/raw/
     if (isStandardAdobeCdnBucket(bucketName) && imsOrgId) {
       const response = await s3Client.send(new ListObjectsV2Command({
@@ -208,28 +209,14 @@ export async function getBucketInfo(s3Client, bucketName, imsOrgId = null) {
         MaxKeys: 10,
       }));
 
-      const providers = (response.CommonPrefixes || [])
+      providers = (response.CommonPrefixes || [])
         .map((prefix) => prefix.Prefix.replace(`${imsOrgId}/raw/`, '').replace('/', ''))
         .filter((provider) => provider && provider.length > 0);
 
-      return { isLegacy: false, providers };
+      return { isLegacy: isLegacyBucketStructure(providers), providers };
     }
 
-    // For legacy buckets (domain-based), check under raw/
-    const response = await s3Client.send(new ListObjectsV2Command({
-      Bucket: bucketName,
-      Prefix: 'raw/',
-      Delimiter: '/',
-      MaxKeys: 10,
-    }));
-
-    const providers = (response.CommonPrefixes || [])
-      .map((prefix) => prefix.Prefix.replace('raw/', '').replace('/', ''))
-      .filter((provider) => provider && provider.length > 0);
-
-    const isLegacy = isLegacyBucketStructure(providers);
-
-    return { isLegacy, providers };
+    return { isLegacy: true, providers };
   } catch {
     return { isLegacy: true, providers: [] };
   }

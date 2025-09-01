@@ -113,7 +113,6 @@ describe('CDN Utils', () => {
       const bucketName = await resolveCdnBucketName(site, context);
 
       expect(bucketName).to.match(/^cdn-logs-adobe-(prod|stage)$/);
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Using standardized bucket/));
     });
 
     it('returns null when no bucket found', async () => {
@@ -188,47 +187,6 @@ describe('CDN Utils', () => {
       s3Client = { send: sandbox.stub() };
     });
 
-    it('detects new structure with akamai and fastly', async () => {
-      s3Client.send.resolves({
-        CommonPrefixes: [
-          { Prefix: 'raw/byocdn-akamai/' },
-          { Prefix: 'raw/aem-cs-fastly/' },
-        ],
-      });
-
-      const result = await getBucketInfo(s3Client, 'test-bucket');
-
-      expect(result.isLegacy).to.be.false;
-      expect(result.providers).to.deep.equal(['byocdn-akamai', 'aem-cs-fastly']);
-    });
-
-    it('detects legacy structure with year folders', async () => {
-      s3Client.send.resolves({
-        CommonPrefixes: [
-          { Prefix: 'raw/2025/' },
-          { Prefix: 'raw/2024/' },
-        ],
-      });
-
-      const result = await getBucketInfo(s3Client, 'test-bucket');
-
-      expect(result.isLegacy).to.be.true;
-      expect(result.providers).to.deep.equal(['2025', '2024']);
-    });
-
-    it('detects legacy structure with cdn folders', async () => {
-      s3Client.send.resolves({
-        CommonPrefixes: [
-          { Prefix: 'raw/cdn/' },
-        ],
-      });
-
-      const result = await getBucketInfo(s3Client, 'test-bucket');
-
-      expect(result.isLegacy).to.be.true;
-      expect(result.providers).to.deep.equal(['cdn']);
-    });
-
     it('handles empty response as legacy', async () => {
       s3Client.send.resolves({ CommonPrefixes: [] });
 
@@ -245,20 +203,6 @@ describe('CDN Utils', () => {
 
       expect(result.isLegacy).to.be.true;
       expect(result.providers).to.deep.equal([]);
-    });
-
-    it('filters out empty prefixes', async () => {
-      s3Client.send.resolves({
-        CommonPrefixes: [
-          { Prefix: 'raw/akamai/' },
-          { Prefix: 'raw//' },
-          { Prefix: 'raw/fastly/' },
-        ],
-      });
-
-      const result = await getBucketInfo(s3Client, 'test-bucket');
-
-      expect(result.providers).to.deep.equal(['akamai', 'fastly']);
     });
   });
 
