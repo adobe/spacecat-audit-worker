@@ -15,6 +15,7 @@
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
+import esmock from 'esmock';
 import readability, { PREFLIGHT_READABILITY } from '../../../src/readability/handler.js';
 import { PREFLIGHT_STEP_IDENTIFY } from '../../../src/preflight/handler.js';
 
@@ -488,6 +489,313 @@ describe('Preflight Readability Audit', () => {
       const opportunity = audit.opportunities[0];
       expect(opportunity.issue).to.include(shortPoorText);
       expect(opportunity.issue).not.to.include('...');
+    });
+  });
+
+  describe('suggest step functionality', () => {
+    let mockSendReadabilityToMystique;
+    let readabilityMocked;
+
+    beforeEach(async () => {
+      mockSendReadabilityToMystique = sinon.stub().resolves();
+
+      readabilityMocked = await esmock('../../../src/readability/handler.js', {
+        '../../../src/readability/async-mystique.js': {
+          sendReadabilityToMystique: mockSendReadabilityToMystique,
+        },
+        '../../../src/preflight/utils.js': {
+          saveIntermediateResults: sinon.stub().resolves(),
+        },
+      });
+
+      auditContext.step = 'suggest';
+
+      // Mock dataAccess.Opportunity
+      context.dataAccess.Opportunity = {
+        allBySiteId: sinon.stub().resolves([]),
+      };
+    });
+
+    it('should handle suggest step with no readability issues', async () => {
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: '<html><body><p>Simple text that is easy to read.</p></body></html>',
+          },
+        },
+      }];
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(log.info).to.have.been.calledWithMatch('No readability issues found to send to Mystique');
+      expect(mockSendReadabilityToMystique).not.to.have.been.called;
+      expect(result.processing).to.be.false;
+    });
+
+    it('should collect readability issues and check for existing suggestions', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Mock existing opportunity with no suggestions
+      const mockOpportunity = {
+        getAuditId: () => 'job-123',
+        getData: () => ({ subType: 'readability' }),
+        getSuggestions: sinon.stub().resolves([]),
+      };
+      context.dataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
+      expect(log.info).to.have.been.calledWithMatch('Sending 1 readability issues to Mystique');
+      expect(result.processing).to.be.true;
+    });
+
+    it('should handle existing suggestions from previous Mystique runs', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Mock existing opportunity with suggestions
+      const mockSuggestion = {
+        getData: () => ({
+          recommendations: [{
+            originalText: poorText,
+            improvedText: 'This is a simple sentence. It is easy to read.',
+            originalFleschScore: 15,
+            improvedFleschScore: 85,
+            seoRecommendation: 'Use shorter sentences',
+            aiRationale: 'Shorter sentences improve readability',
+          }],
+          lastMystiqueResponse: '2023-01-01T00:00:00.000Z',
+        }),
+      };
+
+      const mockOpportunity = {
+        getAuditId: () => 'job-123',
+        getData: () => ({ subType: 'readability' }),
+        getSuggestions: sinon.stub().resolves([mockSuggestion]),
+      };
+      context.dataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(mockSendReadabilityToMystique).not.to.have.been.called;
+      expect(log.info).to.have.been.calledWithMatch('All 1 readability issues already have suggestions');
+      expect(result.processing).to.be.false;
+
+      // Check that audit results were updated with suggestions
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      const opportunity = audit.opportunities[0];
+      expect(opportunity.suggestionStatus).to.equal('completed');
+      expect(opportunity.improvedText).to.equal('This is a simple sentence. It is easy to read.');
+      expect(opportunity.improvedFleschScore).to.equal(85);
+      expect(opportunity.readabilityImprovement).to.equal(70); // 85 - 15
+    });
+
+    it('should handle no existing opportunity found scenario', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // No existing opportunity found
+      context.dataAccess.Opportunity.allBySiteId.resolves([]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(log.debug).to.have.been.calledWithMatch('No existing opportunity found for jobId: job-123');
+      expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
+      expect(result.processing).to.be.true;
+
+      // Check that opportunities were marked as processing
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      const opportunity = audit.opportunities[0];
+      expect(opportunity.suggestionStatus).to.equal('processing');
+      expect(opportunity.suggestionMessage).to.include('AI suggestions are being generated by Mystique');
+    });
+
+    it('should handle mixed suggestions scenario - some exist, some need processing', async () => {
+      const poorText1 = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+      const poorText2 = 'Another extremely convoluted and unnecessarily complicated textual composition that employs excessive verbosity and complex grammatical structures that significantly impede comprehension for typical readers.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText1}</p><p>${poorText2}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Mock existing opportunity with partial suggestions (only for first text)
+      const mockSuggestion = {
+        getData: () => ({
+          recommendations: [{
+            originalText: poorText1,
+            improvedText: 'This is a simple sentence. It is easy to read.',
+            originalFleschScore: 15,
+            improvedFleschScore: 85,
+            seoRecommendation: 'Use shorter sentences',
+            aiRationale: 'Shorter sentences improve readability',
+          }],
+          lastMystiqueResponse: '2023-01-01T00:00:00.000Z',
+        }),
+      };
+
+      const mockOpportunity = {
+        getAuditId: () => 'job-123',
+        getData: () => ({ subType: 'readability' }),
+        getSuggestions: sinon.stub().resolves([mockSuggestion]),
+      };
+      context.dataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
+      expect(log.info).to.have.been.calledWithMatch('Sending 1 readability issues to Mystique');
+      expect(result.processing).to.be.true;
+
+      // Check that first opportunity has completed suggestion, second is processing
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      expect(audit.opportunities).to.have.lengthOf(2);
+
+      const completedOpportunity = audit.opportunities.find((opp) => opp.textContent === poorText1);
+      const processingOpportunity = audit.opportunities.find(
+        (opp) => opp.textContent === poorText2,
+      );
+
+      expect(completedOpportunity.suggestionStatus).to.equal('completed');
+      expect(processingOpportunity.suggestionStatus).to.equal('processing');
+    });
+
+    it('should handle errors when checking for existing suggestions', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Mock error when getting opportunities
+      context.dataAccess.Opportunity.allBySiteId.rejects(new Error('Database connection failed'));
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(log.error).to.have.been.calledWithMatch('Error checking for existing suggestions: Database connection failed');
+      expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
+      expect(result.processing).to.be.true;
+
+      // Check that opportunities were marked as processing as fallback
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      const opportunity = audit.opportunities[0];
+      expect(opportunity.suggestionStatus).to.equal('processing');
+    });
+
+    it('should handle Mystique integration errors and set error status', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // No existing opportunity found
+      context.dataAccess.Opportunity.allBySiteId.resolves([]);
+
+      // Mock Mystique error
+      mockSendReadabilityToMystique.rejects(new Error('SQS connection failed'));
+
+      // Add env and sqs to context for error debugging
+      context.env = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
+      context.sqs = { sendMessage: sinon.stub() };
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(log.error).to.have.been.calledWithMatch('Error sending issues to Mystique');
+      expect(result.processing).to.be.false;
+
+      // Check that opportunities were marked with error status and debug info
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      const opportunity = audit.opportunities[0];
+      expect(opportunity.suggestionStatus).to.equal('error');
+      expect(opportunity.suggestionMessage).to.include('Mystique integration failed: SQS connection failed');
+      expect(opportunity.debugInfo).to.exist;
+      expect(opportunity.debugInfo.errorType).to.equal('Error');
+      expect(opportunity.debugInfo.errorMessage).to.equal('SQS connection failed');
+      expect(opportunity.debugInfo.mystiqueQueueConfigured).to.be.true;
+      expect(opportunity.debugInfo.sqsClientAvailable).to.be.true;
+    });
+
+    it('should clear readability opportunities from response when processing', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // No existing opportunity found
+      context.dataAccess.Opportunity.allBySiteId.resolves([]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(result.processing).to.be.true;
+
+      // Check that opportunities were cleared from the response (set to empty array)
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      expect(audit.opportunities).to.have.lengthOf(0);
+    });
+
+    it('should add suggest step timing information', async () => {
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: '<html><body><p>Simple text that is easy to read.</p></body></html>',
+          },
+        },
+      }];
+
+      await readabilityMocked.default(context, auditContext);
+
+      expect(auditContext.timeExecutionBreakdown).to.have.lengthOf(1);
+      expect(auditContext.timeExecutionBreakdown[0].name).to.equal('readability-suggestions');
+      expect(auditContext.timeExecutionBreakdown[0].duration).to.include('seconds');
     });
   });
 });
