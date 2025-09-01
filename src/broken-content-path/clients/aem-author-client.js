@@ -20,6 +20,12 @@ export class AemAuthorClient {
 
   static API_SITES_FRAGMENTS = `${AemAuthorClient.API_SITES_BASE}/fragments`;
 
+  // Safety limit to prevent too many paginated queries
+  static MAX_PAGES = 10;
+
+  // Delay between pagination requests for rate limiting
+  static PAGINATION_DELAY_MS = 100;
+
   constructor(authorUrl, authToken, pathIndex = null) {
     this.authorUrl = authorUrl;
     this.authToken = authToken;
@@ -58,9 +64,20 @@ export class AemAuthorClient {
     }
   }
 
+  /**
+   * Simple delay utility for rate limiting
+   * @param {number} ms - Milliseconds to delay
+   * @returns {Promise<void>}
+   */
+  static async delay(ms) {
+    return new Promise((resolve) => {
+      setTimeout(() => resolve(), ms);
+    });
+  }
+
   async isAvailable(path) {
     try {
-      const response = await fetch(this.createUrl(path), {
+      const response = await fetch(this.createUrl(path).toString(), {
         headers: this.createAuthHeaders(),
       });
 
@@ -71,7 +88,7 @@ export class AemAuthorClient {
       const data = await response.json();
       const isAvailable = data?.items && data.items.length > 0;
 
-      // If content is available and we have a PathIndex, cache it
+      // If content is available, cache it
       if (isAvailable && this.pathIndex) {
         for (const item of data.items) {
           const contentPath = new ContentPath(
@@ -89,22 +106,99 @@ export class AemAuthorClient {
     }
   }
 
-  async fetchContent(path) {
+  async fetchContent(path, context = null) {
     try {
-      // TODO: Implement crawling with pagination, as AEM returns only 50 items at a time
-      const response = await fetch(this.createUrl(path), {
-        headers: this.createAuthHeaders(),
-      });
-
-      if (!response.ok) {
-        return [];
-      }
-
-      const data = await response.json();
-      return data?.items || [];
+      return await this.fetchContentWithPagination(path, context);
     } catch (error) {
       throw new Error(`Failed to fetch AEM Author content for ${path}: ${error.message}`);
     }
+  }
+
+  /**
+   * Crawl all content from a path using cursor-based pagination
+   * @param {string} path - The path to crawl
+   * @param {Object} context - Optional context for logging
+   * @returns {Promise<Array>} - All content items found
+   */
+  async fetchContentWithPagination(path, context = null) {
+    const { log } = context;
+
+    const allItems = [];
+    let cursor = null;
+    let pageCount = 0;
+
+    log.debug(`Starting crawl for path: ${path}`);
+
+    do {
+      try {
+        pageCount += 1;
+        if (pageCount > AemAuthorClient.MAX_PAGES) {
+          log.warn(`Reached maximum page limit (${AemAuthorClient.MAX_PAGES}) for path: ${path}`);
+          break;
+        }
+
+        log.debug(`Fetching page ${pageCount} for path: ${path}${cursor ? ` (cursor: ${cursor})` : ''}`);
+
+        // eslint-disable-next-line no-await-in-loop
+        const response = await this.fetchWithPagination(path, cursor);
+
+        if (response.items && response.items.length > 0) {
+          allItems.push(...response.items);
+          log.debug(`Page ${pageCount}: Found ${response.items.length} items (total: ${allItems.length})`);
+        }
+
+        cursor = response.cursor;
+
+        // Add small delay to implement rate limiting
+        if (cursor) {
+          // eslint-disable-next-line no-await-in-loop
+          await AemAuthorClient.delay(AemAuthorClient.PAGINATION_DELAY_MS);
+        }
+      } catch (error) {
+        log.error(`Error fetching page ${pageCount} for path ${path}: ${error.message}`);
+        // Return what we have so far instead of failing completely
+        break;
+      }
+    } while (cursor && pageCount < AemAuthorClient.MAX_PAGES);
+
+    // Cache items
+    if (this.pathIndex) {
+      for (const item of allItems) {
+        const contentPath = new ContentPath(
+          item.path,
+          AemAuthorClient.parseContentStatus(item.status),
+          Locale.fromPath(item.path),
+        );
+        this.pathIndex.insertContentPath(contentPath);
+      }
+    }
+
+    log.info(`Complete crawl finished for path: ${path}. Found ${allItems.length} total items across ${pageCount} pages`);
+    return allItems;
+  }
+
+  /**
+   * Fetch a single page of content with optional cursor
+   * @param {string} path - The path to fetch
+   * @param {string|null} cursor - The cursor for pagination
+   * @returns {Promise<{items: Array, cursor: string|null}>} - Response with items and next cursor
+   */
+  async fetchWithPagination(path, cursor = null) {
+    const url = this.createUrlWithPagination(path, cursor);
+
+    const response = await fetch(url.toString(), {
+      headers: this.createAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return {
+      items: data?.items || [],
+      cursor: data?.cursor || null,
+    };
   }
 
   async getChildrenFromPath(parentPath, context) {
@@ -139,6 +233,16 @@ export class AemAuthorClient {
 
     if (isAvailable) {
       log.info(`Parent path is available on Author: ${parentPath}`);
+
+      // Cache content here since it is available
+      try {
+        await this.fetchContent(parentPath, context);
+        log.debug(`Fetched all content for parent path: ${parentPath}`);
+      } catch (error) {
+        log.warn(`Failed to fetch complete content for ${parentPath}: ${error.message}`);
+        // Continue with cached data if available
+      }
+
       return this.pathIndex.findChildren(parentPath);
     }
 
@@ -148,11 +252,27 @@ export class AemAuthorClient {
     return this.getChildrenFromPath(nextParent, context);
   }
 
+  /**
+   * Create URL with pagination parameters
+   * @param {string} path - The path to fetch
+   * @param {string|null} cursor - The cursor for pagination
+   * @returns {string} - Complete URL with pagination
+   */
+  createUrlWithPagination(fragmentPath, cursor = null) {
+    const url = this.createUrl(fragmentPath);
+
+    if (cursor) {
+      url.searchParams.set('cursor', cursor);
+    }
+
+    return url;
+  }
+
   createUrl(fragmentPath) {
     const url = new URL(AemAuthorClient.API_SITES_FRAGMENTS, this.authorUrl);
     url.searchParams.set('path', fragmentPath);
     url.searchParams.set('projection', 'minimal');
-    return url.toString();
+    return url;
   }
 
   createAuthHeaders() {
