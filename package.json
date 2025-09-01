@@ -47,7 +47,8 @@
       "src/cdn-analysis/sql",
       "src/cdn-logs-report/sql",
       "src/llmo-referral-traffic/sql",
-      "src/page-intent/sql"
+      "src/page-intent/sql",
+      "src/llm-error-pages/sql"
     ]
   },
   "repository": {
