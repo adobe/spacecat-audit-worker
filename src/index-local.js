@@ -13,32 +13,14 @@
 import { main as universalMain } from './index.js';
 
 export const main = async () => {
-  // const messageBody = {
-  //   type: 'llm-error-pages',
-  //   siteId: '028147f6-4a7a-4325-a758-376c460a559c',
-  //   auditContext: {
-  //     type: 'llm-error-pages',
-  //     fullAuditRef: 'scrapes/40f377b0-2242-41d6-b215-e9ff8ace8b3d/',
-  //   },
-  // };
   const messageBody = {
-    id: '7d657eec-7cad-4fbe-8de4-6bfd77b5acab',
-    type: 'guidance:llm-error-pages',
-    auditId: 'llm-error-pages-audit',
-    siteId: '028147f6-4a7a-4325-a758-376c460a559c',
-    data: {
-      brokenLinks: [
-        {
-          urlFrom: 'ChatGPT, Perplexity',
-          urlTo: 'https://akamai.synth/products/category_d/product_4',
-          suggestionId: 'llm-404-suggestion-w34-2025-0',
-          suggestedUrls: [
-            'https://akamai.synth/',
-          ],
-          aiRationale: 'No alternative URLs were provided for analysis. According to the strict domain and list adherence rules, when no suitable same-domain alternatives exist, only the base URL of the domain should be suggested. This ensures users remain on the correct domain and preserves as much SEO value as possible, even though the specific product content is unavailable.',
-        },
-      ],
-      opportunityId: 'llm-404-w34-2025',
+    type: 'llm-blocked',
+    siteId: 'c2473d89-e997-458d-a86d-b4096649c12b',
+    auditContext: {
+      next: 'check-llm-blocked',
+      auditId: 'a263123c-9f9a-44a8-9531-955884563472',
+      type: 'llm-blocked',
+      fullAuditRef: 'llm-blocked::adobe.com',
     },
   };
 
