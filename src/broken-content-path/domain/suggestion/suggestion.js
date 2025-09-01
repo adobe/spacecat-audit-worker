@@ -25,7 +25,7 @@ export class Suggestion {
     this.reason = reason;
   }
 
-  static publish(requestedPath, reason = 'Content exists on Author but is not published') {
+  static publish(requestedPath, reason = 'Content exists on Author') {
     return new Suggestion(requestedPath, null, SuggestionType.PUBLISH, reason);
   }
 
