@@ -17,7 +17,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import esmock from 'esmock';
 
-describe('LLM Error Pages Handler (Excel + SQS)', () => {
+describe('LLM Error Pages Handler', () => {
   let handler;
   let mockAthenaClient;
   let sandbox;
@@ -109,707 +109,542 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
   afterEach(() => sandbox.restore());
 
-  it('writes 3 Excel files and sends SQS for 404s with alternativeUrls', async () => {
-    mockAthenaClient.query.resolves([]);
+  describe('Main Audit Runner', () => {
+    it('processes errors and generates Excel files successfully', async () => {
+      mockAthenaClient.query.resolves([]);
 
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }), getLlmoDataFolder: () => 'customer' }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
+      const site = {
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }), getLlmoDataFolder: () => 'customer' }),
+        getId: () => 'site-1',
+        getDeliveryType: () => 'aem_edge',
+      };
 
-    const topPages = [{ getUrl: () => 'https://example.com/' }, { getUrl: () => 'https://example.com/products/' }];
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
-      },
-    };
+      const context = {
+        log: console,
+        audit: {},
+        sqs: null,
+        env: {},
+        dataAccess: {},
+      };
 
-    const ctx = {
-      log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess,
-    };
+      const result = await handler.runner('https://example.com', context, site);
 
-    const result = await handler.runner('https://example.com', ctx, site);
+      // Verify Excel reports were saved 3 times (404, 403, 5xx)
+      expect(mockSaveExcelReport.callCount).to.equal(3);
 
-    // Excel reports saved 3 times
-    expect(mockSaveExcelReport.callCount).to.equal(3);
-
-    // SQS message sent once for 404 group
-    expect(sqs.sendMessage.calledOnce).to.be.true;
-    const queueUrl = sqs.sendMessage.firstCall.args[0];
-    const msg = sqs.sendMessage.firstCall.args[1];
-    expect(queueUrl).to.equal('queue-url');
-    expect(msg.type).to.equal('guidance:llm-error-pages');
-    expect(msg.data).to.have.property('brokenLinks');
-    expect(msg.data).to.have.property('alternativeUrls');
-
-    expect(result.auditResult.success).to.be.true;
-    expect(result.auditResult.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
-  });
-
-  it('handles audit failure and returns error result', async () => {
-    mockAthenaClient.query.rejects(new Error('Database connection failed'));
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const ctx = {
-      log: console, env: {}, sqs: null, dataAccess: {},
-    };
-
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.false;
-    expect(result.auditResult.error).to.equal('Database connection failed');
-    expect(result.auditResult.database).to.equal('test_db');
-    expect(result.auditResult.table).to.equal('test_table');
-    expect(result.auditResult.customer).to.equal('test-customer');
-  });
-
-  it('handles invalid URLs in toPathOnly function', async () => {
-    // This test exercises the catch block in toPathOnly by providing invalid URLs
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 GPTBot/4.0', url: '://invalid-url-with-no-protocol', status: 404, total_requests: 1,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 1 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const ctx = {
-      log: console, env: {}, sqs: null, dataAccess: {},
-    };
-
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(mockSaveExcelReport.callCount).to.equal(1); // Only 404 file generated
-  });
-
-  it('handles invalid URLs with no site base URL', async () => {
-    // This test exercises the catch block in toPathOnly with no base URL
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 GPTBot/4.0', url: '\x00invalid-url-with-null-char', status: 404, total_requests: 1,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 1 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const site = {
-      getBaseURL: () => null, // No base URL
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const ctx = {
-      log: console, env: {}, sqs: null, dataAccess: {},
-    };
-
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(mockSaveExcelReport.callCount).to.equal(1); // Only 404 file generated
-  });
-
-  it('handles URL constructor throwing error', async () => {
-    // This test exercises the catch block in toPathOnly by mocking URL constructor to throw
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 GPTBot/4.0', url: 'any-url', status: 404, total_requests: 1,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 1 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    // Temporarily override the global URL constructor to throw
-    const originalURL = global.URL;
-    global.URL = function MockURL() {
-      throw new TypeError('Invalid URL');
-    };
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const ctx = {
-      log: console, env: {}, sqs: null, dataAccess: {},
-    };
-
-    try {
-      const result = await handler.runner('https://example.com', ctx, site);
+      // Verify audit result structure
       expect(result.auditResult.success).to.be.true;
-      expect(mockSaveExcelReport.callCount).to.equal(1); // Only 404 file generated
-    } finally {
-      // Restore the original URL constructor
-      global.URL = originalURL;
-    }
-  });
-
-  it('skips SQS when no 404 errors', async () => {
-    mockProcessResults.returns({
-      totalErrors: 2,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3,
-        },
-        {
-          user_agent: 'Chrome/120 Claude/1.0', url: '/api/data', status: 503, total_requests: 5,
-        },
-      ],
-      summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 403: 3, 503: 5 } },
+      expect(result.auditResult.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      expect(result.auditResult.totalErrors).to.equal(3);
+      expect(result.auditResult.categorizedResults).to.exist;
+      expect(result.fullAuditRef).to.equal('https://example.com');
     });
 
-    mockAthenaClient.query.resolves([]);
+    it('handles audit failure and returns error result', async () => {
+      mockAthenaClient.query.rejects(new Error('Database connection failed'));
 
+      const site = {
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+        getId: () => 'site-1',
+        getDeliveryType: () => 'aem_edge',
+      };
+
+      const context = {
+        log: console,
+        audit: {},
+        sqs: null,
+        env: {},
+        dataAccess: {},
+      };
+
+      const result = await handler.runner('https://example.com', context, site);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Database connection failed');
+      expect(result.auditResult.database).to.equal('test_db');
+      expect(result.auditResult.table).to.equal('test_table');
+      expect(result.auditResult.customer).to.equal('test-customer');
+    });
+
+    it('handles site with no config', async () => {
+      mockAthenaClient.query.resolves([]);
+
+      const site = {
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => null, // No config at all
+        getId: () => 'site-1',
+        getDeliveryType: () => 'aem_edge',
+      };
+
+      const context = {
+        log: console,
+        audit: {},
+        sqs: null,
+        env: {},
+        dataAccess: {},
+      };
+
+      const result = await handler.runner('https://example.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockSaveExcelReport.callCount).to.equal(3); // 404, 403, 5xx files generated
+    });
+
+    it('handles empty errors array and skips Excel generation', async () => {
+      // Mock processResults to return empty errors for all categories
+      mockProcessResults.returns({
+        totalErrors: 0,
+        errorPages: [],
+        summary: { uniqueUrls: 0, uniqueUserAgents: 0, statusCodes: {} },
+        categorizedResults: {
+          404: [], // Empty array for 404 errors (line 86)
+          403: [],
+          '5xx': [],
+        },
+      });
+
+      mockAthenaClient.query.resolves([]);
+
+      const site = {
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+        getId: () => 'site-1',
+        getDeliveryType: () => 'aem_edge',
+      };
+
+      const context = {
+        log: console,
+        audit: {},
+        sqs: null,
+        env: {},
+        dataAccess: {},
+      };
+
+      const result = await handler.runner('https://example.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.totalErrors).to.equal(0);
+      // When there are no errors, Excel files should not be generated
+      expect(mockSaveExcelReport.callCount).to.equal(0);
+    });
+  });
+
+  describe('Mystique Message Post Processor', () => {
+    it('sends SQS message for 404 errors with alternativeUrls', async () => {
+      const topPages = [{ getUrl: () => 'https://example.com/' }, { getUrl: () => 'https://example.com/products/' }];
+      const sqs = { sendMessage: sandbox.stub().resolves() };
+      const dataAccess = {
+        Site: {
+          findById: sandbox.stub().resolves({
+            getBaseURL: () => 'https://example.com',
+            getDeliveryType: () => 'aem_edge',
+          }),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+      };
+
+      const auditData = {
+        siteId: 'site-1',
+        auditId: 'audit-123',
+        auditResult: {
+          success: true,
+          categorizedResults: {
+            404: [
+              {
+                user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+              },
+            ],
+          },
+          periodIdentifier: 'w34-2025',
+        },
+      };
+
+      const context = {
+        log: console,
+        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
+        sqs,
+        dataAccess,
+        audit: {
+          getId: () => 'audit-123',
+        },
+      };
+
+      const result = await handler.postProcessors[0]('https://example.com', auditData, context);
+
+      // Verify SQS message was sent
+      expect(sqs.sendMessage.calledOnce).to.be.true;
+      const queueUrl = sqs.sendMessage.firstCall.args[0];
+      const msg = sqs.sendMessage.firstCall.args[1];
+      expect(queueUrl).to.equal('queue-url');
+      expect(msg.type).to.equal('guidance:llm-error-pages');
+      expect(msg.data).to.have.property('brokenLinks');
+      expect(msg.data).to.have.property('alternativeUrls');
+      expect(msg.siteId).to.equal('site-1');
+      expect(msg.auditId).to.equal('audit-123');
+
+      // Verify post processor returns auditData unchanged
+      expect(result).to.deep.equal(auditData);
+    });
+
+    it('skips message when audit failed', async () => {
+      const auditData = {
+        siteId: 'site-1',
+        auditResult: {
+          success: false,
+          error: 'Audit failed',
+        },
+      };
+
+      const context = {
+        log: console,
+        sqs: { sendMessage: sandbox.stub() },
+        env: {},
+        dataAccess: {},
+        audit: {
+          getId: () => 'audit-123',
+        },
+      };
+
+      const result = await handler.postProcessors[0]('https://example.com', auditData, context);
+
+      expect(context.sqs.sendMessage.called).to.be.false;
+      expect(result).to.deep.equal(auditData);
+    });
+
+    it('skips message when no 404 errors', async () => {
+      const auditData = {
+        siteId: 'site-1',
+        auditResult: {
+          success: true,
+          categorizedResults: {
+            403: [
+              {
+                user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3,
+              },
+            ],
+          },
+          periodIdentifier: 'w34-2025',
+        },
+      };
+
+      const context = {
+        log: console,
+        sqs: { sendMessage: sandbox.stub() },
+        env: {},
+        dataAccess: {},
+        audit: {
+          getId: () => 'audit-123',
+        },
+      };
+
+      const result = await handler.postProcessors[0]('https://example.com', auditData, context);
+
+      expect(context.sqs.sendMessage.called).to.be.false;
+      expect(result).to.deep.equal(auditData);
+    });
+
+    it('skips message when SQS not configured', async () => {
+      const auditData = {
+        siteId: 'site-1',
+        auditResult: {
+          success: true,
+          categorizedResults: {
+            404: [
+              {
+                user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+              },
+            ],
+          },
+          periodIdentifier: 'w34-2025',
+        },
+      };
+
+      const context = {
+        log: console,
+        env: {}, // No QUEUE_SPACECAT_TO_MYSTIQUE
+        sqs: null,
+        dataAccess: {},
+        audit: {
+          getId: () => 'audit-123',
+        },
+      };
+
+      const result = await handler.postProcessors[0]('https://example.com', auditData, context);
+
+      expect(result).to.deep.equal(auditData);
+    });
+
+    it('handles site with no base URL in SQS message', async () => {
+      const topPages = [{ getUrl: () => 'https://example.com/' }];
+      const sqs = { sendMessage: sandbox.stub().resolves() };
+      const dataAccess = {
+        Site: {
+          findById: sandbox.stub().resolves({
+            getBaseURL: () => null, // No base URL
+            getDeliveryType: () => 'aem_edge',
+          }),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+      };
+
+      const auditData = {
+        siteId: 'site-1',
+        auditResult: {
+          success: true,
+          categorizedResults: {
+            404: [
+              {
+                user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+              },
+            ],
+          },
+          periodIdentifier: 'w34-2025',
+        },
+      };
+
+      const context = {
+        log: console,
+        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
+        sqs,
+        dataAccess,
+        audit: {
+          getId: () => 'audit-123',
+        },
+      };
+
+      const result = await handler.postProcessors[0]('https://example.com', auditData, context);
+
+      expect(sqs.sendMessage.calledOnce).to.be.true;
+
+      // Check that the message uses the URL directly (no baseUrl prefix)
+      const msg = sqs.sendMessage.firstCall.args[1];
+      expect(msg.data.brokenLinks[0].urlTo).to.equal('/p1'); // No baseUrl prefix
+
+      expect(result).to.deep.equal(auditData);
+    });
+
+    it('handles site with missing delivery type and uses fallback', async () => {
+      const topPages = [{ getUrl: () => 'https://example.com/' }];
+      const sqs = { sendMessage: sandbox.stub().resolves() };
+      const dataAccess = {
+        Site: {
+          findById: sandbox.stub().resolves({
+            getBaseURL: () => 'https://example.com',
+            getDeliveryType: () => undefined, // Missing delivery type (line 216)
+          }),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+      };
+
+      const auditData = {
+        siteId: 'site-1',
+        auditResult: {
+          success: true,
+          categorizedResults: {
+            404: [
+              {
+                user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+              },
+            ],
+          },
+          periodIdentifier: 'w34-2025',
+        },
+      };
+
+      const context = {
+        log: console,
+        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
+        sqs,
+        dataAccess,
+        audit: {
+          getId: () => 'audit-123',
+        },
+      };
+
+      const result = await handler.postProcessors[0]('https://example.com', auditData, context);
+
+      expect(sqs.sendMessage.calledOnce).to.be.true;
+
+      // Check that the fallback delivery type is used (line 216)
+      const msg = sqs.sendMessage.firstCall.args[1];
+      expect(msg.deliveryType).to.equal('aem_edge'); // Should use fallback value
+
+      expect(result).to.deep.equal(auditData);
+    });
+
+    it('handles missing audit ID and uses fallback', async () => {
+      const topPages = [{ getUrl: () => 'https://example.com/' }];
+      const sqs = { sendMessage: sandbox.stub().resolves() };
+      const dataAccess = {
+        Site: {
+          findById: sandbox.stub().resolves({
+            getBaseURL: () => 'https://example.com',
+            getDeliveryType: () => 'aem_edge',
+          }),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+        },
+      };
+
+      const auditData = {
+        siteId: 'site-1',
+        auditResult: {
+          success: true,
+          categorizedResults: {
+            404: [
+              {
+                user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+              },
+            ],
+          },
+          periodIdentifier: 'w34-2025',
+        },
+      };
+
+      const context = {
+        log: console,
+        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
+        sqs,
+        dataAccess,
+        audit: {
+          getId: () => undefined, // Missing audit ID
+        },
+      };
+
+      const result = await handler.postProcessors[0]('https://example.com', auditData, context);
+
+      expect(sqs.sendMessage.calledOnce).to.be.true;
+      // Verify the fallback audit ID is used
+      const sentMessage = sqs.sendMessage.firstCall.args[1];
+      expect(sentMessage.auditId).to.equal('llm-error-pages-audit');
+      expect(result).to.deep.equal(auditData);
+    });
+
+    it('handles error during message sending', async () => {
+      const sqs = { sendMessage: sandbox.stub().rejects(new Error('SQS error')) };
+      const dataAccess = {
+        Site: {
+          findById: sandbox.stub().resolves({
+            getBaseURL: () => 'https://example.com',
+            getDeliveryType: () => 'aem_edge',
+          }),
+        },
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        },
+      };
+
+      const auditData = {
+        siteId: 'site-1',
+        auditResult: {
+          success: true,
+          categorizedResults: {
+            404: [
+              {
+                user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+              },
+            ],
+          },
+          periodIdentifier: 'w34-2025',
+        },
+      };
+
+      const context = {
+        log: console,
+        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
+        sqs,
+        dataAccess,
+        audit: {
+          getId: () => 'audit-123',
+        },
+      };
+
+      const result = await handler.postProcessors[0]('https://example.com', auditData, context);
+
+      // Should still return auditData even if SQS fails
+      expect(result).to.deep.equal(auditData);
+    });
+
+    it('handles site not found', async () => {
+      const dataAccess = {
+        Site: {
+          findById: sandbox.stub().resolves(null), // Site not found
+        },
+      };
+
+      const auditData = {
+        siteId: 'site-1',
+        auditResult: {
+          success: true,
+          categorizedResults: {
+            404: [
+              {
+                user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
+              },
+            ],
+          },
+          periodIdentifier: 'w34-2025',
+        },
+      };
+
+      const context = {
+        log: console,
+        env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
+        sqs: { sendMessage: sandbox.stub() },
+        dataAccess,
+        audit: {
+          getId: () => 'audit-123',
+        },
+      };
+
+      const result = await handler.postProcessors[0]('https://example.com', auditData, context);
+
+      expect(context.sqs.sendMessage.called).to.be.false;
+      expect(result).to.deep.equal(auditData);
+    });
+  });
+
+  describe('Audit Configuration', () => {
+    it('has correct audit structure', () => {
+      expect(handler.runner).to.be.a('function');
+      expect(handler.postProcessors).to.be.an('array');
+      expect(handler.postProcessors).to.have.length(1);
+      expect(handler.postProcessors[0]).to.be.a('function');
+    });
+
+    it('has correct URL resolver', () => {
+      expect(handler.urlResolver).to.exist;
+    });
+  });
+
+  it('handles site with missing baseURL and uses fallback', async () => {
     const site = {
-      getBaseURL: () => 'https://example.com',
+      getBaseURL: () => undefined, // Missing baseURL
       getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
 
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const ctx = {
-      log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess: {},
-    };
-
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(sqs.sendMessage.called).to.be.false; // No SQS message sent (no 404s)
-    expect(mockSaveExcelReport.callCount).to.equal(2); // 403 and 5xx files generated
-  });
-
-  it('skips SQS when no SQS client provided', async () => {
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const ctx = {
-      log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs: null, dataAccess: {},
-    }; // No SQS
-
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(mockSaveExcelReport.callCount).to.equal(1); // Only 404 file generated
-  });
-
-  it('skips SQS when no queue environment variable', async () => {
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const ctx = {
-      log: console, env: {}, sqs, dataAccess: {},
-    }; // No QUEUE_SPACECAT_TO_MYSTIQUE
-
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(sqs.sendMessage.called).to.be.false; // No SQS message sent
-    expect(mockSaveExcelReport.callCount).to.equal(1); // Only 404 file generated
-  });
-
-  it('handles site with no base URL in SQS message', async () => {
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const topPages = [{ getUrl: () => 'https://example.com/' }];
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
-      },
-    };
-
-    const site = {
-      getBaseURL: () => null, // No base URL
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const ctx = {
-      log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess,
-    };
-
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(sqs.sendMessage.calledOnce).to.be.true;
-
-    // Check that the message uses the URL directly (no baseUrl prefix)
-    const msg = sqs.sendMessage.firstCall.args[1];
-    expect(msg.data.brokenLinks[0].urlTo).to.equal('/p1'); // No baseUrl prefix
-  });
-
-  it('handles site with no config at all', async () => {
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => null, // No config at all
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const ctx = {
-      log: console, env: {}, sqs: null, dataAccess: {},
-    };
-
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(mockSaveExcelReport.callCount).to.equal(1); // Only 404 file generated
-  });
-
-  it('handles audit and site method fallbacks in SQS message', async () => {
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const topPages = [{ getUrl: () => 'https://example.com/' }];
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
-      },
-    };
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: null, // No getDeliveryType method
-    };
-
-    // No audit provided (null)
-    const ctx = {
-      log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess,
-    };
-
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(sqs.sendMessage.calledOnce).to.be.true;
-
-    // Check that the message uses fallback values
-    const msg = sqs.sendMessage.firstCall.args[1];
-    expect(msg.auditId).to.equal('llm-error-pages-audit'); // Fallback auditId
-    expect(msg.deliveryType).to.equal('aem_edge'); // Fallback deliveryType
-  });
-
-  it('handles empty categorized results with 404 fallback', async () => {
-    // Mock categorizeErrorsByStatusCode to return an object without 404 key
-    // This tests the || [] fallback when 404 key doesn't exist
-
-    // We need to mock the import - this is tricky with ES modules
-    // Instead, let's create a scenario where 404s are filtered out
-    mockProcessResults.returns({
-      totalErrors: 2,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3,
-        },
-        {
-          user_agent: 'Chrome/120 Claude/1.0', url: '/api/data', status: 503, total_requests: 5,
-        },
-      ],
-      summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 403: 3, 503: 5 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const ctx = {
-      log: console, env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' }, sqs, dataAccess: {},
-    };
-
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(sqs.sendMessage.called).to.be.false; // No SQS message sent (no 404s)
-    expect(mockSaveExcelReport.callCount).to.equal(2); // 403 and 5xx files generated
-  });
-
-  it('covers audit object without getId method branch', async () => {
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const topPages = [{ getUrl: () => 'https://example.com/' }];
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
-      },
-    };
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    // Test case for when audit is not provided in context
-    const ctx = {
+    const context = {
       log: console,
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
-      sqs,
-      dataAccess,
-      // Don't include audit in context
+      audit: {},
+      sqs: null,
+      env: {},
+      dataAccess: {},
     };
 
-    const result = await handler.runner('https://example.com', ctx, site);
+    const result = await handler.runner('https://example.com', context, site);
 
     expect(result.auditResult.success).to.be.true;
-    expect(sqs.sendMessage.calledOnce).to.be.true;
-
-    // Check that the message uses fallback auditId
-    const msg = sqs.sendMessage.firstCall.args[1];
-    expect(msg.auditId).to.equal('llm-error-pages-audit'); // Fallback auditId
-  });
-
-  it('covers the final remaining branches with direct function call', async () => {
-    // Test the remaining branches by calling the runner function directly with specific parameters
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const topPages = [{ getUrl: () => 'https://example.com/' }];
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
-      },
-    };
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    // Pass audit as a parameter to the runner function
-    const auditWithoutGetId = {}; // Empty object, no getId method
-    const ctx = {
-      log: console,
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
-      sqs,
-      dataAccess,
-    };
-
-    // Call runner with audit as fourth parameter
-    const result = await handler.runner('https://example.com', ctx, site, auditWithoutGetId);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(sqs.sendMessage.calledOnce).to.be.true;
-
-    // Check that the message uses fallback auditId when audit?.getId() is undefined
-    const msg = sqs.sendMessage.firstCall.args[1];
-    expect(msg.auditId).to.equal('llm-error-pages-audit'); // Fallback auditId
-  });
-
-  it('covers audit being null branch', async () => {
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const topPages = [{ getUrl: () => 'https://example.com/' }];
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
-      },
-    };
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const ctx = {
-      log: console,
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
-      sqs,
-      dataAccess,
-    };
-
-    // Pass null as audit parameter to test audit?.getId() branch
-    const result = await handler.runner('https://example.com', ctx, site, null);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(sqs.sendMessage.calledOnce).to.be.true;
-
-    // Check that the message uses fallback auditId when audit is null
-    const msg = sqs.sendMessage.firstCall.args[1];
-    expect(msg.auditId).to.equal('llm-error-pages-audit'); // Fallback auditId
-  });
-
-  it('covers final branches 129 & 139 with direct data manipulation', async () => {
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 GPTBot/4.0', url: '/p1', status: 404, total_requests: 4,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 404: 4 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const topPages = [{ getUrl: () => 'https://example.com/' }];
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
-      },
-    };
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const auditWithGetId = {
-      getId: () => 'audit-123',
-    };
-
-    const ctx = {
-      log: console,
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
-      sqs,
-      dataAccess,
-      audit: auditWithGetId, // Put audit in context, not as separate parameter
-    };
-
-    // This should hit both branches since:
-    // - processErrorPagesResults returns 404 errors
-    // - categorizeErrorsByStatusCode will naturally create a 404 key with those errors
-    // - audit.getId() will return 'audit-123' instead of using fallback
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(sqs.sendMessage.calledOnce).to.be.true;
-
-    // Check that the message uses the actual audit ID (not fallback)
-    const msg = sqs.sendMessage.firstCall.args[1];
-    expect(msg.auditId).to.equal('audit-123'); // Real audit ID from getId()
-  });
-
-  it('covers categorizedResults[404] undefined fallback', async () => {
-    // We need categorizedResults to NOT have a 404 property, triggering the || [] fallback
-
-    // Mock processErrorPagesResults to return non-404 errors only
-    mockProcessResults.returns({
-      totalErrors: 2,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3,
-        },
-        {
-          user_agent: 'Chrome/120 Claude/1.0', url: '/api/data', status: 503, total_requests: 5,
-        },
-      ],
-      summary: { uniqueUrls: 2, uniqueUserAgents: 2, statusCodes: { 403: 3, 503: 5 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = {};
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const ctx = {
-      log: console,
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
-      sqs,
-      dataAccess,
-    };
-
-    // Since we only have 403/5xx errors, categorizeErrorsByStatusCode will return:
-    // { 403: [...], '5xx': [...] } - NO 404 property
-    // This triggers: const errors404 = categorizedResults[404] || [];
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(sqs.sendMessage.called).to.be.false; // No SQS message sent (empty 404 array)
-    expect(mockSaveExcelReport.callCount).to.equal(2); // Only 403 and 5xx files generated
-  });
-
-  it('triggers 404 undefined fallback with modified categorizeErrorsByStatusCode', async () => {
-    // Now that categorizeErrorsByStatusCode only creates keys when there are errors,
-    // this test will ensure the 404 key doesn't exist, triggering the || [] fallback
-
-    mockProcessResults.returns({
-      totalErrors: 1,
-      errorPages: [
-        {
-          user_agent: 'Chrome/120 Perplexity/5.0', url: '/robots.txt', status: 403, total_requests: 3,
-        },
-      ],
-      summary: { uniqueUrls: 1, uniqueUserAgents: 1, statusCodes: { 403: 3 } },
-    });
-
-    mockAthenaClient.query.resolves([]);
-
-    const sqs = { sendMessage: sandbox.stub().resolves() };
-    const dataAccess = {};
-
-    const site = {
-      getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
-      getId: () => 'site-1',
-      getDeliveryType: () => 'aem_edge',
-    };
-
-    const ctx = {
-      log: console,
-      env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
-      sqs,
-      dataAccess,
-    };
-
-    // With only 403 errors, categorizeErrorsByStatusCode returns: { 403: [...] }
-    // NO 404 key exists, so categorizedResults[404] is undefined
-    // This finally triggers: const errors404 = categorizedResults[404] || [];
-    const result = await handler.runner('https://example.com', ctx, site);
-
-    expect(result.auditResult.success).to.be.true;
-    expect(sqs.sendMessage.called).to.be.false; // No SQS message sent (404 array is empty from fallback)
-    expect(mockSaveExcelReport.callCount).to.equal(1); // Only 403 file generated
+    expect(mockSaveExcelReport.callCount).to.equal(3); // 404, 403, 5xx files generated
   });
 });
