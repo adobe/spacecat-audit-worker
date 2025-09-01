@@ -35,6 +35,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
   const s3Config = getS3Config(site);
 
   log.info(`Starting LLM error pages audit for ${url}`);
+  log.info(`Running LLM error pages audit ${audit}`);
 
   try {
     const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
