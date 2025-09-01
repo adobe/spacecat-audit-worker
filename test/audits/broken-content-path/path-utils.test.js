@@ -1,0 +1,96 @@
+/*
+ * Copyright 2025 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+/* eslint-env mocha */
+import { expect } from 'chai';
+import { PathUtils } from '../../../src/broken-content-path/utils/path-utils.js';
+
+describe('PathUtils', () => {
+  describe('removeLocaleFromPath', () => {
+    it('should return original path for null or empty input', () => {
+      expect(PathUtils.removeLocaleFromPath(null)).to.equal(null);
+      expect(PathUtils.removeLocaleFromPath('')).to.equal('');
+      expect(PathUtils.removeLocaleFromPath(undefined)).to.equal(undefined);
+    });
+
+    it('should remove 2-letter locale from path', () => {
+      expect(PathUtils.removeLocaleFromPath('/content/dam/US/images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeLocaleFromPath('/content/dam/fr/images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+    });
+
+    it('should remove 5-letter locale from path', () => {
+      expect(PathUtils.removeLocaleFromPath('/content/dam/en-US/images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeLocaleFromPath('/content/dam/fr_FR/images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+    });
+
+    it('should remove multiple locales from path', () => {
+      expect(PathUtils.removeLocaleFromPath('/content/dam/en-US/US/images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+    });
+
+    it('should not remove non-locale segments', () => {
+      expect(PathUtils.removeLocaleFromPath('/content/dam/images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeLocaleFromPath('/content/dam/123/images/photo.jpg'))
+        .to.equal('/content/dam/123/images/photo.jpg');
+    });
+
+    it('should handle paths with no locales', () => {
+      expect(PathUtils.removeLocaleFromPath('/content/dam/images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeLocaleFromPath('/content/dam/'))
+        .to.equal('/content/dam/');
+    });
+
+    it('should return null for paths not starting with /content/dam/', () => {
+      expect(PathUtils.removeLocaleFromPath('/')).to.equal('/');
+      expect(PathUtils.removeLocaleFromPath('/en-US')).to.equal('/en-US');
+    });
+  });
+
+  describe('getParentPath', () => {
+    it('should return null for root paths', () => {
+      expect(PathUtils.getParentPath('/')).to.be.null;
+      expect(PathUtils.getParentPath('/content')).to.be.null;
+      expect(PathUtils.getParentPath('/content/dam')).to.be.null;
+    });
+
+    it('should return parent path for valid paths', () => {
+      expect(PathUtils.getParentPath('/content/dam/en-US'))
+        .to.equal('/content/dam');
+      expect(PathUtils.getParentPath('/content/dam/en-US/images'))
+        .to.equal('/content/dam/en-US');
+      expect(PathUtils.getParentPath('/content/dam/en-US/images/photo.jpg'))
+        .to.equal('/content/dam/en-US/images');
+    });
+
+    it('should return null for segment not starting with /content/dam/', () => {
+      expect(PathUtils.getParentPath('en-US')).to.be.null;
+      expect(PathUtils.getParentPath('/en-US')).to.be.null;
+    });
+
+    it('should handle null or empty input', () => {
+      expect(PathUtils.getParentPath(null)).to.be.null;
+      expect(PathUtils.getParentPath('')).to.be.null;
+      expect(PathUtils.getParentPath(undefined)).to.be.null;
+    });
+
+    it('should handle paths with trailing slash', () => {
+      expect(PathUtils.getParentPath('/content/dam/en-US/'))
+        .to.equal('/content/dam');
+    });
+  });
+});
