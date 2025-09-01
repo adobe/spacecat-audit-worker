@@ -1,11 +1,12 @@
 CREATE EXTERNAL TABLE IF NOT EXISTS {{databaseName}}.{{tableName}} (
   url string,
-  user_agent string,
-  status int,
-  referer string,
   host string,
-  time_to_first_byte double,
-  count bigint,
+  referrer string,
+  utm_source string,
+  utm_medium string,
+  tracking_param string,
+  device string,
+  date string,
   cdn_provider string
 )
 PARTITIONED BY (
@@ -31,4 +32,4 @@ TBLPROPERTIES (
   'projection.hour.digits' = '2',
   'storage.location.template' = '{{aggregatedLocation}}${year}/${month}/${day}/${hour}/',
   'has_encrypted_data' = 'false'
-)
+);

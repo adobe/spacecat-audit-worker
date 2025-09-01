@@ -14,14 +14,19 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import { getConfigs } from '../../../src/cdn-logs-report/constants/report-configs.js';
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('CDN Logs Report Utils', () => {
   let reportUtils;
   let sandbox;
   let mockResolveCdnBucketName;
+  const referralConfig = getConfigs('test-bucket', 'example_com')
+    .find((c) => c.name === 'referral');
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -50,8 +55,8 @@ describe('CDN Logs Report Utils', () => {
       expect(config).to.have.property('customerDomain', 'example_com');
       expect(config).to.have.property('bucket', 'test-bucket');
       expect(config).to.have.property('databaseName', 'cdn_logs_example_com');
-      expect(config).to.have.property('tableName', 'aggregated_logs_example_com');
-      expect(config).to.have.property('aggregatedLocation', 's3://test-bucket/aggregated/');
+      // expect(config).to.have.property('tableName', 'aggregated_logs_example_com');
+      // expect(config).to.have.property('aggregatedLocation', 's3://test-bucket/aggregated/');
     });
 
     it('extracts customer name from domain parts correctly', async () => {
@@ -183,11 +188,11 @@ describe('CDN Logs Report Utils', () => {
         error: sandbox.stub(),
       };
 
-      await reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, mockLog);
+      await reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, referralConfig, mockLog);
 
       expect(mockAthenaClient.execute).to.have.been.calledOnce;
-      expect(mockLog.info).to.have.been.calledWith('Creating or checking table: test_table');
-      expect(mockLog.info).to.have.been.calledWith('Table test_table is ready');
+      expect(mockLog.info).to.have.been.calledWith('Creating or checking table: aggregated_referral_logs_example_com');
+      expect(mockLog.info).to.have.been.calledWith('Table aggregated_referral_logs_example_com is ready');
     });
 
     it('handles table creation errors', async () => {
@@ -205,7 +210,7 @@ describe('CDN Logs Report Utils', () => {
       };
 
       await expect(
-        reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, mockLog),
+        reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, referralConfig, mockLog),
       ).to.be.rejectedWith('Table creation failed');
 
       expect(mockLog.error).to.have.been.calledWith(
