@@ -99,7 +99,6 @@ function getHighOrganicLowCtrOpportunityUrls(experimentationOpportunities) {
  * Audit handler container for all the opportunities
  * @param {*} auditUrl
  * @param {*} context
- * @param {*} site
  * @returns
  */
 
