@@ -1,3 +1,53 @@
+## [1.166.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.166.2...v1.166.3) (2025-08-31)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-helix-content-sdk to v1.4.20 ([#1202](https://github.com/adobe/spacecat-audit-worker/issues/1202)) ([5064453](https://github.com/adobe/spacecat-audit-worker/commit/506445326252cbb5d669b9731e610e0552139dac))
+
+## [1.166.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.166.1...v1.166.2) (2025-08-31)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1200](https://github.com/adobe/spacecat-audit-worker/issues/1200)) ([d68f628](https://github.com/adobe/spacecat-audit-worker/commit/d68f6287c077bc95dc445890049200783326dcfd))
+
+## [1.166.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.166.0...v1.166.1) (2025-08-31)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.60.1 ([#1193](https://github.com/adobe/spacecat-audit-worker/issues/1193)) ([b1c1d1e](https://github.com/adobe/spacecat-audit-worker/commit/b1c1d1e2fa0db1654e03a20d5bf7120975dfd427))
+
+# [1.166.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.165.2...v1.166.0) (2025-08-30)
+
+
+### Features
+
+* extract referral traffic from cdn logs ([#1176](https://github.com/adobe/spacecat-audit-worker/issues/1176)) ([fe1bc24](https://github.com/adobe/spacecat-audit-worker/commit/fe1bc24d597b17168eb128b59a810b57d64b6a6b))
+
+## [1.165.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.165.1...v1.165.2) (2025-08-29)
+
+
+### Bug Fixes
+
+* revert metatags audit scrape jobs due to preflight regression ([#1196](https://github.com/adobe/spacecat-audit-worker/issues/1196)) ([3ac720a](https://github.com/adobe/spacecat-audit-worker/commit/3ac720a7287b3f13290d338dfd62b0a1da3d09ae))
+* use correct bucket env ([#1197](https://github.com/adobe/spacecat-audit-worker/issues/1197)) ([acf7ab4](https://github.com/adobe/spacecat-audit-worker/commit/acf7ab4cf1c5e344f0769988f24394ff9a764362))
+
+## [1.165.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.165.0...v1.165.1) (2025-08-29)
+
+
+### Bug Fixes
+
+* genvar throws in preflight when not generating suggestions ([#1194](https://github.com/adobe/spacecat-audit-worker/issues/1194)) ([fc927eb](https://github.com/adobe/spacecat-audit-worker/commit/fc927eb3621c1ab65a2bf23fc37ae44ce436909a))
+
+# [1.165.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.164.2...v1.165.0) (2025-08-29)
+
+
+### Features
+
+* pre-warm cache either weekly or monthly per single site on call to perform ai analysis ([#1192](https://github.com/adobe/spacecat-audit-worker/issues/1192)) ([0d20246](https://github.com/adobe/spacecat-audit-worker/commit/0d20246526de7c5a500574d8aa4c7bf9bc2ff84f))
+
 ## [1.164.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.164.1...v1.164.2) (2025-08-28)
 
 

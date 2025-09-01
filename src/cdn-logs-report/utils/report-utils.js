@@ -34,9 +34,7 @@ export async function getS3Config(site, context) {
     bucket,
     customerName,
     customerDomain,
-    aggregatedLocation: `s3://${bucket}/aggregated/`,
     databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
   };
 }
@@ -67,11 +65,13 @@ export function validateCountryCode(code) {
   return DEFAULT_COUNTRY_CODE;
 }
 
-export async function ensureTableExists(athenaClient, s3Config, log) {
-  const { tableName, databaseName, aggregatedLocation } = s3Config;
+export async function ensureTableExists(athenaClient, databaseName, reportConfig, log) {
+  const {
+    createTableSql, tableName, aggregatedLocation,
+  } = reportConfig;
 
   try {
-    const createTableQuery = await loadSql('create-aggregated-table', {
+    const createTableQuery = await loadSql(createTableSql, {
       databaseName,
       tableName,
       aggregatedLocation,
