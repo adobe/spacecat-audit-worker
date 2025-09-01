@@ -1,3 +1,10 @@
+# [1.167.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.166.3...v1.167.0) (2025-09-01)
+
+
+### Features
+
+* add LLM error pages audit ([#1187](https://github.com/adobe/spacecat-audit-worker/issues/1187)) ([6150312](https://github.com/adobe/spacecat-audit-worker/commit/61503120ec044c15cbfa6a9145858507c4ae2c2a))
+
 ## [1.166.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.166.2...v1.166.3) (2025-08-31)
 
 
