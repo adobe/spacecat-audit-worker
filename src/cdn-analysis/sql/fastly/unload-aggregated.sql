@@ -6,7 +6,8 @@ UNLOAD (
     try(url_extract_host(request_referer)) AS referer,
     host,
     CAST(time_to_first_byte AS DOUBLE) * 1000 AS time_to_first_byte,
-    COUNT(*) AS count
+    COUNT(*) AS count,
+    '{{serviceProvider}}' AS cdn_provider
   FROM {{database}}.{{rawTable}}
   WHERE year  = '{{year}}'
     AND month = '{{month}}'
@@ -33,7 +34,8 @@ UNLOAD (
     response_status,
     request_referer,
     host,
-    CAST(time_to_first_byte AS DOUBLE) * 1000
+    CAST(time_to_first_byte AS DOUBLE) * 1000,
+    '{{serviceProvider}}'
 
-) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'
+) TO '{{aggregatedOutput}}'
 WITH (format = 'PARQUET');

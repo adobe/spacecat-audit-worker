@@ -6,7 +6,8 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{databaseName}}.{{tableName}} (
   utm_medium string,
   tracking_param string,
   device string,
-  date string
+  date string,
+  cdn_provider string
 )
 PARTITIONED BY (
   year string,

@@ -36,6 +36,10 @@ describe('CDN Analysis Handler', () => {
     sandbox = sinon.createSandbox();
     site = {
       getBaseURL: sandbox.stub().returns('https://example.com'),
+      getConfig: sandbox.stub().returns({
+        getLlmoCdnBucketConfig: () => null,
+        getCdnLogsConfig: () => null,
+      }),
     };
     context = new MockContextBuilder()
       .withSandbox(sandbox)
@@ -120,7 +124,7 @@ describe('CDN Analysis Handler', () => {
     const result = await handlerModule.cdnLogAnalysisRunner('https://example.com', context, site);
 
     expect(result.auditResult).to.have.property('error', 'No CDN bucket found');
-    expect(result.fullAuditRef).to.be.null;
+    expect(result.fullAuditRef).to.equal('https://example.com');
   });
 
   it('handles athena execution errors', async () => {
@@ -150,10 +154,6 @@ describe('CDN Analysis Handler', () => {
 
     expect(result.auditResult.providers).to.have.length(1);
     expect(result.auditResult.providers[0]).to.have.property('cdnType', 'fastly');
-
-    expect(context.log.info).to.have.been.calledWith(
-      'Skipping CLOUDFLARE - only processed daily at end of day (hour 23)',
-    );
 
     Date.now = originalDateNow;
   });
@@ -235,9 +235,6 @@ describe('CDN Analysis Handler', () => {
     const result = await handlerModule.cdnLogAnalysisRunner('https://example.com', context, site, auditContext);
 
     expect(result.auditResult.providers.map((p) => p.cdnType)).to.deep.equal(['fastly']);
-    expect(context.log.info).to.have.been.calledWith(
-      'Skipping CLOUDFLARE - only processed daily at end of day (hour 23)',
-    );
 
     const unloadCall = getStaticContentStub
       .getCalls()

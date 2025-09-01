@@ -40,6 +40,8 @@ describe('CDN Logs Report Handler', () => {
       getBaseURL: () => 'https://example.com',
       getConfig: () => ({
         getLlmoDataFolder: () => 'test-folder',
+        getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        getCdnLogsConfig: () => null,
       }),
     };
 
@@ -55,6 +57,7 @@ describe('CDN Logs Report Handler', () => {
         s3Client: {
           send: sandbox.stub().resolves(),
         },
+        dataAccess: { Organization: { findById: sandbox.stub() } },
       })
       .build();
 
@@ -89,6 +92,9 @@ describe('CDN Logs Report Handler', () => {
       },
       '../../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: mockCreateLLMOSharepointClient,
+      },
+      '../../../src/utils/data-access.js': {
+        getImsOrgId: () => Promise.resolve('ims-org-id'),
       },
     });
 

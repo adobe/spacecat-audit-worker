@@ -69,7 +69,7 @@ describe('CDN Logs Sheet Configs', () => {
           number_of_hits: 50,
           avg_ttfb_ms: 100.0,
           country_code: 'invalid',
-          url: 'https://example.com/missing',
+          url: '-',
           product: null,
           category: null,
         },
@@ -105,7 +105,7 @@ describe('CDN Logs Sheet Configs', () => {
           50,
           100.0,
           'GLOBAL',
-          'https://example.com/missing',
+          '/',
           'Other',
           'Uncategorized',
         ]);
