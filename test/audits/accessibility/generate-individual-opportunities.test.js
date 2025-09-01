@@ -126,8 +126,8 @@ describe('formatIssue', () => {
     sandbox = sinon.createSandbox();
     originalSuccessCriteriaLinks = JSON.parse(JSON.stringify(constants.successCriteriaLinks));
     // Add some test WCAG rules
-    constants.successCriteriaLinks['412'] = { name: 'Name, Role, Value' };
-    constants.successCriteriaLinks['111'] = { name: 'Non-text Content' };
+    // constants.successCriteriaLinks['412'] = { name: 'Name, Role, Value' };
+    // constants.successCriteriaLinks['111'] = { name: 'Non-text Content' };
   });
 
   afterEach(() => {
@@ -158,6 +158,7 @@ describe('formatIssue', () => {
       type: 'color-contrast',
       description: 'Test description',
       wcagRule: '4.1.2 Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
       wcagLevel: 'AA',
       severity: 'critical',
       occurrences: 5,
@@ -333,6 +334,7 @@ describe('formatIssue', () => {
       type: 'aria-allowed-attr',
       description: 'Test description',
       wcagRule: '4.1.2 Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
       wcagLevel: '',
       severity: 'critical',
       occurrences: 0,
@@ -362,6 +364,7 @@ describe('formatIssue', () => {
       type: 'aria-allowed-attr',
       description: 'Test description',
       wcagRule: '4.1.2 Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
       wcagLevel: '',
       severity: 'critical',
       occurrences: 0,
@@ -391,6 +394,7 @@ describe('formatIssue', () => {
       type: 'aria-allowed-attr',
       description: 'Test description',
       wcagRule: '4.1.2 Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
       wcagLevel: '',
       severity: 'critical',
       occurrences: 0,
@@ -420,6 +424,7 @@ describe('formatIssue', () => {
       type: 'aria-allowed-attr',
       description: '', // Should default to empty string
       wcagRule: '4.1.2 Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
       wcagLevel: '', // Should default to empty string
       severity: 'critical',
       occurrences: 1, // Length of htmlWithIssues array
@@ -448,6 +453,7 @@ describe('formatIssue', () => {
       type: 'aria-allowed-attr',
       description: '', // Should default to empty string
       wcagRule: '4.1.2 Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
       wcagLevel: '', // Should default to empty string
       severity: 'critical',
       occurrences: 1, // Length of htmlWithIssues array
