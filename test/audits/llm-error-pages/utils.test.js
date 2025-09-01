@@ -216,7 +216,7 @@ describe('LLM Error Pages Utils', () => {
       expect(mockGetStaticContent).to.have.been.calledWith({
         databaseName: 'test_db',
         tableName: 'test_table',
-        whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599',
+        whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
       }, './src/llm-error-pages/sql/llm-error-pages.sql');
     });
 
@@ -230,7 +230,7 @@ describe('LLM Error Pages Utils', () => {
       expect(mockGetStaticContent).to.have.been.calledWith({
         databaseName: 'test_db',
         tableName: 'test_table',
-        whereClause: 'WHERE REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599',
+        whereClause: 'WHERE REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
       }, './src/llm-error-pages/sql/llm-error-pages.sql');
     });
 
@@ -243,7 +243,7 @@ describe('LLM Error Pages Utils', () => {
       expect(mockGetStaticContent).to.have.been.calledWith({
         databaseName: 'test_db',
         tableName: 'test_table',
-        whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599',
+        whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
       }, './src/llm-error-pages/sql/llm-error-pages.sql');
     });
 
@@ -256,7 +256,7 @@ describe('LLM Error Pages Utils', () => {
       expect(mockGetStaticContent).to.have.been.calledWith({
         databaseName: 'test_db',
         tableName: 'test_table',
-        whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND status BETWEEN 400 AND 599',
+        whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
       }, './src/llm-error-pages/sql/llm-error-pages.sql');
     });
 
@@ -271,7 +271,7 @@ describe('LLM Error Pages Utils', () => {
       expect(mockGetStaticContent).to.have.been.calledWith({
         databaseName: 'test_db',
         tableName: 'test_table',
-        whereClause: 'WHERE status BETWEEN 400 AND 599',
+        whereClause: 'WHERE status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
       }, './src/llm-error-pages/sql/llm-error-pages.sql');
     });
 
@@ -291,7 +291,7 @@ describe('LLM Error Pages Utils', () => {
       expect(mockGetStaticContent).to.have.been.calledWith({
         databaseName: 'test_db',
         tableName: 'test_table',
-        whereClause: 'WHERE status BETWEEN 400 AND 599',
+        whereClause: 'WHERE status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
       }, './src/llm-error-pages/sql/llm-error-pages.sql');
     });
 
@@ -310,7 +310,7 @@ describe('LLM Error Pages Utils', () => {
       expect(mockGetStaticContent).to.have.been.calledWith({
         databaseName: 'test_db',
         tableName: 'test_table',
-        whereClause: 'WHERE ((year = \'2024\' AND month = \'12\' AND day >= \'25\')\n       OR (year = \'2025\' AND month = \'01\' AND day <= \'05\')) AND status BETWEEN 400 AND 599',
+        whereClause: 'WHERE ((year = \'2024\' AND month = \'12\' AND day >= \'25\')\n       OR (year = \'2025\' AND month = \'01\' AND day <= \'05\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
       }, './src/llm-error-pages/sql/llm-error-pages.sql');
     });
   });
