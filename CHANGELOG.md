@@ -1,3 +1,15 @@
+# [1.168.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.167.1...v1.168.0) (2025-09-01)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.61.0 ([#1206](https://github.com/adobe/spacecat-audit-worker/issues/1206)) ([33d061e](https://github.com/adobe/spacecat-audit-worker/commit/33d061e4e56bcc0e7d647592ee8759645f4e0849))
+
+
+### Features
+
+* s3 restructure to use single bucket for CDN logs ([#1191](https://github.com/adobe/spacecat-audit-worker/issues/1191)) ([db448d4](https://github.com/adobe/spacecat-audit-worker/commit/db448d41a5e0bd4243171babe11416316b66a373))
+
 ## [1.167.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.167.0...v1.167.1) (2025-09-01)
 
 
