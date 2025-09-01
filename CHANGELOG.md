@@ -1,3 +1,10 @@
+# [1.170.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.169.0...v1.170.0) (2025-09-01)
+
+
+### Features
+
+* headings audit ([#1142](https://github.com/adobe/spacecat-audit-worker/issues/1142)) ([cc8622c](https://github.com/adobe/spacecat-audit-worker/commit/cc8622cdb835f057a9cc4fc4d8d3da6755b6e80d))
+
 # [1.169.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.168.1...v1.169.0) (2025-09-01)
 
 
