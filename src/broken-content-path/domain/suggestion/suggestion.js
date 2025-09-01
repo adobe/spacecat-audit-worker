@@ -25,8 +25,8 @@ export class Suggestion {
     this.reason = reason;
   }
 
-  static publish(requestedPath, reason = 'Content exists on Author') {
-    return new Suggestion(requestedPath, null, SuggestionType.PUBLISH, reason);
+  static publish(requestedPath, suggestedPath = null, reason = 'Content exists on Author') {
+    return new Suggestion(requestedPath, suggestedPath, SuggestionType.PUBLISH, reason);
   }
 
   static locale(requestedPath, suggestedPath, reason = 'Locale fallback detected') {

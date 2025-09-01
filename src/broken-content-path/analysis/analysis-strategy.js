@@ -119,6 +119,7 @@ export class AnalysisStrategy {
 
       const processedSuggestion = Suggestion.publish(
         suggestion.requestedPath,
+        suggestion.suggestedPath,
         `Content is in ${status} state. Suggest publishing.`,
       );
       processedSuggestions.push(processedSuggestion);
