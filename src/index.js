@@ -70,6 +70,7 @@ import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-tr
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
+import headings from './headings/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -125,6 +126,7 @@ const HANDLERS = {
   'optimization-report-callback': optimizationReportCallback,
   'llmo-customer-analysis': llmoCustomerAnalysis,
   hreflang,
+  headings,
   dummy: (message) => ok(message),
 };
 
