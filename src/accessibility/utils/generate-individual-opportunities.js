@@ -231,11 +231,22 @@ export function formatIssue(type, issueData, severity) {
     }];
   }
 
+  // Extract understanding URL
+  let understandingUrl = '';
+  if (rawWcagRule && rawWcagRule.startsWith('wcag')) {
+    const numberPart = rawWcagRule.replace('wcag', '');
+    const ruleInfo = successCriteriaLinks[numberPart];
+    if (ruleInfo && ruleInfo.understandingUrl) {
+      understandingUrl = ruleInfo.understandingUrl;
+    }
+  }
+
   return {
     type,
     description: issueData.description || '',
     wcagRule,
     wcagLevel: issueData.level || '', // AA, AAA, etc.
+    understandingUrl,
     severity,
     occurrences: (issueData.htmlWithIssues && issueData.htmlWithIssues.length) || 0,
     htmlWithIssues,
