@@ -58,7 +58,7 @@ describe('User Agent Patterns', () => {
       const sql = buildAgentTypeClassificationSQL();
 
       expect(sql).to.include('CASE');
-      expect(sql).to.include('Crawlers');
+      expect(sql).to.include('Web search crawlers');
       expect(sql).to.include('Chatbots');
       expect(sql).to.include('gptbot');
       expect(sql).to.include('perplexity');
