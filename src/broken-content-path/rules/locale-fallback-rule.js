@@ -14,6 +14,7 @@ import { BaseRule } from './base-rule.js';
 import { Suggestion } from '../domain/suggestion/suggestion.js';
 import { Locale } from '../domain/language/locale.js';
 import { LanguageTree } from '../domain/language/language-tree.js';
+import { PathUtils } from '../utils/path-utils.js';
 
 export class LocaleFallbackRule extends BaseRule {
   constructor(context, aemAuthorClient) {
@@ -26,7 +27,15 @@ export class LocaleFallbackRule extends BaseRule {
 
     const detectedLocale = Locale.fromPath(brokenPath);
     if (!detectedLocale) {
-      return null;
+      if (!PathUtils.hasDoubleSlashes(brokenPath)) {
+        return null;
+      }
+
+      log.info('Double slash detected');
+
+      // Check if there's a double slash that might indicate missing locale
+      const localeSuggestion = await this.tryLocaleInsertion(brokenPath);
+      return localeSuggestion;
     }
 
     log.debug(`Detected locale: ${detectedLocale.getCode()} in path: ${brokenPath}`);
@@ -40,6 +49,34 @@ export class LocaleFallbackRule extends BaseRule {
       if (await this.getAemAuthorClient().isAvailable(suggestedPath)) {
         log.info(`Found locale fallback for ${brokenPath}: ${detectedLocale.getCode()} -> ${similarRoot}`);
         return Suggestion.locale(brokenPath, suggestedPath);
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Try to fix double slashes by inserting English fallback locales
+   * @param {string} brokenPath - The path with double slashes
+   * @returns {Promise<Suggestion|null>} - Locale suggestion if found, null otherwise
+   */
+  async tryLocaleInsertion(brokenPath) {
+    const { log } = this.context;
+
+    // Get all English fallback locales from LanguageTree
+    const englishLocales = LanguageTree.findEnglishFallbacks();
+
+    // Try inserting each English locale at the first double slash position
+    for (const localeCode of englishLocales) {
+      // Replace the first occurrence of // with /locale/
+      const localePath = brokenPath.replace('//', `/${localeCode}/`);
+
+      log.debug(`Trying locale insertion: ${brokenPath} -> ${localePath}`);
+
+      // eslint-disable-next-line no-await-in-loop
+      if (await this.getAemAuthorClient().isAvailable(localePath)) {
+        log.info(`Found content with locale insertion: ${brokenPath} -> ${localePath}`);
+        return Suggestion.locale(brokenPath, localePath);
       }
     }
 

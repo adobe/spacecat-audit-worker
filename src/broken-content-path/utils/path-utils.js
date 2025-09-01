@@ -60,4 +60,34 @@ export class PathUtils {
 
     return removedPath.substring(0, removedPath.lastIndexOf('/'));
   }
+
+  /**
+   * Check if a path has double slashes (excluding protocol slashes)
+   * @param {string} path - The path to check
+   * @returns {boolean} - True if path contains double slashes
+   */
+  static hasDoubleSlashes(path) {
+    if (!path) return false;
+
+    // Check for double slashes but exclude protocol slashes (http://, https://)
+    const withoutProtocol = path.replace(/^[^:]+:\/\//, '');
+    return withoutProtocol.includes('//');
+  }
+
+  /**
+   * Remove double slashes in a path
+   * @param {string} path - The path to fix
+   * @returns {string} - The path with double slashes removed
+   */
+  static removeDoubleSlashes(path) {
+    if (!path) return path;
+
+    // Replace multiple consecutive slashes with single slash
+    let fixed = path.replace(/\/+/g, '/');
+
+    // Ensure we don't have leading double slashes after protocols (http://, https://)
+    fixed = fixed.replace(/^([^:]+:\/)\/+/g, '$1');
+
+    return fixed;
+  }
 }
