@@ -125,6 +125,9 @@ function buildWhereClause(conditions = [], llmProviders = null, siteFilters = []
   // Error status filter - get all error status codes (400-599)
   allConditions.push('status BETWEEN 400 AND 599');
 
+  // Exclude robots and sitemap URLs (simple LIKEs)
+  allConditions.push("NOT (url LIKE '%robots.txt' OR url LIKE '%sitemap%')");
+
   return `WHERE ${allConditions.join(' AND ')}`;
 }
 
