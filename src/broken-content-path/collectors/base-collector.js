@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+
 class BaseCollector {
   // eslint-disable-next-line class-methods-use-this, @typescript-eslint/no-unused-vars
   async fetchBrokenPaths(tenant, options = {}) {

@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+
 import { PublishRule } from '../rules/publish-rule.js';
 import { LocaleFallbackRule } from '../rules/locale-fallback-rule.js';
 import { SimilarPathRule } from '../rules/similar-path-rule.js';

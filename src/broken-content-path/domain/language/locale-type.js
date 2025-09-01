@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+
 export const LocaleType = {
   FIVE_LETTER_LOCALE: 'FIVE_LETTER_LOCALE',
   TWO_LETTER_COUNTRY: 'TWO_LETTER_COUNTRY',

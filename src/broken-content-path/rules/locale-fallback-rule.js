@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+
 import { BaseRule } from './base-rule.js';
 import { Suggestion } from '../domain/suggestion/suggestion.js';
 import { Locale } from '../domain/language/locale.js';

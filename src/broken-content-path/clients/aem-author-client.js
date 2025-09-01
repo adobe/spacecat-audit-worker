@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { ContentPath } from '../domain/content/content-path.js';
 import { Locale } from '../domain/language/locale.js';
