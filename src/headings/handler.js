@@ -161,6 +161,7 @@ export async function validatePageHeadings(url, log) {
         check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
+        suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
       });
       log.info(`Missing h1 element detected at ${url}`);
     } else if (h1Elements.length > 1) {
@@ -168,6 +169,7 @@ export async function validatePageHeadings(url, log) {
         check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation,
+        suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
         count: h1Elements.length,
       });
       log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
@@ -182,6 +184,7 @@ export async function validatePageHeadings(url, log) {
           check: HEADINGS_CHECKS.HEADING_EMPTY.check,
           success: false,
           explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
+          suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
           tagName: heading.tagName,
         });
         log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
@@ -207,6 +210,7 @@ export async function validatePageHeadings(url, log) {
           check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
           success: false,
           explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+          suggestion: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion,
           text: headingsWithSameText[0].text,
           duplicates: headingsWithSameText.map((h) => h.tagName),
           count: headingsWithSameText.length,
@@ -225,6 +229,7 @@ export async function validatePageHeadings(url, log) {
           check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
           success: false,
           explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
+          suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
           heading: currentHeading.tagName,
           nextHeading: nextHeading.tagName,
         });
@@ -243,6 +248,7 @@ export async function validatePageHeadings(url, log) {
             check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
             success: false,
             explanation: HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation,
+            suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
             previous: `h${prevLevel}`,
             current: `h${curLevel}`,
           });
@@ -314,6 +320,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
               aggregatedResults[checkType] = {
                 success: false,
                 explanation: check.explanation,
+                suggestion: check.suggestion,
                 urls: [],
               };
             }

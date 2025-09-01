@@ -51,6 +51,7 @@ describe('Headings Audit', () => {
       check: HEADINGS_CHECKS.HEADING_EMPTY.check,
       success: false,
       explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
       tagName: 'H1',
     });
   });
@@ -66,6 +67,7 @@ describe('Headings Audit', () => {
       check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
       success: false,
       explanation: HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
       previous: 'h1',
       current: 'h3',
     });
@@ -92,6 +94,7 @@ describe('Headings Audit', () => {
       check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
       success: false,
       explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
     });
   });
 
@@ -106,6 +109,7 @@ describe('Headings Audit', () => {
       check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
       success: false,
       explanation: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
       count: 2,
     });
   });
@@ -140,6 +144,7 @@ describe('Headings Audit', () => {
       check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
       success: false,
       explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion,
       text: 'Our Services',
       duplicates: ['H1', 'H2'],
       count: 2,
@@ -175,6 +180,7 @@ describe('Headings Audit', () => {
       check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
       success: false,
       explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion,
       text: 'Our Services',
       duplicates: ['H1', 'H2'],
       count: 2,
@@ -185,6 +191,7 @@ describe('Headings Audit', () => {
       check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
       success: false,
       explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion,
       text: 'Featured Products',
       duplicates: ['H2', 'H3'],
       count: 2,
@@ -202,6 +209,7 @@ describe('Headings Audit', () => {
       check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
       success: false,
       explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion,
       text: 'About Us',
       duplicates: ['H1', 'H2', 'H3'],
       count: 3,
@@ -219,6 +227,7 @@ describe('Headings Audit', () => {
       check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
       success: false,
       explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion,
       text: 'Contact',
       duplicates: ['H1', 'H2', 'H3'],
       count: 3,
@@ -276,6 +285,7 @@ describe('Headings Audit', () => {
       check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
       success: false,
       explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
       heading: 'H1',
       nextHeading: 'H2',
     });
@@ -320,6 +330,7 @@ describe('Headings Audit', () => {
       check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
       success: false,
       explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
       heading: 'H1',
       nextHeading: 'H2',
     });
@@ -328,6 +339,7 @@ describe('Headings Audit', () => {
       check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
       success: false,
       explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
       heading: 'H2',
       nextHeading: 'H3',
     });
