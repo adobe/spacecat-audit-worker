@@ -19,34 +19,61 @@ import { AemAuthorClient } from './clients/aem-author-client.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 export async function fetchBrokenContentPaths(context) {
-  const { log } = context;
+  const { log, tenantUrl } = context;
 
-  const collector = CollectorFactory.create(context);
-  const brokenPaths = await collector.fetchBrokenPaths();
+  try {
+    const collector = CollectorFactory.create(context);
+    const brokenPaths = await collector.fetchBrokenPaths();
 
-  log.info(`Found ${brokenPaths.length} broken content paths from ${collector.constructor.name}`);
-  return { brokenPaths };
+    log.info(`Found ${brokenPaths.length} broken content paths from ${collector.constructor.name}`);
+
+    return {
+      fullAuditRef: tenantUrl,
+      auditResult: {
+        brokenPaths,
+        success: true,
+      },
+    };
+  } catch (error) {
+    log.error(`Failed to fetch broken content paths: ${error.message}`);
+    return {
+      fullAuditRef: tenantUrl,
+      auditResult: {
+        error: error.message,
+        success: false,
+      },
+    };
+  }
 }
 
 export async function analyzeBrokenContentPaths(context) {
-  const { audit, log } = context;
+  const { log, audit } = context;
 
   const result = audit.getAuditResult();
   if (!result.success) {
     throw new Error('Audit failed, skipping analysis');
   }
 
-  const pathIndex = new PathIndex(context);
-  const aemAuthorClient = AemAuthorClient.createFrom(context, pathIndex);
-  const strategy = new AnalysisStrategy(context, aemAuthorClient, pathIndex);
-  const suggestions = await strategy.analyze(result.brokenPaths);
+  try {
+    const pathIndex = new PathIndex(context);
+    const aemAuthorClient = AemAuthorClient.createFrom(context, pathIndex);
+    const strategy = new AnalysisStrategy(context, aemAuthorClient, pathIndex);
+    const suggestions = await strategy.analyze(result.brokenPaths);
 
-  log.info(`Found ${suggestions.length} suggestions for broken content paths`);
-  return { suggestions };
+    log.info(`Found ${suggestions.length} suggestions for broken content paths`);
+
+    return { suggestions, success: true };
+  } catch (error) {
+    log.error(`Failed to analyze broken content paths: ${error.message}`);
+    return {
+      error: error.message,
+      success: false,
+    };
+  }
 }
 
 export function provideSuggestions(context) {
-  const { audit, finalUrl, tenant } = context;
+  const { audit, tenantUrl } = context;
 
   const result = audit.getAuditResult();
   if (!result.success) {
@@ -54,10 +81,9 @@ export function provideSuggestions(context) {
   }
 
   return {
-    fullAuditRef: finalUrl,
+    fullAuditRef: tenantUrl,
     auditResult: {
-      finalUrl,
-      tenant,
+      tenantUrl,
       brokenContentPaths: result.suggestions,
       success: true,
     },
