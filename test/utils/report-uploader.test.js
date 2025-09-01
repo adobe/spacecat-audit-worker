@@ -25,6 +25,7 @@ describe('Utils Report Uploader', () => {
   let uploadToSharePoint;
   let saveExcelReport;
   let uploadAndPublishFile;
+  let readFromSharePoint;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -41,11 +42,15 @@ describe('Utils Report Uploader', () => {
     uploadToSharePoint = reportUploaderModule.uploadToSharePoint;
     saveExcelReport = reportUploaderModule.saveExcelReport;
     uploadAndPublishFile = reportUploaderModule.uploadAndPublishFile;
+    readFromSharePoint = reportUploaderModule.readFromSharePoint;
 
     mockContext = {
       workbook: { xlsx: { writeBuffer: sandbox.stub().resolves(Buffer.from('excel data')) } },
       log: { info: sandbox.stub(), error: sandbox.stub() },
-      sharepointDoc: { uploadRawDocument: sandbox.stub().resolves() },
+      sharepointDoc: {
+        uploadRawDocument: sandbox.stub().resolves(),
+        getDocumentContent: sandbox.stub().resolves(Buffer.from('test content')),
+      },
       sharepointClient: { getDocument: sandbox.stub() },
       params: { outputLocation: 'test-location', filename: 'test-file.xlsx' },
     };
@@ -56,6 +61,66 @@ describe('Utils Report Uploader', () => {
   afterEach(() => {
     sandbox.restore();
     delete process.env.ADMIN_HLX_API_KEY;
+  });
+
+  describe('readFromSharePoint', () => {
+    it('should read file content from SharePoint successfully', async () => {
+      const filename = 'test.xlsx';
+      const outputLocation = 'reports';
+      const expectedBuffer = Buffer.from('test file content');
+
+      mockContext.sharepointDoc.getDocumentContent.resolves(expectedBuffer);
+
+      const result = await readFromSharePoint(
+        filename,
+        outputLocation,
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(mockContext.sharepointClient.getDocument).to.have.been.calledWith('/sites/elmo-ui-data/reports/test.xlsx');
+      expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledOnce;
+      expect(result).to.deep.equal(expectedBuffer);
+      expect(mockContext.log.info).to.have.been.calledWith(
+        'Document successfully downloaded from SharePoint: /sites/elmo-ui-data/reports/test.xlsx',
+      );
+    });
+
+    it('should handle SharePoint read errors', async () => {
+      const filename = 'test.xlsx';
+      const outputLocation = 'reports';
+      const errorMessage = 'SharePoint read error';
+
+      mockContext.sharepointDoc.getDocumentContent.rejects(new Error(errorMessage));
+
+      await expect(
+        readFromSharePoint(
+          filename,
+          outputLocation,
+          mockContext.sharepointClient,
+          mockContext.log,
+        ),
+      ).to.be.rejectedWith(errorMessage);
+
+      expect(mockContext.log.error).to.have.been.calledWith(`Failed to read from SharePoint: ${errorMessage}`);
+    });
+
+    it('should construct correct document path', async () => {
+      const filename = 'report-2025.xlsx';
+      const outputLocation = 'monthly-reports';
+      const expectedBuffer = Buffer.from('report data');
+
+      mockContext.sharepointDoc.getDocumentContent.resolves(expectedBuffer);
+
+      await readFromSharePoint(
+        filename,
+        outputLocation,
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(mockContext.sharepointClient.getDocument).to.have.been.calledWith('/sites/elmo-ui-data/monthly-reports/report-2025.xlsx');
+    });
   });
 
   describe('uploadToSharePoint', () => {
