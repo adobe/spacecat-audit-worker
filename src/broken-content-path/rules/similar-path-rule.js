@@ -25,32 +25,75 @@ export class SimilarPathRule extends BaseRule {
     const { log } = this.context;
     log.debug(`Applying SimilarPathRule to path: ${brokenPath}`);
 
-    const parentPath = PathUtils.getParentPath(brokenPath);
+    let path = brokenPath;
+    const result = await this.checkDoubleSlash(brokenPath);
+    if (result) {
+      // If we have a suggestion, return it directly
+      if (result.suggestion) {
+        return result.suggestion;
+      }
+      // If we have a fixed path but no suggestion, continue with checks using the fixed path
+      if (result.fixedPath) {
+        path = result.fixedPath;
+        log.debug(`Continuing similarity check with fixed path: ${path}`);
+      }
+    }
+
+    const parentPath = PathUtils.getParentPath(path);
     if (!parentPath) {
-      log.debug(`No parent path found for: ${brokenPath}`);
+      log.debug(`No parent path found for: ${path}`);
       return null;
     }
 
-    log.debug(`Getting children from parent folder: ${parentPath}`);
+    log.debug(`Getting children from parent folder: ${path}`);
 
     // We are traversing up the hierarchy until we find a path that is available on Author
     const childrenPaths = await this.getAemAuthorClient().getChildrenFromPath(
-      parentPath,
+      path,
       this.context,
     );
     if (childrenPaths.length === 0) {
-      log.debug(`No children paths found for parent: ${parentPath}`);
+      log.debug(`No children paths found for parent: ${path}`);
       return null;
     }
 
     // Use Levenshtein distance <= 1 for typos
-    const similar = SimilarPathRule.findSimilarPath(brokenPath, childrenPaths, 1);
+    const similar = SimilarPathRule.findSimilarPath(path, childrenPaths, 1);
     if (similar) {
-      log.info(`Found similar path for ${brokenPath}: ${similar.path}`);
-      return Suggestion.similar(brokenPath, similar.path);
+      log.info(`Found similar path for ${path}: ${similar.path}`);
+      return Suggestion.similar(path, similar.path);
     }
 
     return null;
+  }
+
+  /**
+   * Check if the broken path can be fixed by removing double slashes
+   * @param {string} brokenPath - The path with potential double slashes
+   * @returns {Promise<{suggestion: Suggestion|null, fixedPath: string|null}|null>}
+   * Object with suggestion and fixedPath fields, null if no double slashes
+   */
+  async checkDoubleSlash(brokenPath) {
+    const { log } = this.context;
+
+    // Check if path contains double slashes
+    if (!PathUtils.hasDoubleSlashes(brokenPath)) {
+      return null;
+    }
+
+    // Remove double slashes by replacing them with single slashes
+    const fixedPath = PathUtils.removeDoubleSlashes(brokenPath);
+
+    log.debug(`Checking double slash removal: ${brokenPath} -> ${fixedPath}`);
+
+    // Check if the fixed path exists on Author
+    if (await this.getAemAuthorClient().isAvailable(fixedPath)) {
+      log.info(`Found content for double-slash corrected path: ${brokenPath} -> ${fixedPath}`);
+      return { suggestion: Suggestion.similar(brokenPath, fixedPath), fixedPath };
+    }
+
+    log.debug(`Fixed path not available on Author, will continue with similarity check: ${fixedPath}`);
+    return { suggestion: null, fixedPath };
   }
 
   static findSimilarPath(brokenPath, candidatePaths, maxDistance) {
