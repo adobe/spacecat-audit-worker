@@ -67,6 +67,7 @@ import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
+import featuredSnippet from './featured-snippet/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -119,6 +120,7 @@ const HANDLERS = {
   'llmo-referral-traffic': llmoReferralTraffic,
   'optimization-report-callback': optimizationReportCallback,
   hreflang,
+  'featured-snippet': featuredSnippet,
   dummy: (message) => ok(message),
 };
 

@@ -24,6 +24,7 @@ Resources:
           FIREFALL_API_CAPABILITY_NAME: !Ref FIREFALL_API_CAPABILITY_NAME
           FIREFALL_MODEL: !Ref FIREFALL_MODEL
           S3_SCRAPER_BUCKET_NAME: !Ref S3_SCRAPER_BUCKET_NAME
+          S3_IMPORTER_BUCKET_NAME: !Ref S3_IMPORTER_BUCKET_NAME
           IMS_HOST: !Ref IMS_HOST
           IMS_CLIENT_ID: !Ref IMS_CLIENT_ID
           IMS_CLIENT_CODE: !Ref IMS_CLIENT_CODE
@@ -78,6 +79,9 @@ Parameters:
   S3_SCRAPER_BUCKET_NAME:
     Type: String
     Description: S3 Scraper Bucket Name
+  S3_IMPORTER_BUCKET_NAME:
+    Type: String
+    Description: S3 Importer Bucket Name
   IMS_HOST:
     Type: String
     Description: IMS Host

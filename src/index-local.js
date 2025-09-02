@@ -14,13 +14,13 @@ import { main as universalMain } from './index.js';
 
 export const main = async () => {
   const messageBody = {
-    type: 'llm-blocked',
-    siteId: 'c2473d89-e997-458d-a86d-b4096649c12b',
+    type: 'featured-snippet',
+    siteId: '7be95fa1-e532-410c-b6f8-6584ca92ac09',
     auditContext: {
-      next: 'check-llm-blocked',
+      next: 'run-audit-and-generate-suggestions',
       auditId: 'a263123c-9f9a-44a8-9531-955884563472',
-      type: 'llm-blocked',
-      fullAuditRef: 'llm-blocked::adobe.com',
+      type: 'featured-snippet',
+      fullAuditRef: '7be95fa1-e532-410c-b6f8-6584ca92ac09',
     },
   };
 
