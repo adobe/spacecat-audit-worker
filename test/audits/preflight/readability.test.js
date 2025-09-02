@@ -790,5 +790,168 @@ describe('Preflight Readability Audit', () => {
       expect(auditContext.timeExecutionBreakdown[0].name).to.equal('readability-suggestions');
       expect(auditContext.timeExecutionBreakdown[0].duration).to.include('seconds');
     });
+
+    it('should use fallback originalFleschScore when recommendation score is missing (line 89)', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Mock existing opportunity with suggestion
+      // that has NO originalFleschScore (to trigger fallback)
+      const mockSuggestion = {
+        getData: () => ({
+          recommendations: [{
+            originalText: poorText,
+            improvedText: 'This is a simple sentence. It is easy to read.',
+            // originalFleschScore: undefined/missing - this will trigger the fallback
+            improvedFleschScore: 85,
+            seoRecommendation: 'Use shorter sentences',
+            aiRationale: 'Shorter sentences improve readability',
+          }],
+          lastMystiqueResponse: '2023-01-01T00:00:00.000Z',
+        }),
+      };
+
+      const mockOpportunity = {
+        getAuditId: () => 'job-123',
+        getData: () => ({ subType: 'readability' }),
+        getSuggestions: sinon.stub().resolves([mockSuggestion]),
+      };
+      context.dataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(mockSendReadabilityToMystique).not.to.have.been.called;
+      expect(result.processing).to.be.false;
+
+      // Check that audit results used the fallback fleschReadingEase value
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      const opportunity = audit.opportunities[0];
+      expect(opportunity.suggestionStatus).to.equal('completed');
+
+      // The readabilityImprovement should be calculated using the fallback score
+      // improvedFleschScore (85) - opportunity.fleschReadingEase (from original audit)
+      expect(opportunity.readabilityImprovement).to.be.a('number');
+      expect(opportunity.readabilityImprovement).to.be.greaterThan(0);
+    });
+
+    it('should use fallback timestamp when lastMystiqueResponse is missing (line 103)', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Mock existing opportunity with suggestion
+      // that has NO lastMystiqueResponse (to trigger fallback)
+      const mockSuggestion = {
+        getData: () => ({
+          recommendations: [{
+            originalText: poorText,
+            improvedText: 'This is a simple sentence. It is easy to read.',
+            originalFleschScore: 15,
+            improvedFleschScore: 85,
+            seoRecommendation: 'Use shorter sentences',
+            aiRationale: 'Shorter sentences improve readability',
+          }],
+          // lastMystiqueResponse: undefined/missing - this will trigger the fallback
+        }),
+      };
+
+      const mockOpportunity = {
+        getAuditId: () => 'job-123',
+        getData: () => ({ subType: 'readability' }),
+        getSuggestions: sinon.stub().resolves([mockSuggestion]),
+      };
+      context.dataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(mockSendReadabilityToMystique).not.to.have.been.called;
+      expect(result.processing).to.be.false;
+
+      // Check that audit results used the fallback timestamp (current date)
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      const opportunity = audit.opportunities[0];
+      expect(opportunity.suggestionStatus).to.equal('completed');
+
+      // The mystiqueProcessingCompleted should be a valid ISO timestamp (fallback)
+      expect(opportunity.mystiqueProcessingCompleted).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+      // Since we're using the fallback (new Date().toISOString()),
+      // the timestamp should be recent (within the last few seconds)
+      const timestamp = new Date(opportunity.mystiqueProcessingCompleted);
+      const now = new Date();
+      const timeDiff = Math.abs(now.getTime() - timestamp.getTime());
+      expect(timeDiff).to.be.lessThan(5000); // Within 5 seconds
+    });
+
+    it('should cover both fallbacks in the same scenario', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Mock existing opportunity with suggestion that has BOTH fallbacks triggered
+      const mockSuggestion = {
+        getData: () => ({
+          recommendations: [{
+            originalText: poorText,
+            improvedText: 'This is a simple sentence. It is easy to read.',
+            // originalFleschScore: undefined/missing - triggers line 89 fallback
+            improvedFleschScore: 85,
+            seoRecommendation: 'Use shorter sentences',
+            aiRationale: 'Shorter sentences improve readability',
+          }],
+          // lastMystiqueResponse: undefined/missing - triggers line 103 fallback
+        }),
+      };
+
+      const mockOpportunity = {
+        getAuditId: () => 'job-123',
+        getData: () => ({ subType: 'readability' }),
+        getSuggestions: sinon.stub().resolves([mockSuggestion]),
+      };
+      context.dataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(mockSendReadabilityToMystique).not.to.have.been.called;
+      expect(result.processing).to.be.false;
+
+      // Check that both fallbacks were used correctly
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      const opportunity = audit.opportunities[0];
+      expect(opportunity.suggestionStatus).to.equal('completed');
+
+      // Line 89 fallback: readabilityImprovement uses opportunity.fleschReadingEase
+      expect(opportunity.readabilityImprovement).to.be.a('number');
+      expect(opportunity.readabilityImprovement).to.be.greaterThan(0);
+
+      // Line 103 fallback: mystiqueProcessingCompleted uses new Date().toISOString()
+      expect(opportunity.mystiqueProcessingCompleted).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      const timestamp = new Date(opportunity.mystiqueProcessingCompleted);
+      const now = new Date();
+      const timeDiff = Math.abs(now.getTime() - timestamp.getTime());
+      expect(timeDiff).to.be.lessThan(5000); // Within 5 seconds
+    });
   });
 });
