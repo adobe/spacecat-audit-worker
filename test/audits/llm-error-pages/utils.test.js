@@ -352,7 +352,7 @@ describe('LLM Error Pages Utils', () => {
   });
 
   describe('getS3Config', () => {
-    it('should return config with custom bucket when CDN logs config exists', () => {
+    it('should return config with custom bucket when CDN logs config exists', async () => {
       const mockSite = {
         getConfig: () => ({
           getCdnLogsConfig: () => ({
@@ -362,7 +362,7 @@ describe('LLM Error Pages Utils', () => {
         getBaseURL: () => 'https://www.example.com',
       };
 
-      const result = getS3Config(mockSite);
+      const result = await getS3Config(mockSite, {});
       expect(result.bucket).to.equal('custom-bucket');
       expect(result.customerName).to.equal('www');
       expect(result.customerDomain).to.equal('www_example_com');
@@ -371,7 +371,7 @@ describe('LLM Error Pages Utils', () => {
       expect(result.tableName).to.equal('aggregated_logs_www_example_com');
     });
 
-    it('should return config with default bucket when no CDN logs config', () => {
+    it('should return config with default bucket when no CDN logs config', async () => {
       const mockSite = {
         getConfig: () => ({
           getCdnLogsConfig: () => null,
@@ -379,13 +379,13 @@ describe('LLM Error Pages Utils', () => {
         getBaseURL: () => 'https://www.example.com',
       };
 
-      const result = getS3Config(mockSite);
+      const result = await getS3Config(mockSite, {});
       expect(result.bucket).to.equal('cdn-logs-www-example-com');
       expect(result.customerName).to.equal('www');
       expect(result.customerDomain).to.equal('www_example_com');
     });
 
-    it('should handle site with null config', () => {
+    it('should handle site with null config', async () => {
       const mockSite = {
         getConfig: () => ({
           getCdnLogsConfig: () => null,
@@ -393,11 +393,11 @@ describe('LLM Error Pages Utils', () => {
         getBaseURL: () => 'https://www.example.com',
       };
 
-      const result = getS3Config(mockSite);
+      const result = await getS3Config(mockSite, {});
       expect(result.bucket).to.equal('cdn-logs-www-example-com');
     });
 
-    it('should return config with callable getAthenaTempLocation function', () => {
+    it('should return config with callable getAthenaTempLocation function', async () => {
       const mockSite = {
         getBaseURL: () => 'https://test.example.com',
         getConfig: () => ({
@@ -405,10 +405,47 @@ describe('LLM Error Pages Utils', () => {
         }),
       };
 
-      const result = getS3Config(mockSite);
+      const result = await getS3Config(mockSite, {});
 
       expect(result.getAthenaTempLocation).to.be.a('function');
       expect(result.getAthenaTempLocation()).to.equal('s3://custom-bucket/temp/athena-results/');
+    });
+
+    it('should resolve bucket via resolveCdnBucketName when not configured', async () => {
+      const mockSite = {
+        getBaseURL: () => 'https://test.example.com',
+        getConfig: () => ({
+          getCdnLogsConfig: () => null,
+        }),
+      };
+
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveCdnBucketName: async () => 'resolved-bucket',
+        },
+      });
+
+      const result = await mockedUtils.getS3Config(mockSite, {});
+      expect(result.bucket).to.equal('resolved-bucket');
+      expect(result.getAthenaTempLocation()).to.equal('s3://resolved-bucket/temp/athena-results/');
+    });
+
+    it('should fallback to derived analysis bucket when resolver throws', async () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => ({
+          getCdnLogsConfig: () => null,
+        }),
+      };
+
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveCdnBucketName: async () => { throw new Error('boom'); },
+        },
+      });
+
+      const result = await mockedUtils.getS3Config(mockSite, {});
+      expect(result.bucket).to.equal('cdn-logs-www-example-com');
     });
   });
 

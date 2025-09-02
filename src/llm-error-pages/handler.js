@@ -32,7 +32,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
   const {
     log, audit, sqs, env, dataAccess,
   } = context;
-  const s3Config = getS3Config(site);
+  const s3Config = await getS3Config(site, context);
 
   log.info(`Starting LLM error pages audit for ${url}`);
 

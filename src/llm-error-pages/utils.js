@@ -11,6 +11,7 @@
  */
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { resolveCdnBucketName } from '../utils/cdn-utils.js';
 
 // ============================================================================
 // CONSTANTS
@@ -172,11 +173,27 @@ export function getAnalysisBucket(customerDomain) {
   return `${CDN_LOGS_PREFIX}${bucketCustomer}`;
 }
 
-export function getS3Config(site) {
+export async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
   const customerName = customerDomain.split(/[._]/)[0];
-  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig()
-    || { bucketName: getAnalysisBucket(customerDomain) };
+
+  // Prefer explicit config bucket if present
+  const configured = site.getConfig()?.getCdnLogsConfig?.();
+  let bucket = configured?.bucketName;
+
+  // Fallback to resolver (standard path via CDN utils)
+  if (!bucket) {
+    try {
+      bucket = await resolveCdnBucketName(site, context);
+    } catch {
+      // ignore and fallback further below
+    }
+  }
+
+  // Final fallback to derived analysis bucket
+  if (!bucket) {
+    bucket = getAnalysisBucket(customerDomain);
+  }
 
   return {
     bucket,
