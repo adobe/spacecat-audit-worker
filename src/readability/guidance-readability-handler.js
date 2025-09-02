@@ -47,28 +47,28 @@ export default async function handler(message, context) {
   } = message;
   const { suggestions } = data || {};
 
-  log.info(`[read-suggest]: Received Mystique guidance for readability: ${JSON.stringify(message, null, 2)}`);
+  log.info(`[readability-suggest]: Received Mystique guidance for readability: ${JSON.stringify(message, null, 2)}`);
 
   // For preflight audits, auditId is actually a jobId (AsyncJob ID), not an Audit entity ID
   // We'll validate the AsyncJob exists later when we try to update it
-  log.info(`[read-suggest]: Processing guidance for auditId: ${auditId} (AsyncJob ID), siteId: ${siteId}`);
+  log.info(`[readability-suggest]: Processing guidance for auditId: ${auditId} (AsyncJob ID), siteId: ${siteId}`);
 
   const site = await Site.findById(siteId);
   if (!site) {
-    log.error(`[read-suggest]: Site not found for siteId: ${siteId}`);
+    log.error(`[readability-suggest]: Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
   const auditUrl = site.getBaseURL();
 
-  log.info(`[read-suggest]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
+  log.info(`[readability-suggest]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
 
   // Validate that the AsyncJob (preflight job) exists
   const asyncJob = await AsyncJob.findById(auditId);
   if (!asyncJob) {
-    log.error(`[read-suggest]: AsyncJob not found for auditId: ${auditId}. This may indicate the preflight job was deleted or expired.`);
+    log.error(`[readability-suggest]: AsyncJob not found for auditId: ${auditId}. This may indicate the preflight job was deleted or expired.`);
     return notFound('AsyncJob not found');
   }
-  log.info(`[read-suggest]: Found AsyncJob with status: ${asyncJob.getStatus()}`);
+  log.info(`[readability-suggest]: Found AsyncJob with status: ${asyncJob.getStatus()}`);
 
   let readabilityOppty;
   try {
@@ -77,12 +77,12 @@ export default async function handler(message, context) {
       (oppty) => oppty.getAuditId() === auditId && oppty.getData()?.subType === 'readability',
     );
   } catch (e) {
-    log.error(`[read-suggest]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
-    throw new Error(`[read-suggest]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
+    log.error(`[readability-suggest]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
+    throw new Error(`[readability-suggest]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
   }
 
   if (!readabilityOppty) {
-    const errorMsg = `[read-suggest]: No existing opportunity found for siteId ${siteId}. Opportunity should be created by main handler before processing suggestions.`;
+    const errorMsg = `[readability-suggest]: No existing opportunity found for siteId ${siteId}. Opportunity should be created by main handler before processing suggestions.`;
     log.error(errorMsg);
     throw new Error(errorMsg);
   }
@@ -90,7 +90,7 @@ export default async function handler(message, context) {
   const existingData = readabilityOppty.getData() || {};
   const processedSuggestionIds = new Set(existingData.processedSuggestionIds || []);
   if (processedSuggestionIds.has(messageId)) {
-    log.info(`[read-suggest]: Suggestions with id ${messageId} already processed. Skipping processing.`);
+    log.info(`[readability-suggest]: Suggestions with id ${messageId} already processed. Skipping processing.`);
     return ok();
   } else {
     processedSuggestionIds.add(messageId);
@@ -121,7 +121,7 @@ export default async function handler(message, context) {
   }
 
   if (mappedSuggestions.length === 0) {
-    log.warn(`[read-suggest]: No valid readability improvements found in Mystique response for siteId: ${siteId}`);
+    log.warn(`[readability-suggest]: No valid readability improvements found in Mystique response for siteId: ${siteId}`);
     return ok();
   }
 
@@ -135,7 +135,7 @@ export default async function handler(message, context) {
     lastMystiqueResponse: new Date().toISOString(),
   };
 
-  log.info(`[read-suggest]: Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
+  log.info(`[readability-suggest]: Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
 
   // Update opportunity with accumulated data
   try {
@@ -143,10 +143,10 @@ export default async function handler(message, context) {
     readabilityOppty.setData(updatedOpportunityData);
     readabilityOppty.setUpdatedBy('system');
     await readabilityOppty.save();
-    log.info('[read-suggest]: Updated opportunity with accumulated data');
+    log.info('[readability-suggest]: Updated opportunity with accumulated data');
   } catch (e) {
-    log.error(`[read-suggest]: Updating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
-    throw new Error(`[read-suggest]: Failed to update opportunity for siteId ${siteId}: ${e.message}`);
+    log.error(`[readability-suggest]: Updating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
+    throw new Error(`[readability-suggest]: Failed to update opportunity for siteId ${siteId}: ${e.message}`);
   }
 
   // Process suggestions from Mystique
@@ -162,7 +162,7 @@ export default async function handler(message, context) {
       log,
     });
 
-    log.info(`[read-suggest]: Successfully processed ${mappedSuggestions.length} suggestions from Mystique for siteId: ${siteId}`);
+    log.info(`[readability-suggest]: Successfully processed ${mappedSuggestions.length} suggestions from Mystique for siteId: ${siteId}`);
   }
 
   // Check if all Mystique responses have been received and update AsyncJob if complete
@@ -170,7 +170,7 @@ export default async function handler(message, context) {
     >= updatedOpportunityData.mystiqueResponsesExpected;
   if (allResponsesReceived && updatedOpportunityData.mystiqueResponsesExpected > 0) {
     try {
-      log.info(`[read-suggest]: All ${updatedOpportunityData.mystiqueResponsesExpected} `
+      log.info(`[readability-suggest]: All ${updatedOpportunityData.mystiqueResponsesExpected} `
         + `Mystique responses received. Updating AsyncJob ${auditId} to COMPLETED.`);
 
       // Use the AsyncJob we already validated earlier
@@ -188,22 +188,22 @@ export default async function handler(message, context) {
 
                 // The AsyncJob may have 0 opportunities if cleared during async processing
                 // We need to reconstruct them from the stored suggestions
-                log.info(`[read-suggest]: AsyncJob has ${auditItem.opportunities.length} readability opportunities stored`);
-                log.info(`[read-suggest]: Found ${allSuggestions.length} stored suggestions to use for reconstruction`);
+                log.info(`[readability-suggest]: AsyncJob has ${auditItem.opportunities.length} readability opportunities stored`);
+                log.info(`[readability-suggest]: Found ${allSuggestions.length} stored suggestions to use for reconstruction`);
 
                 let opportunitiesToProcess = auditItem.opportunities;
 
                 // If AsyncJob has no opportunities but we have suggestions,
                 // reconstruct from suggestions
                 if (auditItem.opportunities.length === 0 && allSuggestions.length > 0) {
-                  log.info(`[read-suggest]: Reconstructing opportunities from ${allSuggestions.length} stored suggestions`);
+                  log.info(`[readability-suggest]: Reconstructing opportunities from ${allSuggestions.length} stored suggestions`);
                   opportunitiesToProcess = allSuggestions.map((suggestion, index) => {
                     const suggestionData = suggestion.getData();
-                    log.info(`[read-suggest]: Examining suggestion ${index}: ${JSON.stringify(suggestionData, null, 2)}`);
+                    log.info(`[readability-suggest]: Examining suggestion ${index}: ${JSON.stringify(suggestionData, null, 2)}`);
 
                     const recommendation = suggestionData.recommendations?.[0];
                     if (recommendation) {
-                      log.info(`[read-suggest]: Found recommendation with originalText: "${recommendation.originalText?.substring(0, 50)}..."`);
+                      log.info(`[readability-suggest]: Found recommendation with originalText: "${recommendation.originalText?.substring(0, 50)}..."`);
 
                       const reconstructedOpportunity = {
                         check: 'poor-readability',
@@ -216,31 +216,31 @@ export default async function handler(message, context) {
                           + 'simpler words, and clearer structure',
                       };
 
-                      log.info(`[read-suggest]: Successfully reconstructed opportunity: ${JSON.stringify(reconstructedOpportunity, null, 2)}`);
+                      log.info(`[readability-suggest]: Successfully reconstructed opportunity: ${JSON.stringify(reconstructedOpportunity, null, 2)}`);
                       return reconstructedOpportunity;
                     } else {
-                      log.warn(`[read-suggest]: No recommendation found in suggestion ${index} - suggestionData structure: ${JSON.stringify(suggestionData, null, 2)}`);
+                      log.warn(`[readability-suggest]: No recommendation found in suggestion ${index} - suggestionData structure: ${JSON.stringify(suggestionData, null, 2)}`);
                     }
                     return null;
                   }).filter(Boolean);
-                  log.info(`[read-suggest]: Reconstructed ${opportunitiesToProcess.length} `
+                  log.info(`[readability-suggest]: Reconstructed ${opportunitiesToProcess.length} `
                     + 'opportunities from suggestions');
                 }
 
                 const updatedOpportunities = opportunitiesToProcess.map((opportunity) => {
-                  log.info('[read-suggest]: Looking for suggestion matching opportunity text: '
+                  log.info('[readability-suggest]: Looking for suggestion matching opportunity text: '
                     + `"${opportunity.textContent?.substring(0, 80)}..."`);
-                  log.info(`[read-suggest]: Found ${allSuggestions.length} stored suggestions`);
+                  log.info(`[readability-suggest]: Found ${allSuggestions.length} stored suggestions`);
 
                   const matchingSuggestion = allSuggestions.find((suggestion) => {
                     const suggestionData = suggestion.getData();
-                    log.info('[read-suggest]: Checking suggestion with data: '
+                    log.info('[readability-suggest]: Checking suggestion with data: '
                       + `${JSON.stringify(suggestionData, null, 2)}`);
 
                     // All suggestions are stored as { recommendations: [suggestion] }
                     const recommendation = suggestionData.recommendations?.[0];
                     if (recommendation) {
-                      log.info(`[read-suggest]: Comparing "${recommendation.originalText?.substring(0, 80)}..."`
+                      log.info(`[readability-suggest]: Comparing "${recommendation.originalText?.substring(0, 80)}..."`
                           + ` vs "${opportunity.textContent?.substring(0, 80)}..."`);
                       return recommendation.originalText === opportunity.textContent;
                     }
@@ -267,11 +267,11 @@ export default async function handler(message, context) {
                       mystiqueProcessingCompleted: new Date().toISOString(),
                     };
 
-                    log.info(`[read-suggest]: Updated opportunity with Mystique suggestions: ${JSON.stringify(updatedOpportunity, null, 2)}`);
+                    log.info(`[readability-suggest]: Updated opportunity with Mystique suggestions: ${JSON.stringify(updatedOpportunity, null, 2)}`);
 
                     return updatedOpportunity;
                   } else {
-                    log.warn(`[read-suggest]: No matching suggestion found for opportunity: "${opportunity.textContent?.substring(0, 80)}..."`);
+                    log.warn(`[readability-suggest]: No matching suggestion found for opportunity: "${opportunity.textContent?.substring(0, 80)}..."`);
                   }
 
                   return opportunity;
@@ -293,16 +293,16 @@ export default async function handler(message, context) {
         asyncJob.setEndedAt(new Date().toISOString());
         await asyncJob.save();
 
-        log.info(`[read-suggest]: Successfully updated AsyncJob ${auditId} `
+        log.info(`[readability-suggest]: Successfully updated AsyncJob ${auditId} `
           + 'with completed readability suggestions');
       }
     } catch (error) {
-      log.error(`[read-suggest]: Error updating AsyncJob ${auditId} with completed suggestions: `
+      log.error(`[readability-suggest]: Error updating AsyncJob ${auditId} with completed suggestions: `
         + `${error.message}`, error);
       // Don't throw - the suggestions were still processed successfully
     }
   }
 
-  log.info(`[read-suggest]: Successfully processed Mystique guidance for siteId: ${siteId}`);
+  log.info(`[readability-suggest]: Successfully processed Mystique guidance for siteId: ${siteId}`);
   return ok();
 }
