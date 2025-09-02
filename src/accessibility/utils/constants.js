@@ -745,6 +745,9 @@ export const accessibilityOpportunitiesMap = {
     'input-image-alt',
     'form-field-multiple-labels',
     'autocomplete-valid',
+    'color-contrast',
+    'target-size',
+    'aria-input-field-name',
   ],
 };
 
