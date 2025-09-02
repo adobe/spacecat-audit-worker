@@ -1,3 +1,10 @@
+## [1.170.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.170.0...v1.170.1) (2025-09-02)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** return regex patterns only ([#1209](https://github.com/adobe/spacecat-audit-worker/issues/1209)) ([400a868](https://github.com/adobe/spacecat-audit-worker/commit/400a868425dfe356f6225b125568e8355fc9099e))
+
 # [1.170.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.169.0...v1.170.0) (2025-09-01)
 
 
