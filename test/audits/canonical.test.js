@@ -123,11 +123,7 @@ describe('Canonical URL Tests', () => {
       const baseUrl = 'invalid-url';
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
 
-      expect(result).to.deep.include({
-        check: 'url-defined',
-        success: false,
-        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-      });
+      expect(result).to.be.an('array').that.is.empty;
       expect(log.error).to.have.been.calledWith(`Invalid URL: ${baseUrl}`);
     });
 
@@ -135,12 +131,8 @@ describe('Canonical URL Tests', () => {
       const result = await validateCanonicalTag(null, log);
 
       expect(result.canonicalUrl).to.be.null;
-      expect(result.checks).to.deep.include({
-        check: 'url-defined',
-        success: false,
-        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-      });
-      expect(log.error).to.have.been.calledWith('URL is undefined or null');
+      expect(result.checks).to.be.an('array').that.is.empty;
+      expect(log.error).to.have.been.calledWith('URL is undefined or null, cannot validate canonical tags');
     });
 
     it('should handle fetch error', async () => {
@@ -276,28 +268,21 @@ describe('Canonical URL Tests', () => {
       ]);
     });
 
-    it('should handle invalid canonical URL', () => {
+    it('should handle invalid canonical URL ', () => {
       const canonicalUrl = {};
       const baseUrl = 'http://example.com';
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
 
-      expect(result).to.deep.include.members([{
-        check: 'url-defined',
-        success: false,
-        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-      }]);
+      expect(result).to.be.an('array').that.is.empty;
+      expect(log.error).to.have.been.calledWith('Canonical URL is not a string: object');
     });
 
-    it('should handle invalid base URL', () => {
+    it('should handle invalid base URL ', () => {
       const canonicalUrl = 'https://example.com';
       const baseUrl = 'invalid-url';
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
 
-      expect(result).to.deep.include({
-        check: 'url-defined',
-        success: false,
-        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-      });
+      expect(result).to.be.an('array').that.is.empty;
       expect(log.error).to.have.been.calledWith('Invalid URL: invalid-url');
     });
 
@@ -423,7 +408,7 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.calledWith(`Canonical URL ${url} references itself`);
     });
 
-    it('should handle try-catch for invalid canonical URL', () => {
+    it('should handle try-catch for invalid canonical URL ', () => {
       const invalidCanonicalUrl = 'http://%';
       const baseUrl = 'https://example.com';
 
@@ -434,13 +419,7 @@ describe('Canonical URL Tests', () => {
         success: true,
       }]);
 
-      expect(result).to.deep.include.members([{
-        check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-        success: false,
-        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-      }]);
-
-      expect(log.error).to.have.been.calledWith(`Invalid URL: ${invalidCanonicalUrl}`);
+      expect(log.error).to.have.been.calledWith(`Invalid canonical URL: ${invalidCanonicalUrl}`);
     });
 
     it('should fail if the canonical URL does not point to itself', async () => {
