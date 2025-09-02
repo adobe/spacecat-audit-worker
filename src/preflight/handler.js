@@ -266,7 +266,7 @@ export const preflightAudit = async (context) => {
     log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. resultWithProfiling: ${JSON.stringify(resultWithProfiling)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
-    const anyProcessing = (handlerResults || []).some((r) => r && r.processing === true);
+    const anyProcessing = handlerResults.some((r) => r && r.processing === true);
     jobEntity.setResultType(AsyncJob.ResultType.INLINE);
     jobEntity.setResult(resultWithProfiling);
     if (anyProcessing) {
