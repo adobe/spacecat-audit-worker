@@ -1019,5 +1019,194 @@ describe('Preflight Readability Audit', () => {
       expect(result.processing).to.be.true;
       expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
     });
+
+    it('should cover all branches for line 326: pageAudit?.opportunities || []', async () => {
+      // Test all three branch scenarios for the optional chaining and fallback
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Create multiple pages to test different branch scenarios
+      auditsResult[0].audits = [{
+        name: 'readability',
+        type: 'seo',
+        opportunities: [{
+          check: 'poor-readability',
+          textContent: poorText,
+          suggestionStatus: 'processing',
+        }],
+      }];
+
+      // Add pages with different pageAudit states to trigger all branches
+      auditsResult.push(
+        // Page 2: pageAudit exists, opportunities is null (tests opportunities || [])
+        {
+          pageUrl: 'https://example.com/page2',
+          audits: [{
+            name: 'readability',
+            type: 'seo',
+            opportunities: null, // This triggers opportunities || []
+          }],
+        },
+        // Page 3: pageAudit exists, opportunities is undefined (tests opportunities || [])
+        {
+          pageUrl: 'https://example.com/page3',
+          audits: [{
+            name: 'readability',
+            type: 'seo',
+            // No opportunities property - this triggers opportunities || []
+          }],
+        },
+        // Page 4: no readability audit at all
+        // (tests pageAudit?.opportunities when pageAudit undefined)
+        {
+          pageUrl: 'https://example.com/page4',
+          audits: [{
+            name: 'some-other-audit',
+            type: 'seo',
+            opportunities: [],
+          }],
+        },
+      );
+
+      // Mock opportunity for checkForExistingSuggestions
+      const mockOpportunity = {
+        getAuditId: () => 'job-123',
+        getData: () => ({ subType: 'readability' }),
+        getSuggestions: sinon.stub().resolves([]),
+      };
+      context.dataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(result.processing).to.be.true;
+      expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
+
+      // All branches of line 326 should now be covered:
+      // 1. pageAudit exists + opportunities exists (page 1)
+      // 2. pageAudit exists + opportunities is null (page 2)
+      // 3. pageAudit exists + opportunities is undefined (page 3)
+      // 4. pageAudit is undefined (page 4 - no readability audit found)
+    });
+
+    it('should test pageAudit null branch specifically', async () => {
+      // Specifically test when pageAudit is null to ensure full branch coverage
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Create one normal page with opportunities
+      auditsResult[0].audits = [{
+        name: 'readability',
+        type: 'seo',
+        opportunities: [{
+          check: 'poor-readability',
+          textContent: poorText,
+          suggestionStatus: 'processing',
+        }],
+      }];
+
+      // Add a page where find() returns undefined (pageAudit is undefined)
+      // This happens when there's no audit with name === 'readability'
+      auditsResult.push({
+        pageUrl: 'https://example.com/page2',
+        audits: [
+          { name: 'canonical', type: 'seo', opportunities: [] },
+          { name: 'metatags', type: 'seo', opportunities: [] },
+          // No 'readability' audit - this makes pageAudit undefined
+        ],
+      });
+
+      // Mock for checkForExistingSuggestions
+      const mockOpportunity = {
+        getAuditId: () => 'job-123',
+        getData: () => ({ subType: 'readability' }),
+        getSuggestions: sinon.stub().resolves([]),
+      };
+      context.dataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(result.processing).to.be.true;
+      expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
+
+      // This should cover the pageAudit?.opportunities branch when pageAudit is undefined
+    });
+
+    it('should test opportunities array exists branch', async () => {
+      // Test the scenario where pageAudit exists AND opportunities exists (left side of ||)
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Create pages with normal opportunities arrays (tests the left side of ||)
+      auditsResult[0].audits = [{
+        name: 'readability',
+        type: 'seo',
+        opportunities: [
+          {
+            check: 'poor-readability',
+            textContent: poorText,
+            suggestionStatus: 'processing',
+          },
+          {
+            check: 'poor-readability',
+            textContent: 'Another poor text',
+            suggestionStatus: 'completed',
+          },
+        ],
+      }];
+
+      // Add another page with a different opportunities array
+      auditsResult.push({
+        pageUrl: 'https://example.com/page2',
+        audits: [{
+          name: 'readability',
+          type: 'seo',
+          opportunities: [{
+            check: 'poor-readability',
+            textContent: 'Some other text',
+            suggestionStatus: 'error',
+          }],
+        }],
+      });
+
+      // Mock for checkForExistingSuggestions
+      const mockOpportunity = {
+        getAuditId: () => 'job-123',
+        getData: () => ({ subType: 'readability' }),
+        getSuggestions: sinon.stub().resolves([]),
+      };
+      context.dataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(result.processing).to.be.true;
+      expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
+
+      // This tests the scenario where opportunities arrays exist and are used directly
+      // (left side of the || operator on line 326)
+    });
   });
 });

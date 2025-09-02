@@ -1063,8 +1063,8 @@ describe('Guidance Readability Handler Tests', () => {
       // Mock opportunity that returns valid data first (to be found),
       // then null (to trigger line 90 fallback)
       mockOpportunity.getData
-        .onFirstCall().returns({ subType: 'readability' }) // For finding the opportunity
-        .onSecondCall().returns(null); // For triggering the || {} fallback on line 90
+        .onFirstCall().returns({ subType: 'readability' })
+        .onSecondCall().returns(null); // For triggering the || {} fallback
       mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
       mockAddReadabilitySuggestions.resolves();
 
@@ -1174,6 +1174,241 @@ describe('Guidance Readability Handler Tests', () => {
 
       // Verify the fallbacks were used in log messages
       expect(log.info).to.have.been.calledWithMatch('All 1 Mystique responses received');
+    });
+
+    it('should cover all branches for line 210: originalText with value vs null', async () => {
+      // Test both branches: when originalText exists vs when it's null (triggering 'Unknown text')
+      const messageWithValidData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 85,
+          original_paragraph: 'Original text',
+          current_flesch_score: 25,
+        },
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+
+      const mockAsyncJobForBranches = {
+        ...mockAsyncJob,
+        getResult: () => [{
+          pageUrl: 'https://test-site.com/page1',
+          audits: [{
+            name: 'readability',
+            opportunities: [], // Empty - will trigger reconstruction
+          }],
+        }],
+      };
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobForBranches);
+
+      mockOpportunity.getData.returns({
+        subType: 'readability',
+        processedSuggestionIds: [],
+        mystiqueResponsesReceived: 1,
+        mystiqueResponsesExpected: 1,
+      });
+
+      // Test BOTH branches for line 210
+      const mockSuggestionWithText = {
+        getData: () => ({
+          recommendations: [{
+            originalText: 'Some actual text', // This will NOT trigger the fallback
+            improvedText: 'Improved text',
+            originalFleschScore: 25,
+            improvedFleschScore: 85,
+          }],
+        }),
+      };
+
+      const mockSuggestionWithNullText = {
+        getData: () => ({
+          recommendations: [{
+            originalText: null, // This WILL trigger the 'Unknown text' fallback
+            improvedText: 'Improved text',
+            originalFleschScore: 25,
+            improvedFleschScore: 85,
+          }],
+        }),
+      };
+
+      // First call - test with actual text (left branch of ||)
+      mockOpportunity.getSuggestions.resolves([mockSuggestionWithText]);
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+      mockAddReadabilitySuggestions.resolves();
+
+      const result1 = await guidanceHandler(messageWithValidData, context);
+      expect(result1.statusCode).to.equal(200);
+
+      // Reset mocks for second test
+      mockOpportunity.getSuggestions.reset();
+      mockAddReadabilitySuggestions.reset();
+
+      // Second call - test with null text (right branch of ||)
+      mockOpportunity.getSuggestions.resolves([mockSuggestionWithNullText]);
+
+      const result2 = await guidanceHandler(messageWithValidData, context);
+      expect(result2.statusCode).to.equal(200);
+
+      // Both branches of line 210 should now be covered
+    });
+
+    it('should cover all branches for line 213: originalFleschScore with value vs null', async () => {
+      // Test both branches for the fallback: recommendation.originalFleschScore || 0
+      const messageWithValidData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 85,
+          original_paragraph: 'Original text',
+          current_flesch_score: 25,
+        },
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+
+      const mockAsyncJobForScores = {
+        ...mockAsyncJob,
+        getResult: () => [{
+          pageUrl: 'https://test-site.com/page1',
+          audits: [{
+            name: 'readability',
+            opportunities: [], // Empty - will trigger reconstruction
+          }],
+        }],
+      };
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobForScores);
+
+      mockOpportunity.getData.returns({
+        subType: 'readability',
+        processedSuggestionIds: [],
+        mystiqueResponsesReceived: 1,
+        mystiqueResponsesExpected: 1,
+      });
+
+      // Test with actual score (left branch of ||)
+      const mockSuggestionWithScore = {
+        getData: () => ({
+          recommendations: [{
+            originalText: 'Test text',
+            improvedText: 'Improved text',
+            originalFleschScore: 30, // This will NOT trigger the fallback
+            improvedFleschScore: 85,
+          }],
+        }),
+      };
+
+      // Test with null score (right branch of ||)
+      const mockSuggestionWithNullScore = {
+        getData: () => ({
+          recommendations: [{
+            originalText: 'Test text',
+            improvedText: 'Improved text',
+            originalFleschScore: null, // This WILL trigger the 0 fallback
+            improvedFleschScore: 85,
+          }],
+        }),
+      };
+
+      // First test - with actual score
+      mockOpportunity.getSuggestions.resolves([mockSuggestionWithScore]);
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+      mockAddReadabilitySuggestions.resolves();
+
+      const result1 = await guidanceHandler(messageWithValidData, context);
+      expect(result1.statusCode).to.equal(200);
+
+      // Reset and test with null score
+      mockOpportunity.getSuggestions.reset();
+      mockAddReadabilitySuggestions.reset();
+      mockOpportunity.getSuggestions.resolves([mockSuggestionWithNullScore]);
+
+      const result2 = await guidanceHandler(messageWithValidData, context);
+      expect(result2.statusCode).to.equal(200);
+    });
+
+    it('should cover all branches for line 264: calculation fallback scenarios', async () => {
+      // Test both branches: recommendation.originalFleschScore || opportunity.fleschReadingEase
+      const messageWithValidData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 85,
+          original_paragraph: 'Original text',
+          current_flesch_score: 25,
+        },
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+
+      const mockAsyncJobWithOpps = {
+        ...mockAsyncJob,
+        getResult: () => [{
+          pageUrl: 'https://test-site.com/page1',
+          audits: [{
+            name: 'readability',
+            opportunities: [{
+              check: 'poor-readability',
+              textContent: 'Original text',
+              fleschReadingEase: 20, // This will be used as fallback
+            }],
+          }],
+        }],
+      };
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithOpps);
+
+      mockOpportunity.getData.returns({
+        subType: 'readability',
+        processedSuggestionIds: [],
+        mystiqueResponsesReceived: 1,
+        mystiqueResponsesExpected: 1,
+      });
+
+      // Test with originalFleschScore present (left branch)
+      const mockSuggestionWithOriginalScore = {
+        getData: () => ({
+          recommendations: [{
+            originalText: 'Original text',
+            improvedText: 'Improved text',
+            originalFleschScore: 30, // This will be used, NOT the fallback
+            improvedFleschScore: 85,
+          }],
+        }),
+      };
+
+      // Test with originalFleschScore null (right branch)
+      const mockSuggestionWithoutOriginalScore = {
+        getData: () => ({
+          recommendations: [{
+            originalText: 'Original text',
+            improvedText: 'Improved text',
+            originalFleschScore: null,
+            improvedFleschScore: 85,
+          }],
+        }),
+      };
+
+      // Test first branch - with original score
+      mockOpportunity.getSuggestions.resolves([mockSuggestionWithOriginalScore]);
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+      mockAddReadabilitySuggestions.resolves();
+
+      const result1 = await guidanceHandler(messageWithValidData, context);
+      expect(result1.statusCode).to.equal(200);
+
+      // Reset and test second branch - without original score
+      mockOpportunity.getSuggestions.reset();
+      mockAddReadabilitySuggestions.reset();
+      mockOpportunity.getSuggestions.resolves([mockSuggestionWithoutOriginalScore]);
+
+      const result2 = await guidanceHandler(messageWithValidData, context);
+      expect(result2.statusCode).to.equal(200);
     });
   });
 });
