@@ -120,7 +120,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     return acc;
   }, []);
 
-  const buildKey = (data) => `${data.pageUrl}`;
+  const buildKey = (data) => `${data.url || data.pageUrl}`;
 
   await syncSuggestions({
     opportunity,
