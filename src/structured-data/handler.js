@@ -111,7 +111,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   // Temporarily group issues by pageUrl as the UI does not support displaying
   // the same page multiple times or displaying issues grouped by rootType
   const issuesByPageUrl = auditData.auditResult.issues.reduce((acc, issue) => {
-    const existingIssue = acc.find((i) => i.pageUrl === issue.pageUrl);
+    const existingIssue = acc.find((i) => (i.url || i.pageUrl) === issue.pageUrl);
     if (!existingIssue) {
       acc.push(issue);
     } else {
