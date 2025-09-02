@@ -175,25 +175,11 @@ export function getAnalysisBucket(customerDomain) {
 
 export async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
-  const customerName = customerDomain.split(/[._]/)[0];
 
-  // Prefer explicit config bucket if present
-  const configured = site.getConfig()?.getCdnLogsConfig?.();
-  let bucket = configured?.bucketName;
-
-  // Fallback to resolver (standard path via CDN utils)
-  if (!bucket) {
-    try {
-      bucket = await resolveCdnBucketName(site, context);
-    } catch {
-      // ignore and fallback further below
-    }
-  }
-
-  // Final fallback to derived analysis bucket
-  if (!bucket) {
-    bucket = getAnalysisBucket(customerDomain);
-  }
+  const domainParts = customerDomain.split(/[._]/);
+  /* c8 ignore next */
+  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
+  const bucket = await resolveCdnBucketName(site, context);
 
   return {
     bucket,

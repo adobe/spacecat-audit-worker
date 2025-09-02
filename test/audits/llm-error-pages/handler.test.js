@@ -114,7 +114,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }), getLlmoDataFolder: () => 'customer' }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'customer' }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -154,7 +154,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -188,7 +188,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -219,7 +219,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => null, // No base URL
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -256,7 +256,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -293,7 +293,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -325,7 +325,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -355,7 +355,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -395,7 +395,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => null, // No base URL
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -467,7 +467,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: null, // No getDeliveryType method
     };
@@ -511,7 +511,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -551,7 +551,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -599,7 +599,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -647,7 +647,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -693,7 +693,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -748,7 +748,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };
@@ -791,7 +791,7 @@ describe('LLM Error Pages Handler (Excel + SQS)', () => {
 
     const site = {
       getBaseURL: () => 'https://example.com',
-      getConfig: () => ({ getCdnLogsConfig: () => ({ filters: [] }) }),
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [] }),
       getId: () => 'site-1',
       getDeliveryType: () => 'aem_edge',
     };

@@ -46,8 +46,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
     log.info(`Running weekly audit for ${periodIdentifier}`);
 
     // Get site configuration
-    const cdnLogsConfig = site.getConfig()?.getCdnLogsConfig?.() || {};
-    const { filters } = cdnLogsConfig;
+    const filters = site.getConfig()?.getLlmoCdnlogsFilter?.() || [];
     const siteFilters = buildSiteFilters(filters);
 
     // Build and execute query
