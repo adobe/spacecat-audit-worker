@@ -13,38 +13,62 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
+import sinon from 'sinon';
 import { describe } from 'mocha';
-import { mapToPaidSuggestion, mapToPaidOpportunity } from '../../../src/paid/guidance-opportunity-mapper.js';
+import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
+import { mapToPaidSuggestion, mapToPaidOpportunity } from '../../../src/paid-cookie-consent/guidance-opportunity-mapper.js';
 
 const TEST_SITE_ID = 'some-id';
 const TEST_SITE = 'https://sample-page';
 
-describe('Paid opportunity mapper', () => {
-  it('handles plain markdown string', () => {
+describe('Paid Cookie Consent opportunity mapper', () => {
+  let sandbox;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    // Mock ScrapeClient
+    const mockScrapeClient = {
+      getScrapeJobUrlResults: sandbox.stub().resolves([{
+        path: 'path/to/scrape.json',
+      }]),
+    };
+    sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+  it('handles plain markdown string', async () => {
     const body = 'Simple markdown';
-    const result = mapToPaidSuggestion({}, 'oppId', TEST_SITE_ID, TEST_SITE, { body: { markdown: body } });
+    const context = { env: {}, dataAccess: {} };
+    const guidance = { body: { markdown: body }, metadata: { scrape_job_id: 'test-job' } };
+    const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
     expect(result.data.suggestionValue).to.include('Simple markdown');
   });
 
-  it('handles plain markdown string with double-escaped newlines', () => {
+  it('handles plain markdown string with double-escaped newlines', async () => {
     const body = 'Line1\\nLine2\\nLine3';
-    const result = mapToPaidSuggestion({}, 'oppId', TEST_SITE_ID, TEST_SITE, { body: { markdown: body } });
+    const context = { env: {}, dataAccess: {} };
+    const guidance = { body: { markdown: body }, metadata: { scrape_job_id: 'test-job' } };
+    const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
     expect(result.data.suggestionValue).to.include(`Line1
 Line2
 Line3`);
   });
 
-  it('handles serialized JSON body with markdown', () => {
+  it('handles serialized JSON body with markdown', async () => {
     const markdown = 'Markup with\nnewlines';
-    const guidance = { body: { markdown } };
-    const result = mapToPaidSuggestion({}, 'oppId', TEST_SITE_ID, TEST_SITE, guidance);
+    const context = { env: {}, dataAccess: {} };
+    const guidance = { body: { markdown }, metadata: { scrape_job_id: 'test-job' } };
+    const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
     expect(result.data.suggestionValue).to.include('Markup with\nnewlines');
   });
 
-  it('handles serialized JSON body with double-escaped newlines in markdown', () => {
+  it('handles serialized JSON body with double-escaped newlines in markdown', async () => {
     const markdown = 'Markup with\\nnewlines';
-    const guidance = { body: { markdown } };
-    const result = mapToPaidSuggestion({}, 'oppId', TEST_SITE_ID, TEST_SITE, guidance);
+    const context = { env: {}, dataAccess: {} };
+    const guidance = { body: { markdown }, metadata: { scrape_job_id: 'test-job' } };
+    const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
     expect(result.data.suggestionValue).to.include(`Markup with
 newlines`);
   });
@@ -88,6 +112,44 @@ newlines`);
       expect(result.data.ctr).to.equal(0);
       expect(result.data.bounceRate).to.equal(0);
       expect(result.data.pageType).to.equal('landing');
+    });
+
+    it('formats large numbers with K suffix in description', () => {
+      const audit = {
+        getAuditId: () => 'aid',
+        getAuditResult: () => [
+          {
+            key: 'url',
+            value: [{
+              url, pageViews: 10000, ctr: 0.5, bounceRate: 0.8,
+            }],
+          },
+          { key: 'pageType', value: [{ topURLs: [url], type: 'landing' }] },
+        ],
+      };
+      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
+      // bounceRate (0.8) * pageViews (10000) = 8000, should be formatted as 8.0K
+      expect(result.description).to.include('8.0K');
+      expect(result.description).to.include('80.0% of paid traffic bounces');
+    });
+
+    it('keeps small numbers unformatted in description', () => {
+      const audit = {
+        getAuditId: () => 'aid',
+        getAuditResult: () => [
+          {
+            key: 'url',
+            value: [{
+              url, pageViews: 500, ctr: 0.5, bounceRate: 0.6,
+            }],
+          },
+          { key: 'pageType', value: [{ topURLs: [url], type: 'landing' }] },
+        ],
+      };
+      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
+      // bounceRate (0.6) * pageViews (500) = 300, should stay as 300
+      expect(result.description).to.include('300)');
+      expect(result.description).to.include('60.0% of paid traffic bounces');
     });
 
     it('returns default pageType if pageType segment is missing', () => {

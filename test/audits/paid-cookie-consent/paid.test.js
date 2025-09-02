@@ -18,7 +18,7 @@ import nock from 'nock';
 import { describe } from 'mocha';
 import rumData from '../../fixtures/paid/mock-segments-data.json' with { type: 'json' };
 import expectedSubmitted from '../../fixtures/paid/expected-submitted-audit.json' with {type: 'json'};
-import { paidAuditRunner, paidConsentBannerCheck } from '../../../src/paid/handler.js';
+import { paidAuditRunner, paidConsentBannerCheck } from '../../../src/paid-cookie-consent/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -105,7 +105,7 @@ function getSite(sandbox, overrides = {}) {
   };
 }
 
-describe('Paid Audit', () => {
+describe('Paid Cookie Consent Audit', () => {
   let sandbox;
 
   let logStub;
@@ -233,13 +233,22 @@ describe('Paid Audit', () => {
             key: 'url',
             value: [
               {
+                url: 'https://example.com/page1',
                 topURLs: ['https://example.com/page1'],
+                pageViews: 100,
+                bounceRate: 0.2, // projected 20
               },
               {
+                url: 'https://example.com/page2',
                 topURLs: ['https://example.com/page2'],
+                pageViews: 50,
+                bounceRate: 0.9, // projected 45 (highest)
               },
               {
+                url: 'https://example.com',
                 topURLs: ['https://example.com'],
+                pageViews: 10,
+                bounceRate: 0.5, // projected 5
               },
             ],
           },
@@ -250,13 +259,13 @@ describe('Paid Audit', () => {
 
     const expectedSubmitedMsg = {
       type: 'guidance:paid-cookie-consent',
-      observation: 'Landing page should not have a blocking cookie concent banner',
+      observation: 'High bounce rate detected on paid traffic page',
       siteId: 'test-site-id',
-      url: 'https://example.com/page1',
+      url: 'https://example.com/page2',
       auditId: 'test-audit-id',
       deliveryType: 'aem-edge',
       data: {
-        url: 'https://example.com/page1',
+        url: 'https://example.com/page2',
       },
     };
 
@@ -281,5 +290,93 @@ describe('Paid Audit', () => {
       .to.be.rejectedWith(Error, `Failed to find valid page for consent banner audit for AuditUrl ${auditUrl}`);
 
     expect(context.sqs.sendMessage.called).to.be.false;
+  });
+
+  it('should warn and not send when no eligible pages found', async () => {
+    const auditData = {
+      fullAuditRef: 'https://example.com',
+      id: 'test-audit-id',
+      auditResult: [
+        { key: 'url', value: [] },
+      ],
+    };
+
+    await paidConsentBannerCheck(auditUrl, auditData, context, site);
+
+    expect(context.sqs.sendMessage.called).to.be.false;
+    expect(context.log.warn).to.have.been.called;
+  });
+
+  it('should select highest projected loss even when it appears after K items', async () => {
+    const auditData = {
+      fullAuditRef: 'https://example.com',
+      id: 'test-audit-id',
+      auditResult: [
+        {
+          key: 'url',
+          value: [
+            { url: 'https://example.com/p100', pageViews: 100, bounceRate: 1 },
+            { url: 'https://example.com/p90', pageViews: 90, bounceRate: 1 },
+            { url: 'https://example.com/p80', pageViews: 80, bounceRate: 1 },
+            // Below K-th smallest (skip branch)
+            { url: 'https://example.com/p70', pageViews: 70, bounceRate: 1 },
+            // Larger than current smallest (replace branch)
+            { url: 'https://example.com/p110', pageViews: 110, bounceRate: 1 },
+          ],
+        },
+      ],
+    };
+
+    await paidConsentBannerCheck(auditUrl, auditData, context, site);
+
+    expect(context.sqs.sendMessage.called).to.be.true;
+    const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+    expect(sentMessage.url).to.equal('https://example.com/p110');
+  });
+
+  it('should handle fewer pages than K without error', async () => {
+    const auditData = {
+      fullAuditRef: 'https://example.com',
+      id: 'test-audit-id',
+      auditResult: [
+        {
+          key: 'url',
+          value: [
+            { url: 'https://example.com/high', pageViews: 50, bounceRate: 0.9 },
+            { url: 'https://example.com/low', pageViews: 10, bounceRate: 0.1 },
+          ],
+        },
+      ],
+    };
+
+    await paidConsentBannerCheck(auditUrl, auditData, context, site);
+
+    expect(context.sqs.sendMessage.called).to.be.true;
+    const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+    expect(sentMessage.url).to.equal('https://example.com/high');
+  });
+
+  it('should handle zero bounce and zero page views correctly', async () => {
+    const auditData = {
+      fullAuditRef: 'https://example.com',
+      id: 'test-audit-id',
+      auditResult: [
+        {
+          key: 'url',
+          value: [
+            { url: 'https://example.com/zb', pageViews: 1000, bounceRate: 0 }, // projected 0
+            { url: 'https://example.com/zv', pageViews: 0, bounceRate: 0.9 }, // projected 0
+            { url: 'https://example.com/win', pageViews: 40, bounceRate: 0.4 }, // projected 16 (winner)
+            { url: 'https://example.com/other', pageViews: 10, bounceRate: 0.9 }, // projected 9
+          ],
+        },
+      ],
+    };
+
+    await paidConsentBannerCheck(auditUrl, auditData, context, site);
+
+    expect(context.sqs.sendMessage.called).to.be.true;
+    const sentMessage = context.sqs.sendMessage.getCall(0).args[1];
+    expect(sentMessage.url).to.equal('https://example.com/win');
   });
 });

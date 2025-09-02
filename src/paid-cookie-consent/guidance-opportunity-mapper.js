@@ -11,9 +11,17 @@
  */
 
 import { randomUUID } from 'crypto';
+import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { DATA_SOURCES } from '../common/constants.js';
 
 const ESTIMATED_CPC = 2.65;
+
+function formatNumberWithK(num) {
+  if (num >= 1000) {
+    return `${(num / 1000).toFixed(1)}K`;
+  }
+  return num.toString();
+}
 
 function sanitizeMarkdown(markdown) {
   if (typeof markdown === 'string' && markdown.includes('\\n')) {
@@ -22,22 +30,28 @@ function sanitizeMarkdown(markdown) {
   return markdown;
 }
 
-function appendScreenshots(env, siteId, markdown, url) {
-  const apiBase = env.SPACECAT_API_URI || 'https://spacecat.experiencecloud.live/api/v1';
-  const urlPath = new URL(url).pathname;
-  const suffix = urlPath.replace(/\/$/, '') || '';
-  const desktopScreenshot = `${apiBase}/sites/${siteId}/files?key=scrapes/${siteId}${suffix}/consent-banner-on/screenshot-desktop-viewport.png`;
-  const mobileScreenshot = `${apiBase}/sites/${siteId}/files?key=scrapes/${siteId}${suffix}/consent-banner-on/screenshot-iphone-6-viewport.png`;
+async function addScreenshots(context, siteId, markdown, jobId) {
+  const fileVariants = [
+    { key: 'DESKTOP_BANNER_ON_URL', variant: 'screenshot-desktop-viewport-withBanner' },
+    { key: 'DESKTOP_BANNER_OFF_URL', variant: 'screenshot-desktop-viewport-withoutBanner' },
+    { key: 'MOBILE_BANNER_ON_URL', variant: 'screenshot-iphone-6-viewport-withBanner' },
+    { key: 'MOBILE_BANNER_OFF_URL', variant: 'screenshot-iphone-6-viewport-withoutBanner' },
+  ];
 
-  const appendedSection = `
-### Screenshots
+  const scrapeClient = ScrapeClient.createFrom(context);
+  const scrapeResults = await scrapeClient.getScrapeJobUrlResults(jobId);
+  const result = scrapeResults[0];
+  let markdownWithScreenshots = markdown;
 
-| Mobile | Desktop |
-|--------|---------|
-| ![Mobile Screenshot](${mobileScreenshot}) | ![Desktop Screenshot](${desktopScreenshot}) |
-`;
+  const apiBase = context.env?.SPACECAT_API_URI || 'https://spacecat.experiencecloud.live/api/v1';
+  fileVariants.forEach((fileVariant) => {
+    const imageKey = result.path.replace('scrape.json', `${fileVariant.variant}.png`);
+    const screenshotGenPreSignedUrlPath = `${apiBase}/sites/${siteId}/files?key=${imageKey}`;
+    markdownWithScreenshots = markdownWithScreenshots
+      .replace(fileVariant.key, screenshotGenPreSignedUrlPath);
+  });
 
-  return `${sanitizeMarkdown(markdown)}\n\n${appendedSection.trim()}\n`;
+  return `${sanitizeMarkdown(markdownWithScreenshots)}`;
 }
 
 export function isLowSeverityGuidanceBody(body) {
@@ -65,8 +79,8 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
     auditId: audit.getAuditId(),
     type: 'generic-opportunity',
     origin: 'AUTOMATION',
-    title: 'Cookie Consent Banner',
-    description: `Insight: ${pageGuidance.insight}. Recommendation: ${pageGuidance.recommendation}`,
+    title: 'Consent Banner covers essential page content',
+    description: `The consent banner hides essential page content. ${(bounceRate * 100).toFixed(1)}% of paid traffic bounces on consent banner without interaction. Most affected page: ${url} (${formatNumberWithK(projectedTrafficLost)})`,
     guidance: {
       recommendations: [
         {
@@ -99,7 +113,7 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
   };
 }
 
-export function mapToPaidSuggestion(env, siteId, opportunityId, url, pageGuidance = []) {
+export async function mapToPaidSuggestion(context, siteId, opportunityId, url, pageGuidance = []) {
   return {
     opportunityId,
     type: 'CONTENT_UPDATE',
@@ -112,7 +126,12 @@ export function mapToPaidSuggestion(env, siteId, opportunityId, url, pageGuidanc
           pageUrl: url,
         },
       ],
-      suggestionValue: appendScreenshots(env, siteId, pageGuidance.body.markdown, url),
+      suggestionValue: await addScreenshots(
+        context,
+        siteId,
+        pageGuidance.body.markdown,
+        pageGuidance.metadata.scrape_job_id,
+      ),
     },
   };
 }

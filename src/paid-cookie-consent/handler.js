@@ -25,7 +25,7 @@ const SITE_CLASSIFIER = {};
 
 const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:paid-cookie-consent',
-  OBSERVATION: 'Landing page should not have a blocking cookie concent banner',
+  OBSERVATION: 'High bounce rate detected on paid traffic page',
 };
 
 const isAllowedSegment = (segment) => ALLOWED_SEGMENTS.includes(segment.key);
@@ -144,7 +144,10 @@ export async function paidAuditRunner(auditUrl, context, site) {
     trafficType: TRAFFIC_TYPE,
   };
 
-  log.info(`[paid-audit] [Site: ${auditUrl}] Querying paid Optel metrics (hasPageClassifier: ${hasClassifier}, trafficType: ${options.trafficType})`);
+  log.info(
+    `[paid-audit] [Site: ${auditUrl}] Querying paid Optel metrics `
+    + `(hasPageClassifier: ${hasClassifier}, trafficType: ${options.trafficType})`,
+  );
   const allSegments = await rumAPIClient.query('trafficMetrics', options);
   const segmentsFiltered = allSegments.filter(isAllowedSegment);
 
@@ -169,16 +172,48 @@ export async function paidAuditRunner(auditUrl, context, site) {
   };
 }
 
+function computeProjectedBounce(item) {
+  return (item.bounceRate || 0) * (item.pageViews || 0);
+}
+
+function selectTopKByProjectedBounce(items, k) {
+  const top = items.reduce((acc, item) => {
+    const projectedBounce = computeProjectedBounce(item);
+    const enriched = { ...item, projectedBounce };
+
+    if (acc.length < k) {
+      // Insert into the right place
+      const i = acc.findIndex((t) => projectedBounce < t.projectedBounce);
+      return i === -1
+        ? [...acc, enriched]
+        : [...acc.slice(0, i), enriched, ...acc.slice(i)];
+    }
+
+    if (projectedBounce <= acc[0].projectedBounce) {
+      // Skip this item (equivalent to "continue")
+      return acc;
+    }
+
+    // Replace the smallest element, then re-sort
+    const updated = [enriched, ...acc.slice(1)].sort(
+      (a, b) => a.projectedBounce - b.projectedBounce,
+    );
+    return updated;
+  }, []);
+
+  // Return sorted in descending order
+  return [...top].sort((a, b) => b.projectedBounce - a.projectedBounce);
+}
+
 function selectPagesForConsentBannerAudit(auditResult, auditUrl) {
   if (!auditResult || !Array.isArray(auditResult) || auditResult === 0) {
     throw new Error(`Failed to find valid page for consent banner audit for AuditUrl ${auditUrl}`);
   }
 
-  const urlSegment = auditResult
-    .find((item) => item.key === 'url');
-  const urls = urlSegment?.value.flatMap((item) => item.topURLs);
+  const urlItems = auditResult
+    .find((item) => item.key === 'url')?.value;
 
-  return urls.slice(0, MAX_PAGES_TO_AUDIT);
+  return selectTopKByProjectedBounce(urlItems, MAX_PAGES_TO_AUDIT);
 }
 
 export async function paidConsentBannerCheck(auditUrl, auditData, context, site) {
@@ -189,12 +224,25 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
   const { auditResult, id } = auditData;
   const pagesToAudit = selectPagesForConsentBannerAudit(auditResult, auditUrl);
 
-  // Logic for which url to pick will be improved
-  const selectedPage = pagesToAudit[0];
+  // take first page which has highest projectedTrafficLost
+  const selected = pagesToAudit?.[0];
+  const selectedPage = selected?.url;
+
+  if (!selectedPage) {
+    log.warn(
+      `[paid-audit] [Site: ${auditUrl}] No eligible pages found for consent banner audit; skipping`,
+    );
+    return;
+  }
 
   const mystiqueMessage = buildMystiqueMessage(site, id, selectedPage);
 
-  log.info(`[paid-audit] [Site: ${auditUrl}] Sending page ${selectedPage}  with message ${JSON.stringify(mystiqueMessage, 2)} evaluation to mystique`);
+  const projected = selected?.projectedBounce;
+  log.info(
+    `[paid-audit] [Site: ${auditUrl}] Sending page ${selectedPage} with message `
+    + `(projectedTrafficLoss: ${projected}) ${JSON.stringify(mystiqueMessage, 2)} `
+    + 'evaluation to mystique',
+  );
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
   log.info(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
 }
