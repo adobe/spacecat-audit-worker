@@ -953,5 +953,71 @@ describe('Preflight Readability Audit', () => {
       const timeDiff = Math.abs(now.getTime() - timestamp.getTime());
       expect(timeDiff).to.be.lessThan(5000); // Within 5 seconds
     });
+
+    it('should handle readability processing with opportunity collection', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Start with normal audit with opportunities to collect issues
+      auditsResult[0].audits = [{
+        name: 'readability',
+        type: 'seo',
+        opportunities: [{
+          check: 'poor-readability',
+          textContent: poorText,
+          suggestionStatus: 'processing',
+        }],
+      }];
+
+      // No existing opportunity found - this will trigger processing
+      context.dataAccess.Opportunity.allBySiteId.resolves([]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(log.info).to.have.been.calledWithMatch('Sending 1 readability issues to Mystique');
+      expect(result.processing).to.be.true;
+      expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
+    });
+
+    it('should handle readability processing with multiple scenarios', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic words and intricate grammatical constructions, making it extremely difficult for the average reader to comprehend without considerable effort and concentration.'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Start with normal audit with opportunities to collect issues
+      auditsResult[0].audits = [{
+        name: 'readability',
+        type: 'seo',
+        opportunities: [{
+          check: 'poor-readability',
+          textContent: poorText,
+          suggestionStatus: 'processing',
+        }],
+      }];
+
+      // No existing opportunity found - this will trigger processing
+      context.dataAccess.Opportunity.allBySiteId.resolves([]);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(log.info).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
+      expect(result.processing).to.be.true;
+      expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
+    });
   });
 });

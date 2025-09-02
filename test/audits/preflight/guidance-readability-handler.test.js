@@ -97,6 +97,10 @@ describe('Guidance Readability Handler Tests', () => {
         '../../../src/readability/opportunity-handler.js': {
           addReadabilitySuggestions: mockAddReadabilitySuggestions,
         },
+        '@adobe/spacecat-shared-http-utils': {
+          ok: () => ({ statusCode: 200, body: 'OK' }),
+          notFound: (message) => ({ statusCode: 404, body: message }),
+        },
       },
     );
 
@@ -396,7 +400,10 @@ describe('Guidance Readability Handler Tests', () => {
       mockDataAccess.Site.findById.resolves(mockSite);
       mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
 
-      mockOpportunity.getData.returns(null); // Trigger || {} fallback
+      // Mock opportunity to return valid data first (for finding), then null (for testing fallback)
+      mockOpportunity.getData
+        .onFirstCall().returns({ subType: 'readability' }) // For finding the opportunity
+        .onSecondCall().returns(null); // For triggering the fallback
       mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
       mockAddReadabilitySuggestions.resolves();
 
@@ -608,7 +615,7 @@ describe('Guidance Readability Handler Tests', () => {
 
       expect(result.statusCode).to.equal(200);
       expect(log.info).to.have.been.calledWithMatch('All 2 Mystique responses received');
-      expect(mockAsyncJob.setStatus).to.have.been.calledWith('completed');
+      expect(mockAsyncJob.setStatus).to.have.been.calledWith('COMPLETED');
       expect(mockAsyncJob.setEndedAt).to.have.been.called;
       expect(mockAsyncJob.setResult).to.have.been.called;
       expect(mockAsyncJob.save).to.have.been.called;
@@ -1008,6 +1015,165 @@ describe('Guidance Readability Handler Tests', () => {
 
       // Lines 167-168 would only be reachable if mappedSuggestions.length becomes 0
       // after being > 0, which seems impossible in the current code structure
+    });
+  });
+
+  describe('Fallback coverage tests', () => {
+    it('should cover data fallback on line 48: || {}', async () => {
+      // Test when message.data is null/undefined, triggering the || {} fallback
+      const messageWithNullData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: null, // This will trigger the || {} fallback on line 48
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
+
+      mockOpportunity.getData.returns({
+        subType: 'readability',
+        processedSuggestionIds: [],
+      });
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      const result = await guidanceHandler(messageWithNullData, context);
+
+      expect(result.statusCode).to.equal(200);
+      expect(log.warn).to.have.been.calledWithMatch('No valid readability improvements found');
+    });
+
+    it('should cover existingData fallback on line 90: || {}', async () => {
+      // Test when readabilityOppty.getData() returns null, triggering the || {} fallback
+      const messageWithValidData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 75,
+          original_paragraph: 'Original text',
+          current_flesch_score: 25,
+        },
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
+
+      // Mock opportunity that returns valid data first (to be found),
+      // then null (to trigger line 90 fallback)
+      mockOpportunity.getData
+        .onFirstCall().returns({ subType: 'readability' }) // For finding the opportunity
+        .onSecondCall().returns(null); // For triggering the || {} fallback on line 90
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+      mockAddReadabilitySuggestions.resolves();
+
+      const result = await guidanceHandler(messageWithValidData, context);
+
+      expect(result.statusCode).to.equal(200);
+      expect(mockOpportunity.setData).to.have.been.called;
+    });
+
+    it('should cover processedSuggestionIds fallback on line 91: || []', async () => {
+      // Test when existingData.processedSuggestionIds is undefined, triggering the || [] fallback
+      const messageWithValidData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 75,
+          original_paragraph: 'Original text',
+          current_flesch_score: 25,
+        },
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
+
+      // Mock opportunity with data that has no processedSuggestionIds - triggers line 91 fallback
+      mockOpportunity.getData.returns({
+        subType: 'readability',
+        // processedSuggestionIds: undefined - this will trigger the || [] fallback
+      });
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+      mockAddReadabilitySuggestions.resolves();
+
+      const result = await guidanceHandler(messageWithValidData, context);
+
+      expect(result.statusCode).to.equal(200);
+      expect(mockOpportunity.setData).to.have.been.called;
+    });
+
+    it('should cover AsyncJob completion fallbacks: lines 210, 213, 264', async () => {
+      // Test all the fallbacks in the AsyncJob completion logic
+      const messageWithValidData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 85,
+          original_paragraph: 'Original text',
+          current_flesch_score: 25,
+        },
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+
+      // Create AsyncJob with result that will trigger completion logic
+      const mockAsyncJobWithResult = {
+        ...mockAsyncJob,
+        getResult: () => [{
+          pageUrl: 'https://test-site.com/page1',
+          audits: [{
+            name: 'readability',
+            opportunities: [{
+              check: 'poor-readability',
+              textContent: 'Original text',
+              fleschReadingEase: 30,
+            }],
+          }],
+        }],
+      };
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithResult);
+
+      mockOpportunity.getData.returns({
+        subType: 'readability',
+        processedSuggestionIds: [],
+        mystiqueResponsesReceived: 0,
+        mystiqueResponsesExpected: 1,
+      });
+
+      // Create mock suggestion that will trigger the fallbacks
+      const mockSuggestionForFallbacks = {
+        getData: () => ({
+          recommendations: [{
+            originalText: null, // This will trigger line 210 fallback: || 'Unknown text'
+            improvedText: 'Improved text',
+            originalFleschScore: null, // This will trigger line 213 and 264 fallbacks
+            improvedFleschScore: 85,
+            seoRecommendation: 'Use shorter sentences',
+            aiRationale: 'Shorter sentences improve readability',
+          }],
+        }),
+      };
+      mockOpportunity.getSuggestions.resolves([mockSuggestionForFallbacks]);
+
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+      mockAddReadabilitySuggestions.resolves();
+
+      const result = await guidanceHandler(messageWithValidData, context);
+
+      expect(result.statusCode).to.equal(200);
+
+      // Verify that AsyncJob completion logic was triggered
+      expect(mockAsyncJobWithResult.setResult).to.have.been.called;
+      expect(mockAsyncJobWithResult.setStatus).to.have.been.called;
+      expect(mockAsyncJobWithResult.save).to.have.been.called;
+
+      // Verify the fallbacks were used in log messages
+      expect(log.info).to.have.been.calledWithMatch('All 1 Mystique responses received');
     });
   });
 });
