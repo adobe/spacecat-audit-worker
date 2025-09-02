@@ -17,11 +17,29 @@ import {
   syncSuggestions,
   keepSameDataFunction,
 } from '../../utils/data-access.js';
-import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
+import { successCriteriaLinks, accessibilityOpportunitiesMap, URL_SOURCE_SEPARATOR } from './constants.js';
 import { getAuditData } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 import { saveMystiqueValidationMetricsToS3 } from './scrape-utils.js';
+
+/**
+ * Extracts the 'source' query parameter from a URL and returns a clean URL
+ * without the source parameter
+ *
+ * @param {string} url - The original URL that may contain a source parameter
+ * @returns {Object} An object containing the clean URL and extracted source
+ * @returns {string} returns.url - The URL without the source parameter
+ * @returns {string|null} returns.source - The extracted source value, or null
+ */
+function extractSourceFromUrl(url) {
+  if (url.includes(URL_SOURCE_SEPARATOR)) {
+    const [pageUrl, source] = url.split(URL_SOURCE_SEPARATOR);
+    return { url: pageUrl, source };
+  }
+
+  return { url, source: null };
+}
 
 /**
  * Creates a Mystique message object
@@ -213,11 +231,22 @@ export function formatIssue(type, issueData, severity) {
     }];
   }
 
+  // Extract understanding URL
+  let understandingUrl = '';
+  if (rawWcagRule && rawWcagRule.startsWith('wcag')) {
+    const numberPart = rawWcagRule.replace('wcag', '');
+    const ruleInfo = successCriteriaLinks[numberPart];
+    if (ruleInfo && ruleInfo.understandingUrl) {
+      understandingUrl = ruleInfo.understandingUrl;
+    }
+  }
+
   return {
     type,
     description: issueData.description || '',
     wcagRule,
     wcagLevel: issueData.level || '', // AA, AAA, etc.
+    understandingUrl,
     severity,
     occurrences: (issueData.htmlWithIssues && issueData.htmlWithIssues.length) || 0,
     htmlWithIssues,
@@ -237,30 +266,31 @@ export function formatIssue(type, issueData, severity) {
  * @param {Object} accessibilityData[url] - Per-URL accessibility data
  * @returns {Object} Object with data array containing URLs and their issues
  */
-export function aggregateAccessibilityIssues(accessibilityData) {
+export function aggregateAccessibilityIssues(accessibilityData, opportunityType = 'a11y-assistive') {
   if (!accessibilityData) {
     return { data: [] };
   }
 
-  // Create reverse mapping (unchanged)
+  // Create reverse mapping - only for the specified opportunityType
   const issueTypeToOpportunityMap = {};
-  for (const [opportunityType, issuesList] of Object.entries(accessibilityOpportunitiesMap)) {
-    for (const issueType of issuesList) {
-      issueTypeToOpportunityMap[issueType] = opportunityType;
-    }
+  const issueList = accessibilityOpportunitiesMap[opportunityType];
+  if (!issueList) {
+    return { data: [] };
   }
 
-  // Initialize grouped data structure (unchanged)
-  const groupedData = {};
-  for (const [opportunityType] of Object.entries(accessibilityOpportunitiesMap)) {
-    groupedData[opportunityType] = [];
+  for (const issueType of issueList) {
+    issueTypeToOpportunityMap[issueType] = opportunityType;
   }
+
+  // Initialize grouped data structure - only for the specified opportunityType
+  const groupedData = {};
+  groupedData[opportunityType] = [];
 
   // NEW: Process individual HTML elements directly
   const processIssuesForSeverity = (items, severity, url, data) => {
     for (const [issueType, issueData] of Object.entries(items)) {
-      const opportunityType = issueTypeToOpportunityMap[issueType];
-      if (opportunityType && issueData.htmlWithIssues) {
+      const oppType = issueTypeToOpportunityMap[issueType];
+      if (oppType && issueData.htmlWithIssues) {
         issueData.htmlWithIssues.forEach((htmlElement, index) => {
           const singleElementIssueData = {
             ...issueData,
@@ -268,9 +298,13 @@ export function aggregateAccessibilityIssues(accessibilityData) {
             target: issueData.target ? issueData.target[index] : '',
           };
 
+          // Extract source from URL and clean the URL
+          const { url: pageUrl, source } = extractSourceFromUrl(url);
+
           const urlObject = {
             type: 'url',
-            url,
+            url: pageUrl,
+            ...(source && { source }),
             issues: [formatIssue(issueType, singleElementIssueData, severity)],
           };
 
@@ -298,8 +332,8 @@ export function aggregateAccessibilityIssues(accessibilityData) {
   // Convert to final format (unchanged)
   const formattedData = Object.entries(groupedData)
     .filter(([, urls]) => urls.length > 0)
-    .map(([opportunityType, urls]) => ({
-      [opportunityType]: urls,
+    .map(([oppType, urls]) => ({
+      [oppType]: urls,
     }));
 
   return { data: formattedData };
@@ -369,7 +403,11 @@ export async function createIndividualOpportunitySuggestions(
     if (issues.length === 0) {
       return data.url;
     }
-    return `${data.url}|${issues[0].type}|${issues[0]?.htmlWithIssues[0]?.target_selector || ''}`;
+    let key = `${data.url}|${issues[0].type}|${issues[0]?.htmlWithIssues[0]?.target_selector || ''}`;
+    if (data.source) {
+      key += `|${data.source}`;
+    }
+    return key;
   };
 
   log.info(`[A11yIndividual] ${aggregatedData.data.length} issues aggregated for opportunity ${opportunity.getId()}`);
@@ -390,6 +428,7 @@ export async function createIndividualOpportunitySuggestions(
           url: urlData.url,
           type: urlData.type,
           issues: urlData.issues, // Array of formatted accessibility issues
+          ...(urlData.source && { source: urlData.source }),
           isCreateTicketClicked: false,
         },
       }),
@@ -613,13 +652,6 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
 
           // Get the appropriate opportunity creator function
           const creatorFunc = opportunityCreators[opportunityType];
-          if (!creatorFunc) {
-            const availableCreators = Object.keys(opportunityCreators).join(', ');
-            log.error(
-              `[A11yIndividual][A11yProcessingError] No opportunity creator found for type: ${opportunityType}. Available creators: ${availableCreators}`,
-            );
-            throw new Error(`No opportunity creator found for type: ${opportunityType}`);
-          }
 
           const opportunityInstance = creatorFunc();
 

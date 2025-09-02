@@ -707,6 +707,10 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         '../../../src/accessibility/utils/scrape-utils.js': {
           updateStatusToIgnored: updateStatusToIgnoredStub,
         },
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          aggregateAccessibilityIssues: sandbox.stub().returns({ data: [] }),
+          createIndividualOpportunitySuggestions: sandbox.stub().resolves(),
+        },
       });
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
@@ -735,6 +739,197 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       // Verify no error was logged since the function continues normally
       expect(context.log.error).to.not.have.been.called;
+    });
+
+    it('should create individual suggestions for form accessibility issues', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success with violations
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            'https://example.com/page1?source=contact-form': {
+              violations: {
+                critical: {
+                  items: {
+                    label: {
+                      description: 'Form elements must have labels',
+                      level: 'critical',
+                      successCriteriaTags: ['wcag412'],
+                      failureSummary: 'Ensure every form field has a label',
+                      htmlWithIssues: ['<input type="text">'],
+                      target: ['input[type="text"]'],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Mock aggregateAccessibilityIssues to return individual issues
+      const aggregateAccessibilityIssuesStub = sandbox.stub().returns({
+        data: [{
+          'form-accessibility': [
+            {
+              type: 'url',
+              url: 'https://example.com/page1',
+              source: 'contact-form',
+              issues: [
+                {
+                  type: 'label',
+                  severity: 'critical',
+                  htmlWithIssues: [{
+                    target_selector: 'input[type="text"]',
+                  }],
+                },
+              ],
+            },
+          ],
+        }],
+      });
+
+      // Mock createIndividualOpportunitySuggestions
+      const createIndividualOpportunitySuggestionsStub = sandbox.stub().resolves();
+
+      const createdOpportunity = {
+        getId: () => 'opportunity-123',
+      };
+      context.dataAccess.Opportunity.create.resolves(createdOpportunity);
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          aggregateAccessibilityIssues: aggregateAccessibilityIssuesStub,
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      // Verify individual suggestions were created
+      expect(aggregateAccessibilityIssuesStub).to.have.been.calledOnce;
+      expect(aggregateAccessibilityIssuesStub).to.have.been.calledWith(
+        sinon.match.object,
+        'form-accessibility',
+      );
+      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
+    });
+
+    it('should handle individual suggestions creation errors gracefully', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            'https://example.com/page1': {
+              violations: {
+                critical: {
+                  items: {
+                    label: {
+                      description: 'Form elements must have labels',
+                      level: 'critical',
+                      successCriteriaTags: ['wcag412'],
+                      failureSummary: 'Ensure every form field has a label',
+                      htmlWithIssues: ['<input type="text">'],
+                      target: ['input[type="text"]'],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Mock aggregateAccessibilityIssues to throw an error
+      const aggregateAccessibilityIssuesStub = sandbox.stub().throws(new Error('Aggregation failed'));
+
+      const createdOpportunity = {
+        getId: () => 'opportunity-123',
+      };
+      context.dataAccess.Opportunity.create.resolves(createdOpportunity);
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          aggregateAccessibilityIssues: aggregateAccessibilityIssuesStub,
+          createIndividualOpportunitySuggestions: sandbox.stub().resolves(),
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      // Verify that the error in individual suggestions doesn't break the main flow
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+
+      // Verify the stub was called even though it threw an error
+      expect(aggregateAccessibilityIssuesStub).to.have.been.calledOnce;
+
+      // Verify error was logged for individual suggestions but main success was still logged
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Error creating individual suggestions/),
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/a11y opportunity created.*and sent to mystique/),
+      );
+    });
+
+    it('should skip individual suggestions when no opportunity is created', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success but with no violations
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {},
+        },
+      });
+
+      const aggregateAccessibilityIssuesStub = sandbox.stub();
+      const createIndividualOpportunitySuggestionsStub = sandbox.stub();
+
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+        },
+        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
+          aggregateAccessibilityIssues: aggregateAccessibilityIssuesStub,
+          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      // Verify individual suggestions functions were not called when no opportunity was created
+      expect(aggregateAccessibilityIssuesStub).to.not.have.been.called;
+      expect(createIndividualOpportunitySuggestionsStub).to.not.have.been.called;
     });
 
     it('should handle SQS message sending failure gracefully', async () => {
