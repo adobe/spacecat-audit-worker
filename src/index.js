@@ -64,9 +64,13 @@ import detectPageIntent from './page-intent/handler.detect.js';
 import updatePageIntent from './page-intent/handler.update.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
+import llmErrorPages from './llm-error-pages/handler.js';
+import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
 import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
+import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
+import headings from './headings/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -117,8 +121,12 @@ const HANDLERS = {
   'detect:form-details': detectFormDetails,
   'page-intent': updatePageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
+  'llm-error-pages': llmErrorPages,
+  'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
+  'llmo-customer-analysis': llmoCustomerAnalysis,
   hreflang,
+  headings,
   dummy: (message) => ok(message),
 };
 
