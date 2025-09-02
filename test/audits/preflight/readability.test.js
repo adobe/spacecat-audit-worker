@@ -982,7 +982,7 @@ describe('Preflight Readability Audit', () => {
 
       const result = await readabilityMocked.default(context, auditContext);
 
-      expect(log.info).to.have.been.calledWithMatch('Sending 1 readability issues to Mystique');
+      expect(log.info).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
       expect(result.processing).to.be.true;
       expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
     });
