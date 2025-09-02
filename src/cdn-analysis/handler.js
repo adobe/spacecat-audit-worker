@@ -107,7 +107,9 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
         imsOrgId,
       );
       const rawTable = `raw_logs_${customerDomain}_${serviceProvider.replace(/-/g, '_')}`;
-      const athenaClient = AWSAthenaClient.fromContext(context, paths.tempLocation);
+      const athenaClient = AWSAthenaClient.fromContext(context, paths.tempLocation, {
+        maxPollAttempts: 500,
+      });
 
       if (results.length === 0) {
         // eslint-disable-next-line no-await-in-loop
