@@ -108,8 +108,7 @@ async function createAgenticReportQuery(options) {
     periods, databaseName, tableName, site,
   } = options;
 
-  const filters = site.getConfig().getCdnLogsConfig()?.filters
-    || site.getConfig().getLlmoCdnlogsFilter();
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
   const siteFilters = buildSiteFilters(filters);
 
   const lastWeek = periods.weeks[periods.weeks.length - 1];
@@ -149,8 +148,7 @@ async function createReferralReportQuery(options) {
   } = options;
 
   /* c8 ignore next */
-  const filters = site.getConfig().getCdnLogsConfig()?.filters
-    || site.getConfig().getLlmoCdnlogsFilter();
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
   const siteFilters = buildSiteFilters(filters);
   const lastWeek = periods.weeks[periods.weeks.length - 1];
   const whereClause = buildWhereClauseReferral(
