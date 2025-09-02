@@ -1098,15 +1098,21 @@ describe('Preflight Readability Audit', () => {
         getAuditId: () => 'job-123',
         getData: () => ({ subType: 'readability' }),
         getSuggestions: sinon.stub().callsFake(async () => {
-          // During getSuggestions call, modify the audit to simulate
-          // opportunities being cleared by async processing
+          // Mark some suggestions as processing to trigger Mystique call
           if (auditsResult[0] && auditsResult[0].audits[0]) {
-            auditsResult[0].audits[0].opportunities = null;
+            const { opportunities } = auditsResult[0].audits[0];
+            for (let i = 0; i < opportunities.length; i += 1) {
+              opportunities[i].suggestionStatus = 'processing';
+            }
           }
           return [];
         }),
       };
       context.dataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      // Add missing environment variable
+      context.env = context.env || {};
+      context.env.QUEUE_SPACECAT_TO_MYSTIQUE = 'test-queue-url';
 
       const result = await readabilityMocked.default(context, auditContext);
 

@@ -91,7 +91,12 @@ describe('Opportunity Handler Tests', () => {
 
     it('should add suggestions successfully', async () => {
       // Mock successful addition
-      mockIsNonEmptyArray.returns(true);
+      mockIsNonEmptyArray
+        .onFirstCall().returns(true) // newSuggestionDTOs is non-empty
+        .onSecondCall().returns(false) // errorItems is empty
+        .onThirdCall()
+        .returns(true); // createdItems is non-empty
+
       const updateResult = {
         createdItems: [{ id: 'suggestion-1' }],
         errorItems: [],
