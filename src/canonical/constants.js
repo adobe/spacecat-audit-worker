@@ -90,10 +90,6 @@ export const CANONICAL_CHECKS = Object.freeze({
     check: 'top-pages',
     explanation: 'No top pages found',
   },
-  URL_UNDEFINED: {
-    check: 'url-defined',
-    explanation: 'The URL is undefined or null, which prevents the canonical tag validation process.',
-  },
   UNEXPECTED_STATUS_CODE: {
     check: 'unexpected-status-code',
     explanation: 'The response returned an unexpected status code, indicating an unforeseen issue with the canonical URL.',

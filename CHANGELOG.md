@@ -1,3 +1,50 @@
+# [1.170.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.169.0...v1.170.0) (2025-09-01)
+
+
+### Features
+
+* headings audit ([#1142](https://github.com/adobe/spacecat-audit-worker/issues/1142)) ([cc8622c](https://github.com/adobe/spacecat-audit-worker/commit/cc8622cdb835f057a9cc4fc4d8d3da6755b6e80d))
+
+# [1.169.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.168.1...v1.169.0) (2025-09-01)
+
+
+### Features
+
+* add audit for LLMO onboarding automation ([#1199](https://github.com/adobe/spacecat-audit-worker/issues/1199)) ([280b233](https://github.com/adobe/spacecat-audit-worker/commit/280b233e42d9ff32d668da10033be490cd0050ec))
+
+## [1.168.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.168.0...v1.168.1) (2025-09-01)
+
+
+### Bug Fixes
+
+* add training bot classification ([#1207](https://github.com/adobe/spacecat-audit-worker/issues/1207)) ([a81a1e9](https://github.com/adobe/spacecat-audit-worker/commit/a81a1e9ad580311305e56285a4d8cce523897bd5))
+
+# [1.168.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.167.1...v1.168.0) (2025-09-01)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.61.0 ([#1206](https://github.com/adobe/spacecat-audit-worker/issues/1206)) ([33d061e](https://github.com/adobe/spacecat-audit-worker/commit/33d061e4e56bcc0e7d647592ee8759645f4e0849))
+
+
+### Features
+
+* s3 restructure to use single bucket for CDN logs ([#1191](https://github.com/adobe/spacecat-audit-worker/issues/1191)) ([db448d4](https://github.com/adobe/spacecat-audit-worker/commit/db448d41a5e0bd4243171babe11416316b66a373))
+
+## [1.167.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.167.0...v1.167.1) (2025-09-01)
+
+
+### Bug Fixes
+
+* add static file for llm error pages ([#1203](https://github.com/adobe/spacecat-audit-worker/issues/1203)) ([0eff109](https://github.com/adobe/spacecat-audit-worker/commit/0eff109100b462303ae756a06bf25f46521faba5))
+
+# [1.167.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.166.3...v1.167.0) (2025-09-01)
+
+
+### Features
+
+* add LLM error pages audit ([#1187](https://github.com/adobe/spacecat-audit-worker/issues/1187)) ([6150312](https://github.com/adobe/spacecat-audit-worker/commit/61503120ec044c15cbfa6a9145858507c4ae2c2a))
+
 ## [1.166.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.166.2...v1.166.3) (2025-08-31)
 
 

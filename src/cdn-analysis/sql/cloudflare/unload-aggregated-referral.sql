@@ -52,7 +52,8 @@ UNLOAD (
           THEN 'mobile'
         ELSE 'desktop'
       END AS device,
-      
+      '{{serviceProvider}}' AS cdn_provider,
+
       CONCAT('{{year}}', '-', '{{month}}', '-', '{{day}}') as date
 
     FROM base
@@ -107,5 +108,5 @@ UNLOAD (
     NULLIF(tracking_param, '')
   ) IS NOT NULL
 
-) TO 's3://{{bucket}}/aggregated-referral/{{year}}/{{month}}/{{day}}/08/'
+) TO '{{aggregatedReferralOutput}}'
 WITH (format = 'PARQUET');
