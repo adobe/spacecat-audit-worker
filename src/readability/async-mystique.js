@@ -57,6 +57,8 @@ export async function sendReadabilityToMystique(
     const { Opportunity } = dataAccess;
 
     // Check if opportunity already exists
+    // Note: auditId & jobId refer to the same entity
+    // opportunities are linked to jobs via auditId
     const existingOpportunities = await Opportunity.allBySiteId(siteId);
     let opportunity = existingOpportunities.find(
       (oppty) => oppty.getAuditId() === jobId && oppty.getData()?.subType === 'readability',
@@ -80,7 +82,7 @@ export async function sendReadabilityToMystique(
       // Create new opportunity
       const opportunityData = {
         siteId,
-        auditId: jobId,
+        auditId: jobId, // auditId is set to jobId to link this opportunity to the current job
         type: 'generic-opportunity',
         origin: 'AUTOMATION',
         title: 'Readability Improvement Suggestions',

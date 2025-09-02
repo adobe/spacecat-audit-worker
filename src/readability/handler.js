@@ -35,6 +35,8 @@ async function checkForExistingSuggestions(
 
   try {
     // Find existing readability opportunity for this site/job
+    // Note: auditId and jobId refer to the same entity
+    // opportunities are linked to jobs via auditId
     const existingOpportunities = await Opportunity.allBySiteId(siteId);
     const readabilityOpportunity = existingOpportunities.find(
       (oppty) => oppty.getAuditId() === jobId && oppty.getData()?.subType === 'readability',
