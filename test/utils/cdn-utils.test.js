@@ -87,7 +87,7 @@ describe('CDN Utils', () => {
         getBaseURL: () => 'https://example.com',
         getOrganizationId: () => 'org-id',
         getConfig: () => ({
-          getCdnLogsConfig: () => ({ bucketName: 'configured-bucket' }),
+          getLlmoCdnBucketConfig: () => ({ bucketName: 'configured-bucket', orgId: 'test-org-id' }),
         }),
       };
 
@@ -103,7 +103,6 @@ describe('CDN Utils', () => {
         getBaseURL: () => 'https://example.com',
         getOrganizationId: () => 'org-id',
         getConfig: () => ({
-          getCdnLogsConfig: () => null,
           getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
         }),
       };
@@ -120,7 +119,6 @@ describe('CDN Utils', () => {
         getBaseURL: () => 'https://unknown.com',
         getOrganizationId: () => 'org-id',
         getConfig: () => ({
-          getCdnLogsConfig: () => null,
           getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
         }),
       };
@@ -138,7 +136,6 @@ describe('CDN Utils', () => {
         getBaseURL: () => 'https://example.com',
         getOrganizationId: () => 'org-id',
         getConfig: () => ({
-          getCdnLogsConfig: () => null,
           getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
         }),
       };
