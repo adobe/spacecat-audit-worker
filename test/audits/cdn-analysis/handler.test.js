@@ -38,7 +38,6 @@ describe('CDN Analysis Handler', () => {
       getBaseURL: sandbox.stub().returns('https://example.com'),
       getConfig: sandbox.stub().returns({
         getLlmoCdnBucketConfig: () => null,
-        getCdnLogsConfig: () => null,
       }),
     };
     context = new MockContextBuilder()

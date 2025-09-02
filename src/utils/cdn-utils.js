@@ -85,8 +85,7 @@ export async function resolveCdnBucketName(site, context) {
   } = context;
 
   // If the bucket name is configured, use it
-  const { bucketName } = site.getConfig().getCdnLogsConfig()
-    || site.getConfig()?.getLlmoCdnBucketConfig() || {};
+  const { bucketName } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
   if (bucketName) {
     await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
     return bucketName;

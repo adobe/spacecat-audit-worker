@@ -296,7 +296,7 @@ export async function analyzePageTypes(domain, paths, context) {
     log.info(`Total token usage for page type analysis: ${JSON.stringify(totalTokenUsage)}`);
 
     log.info(`Page type analysis complete for domain: ${domain}`);
-    return regexPatterns;
+    return regexPatterns.regexes;
   } catch (error) {
     log.error(`Failed to complete page type analysis: ${error.message}`);
     throw error;

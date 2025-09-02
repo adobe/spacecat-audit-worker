@@ -30,11 +30,12 @@ import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-upl
 
 async function runLlmErrorPagesAudit(url, context, site) {
   const {
-    log, audit, sqs, env, dataAccess,
+    log, audit,
   } = context;
   const s3Config = await getS3Config(site, context);
 
   log.info(`Starting LLM error pages audit for ${url}`);
+  log.info(`Running LLM error pages audit ${audit}`);
 
   try {
     const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
@@ -69,7 +70,6 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
     // Process results
     const processedResults = processErrorPagesResults(results);
-
     const categorizedResults = categorizeErrorsByStatusCode(processedResults.errorPages);
 
     // Prepare SharePoint client and output location
@@ -117,48 +117,6 @@ async function runLlmErrorPagesAudit(url, context, site) {
       writeCategoryExcel('5xx', categorizedResults['5xx']),
     ]);
 
-    // Send SQS message to Mystique for 404 errors only (no DB dependencies)
-    const errors404 = categorizedResults[404] || [];
-    if (errors404.length > 0 && sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-      const messageBaseUrl = site.getBaseURL?.() || '';
-      const consolidated404 = consolidateErrorsByUrl(errors404);
-      const sorted404 = sortErrorsByTrafficVolume(consolidated404);
-      const { SiteTopPage } = dataAccess;
-      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-
-      // Consolidate by URL and combine user agents
-      const urlToUserAgentsMap = new Map();
-      sorted404.forEach((errorPage) => {
-        const fullUrl = messageBaseUrl ? `${messageBaseUrl}${errorPage.url}` : errorPage.url;
-        if (!urlToUserAgentsMap.has(fullUrl)) {
-          urlToUserAgentsMap.set(fullUrl, new Set());
-        }
-        urlToUserAgentsMap.get(fullUrl).add(errorPage.userAgent);
-      });
-
-      const message = {
-        type: 'guidance:llm-error-pages',
-        siteId: site.getId(),
-        auditId: audit?.getId() || 'llm-error-pages-audit',
-        deliveryType: site?.getDeliveryType?.() || 'aem_edge',
-        time: new Date().toISOString(),
-        data: {
-          brokenLinks: Array.from(urlToUserAgentsMap.entries())
-            .map(([fullUrl, userAgents], index) => ({
-              urlFrom: Array.from(userAgents).join(', '),
-              urlTo: fullUrl,
-              suggestionId: `llm-404-suggestion-${periodIdentifier}-${index}`,
-            }))
-            .filter((link) => link.urlFrom.length > 0),
-          alternativeUrls: topPages.map((topPage) => topPage.getUrl()),
-          opportunityId: `llm-404-${periodIdentifier}`,
-        },
-      };
-
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-      log.info(`Queued ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
-    }
-
     log.info(`Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
 
     const auditResult = {
@@ -175,6 +133,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
       totalErrors: processedResults.totalErrors,
       summary: processedResults.summary,
       errorPages: processedResults.errorPages,
+      categorizedResults,
     };
 
     return {
@@ -198,7 +157,87 @@ async function runLlmErrorPagesAudit(url, context, site) {
   }
 }
 
+// Post processor for sending message to Mystique
+async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
+  const {
+    log, sqs, env, dataAccess, audit,
+  } = context;
+  const { siteId, auditResult } = auditData;
+
+  // Skip if audit failed
+  if (!auditResult.success) {
+    log.info('Audit failed, skipping Mystique message');
+    return auditData;
+  }
+
+  const { categorizedResults, periodIdentifier } = auditResult;
+  const errors404 = categorizedResults[404] || [];
+
+  if (errors404.length === 0) {
+    log.info('No 404 errors found, skipping Mystique message');
+    return auditData;
+  }
+
+  if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
+    log.warn('SQS or Mystique queue not configured, skipping message');
+    return auditData;
+  }
+
+  try {
+    // Get site for additional data
+    const { Site } = dataAccess;
+    const site = await Site.findById(siteId);
+    if (!site) {
+      log.warn('Site not found, skipping Mystique message');
+      return auditData;
+    }
+
+    const messageBaseUrl = site.getBaseURL?.() || '';
+    const consolidated404 = consolidateErrorsByUrl(errors404);
+    const sorted404 = sortErrorsByTrafficVolume(consolidated404);
+    const { SiteTopPage } = dataAccess;
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+
+    // Consolidate by URL and combine user agents
+    const urlToUserAgentsMap = new Map();
+    sorted404.forEach((errorPage) => {
+      const fullUrl = messageBaseUrl ? `${messageBaseUrl}${errorPage.url}` : errorPage.url;
+      if (!urlToUserAgentsMap.has(fullUrl)) {
+        urlToUserAgentsMap.set(fullUrl, new Set());
+      }
+      urlToUserAgentsMap.get(fullUrl).add(errorPage.userAgent);
+    });
+
+    const message = {
+      type: 'guidance:llm-error-pages',
+      siteId,
+      auditId: audit.getId() || 'llm-error-pages-audit',
+      deliveryType: site?.getDeliveryType?.() || 'aem_edge',
+      time: new Date().toISOString(),
+      data: {
+        brokenLinks: Array.from(urlToUserAgentsMap.entries())
+          .map(([fullUrl, userAgents], index) => ({
+            urlFrom: Array.from(userAgents).join(', '),
+            urlTo: fullUrl,
+            suggestionId: `llm-404-suggestion-${periodIdentifier}-${index}`,
+          }))
+          .filter((link) => link.urlFrom.length > 0),
+        alternativeUrls: topPages.map((topPage) => topPage.getUrl()),
+        opportunityId: `llm-404-${periodIdentifier}`,
+      },
+    };
+
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(`Queued ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
+  } catch (error) {
+    log.error(`Failed to send Mystique message: ${error.message}`);
+  }
+
+  return auditData;
+}
+
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .withRunner(runLlmErrorPagesAudit)
+  .withPostProcessors([sendMystiqueMessagePostProcessor])
   .build();
