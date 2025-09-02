@@ -1,3 +1,10 @@
+## [1.170.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.170.1...v1.170.2) (2025-09-02)
+
+
+### Bug Fixes
+
+* audit ID for LLM errors guidance ([#1208](https://github.com/adobe/spacecat-audit-worker/issues/1208)) ([8b14667](https://github.com/adobe/spacecat-audit-worker/commit/8b146675026e4feeae6fa45b876a7240bb035cf9))
+
 ## [1.170.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.170.0...v1.170.1) (2025-09-02)
 
 
