@@ -259,9 +259,12 @@ export default async function handler(message, context) {
                         + 'generated successfully.',
                       // originalText: recommendation.originalText,
                       // originalFleschScore: opportunity.fleschReadingEase,
-                      improvedFleschScore: recommendation.improvedFleschScore,
-                      readabilityImprovement: recommendation.improvedFleschScore
-                        - (recommendation.originalFleschScore || opportunity.fleschReadingEase),
+                      improvedFleschScore: Math.round(
+                        recommendation.improvedFleschScore * 100,
+                      ) / 100,
+                      readabilityImprovement: Math.round((recommendation.improvedFleschScore
+                        - (recommendation.originalFleschScore
+                          || opportunity.fleschReadingEase)) * 100) / 100,
                       aiSuggestion: recommendation.improvedText,
                       aiRationale: recommendation.aiRationale,
                       mystiqueProcessingCompleted: new Date().toISOString(),

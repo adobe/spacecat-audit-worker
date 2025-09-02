@@ -95,8 +95,8 @@ async function checkForExistingSuggestions(
               // originalText: recommendation.originalText,
               improvedText: recommendation?.improvedText,
               // originalFleschScore: originalScore,
-              improvedFleschScore: improvedScore,
-              readabilityImprovement: improvedScore - originalScore,
+              improvedFleschScore: Math.round(improvedScore * 100) / 100,
+              readabilityImprovement: Math.round((improvedScore - originalScore) * 100) / 100,
               aiSuggestion: recommendation?.seoRecommendation,
               aiRationale: recommendation?.aiRationale,
               mystiqueProcessingCompleted: suggestionData.lastMystiqueResponse
