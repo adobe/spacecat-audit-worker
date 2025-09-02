@@ -499,6 +499,7 @@ Each step receives a context object containing:
 - `site`: The site being audited (with methods like `getBaseURL()`, `getId()`)
 - `audit`: The audit record (undefined for first step)
 - `finalUrl`: The resolved URL (only in first step)
+- `scrapeResultPaths`: Map(url -> path) for all successfully scraped URLs (only after scrape step (SCRAPE_CLIENT only))
 - Standard context properties (`log`, `dataAccess`, etc.)
 
 ### Destinations
@@ -532,6 +533,26 @@ IMPORT_WORKER: {
       fullAuditRef: string
     }
   }
+}
+
+SCRAPE_CLIENT: {
+    // Formats payload for scrape client
+    payload: {
+        urls: Array<{url: string}>,
+        processingType: string,
+        options: object,
+        maxScrapeAge: number,
+        auditData: {
+          siteId: string,
+          completionQueueUrl: string, 
+          auditContext: {
+            next: string,
+            auditId: string,
+            auditType: string,
+            fullAuditRef: string
+          }
+        }
+    }
 }
 ```
 

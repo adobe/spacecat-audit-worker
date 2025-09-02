@@ -763,6 +763,14 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
       return { success: false, error: 'Site ID mismatch' };
     }
 
+    // This ensures we get the original count before any suggestions are filtered out
+    const allSuggestionsForCount = await opportunity.getSuggestions();
+    const sentPayloads = processSuggestionsForMystique(allSuggestionsForCount);
+    const allSentSuggestionIds = sentPayloads
+      .flatMap((payload) => payload.issuesList)
+      .map((issue) => issue.suggestionId);
+    const sentCount = allSentSuggestionIds.length;
+
     if (!remediations || remediations.length === 0) {
       log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: No remediations provided`);
       return {
@@ -878,16 +886,7 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
       const receivedSuggestionIds = validRemediations
         .map((remediation) => remediation.suggestionId);
 
-      // Get all suggestions for this opportunity to determine what was sent to Mystique
-      const allSuggestions = await opportunity.getSuggestions();
-      const sentPayloads = processSuggestionsForMystique(allSuggestions);
-
-      // Extract all suggestion IDs from all issuesList arrays in all messages
-      const allSentSuggestionIds = sentPayloads
-        .flatMap((payload) => payload.issuesList)
-        .map((issue) => issue.suggestionId);
-
-      const sentCount = allSentSuggestionIds.length;
+      // Use the pre-calculated sent count (calculated before adding any guidance)
       const receivedCount = receivedSuggestionIds.length;
 
       await saveMystiqueValidationMetricsToS3(

@@ -19,7 +19,7 @@ import sinon from 'sinon';
 import nock from 'nock';
 import esmock from 'esmock';
 import AWSXray from 'aws-xray-sdk';
-import { FirefallClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
+import { AzureOpenAIClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import { Site } from '@adobe/spacecat-shared-data-access';
 import {
   scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
@@ -575,7 +575,7 @@ describe('Preflight Audit', () => {
     let s3Client;
     let secretsClient;
     let configuration;
-    let firefallClient;
+    let azureOpenAIClient;
     let genvarClient;
     let preflightAuditFunction;
 
@@ -614,14 +614,14 @@ describe('Preflight Audit', () => {
         setError: sinon.stub(),
         save: sinon.stub().resolves(),
       };
-      firefallClient = {
+      azureOpenAIClient = {
         fetchChatCompletion: sandbox.stub(),
       };
       genvarClient = {
         generateSuggestions: sandbox.stub(),
       };
       sinon.stub(AWSXray, 'captureAWSv3Client').returns(secretsClient);
-      sandbox.stub(FirefallClient, 'createFrom').returns(firefallClient);
+      sandbox.stub(AzureOpenAIClient, 'createFrom').returns(azureOpenAIClient);
       sandbox.stub(GenvarClient, 'createFrom').returns(genvarClient);
 
       // Mock the accessibility handler to prevent timeouts
@@ -728,7 +728,7 @@ describe('Preflight Audit', () => {
         },
       });
 
-      firefallClient.fetchChatCompletion.resolves({
+      azureOpenAIClient.fetchChatCompletion.resolves({
         choices: [{
           message: {
             content: JSON.stringify({ suggested_urls: ['https://example.com/fix'], aiRationale: 'Rationale' }),
@@ -831,7 +831,7 @@ describe('Preflight Audit', () => {
         },
       });
 
-      firefallClient.fetchChatCompletion.resolves({
+      azureOpenAIClient.fetchChatCompletion.resolves({
         choices: [{
           message: {
             content: JSON.stringify({ suggested_urls: ['https://example.com/fix'], aiRationale: 'Rationale' }),
@@ -873,6 +873,22 @@ describe('Preflight Audit', () => {
       expect(finalJobEntity.setEndedAt).to.have.been.called;
       expect(finalJobEntity.save).to.have.been.called;
       expect(finalJobEntity.setResult).to.have.been.called;
+    });
+
+    it('handles genvar errors gracefully', async () => {
+      genvarClient.generateSuggestions.throws(new Error('Genvar failure'));
+      job.getMetadata = () => ({
+        payload: {
+          step: PREFLIGHT_STEP_SUGGEST,
+          urls: ['https://main--example--page.aem.page'],
+          checks: ['metatags'],
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(true);
+      await preflightAuditFunction(context);
+      expect(genvarClient.generateSuggestions).to.have.been.called;
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+      expect(context.log.error).to.have.been.calledWithMatch('[preflight-audit] site: site-123, job: job-123, step: suggest. Meta tags audit failed: Genvar failure');
     });
 
     it('completes successfully when finalUrl has trailing slash but input URL gets normalized', async () => {

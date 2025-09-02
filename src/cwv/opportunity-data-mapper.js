@@ -32,7 +32,7 @@ export function createOpportunityData(kpiDeltas) {
     ],
     data: {
       ...kpiDeltas,
-      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.GSC, DATA_SOURCES.SITE],
+      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
     },
   };
 }
