@@ -163,8 +163,6 @@ export default async function handler(message, context) {
     });
 
     log.info(`[read-suggest]: Successfully processed ${mappedSuggestions.length} suggestions from Mystique for siteId: ${siteId}`);
-  } else {
-    log.info(`[read-suggest]: No suggestions to process for siteId: ${siteId}`);
   }
 
   // Check if all Mystique responses have been received and update AsyncJob if complete
