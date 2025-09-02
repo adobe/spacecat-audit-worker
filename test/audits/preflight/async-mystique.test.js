@@ -423,6 +423,40 @@ describe('Async Mystique Tests', () => {
       });
     });
 
+    it('should handle opportunity where getData() returns null during update', async () => {
+      // Setup: Existing opportunity where getData() returns different values on different calls
+      // First call (during find): returns object with subType so opportunity is found
+      // Second call (during update): returns null, triggering the || {} fallback
+      existingOpportunity.getData
+        .onFirstCall().returns({ subType: 'readability', existingProp: 'value' })
+        .onSecondCall().returns(null); // This triggers the || {} fallback
+
+      mockOpportunity.allBySiteId.resolves([existingOpportunity]);
+      mockSqs.sendMessage.resolves({ MessageId: 'msg-456' });
+
+      await sendReadabilityToMystique(
+        'https://example.com',
+        sampleReadabilityIssues,
+        'test-site',
+        'test-job',
+        context,
+      );
+
+      // Verify opportunity was updated with default empty object (|| {} was used)
+      const updatedData = existingOpportunity.setData.firstCall.args[0];
+      expect(updatedData).to.deep.include({
+        mystiqueResponsesReceived: 0,
+        mystiqueResponsesExpected: 2,
+        totalReadabilityIssues: 2,
+        processedSuggestionIds: [], // Default empty array since existingData was null
+      });
+      expect(updatedData.lastMystiqueRequest).to.be.a('string');
+
+      // Verify the existing property is NOT preserved since getData() returned null
+      expect(updatedData.existingProp).to.be.undefined;
+      expect(existingOpportunity.save).to.have.been.calledOnce;
+    });
+
     it('should create unique issue IDs for each readability issue', async () => {
       mockOpportunity.allBySiteId.resolves([]);
       const newOpportunity = { getId: () => 'new-opportunity-id' };
