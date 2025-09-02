@@ -883,5 +883,131 @@ describe('Guidance Readability Handler Tests', () => {
       const updatedResult = mockAsyncJob.setResult.firstCall.args[0];
       expect(updatedResult).to.deep.equal([]);
     });
+
+    it('should handle suggestion with no recommendation data', async () => {
+      mockOpportunity.getData.returns({
+        subType: 'readability',
+        processedSuggestionIds: [],
+        mystiqueResponsesReceived: 1,
+        mystiqueResponsesExpected: 2,
+      });
+
+      const mockJobResult = [
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [
+                {
+                  check: 'poor-readability',
+                  textContent: 'Some text',
+                  fleschReadingEase: 25,
+                },
+              ],
+            },
+          ],
+        },
+      ];
+      mockAsyncJob.getResult.returns(mockJobResult);
+
+      // Mock suggestion with no recommendations property (triggers return false at line 249)
+      mockSuggestion.getData.returns({
+        someOtherData: 'value',
+        // No recommendations property
+      });
+      mockOpportunity.getSuggestions.resolves([mockSuggestion]);
+
+      const result = await guidanceHandler(baseMessage, context);
+
+      expect(result.statusCode).to.equal(200);
+      expect(mockAsyncJob.setResult).to.have.been.called;
+
+      // Verify no matching suggestion was found (because return false was triggered)
+      const updatedResult = mockAsyncJob.setResult.firstCall.args[0];
+      const readabilityAudit = updatedResult[0].audits.find((audit) => audit.name === 'readability');
+      expect(readabilityAudit.opportunities[0]).to.not.have.property('suggestionStatus');
+    });
+
+    it('should handle non-readability audit items during completion', async () => {
+      mockOpportunity.getData.returns({
+        subType: 'readability',
+        processedSuggestionIds: [],
+        mystiqueResponsesReceived: 1,
+        mystiqueResponsesExpected: 2,
+      });
+
+      // Mock AsyncJob with non-readability audit (triggers return auditItem at line 284)
+      const mockJobResult = [
+        {
+          audits: [
+            {
+              name: 'canonical', // Not 'readability'
+              opportunities: [
+                {
+                  check: 'missing-canonical',
+                  issue: 'No canonical tag found',
+                },
+              ],
+            },
+          ],
+        },
+      ];
+      mockAsyncJob.getResult.returns(mockJobResult);
+
+      const result = await guidanceHandler(baseMessage, context);
+
+      expect(result.statusCode).to.equal(200);
+      expect(mockAsyncJob.setResult).to.have.been.called;
+
+      // Verify non-readability audit passed through unchanged
+      const updatedResult = mockAsyncJob.setResult.firstCall.args[0];
+      const canonicalAudit = updatedResult[0].audits.find((audit) => audit.name === 'canonical');
+      expect(canonicalAudit).to.deep.equal({
+        name: 'canonical',
+        opportunities: [
+          {
+            check: 'missing-canonical',
+            issue: 'No canonical tag found',
+          },
+        ],
+      });
+    });
+  });
+
+  describe('Edge cases and unreachable code', () => {
+    it('should handle edge case for unreachable else branch (lines 167-168)', async () => {
+      // Note: Lines 167-168 appear to be unreachable due to early return at line 125
+      // when mappedSuggestions.length === 0. This test documents the potential dead code.
+
+      const messageWithDirectData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 75,
+          original_paragraph: 'Original text',
+          current_flesch_score: 25,
+        },
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
+
+      mockOpportunity.getData.returns({
+        subType: 'readability',
+        processedSuggestionIds: [],
+      });
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+      mockAddReadabilitySuggestions.resolves();
+
+      const result = await guidanceHandler(messageWithDirectData, context);
+
+      expect(result.statusCode).to.equal(200);
+      expect(log.info).to.have.been.calledWithMatch('Successfully processed 1 suggestions from Mystique');
+
+      // Lines 167-168 would only be reachable if mappedSuggestions.length becomes 0
+      // after being > 0, which seems impossible in the current code structure
+    });
   });
 });
