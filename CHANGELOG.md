@@ -1,3 +1,10 @@
+## [1.170.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.170.2...v1.170.3) (2025-09-02)
+
+
+### Bug Fixes
+
+* use proper llmo config for cdn logs analysis and reports ([#1212](https://github.com/adobe/spacecat-audit-worker/issues/1212)) ([392479c](https://github.com/adobe/spacecat-audit-worker/commit/392479c424c59359a6011534ce1ac0c66e8de201))
+
 ## [1.170.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.170.1...v1.170.2) (2025-09-02)
 
 
