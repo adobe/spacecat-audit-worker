@@ -6,24 +6,16 @@ UNLOAD (
     try(url_extract_host(request_referer)) AS referer,
     host,
     CAST(time_to_first_byte AS DOUBLE) * 1000 AS time_to_first_byte,
-    COUNT(*) AS count
+    COUNT(*) AS count,
+    '{{serviceProvider}}' AS cdn_provider
   FROM {{database}}.{{rawTable}}
   WHERE year  = '{{year}}'
     AND month = '{{month}}'
     AND day   = '{{day}}'
     AND hour  = '{{hour}}'
     
-    -- agentic and LLM-attributed traffic filter based on user-agent, referer and utm tag
-    AND (
-      -- match known LLM-related user-agents
-      REGEXP_LIKE(request_user_agent, '(?i)ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot')
-
-      -- match known referer hostnames for LLM-attributed real-user traffic
-      OR REGEXP_LIKE(COALESCE(request_referer, ''), '(?i)chatgpt\.com|openai\.com|perplexity\.ai|claude\.ai|gemini\.google\.com|copilot\.microsoft\.com')
-
-      -- match known query parameters for LLM-attributed real-user traffic
-      OR url LIKE '%utm_source=chatgpt.com%'
-    )
+     -- match known LLM-related user-agents
+    AND REGEXP_LIKE(request_user_agent, '(?i)ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot')
 
     -- only count text/html responses with robots.txt and sitemaps
     AND (
@@ -42,7 +34,8 @@ UNLOAD (
     response_status,
     request_referer,
     host,
-    CAST(time_to_first_byte AS DOUBLE) * 1000
+    CAST(time_to_first_byte AS DOUBLE) * 1000,
+    '{{serviceProvider}}'
 
-) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'
+) TO '{{aggregatedOutput}}'
 WITH (format = 'PARQUET');

@@ -12,6 +12,7 @@
 import { getWeekInfo, getMonthInfo } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { warmCacheForSite } from './cache-warmer.js';
 
 function buildMystiqueMessage(site, auditId, baseUrl, auditResult) {
   return {
@@ -39,7 +40,7 @@ function buildMystiqueMessage(site, auditId, baseUrl, auditResult) {
  * @returns {Object} Audit result and reference
  */
 export async function prepareTrafficAnalysisRequest(auditUrl, context, site, period) {
-  const { log } = context;
+  const { log, env } = context;
   const siteId = site.getSiteId();
 
   log.info(`[traffic-analysis-audit-${period}] Preparing mystique traffic-analysis-audit request parameters for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
@@ -69,6 +70,17 @@ export async function prepareTrafficAnalysisRequest(auditUrl, context, site, per
     };
   }
 
+  // Warm cache for this site and period
+
+  const temporalParams = {
+    yearInt: auditResult.year,
+    weekInt: auditResult.week || 0,
+    monthInt: auditResult.month,
+  };
+
+  log.info(`[cache-warming-${period}] Starting cache warming for site: ${siteId}`);
+  await warmCacheForSite(context, log, env, site, temporalParams);
+  log.info(`[cache-warming-${period}] Completed cache warming for site: ${siteId}`);
   log.info(`[traffic-analysis-audit-${period}] Request parameters: ${JSON.stringify(auditResult)} set for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
 
   return {

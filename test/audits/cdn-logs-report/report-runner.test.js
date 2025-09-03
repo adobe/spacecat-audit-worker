@@ -15,6 +15,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import { getConfigs } from '../../../src/cdn-logs-report/constants/report-configs.js';
 
 use(sinonChai);
 
@@ -24,6 +25,7 @@ describe('Report Runner', () => {
   let mockAthenaClient;
   let mockSaveExcelReport;
   let mockCreateExcelReport;
+  const agenticConfig = getConfigs('bucket', 'test_customer').find((c) => c.name === 'agentic');
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -48,15 +50,6 @@ describe('Report Runner', () => {
       '../../../src/cdn-logs-report/utils/excel-generator.js': {
         createExcelReport: mockCreateExcelReport,
       },
-      '../../../src/cdn-logs-report/constants/report-configs.js': {
-        AGENTIC_REPORT_CONFIG: {
-          folderSuffix: 'agentic-traffic',
-          sheetName: 'Agentic Traffic',
-          filePrefix: 'agentic-traffic-report',
-          workbookCreator: 'SpaceCat',
-          queryFunction: sandbox.stub().resolves('SELECT * FROM test'),
-        },
-      },
     });
   });
 
@@ -73,13 +66,13 @@ describe('Report Runner', () => {
           tableName: 'test_table',
           customerName: 'test_customer',
         },
+        reportConfig: agenticConfig,
         log: { info: sandbox.spy(), error: sandbox.spy() },
         site: {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getLlmoCdnlogsFilter: () => [],
             getLlmoDataFolder: () => 'test-folder',
-            getCdnLogsConfig: () => ({ filters: [] }),
           }),
         },
         sharepointClient: {},
@@ -102,13 +95,13 @@ describe('Report Runner', () => {
           tableName: 'test_table',
           customerName: 'test_customer',
         },
+        reportConfig: agenticConfig,
         log: { info: sandbox.spy(), error: sandbox.spy() },
         site: {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getLlmoCdnlogsFilter: () => [],
             getLlmoDataFolder: () => 'test-folder',
-            getCdnLogsConfig: () => ({ filters: [] }),
           }),
         },
         sharepointClient: {},
@@ -132,12 +125,12 @@ describe('Report Runner', () => {
           tableName: 'test_table',
           customerName: 'test_customer',
         },
+        reportConfig: agenticConfig,
         log: { info: sandbox.spy(), error: sandbox.spy() },
         site: {
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
             getLlmoCdnlogsFilter: () => [],
-            getCdnLogsConfig: () => ({ filters: [] }),
             getLlmoDataFolder: () => 'test-folder',
           }),
         },
@@ -145,7 +138,13 @@ describe('Report Runner', () => {
         weekOffset: -2,
       };
 
-      await reportRunner.runReport(mockAthenaClient, options.s3Config, options.log, options);
+      await reportRunner.runReport(
+        agenticConfig,
+        mockAthenaClient,
+        options.s3Config,
+        options.log,
+        options,
+      );
 
       expect(options.log.info).to.have.been.calledWith(sinon.match(/Running agentic report/));
       expect(mockAthenaClient.query).to.have.been.calledOnce;
