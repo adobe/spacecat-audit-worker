@@ -22,6 +22,7 @@ import analyzeDomain from './domain-analysis.js';
 import { analyzeProducts } from './product-analysis.js';
 import { analyzePageTypes } from './page-type-analysis.js';
 import { uploadPatternsWorkbook, uploadUrlsWorkbook, getLastSunday } from './utils.js';
+import { referralTrafficRunner } from '../llmo-referral-traffic/handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
@@ -41,6 +42,9 @@ async function runReferralTrafficStep(context) {
 
   const last4Weeks = getLastNumberOfWeeks(4);
 
+  // Last week will be imported via step audit
+  const lastWeek = last4Weeks.shift();
+
   for (const last4Week of last4Weeks) {
     const { week, year } = last4Week;
     const message = {
@@ -53,16 +57,16 @@ async function runReferralTrafficStep(context) {
       },
     };
     // eslint-disable-next-line no-await-in-loop
-    await sqs.sendMessage(configuration.getQueues().imports, message);
+    sqs.sendMessage(configuration.getQueues().imports, message);
   }
 
-  // workaround to ensure we have imported data for the following steps
+  // Workaround to ensure we have imported data for the following steps
   return {
     auditResult: { status: 'Importing OpTel data' },
     fullAuditRef: finalUrl,
     type: 'traffic-analysis',
-    week: last4Weeks[0].week,
-    year: last4Weeks[0].year,
+    week: lastWeek.week,
+    year: lastWeek.year,
     siteId,
   };
 }
@@ -74,6 +78,12 @@ async function runAgenticTrafficStep(context) {
 
   log.info('Agentic Traffic Step: Extracting product and page type information');
 
+  const lastFourWeeks = getLastNumberOfWeeks(4);
+
+  // Make sure to create the referral traffic workbook for the last week
+  const lastWeek = lastFourWeeks[0];
+  referralTrafficRunner(null, context, site, lastWeek);
+
   const siteId = site.getSiteId();
   const domain = site.getBaseURL();
   const { S3_IMPORTER_BUCKET_NAME: importerBucket } = env;
@@ -81,7 +91,6 @@ async function runAgenticTrafficStep(context) {
   const databaseName = 'rum_metrics';
   const tableName = 'compact_metrics';
   const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
-  const lastFourWeeks = getLastNumberOfWeeks(4);
   const temporalConditions = lastFourWeeks
     .map(({ year, week }) => getWeekInfo(week, year).temporalCondition);
 
@@ -104,7 +113,7 @@ async function runAgenticTrafficStep(context) {
   log.info('Agentic Traffic Step: Upload complete; initiating scrap');
 
   const formatBaseUrl = (url) => url.replace(/^(https?:\/\/)(?!www\.)/, '$1www.');
-  const urls = paths.map((p) => ({ url: `${formatBaseUrl(domain)}${p.path}` }));
+  const urls = paths.slice(0, 20).map((p) => ({ url: `${formatBaseUrl(domain)}${p.path}` }));
 
   return {
     auditResult: { status: 'Initiating scrape' },
