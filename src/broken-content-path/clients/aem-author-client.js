@@ -86,10 +86,11 @@ export class AemAuthorClient {
       }
 
       const data = await response.json();
-      const isAvailable = data?.items && data.items.length > 0;
+      // If != 1, it is either not existing or a folder access
+      const isAvailable = data?.items && data.items.length === 1;
 
-      // If content is available, cache it
-      if (isAvailable && this.pathIndex) {
+      // If there is content, cache it
+      if (data?.items && this.pathIndex) {
         for (const item of data.items) {
           const contentPath = new ContentPath(
             item.path,
@@ -221,7 +222,7 @@ export class AemAuthorClient {
       return cachedChildren;
     }
 
-    log.debug(`No children found in cache, checking parent path: ${parentPath}`);
+    log.debug('No children found in cache');
 
     let isAvailable = false;
     try {
@@ -246,9 +247,14 @@ export class AemAuthorClient {
       return this.pathIndex.findChildren(parentPath);
     }
 
-    // Try the next parent up the hierarchy
-    log.debug(`Parent path not available, trying next parent up: ${parentPath}`);
     const nextParent = PathUtils.getParentPath(parentPath);
+    if (!nextParent) {
+      log.debug(`No next parent found for: ${parentPath}`);
+      return [];
+    }
+
+    // Try the next parent up the hierarchy
+    log.debug(`Parent path not available, trying next parent up: ${nextParent}`);
     return this.getChildrenFromPath(nextParent, context);
   }
 
