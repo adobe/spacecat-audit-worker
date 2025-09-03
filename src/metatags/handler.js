@@ -202,12 +202,12 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
   }
 }
 
-export async function metatagsAutoDetect(site, pagesSet, context) {
+export async function metatagsAutoDetect(site, pagesMap, context) {
   const { log, s3Client } = context;
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const extractedTags = {};
-  const pageMetadataResults = await Promise.all([...pagesSet]
+  const pageMetadataResults = await Promise.all([...pagesMap]
     .map(([url, path]) => fetchAndProcessPageObject(s3Client, bucketName, url, path, log)));
   pageMetadataResults.forEach((pageMetadata) => {
     if (pageMetadata) {

@@ -27,7 +27,6 @@ export default async function metatags(context, auditContext) {
     step,
     audits,
     auditsResult,
-    s3Keys,
     timeExecutionBreakdown,
   } = auditContext;
   if (!checks || checks.includes(PREFLIGHT_METATAGS)) {
@@ -40,7 +39,11 @@ export default async function metatags(context, auditContext) {
     });
 
     // Workaround for the updated meta-tags audit which requires a map of URL to S3 key
-    const pageMap = new Map(previewUrls.map((key, i) => [key, s3Keys[i]]));
+    // TODO: change as soon as preflight is migrated to the ScrapeClient
+    const pageMap = new Map(previewUrls.map((url) => {
+      const s3Key = `scrapes/${site.getId()}${new URL(url).pathname.replace(/\/$/, '')}/scrape.json`;
+      return [url, s3Key];
+    }));
 
     const {
       seoChecks,
