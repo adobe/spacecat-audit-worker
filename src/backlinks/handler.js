@@ -115,7 +115,7 @@ export async function submitForScraping(context) {
   const { SiteTopPage } = dataAccess;
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
-    throw new Error('Audit failed, skipping suggestions generation');
+    throw new Error('Audit failed, skipping scraping and suggestions generation');
   }
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   return {
