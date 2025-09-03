@@ -45,8 +45,6 @@ export class SimilarPathRule extends BaseRule {
       return null;
     }
 
-    log.debug(`Getting children from parent folder: ${path}`);
-
     // We are traversing up the hierarchy until we find a path that is available on Author
     const childrenPaths = await this.getAemAuthorClient().getChildrenFromPath(
       path,
