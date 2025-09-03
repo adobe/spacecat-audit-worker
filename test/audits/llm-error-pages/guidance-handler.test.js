@@ -92,12 +92,12 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
-    const context = { 
-      log: logMock, 
+    const context = {
+      log: logMock,
       dataAccess,
       s3Client: {
-        send: sandbox.stub().resolves()
-      }
+        send: sandbox.stub().resolves(),
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -197,12 +197,12 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
-    const context = { 
-      log: logMock, 
+    const context = {
+      log: logMock,
       dataAccess,
       s3Client: {
-        send: sandbox.stub().resolves()
-      }
+        send: sandbox.stub().resolves(),
+      },
     };
 
     const resp = await guidanceHandler.default(message, context);

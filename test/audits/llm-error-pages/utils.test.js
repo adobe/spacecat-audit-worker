@@ -22,7 +22,6 @@ import {
   normalizeUserAgentToProvider,
   extractCustomerDomain,
   getAnalysisBucket,
-  getS3Config,
   formatDateString,
   getWeekRange,
   createDateRange,
@@ -408,8 +407,6 @@ describe('LLM Error Pages Utils', () => {
       expect(result.getAthenaTempLocation).to.be.a('function');
       expect(result.getAthenaTempLocation()).to.equal('s3://custom-bucket/temp/athena-results/');
     });
-
-
 
     it('should throw error when resolver fails', async () => {
       const mockSite = {
@@ -858,9 +855,6 @@ describe('LLM Error Pages Utils', () => {
   // ============================================================================
 
   describe('buildLlmErrorPagesQuery', () => {
-    let mockGetStaticContent;
-    let utils;
-
     beforeEach(async () => {
       mockGetStaticContent = sinon.stub().returns('SELECT * FROM table');
       utils = await esmock('../../../src/llm-error-pages/utils.js', {
@@ -1000,7 +994,7 @@ describe('LLM Error Pages Utils', () => {
     it('should handle multiple filter types with AND join', () => {
       const filters = [
         { key: 'host', value: ['example.com'] },
-        { key: 'url', value: ['/page1'], type: 'exclude' }
+        { key: 'url', value: ['/page1'], type: 'exclude' },
       ];
       const result = buildSiteFilters(filters);
       expect(result).to.include("REGEXP_LIKE(host, '(?i)(example.com)')");
@@ -1023,9 +1017,15 @@ describe('LLM Error Pages Utils', () => {
   describe('processErrorPagesResults', () => {
     it('should calculate summary from results and return object shape', () => {
       const results = [
-        { url: '/page1', total_requests: '10', status: '404', user_agent: 'bot' },
-        { url: '/page1', total_requests: '5', status: '404', user_agent: 'human' },
-        { url: '/page2', total_requests: '3', status: '403', user_agent: 'bot' }
+        {
+          url: '/page1', total_requests: '10', status: '404', user_agent: 'bot',
+        },
+        {
+          url: '/page1', total_requests: '5', status: '404', user_agent: 'human',
+        },
+        {
+          url: '/page2', total_requests: '3', status: '403', user_agent: 'bot',
+        },
       ];
 
       const processed = processErrorPagesResults(results);
@@ -1033,19 +1033,29 @@ describe('LLM Error Pages Utils', () => {
       expect(processed.errorPages).to.equal(results);
       expect(processed.summary.uniqueUrls).to.equal(2);
       expect(processed.summary.uniqueUserAgents).to.equal(2);
-      expect(processed.summary.statusCodes).to.deep.equal({ '404': 15, '403': 3 });
+      expect(processed.summary.statusCodes).to.deep.equal({ 404: 15, 403: 3 });
     });
 
     it('should handle empty results', () => {
       const processed = processErrorPagesResults([]);
-      expect(processed).to.deep.equal({ totalErrors: 0, errorPages: [], summary: { uniqueUrls: 0, uniqueUserAgents: 0, statusCodes: {} } });
+      expect(processed).to.deep.equal({
+        totalErrors: 0,
+        errorPages: [],
+        summary: {
+          uniqueUrls: 0,
+          uniqueUserAgents: 0,
+          statusCodes: {},
+        },
+      });
     });
 
     it('should coerce non-numeric total_requests to 0 and compute counts', () => {
-      const results = [{ url: '/page1', total_requests: 'invalid', status: '404', user_agent: 'bot' }];
+      const results = [{
+        url: '/page1', total_requests: 'invalid', status: '404', user_agent: 'bot',
+      }];
       const processed = processErrorPagesResults(results);
       expect(processed.totalErrors).to.equal(0);
-      expect(processed.summary.statusCodes).to.deep.equal({ '404': 0 });
+      expect(processed.summary.statusCodes).to.deep.equal({ 404: 0 });
     });
 
     it('should not crash when user_agent/status missing and still produce summary', () => {
@@ -1054,7 +1064,7 @@ describe('LLM Error Pages Utils', () => {
       ];
       const processed = processErrorPagesResults(results);
       expect(processed.totalErrors).to.equal(2);
-      expect(processed.summary.statusCodes).to.deep.equal({ 'Unknown': 2 });
+      expect(processed.summary.statusCodes).to.deep.equal({ Unknown: 2 });
     });
   });
 });
