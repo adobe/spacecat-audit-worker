@@ -13,7 +13,7 @@
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
-import { getSuccessCriteriaDetails, sendMessageToFormsQualityAgent } from '../utils.js';
+import { getSuccessCriteriaDetails, sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import { aggregateAccessibilityData } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR } from '../../accessibility/utils/constants.js';
@@ -275,8 +275,11 @@ export default async function handler(message, context) {
     log.info(`[Form Opportunity] [Site Id: ${siteId}] a11y opportunity: ${JSON.stringify(opportunity, null, 2)}`);
     const opportunityData = opportunity.getData();
     const a11yData = opportunityData.accessibility;
-    const formsList = a11yData.map((item) => ({ form: item.form, formSource: item.formSource }));
-    await sendMessageToFormsQualityAgent(context, opportunity, formsList);
+    // eslint-disable-next-line max-len
+    const formsList = a11yData.filter((item) => !item.formDetails).map((item) => ({ form: item.form, formSource: item.formSource }));
+    await (formsList.length === 0
+      ? sendMessageToMystiqueForGuidance(context, opportunity)
+      : sendMessageToFormsQualityAgent(context, opportunity, formsList));
   } catch (error) {
     log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to process a11y opportunity from mystique: ${error.message}`);
   }

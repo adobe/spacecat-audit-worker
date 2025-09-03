@@ -11,10 +11,11 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
+import { sendMessageToMystiqueForGuidance } from '../utils.js';
 
 export default async function handler(message, context) {
   const {
-    log, dataAccess, sqs, env,
+    log, dataAccess,
   } = context;
   const { Opportunity } = dataAccess;
   const { data } = message;
@@ -59,40 +60,7 @@ export default async function handler(message, context) {
     // eslint-disable-next-line no-await-in-loop
     await opportunity.save();
     log.info(`Updated opportunity: ${JSON.stringify(opportunity, null, 2)}`);
-
-    const opptyData = JSON.parse(JSON.stringify(opportunity));
-    // sending message to mystique for guidance
-    log.info('sending message to mystique');
-    const mystiqueMessage = {
-      type: `guidance:${opptyData.type}`,
-      siteId: opptyData.siteId,
-      auditId: opptyData.auditId,
-      time: new Date().toISOString(),
-      // keys inside data should follow snake case and outside should follow camel case
-      data: {
-        url: opptyData.data?.form || '',
-        cr: opptyData.data?.trackedFormKPIValue || 0,
-        metrics: opptyData.data?.metrics || {},
-        cta_source: opptyData.data?.formNavigation?.source || '',
-        cta_text: opptyData.data?.formNavigation?.text || '',
-        opportunityId: opptyData.id || '',
-        form_source: opptyData.data?.formsource || '',
-        form_details: opptyData.data?.formDetails,
-        page_views: opptyData.data?.pageViews,
-        form_views: opptyData.data?.formViews,
-        form_navigation: {
-          url: opptyData.data?.formNavigation?.url || '',
-          source: opptyData.data?.formNavigation?.source || '',
-          cta_clicks: opptyData.data?.formNavigation?.clicksOnCTA || 0,
-          page_views: opptyData.data?.formNavigation?.pageViews || 0,
-        },
-      },
-    };
-
-    // eslint-disable-next-line no-await-in-loop
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.info(`forms opportunity sent to mystique for guidance: ${JSON.stringify(mystiqueMessage)}`);
+    await sendMessageToMystiqueForGuidance(context, opportunity);
   }
-
   return ok();
 }
