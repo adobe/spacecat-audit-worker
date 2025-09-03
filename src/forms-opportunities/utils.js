@@ -539,7 +539,7 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
         metrics: opptyData.data?.metrics || {},
         cta_source: opptyData.data?.formNavigation?.source || '',
         cta_text: opptyData.data?.formNavigation?.text || '',
-        opportunityId: opptyData.id || '',
+        // opportunityId: opptyData.id || '',
         form_source: opptyData.data?.formsource || '',
         form_details: opptyData.data?.formDetails,
         page_views: opptyData.data?.pageViews,

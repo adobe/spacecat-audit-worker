@@ -164,8 +164,9 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
       } else {
         const data = highFormViewsLowConversionsOppty.getData();
         const { formDetails } = data;
+        log.info(`form details available ${JSON.stringify(formDetails, null, 2)}`);
         formsList = (formDetails !== undefined && isNonEmptyObject(formDetails))
-          ? (log.info('formDetails is not a valid JSON object'), [])
+          ? (log.info('form details available - not sending to quality agent'), [])
           : [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
 
         highFormViewsLowConversionsOppty.setAuditId(auditData.auditId);

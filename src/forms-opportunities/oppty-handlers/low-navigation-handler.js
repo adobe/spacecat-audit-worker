@@ -119,6 +119,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
       } else {
         const data = highPageViewsLowFormNavOppty.getData();
         const { formDetails } = data;
+        log.info(`form details available ${JSON.stringify(formDetails, null, 2)}`);
         formsList = (formDetails !== undefined && isNonEmptyObject(formDetails))
           ? (log.info('formDetails is not a valid JSON object'), [])
           : [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
