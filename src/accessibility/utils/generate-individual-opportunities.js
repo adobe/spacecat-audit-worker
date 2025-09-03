@@ -390,7 +390,7 @@ export async function createIndividualOpportunitySuggestions(
           url: urlData.url,
           type: urlData.type,
           issues: urlData.issues, // Array of formatted accessibility issues
-          isCreateTicketClicked: false,
+          jiraLink: '',
         },
       }),
       mergeDataFunction: keepSameDataFunction,
