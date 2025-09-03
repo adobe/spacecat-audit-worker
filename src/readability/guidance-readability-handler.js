@@ -229,11 +229,24 @@ export default async function handler(message, context) {
                     + 'opportunities from suggestions');
                 }
 
-                // Create a mapping of textContent to original position to preserve order
-                const originalOrder = opportunitiesToProcess.map((opp, index) => ({
-                  textContent: opp.textContent,
-                  originalIndex: index,
-                }));
+                // Get stored original order mapping from opportunity data,
+                // or create from current order as fallback
+                const opportunityData = readabilityOppty.getData() || {};
+                const storedOrderMapping = opportunityData.originalOrderMapping;
+
+                let originalOrder;
+                if (storedOrderMapping && Array.isArray(storedOrderMapping)) {
+                  // Use stored original order mapping from identify step
+                  log.info(`[readability-suggest]: Using stored original order mapping with ${storedOrderMapping.length} items`);
+                  originalOrder = storedOrderMapping;
+                } else {
+                  // Fallback: create from current order (may not match original identify order)
+                  log.warn('[readability-suggest]: No stored order mapping found, using current order as fallback');
+                  originalOrder = opportunitiesToProcess.map((opp, index) => ({
+                    textContent: opp.textContent,
+                    originalIndex: index,
+                  }));
+                }
 
                 const updatedOpportunities = opportunitiesToProcess.map((opportunity) => {
                   log.info('[readability-suggest]: Looking for suggestion matching opportunity text: '

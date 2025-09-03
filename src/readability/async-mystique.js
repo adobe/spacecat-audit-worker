@@ -67,6 +67,13 @@ export async function sendReadabilityToMystique(
     if (opportunity) {
       // Update existing opportunity
       const existingData = opportunity.getData() || {};
+
+      // Store original order mapping to preserve identify-step order
+      const originalOrderMapping = readabilityIssues.map((issue, index) => ({
+        textContent: issue.textContent,
+        originalIndex: index,
+      }));
+
       const updatedData = {
         ...existingData,
         mystiqueResponsesReceived: 0, // Reset for new batch
@@ -74,12 +81,19 @@ export async function sendReadabilityToMystique(
         totalReadabilityIssues: readabilityIssues.length,
         processedSuggestionIds: existingData.processedSuggestionIds || [],
         lastMystiqueRequest: new Date().toISOString(),
+        originalOrderMapping, // Store original order for reconstruction
       };
       opportunity.setData(updatedData);
       await opportunity.save();
       log.info(`[readability-async] Updated existing opportunity with ID: ${opportunity.getId()}`);
     } else {
       // Create new opportunity
+      // Store original order mapping to preserve identify-step order
+      const originalOrderMapping = readabilityIssues.map((issue, index) => ({
+        textContent: issue.textContent,
+        originalIndex: index,
+      }));
+
       const opportunityData = {
         siteId,
         auditId: jobId, // auditId is set to jobId to link this opportunity to the current job
@@ -98,6 +112,7 @@ export async function sendReadabilityToMystique(
           processedSuggestionIds: [],
           dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.PAGE],
           lastMystiqueRequest: new Date().toISOString(),
+          originalOrderMapping, // Store original order for reconstruction
         },
       };
 
