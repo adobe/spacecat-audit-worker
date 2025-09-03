@@ -278,17 +278,21 @@ export async function validatePageHeadings(url, log) {
 export async function headingsAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess } = context;
-  log.info(`Starting Headings Audit with siteId: ${siteId}`);
+  log.info(`[Headings Audit] Starting Headings Audit with siteId: ${siteId}`);
+  log.info(`[Headings Audit] Base URL: ${baseURL}`);
+  log.info(`[Headings Audit] Site delivery type: ${site.getDeliveryType() || 'Unknown'}`);
 
   try {
     // Get top 200 pages
+    log.info(`[Headings Audit] Fetching top pages for site: ${siteId}`);
     const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
     const topPages = allTopPages.slice(0, 200);
 
-    log.info(`Processing ${topPages.length} top pages for headings audit (limited to 200)`);
+    log.info(`[Headings Audit] Processing ${topPages.length} top pages for headings audit (limited to 200)`);
+    log.debug(`[Headings Audit] Top pages sample: ${topPages.slice(0, 3).map((p) => p.url).join(', ')}`);
 
     if (topPages.length === 0) {
-      log.info('No top pages found, ending audit.');
+      log.warn('[Headings Audit] No top pages found, ending audit.');
       return {
         fullAuditRef: baseURL,
         auditResult: {
@@ -389,8 +393,11 @@ export function generateSuggestions(auditUrl, auditData, context) {
 export async function generateAISuggestions(auditUrl, auditData, context) {
   const { log, site } = context;
 
+  log.info(`[Headings AI Suggestions] Starting AI suggestions generation for audit: ${auditUrl}`);
+  log.info(`[Headings AI Suggestions] Site ID: ${site.getId()}, Base URL: ${site.getBaseURL()}`);
+
   if (auditData.auditResult?.status === 'success' || auditData.auditResult?.error) {
-    log.info(`Headings audit for ${auditUrl} has no issues or failed, skipping AI suggestions generation`);
+    log.info(`[Headings AI Suggestions] Headings audit for ${auditUrl} has no issues or failed, skipping AI suggestions generation`);
     return { ...auditData };
   }
 
@@ -406,9 +413,12 @@ export async function generateAISuggestions(auditUrl, auditData, context) {
       },
     };
 
+    log.info('[Headings AI Suggestions] Preparing data structure for AI suggestions');
+
     // Extract detected headings with issues
     Object.entries(auditData.auditResult).forEach(([checkType, checkResult]) => {
       if (checkResult.success === false && Array.isArray(checkResult.urls)) {
+        log.debug(`[Headings AI Suggestions] Processing check type: ${checkType} with ${checkResult.urls.length} URLs`);
         checkResult.urls.forEach((url) => {
           if (!allHeadings.detectedHeadings[url]) {
             allHeadings.detectedHeadings[url] = {};
@@ -418,30 +428,43 @@ export async function generateAISuggestions(auditUrl, auditData, context) {
       }
     });
 
+    log.info(`[Headings AI Suggestions] Data structure prepared. Detected headings: ${Object.keys(allHeadings.detectedHeadings).length}, Check types: ${Object.keys(auditData.auditResult).filter((key) => auditData.auditResult[key].success === false).join(', ')}`);
+
     // If no detected headings, return early
     if (Object.keys(allHeadings.detectedHeadings).length === 0) {
-      log.info('No detected heading issues found, skipping AI suggestions');
+      log.warn('[Headings AI Suggestions] No detected heading issues found, skipping AI suggestions');
       return { ...auditData };
     }
 
+    log.info(`[Headings AI Suggestions] Found ${Object.keys(allHeadings.detectedHeadings).length} URLs with heading issues to process`);
+
     // Get healthy headings from top pages for brand guidelines
+    log.info('[Headings AI Suggestions] Attempting to fetch top pages for healthy heading examples');
     try {
       const topPages = await getTopPagesForSiteId(site, context);
       if (topPages && topPages.length > 0) {
         // Extract healthy headings from top pages
         // (this would need to be implemented based on your data structure)
         // For now, we'll use empty arrays as placeholders
-        log.info('Using top pages for healthy heading examples');
+        log.info(`[Headings AI Suggestions] Successfully fetched ${topPages.length} top pages for healthy heading examples`);
+        log.debug(`[Headings AI Suggestions] Top pages sample: ${topPages.slice(0, 3).map((p) => p.url).join(', ')}`);
+      } else {
+        log.warn('[Headings AI Suggestions] No top pages found for healthy heading examples');
       }
     } catch (error) {
-      log.warn('Could not fetch top pages for healthy heading examples:', error.message);
+      log.warn(`[Headings AI Suggestions] Could not fetch top pages for healthy heading examples: ${error.message}`);
     }
 
     // Generate AI suggestions
+    log.info('[Headings AI Suggestions] Calling headingsAutoSuggest to generate AI suggestions');
     const updatedDetectedHeadings = await headingsAutoSuggest(allHeadings, context, site);
+    log.info(`[Headings AI Suggestions] AI suggestions generation completed. Updated headings count: ${Object.keys(updatedDetectedHeadings).length}`);
 
     // Merge AI suggestions back into audit data
+    log.info('[Headings AI Suggestions] Starting to merge AI suggestions back into audit data');
     const updatedAuditData = { ...auditData };
+    let totalSuggestionsMerged = 0;
+
     Object.entries(updatedDetectedHeadings).forEach(([url, headingData]) => {
       if (updatedAuditData.auditResult) {
         Object.keys(headingData).forEach((checkType) => {
@@ -454,16 +477,20 @@ export async function generateAISuggestions(auditUrl, auditData, context) {
                 updatedAuditData.auditResult[checkType].aiSuggestions = {};
               }
               updatedAuditData.auditResult[checkType].aiSuggestions[url] = headingData[checkType];
+              totalSuggestionsMerged += 1;
+              log.debug(`[Headings AI Suggestions] Merged AI suggestions for ${url} - ${checkType}`);
             }
           }
         });
       }
     });
 
-    log.info('AI suggestions generated for headings audit');
+    log.info(`[Headings AI Suggestions] Successfully merged ${totalSuggestionsMerged} AI suggestions into audit data`);
+    log.info('[Headings AI Suggestions] AI suggestions generation and merging completed successfully');
     return updatedAuditData;
   } catch (error) {
-    log.error(`Error generating AI suggestions for headings: ${error.message}`);
+    log.error(`[Headings AI Suggestions] Error generating AI suggestions for headings: ${error.message}`);
+    log.error(`[Headings AI Suggestions] Stack trace: ${error.stack}`);
     // Return original audit data if AI suggestions fail
     return { ...auditData };
   }
