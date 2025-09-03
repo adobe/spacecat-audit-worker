@@ -186,7 +186,7 @@ describe('Backlinks Tests', function () {
     try {
       await submitForScraping(context);
     } catch (error) {
-      expect(error.message).to.equal('Audit failed, skipping suggestions generation');
+      expect(error.message).to.equal('Audit failed, skipping scraping and suggestions generation');
     }
   });
 
