@@ -75,10 +75,12 @@ describe('Image Alt Text Handler', () => {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
             create: sandbox.stub().resolves({
               getId: sandbox.stub().returns('opportunity-id'),
+              getSiteId: sandbox.stub().returns('site-id'),
               getData: sandbox.stub().returns({}),
               setData: sandbox.stub(),
               save: sandbox.stub().resolves(),
               getType: sandbox.stub().returns('alt-text'),
+              getSuggestions: sandbox.stub().resolves([]),
             }),
           },
         },
@@ -115,10 +117,14 @@ describe('Image Alt Text Handler', () => {
   describe('processAltTextWithMystique', () => {
     let sendAltTextOpportunityToMystiqueStub;
     let clearAltTextSuggestionsStub;
+    let saveAltTextMetricsStub;
+    let cleanupOutdatedSuggestionsStub;
 
     beforeEach(async () => {
       sendAltTextOpportunityToMystiqueStub = sandbox.stub().resolves();
       clearAltTextSuggestionsStub = sandbox.stub().resolves();
+      saveAltTextMetricsStub = sandbox.stub().resolves();
+      cleanupOutdatedSuggestionsStub = sandbox.stub().resolves();
       // Mock the module with our stubs
       handlerModule = await esmock('../../../src/image-alt-text/handler.js', {
         '@adobe/spacecat-shared-utils': { tracingFetch: tracingFetchStub },
@@ -126,6 +132,8 @@ describe('Image Alt Text Handler', () => {
           default: sandbox.stub(),
           sendAltTextOpportunityToMystique: sendAltTextOpportunityToMystiqueStub,
           clearAltTextSuggestions: clearAltTextSuggestionsStub,
+          saveAltTextMetrics: saveAltTextMetricsStub,
+          cleanupOutdatedSuggestions: cleanupOutdatedSuggestionsStub,
         },
       });
     });
@@ -188,9 +196,11 @@ describe('Image Alt Text Handler', () => {
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
         getId: () => 'opportunity-id',
+        getSiteId: () => 'site-id',
         getData: () => ({ existingData: 'value' }), // Return some existing data
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([]),
       };
 
       // Override the default empty array with our mock opportunity
@@ -224,9 +234,11 @@ describe('Image Alt Text Handler', () => {
       const mockOpportunity = {
         getType: () => AUDIT_TYPE,
         getId: () => 'opportunity-id',
+        getSiteId: () => 'site-id',
         getData: () => null,
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
+        getSuggestions: sandbox.stub().resolves([]),
       };
 
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([mockOpportunity]);
