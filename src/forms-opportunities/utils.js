@@ -491,10 +491,12 @@ export async function calculateProjectedConversionValue(context, siteId, opportu
 
 export async function sendMessageToFormsQualityAgent(context, opportunity, formsList) {
   if (opportunity) {
-    const opportunityData = JSON.parse(JSON.stringify(opportunity));
     const {
       log, sqs, site, env,
     } = context;
+
+    log.info(`forms quality agent message sent to mystique : ${JSON.stringify(opportunity)}`);
+    const opportunityData = JSON.parse(JSON.stringify(opportunity));
 
     const data = {
       url: site.getBaseURL(),
@@ -525,6 +527,7 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
   } = context;
 
   if (opportunity) {
+    log.info(`forms quality agent message sent to mystique : ${JSON.stringify(opportunity)}`);
     const opptyData = JSON.parse(JSON.stringify(opportunity));
     // sending message to mystique for guidance
     const mystiqueMessage = {
