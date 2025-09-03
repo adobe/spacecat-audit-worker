@@ -39,11 +39,14 @@ export default async function metatags(context, auditContext) {
       pageResult.audits.push({ name: PREFLIGHT_METATAGS, type: 'seo', opportunities: [] });
     });
 
+    // Workaround for the updated meta-tags audit which requires a map of URL to S3 key
+    const pageMap = new Map(previewUrls.map((key, i) => [key, s3Keys[i]]));
+
     const {
       seoChecks,
       detectedTags,
       extractedTags,
-    } = await metatagsAutoDetect(site, s3Keys, context);
+    } = await metatagsAutoDetect(site, pageMap, context);
     try {
       const tagCollection = step === 'suggest'
         ? await metatagsAutoSuggest({
