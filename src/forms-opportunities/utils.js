@@ -537,51 +537,24 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
       time: new Date().toISOString(),
       // keys inside data should follow snake case and outside should follow camel case
       data: {
-        // url: opptyData.data?.form || '',
-        // cr: opptyData.data?.trackedFormKPIValue || 0,
-        // metrics: opptyData.data?.metrics || {},
-        // cta_source: opptyData.data?.formNavigation?.source || '',
-        // cta_text: opptyData.data?.formNavigation?.text || '',
-        // // opportunityId: opptyData.id || '',
-        // form_source: opptyData.data?.formsource || '',
-        // form_details: opptyData.data?.formDetails,
-        // page_views: opptyData.data?.pageViews,
-        // form_views: opptyData.data?.formViews,
-        // form_navigation: {
-        //   url: opptyData.data?.formNavigation?.url || '',
-        //   source: opptyData.data?.formNavigation?.source || '',
-        //   cta_clicks: opptyData.data?.formNavigation?.clicksOnCTA || 0,
-        //   page_views: opptyData.data?.formNavigation?.pageViews || 0,
-        // },
+        url: opptyData.data?.form || '',
+        cr: opptyData.data?.trackedFormKPIValue || 0,
+        metrics: opptyData.data?.metrics || {},
+        cta_source: opptyData.data?.formNavigation?.source || '',
+        cta_text: opptyData.data?.formNavigation?.text || '',
+        opportunityId: opptyData.opportunityId || '',
+        form_source: opptyData.data?.formsource || '',
+        form_details: opptyData.data?.formDetails,
+        page_views: opptyData.data?.pageViews,
+        form_views: opptyData.data?.formViews,
+        form_navigation: {
+          url: opptyData.data?.formNavigation?.url || '',
+          source: opptyData.data?.formNavigation?.source || '',
+          cta_clicks: opptyData.data?.formNavigation?.clicksOnCTA || 0,
+          page_views: opptyData.data?.formNavigation?.pageViews || 0,
+        },
       },
     };
-
-    if (opptyData.data?.form) mystiqueMessage.data.url = opptyData.data.form;
-    // eslint-disable-next-line max-len
-    if (opptyData.data?.trackedFormKPIValue !== undefined) mystiqueMessage.data.cr = opptyData.data.trackedFormKPIValue;
-    if (opptyData.data?.metrics) mystiqueMessage.data.metrics = opptyData.data.metrics;
-    // eslint-disable-next-line max-len
-    if (opptyData.data?.formNavigation?.source) mystiqueMessage.data.cta_source = opptyData.data.formNavigation.source;
-    // eslint-disable-next-line max-len
-    if (opptyData.data?.formNavigation?.text) mystiqueMessage.data.cta_text = opptyData.data.formNavigation.text;
-    if (opptyData.id) mystiqueMessage.data.opportunityId = opptyData.id;
-    if (opptyData.data?.formsource) mystiqueMessage.data.form_source = opptyData.data.formsource;
-    if (opptyData.data?.formDetails) mystiqueMessage.data.form_details = opptyData.data.formDetails;
-    // eslint-disable-next-line max-len
-    if (opptyData.data?.pageViews !== undefined) mystiqueMessage.data.page_views = opptyData.data.pageViews;
-    // eslint-disable-next-line max-len
-    if (opptyData.data?.formViews !== undefined) mystiqueMessage.data.form_views = opptyData.data.formViews;
-
-    if (opptyData.data?.formNavigation) {
-      const nav = {};
-      if (opptyData.data.formNavigation.url) nav.url = opptyData.data.formNavigation.url;
-      if (opptyData.data.formNavigation.source) nav.source = opptyData.data.formNavigation.source;
-      // eslint-disable-next-line max-len
-      if (opptyData.data.formNavigation.clicksOnCTA !== undefined) nav.cta_clicks = opptyData.data.formNavigation.clicksOnCTA;
-      // eslint-disable-next-line max-len
-      if (opptyData.data.formNavigation.pageViews !== undefined) nav.page_views = opptyData.data.formNavigation.pageViews;
-      if (Object.keys(nav).length > 0) mystiqueMessage.data.form_navigation = nav;
-    }
 
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
