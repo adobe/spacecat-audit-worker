@@ -178,12 +178,35 @@ async function generateSuggestions(
 export default async function headingsAutoSuggest(allHeadings, context, site, options = {
   forceAutoSuggest: false,
 }) {
+  // Validate required parameters
+  if (!context) {
+    throw new Error('Context object is required for headingsAutoSuggest');
+  }
+
+  if (!site) {
+    throw new Error('Site object is required for headingsAutoSuggest');
+  }
+
+  if (!allHeadings) {
+    throw new Error('AllHeadings object is required for headingsAutoSuggest');
+  }
+
   const { s3Client, dataAccess, log } = context;
+  // Validate required context properties
+  if (!s3Client || !dataAccess || !log) {
+    throw new Error('Context must contain s3Client, dataAccess, and log properties');
+  }
+
   const {
     detectedHeadings,
     extractedHeadings,
     healthyHeadings,
   } = allHeadings;
+  // Validate allHeadings structure
+  if (!detectedHeadings || !extractedHeadings || !healthyHeadings) {
+    throw new Error('AllHeadings must contain detectedHeadings, extractedHeadings, and healthyHeadings properties');
+  }
+
   const { forceAutoSuggest = false } = options;
   const { Configuration } = dataAccess;
 
