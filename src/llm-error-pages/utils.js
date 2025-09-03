@@ -11,7 +11,8 @@
  */
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
-import { resolveCdnBucketName } from '../utils/cdn-utils.js';
+import { resolveCdnBucketName, extractCustomerDomain, isStandardAdobeCdnBucket } from '../utils/cdn-utils.js';
+import { getImsOrgId } from '../utils/data-access.js';
 
 // ============================================================================
 // CONSTANTS
@@ -30,13 +31,6 @@ const TIME_CONSTANTS = {
   ISO_SUNDAY: 0,
   DAYS_PER_WEEK: 7,
 };
-
-const REGEX_PATTERNS = {
-  URL_SANITIZATION: /[^a-zA-Z0-9]/g,
-  BUCKET_SANITIZATION: /[._]/g,
-};
-
-const CDN_LOGS_PREFIX = 'cdn-logs-';
 
 // ============================================================================
 // LLM USER AGENT UTILITIES
@@ -161,18 +155,6 @@ export function buildLlmErrorPagesQuery(options) {
 // ============================================================================
 // SITE AND CONFIGURATION UTILITIES
 // ============================================================================
-
-export function extractCustomerDomain(site) {
-  return new URL(site.getBaseURL()).host
-    .replace(REGEX_PATTERNS.URL_SANITIZATION, '_')
-    .toLowerCase();
-}
-
-export function getAnalysisBucket(customerDomain) {
-  const bucketCustomer = customerDomain.replace(REGEX_PATTERNS.BUCKET_SANITIZATION, '-');
-  return `${CDN_LOGS_PREFIX}${bucketCustomer}`;
-}
-
 export async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
 
@@ -181,11 +163,23 @@ export async function getS3Config(site, context) {
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
   const bucket = await resolveCdnBucketName(site, context);
 
+  let aggregatedLocation = `s3://${bucket}/aggregated/`;
+  try {
+    if (isStandardAdobeCdnBucket(bucket)) {
+      const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig?.() || {};
+      const imsOrgId = await getImsOrgId?.(site, context?.dataAccess, context?.log) || orgId;
+      if (imsOrgId) {
+        aggregatedLocation = `s3://${bucket}/${imsOrgId}/aggregated/`;
+      }
+    }
+  } catch {
+    // keep default aggregatedLocation
+  }
   return {
     bucket,
     customerName,
     customerDomain,
-    aggregatedLocation: `s3://${bucket}/aggregated/`,
+    aggregatedLocation,
     databaseName: `cdn_logs_${customerDomain}`,
     tableName: `aggregated_logs_${customerDomain}`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,

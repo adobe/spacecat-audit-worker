@@ -20,8 +20,6 @@ import {
   getAllLlmProviders,
   buildLlmUserAgentFilter,
   normalizeUserAgentToProvider,
-  extractCustomerDomain,
-  getAnalysisBucket,
   formatDateString,
   getWeekRange,
   createDateRange,
@@ -34,6 +32,7 @@ import {
   sortErrorsByTrafficVolume,
   toPathOnly,
 } from '../../../src/llm-error-pages/utils.js';
+import { extractCustomerDomain } from '../../../src/utils/cdn-utils.js';
 
 use(sinonChai);
 
@@ -325,7 +324,7 @@ describe('LLM Error Pages Utils', () => {
       };
 
       const result = extractCustomerDomain(mockSite);
-      expect(result).to.equal('www_example_com');
+      expect(result).to.equal('example_com');
     });
 
     it('should handle special characters in domain', () => {
@@ -335,18 +334,6 @@ describe('LLM Error Pages Utils', () => {
 
       const result = extractCustomerDomain(mockSite);
       expect(result).to.equal('test_site_example_co_uk');
-    });
-  });
-
-  describe('getAnalysisBucket', () => {
-    it('should create bucket name with CDN logs prefix', () => {
-      const result = getAnalysisBucket('test_example_com');
-      expect(result).to.equal('cdn-logs-test-example-com');
-    });
-
-    it('should replace dots and underscores with hyphens', () => {
-      const result = getAnalysisBucket('test.example.com');
-      expect(result).to.equal('cdn-logs-test-example-com');
     });
   });
 
@@ -360,16 +347,18 @@ describe('LLM Error Pages Utils', () => {
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
           resolveCdnBucketName: sinon.stub().resolves('resolved-bucket'),
+          extractCustomerDomain: () => 'example_com',
+          isStandardAdobeCdnBucket: () => false,
         },
       });
 
       const result = await mockedUtils.getS3Config(mockSite, {});
       expect(result.bucket).to.equal('resolved-bucket');
       expect(result.customerName).to.equal('example');
-      expect(result.customerDomain).to.equal('www_example_com');
+      expect(result.customerDomain).to.equal('example_com');
       expect(result.aggregatedLocation).to.equal('s3://resolved-bucket/aggregated/');
-      expect(result.databaseName).to.equal('cdn_logs_www_example_com');
-      expect(result.tableName).to.equal('aggregated_logs_www_example_com');
+      expect(result.databaseName).to.equal('cdn_logs_example_com');
+      expect(result.tableName).to.equal('aggregated_logs_example_com');
     });
 
     it('should use resolveCdnBucketName by default', async () => {
@@ -381,13 +370,15 @@ describe('LLM Error Pages Utils', () => {
       const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
         '../../../src/utils/cdn-utils.js': {
           resolveCdnBucketName: async () => 'resolved-bucket-name',
+          extractCustomerDomain: () => 'example_com',
+          isStandardAdobeCdnBucket: () => false,
         },
       });
 
       const result = await mockedUtils.getS3Config(mockSite, {});
       expect(result.bucket).to.equal('resolved-bucket-name');
       expect(result.customerName).to.equal('example');
-      expect(result.customerDomain).to.equal('www_example_com');
+      expect(result.customerDomain).to.equal('example_com');
     });
 
     it('should return config with callable getAthenaTempLocation function', async () => {
@@ -427,6 +418,50 @@ describe('LLM Error Pages Utils', () => {
         expect(error.message).to.equal('boom');
       }
     });
+  });
+
+  it('should include imsOrgId in aggregatedLocation for standard Adobe bucket', async () => {
+    const mockSite = {
+      getConfig: () => ({
+        getLlmoCdnBucketConfig: () => ({ orgId: 'IMS_ORG_123' }),
+      }),
+      getBaseURL: () => 'https://www.example.com',
+    };
+
+    const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+      '../../../src/utils/cdn-utils.js': {
+        resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
+        extractCustomerDomain: () => 'example_com',
+        isStandardAdobeCdnBucket: () => true,
+      },
+      '../../../src/utils/data-access.js': {
+        getImsOrgId: async () => null,
+      },
+    });
+
+    const result = await mockedUtils.getS3Config(mockSite, {});
+    expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/IMS_ORG_123/aggregated/');
+  });
+
+  it('should keep default aggregatedLocation when IMS lookup throws', async () => {
+    const mockSite = {
+      getConfig: () => ({}),
+      getBaseURL: () => 'https://www.example.com',
+    };
+
+    const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+      '../../../src/utils/cdn-utils.js': {
+        resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
+        extractCustomerDomain: () => 'example_com',
+        isStandardAdobeCdnBucket: () => true,
+      },
+      '../../../src/utils/data-access.js': {
+        getImsOrgId: async () => { throw new Error('IMS failure'); },
+      },
+    });
+
+    const result = await mockedUtils.getS3Config(mockSite, {});
+    expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/aggregated/');
   });
 
   // ============================================================================
