@@ -33,7 +33,7 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
       seoRecommendation: suggestion.seo_recommendation,
       aiRationale: suggestion.ai_rationale,
       targetFleschScore: suggestion.target_flesch_score,
-      originalIndex: suggestion.originalIndex, // Preserve original order from identify step
+
     };
   });
 }
@@ -112,7 +112,7 @@ export default async function handler(message, context) {
       seoRecommendation: data.seo_recommendation,
       aiRationale: data.ai_rationale,
       targetFleschScore: data.target_flesch_score,
-      originalIndex: data.originalIndex, // Preserve original order from identify step
+
     });
   } else if (suggestions && suggestions.length > 0) {
     // Check if we have suggestions array (batch response)
@@ -186,20 +186,7 @@ export default async function handler(message, context) {
             const updatedAudits = await Promise.all(pageResult.audits.map(async (auditItem) => {
               if (auditItem.name === 'readability') {
                 // Get all suggestions for this opportunity
-                // and sort by originalIndex to preserve order
                 const allSuggestions = await readabilityOppty.getSuggestions();
-
-                // Sort suggestions by originalIndex
-                // to maintain the original order from identify step
-                allSuggestions.sort((a, b) => {
-                  const aData = a.getData();
-                  const bData = b.getData();
-                  const aIndex = aData?.recommendations?.[0]?.originalIndex
-                    ?? Number.MAX_SAFE_INTEGER;
-                  const bIndex = bData?.recommendations?.[0]?.originalIndex
-                    ?? Number.MAX_SAFE_INTEGER;
-                  return aIndex - bIndex;
-                });
 
                 // The AsyncJob may have 0 opportunities if cleared during async processing
                 // We need to reconstruct them from the stored suggestions
@@ -209,7 +196,7 @@ export default async function handler(message, context) {
                 let opportunitiesToProcess = auditItem.opportunities;
 
                 // If AsyncJob has no opportunities but we have suggestions,
-                // reconstruct from suggestions
+                // reconstruct from suggestions (note: original order may be lost in this case)
                 if (auditItem.opportunities.length === 0 && allSuggestions.length > 0) {
                   log.info(`[readability-suggest]: Reconstructing opportunities from ${allSuggestions.length} stored suggestions`);
                   opportunitiesToProcess = allSuggestions.map((suggestion, index) => {
@@ -241,6 +228,12 @@ export default async function handler(message, context) {
                   log.info(`[readability-suggest]: Reconstructed ${opportunitiesToProcess.length} `
                     + 'opportunities from suggestions');
                 }
+
+                // Create a mapping of textContent to original position to preserve order
+                const originalOrder = opportunitiesToProcess.map((opp, index) => ({
+                  textContent: opp.textContent,
+                  originalIndex: index,
+                }));
 
                 const updatedOpportunities = opportunitiesToProcess.map((opportunity) => {
                   log.info('[readability-suggest]: Looking for suggestion matching opportunity text: '
@@ -295,7 +288,20 @@ export default async function handler(message, context) {
                   return opportunity;
                 });
 
-                return { ...auditItem, opportunities: updatedOpportunities };
+                // Sort updatedOpportunities back to original order based on textContent
+                const sortedOpportunities = updatedOpportunities.sort((a, b) => {
+                  const aOriginalIndex = originalOrder.find(
+                    (item) => item.textContent === a.textContent,
+                  )?.originalIndex ?? Number.MAX_SAFE_INTEGER;
+                  const bOriginalIndex = originalOrder.find(
+                    (item) => item.textContent === b.textContent,
+                  )?.originalIndex ?? Number.MAX_SAFE_INTEGER;
+                  return aOriginalIndex - bOriginalIndex;
+                });
+
+                log.info(`[readability-suggest]: Sorted ${sortedOpportunities.length} opportunities back to original order`);
+
+                return { ...auditItem, opportunities: sortedOpportunities };
               }
               return auditItem;
             }));
