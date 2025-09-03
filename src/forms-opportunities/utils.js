@@ -509,7 +509,7 @@ export async function sendMessageToFormsQualityAgent(context, opportunity, forms
     const mystiqueFormsQualityAgentMessage = {
       type: 'detect:form-details',
       siteId: opportunityData.siteId,
-      auditId: opportunityData.id,
+      auditId: opportunityData.auditId,
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data,
