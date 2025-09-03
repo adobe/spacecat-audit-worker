@@ -1589,11 +1589,38 @@ describe('Guidance Readability Handler Tests', () => {
 
       mockDataAccess.Site.findById.resolves(mockSite);
 
+      // Create a stub that returns different values for different calls
+      const mockGetDataStub = sinon.stub();
+      // First call (line 78 - finding opportunity): return valid data with subType
+      mockGetDataStub.onCall(0).returns({
+        subType: 'readability',
+        mystiqueResponsesReceived: 0,
+        mystiqueResponsesExpected: 1,
+      });
+      // Second call (line 91 - existingData): return valid data
+      mockGetDataStub.onCall(1).returns({
+        subType: 'readability',
+        mystiqueResponsesReceived: 0,
+        mystiqueResponsesExpected: 1,
+      });
+      // Third call (line 234 - opportunityData): return null to trigger || {} fallback
+      mockGetDataStub.onCall(2).returns(null);
+      // All subsequent calls: return valid data
+      mockGetDataStub.returns({
+        subType: 'readability',
+        mystiqueResponsesReceived: 1,
+        mystiqueResponsesExpected: 1,
+      });
+
       const mockReadabilityOpportunityWithNullData = {
         getId: () => 'opp-123',
-        getData: () => null, // This will trigger the || {} fallback on line 234
+        getAuditId: () => 'test-job-id',
+        getData: mockGetDataStub, // This will trigger the || {} fallback on line 234
         getSuggestions: sinon.stub().resolves([]),
         save: sinon.stub().resolves(),
+        setAuditId: sinon.stub(),
+        setData: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
       };
 
       mockDataAccess.Opportunity.allBySiteId.resolves([mockReadabilityOpportunityWithNullData]);
@@ -1617,7 +1644,9 @@ describe('Guidance Readability Handler Tests', () => {
 
       await guidanceHandler(messageWithValidData, context);
 
-      expect(mockReadabilityOpportunityWithNullData.getData).to.have.been.called;
+      // Verify that getData was called multiple times and returned null on line 234
+      expect(mockGetDataStub.callCount).to.be.at.least(3);
+      expect(mockGetDataStub.getCall(2).returnValue).to.be.null;
     });
 
     it('should cover lines 308,311: sorting fallback when textContent not found in originalOrder', async () => {
@@ -1646,12 +1675,12 @@ describe('Guidance Readability Handler Tests', () => {
             name: 'readability',
             opportunities: [
               {
-                textContent: 'Text that does not exist in original order mapping',
+                textContent: 'Unmatched text A that does not exist in original order mapping',
                 fleschReadingEase: 25,
                 selector: 'p:nth-child(1)',
               },
               {
-                textContent: 'Another text that does not exist in mapping',
+                textContent: 'Unmatched text B that does not exist in mapping either',
                 fleschReadingEase: 30,
                 selector: 'p:nth-child(2)',
               },
@@ -1662,8 +1691,14 @@ describe('Guidance Readability Handler Tests', () => {
 
       const mockReadabilityOpportunityWithStoredMapping = {
         getId: () => 'opp-123',
+        getAuditId: () => 'test-job-id',
         getData: () => ({
+          subType: 'readability', // Required to find the opportunity
+          mystiqueResponsesReceived: 1,
+          mystiqueResponsesExpected: 1,
           // Stored mapping with different textContent than the opportunities above
+          // This will cause originalOrder.find() to return undefined,
+          // triggering ?? Number.MAX_SAFE_INTEGER on lines 308 and 311
           originalOrderMapping: [
             { textContent: 'Different text 1', originalIndex: 0 },
             { textContent: 'Different text 2', originalIndex: 1 },
@@ -1671,6 +1706,9 @@ describe('Guidance Readability Handler Tests', () => {
         }),
         getSuggestions: sinon.stub().resolves([]),
         save: sinon.stub().resolves(),
+        setAuditId: sinon.stub(),
+        setData: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
       };
 
       mockDataAccess.Opportunity.allBySiteId.resolves([
@@ -1682,6 +1720,8 @@ describe('Guidance Readability Handler Tests', () => {
 
       // The sort should still work, using Number.MAX_SAFE_INTEGER for unfound items
       expect(mockReadabilityOpportunityWithStoredMapping.save).to.have.been.called;
+      // Verify that the sorting was attempted (this would happen in the AsyncJob completion logic)
+      expect(log.info).to.have.been.calledWithMatch('Sorted');
     });
 
     it('should cover all branches for line 264: calculation fallback scenarios', async () => {
