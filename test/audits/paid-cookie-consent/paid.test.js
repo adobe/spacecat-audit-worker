@@ -205,7 +205,7 @@ describe('Paid Cookie Consent Audit', () => {
         {
           key: 'urlConsent',
           value: [
-            { url: 'https://example.com/page1', bounceRate: 0.6, consent: 'show' }, // bounce rate too low
+            { url: 'https://example.com/page1', bounceRate: 0.2, consent: 'show' }, // bounce rate too low
             { url: 'https://example.com/page2', bounceRate: 0.8, consent: 'hide' }, // wrong consent
           ],
         },
@@ -286,7 +286,7 @@ describe('Paid Cookie Consent Audit', () => {
           key: 'urlConsent',
           value: [
             {
-              url: 'https://example.com/low-bounce', pageViews: 1000, bounceRate: 0.6, consent: 'show',
+              url: 'https://example.com/low-bounce', pageViews: 1000, bounceRate: 0.2, consent: 'show',
             }, // Below 0.7 - filtered
             {
               url: 'https://example.com/zero-bounce', pageViews: 500, bounceRate: 0, consent: 'show',

@@ -20,6 +20,7 @@ import {
 } from './queries.js';
 
 const MAX_PAGES_TO_AUDIT = 3;
+const CUT_OFF_BOUNCE_RATE = 0.3;
 
 const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:paid-cookie-consent',
@@ -224,10 +225,10 @@ function selectPagesForConsentBannerAudit(auditResult, auditUrl) {
     throw new Error(`Failed to find urlConsent segment for consent banner audit for AuditUrl ${auditUrl}`);
   }
 
-  // Filter by consent == "show", bounce rate >= 0.7, then find URL with max projected traffic loss
+  // Filter by consent == "show", bounce rate >= 0.3, then find URL with max projected traffic loss
   const seenConsentItems = urlConsentItems
     .filter((item) => item.consent === 'show')
-    .filter((item) => item.bounceRate >= 0.7)
+    .filter((item) => item.bounceRate >= CUT_OFF_BOUNCE_RATE)
     .sort((a, b) => b.projectedTrafficLost - a.projectedTrafficLost);
 
   return seenConsentItems.slice(0, MAX_PAGES_TO_AUDIT);
