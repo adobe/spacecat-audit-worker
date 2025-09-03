@@ -27,16 +27,17 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
 
-async function runAgenticAndReferralTrafficStep(context) {
+async function runReferralTrafficStep(context) {
   const {
-    dataAccess, env, finalUrl, site, sqs, log,
+    dataAccess, finalUrl, site, sqs, log,
   } = context;
 
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   const siteId = site.getSiteId();
 
-  log.info(`Starting llmo customer analysis audit for site: ${siteId}}`);
+  log.info(`Starting llmo-customer-analysis audit for site: ${siteId}}`);
+  log.info('Referral Traffic Step: Initiating OpTel import for the last 4 full calendar weeks');
 
   const last4Weeks = getLastNumberOfWeeks(4);
 
@@ -53,9 +54,28 @@ async function runAgenticAndReferralTrafficStep(context) {
     };
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(configuration.getQueues().imports, message);
-    log.info(`Successfully triggered import ${REFERRAL_TRAFFIC_IMPORT} with message: ${JSON.stringify(message)}`);
   }
 
+  // workaround to ensure we have imported data for the following steps
+  return {
+    auditResult: { status: 'Importing OpTel data' },
+    fullAuditRef: finalUrl,
+    type: 'traffic-analysis',
+    week: last4Weeks[0].week,
+    year: last4Weeks[0].year,
+    siteId,
+  };
+}
+
+async function runAgenticTrafficStep(context) {
+  const {
+    env, site, log,
+  } = context;
+
+  log.info('Agentic Traffic Step: Extracting product and page type information');
+
+  const siteId = site.getSiteId();
+  const domain = site.getBaseURL();
   const { S3_IMPORTER_BUCKET_NAME: importerBucket } = env;
   const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
   const databaseName = 'rum_metrics';
@@ -71,20 +91,23 @@ async function runAgenticAndReferralTrafficStep(context) {
     temporalCondition: `(${temporalConditions.join(' OR ')})`,
   };
 
-  const domain = site.getBaseURL();
   const query = await getStaticContent(variables, './src/llmo-customer-analysis/sql/urls.sql');
   const description = `[Athena Query] Fetching customer analysis data for ${domain}`;
   const paths = await athenaClient.query(query, databaseName, description);
   const productRegexes = await analyzeProducts(domain, paths.map((p) => p.path), context);
   const pagetypeRegexes = await analyzePageTypes(domain, paths.map((p) => p.path), context);
+
+  log.info('Agentic Traffic Step: Extraction complete; uploading results');
+
   await uploadPatternsWorkbook(productRegexes, pagetypeRegexes, site, context);
+
+  log.info('Agentic Traffic Step: Upload complete; initiating scrap');
 
   const formatBaseUrl = (url) => url.replace(/^(https?:\/\/)(?!www\.)/, '$1www.');
   const urls = paths.map((p) => ({ url: `${formatBaseUrl(domain)}${p.path}` }));
 
   return {
-    auditResult: { status: 'agentic and referral traffic steps completed' },
-    fullAuditRef: finalUrl,
+    auditResult: { status: 'Initiating scrape' },
     siteId,
     urls,
     maxScrapeAge: 24 * 7,
@@ -104,8 +127,15 @@ async function runBrandPresenceStep(context) {
   const results = [...scrapeResultPaths.values()];
 
   try {
+    log.info('Brand Presence Step: Scrapes received; starting analysis');
+
     const domainInsights = await analyzeDomain(domain, results, context);
+
+    log.info('Brand Presence Step: analysis complete; uploading results');
+
     await uploadUrlsWorkbook(domainInsights, site, context);
+
+    log.info('Brand Presence Step: Upload complete; triggering geo-brand-presence audit');
 
     const geoBrandPresenceMessage = {
       type: 'geo-brand-presence',
@@ -116,7 +146,7 @@ async function runBrandPresenceStep(context) {
     await sqs.sendMessage(configuration.getQueues().audits, geoBrandPresenceMessage);
 
     return {
-      status: 'LLMO customer analysis successfully',
+      status: 'llmo-customer-analysis audit completed',
     };
   } catch (error) {
     log.error(`Error during brand presence step: ${error.message}`);
@@ -129,7 +159,8 @@ async function runBrandPresenceStep(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('runAgenticAndReferralTrafficStep', runAgenticAndReferralTrafficStep, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+  .addStep('runReferralTrafficStep', runReferralTrafficStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('runAgenticTrafficStep', runAgenticTrafficStep, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('runBrandPresenceStep', runBrandPresenceStep)
   .build();
 /* c8 ignore end */
