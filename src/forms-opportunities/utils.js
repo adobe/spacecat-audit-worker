@@ -544,7 +544,9 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
         cta_text: opptyData.data?.formNavigation?.text || '',
         opportunityId: opptyData.opportunityId || '',
         form_source: opptyData.data?.formsource || '',
-        form_details: opptyData.data?.formDetails,
+        // form_details: opptyData.data?.formDetails,
+        // eslint-disable-next-line max-len,no-nested-ternary
+        form_details: Array.isArray(opptyData.data?.formDetails) ? opptyData.data.formDetails : (opptyData.data?.formDetails ? [opptyData.data.formDetails] : []),
         page_views: opptyData.data?.pageViews,
         form_views: opptyData.data?.formViews,
         form_navigation: {
