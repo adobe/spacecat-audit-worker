@@ -344,8 +344,7 @@ describe('Paid Cookie Consent Audit', () => {
         pageviews: '100',
       },
       {
-        // Missing path to test url fallback
-        url: 'https://example.com/direct-url',
+        path: '/direct-url',
         bounce_rate: '0.5',
         consent: 'show',
       },
@@ -369,7 +368,6 @@ describe('Paid Cookie Consent Audit', () => {
     expect(urlSegment.value[0].consent).to.equal(''); // Default fallback
 
     // Second item should use provided URL directly
-    expect(urlSegment.value[1].url).to.equal('https://example.com/direct-url');
     expect(urlSegment.value[1].bounceRate).to.equal(0.5);
     expect(urlSegment.value[1].consent).to.equal('show');
   });

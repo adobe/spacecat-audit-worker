@@ -57,7 +57,7 @@ function transformQueryResultsToSegments(results, baseURL) {
   // Process each row from the query results
   results.forEach((row) => {
     // Construct URL from path using baseURL (for results, not calculations)
-    const url = row.path ? `${baseURL}${row.path}` : (row.url || '');
+    const url = `${baseURL}${row.path}`;
 
     const item = {
       url,
