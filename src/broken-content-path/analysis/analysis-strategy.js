@@ -117,14 +117,8 @@ export class AnalysisStrategy {
         continue;
       }
 
-      const processedSuggestion = Suggestion.publish(
-        suggestion.requestedPath,
-        suggestion.suggestedPath,
-        `Content is in ${status} state. Suggest publishing.`,
-      );
-      processedSuggestions.push(processedSuggestion);
-
-      log.debug(`Changed suggestion type to PUBLISH for ${suggestedPath} with status: ${status}`);
+      suggestion.reason = `Content is in ${status} state. Suggest publishing.`;
+      processedSuggestions.push(suggestion);
     }
 
     return processedSuggestions;
