@@ -517,7 +517,7 @@ export async function sendMessageToFormsQualityAgent(context, opportunity, forms
 
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueFormsQualityAgentMessage);
-    log.info(`forms quality agent message sent to mystique : ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
+    log.info(`forms quality agent message sent to mystique 1 : ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
   }
 }
 
