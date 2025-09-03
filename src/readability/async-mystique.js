@@ -128,6 +128,7 @@ export async function sendReadabilityToMystique(
           pageUrl: issue.pageUrl,
           selector: issue.selector,
           issue_id: `readability-${Date.now()}-${index}`,
+          originalIndex: issue.originalIndex, // Preserve original order from identify step
         },
       };
 

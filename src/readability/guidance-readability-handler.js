@@ -33,6 +33,7 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
       seoRecommendation: suggestion.seo_recommendation,
       aiRationale: suggestion.ai_rationale,
       targetFleschScore: suggestion.target_flesch_score,
+      originalIndex: suggestion.originalIndex, // Preserve original order from identify step
     };
   });
 }
@@ -111,6 +112,7 @@ export default async function handler(message, context) {
       seoRecommendation: data.seo_recommendation,
       aiRationale: data.ai_rationale,
       targetFleschScore: data.target_flesch_score,
+      originalIndex: data.originalIndex, // Preserve original order from identify step
     });
   } else if (suggestions && suggestions.length > 0) {
     // Check if we have suggestions array (batch response)
@@ -184,7 +186,20 @@ export default async function handler(message, context) {
             const updatedAudits = await Promise.all(pageResult.audits.map(async (auditItem) => {
               if (auditItem.name === 'readability') {
                 // Get all suggestions for this opportunity
+                // and sort by originalIndex to preserve order
                 const allSuggestions = await readabilityOppty.getSuggestions();
+
+                // Sort suggestions by originalIndex
+                // to maintain the original order from identify step
+                allSuggestions.sort((a, b) => {
+                  const aData = a.getData();
+                  const bData = b.getData();
+                  const aIndex = aData?.recommendations?.[0]?.originalIndex
+                    ?? Number.MAX_SAFE_INTEGER;
+                  const bIndex = bData?.recommendations?.[0]?.originalIndex
+                    ?? Number.MAX_SAFE_INTEGER;
+                  return aIndex - bIndex;
+                });
 
                 // The AsyncJob may have 0 opportunities if cleared during async processing
                 // We need to reconstruct them from the stored suggestions

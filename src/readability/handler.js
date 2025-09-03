@@ -296,14 +296,21 @@ export default async function readability(context, auditContext) {
     if (step === 'suggest') {
       // Collect all readability issues across all pages
       const allReadabilityIssues = [];
+      let globalIndex = 0; // Global index to preserve original order across all pages
       for (const pageResult of auditsResult) {
         const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
         if (audit && audit.opportunities.length > 0) {
-          // Add page URL to each issue for context
-          const issuesWithContext = audit.opportunities.map((issue) => ({
-            ...issue,
-            pageUrl: pageResult.pageUrl,
-          }));
+          // Add page URL and original index to each issue for context and ordering
+          const issuesWithContext = [];
+          for (let i = 0; i < audit.opportunities.length; i += 1) {
+            const issue = audit.opportunities[i];
+            issuesWithContext.push({
+              ...issue,
+              pageUrl: pageResult.pageUrl,
+              originalIndex: globalIndex, // Preserve original order from identify step
+            });
+            globalIndex += 1;
+          }
           allReadabilityIssues.push(...issuesWithContext);
         }
       }
