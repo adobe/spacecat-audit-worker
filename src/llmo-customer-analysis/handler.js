@@ -73,7 +73,7 @@ async function runReferralTrafficStep(context) {
 
 async function runAgenticTrafficStep(context) {
   const {
-    env, site, log,
+    audit, env, site, log,
   } = context;
 
   log.info('Agentic Traffic Step: Extracting product and page type information');
@@ -112,8 +112,7 @@ async function runAgenticTrafficStep(context) {
 
   log.info('Agentic Traffic Step: Upload complete; initiating scrap');
 
-  const formatBaseUrl = (url) => url.replace(/^(https?:\/\/)(?!www\.)/, '$1www.');
-  const urls = paths.slice(0, 20).map((p) => ({ url: `${formatBaseUrl(domain)}${p.path}` }));
+  const urls = paths.slice(0, 20).map((p) => ({ url: `https://${audit.getFullAuditRef()}${p.path}` }));
 
   return {
     auditResult: { status: 'Initiating scrape' },
