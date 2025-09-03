@@ -740,6 +740,8 @@ export const issueTypesForMystique = [
   'aria-valid-attr-value',
   'button-name',
   'link-name',
+  'select-name',
+  'aria-required-parent',
 ];
 
 /**
