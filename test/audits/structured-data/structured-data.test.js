@@ -70,7 +70,12 @@ describe('Structured Data Audit', () => {
     siteStub = {
       getId: () => '123',
       getConfig: () => ({
-        getIncludedURLs: () => ['https://example.com/product/1', 'https://example.com/product/2', 'https://example.com/product/3'],
+        getIncludedURLs: (auditType) => {
+          if (auditType === 'meta-tags') {
+            return ['https://example.com/product/1', 'https://example.com/product/2', 'https://example.com/product/3'];
+          }
+          return [];
+        },
       }),
       getDeliveryType: () => 'other',
     };
@@ -130,17 +135,48 @@ describe('Structured Data Audit', () => {
   });
 
   describe('runAuditAndGenerateSuggestions', () => {
-    it('throws an error if no top pages are available', async () => {
+    it('throws an error if no top pages and no included URLs are available', async () => {
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([]);
+      siteStub.getConfig = () => ({
+        getIncludedURLs: () => [],
+      });
 
       const result = await runAuditAndGenerateSuggestions(context);
       expect(result).to.deep.equal({
         fullAuditRef: 'https://www.example.com',
         auditResult: {
-          error: 'No top pages for site ID 123 found.',
+          error: 'No URLs found for site ID 123 (neither top pages nor included URLs).',
           success: false,
         },
       });
+    });
+
+    it('works with only included URLs when no top pages are available', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([]);
+      siteStub.getConfig = () => ({
+        getIncludedURLs: (auditType) => (auditType === 'meta-tags' ? ['https://example.com/product/1'] : []),
+      });
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus
+        .resolves([context.dataAccess.Opportunity]);
+      context.dataAccess.Opportunity.getSuggestions.resolves([]);
+      context.dataAccess.Opportunity.getId.returns('opportunity-id');
+      context.dataAccess.Opportunity.getType.returns('structured-data');
+      context.dataAccess.Opportunity.addSuggestions.resolves(structuredDataSuggestions);
+
+      s3ClientStub.send.resolves(createS3ObjectStub(JSON.stringify({
+        scrapeResult: {
+          rawBody: '<main></main>',
+          structuredData: {
+            jsonld: {},
+            errors: [],
+          },
+        },
+      })));
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus = sinon.stub().resolves([]);
+
+      const result = await runAuditAndGenerateSuggestions(context);
+      expect(result.auditResult.success).to.equal(true);
     });
 
     it('filters out files from top pages', async () => {
@@ -481,10 +517,30 @@ describe('Structured Data Audit', () => {
       });
     });
 
-    it('throws error if no top pages are found when sending scraping request', async () => {
+    it('throws error if no top pages and no included URLs are found when sending scraping request', async () => {
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([]);
+      siteStub.getConfig = () => ({
+        getIncludedURLs: () => [],
+      });
 
-      expect(submitForScraping(context)).to.be.rejectedWith('No top pages for site ID 123 found.');
+      expect(submitForScraping(context)).to.be.rejectedWith('No URLs found for site neither top pages nor included URLs');
+    });
+
+    it('works with only included URLs when no top pages are available for scraping', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([]);
+      siteStub.getConfig = () => ({
+        getIncludedURLs: (auditType) => (auditType === 'meta-tags' ? ['https://example.com/included/1', 'https://example.com/included/2'] : []),
+      });
+
+      const result = await submitForScraping(context);
+      expect(result).to.deep.equal({
+        siteId: '123',
+        type: 'structured-data',
+        urls: [
+          { url: 'https://example.com/included/1' },
+          { url: 'https://example.com/included/2' },
+        ],
+      });
     });
   });
 });
