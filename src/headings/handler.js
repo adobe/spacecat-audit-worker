@@ -19,6 +19,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
+import headingsAutoSuggest from './headings-auto-suggest.js';
 
 const auditType = Audit.AUDIT_TYPES.HEADINGS;
 
@@ -385,6 +386,89 @@ export function generateSuggestions(auditUrl, auditData, context) {
   return { ...auditData, suggestions };
 }
 
+export async function generateAISuggestions(auditUrl, auditData, context) {
+  const { log, site } = context;
+
+  if (auditData.auditResult?.status === 'success' || auditData.auditResult?.error) {
+    log.info(`Headings audit for ${auditUrl} has no issues or failed, skipping AI suggestions generation`);
+    return { ...auditData };
+  }
+
+  try {
+    // Prepare data structure for AI suggestions
+    const allHeadings = {
+      detectedHeadings: {},
+      extractedHeadings: {},
+      healthyHeadings: {
+        h1: [],
+        h2: [],
+        h3: [],
+      },
+    };
+
+    // Extract detected headings with issues
+    Object.entries(auditData.auditResult).forEach(([checkType, checkResult]) => {
+      if (checkResult.success === false && Array.isArray(checkResult.urls)) {
+        checkResult.urls.forEach((url) => {
+          if (!allHeadings.detectedHeadings[url]) {
+            allHeadings.detectedHeadings[url] = {};
+          }
+          allHeadings.detectedHeadings[url][checkType] = checkResult;
+        });
+      }
+    });
+
+    // If no detected headings, return early
+    if (Object.keys(allHeadings.detectedHeadings).length === 0) {
+      log.info('No detected heading issues found, skipping AI suggestions');
+      return { ...auditData };
+    }
+
+    // Get healthy headings from top pages for brand guidelines
+    try {
+      const topPages = await getTopPagesForSiteId(site, context);
+      if (topPages && topPages.length > 0) {
+        // Extract healthy headings from top pages
+        // (this would need to be implemented based on your data structure)
+        // For now, we'll use empty arrays as placeholders
+        log.info('Using top pages for healthy heading examples');
+      }
+    } catch (error) {
+      log.warn('Could not fetch top pages for healthy heading examples:', error.message);
+    }
+
+    // Generate AI suggestions
+    const updatedDetectedHeadings = await headingsAutoSuggest(allHeadings, context, site);
+
+    // Merge AI suggestions back into audit data
+    const updatedAuditData = { ...auditData };
+    Object.entries(updatedDetectedHeadings).forEach(([url, headingData]) => {
+      if (updatedAuditData.auditResult) {
+        Object.keys(headingData).forEach((checkType) => {
+          if (updatedAuditData.auditResult[checkType]
+              && updatedAuditData.auditResult[checkType].urls) {
+            const urlIndex = updatedAuditData.auditResult[checkType].urls.indexOf(url);
+            if (urlIndex !== -1) {
+              // Add AI suggestions to the existing audit result
+              if (!updatedAuditData.auditResult[checkType].aiSuggestions) {
+                updatedAuditData.auditResult[checkType].aiSuggestions = {};
+              }
+              updatedAuditData.auditResult[checkType].aiSuggestions[url] = headingData[checkType];
+            }
+          }
+        });
+      }
+    });
+
+    log.info('AI suggestions generated for headings audit');
+    return updatedAuditData;
+  } catch (error) {
+    log.error(`Error generating AI suggestions for headings: ${error.message}`);
+    // Return original audit data if AI suggestions fail
+    return { ...auditData };
+  }
+}
+
 function generateRecommendedAction(checkType) {
   switch (checkType) {
     case HEADINGS_CHECKS.HEADING_ORDER_INVALID.check:
@@ -444,5 +528,5 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(headingsAuditRunner)
-  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
+  .withPostProcessors([generateSuggestions, generateAISuggestions, opportunityAndSuggestions])
   .build();

@@ -17,15 +17,17 @@ export function createOpportunityData() {
     runbook: '',
     origin: 'AUTOMATION',
     title: 'Heading structure issues affecting accessibility and SEO',
-    description: 'Ensure heading elements (h1–h6) are used in a logical, hierarchical order without skipping levels, and that no heading is empty. Proper heading structure improves accessibility and helps search engines understand page content.',
+    description: 'Ensure heading elements (h1–h6) are used in a logical, hierarchical order without skipping levels, and that no heading is empty. Proper heading structure improves accessibility and helps search engines understand page content. AI-powered suggestions are available to help improve heading quality and consistency.',
     guidance: {
       steps: [
         'Review pages flagged for heading order or empty heading issues in the audit results.',
+        'Use AI-generated suggestions to improve heading quality, consistency, and SEO performance.',
         'Adjust headings so that levels increase by at most one at a time (e.g., h1 → h2 → h3).',
         'Remove or fill any empty heading elements with descriptive text.',
+        'Ensure headings follow brand guidelines and maintain consistent tone across the site.',
       ],
     },
-    tags: ['Accessibility', 'SEO'],
+    tags: ['Accessibility', 'SEO', 'AI-Powered'],
     data: {
       dataSources: [DATA_SOURCES.SITE],
     },

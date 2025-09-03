@@ -13,16 +13,17 @@
 import { main as universalMain } from './index.js';
 
 export const main = async () => {
-  const messageBody = {
-    type: 'llm-blocked',
-    siteId: 'c2473d89-e997-458d-a86d-b4096649c12b',
-    auditContext: {
-      next: 'check-llm-blocked',
-      auditId: 'a263123c-9f9a-44a8-9531-955884563472',
-      type: 'llm-blocked',
-      fullAuditRef: 'llm-blocked::adobe.com',
-    },
-  };
+  const messageBody = { type: 'headings', siteId: '36e4848b-d6e5-4350-a7f9-610e78325966' };
+  // const messageBody = {
+  //   type: 'llm-blocked',
+  //   siteId: 'c2473d89-e997-458d-a86d-b4096649c12b',
+  //   auditContext: {
+  //     next: 'check-llm-blocked',
+  //     auditId: 'a263123c-9f9a-44a8-9531-955884563472',
+  //     type: 'llm-blocked',
+  //     fullAuditRef: 'llm-blocked::adobe.com',
+  //   },
+  // };
 
   const message = {
     Records: [
@@ -38,7 +39,7 @@ export const main = async () => {
       info: console.log,
       error: console.error,
       warn: console.warn,
-      debug: () => {}, // Disable debug logging
+      debug: console.debug,
     },
     runtime: {
       region: 'us-east-1',
