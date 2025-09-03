@@ -79,7 +79,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
     const baseUrl = site.getBaseURL?.() || 'https://example.com';
 
-    const buildFilename = (code) => `agentictraffic-${periodIdentifier}-${code}-ui.xlsx`;
+    const buildFilename = (code) => `agentictraffic-errors-${periodIdentifier}-${code}.xlsx`;
 
     const writeCategoryExcel = async (code, errors) => {
       if (!errors || errors.length === 0) return;
