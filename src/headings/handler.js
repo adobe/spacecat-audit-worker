@@ -391,17 +391,33 @@ export function generateSuggestions(auditUrl, auditData, context) {
 }
 
 export async function generateAISuggestions(auditUrl, auditData, context) {
-  const { log, site } = context;
-
-  log.info(`[Headings AI Suggestions] Starting AI suggestions generation for audit: ${auditUrl}`);
-  log.info(`[Headings AI Suggestions] Site ID: ${site.getId()}, Base URL: ${site.getBaseURL()}`);
-
-  if (auditData.auditResult?.status === 'success' || auditData.auditResult?.error) {
-    log.info(`[Headings AI Suggestions] Headings audit for ${auditUrl} has no issues or failed, skipping AI suggestions generation`);
-    return { ...auditData };
-  }
-
   try {
+    const { log } = context;
+
+    // Validate required context properties
+    if (!context.site) {
+      log.error('[Headings AI Suggestions] Site object is missing from context, skipping AI suggestions generation');
+      log.debug(`[Headings AI Suggestions] Available context keys: ${Object.keys(context).join(', ')}`);
+      return { ...auditData };
+    }
+
+    const { site } = context;
+
+    // Validate site object has required methods
+    if (typeof site.getId !== 'function' || typeof site.getBaseURL !== 'function') {
+      log.error('[Headings AI Suggestions] Site object is missing required methods (getId or getBaseURL), skipping AI suggestions generation');
+      log.debug(`[Headings AI Suggestions] Site object properties: ${Object.getOwnPropertyNames(site).join(', ')}`);
+      return { ...auditData };
+    }
+
+    log.info(`[Headings AI Suggestions] Starting AI suggestions generation for audit: ${auditUrl}`);
+    log.info(`[Headings AI Suggestions] Site ID: ${site.getId()}, Base URL: ${site.getBaseURL()}`);
+
+    if (auditData.auditResult?.status === 'success' || auditData.auditResult?.error) {
+      log.info(`[Headings AI Suggestions] Headings audit for ${auditUrl} has no issues or failed, skipping AI suggestions generation`);
+      return { ...auditData };
+    }
+
     // Prepare data structure for AI suggestions
     const allHeadings = {
       detectedHeadings: {},
@@ -457,6 +473,13 @@ export async function generateAISuggestions(auditUrl, auditData, context) {
 
     // Generate AI suggestions
     log.info('[Headings AI Suggestions] Calling headingsAutoSuggest to generate AI suggestions');
+    log.debug(`[Headings AI Suggestions] Context keys: ${Object.keys(context).join(', ')}`);
+    log.debug(`[Headings AI Suggestions] Site object type: ${typeof site}, Site methods: ${Object.getOwnPropertyNames(site).join(', ')}`);
+    log.debug(`[Headings AI Suggestions] AllHeadings structure: ${JSON.stringify({
+      detectedHeadingsCount: Object.keys(allHeadings.detectedHeadings || {}).length,
+      extractedHeadingsCount: Object.keys(allHeadings.extractedHeadings || {}).length,
+      healthyHeadingsKeys: Object.keys(allHeadings.healthyHeadings || {}),
+    })}`);
     const updatedDetectedHeadings = await headingsAutoSuggest(allHeadings, context, site);
     log.info(`[Headings AI Suggestions] AI suggestions generation completed. Updated headings count: ${Object.keys(updatedDetectedHeadings).length}`);
 
@@ -488,11 +511,9 @@ export async function generateAISuggestions(auditUrl, auditData, context) {
     log.info(`[Headings AI Suggestions] Successfully merged ${totalSuggestionsMerged} AI suggestions into audit data`);
     log.info('[Headings AI Suggestions] AI suggestions generation and merging completed successfully');
     return updatedAuditData;
-  } catch (error) {
-    log.error(`[Headings AI Suggestions] Error generating AI suggestions for headings: ${error.message}`);
-    log.error(`[Headings AI Suggestions] Stack trace: ${error.stack}`);
+  } catch (err) {
     // Return original audit data if AI suggestions fail
-    return { ...auditData };
+    return { ...auditData, error: `Error generating AI suggestions for headings: ${err.message}` };
   }
 }
 
