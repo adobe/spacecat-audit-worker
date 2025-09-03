@@ -1,3 +1,10 @@
+# [1.171.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.170.3...v1.171.0) (2025-09-03)
+
+
+### Features
+
+* added jiraLink field to a11y suggestion data structure ([#1204](https://github.com/adobe/spacecat-audit-worker/issues/1204)) ([f925653](https://github.com/adobe/spacecat-audit-worker/commit/f925653b18ee07a276411f4017f615b9741c78d2))
+
 ## [1.170.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.170.2...v1.170.3) (2025-09-02)
 
 
