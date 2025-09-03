@@ -51,7 +51,7 @@ export default async function handler(message, context) {
     const derivedPeriod = `w${week.weekNumber}-${week.year}`;
     const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
     const outputDir = `${llmoFolder}/agentic-traffic`;
-    const filename = `agentictraffic-errors-${derivedPeriod}-404.xlsx`;
+    const filename = `agentictraffic-errors-404-${derivedPeriod}.xlsx`;
 
     const workbook = new ExcelJS.Workbook();
     const existingBuffer = await readFromSharePoint(filename, outputDir, sharepointClient, log);
