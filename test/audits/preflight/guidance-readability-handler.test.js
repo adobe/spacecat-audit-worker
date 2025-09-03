@@ -1331,6 +1331,359 @@ describe('Guidance Readability Handler Tests', () => {
       expect(result2.statusCode).to.equal(200);
     });
 
+    it('should cover stored order mapping usage (lines 239-241)', async () => {
+      // Test the case where we DO have stored order mapping and use it
+      const messageWithValidData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 85,
+          original_paragraph: 'Original text',
+          current_flesch_score: 25,
+        },
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+
+      const mockAsyncJobWithStoredMapping = {
+        ...mockAsyncJob,
+        getResult: () => [{
+          pageUrl: 'https://test-site.com/page1',
+          audits: [{
+            name: 'readability',
+            opportunities: [{
+              check: 'poor-readability',
+              textContent: 'Original text',
+              fleschReadingEase: 25,
+            }],
+          }],
+        }],
+      };
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithStoredMapping);
+
+      // Key: Mock opportunity data WITH stored order mapping
+      mockOpportunity.getData.returns({
+        subType: 'readability',
+        processedSuggestionIds: [],
+        mystiqueResponsesReceived: 1,
+        mystiqueResponsesExpected: 1,
+        originalOrderMapping: [
+          { textContent: 'Original text', originalIndex: 0 },
+        ], // This will trigger lines 239-241
+      });
+
+      const mockSuggestionWithMapping = {
+        getData: () => ({
+          recommendations: [{
+            originalText: 'Original text',
+            improvedText: 'Improved text',
+            originalFleschScore: 25,
+            improvedFleschScore: 85,
+          }],
+        }),
+      };
+      mockOpportunity.getSuggestions.resolves([mockSuggestionWithMapping]);
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+      mockAddReadabilitySuggestions.resolves();
+
+      const result = await guidanceHandler(messageWithValidData, context);
+
+      expect(result.statusCode).to.equal(200);
+      // Verify that stored order mapping was used (lines 239-241)
+      expect(log.info).to.have.been.calledWithMatch('Using stored original order mapping with 1 items');
+      expect(log.info).to.have.been.calledWithMatch('Sorted 1 opportunities back to original order');
+    });
+
+    it('should cover sorting logic with mixed order scenarios (lines 306-312)', async () => {
+      // Test the sorting logic when opportunities need to be reordered
+      const messageWithValidData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 85,
+          original_paragraph: 'Original text',
+          current_flesch_score: 25,
+        },
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+
+      const mockAsyncJobWithMixedOrder = {
+        ...mockAsyncJob,
+        getResult: () => [{
+          pageUrl: 'https://test-site.com/page1',
+          audits: [{
+            name: 'readability',
+            opportunities: [
+              {
+                check: 'poor-readability',
+                textContent: 'Third text', // This should be sorted last
+                fleschReadingEase: 15,
+              },
+              {
+                check: 'poor-readability',
+                textContent: 'First text', // This should be sorted first
+                fleschReadingEase: 25,
+              },
+              {
+                check: 'poor-readability',
+                textContent: 'Second text', // This should be sorted second
+                fleschReadingEase: 20,
+              },
+            ],
+          }],
+        }],
+      };
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithMixedOrder);
+
+      // Mock opportunity data with stored order mapping that defines the correct order
+      mockOpportunity.getData.returns({
+        subType: 'readability',
+        processedSuggestionIds: [],
+        mystiqueResponsesReceived: 1,
+        mystiqueResponsesExpected: 1,
+        originalOrderMapping: [
+          { textContent: 'First text', originalIndex: 0 },
+          { textContent: 'Second text', originalIndex: 1 },
+          { textContent: 'Third text', originalIndex: 2 },
+        ],
+      });
+
+      // Mock suggestions for all three texts
+      const mockSuggestions = [
+        {
+          getData: () => ({
+            recommendations: [{
+              originalText: 'First text',
+              improvedText: 'Improved first text',
+              originalFleschScore: 25,
+              improvedFleschScore: 75,
+            }],
+          }),
+        },
+        {
+          getData: () => ({
+            recommendations: [{
+              originalText: 'Second text',
+              improvedText: 'Improved second text',
+              originalFleschScore: 20,
+              improvedFleschScore: 80,
+            }],
+          }),
+        },
+        {
+          getData: () => ({
+            recommendations: [{
+              originalText: 'Third text',
+              improvedText: 'Improved third text',
+              originalFleschScore: 15,
+              improvedFleschScore: 85,
+            }],
+          }),
+        },
+      ];
+      mockOpportunity.getSuggestions.resolves(mockSuggestions);
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+      mockAddReadabilitySuggestions.resolves();
+
+      const result = await guidanceHandler(messageWithValidData, context);
+
+      expect(result.statusCode).to.equal(200);
+
+      // Verify sorting logic was executed (lines 306-312)
+      expect(log.info).to.have.been.calledWithMatch('Sorted 3 opportunities back to original order');
+      expect(mockAsyncJobWithMixedOrder.setResult).to.have.been.called;
+
+      // Verify the opportunities were sorted in the correct order
+      const updatedResult = mockAsyncJobWithMixedOrder.setResult.firstCall.args[0];
+      const readabilityAudit = updatedResult[0].audits.find((audit) => audit.name === 'readability');
+      expect(readabilityAudit.opportunities[0].textContent).to.equal('First text');
+      expect(readabilityAudit.opportunities[1].textContent).to.equal('Second text');
+      expect(readabilityAudit.opportunities[2].textContent).to.equal('Third text');
+    });
+
+    it('should cover fallback scenario when textContent not found in originalOrder (lines 306-312)', async () => {
+      // Test the Number.MAX_SAFE_INTEGER fallback in sorting logic
+      const messageWithValidData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 85,
+          original_paragraph: 'Original text',
+          current_flesch_score: 25,
+        },
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+
+      const mockAsyncJobWithUnmatchedText = {
+        ...mockAsyncJob,
+        getResult: () => [{
+          pageUrl: 'https://test-site.com/page1',
+          audits: [{
+            name: 'readability',
+            opportunities: [{
+              check: 'poor-readability',
+              textContent: 'Unmatched text content', // This won't be in originalOrderMapping
+              fleschReadingEase: 25,
+            }],
+          }],
+        }],
+      };
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithUnmatchedText);
+
+      // Mock opportunity data with stored order mapping
+      // that DOESN'T include the opportunity's textContent
+      mockOpportunity.getData.returns({
+        subType: 'readability',
+        processedSuggestionIds: [],
+        mystiqueResponsesReceived: 1,
+        mystiqueResponsesExpected: 1,
+        originalOrderMapping: [
+          { textContent: 'Different text', originalIndex: 0 },
+        ], // This doesn't match "Unmatched text content"
+      });
+
+      const mockSuggestionUnmatched = {
+        getData: () => ({
+          recommendations: [{
+            originalText: 'Unmatched text content',
+            improvedText: 'Improved unmatched text',
+            originalFleschScore: 25,
+            improvedFleschScore: 85,
+          }],
+        }),
+      };
+      mockOpportunity.getSuggestions.resolves([mockSuggestionUnmatched]);
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+      mockAddReadabilitySuggestions.resolves();
+
+      const result = await guidanceHandler(messageWithValidData, context);
+
+      expect(result.statusCode).to.equal(200);
+
+      // This will test the ?? Number.MAX_SAFE_INTEGER fallback in lines 308 and 311
+      expect(log.info).to.have.been.calledWithMatch('Sorted 1 opportunities back to original order');
+      expect(mockAsyncJobWithUnmatchedText.setResult).to.have.been.called;
+    });
+
+    it('should cover line 234: opportunityData fallback when getData returns null', async () => {
+      // Test the case where readabilityOppty.getData() returns null, triggering || {} fallback
+      const messageWithValidData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 85,
+          original_paragraph: 'Original text',
+          current_flesch_score: 25,
+        },
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+
+      const mockReadabilityOpportunityWithNullData = {
+        getId: () => 'opp-123',
+        getData: () => null, // This will trigger the || {} fallback on line 234
+        getSuggestions: sinon.stub().resolves([]),
+        save: sinon.stub().resolves(),
+      };
+
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockReadabilityOpportunityWithNullData]);
+
+      const mockAsyncJobWithOpportunities = {
+        ...mockAsyncJob,
+        getResult: () => [{
+          pageUrl: 'https://test-site.com/page1',
+          audits: [{
+            name: 'readability',
+            opportunities: [{
+              textContent: 'Original text',
+              fleschReadingEase: 25,
+              selector: 'p:nth-child(1)',
+            }],
+          }],
+        }],
+      };
+
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithOpportunities);
+
+      await guidanceHandler(messageWithValidData, context);
+
+      expect(mockReadabilityOpportunityWithNullData.getData).to.have.been.called;
+    });
+
+    it('should cover lines 308,311: sorting fallback when textContent not found in originalOrder', async () => {
+      // Test the case where originalOrder.find() returns undefined,
+      // triggering ?? Number.MAX_SAFE_INTEGER
+      const messageWithValidData = {
+        auditId: 'test-job-id',
+        siteId: 'test-site-id',
+        id: 'message-123',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 85,
+          original_paragraph: 'Original text',
+          current_flesch_score: 25,
+        },
+      };
+
+      mockDataAccess.Site.findById.resolves(mockSite);
+
+      // Create opportunities with textContent that won't match the originalOrder mapping
+      const mockAsyncJobWithMismatchedOpportunities = {
+        ...mockAsyncJob,
+        getResult: () => [{
+          pageUrl: 'https://test-site.com/page1',
+          audits: [{
+            name: 'readability',
+            opportunities: [
+              {
+                textContent: 'Text that does not exist in original order mapping',
+                fleschReadingEase: 25,
+                selector: 'p:nth-child(1)',
+              },
+              {
+                textContent: 'Another text that does not exist in mapping',
+                fleschReadingEase: 30,
+                selector: 'p:nth-child(2)',
+              },
+            ],
+          }],
+        }],
+      };
+
+      const mockReadabilityOpportunityWithStoredMapping = {
+        getId: () => 'opp-123',
+        getData: () => ({
+          // Stored mapping with different textContent than the opportunities above
+          originalOrderMapping: [
+            { textContent: 'Different text 1', originalIndex: 0 },
+            { textContent: 'Different text 2', originalIndex: 1 },
+          ],
+        }),
+        getSuggestions: sinon.stub().resolves([]),
+        save: sinon.stub().resolves(),
+      };
+
+      mockDataAccess.Opportunity.allBySiteId.resolves([
+        mockReadabilityOpportunityWithStoredMapping,
+      ]);
+      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithMismatchedOpportunities);
+
+      await guidanceHandler(messageWithValidData, context);
+
+      // The sort should still work, using Number.MAX_SAFE_INTEGER for unfound items
+      expect(mockReadabilityOpportunityWithStoredMapping.save).to.have.been.called;
+    });
+
     it('should cover all branches for line 264: calculation fallback scenarios', async () => {
       // Test both branches: recommendation.originalFleschScore || opportunity.fleschReadingEase
       const messageWithValidData = {
