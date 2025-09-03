@@ -90,12 +90,11 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       getAuditId: () => 'auditId',
       getAuditResult: () => [
         {
-          key: 'url',
+          key: 'urlConsent',
           value: [{
-            url: 'https://example-page/to-check', pageViews: 10, ctr: 0.5, bounceRate: 0.2,
+            url: 'https://example-page/to-check', pageViews: 10, bounceRate: 0.8, projectedTrafficLost: 8, consent: 'show',
           }],
         },
-        { key: 'pageType', value: [{ topURLs: ['https://example-url'], type: 'product-page' }] },
       ],
     });
 
@@ -201,12 +200,11 @@ markdown`);
       getAuditId: () => 'auditId',
       getAuditResult: () => [
         {
-          key: 'url',
+          key: 'urlConsent',
           value: [{
-            url: TEST_PAGE, pageViews: 10, ctr: 0.5, bounceRate: 0.2,
+            url: TEST_PAGE, pageViews: 10, bounceRate: 0.8, projectedTrafficLost: 8, consent: 'show',
           }],
         },
-        { key: 'pageType', value: [{ topURLs: [TEST_PAGE], type: 'landing' }] },
       ],
     });
     const guidance = [{
@@ -279,6 +277,34 @@ markdown`);
     expect(calledWith.guidance.recommendations[0].insight).to.equal('insight');
     expect(calledWith.guidance.recommendations[0].recommendation).to.equal('rec');
     expect(calledWith.guidance.recommendations[0].rationale).to.equal('rationale');
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should handle malformed JSON in guidance body gracefully', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const body = '{ invalid json';
+    const guidance = [{
+      body,
+      insight: 'insight',
+      rationale: 'rationale',
+      recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    const result = await handler(message, context);
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should skip opportunity creation for none severity', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const body = JSON.stringify({ issueSeverity: 'none', markdown: 'test' });
+    const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+
+    const result = await handler(message, context);
+
+    expect(Opportunity.create).not.to.have.been.called;
     expect(result.status).to.equal(ok().status);
   });
 });

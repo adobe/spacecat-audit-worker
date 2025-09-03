@@ -14,7 +14,7 @@ import { randomUUID } from 'crypto';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { DATA_SOURCES } from '../common/constants.js';
 
-const ESTIMATED_CPC = 2.65;
+const ESTIMATED_CPC = 0.80;
 
 function formatNumberWithK(num) {
   if (num >= 1000) {
@@ -64,14 +64,15 @@ export function isLowSeverityGuidanceBody(body) {
 }
 
 export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
+  // Get the data from urlConsent segment and filter for 'show' consent
   const stats = audit.getAuditResult();
-  const urlSegment = stats.find((item) => item.key === 'url');
-  const pageStats = urlSegment?.value.find((item) => item.url === url) || {};
-  const pageTypeSegment = stats.find((item) => item.key === 'pageType');
-  const pageTypeStats = pageTypeSegment?.value.find((item) => item.topURLs.includes(url)) || {};
-  const pageViews = pageStats.pageViews || 0;
-  const bounceRate = pageStats.bounceRate || 0;
-  const projectedTrafficLost = bounceRate * pageViews;
+  const urlConsentSegment = stats.find((item) => item.key === 'urlConsent');
+  const pagesWithConsent = urlConsentSegment?.value?.filter((item) => item.consent === 'show') || [];
+  const pageData = pagesWithConsent.find((item) => item.url === url) || {};
+
+  const pageViews = pageData.pageViews || 0;
+  const bounceRate = pageData.bounceRate || 0;
+  const projectedTrafficLost = pageData.projectedTrafficLost || bounceRate * pageViews;
   const projectedTrafficValue = projectedTrafficLost * ESTIMATED_CPC;
   return {
     siteId,
@@ -102,9 +103,9 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
       opportunityType: 'paid-cookie-consent',
       page: url,
       pageViews,
-      ctr: pageStats.ctr || 0,
+      ctr: 0,
       bounceRate,
-      pageType: pageTypeStats?.type || 'unknown',
+      pageType: 'unknown',
     },
     status: 'NEW',
     tags: [

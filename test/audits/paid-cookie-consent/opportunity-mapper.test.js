@@ -79,39 +79,38 @@ newlines`);
     const url = 'https://example.com/page';
     const guidance = [{ insight: 'insight', rationale: 'rationale', recommendation: 'rec' }];
 
-    it('returns default stats if url segment is missing', () => {
+    it('returns default stats if urlConsent segment is missing', () => {
       const audit = {
         getAuditId: () => 'aid',
         getAuditResult: () => [
-          // No 'url' segment
-          { key: 'pageType', value: [{ topURLs: [url], type: 'landing' }] },
+          // No 'urlConsent' segment
+          { key: 'url', value: [{ url, pageViews: 100, bounceRate: 0.5 }] },
         ],
       };
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
       expect(result.data.pageViews).to.equal(0);
       expect(result.data.ctr).to.equal(0);
       expect(result.data.bounceRate).to.equal(0);
-      expect(result.data.pageType).to.equal('landing');
+      expect(result.data.projectedTrafficLost).to.equal(0);
     });
 
-    it('returns default stats if url is not found in url segment', () => {
+    it('returns default stats if url is not found in urlConsent segment', () => {
       const audit = {
         getAuditId: () => 'aid',
         getAuditResult: () => [
           {
-            key: 'url',
+            key: 'urlConsent',
             value: [{
-              url: 'https://other.com/page', pageViews: 99, ctr: 0.9, bounceRate: 0.1,
+              url: 'https://other.com/page', pageViews: 99, bounceRate: 0.1, projectedTrafficLost: 9.9, consent: 'show',
             }],
           },
-          { key: 'pageType', value: [{ topURLs: [url], type: 'landing' }] },
         ],
       };
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
       expect(result.data.pageViews).to.equal(0);
       expect(result.data.ctr).to.equal(0);
       expect(result.data.bounceRate).to.equal(0);
-      expect(result.data.pageType).to.equal('landing');
+      expect(result.data.projectedTrafficLost).to.equal(0);
     });
 
     it('formats large numbers with K suffix in description', () => {
@@ -119,16 +118,15 @@ newlines`);
         getAuditId: () => 'aid',
         getAuditResult: () => [
           {
-            key: 'url',
+            key: 'urlConsent',
             value: [{
-              url, pageViews: 10000, ctr: 0.5, bounceRate: 0.8,
+              url, pageViews: 10000, bounceRate: 0.8, projectedTrafficLost: 8000, consent: 'show',
             }],
           },
-          { key: 'pageType', value: [{ topURLs: [url], type: 'landing' }] },
         ],
       };
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      // bounceRate (0.8) * pageViews (10000) = 8000, should be formatted as 8.0K
+      // projectedTrafficLost 8000 should be formatted as 8.0K
       expect(result.description).to.include('8.0K');
       expect(result.description).to.include('80.0% of paid traffic bounces');
     });
@@ -138,58 +136,56 @@ newlines`);
         getAuditId: () => 'aid',
         getAuditResult: () => [
           {
-            key: 'url',
+            key: 'urlConsent',
             value: [{
-              url, pageViews: 500, ctr: 0.5, bounceRate: 0.6,
+              url, pageViews: 500, bounceRate: 0.6, projectedTrafficLost: 300, consent: 'show',
             }],
           },
-          { key: 'pageType', value: [{ topURLs: [url], type: 'landing' }] },
         ],
       };
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      // bounceRate (0.6) * pageViews (500) = 300, should stay as 300
+      // projectedTrafficLost 300 should stay as 300
       expect(result.description).to.include('300)');
       expect(result.description).to.include('60.0% of paid traffic bounces');
     });
 
-    it('returns default pageType if pageType segment is missing', () => {
+    it('uses data from urlConsent segment correctly', () => {
       const audit = {
         getAuditId: () => 'aid',
         getAuditResult: () => [
           {
-            key: 'url',
+            key: 'urlConsent',
             value: [{
-              url, pageViews: 5, ctr: 0.2, bounceRate: 0.3,
+              url, pageViews: 5, bounceRate: 0.3, projectedTrafficLost: 1.5, consent: 'show',
             }],
           },
-          // No 'pageType' segment
         ],
       };
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
       expect(result.data.pageViews).to.equal(5);
-      expect(result.data.ctr).to.equal(0.2);
+      expect(result.data.ctr).to.equal(0);
       expect(result.data.bounceRate).to.equal(0.3);
-      expect(result.data.pageType).to.equal('unknown');
+      expect(result.data.projectedTrafficLost).to.equal(1.5);
     });
 
-    it('returns default pageType if url is not found in pageType segment', () => {
+    it('calculates projectedTrafficLost as fallback when missing', () => {
       const audit = {
         getAuditId: () => 'aid',
         getAuditResult: () => [
           {
-            key: 'url',
+            key: 'urlConsent',
             value: [{
-              url, pageViews: 5, ctr: 0.2, bounceRate: 0.3,
+              url, pageViews: 100, bounceRate: 0.4, consent: 'show',
+              // projectedTrafficLost missing - should calculate as bounceRate * pageViews
             }],
           },
-          { key: 'pageType', value: [{ topURLs: ['https://other.com/page'], type: 'landing' }] },
         ],
       };
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      expect(result.data.pageViews).to.equal(5);
-      expect(result.data.ctr).to.equal(0.2);
-      expect(result.data.bounceRate).to.equal(0.3);
-      expect(result.data.pageType).to.equal('unknown');
+      expect(result.data.pageViews).to.equal(100);
+      expect(result.data.ctr).to.equal(0);
+      expect(result.data.bounceRate).to.equal(0.4);
+      expect(result.data.projectedTrafficLost).to.equal(40); // 0.4 * 100
     });
   });
 });

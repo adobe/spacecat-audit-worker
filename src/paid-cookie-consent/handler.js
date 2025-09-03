@@ -9,111 +9,144 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import {
+  AWSAthenaClient,
+} from '@adobe/spacecat-shared-athena-client';
+import { getWeekInfo } from '@adobe/spacecat-shared-utils';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import {
+  getPaidTrafficAnalysisTemplate,
+} from './queries.js';
 
 const MAX_PAGES_TO_AUDIT = 3;
-const INTERVAL_DAYS = 7;
-const UNCATEGORIZED = 'uncategorized';
-const TRAFFIC_TYPE = 'paid';
-const MIN_DAILY_PAGE_VIEWS = 500;
-
-const ALLOWED_SEGMENTS = ['url', 'pageType', 'urlTrafficSource', 'pageTypeTrafficSource'];
-const SITE_CLASSIFIER = {};
 
 const AUDIT_CONSTANTS = {
   GUIDANCE_TYPE: 'guidance:paid-cookie-consent',
   OBSERVATION: 'High bounce rate detected on paid traffic page',
 };
 
-const isAllowedSegment = (segment) => ALLOWED_SEGMENTS.includes(segment.key);
-const filterAndSortByPageViews = ({ key, value }) => {
-  const minViews = INTERVAL_DAYS * MIN_DAILY_PAGE_VIEWS;
+function getConfig(env) {
+  const {
+    RUM_METRICS_DATABASE: rumMetricsDatabase,
+    RUM_METRICS_COMPACT_TABLE: rumMetricsCompactTable,
+    S3_IMPORTER_BUCKET_NAME: bucketName,
+    PAID_DATA_THRESHOLD: paidDataThreshold,
+  } = env;
 
-  return {
-    key,
-    value: value
-      .filter((item) => item.pageViews >= minViews)
-      .sort((a, b) => b.pageViews - a.pageViews),
-  };
-};
-
-const removeUncategorizedPages = (segment) => {
-  const categorized = segment.value.filter((valueItem) => valueItem.type !== UNCATEGORIZED);
-  return {
-    key: segment.key,
-    value: categorized,
-  };
-};
-
-const hasValues = (segment) => segment?.value?.length > 0;
-
-function fetchPageTypeClassifier(site, log) {
-  const siteId = site.getId();
-  log.info(`[paid-audit] [Site: ${siteId}] Fetching page type classifier`);
-
-  let classifier = SITE_CLASSIFIER[siteId];
-  if (!classifier) {
-    const config = site.getConfig()?.getGroupedURLs(TRAFFIC_TYPE);
-    const pageTypes = config?.map((item) => {
-      const page = item.name;
-      const patternObj = JSON.parse(item.pattern);
-      const pattern = new RegExp(patternObj.pattern, patternObj.flags);
-      return {
-        [page]: pattern,
-      };
-    });
-
-    classifier = pageTypes?.reduce((acc, pageType) => ({ ...acc, ...pageType }), {});
-
-    if (classifier) {
-      SITE_CLASSIFIER[siteId] = classifier;
-    }
+  if (!bucketName) {
+    throw new Error('S3_IMPORTER_BUCKET_NAME must be provided for paid audit');
   }
-  return classifier;
+
+  return {
+    rumMetricsDatabase: rumMetricsDatabase ?? 'rum_metrics',
+    rumMetricsCompactTable: rumMetricsCompactTable ?? 'compact_metrics',
+    bucketName,
+    pageViewThreshold: paidDataThreshold ?? 1000,
+    athenaTemp: `s3://${bucketName}/rum-metrics-compact/temp/out`,
+  };
 }
 
-const sortAndfilterByUrlPageViews = (segment, rankingMap) => {
-  const { key, value } = segment;
-  if (key === 'url') return segment;
+// Transform direct SQL query results to RUM-compatible segments
+function transformQueryResultsToSegments(results, baseURL) {
+  const segments = [];
+  const urlSegmentData = [];
+  const urlTrafficSourceData = [];
+  const urlConsentData = [];
 
-  const valueWithSortedUrls = value.map((entry) => {
-    const { urls } = entry;
+  // Process each row from the query results
+  results.forEach((row) => {
+    // Construct URL from path using baseURL (for results, not calculations)
+    const url = row.path ? `${baseURL}${row.path}` : (row.url || '');
 
-    const sortedUrls = [...urls]
-      .sort((a, b) => rankingMap.get(b) - rankingMap.get(a))
-      .slice(0, 10);
-
-    return {
-      ...entry,
-      urls: sortedUrls,
+    const item = {
+      url,
+      pageViews: parseInt(row.pageviews || 0, 10),
+      ctr: parseFloat(row.click_rate || 0),
+      avgClicksPerSession: parseFloat(row.avg_clicks_per_session || 0),
+      clickedSessions: parseInt(row.clicked_sessions || 0, 10),
+      bounceRate: parseFloat(row.bounce_rate || 0),
+      totalNumClicks: parseInt(row.total_num_clicks || 0, 10),
+      source: row.utm_source || 'paid',
+      consent: row.consent || '',
+      referrer: row.referrer || '',
+      projectedTrafficLost: (parseFloat(row.bounce_rate || 0)) * parseInt(row.pageviews || 0, 10),
     };
+
+    if (row.segment_type === 'url') {
+      urlSegmentData.push(item);
+    } else if (row.segment_type === 'urlTrafficSource') {
+      urlTrafficSourceData.push({ ...item, url: row.utm_source });
+    } else if (row.segment_type === 'urlConsent') {
+      // For urlConsent, keep the constructed URL for mystique
+      urlConsentData.push({ ...item, url });
+    }
   });
 
-  return {
-    key,
-    value: valueWithSortedUrls,
-  };
-};
+  // Create segments
+  if (urlSegmentData.length > 0) {
+    segments.push({
+      key: 'url',
+      value: urlSegmentData,
+    });
+  }
 
-function getRankingMap(allSegments) {
-  const urlSegment = allSegments.find((item) => item.key === 'url');
-  return new Map(
-    urlSegment.value.map(({ url, pageViews }) => [url, pageViews]),
-  );
+  if (urlTrafficSourceData.length > 0) {
+    segments.push({
+      key: 'urlTrafficSource',
+      value: urlTrafficSourceData,
+    });
+  }
+
+  if (urlConsentData.length > 0) {
+    // Sort by projected traffic lost for clicks (highest first)
+    urlConsentData.sort((a, b) => b.projectedTrafficLost - a.projectedTrafficLost);
+    segments.push({
+      key: 'urlConsent',
+      value: urlConsentData,
+    });
+  }
+
+  return segments;
 }
 
-function renameUrlsToTopURLs(segments) {
-  return segments.map((segment) => ({
-    ...segment,
-    value: segment.value.map((item) => {
-      const { urls, ...rest } = item;
-      return { ...rest, topURLs: urls };
-    }),
-  }));
+// Helper function to execute segment query
+async function executeSegmentQuery(
+  athenaClient,
+  dimensions,
+  segmentName,
+  siteId,
+  temporalCondition,
+  pageViewThreshold,
+  config,
+  log,
+) {
+  const dimensionColumns = dimensions.join(', ');
+  const groupBy = dimensions.join(', ');
+  const dimensionColumnsPrefixed = dimensions.map((dim) => `a.${dim}`).join(', ');
+
+  const tableName = `${config.rumMetricsDatabase}.${config.rumMetricsCompactTable}`;
+
+  const query = getPaidTrafficAnalysisTemplate({
+    siteId,
+    tableName,
+    temporalCondition,
+    trfTypeCondition: "trf_type = 'paid'",
+    dimensionColumns,
+    groupBy,
+    dimensionColumnsPrefixed,
+    pageTypeCase: "'uncategorized' as page_type",
+    pageViewThreshold,
+  });
+
+  const description = `${segmentName} segment for siteId: ${siteId} | temporal: ${temporalCondition}`;
+
+  log.debug(`[DEBUG] ${segmentName} Query:`, query);
+
+  return athenaClient.query(query, config.rumMetricsDatabase, description);
 }
+
+const hasValues = (segment) => segment?.value?.length > 0;
 
 function buildMystiqueMessage(site, auditId, url) {
   return {
@@ -131,78 +164,52 @@ function buildMystiqueMessage(site, auditId, url) {
 }
 
 export async function paidAuditRunner(auditUrl, context, site) {
-  const { log } = context;
-  const rumAPIClient = RUMAPIClient.createFrom(context, auditUrl, site);
-  const classifier = fetchPageTypeClassifier(site, log);
-
-  const hasClassifier = isNonEmptyObject(classifier);
-  const options = {
-    domain: auditUrl,
-    interval: INTERVAL_DAYS,
-    granularity: 'hourly',
-    pageTypes: classifier,
-    trafficType: TRAFFIC_TYPE,
-  };
+  const { log, env } = context;
+  const config = getConfig(env);
+  const siteId = site.getId();
+  const baseURL = await site.getBaseURL();
 
   log.info(
-    `[paid-audit] [Site: ${auditUrl}] Querying paid Optel metrics `
-    + `(hasPageClassifier: ${hasClassifier}, trafficType: ${options.trafficType})`,
+    `[paid-audit] [Site: ${auditUrl}] Querying paid Athena metrics with consent and referrer data (siteId: ${siteId})`,
   );
-  const allSegments = await rumAPIClient.query('trafficMetrics', options);
-  const segmentsFiltered = allSegments.filter(isAllowedSegment);
 
-  log.info(`[paid-audit] [Site: ${auditUrl}] Processing ${segmentsFiltered?.length} segments`);
-  const filteredAndSorted = segmentsFiltered
-    .filter(hasValues)
-    .map(removeUncategorizedPages)
-    .map(filterAndSortByPageViews);
+  // Get temporal parameters (7 days back from current week)
+  const { temporalCondition } = getWeekInfo();
 
-  let segmentsSortedByViews = filteredAndSorted;
-  if (filteredAndSorted.some(hasValues)) {
-    // Only create rankingMap if there are segments with values
-    const rankingMap = getRankingMap(allSegments);
-    segmentsSortedByViews = filteredAndSorted
-      .map((segment) => sortAndfilterByUrlPageViews(segment, rankingMap));
+  const athenaClient = AWSAthenaClient.fromContext(context, `${config.athenaTemp}/paid-audit-cookie-consent/${siteId}-${Date.now()}`);
+
+  try {
+    log.info(`[paid-audit] [Site: ${auditUrl}] Executing three separate Athena queries for paid traffic segments`);
+
+    // Execute all three segment queries
+    const urlResults = await executeSegmentQuery(athenaClient, ['path'], 'URL', siteId, temporalCondition, config.pageViewThreshold, config, log);
+
+    const urlTrafficSourceResults = await executeSegmentQuery(athenaClient, ['path', 'utm_source'], 'URL Traffic Source', siteId, temporalCondition, config.pageViewThreshold, config, log);
+
+    const urlConsentResults = await executeSegmentQuery(athenaClient, ['path', 'consent'], 'URL Consent', siteId, temporalCondition, config.pageViewThreshold, config, log);
+
+    // Combine results manually with segment type identifiers
+    const results = [
+      ...urlResults.map((row) => ({ ...row, segment_type: 'url' })),
+      ...urlTrafficSourceResults.map((row) => ({ ...row, segment_type: 'urlTrafficSource' })),
+      ...urlConsentResults.map((row) => ({ ...row, segment_type: 'urlConsent' })),
+    ];
+
+    log.info(`[paid-audit] [Site: ${auditUrl}] Processing ${results?.length} combined query result rows`);
+
+    // Transform query results to RUM-compatible segments
+    const allSegments = transformQueryResultsToSegments(results, baseURL);
+
+    log.info(`[paid-audit] [Site: ${auditUrl}] Processing ${allSegments?.length} segments`);
+    const auditResult = allSegments.filter(hasValues);
+    return {
+      auditResult,
+      fullAuditRef: auditUrl,
+    };
+  } catch (error) {
+    log.error(`[paid-audit] [Site: ${auditUrl}] Paid traffic Athena query failed: ${error.message}`);
+    throw error;
   }
-
-  const auditResult = renameUrlsToTopURLs(segmentsSortedByViews);
-  return {
-    auditResult,
-    fullAuditRef: auditUrl,
-  };
-}
-
-function computeProjectedBounce(item) {
-  return (item.bounceRate || 0) * (item.pageViews || 0);
-}
-
-function selectTopKByProjectedBounce(items, k) {
-  const top = items.reduce((acc, item) => {
-    const projectedBounce = computeProjectedBounce(item);
-    const enriched = { ...item, projectedBounce };
-
-    if (acc.length < k) {
-      // Insert into the right place
-      const i = acc.findIndex((t) => projectedBounce < t.projectedBounce);
-      return i === -1
-        ? [...acc, enriched]
-        : [...acc.slice(0, i), enriched, ...acc.slice(i)];
-    }
-
-    if (projectedBounce <= acc[0].projectedBounce) {
-      // Skip this item (equivalent to "continue")
-      return acc;
-    }
-
-    // Replace the smallest element, then re-sort
-    const updated = [enriched, ...acc.slice(1)].sort(
-      (a, b) => a.projectedBounce - b.projectedBounce,
-    );
-    return updated;
-  }, []);
-
-  // Return sorted in descending order
-  return [...top].sort((a, b) => b.projectedBounce - a.projectedBounce);
 }
 
 function selectPagesForConsentBannerAudit(auditResult, auditUrl) {
@@ -210,10 +217,20 @@ function selectPagesForConsentBannerAudit(auditResult, auditUrl) {
     throw new Error(`Failed to find valid page for consent banner audit for AuditUrl ${auditUrl}`);
   }
 
-  const urlItems = auditResult
-    .find((item) => item.key === 'url')?.value;
+  const urlConsentItems = auditResult
+    .find((item) => item.key === 'urlConsent')?.value;
 
-  return selectTopKByProjectedBounce(urlItems, MAX_PAGES_TO_AUDIT);
+  if (!urlConsentItems) {
+    throw new Error(`Failed to find urlConsent segment for consent banner audit for AuditUrl ${auditUrl}`);
+  }
+
+  // Filter by consent == "show", bounce rate >= 0.7, then find URL with max projected traffic loss
+  const seenConsentItems = urlConsentItems
+    .filter((item) => item.consent === 'show')
+    .filter((item) => item.bounceRate >= 0.7)
+    .sort((a, b) => b.projectedTrafficLost - a.projectedTrafficLost);
+
+  return seenConsentItems.slice(0, MAX_PAGES_TO_AUDIT);
 }
 
 export async function paidConsentBannerCheck(auditUrl, auditData, context, site) {
@@ -230,16 +247,16 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
 
   if (!selectedPage) {
     log.warn(
-      `[paid-audit] [Site: ${auditUrl}] No eligible pages found for consent banner audit; skipping`,
+      `[paid-audit] [Site: ${auditUrl}] No pages with consent='show' found for consent banner audit; skipping`,
     );
     return;
   }
 
   const mystiqueMessage = buildMystiqueMessage(site, id, selectedPage);
 
-  const projected = selected?.projectedBounce;
+  const projected = selected?.projectedTrafficLost;
   log.info(
-    `[paid-audit] [Site: ${auditUrl}] Sending page ${selectedPage} with message `
+    `[paid-audit] [Site: ${auditUrl}] Sending consent-seen page ${selectedPage} with message `
     + `(projectedTrafficLoss: ${projected}) ${JSON.stringify(mystiqueMessage, 2)} `
     + 'evaluation to mystique',
   );
