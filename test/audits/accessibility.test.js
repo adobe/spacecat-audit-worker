@@ -161,7 +161,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        'Missing S3 bucket configuration for accessibility audit',
+        '[A11yProcessingError] Missing S3 bucket configuration for accessibility audit',
       );
 
       expect(result).to.deep.equal({
@@ -841,7 +841,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] Error creating individual opportunities for site test-site-id (https://example.com): Failed to create individual opportunities',
+        '[A11yAudit][A11yProcessingError] Error creating individual opportunities for site test-site-id (https://example.com): Failed to create individual opportunities',
         error,
       );
 
@@ -901,7 +901,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        'Missing S3 bucket configuration for accessibility audit',
+        '[A11yProcessingError] Missing S3 bucket configuration for accessibility audit',
       );
 
       expect(result).to.deep.equal({
@@ -926,7 +926,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] No data aggregated for site test-site-id (https://example.com): No accessibility data found',
+        '[A11yAudit][A11yProcessingError] No data aggregated for site test-site-id (https://example.com): No accessibility data found',
       );
 
       expect(result).to.deep.equal({
@@ -948,7 +948,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] Error processing accessibility data for site test-site-id (https://example.com): S3 connection failed',
+        '[A11yAudit][A11yProcessingError] Error processing accessibility data for site test-site-id (https://example.com): S3 connection failed',
         error,
       );
 
@@ -991,7 +991,7 @@ describe('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] Error generating report opportunities for site test-site-id (https://example.com): Failed to create opportunity',
+        '[A11yAudit][A11yProcessingError] Error generating report opportunities for site test-site-id (https://example.com): Failed to create opportunity',
         error,
       );
 
@@ -1205,7 +1205,7 @@ describe('Accessibility Audit Handler', () => {
       );
 
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit] Error saving a11y metrics to s3 for site test-site-id (https://example.com): S3 upload failed',
+        '[A11yAudit][A11yProcessingError] Error saving a11y metrics to s3 for site test-site-id (https://example.com): S3 upload failed',
         error,
       );
 

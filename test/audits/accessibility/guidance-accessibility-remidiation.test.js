@@ -133,7 +133,7 @@ describe('guidance-accessibility-remediation handler', () => {
     expect(mockContext.log.info).to.have.been.calledWith(expectedLogMessage);
     // eslint-disable-next-line max-len
     expect(mockContext.log.error).to.have.been.calledWith(
-      '[A11yIndividual] Failed to process guidance: Opportunity not found',
+      '[A11yIndividual][A11yProcessingError] Failed to process guidance: Opportunity not found',
     );
     expect(mockHandleAccessibilityRemediationGuidance).to.have.been.calledWith(
       mockMessage,
@@ -177,7 +177,7 @@ describe('guidance-accessibility-remediation handler', () => {
     )}`;
     expect(mockContext.log.info).to.have.been.calledWith(expectedLogMessage);
     expect(mockContext.log.error).to.have.been.calledWith(
-      '[A11yIndividual] Error processing accessibility remediation guidance: Database connection failed',
+      '[A11yIndividual][A11yProcessingError] Error processing accessibility remediation guidance: Database connection failed',
     );
     expect(mockHandleAccessibilityRemediationGuidance).to.have.been.calledWith(
       mockMessage,

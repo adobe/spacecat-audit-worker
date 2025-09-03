@@ -9,28 +9,27 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { createFrom } from '@adobe/spacecat-helix-content-sdk';
+/* eslint-disable no-await-in-loop */
+
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
-import { HeadBucketCommand } from '@aws-sdk/client-s3';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
+import { createLLMOSharepointClient } from '../utils/report-uploader.js';
+import { getConfigs } from './constants/report-configs.js';
+import { getImsOrgId } from '../utils/data-access.js';
 
 async function runCdnLogsReport(url, context, site, auditContext) {
-  const { log, s3Client } = context;
-  const s3Config = getS3Config(site, context);
+  const { log, dataAccess } = context;
+  const s3Config = await getS3Config(site, context);
 
-  try {
-    await s3Client.send(new HeadBucketCommand({ Bucket: s3Config.bucket }));
-  } catch (error) {
-    log.error(`S3 bucket ${s3Config.bucket} is not accessible: ${error.message}`);
+  if (!s3Config?.bucket) {
     return {
       auditResult: {
         success: false,
-        timestamp: new Date().toISOString(),
-        error: `S3 bucket ${s3Config.bucket} is not accessible: ${error.message}`,
-        customer: s3Config.customerName,
+        error: 'No CDN bucket found',
+        completedAt: new Date().toISOString(),
       },
       fullAuditRef: url,
     };
@@ -38,50 +37,48 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
   log.info(`Starting CDN logs report audit for ${url}`);
 
-  const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
-
-  const sharepointClient = await createFrom({
-    clientId: process.env.SHAREPOINT_CLIENT_ID,
-    clientSecret: process.env.SHAREPOINT_CLIENT_SECRET,
-    authority: process.env.SHAREPOINT_AUTHORITY,
-    domainId: process.env.SHAREPOINT_DOMAIN_ID,
-  }, { url: SHAREPOINT_URL, type: 'onedrive' });
-
+  const sharepointClient = await createLLMOSharepointClient(context);
   const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+  /* c8 ignore start */
+  const { orgId } = site.getConfig().getLlmoCdnBucketConfig() || {};
+  // for non-adobe customers, use the orgId from the config
+  const imsOrgId = await getImsOrgId(site, dataAccess, log) || orgId;
+  /* c8 ignore stop */
 
   // create db if not exists
   const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
   const sqlDbDescription = `[Athena Query] Create database ${s3Config.databaseName}`;
   await athenaClient.execute(sqlDb, s3Config.databaseName, sqlDbDescription);
 
-  await ensureTableExists(athenaClient, s3Config, log);
+  const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, imsOrgId);
 
-  const auditResultBase = {
-    success: true,
-    timestamp: new Date().toISOString(),
-    database: s3Config.databaseName,
-    table: s3Config.tableName,
-    customer: s3Config.customerName,
-  };
+  const results = [];
+  for (const reportConfig of reportConfigs) {
+    await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
 
-  log.info('Running weekly report...');
-  const weekOffset = auditContext?.weekOffset || -1;
-  await runWeeklyReport({
-    athenaClient,
-    s3Config,
-    log,
-    site,
-    sharepointClient,
-    weekOffset,
-  });
+    log.info(`Running weekly report: ${reportConfig.name}...`);
+    const weekOffset = auditContext?.weekOffset || -1;
+    await runWeeklyReport({
+      athenaClient,
+      s3Config,
+      reportConfig,
+      log,
+      site,
+      sharepointClient,
+      weekOffset,
+    });
+
+    results.push({
+      name: reportConfig.name,
+      table: reportConfig.tableName,
+      database: s3Config.databaseName,
+      customer: s3Config.customerName,
+    });
+  }
 
   return {
-    auditResult: {
-      ...auditResultBase,
-      reportType: 'cdn-report-weekly',
-      sharePointPath: `/sites/elmo-ui-data/${s3Config.customerName}/`,
-    },
-    fullAuditRef: `${SHAREPOINT_URL}/${s3Config.customerName}/`,
+    auditResult: results,
+    fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };
 }
 

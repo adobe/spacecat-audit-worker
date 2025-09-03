@@ -702,3 +702,95 @@ describe('getProjectedMetrics', () => {
     );
   });
 });
+
+describe('cleanupOutdatedSuggestions', () => {
+  let cleanupOutdatedSuggestions;
+  let logStub;
+
+  beforeEach(async () => {
+    sinon.restore();
+    logStub = {
+      info: sinon.stub(),
+      debug: sinon.stub(),
+      error: sinon.stub(),
+    };
+    const module = await import('../../../src/image-alt-text/opportunityHandler.js');
+    cleanupOutdatedSuggestions = module.cleanupOutdatedSuggestions;
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should cleanup OUTDATED suggestions successfully', async () => {
+    const mockSuggestions = [
+      {
+        getStatus: () => 'OUTDATED',
+        remove: sinon.stub().resolves(),
+      },
+      {
+        getStatus: () => 'OUTDATED',
+        remove: sinon.stub().resolves(),
+      },
+      {
+        getStatus: () => 'NEW',
+        remove: sinon.stub().resolves(),
+      },
+    ];
+
+    const mockOpportunity = {
+      getSuggestions: sinon.stub().resolves(mockSuggestions),
+    };
+
+    await cleanupOutdatedSuggestions(mockOpportunity, logStub);
+
+    // Should remove only OUTDATED suggestions
+    expect(mockSuggestions[0].remove).to.have.been.called;
+    expect(mockSuggestions[1].remove).to.have.been.called;
+    expect(mockSuggestions[2].remove).to.not.have.been.called;
+
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: Cleaned up 2 OUTDATED suggestions',
+    );
+  });
+
+  it('should handle case when no OUTDATED suggestions exist', async () => {
+    const mockSuggestions = [
+      {
+        getStatus: () => 'NEW',
+        remove: sinon.stub().resolves(),
+      },
+      {
+        getStatus: () => 'SKIPPED',
+        remove: sinon.stub().resolves(),
+      },
+    ];
+
+    const mockOpportunity = {
+      getSuggestions: sinon.stub().resolves(mockSuggestions),
+    };
+
+    await cleanupOutdatedSuggestions(mockOpportunity, logStub);
+
+    // Should not remove any suggestions
+    expect(mockSuggestions[0].remove).to.not.have.been.called;
+    expect(mockSuggestions[1].remove).to.not.have.been.called;
+
+    expect(logStub.info).to.have.been.calledWith(
+      '[alt-text]: No OUTDATED suggestions to clean up',
+    );
+  });
+
+  it('should handle errors during cleanup', async () => {
+    const error = new Error('Remove failed');
+    const mockOpportunity = {
+      getSuggestions: sinon.stub().rejects(error),
+    };
+
+    await cleanupOutdatedSuggestions(mockOpportunity, logStub);
+
+    expect(logStub.error).to.have.been.calledWith(
+      '[alt-text]: Failed to cleanup OUTDATED suggestions: Remove failed',
+    );
+  });
+});
