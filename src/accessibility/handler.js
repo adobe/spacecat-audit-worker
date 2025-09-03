@@ -76,7 +76,7 @@ export async function scrapeAccessibilityData(context) {
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
-    log.error(errorMsg);
+    log.error(`[A11yProcessingError] ${errorMsg}`);
     return {
       status: 'PROCESSING_FAILED',
       error: errorMsg,
@@ -153,7 +153,7 @@ export async function processAccessibilityOpportunities(context) {
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   if (!bucketName) {
     const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
-    log.error(errorMsg);
+    log.error(`[A11yProcessingError] ${errorMsg}`);
     return {
       status: 'PROCESSING_FAILED',
       error: errorMsg,
@@ -176,14 +176,14 @@ export async function processAccessibilityOpportunities(context) {
     );
 
     if (!aggregationResult.success) {
-      log.error(`[A11yAudit] No data aggregated for site ${siteId} (${site.getBaseURL()}): ${aggregationResult.message}`);
+      log.error(`[A11yAudit][A11yProcessingError] No data aggregated for site ${siteId} (${site.getBaseURL()}): ${aggregationResult.message}`);
       return {
         status: 'NO_OPPORTUNITIES',
         message: aggregationResult.message,
       };
     }
   } catch (error) {
-    log.error(`[A11yAudit] Error processing accessibility data for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+    log.error(`[A11yAudit][A11yProcessingError] Error processing accessibility data for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,
@@ -201,7 +201,7 @@ export async function processAccessibilityOpportunities(context) {
       AUDIT_TYPE_ACCESSIBILITY,
     );
   } catch (error) {
-    log.error(`[A11yAudit] Error generating report opportunities for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+    log.error(`[A11yAudit][A11yProcessingError] Error generating report opportunities for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,
@@ -216,7 +216,7 @@ export async function processAccessibilityOpportunities(context) {
     );
     log.debug(`[A11yAudit] Individual opportunities created successfully for site ${siteId} (${site.getBaseURL()})`);
   } catch (error) {
-    log.error(`[A11yAudit] Error creating individual opportunities for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+    log.error(`[A11yAudit][A11yProcessingError] Error creating individual opportunities for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,
@@ -233,7 +233,7 @@ export async function processAccessibilityOpportunities(context) {
     );
     log.debug(`[A11yAudit] Saved a11y metrics for site ${siteId} - Result:`, metricsResult);
   } catch (error) {
-    log.error(`[A11yAudit] Error saving a11y metrics to s3 for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+    log.error(`[A11yAudit][A11yProcessingError] Error saving a11y metrics to s3 for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,

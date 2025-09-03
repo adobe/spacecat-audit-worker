@@ -15,66 +15,64 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import nock from 'nock';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
 
-const sandbox = sinon.createSandbox();
-
-let runCdnLogsReport;
-
-describe('CDN Logs Report Audit', () => {
+describe('CDN Logs Report Handler', () => {
+  let sandbox;
   let context;
-  const site = {
-    getId: () => 'test-site',
-    getBaseURL: () => 'https://example.com',
-  };
-
-  const mockGetS3Config = sandbox.stub().returns({
-    databaseName: 'test_db',
-    tableName: 'test_table',
-    customerName: 'test_customer',
-    bucket: 'test-bucket',
-    getAthenaTempLocation: () => 's3://temp-location',
-  });
-
-  const mockLoadSql = sandbox.stub().resolves('CREATE DATABASE test_db');
-  const mockEnsureTableExists = sandbox.stub().resolves();
-  const mockAthenaExecute = sandbox.stub().resolves();
-  const mockRunWeeklyReport = sandbox.stub().resolves();
-  const mockRunCustomDateRangeReport = sandbox.stub().resolves();
-  const mockHelixWrite = sandbox.stub();
+  let site;
+  let runCdnLogsReport;
+  let mockGetS3Config;
+  let mockLoadSql;
+  let mockEnsureTableExists;
+  let mockAthenaExecute;
+  let mockRunWeeklyReport;
+  let mockCreateLLMOSharepointClient;
 
   beforeEach(async () => {
-    sandbox.reset();
+    sandbox = sinon.createSandbox();
+
+    site = {
+      getId: () => 'test-site',
+      getBaseURL: () => 'https://example.com',
+      getConfig: () => ({
+        getLlmoDataFolder: () => 'test-folder',
+        getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        getCdnLogsConfig: () => null,
+      }),
+    };
 
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
-        runtime: { name: 'aws-lambda', region: 'us-east-1' },
-        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
-        message: {},
-        athenaClient: {
-          execute: mockAthenaExecute,
-        },
-        helixContent: {
-          write: mockHelixWrite,
+        log: {
+          info: sandbox.spy(),
+          debug: sandbox.spy(),
+          warn: sandbox.spy(),
+          error: sandbox.spy(),
         },
         s3Client: {
           send: sandbox.stub().resolves(),
         },
+        dataAccess: { Organization: { findById: sandbox.stub() } },
       })
       .build();
 
-    mockGetS3Config.returns({
-      databaseName: 'test_db',
-      tableName: 'test_table',
-      customerName: 'test_customer',
+    mockGetS3Config = sandbox.stub().resolves({
       bucket: 'test-bucket',
+      databaseName: 'test_db',
+      customerName: 'test_customer',
       getAthenaTempLocation: () => 's3://temp-location',
     });
+
+    mockLoadSql = sandbox.stub().resolves('CREATE DATABASE test_db');
+    mockEnsureTableExists = sandbox.stub().resolves();
+    mockAthenaExecute = sandbox.stub().resolves();
+    mockRunWeeklyReport = sandbox.stub().resolves();
+    mockCreateLLMOSharepointClient = sandbox.stub().resolves({});
 
     const handlerModule = await esmock('../../../src/cdn-logs-report/handler.js', {
       '../../../src/cdn-logs-report/utils/report-utils.js': {
@@ -91,12 +89,12 @@ describe('CDN Logs Report Audit', () => {
       },
       '../../../src/cdn-logs-report/utils/report-runner.js': {
         runWeeklyReport: mockRunWeeklyReport,
-        runCustomDateRangeReport: mockRunCustomDateRangeReport,
       },
-      '@adobe/spacecat-helix-content-sdk': {
-        createFrom: sandbox.stub().resolves({
-          write: mockHelixWrite,
-        }),
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: mockCreateLLMOSharepointClient,
+      },
+      '../../../src/utils/data-access.js': {
+        getImsOrgId: () => Promise.resolve('ims-org-id'),
       },
     });
 
@@ -105,39 +103,105 @@ describe('CDN Logs Report Audit', () => {
 
   afterEach(() => {
     sandbox.restore();
-    nock.cleanAll();
   });
 
-  it('runs weekly CDN logs report', async () => {
+  it('runs CDN logs report successfully', async () => {
     const result = await runCdnLogsReport('https://example.com', context, site);
 
-    expect(context.log.info).to.have.been.calledWith('Running weekly report...');
-    expect(result.auditResult.reportType).to.equal('cdn-report-weekly');
-    expect(result.auditResult.database).to.equal('test_db');
-    expect(result.auditResult.customer).to.equal('test_customer');
-    expect(result.fullAuditRef).to.include('test_customer');
+    expect(mockGetS3Config).to.have.been.calledWith(site, context);
+    expect(mockCreateLLMOSharepointClient).to.have.been.calledWith(context);
+    expect(mockLoadSql).to.have.been.calledWith('create-database', { database: 'test_db' });
+    expect(mockAthenaExecute).to.have.been.callCount(1);
+    expect(mockEnsureTableExists).to.have.been.callCount(2);
+    expect(mockRunWeeklyReport).to.have.been.callCount(2);
+    expect(context.log.info).to.have.been.calledWith('Starting CDN logs report audit for https://example.com');
+    expect(context.log.info).to.have.been.calledWith('Running weekly report: agentic...');
+    expect(context.log.info).to.have.been.calledWith('Running weekly report: referral...');
+
+    expect(result.auditResult).to.deep.equal([{
+      customer: 'test_customer',
+      database: 'test_db',
+      name: 'agentic',
+      table: 'aggregated_logs_undefined',
+    }, {
+      customer: 'test_customer',
+      database: 'test_db',
+      name: 'referral',
+      table: 'aggregated_referral_logs_undefined',
+    }]);
+    expect(result.fullAuditRef).to.equal('test-folder');
   });
 
-  it('runs weekly CDN logs report with weekOffset', async () => {
-    const result = await runCdnLogsReport('https://example.com', context, site, { weekOffset: '-2' });
-
-    expect(context.log.info).to.have.been.calledWith('Running weekly report...');
-    expect(result.auditResult.reportType).to.equal('cdn-report-weekly');
-    expect(result.auditResult.database).to.equal('test_db');
-    expect(result.auditResult.customer).to.equal('test_customer');
-    expect(result.fullAuditRef).to.include('test_customer');
-  });
-
-  it('returns error when S3 bucket is not accessible', async () => {
-    context.s3Client.send.rejects(new Error('AccessDenied: Bucket not accessible'));
+  it('handles no CDN bucket found', async () => {
+    mockGetS3Config.resolves(null);
 
     const result = await runCdnLogsReport('https://example.com', context, site);
 
-    expect(context.log.error).to.have.been.calledWith('S3 bucket test-bucket is not accessible: AccessDenied: Bucket not accessible');
-    expect(result.auditResult.success).to.be.false;
-    expect(result.auditResult.error).to.include('S3 bucket test-bucket is not accessible');
-    expect(result.auditResult.customer).to.equal('test_customer');
+    expect(result.auditResult).to.have.property('success', false);
+    expect(result.auditResult).to.have.property('error', 'No CDN bucket found');
+    expect(result.auditResult).to.have.property('completedAt');
+    expect(result.auditResult.completedAt).to.be.a('string');
     expect(result.fullAuditRef).to.equal('https://example.com');
-    expect(context.log.info).to.not.have.been.calledWith('Running weekly report...');
+  });
+
+  it('handles missing bucket in S3 config', async () => {
+    mockGetS3Config.resolves({ bucket: null });
+
+    const result = await runCdnLogsReport('https://example.com', context, site);
+
+    expect(result.auditResult).to.have.property('success', false);
+    expect(result.auditResult).to.have.property('error', 'No CDN bucket found');
+    expect(result.auditResult).to.have.property('completedAt');
+    expect(result.auditResult.completedAt).to.be.a('string');
+  });
+
+  it('passes weekOffset to runWeeklyReport', async () => {
+    const auditContext = { weekOffset: -2 };
+
+    await runCdnLogsReport('https://example.com', context, site, auditContext);
+
+    expect(mockRunWeeklyReport).to.have.been.calledWith({
+      athenaClient: sinon.match.object,
+      s3Config: sinon.match.object,
+      reportConfig: sinon.match.has('name', 'agentic'),
+      log: context.log,
+      site,
+      sharepointClient: sinon.match.object,
+      weekOffset: -2,
+    });
+
+    expect(mockRunWeeklyReport).to.have.been.calledWith({
+      athenaClient: sinon.match.object,
+      s3Config: sinon.match.object,
+      reportConfig: sinon.match.has('name', 'referral'),
+      log: context.log,
+      site,
+      sharepointClient: sinon.match.object,
+      weekOffset: -2,
+    });
+  });
+
+  it('uses default weekOffset when not provided', async () => {
+    await runCdnLogsReport('https://example.com', context, site);
+
+    expect(mockRunWeeklyReport).to.have.been.calledWithMatch({
+      athenaClient: sinon.match.object,
+      s3Config: sinon.match.object,
+      reportConfig: sinon.match.has('name', 'agentic'),
+      log: context.log,
+      site,
+      sharepointClient: sinon.match.object,
+      weekOffset: -1,
+    });
+
+    expect(mockRunWeeklyReport).to.have.been.calledWithMatch({
+      athenaClient: sinon.match.object,
+      s3Config: sinon.match.object,
+      reportConfig: sinon.match.has('name', 'referral'),
+      log: context.log,
+      site,
+      sharepointClient: sinon.match.object,
+      weekOffset: -1,
+    });
   });
 });

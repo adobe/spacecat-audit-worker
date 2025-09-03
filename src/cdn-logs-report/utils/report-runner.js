@@ -10,16 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import {
-  generatePeriodIdentifier,
-  generateReportingPeriods,
-  buildSiteFilters,
-} from './report-utils.js';
+import { generatePeriodIdentifier, generateReportingPeriods } from './report-utils.js';
 import { saveExcelReport } from '../../utils/report-uploader.js';
 import { createExcelReport } from './excel-generator.js';
-import { AGENTIC_REPORT_CONFIG } from '../constants/report-configs.js';
 
-export async function runReport(athenaClient, s3Config, log, options = {}) {
+export async function runReport(reportConfig, athenaClient, s3Config, log, options = {}) {
   const {
     site,
     sharepointClient,
@@ -33,39 +28,42 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
   const periodEnd = week.endDate;
   const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
 
-  log.info(`Running agentic report for ${periodIdentifier} (week offset: ${weekOffset})`);
-  const { filters } = site.getConfig().getCdnLogsConfig() || {};
-  const llmoFolder = site.getConfig()?.getLlmoDataFolder() || s3Config.customerName;
-  const outputLocation = `${llmoFolder}/${AGENTIC_REPORT_CONFIG.folderSuffix}`;
+  log.info(`Running ${reportConfig.name} report for ${periodIdentifier} (week offset: ${weekOffset})`);
+  /* c8 ignore next */
+  const llmoFolder = site.getConfig()?.getLlmoDataFolder();
+  const outputLocation = `${llmoFolder}/${reportConfig.folderSuffix}`;
 
   try {
-    const { databaseName, tableName } = s3Config;
-    const siteFilters = buildSiteFilters(filters);
+    const { databaseName } = s3Config;
+    const { tableName } = reportConfig;
 
     const queryOptions = {
       periods,
       databaseName,
       tableName,
-      siteFilters,
       site,
     };
 
-    const query = await AGENTIC_REPORT_CONFIG.queryFunction(queryOptions);
+    const query = await reportConfig.queryFunction(queryOptions);
     const results = await athenaClient.query(
       query,
       s3Config.databaseName,
-      '[Athena Query] agentic_flat_data',
+      `[Athena Query] ${reportConfig.name}_flat_data`,
     );
 
-    const reportData = { [AGENTIC_REPORT_CONFIG.sheetName]: results };
-    const reportConfig = {
-      workbookCreator: AGENTIC_REPORT_CONFIG.workbookCreator,
-      sheets: [{ name: AGENTIC_REPORT_CONFIG.sheetName, dataKey: AGENTIC_REPORT_CONFIG.sheetName, type: 'agentic' }],
+    const reportData = { [reportConfig.sheetName]: results };
+    const excelConfig = {
+      workbookCreator: reportConfig.workbookCreator,
+      sheets: [{
+        name: reportConfig.sheetName,
+        dataKey: reportConfig.sheetName,
+        type: reportConfig.name,
+      }],
     };
 
-    const filename = `${AGENTIC_REPORT_CONFIG.filePrefix}-${periodIdentifier}.xlsx`;
+    const filename = `${reportConfig.filePrefix}-${periodIdentifier}.xlsx`;
 
-    const workbook = await createExcelReport(reportData, reportConfig);
+    const workbook = await createExcelReport(reportData, excelConfig, site);
 
     await saveExcelReport({
       workbook,
@@ -75,7 +73,7 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
       filename,
     });
   } catch (error) {
-    log.error(`Agentic report generation failed: ${error.message}`);
+    log.error(`${reportConfig.name} report generation failed: ${error.message}`);
     throw error;
   }
 }
@@ -83,20 +81,21 @@ export async function runReport(athenaClient, s3Config, log, options = {}) {
 export async function runWeeklyReport({
   athenaClient,
   s3Config,
+  reportConfig,
   log,
   site,
   sharepointClient,
   weekOffset,
 }) {
   try {
-    log.info(`Starting agentic report for week offset: ${weekOffset}...`);
-    await runReport(athenaClient, s3Config, log, {
+    log.info(`Starting ${reportConfig.name} report for week offset: ${weekOffset}...`);
+    await runReport(reportConfig, athenaClient, s3Config, log, {
       site,
       sharepointClient,
       weekOffset,
     });
-    log.info('Successfully completed agentic report');
+    log.info(`Successfully completed ${reportConfig.name} report`);
   } catch (error) {
-    log.error(`Failed to generate agentic report: ${error.message}`);
+    log.error(`Failed to generate ${reportConfig.name} report: ${error.message}`);
   }
 }
