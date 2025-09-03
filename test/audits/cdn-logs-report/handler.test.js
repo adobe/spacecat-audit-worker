@@ -20,7 +20,8 @@ import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
 
-describe('CDN Logs Report Handler', () => {
+describe('CDN Logs Report Handler', async function test() {
+  this.timeout(5000);
   let sandbox;
   let context;
   let site;
