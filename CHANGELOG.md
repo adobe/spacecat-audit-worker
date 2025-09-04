@@ -1,3 +1,10 @@
+## [1.173.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.173.2...v1.173.3) (2025-09-04)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** add step for OpTel import ([#1225](https://github.com/adobe/spacecat-audit-worker/issues/1225)) ([d4dd5df](https://github.com/adobe/spacecat-audit-worker/commit/d4dd5dfd04b8bcde9e077e0b44d0a6642cbcd3d7))
+
 ## [1.173.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.173.1...v1.173.2) (2025-09-04)
 
 
