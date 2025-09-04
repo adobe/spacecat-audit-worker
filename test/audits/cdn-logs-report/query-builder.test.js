@@ -42,16 +42,13 @@ describe('CDN Logs Query Builder', () => {
         getBaseURL: () => 'https://adobe.com',
         getConfig: () => ({
           getLlmoDataFolder: () => null,
-          getLlmoCdnlogsFilter: () => [],
-          getCdnLogsConfig: () => ({
-            filters: [{
-              value: [
-                'www.another.com',
-              ],
-              key: 'host',
-            },
+          getLlmoCdnlogsFilter: () => [{
+            value: [
+              'www.another.com',
             ],
-          }),
+            key: 'host',
+          }],
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
         }),
       },
     };
@@ -73,9 +70,7 @@ describe('CDN Logs Query Builder', () => {
   it('handles site filters correctly', async () => {
     mockOptions.site.getConfig = () => ({
       getLlmoDataFolder: () => null,
-      getCdnLogsConfig: () => ({
-        filters: [{ value: ['test'], key: 'url' }],
-      }),
+      getLlmoCdnlogsFilter: () => [{ value: ['test'], key: 'url' }],
     });
 
     const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
@@ -86,7 +81,6 @@ describe('CDN Logs Query Builder', () => {
   it('handles llmo cdn logs site filters correctly', async () => {
     mockOptions.site.getConfig = () => ({
       getLlmoDataFolder: () => null,
-      getCdnLogsConfig: () => ({}),
       getLlmoCdnlogsFilter: () => (
         [{ value: ['test'], key: 'url' }]
       ),
@@ -142,7 +136,6 @@ describe('CDN Logs Query Builder', () => {
     mockOptions.site.getConfig = () => ({
       getLlmoDataFolder: () => null,
       getLlmoCdnlogsFilter: () => [],
-      getCdnLogsConfig: () => ({}),
     });
 
     const query = await localQueries.createAgenticReportQuery(mockOptions);

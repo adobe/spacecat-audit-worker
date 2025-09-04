@@ -89,7 +89,7 @@ async function runAgenticAndReferralTrafficStep(context) {
     urls,
     maxScrapeAge: 24 * 7,
     options: {
-      takeScreenshot: false,
+      screenshotTypes: [],
     },
   };
 }
