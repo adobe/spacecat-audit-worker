@@ -538,7 +538,7 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
       time: new Date().toISOString(),
       // keys inside data should follow snake case and outside should follow camel case
       data: {
-        url: opptyData.data?.form || '',
+        url: opptyData.type === 'forms-accessibility' ? opptyData.data?.accessibility?.[0]?.form || '' : opptyData.data?.form || '',
         cr: opptyData.data?.trackedFormKPIValue || 0,
         metrics: opptyData.data?.metrics || {},
         cta_source: opptyData.data?.formNavigation?.source || '',
