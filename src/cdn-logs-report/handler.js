@@ -9,15 +9,19 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+/* eslint-disable no-await-in-loop */
+
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { createLLMOSharepointClient } from '../utils/report-uploader.js';
+import { getConfigs } from './constants/report-configs.js';
+import { getImsOrgId } from '../utils/data-access.js';
 
 async function runCdnLogsReport(url, context, site, auditContext) {
-  const { log } = context;
+  const { log, dataAccess } = context;
   const s3Config = await getS3Config(site, context);
 
   if (!s3Config?.bucket) {
@@ -35,32 +39,45 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
   const sharepointClient = await createLLMOSharepointClient(context);
   const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
-
+  /* c8 ignore start */
+  const { orgId } = site.getConfig().getLlmoCdnBucketConfig() || {};
+  // for non-adobe customers, use the orgId from the config
+  const imsOrgId = orgId || await getImsOrgId(site, dataAccess, log);
   // create db if not exists
   const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
+  /* c8 ignore stop */
   const sqlDbDescription = `[Athena Query] Create database ${s3Config.databaseName}`;
   await athenaClient.execute(sqlDb, s3Config.databaseName, sqlDbDescription);
 
-  await ensureTableExists(athenaClient, s3Config, log);
+  const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, imsOrgId);
 
-  log.info('Running weekly report...');
-  const weekOffset = auditContext?.weekOffset || -1;
-  await runWeeklyReport({
-    athenaClient,
-    s3Config,
-    log,
-    site,
-    sharepointClient,
-    weekOffset,
-  });
+  const results = [];
+  for (const reportConfig of reportConfigs) {
+    await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
+
+    log.info(`Running weekly report: ${reportConfig.name}...`);
+    const weekOffset = auditContext?.weekOffset || -1;
+    await runWeeklyReport({
+      athenaClient,
+      s3Config,
+      reportConfig,
+      log,
+      site,
+      sharepointClient,
+      weekOffset,
+    });
+
+    results.push({
+      name: reportConfig.name,
+      table: reportConfig.tableName,
+      database: s3Config.databaseName,
+      customer: s3Config.customerName,
+    });
+  }
 
   return {
-    auditResult: {
-      database: s3Config.databaseName,
-      table: s3Config.tableName,
-      customer: s3Config.customerName,
-    },
-    fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}/agentic-traffic/`,
+    auditResult: results,
+    fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };
 }
 

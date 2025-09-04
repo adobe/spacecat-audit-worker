@@ -31,7 +31,7 @@ function getGuidanceObj(guidance) {
 }
 
 export default async function handler(message, context) {
-  const { log, dataAccess, env } = context;
+  const { log, dataAccess } = context;
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
   const { url, guidance } = data;
@@ -71,11 +71,17 @@ export default async function handler(message, context) {
   }
   const existingSuggestions = await opportunity.getSuggestions();
 
-  // delete previous suggestions if any
-  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
-
-  const suggestionData = mapToPaidSuggestion(env, siteId, opportunity.getId(), url, guidanceParsed);
+  const suggestionData = await mapToPaidSuggestion(
+    context,
+    siteId,
+    opportunity.getId(),
+    url,
+    guidanceParsed,
+  );
   await Suggestion.create(suggestionData);
+
+  // delete previous suggestions only after new one is successfully created
+  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
 
   log.info(`paid-cookie-consent  opportunity succesfully added for site: ${siteId} page: ${url} audit: ${auditId}  opportunity: ${JSON.stringify(opportunity, null, 2)}`);
 

@@ -70,15 +70,11 @@ export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
 export async function validateCanonicalTag(url, log, options = {}, isPreview = false) {
   // in case of undefined or null URL in the 200 top pages list
   if (!url) {
-    const errorMessage = 'URL is undefined or null';
-    log.error(errorMessage);
+    log.error('URL is undefined or null, cannot validate canonical tags');
+    // Return empty result - URL validation errors should only be logged
     return {
       canonicalUrl: null,
-      checks: [{
-        check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-        success: false,
-        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-      }],
+      checks: [],
     };
   }
 
@@ -144,9 +140,9 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
               check: CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.check,
               success: true,
             });
-            const canonicalPath = new URL(canonicalUrl).pathname;
-            const finalPath = new URL(finalUrl).pathname;
             const normalize = (u) => (typeof u === 'string' && u.endsWith('/') ? u.slice(0, -1) : u);
+            const canonicalPath = normalize(new URL(canonicalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
+            const finalPath = normalize(new URL(finalUrl).pathname).replace(/\/([^/]+)\.[a-zA-Z0-9]+$/, '/$1');
             const normalizedCanonical = normalize(canonicalUrl);
             const normalizedFinal = normalize(finalUrl);
             if ((isPreview && canonicalPath === finalPath)
@@ -223,11 +219,7 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
     base = new URL(baseUrl);
   } catch {
     log.error(`Invalid URL: ${baseUrl}`);
-    checks.push({
-      check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-      success: false,
-      explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-    });
+    // Skip adding check for invalid URL - validation errors should only be logged
     return checks;
   }
 
@@ -249,11 +241,8 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
         });
       }
     } else {
-      checks.push({
-        check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-        success: false,
-        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-      });
+      log.error(`Canonical URL is not a string: ${typeof canonicalUrl}`);
+      // Skip adding check for invalid type - validation errors should only be logged
       return checks;
     }
   }
@@ -276,12 +265,8 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
     try {
       url = new URL(canonicalUrl);
     } catch {
-      log.error(`Invalid URL: ${canonicalUrl}`);
-      checks.push({
-        check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-        success: false,
-        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-      });
+      log.error(`Invalid canonical URL: ${canonicalUrl}`);
+      // Skip adding check for invalid URL - validation errors should only be logged
       return checks;
     }
 

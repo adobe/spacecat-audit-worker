@@ -736,6 +736,12 @@ export const issueTypesForMystique = [
   'aria-prohibited-attr',
   'aria-roles',
   'aria-hidden-focus',
+  'aria-required-attr',
+  'aria-valid-attr-value',
+  'button-name',
+  'link-name',
+  'select-name',
+  'aria-required-parent',
 ];
 
 /**
