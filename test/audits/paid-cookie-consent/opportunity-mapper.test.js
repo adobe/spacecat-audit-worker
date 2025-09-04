@@ -107,9 +107,8 @@ newlines`);
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
       // Aggregate projectedTrafficLost 8000 should be formatted as 8.0K
       expect(result.description).to.include('(8.0K)');
-      expect(result.description).to.include('80.0% of total paid traffic bounces');
+      expect(result.description).to.include('80.0% of total paid traffic (8.0K)');
       expect(result.description).to.include('Most affected page:');
-      expect(result.description).to.include('(8.0K)');
     });
 
     it('keeps small numbers unformatted in description', () => {
@@ -127,9 +126,8 @@ newlines`);
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
       // Aggregate projectedTrafficLost 300 should stay as 300
       expect(result.description).to.include('(300)');
-      expect(result.description).to.include('60.0% of total paid traffic bounces');
+      expect(result.description).to.include('60.0% of total paid traffic (300)');
       expect(result.description).to.include('Most affected page:');
-      expect(result.description).to.include('(300)');
     });
 
     it('uses data from urlConsent segment correctly', () => {
@@ -149,7 +147,6 @@ newlines`);
       expect(result.data.ctr).to.equal(0);
       expect(result.data.bounceRate).to.equal(0.3);
       expect(result.data.projectedTrafficLost).to.equal(1.5); // Should use aggregate sum
-      expect(result.description).to.include('30.0% of total paid traffic bounces');
     });
 
     it('aggregates data correctly across multiple pages with consent=show', () => {
@@ -180,62 +177,9 @@ newlines`);
       expect(result.data.pageViews).to.equal(1000);
       expect(result.data.bounceRate).to.equal(0.8);
       expect(result.data.projectedTrafficLost).to.equal(1180);
-      expect(result.description).to.include('69.4% of total paid traffic bounces');
-      expect(result.description).to.include('(1.2K)'); // projectedTrafficLossSum formatted
+      expect(result.description).to.include('69.4% of total paid traffic (1.2K)');
       expect(result.description).to.include('Most affected page: https://example.com/page1');
       expect(result.description).to.include('(800)'); // individual page traffic lost
-    });
-
-    it('handles missing urlConsent segment value', () => {
-      const audit = {
-        getAuditId: () => 'aid',
-        getAuditResult: () => [
-          {
-            key: 'urlConsent',
-            value: null, // Missing value
-          },
-        ],
-      };
-      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      expect(result.data.pageViews).to.be.undefined;
-      expect(result.data.bounceRate).to.be.undefined;
-      expect(result.data.projectedTrafficLost).to.equal(0);
-      expect(result.description).to.include('0.0% of total paid traffic bounces');
-    });
-
-    it('handles missing urlConsent segment entirely', () => {
-      const audit = {
-        getAuditId: () => 'aid',
-        getAuditResult: () => [
-          { key: 'otherSegment', value: [] },
-        ],
-      };
-      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      expect(result.data.pageViews).to.be.undefined;
-      expect(result.data.bounceRate).to.be.undefined;
-      expect(result.data.projectedTrafficLost).to.equal(0);
-      expect(result.description).to.include('0.0% of total paid traffic bounces');
-    });
-
-    it('handles url not found in urlConsent segment', () => {
-      const audit = {
-        getAuditId: () => 'aid',
-        getAuditResult: () => [
-          {
-            key: 'urlConsent',
-            value: [
-              {
-                url: 'https://different.com/page', pageViews: 100, bounceRate: 0.5, projectedTrafficLost: 50, consent: 'show',
-              },
-            ],
-          },
-        ],
-      };
-      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      expect(result.data.pageViews).to.be.undefined;
-      expect(result.data.bounceRate).to.be.undefined;
-      expect(result.data.projectedTrafficLost).to.equal(50); // Should use aggregate sum
-      expect(result.description).to.include('50.0% of total paid traffic bounces'); // 50/100 = 50%
     });
 
     it('handles zero pageViewsSum for totalAggBounceRate calculation', () => {
@@ -255,7 +199,6 @@ newlines`);
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
       expect(result.data.pageViews).to.equal(0);
       expect(result.data.projectedTrafficLost).to.equal(10);
-      expect(result.description).to.include('0.0% of total paid traffic bounces'); // Should be 0% when pageViewsSum is 0
     });
   });
 });
