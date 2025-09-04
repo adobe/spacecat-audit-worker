@@ -66,6 +66,51 @@ function delay(ms) {
 }
 
 /**
+ * Helper function to try HEAD request first, then GET on 404
+ * This handles cases where servers return 404 for HEAD but 200 for GET
+ */
+async function fetchWithHeadFallback(url, options = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    // Try HEAD request first
+    const headResponse = await fetch(url, {
+      ...options,
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    // If HEAD returns 404, try GET as fallback
+    if (headResponse.status === 404) {
+      const getTimeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+      try {
+        const getResponse = await fetch(url, {
+          ...options,
+          method: 'GET',
+          signal: controller.signal,
+        });
+
+        clearTimeout(getTimeoutId);
+        return getResponse;
+      } catch {
+        clearTimeout(getTimeoutId);
+        // If GET also fails, return the original HEAD response
+        return headResponse;
+      }
+    }
+
+    return headResponse;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
+/**
  * Fetches content with timeout control
  */
 export async function fetchContent(targetUrl) {
@@ -167,22 +212,15 @@ export async function filterValidUrls(urls) {
     };
   }
 
-  const controller = new AbortController();
   const results = {
     ok: [], notOk: [], networkErrors: [], otherStatusCodes: [],
   };
 
   const checkUrl = async (url) => {
     try {
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-      const response = await fetch(url, {
-        method: 'HEAD',
+      const response = await fetchWithHeadFallback(url, {
         redirect: 'manual',
-        signal: controller.signal,
       });
-
-      clearTimeout(timeoutId);
 
       // Handle successful responses
       if (response.status === 200) {
@@ -203,13 +241,9 @@ export async function filterValidUrls(urls) {
         if (finalUrl) {
           let is404 = false;
           try {
-            const redirectTimeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-            const redirectResponse = await fetch(finalUrl, {
-              method: 'HEAD',
+            const redirectResponse = await fetchWithHeadFallback(finalUrl, {
               redirect: 'follow',
-              signal: controller.signal,
             });
-            clearTimeout(redirectTimeoutId);
             is404 = redirectResponse.status === 404;
           } catch {
             // the fetch for the redirect URL can fail for various reasons (e.g. network error).
@@ -570,7 +604,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
       rank: 0,
       data: issue,
     }),
-    log,
   });
 
   return { ...auditData };

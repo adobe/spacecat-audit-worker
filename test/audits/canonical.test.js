@@ -20,9 +20,10 @@ import nock from 'nock';
 import esmock from 'esmock';
 import {
   getTopPagesForSiteId, validateCanonicalTag, validateCanonicalFormat,
-  validateCanonicalRecursively, canonicalAuditRunner, CANONICAL_CHECKS,
+  validateCanonicalRecursively, canonicalAuditRunner,
   generateCanonicalSuggestion, generateSuggestions, opportunityAndSuggestions,
 } from '../../src/canonical/handler.js';
+import { CANONICAL_CHECKS } from '../../src/canonical/constants.js';
 import { createOpportunityData } from '../../src/canonical/opportunity-data-mapper.js';
 
 use(sinonChai);
@@ -32,6 +33,7 @@ describe('Canonical URL Tests', () => {
   let log;
   beforeEach(() => {
     log = {
+      debug: sinon.stub(),
       info: sinon.stub(),
       error: sinon.stub(),
     };
@@ -214,6 +216,50 @@ describe('Canonical URL Tests', () => {
       });
       expect(log.info).to.have.been.calledWith('Canonical tag is not in the head section');
     });
+
+    it('should follow redirects and validate canonical tag on the final destination page', async () => {
+      const originalUrl = 'http://example.com/old';
+      const finalUrl = 'http://example.com/new';
+      const finalHtml = `<html lang="en"><head><link rel="canonical" href="${finalUrl}"><title>test</title></head><body></body></html>`;
+
+      nock('http://example.com')
+        .get('/old')
+        .reply(301, undefined, { Location: finalUrl });
+
+      nock('http://example.com')
+        .get('/new')
+        .reply(200, finalHtml);
+
+      const result = await validateCanonicalTag(originalUrl, log);
+
+      expect(result.canonicalUrl).to.equal(finalUrl);
+      expect(result.checks).to.deep.include({
+        check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+        success: true,
+      });
+    });
+
+    it('should resolve relative canonical against the final destination after redirect', async () => {
+      const originalUrl = 'https://example.com/a';
+      const finalUrl = 'https://example.com/b';
+      const html = '<html lang="en"><head><link rel="canonical" href="/b"><title>test</title></head><body></body></html>';
+
+      nock('https://example.com')
+        .get('/a')
+        .reply(301, undefined, { Location: finalUrl });
+
+      nock('https://example.com')
+        .get('/b')
+        .reply(200, html);
+
+      const result = await validateCanonicalTag(originalUrl, log);
+
+      expect(result.canonicalUrl).to.equal(finalUrl);
+      expect(result.checks).to.deep.include({
+        check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+        success: true,
+      });
+    });
   });
 
   describe('validateCanonicalUrlFormat', () => {
@@ -255,8 +301,8 @@ describe('Canonical URL Tests', () => {
       expect(log.error).to.have.been.calledWith('Invalid URL: invalid-url');
     });
 
-    it('should handle non-lowercase canonical URL', () => {
-      const canonicalUrl = 'https://example.com/UpperCase';
+    it('should handle uppercase canonical URL', () => {
+      const canonicalUrl = 'HTTPS://EXAMPLE.COM/UPPERCASE';
       const baseUrl = 'https://example.com';
       const result = validateCanonicalFormat(canonicalUrl, baseUrl, log);
 
@@ -265,7 +311,7 @@ describe('Canonical URL Tests', () => {
         success: false,
         explanation: CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.explanation,
       });
-      expect(log.info).to.have.been.calledWith('Canonical URL is not lowercased: https://example.com/UpperCase');
+      expect(log.info).to.have.been.calledWith('Canonical URL is fully uppercased: HTTPS://EXAMPLE.COM/UPPERCASE');
     });
 
     it('should pass if canonical URL is in lowercase', () => {
@@ -693,6 +739,50 @@ describe('Canonical URL Tests', () => {
       expect(retrievePageAuthenticationStub).to.have.been.calledOnceWith(site, context);
       expect(log.error).to.have.been.calledWith('Error retrieving page authentication for pageUrl http://example.page: Something went wrong');
     });
+
+    it('should skip login/authentication pages from canonical checks', async () => {
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/page1';
+      const html = `<html lang="en"><head><link rel="canonical" href="${pageURL}"><title>test</title></head><body></body></html>`;
+
+      nock('https://example.com').get('/page1').twice().reply(200, html);
+
+      const getTopPagesForSiteStub = sinon.stub().resolves([
+        { getUrl: () => 'https://example.com/login' },
+        { getUrl: () => 'https://example.com/signin' },
+        { getUrl: () => 'https://example.com/auth' },
+        { getUrl: () => 'https://example.com/auth/user' },
+        { getUrl: () => 'https://example.com/oauth/callback' },
+        { getUrl: () => 'https://example.com/sso' },
+        { getUrl: () => pageURL },
+      ]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('fullAuditRef', baseURL);
+      expect(result).to.have.property('auditResult');
+      expect(result.auditResult).to.deep.equal({
+        status: 'success',
+        message: 'No canonical issues detected',
+      });
+
+      // Verify log entries for skipped pages
+      expect(log.info).to.have.been.calledWith('Skipping canonical checks for auth/login page: https://example.com/login');
+      expect(log.info).to.have.been.calledWith('Skipping canonical checks for auth/login page: https://example.com/signin');
+      expect(log.info).to.have.been.calledWith('Skipping canonical checks for auth/login page: https://example.com/auth');
+      expect(log.info).to.have.been.calledWith('Skipping canonical checks for auth/login page: https://example.com/auth/user');
+      expect(log.info).to.have.been.calledWith('Skipping canonical checks for auth/login page: https://example.com/oauth/callback');
+      expect(log.info).to.have.been.calledWith('Skipping canonical checks for auth/login page: https://example.com/sso');
+    });
   });
 
   describe('generateCanonicalSuggestion', () => {
@@ -720,78 +810,78 @@ describe('Canonical URL Tests', () => {
 
     it('should generate suggestion for CANONICAL_TAG_MISSING', () => {
       const result = generateCanonicalSuggestion(checks.TAG_MISSING, testUrl, baseURL);
-      expect(result).to.equal(`Add a canonical tag to the head section: <link rel="canonical" href="${testUrl}" />`);
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_TAG_MISSING.suggestion(testUrl));
     });
 
     it('should generate suggestion for CANONICAL_TAG_MULTIPLE', () => {
       const result = generateCanonicalSuggestion(checks.TAG_MULTIPLE, testUrl, baseURL);
-      expect(result).to.equal('Remove duplicate canonical tags and keep only one canonical tag in the head section.');
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_TAG_MULTIPLE.suggestion());
     });
 
     it('should generate suggestion for CANONICAL_TAG_EMPTY', () => {
       const result = generateCanonicalSuggestion(checks.TAG_EMPTY, testUrl, baseURL);
-      expect(result).to.equal(`Set the canonical URL in the href attribute: <link rel="canonical" href="${testUrl}" />`);
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_TAG_EMPTY.suggestion(testUrl));
     });
 
     it('should generate suggestion for CANONICAL_TAG_OUTSIDE_HEAD', () => {
       const result = generateCanonicalSuggestion(checks.TAG_OUTSIDE_HEAD, testUrl, baseURL);
-      expect(result).to.equal('Move the canonical tag to the <head> section of the HTML document.');
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.suggestion());
     });
 
     it('should generate suggestion for CANONICAL_URL_STATUS_OK', () => {
       const result = generateCanonicalSuggestion(checks.URL_STATUS_OK, testUrl, baseURL);
-      expect(result).to.equal('Ensure the canonical URL returns a 200 status code and is accessible.');
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.suggestion());
     });
 
     it('should generate suggestion for CANONICAL_URL_NO_REDIRECT', () => {
       const result = generateCanonicalSuggestion(checks.URL_NO_REDIRECT, testUrl, baseURL);
-      expect(result).to.equal('Update the canonical URL to point directly to the final destination without redirects.');
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.suggestion());
     });
 
     it('should generate suggestion for CANONICAL_URL_4XX', () => {
       const result = generateCanonicalSuggestion(checks.URL_4XX, testUrl, baseURL);
-      expect(result).to.equal('Fix the canonical URL to resolve the 4xx client error and make it accessible.');
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_4XX.suggestion());
     });
 
     it('should generate suggestion for CANONICAL_URL_5XX', () => {
       const result = generateCanonicalSuggestion(checks.URL_5XX, testUrl, baseURL);
-      expect(result).to.equal('Fix the canonical URL to resolve the 5xx server error and ensure it\'s accessible.');
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_5XX.suggestion());
     });
 
     it('should generate suggestion for CANONICAL_SELF_REFERENCED', () => {
       const result = generateCanonicalSuggestion(checks.SELF_REFERENCED, testUrl, baseURL);
-      expect(result).to.equal(`Update canonical URL to point to itself: <link rel="canonical" href="${testUrl}" />`);
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.suggestion(testUrl));
     });
 
     it('should generate suggestion for CANONICAL_URL_ABSOLUTE', () => {
       const result = generateCanonicalSuggestion(checks.URL_ABSOLUTE, testUrl, baseURL);
-      expect(result).to.equal(`Use an absolute URL for the canonical tag: <link rel="canonical" href="${testUrl}" />`);
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_ABSOLUTE.suggestion(testUrl));
     });
 
     it('should generate suggestion for CANONICAL_URL_SAME_DOMAIN', () => {
       const result = generateCanonicalSuggestion(checks.URL_SAME_DOMAIN, testUrl, baseURL);
-      expect(result).to.equal(`Update canonical URL to use the same domain as the page: <link rel="canonical" href="${testUrl}" />`);
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_SAME_DOMAIN.suggestion(testUrl));
     });
 
     it('should generate suggestion for CANONICAL_URL_SAME_PROTOCOL', () => {
       const result = generateCanonicalSuggestion(checks.URL_SAME_PROTOCOL, testUrl, baseURL);
-      expect(result).to.equal(`Update canonical URL to use the same protocol (HTTP/HTTPS): <link rel="canonical" href="${testUrl}" />`);
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_SAME_PROTOCOL.suggestion(testUrl));
     });
 
     it('should generate suggestion for CANONICAL_URL_LOWERCASED', () => {
       const testUrlMixed = 'https://Example.com/Test-Page';
       const result = generateCanonicalSuggestion(checks.URL_LOWERCASED, testUrlMixed, baseURL);
-      expect(result).to.equal(`Update canonical URL to use lowercase: <link rel="canonical" href="${testUrlMixed.toLowerCase()}" />`);
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_LOWERCASED.suggestion(testUrlMixed));
     });
 
     it('should generate suggestion for CANONICAL_URL_FETCH_ERROR', () => {
       const result = generateCanonicalSuggestion(checks.URL_FETCH_ERROR, testUrl, baseURL);
-      expect(result).to.equal('Check if the canonical URL is accessible and fix any connectivity issues.');
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.suggestion());
     });
 
     it('should generate suggestion for CANONICAL_URL_INVALID', () => {
       const result = generateCanonicalSuggestion(checks.URL_INVALID, testUrl, baseURL);
-      expect(result).to.equal(`Fix the malformed canonical URL and ensure it follows proper URL format: <link rel="canonical" href="${testUrl}" />`);
+      expect(result).to.equal(CANONICAL_CHECKS.CANONICAL_URL_INVALID.suggestion(testUrl));
     });
 
     it('should return fallback message for unknown check type', () => {
@@ -944,6 +1034,7 @@ describe('Canonical URL Tests', () => {
     const auditUrl = 'https://example.com';
     const mockContext = {
       log: {
+        debug: sinon.stub(),
         info: sinon.stub(),
         error: sinon.stub(),
         warn: sinon.stub(),

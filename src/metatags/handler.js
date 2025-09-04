@@ -20,7 +20,7 @@ import { wwwUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
-import { getIssueRanking, removeTrailingSlash } from './opportunity-utils.js';
+import { getIssueRanking, getBaseUrl } from './opportunity-utils.js';
 import {
   DESCRIPTION,
   H1,
@@ -47,6 +47,15 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   );
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
+  log.info(`started to audit metatags for site url: ${auditData.auditResult.finalUrl}`);
+  let useHostnameOnly = false;
+  try {
+    const siteId = opportunity.getSiteId();
+    const site = await context.dataAccess.Site.findById(siteId);
+    useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+  } catch (error) {
+    log.error('Error in meta-tags configuration:', error);
+  }
   const suggestions = [];
   // Generate suggestions data to be inserted in meta-tags opportunity suggestions
   Object.keys(detectedTags)
@@ -56,7 +65,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
           suggestions.push({
             ...detectedTags[endpoint][tag],
             tagName: tag,
-            url: removeTrailingSlash(auditData.auditResult.finalUrl) + endpoint,
+            url: getBaseUrl(auditData.auditResult.finalUrl, useHostnameOnly) + endpoint,
             rank: getIssueRanking(tag, detectedTags[endpoint][tag].issue),
           });
         }
@@ -77,7 +86,6 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
       rank: suggestion.rank,
       data: { ...suggestion },
     }),
-    log,
   });
   log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
 }
