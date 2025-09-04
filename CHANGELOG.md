@@ -1,3 +1,10 @@
+## [1.173.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.173.1...v1.173.2) (2025-09-04)
+
+
+### Bug Fixes
+
+* use config id if provided then imsOrgId ([#1223](https://github.com/adobe/spacecat-audit-worker/issues/1223)) ([653fc26](https://github.com/adobe/spacecat-audit-worker/commit/653fc26ae7109a35179741d4adad0ebcaf8ab61c))
+
 ## [1.173.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.173.0...v1.173.1) (2025-09-03)
 
 
