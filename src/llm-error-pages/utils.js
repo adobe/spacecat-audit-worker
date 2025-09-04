@@ -167,7 +167,7 @@ export async function getS3Config(site, context) {
   try {
     if (isStandardAdobeCdnBucket(bucket)) {
       const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig?.() || {};
-      const imsOrgId = await getImsOrgId?.(site, context?.dataAccess, context?.log) || orgId;
+      const imsOrgId = orgId || await getImsOrgId?.(site, context?.dataAccess, context?.log);
       if (imsOrgId) {
         aggregatedLocation = `s3://${bucket}/${imsOrgId}/aggregated/`;
       }

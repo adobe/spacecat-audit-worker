@@ -418,50 +418,79 @@ describe('LLM Error Pages Utils', () => {
         expect(error.message).to.equal('boom');
       }
     });
-  });
 
-  it('should include imsOrgId in aggregatedLocation for standard Adobe bucket', async () => {
-    const mockSite = {
-      getConfig: () => ({
-        getLlmoCdnBucketConfig: () => ({ orgId: 'IMS_ORG_123' }),
-      }),
-      getBaseURL: () => 'https://www.example.com',
-    };
+    it('should include imsOrgId in aggregatedLocation for standard Adobe bucket', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ orgId: 'IMS_ORG_123' }),
+        }),
+        getBaseURL: () => 'https://www.example.com',
+      };
 
-    const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-      '../../../src/utils/cdn-utils.js': {
-        resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
-        extractCustomerDomain: () => 'example_com',
-        isStandardAdobeCdnBucket: () => true,
-      },
-      '../../../src/utils/data-access.js': {
-        getImsOrgId: async () => null,
-      },
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
+          extractCustomerDomain: () => 'example_com',
+          isStandardAdobeCdnBucket: () => true,
+        },
+        '../../../src/utils/data-access.js': {
+          getImsOrgId: async () => null,
+        },
+      });
+
+      const result = await mockedUtils.getS3Config(mockSite, {
+        dataAccess: {},
+        log: { info: sinon.stub() },
+      });
+      expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/IMS_ORG_123/aggregated/');
     });
 
-    const result = await mockedUtils.getS3Config(mockSite, {});
-    expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/IMS_ORG_123/aggregated/');
-  });
+    it('should keep default aggregatedLocation when IMS lookup throws', async () => {
+      const mockSite = {
+        getConfig: () => ({}),
+        getBaseURL: () => 'https://www.example.com',
+      };
 
-  it('should keep default aggregatedLocation when IMS lookup throws', async () => {
-    const mockSite = {
-      getConfig: () => ({}),
-      getBaseURL: () => 'https://www.example.com',
-    };
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
+          extractCustomerDomain: () => 'example_com',
+          isStandardAdobeCdnBucket: () => true,
+        },
+        '../../../src/utils/data-access.js': {
+          getImsOrgId: async () => { throw new Error('IMS failure'); },
+        },
+      });
 
-    const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
-      '../../../src/utils/cdn-utils.js': {
-        resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
-        extractCustomerDomain: () => 'example_com',
-        isStandardAdobeCdnBucket: () => true,
-      },
-      '../../../src/utils/data-access.js': {
-        getImsOrgId: async () => { throw new Error('IMS failure'); },
-      },
+      const result = await mockedUtils.getS3Config(mockSite, {});
+      expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/aggregated/');
     });
 
-    const result = await mockedUtils.getS3Config(mockSite, {});
-    expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/aggregated/');
+    it('should use default aggregatedLocation when both orgId and IMS lookup return falsy', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ orgId: null }), // orgId is falsy
+        }),
+        getBaseURL: () => 'https://www.example.com',
+      };
+
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
+          extractCustomerDomain: () => 'example_com',
+          isStandardAdobeCdnBucket: () => true,
+        },
+        '../../../src/utils/data-access.js': {
+          getImsOrgId: async () => null, // Also returns falsy
+        },
+      });
+
+      const result = await mockedUtils.getS3Config(mockSite, {
+        dataAccess: {},
+        log: { info: sinon.stub() },
+      });
+      expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/aggregated/'); // Default location without IMS org
+    });
   });
 
   // ============================================================================
