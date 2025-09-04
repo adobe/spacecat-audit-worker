@@ -19,7 +19,7 @@ export default async function handler(message, context) {
   } = context;
   const { Opportunity } = dataAccess;
   const { data } = message;
-  log.info(`Message received in form details handler: ${JSON.stringify(message, null, 2)}`);
+  log.info(`Message received in form details handler 1: ${JSON.stringify(message, null, 2)}`);
   const {
     form_details: formDetails, auditId: id,
   } = data;
