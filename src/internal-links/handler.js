@@ -249,7 +249,7 @@ export default new AuditBuilder()
   .addStep(
     'prepareScraping',
     prepareScrapingStep,
-    AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
+    AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT,
   )
   .addStep('trigger-ai-suggestions', opportunityAndSuggestionsStep)
   .build();
