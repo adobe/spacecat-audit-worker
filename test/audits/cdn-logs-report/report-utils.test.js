@@ -68,6 +68,16 @@ describe('CDN Logs Report Utils', () => {
       expect(config).to.have.property('customerName', 'sub');
       expect(config).to.have.property('customerDomain', 'sub_example_com');
     });
+
+    it('getAthenaTempLocation method works correctly', async () => {
+      const mockSite = { getBaseURL: () => 'https://www.example.com' };
+      const mockContext = {};
+
+      const config = await reportUtils.getS3Config(mockSite, mockContext);
+      const tempLocation = config.getAthenaTempLocation();
+
+      expect(tempLocation).to.equal('s3://test-bucket/temp/athena-results/');
+    });
   });
 
   describe('generatePeriodIdentifier', () => {
@@ -237,6 +247,7 @@ describe('CDN Logs Report Utils', () => {
       const mockSite = {
         getConfig: () => ({
           getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
         }),
       };
 
@@ -278,6 +289,7 @@ describe('CDN Logs Report Utils', () => {
       const mockSite = {
         getConfig: () => ({
           getLlmoDataFolder: () => null,
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
         }),
       };
 
@@ -302,6 +314,7 @@ describe('CDN Logs Report Utils', () => {
       const mockSite = {
         getConfig: () => ({
           getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
         }),
       };
 
@@ -321,6 +334,7 @@ describe('CDN Logs Report Utils', () => {
       const mockSite = {
         getConfig: () => ({
           getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
         }),
       };
 
@@ -336,6 +350,7 @@ describe('CDN Logs Report Utils', () => {
       const mockSite = {
         getConfig: () => ({
           getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
         }),
       };
 
@@ -354,6 +369,7 @@ describe('CDN Logs Report Utils', () => {
       const mockSite = {
         getConfig: () => ({
           getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
         }),
       };
 
@@ -384,6 +400,7 @@ describe('CDN Logs Report Utils', () => {
       const mockSite = {
         getConfig: () => ({
           getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
         }),
       };
 
