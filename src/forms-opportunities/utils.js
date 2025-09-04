@@ -499,7 +499,7 @@ export async function sendMessageToFormsQualityAgent(context, opportunity, forms
     const opportunityData = JSON.parse(JSON.stringify(opportunity));
 
     const data = {
-      url: site.getBaseURL(),
+      url: site ? site.getBaseURL() : formsList[0]?.form,
       form_details: formsList.map(({ form, formSource }) => ({
         url: form,
         form_source: formSource,
