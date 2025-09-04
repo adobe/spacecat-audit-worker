@@ -73,6 +73,19 @@ Line3`);
 newlines`);
   });
 
+  it('handles JSON object body directly', async () => {
+    const context = { env: {}, dataAccess: {} };
+    const guidance = {
+      body: {
+        markdown: 'Direct JSON object markdown',
+        issueSeverity: 'high',
+      },
+      metadata: { scrape_job_id: 'test-job' },
+    };
+    const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+    expect(result.data.suggestionValue).to.include('Direct JSON object markdown');
+  });
+
   // Additional tests for mapToPaidOpportunity edge cases
   describe('Paid Opportunity Mapper edge cases', () => {
     const siteId = 'site';

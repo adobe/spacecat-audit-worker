@@ -95,7 +95,7 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
     type: 'generic-opportunity',
     origin: 'AUTOMATION',
     title: 'Consent Banner covers essential page content',
-    description: `The consent banner hides essential page content. ${(totalAggBounceRate * 100).toFixed(1)}% of total paid traffic bounces on consent banner without interaction (${formatNumberWithK(projectedTrafficLossSum)}). Most affected page: ${url} (${formatNumberWithK(projectedTrafficLost || 0)})`,
+    description: `The consent banner hides essential page content. ${(totalAggBounceRate * 100).toFixed(1)}% of total paid traffic (${formatNumberWithK(projectedTrafficLossSum)}) bounces on consent banner without interaction. Most affected page: ${url} (${formatNumberWithK(projectedTrafficLost)})`,
     guidance: {
       recommendations: [
         {
