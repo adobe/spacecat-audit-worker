@@ -260,7 +260,7 @@ CRITICAL REQUIREMENTS:
 DOMAIN: ${domain}
 
 GROUPED PATHS BY PRODUCT:
-${groupedPaths}`;
+${JSON.stringify(groupedPaths)}`;
 
   try {
     log.info('Generating regex patterns for products');
@@ -352,6 +352,9 @@ export async function analyzeProducts(domain, paths, context) {
 
     // Combine generated patterns with default patterns
     const combinedPatterns = { ...regexPatterns.patterns, ...defaultPatterns };
+
+    // Remove "unknown" key if it exists
+    delete combinedPatterns.unknown;
 
     log.info(`Completed product analysis for domain: ${domain}`);
     log.info(`Total token usage for product analysis: ${JSON.stringify(totalTokenUsage)}`);
