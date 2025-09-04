@@ -30,8 +30,34 @@ describe('Guidance Readability Handler Tests', () => {
   let log;
   let context;
 
-  beforeEach(async () => {
-    // Setup mocks
+  // One-time module mocking to avoid timeout issues
+  before(async function () {
+    // Increase timeout for module mocking operations
+    this.timeout(10000);
+
+    // Mock the addReadabilitySuggestions function
+    mockAddReadabilitySuggestions = sinon.stub();
+
+    // Mock the module once
+    guidanceHandler = await esmock(
+      '../../../src/readability/guidance-readability-handler.js',
+      {},
+      {
+        '../../../src/readability/opportunity-handler.js': {
+          addReadabilitySuggestions: mockAddReadabilitySuggestions,
+        },
+        '@adobe/spacecat-shared-http-utils': {
+          ok: () => ({ statusCode: 200, body: 'OK' }),
+          notFound: (message) => ({ statusCode: 404, body: message }),
+        },
+      },
+    );
+
+    guidanceHandler = guidanceHandler.default;
+  });
+
+  beforeEach(() => {
+    // Setup mocks (reset for each test)
     log = {
       info: sinon.stub(),
       warn: sinon.stub(),
@@ -86,25 +112,8 @@ describe('Guidance Readability Handler Tests', () => {
       dataAccess: mockDataAccess,
     };
 
-    // Mock the addReadabilitySuggestions function
-    mockAddReadabilitySuggestions = sinon.stub();
-
-    // Mock the module
-    guidanceHandler = await esmock(
-      '../../../src/readability/guidance-readability-handler.js',
-      {},
-      {
-        '../../../src/readability/opportunity-handler.js': {
-          addReadabilitySuggestions: mockAddReadabilitySuggestions,
-        },
-        '@adobe/spacecat-shared-http-utils': {
-          ok: () => ({ statusCode: 200, body: 'OK' }),
-          notFound: (message) => ({ statusCode: 404, body: message }),
-        },
-      },
-    );
-
-    guidanceHandler = guidanceHandler.default;
+    // Reset the stub for each test
+    mockAddReadabilitySuggestions.reset();
   });
 
   afterEach(() => {
