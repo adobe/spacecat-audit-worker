@@ -183,8 +183,8 @@ export default async function readability(context, auditContext) {
 
       const doc = new JSDOM(rawBody).window.document;
 
-      // Get all paragraph and div elements
-      const textElements = Array.from(doc.querySelectorAll('p, div'));
+      // Get all paragraph, div, and list item elements
+      const textElements = Array.from(doc.querySelectorAll('p, div, li'));
 
       let processedElements = 0;
       let poorReadabilityCount = 0;
