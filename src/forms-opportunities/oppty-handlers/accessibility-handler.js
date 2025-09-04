@@ -277,6 +277,7 @@ export default async function handler(message, context) {
     const a11yData = opportunityData.accessibility;
     // eslint-disable-next-line max-len
     const formsList = a11yData.filter((item) => !item.formDetails).map((item) => ({ form: item.form, formSource: item.formSource }));
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] formsList: ${JSON.stringify(formsList, null, 2)}`);
     await (formsList.length === 0
       ? sendMessageToMystiqueForGuidance(context, opportunity)
       : sendMessageToFormsQualityAgent(context, opportunity, formsList));

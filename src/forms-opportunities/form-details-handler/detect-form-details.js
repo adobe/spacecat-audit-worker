@@ -25,12 +25,15 @@ export default async function handler(message, context) {
   const opportunity = await Opportunity.findById(id);
   if (opportunity) {
     log.info(`Opportunity found: ${JSON.stringify(opportunity)}`);
-    if (opportunity.getType() === 'forms-accessibility') {
+    if (opportunity.getType() === 'form-accessibility') {
+      log.info(`Opportunity found accessibility : ${JSON.stringify(opportunity)}`);
       const opportunityData = opportunity.getData();
+      log.info(`Opportunity found accessibility data : ${JSON.stringify(opportunityData)}`);
       const updatedAccessibility = opportunityData.accessibility.map((item) => {
         // eslint-disable-next-line max-len
         const matchingFormDetail = formDetails.find((detail) => detail.url === item.form && detail.form_source === item.formSource);
         if (matchingFormDetail) {
+          log.info(`Matching form details : ${JSON.stringify(matchingFormDetail)}`);
           // eslint-disable-next-line @typescript-eslint/no-unused-vars,camelcase
           const { url, form_source, ...cleanedFormDetail } = matchingFormDetail;
           return { ...item, formDetails: cleanedFormDetail };

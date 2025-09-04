@@ -529,9 +529,10 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
   if (opportunity) {
     log.info(`forms quality agent message sent to mystique : ${JSON.stringify(opportunity)}`);
     const opptyData = JSON.parse(JSON.stringify(opportunity));
-    // sending message to mystique for guidance
+    // Normalize type: convert forms-accessibility → forms-a11y
+    const normalizedType = opptyData.type === 'form-accessibility' ? 'forms-a11y' : opptyData.type;
     const mystiqueMessage = {
-      type: `guidance:${opptyData.type}`,
+      type: `guidance:${normalizedType}`,
       siteId: opptyData.siteId,
       auditId: opptyData.auditId,
       time: new Date().toISOString(),
