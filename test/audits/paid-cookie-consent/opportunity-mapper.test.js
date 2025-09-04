@@ -182,7 +182,22 @@ newlines`);
       expect(result.description).to.include('(800)'); // individual page traffic lost
     });
 
-    it('handles zero pageViewsSum for totalAggBounceRate calculation', () => {
+    it('handles urlConsent segment with null value (line 70 fallback)', () => {
+      const audit = {
+        getAuditId: () => 'aid',
+        getAuditResult: () => [
+          {
+            key: 'urlConsent',
+            value: null, // Triggers || [] fallback
+          },
+        ],
+      };
+      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
+      expect(result.data.pageViews).to.be.undefined;
+      expect(result.data.projectedTrafficLost).to.equal(0);
+    });
+
+    it('handles URL not found in urlConsent segment (line 73 fallback)', () => {
       const audit = {
         getAuditId: () => 'aid',
         getAuditResult: () => [
@@ -190,15 +205,15 @@ newlines`);
             key: 'urlConsent',
             value: [
               {
-                url, pageViews: 0, bounceRate: 0.5, projectedTrafficLost: 10, consent: 'show',
+                url: 'https://different-url.com', pageViews: 100, bounceRate: 0.5, projectedTrafficLost: 50, consent: 'show',
               },
             ],
           },
         ],
       };
-      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      expect(result.data.pageViews).to.equal(0);
-      expect(result.data.projectedTrafficLost).to.equal(10);
+      const result = mapToPaidOpportunity(siteId, url, audit, guidance); // Triggers || {} fallback
+      expect(result.data.pageViews).to.be.undefined;
+      expect(result.data.projectedTrafficLost).to.equal(50);
     });
   });
 });
