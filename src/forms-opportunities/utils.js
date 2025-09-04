@@ -523,7 +523,7 @@ export async function sendMessageToFormsQualityAgent(context, opportunity, forms
 
 export async function sendMessageToMystiqueForGuidance(context, opportunity) {
   const {
-    log, sqs, env,
+    log, sqs, env, site,
   } = context;
 
   if (opportunity) {
@@ -535,12 +535,13 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
       type: `guidance:${normalizedType}`,
       siteId: opptyData.siteId,
       auditId: opptyData.auditId,
+      deliveryType: site ? site.getDeliveryType() : 'aem_cs',
       time: new Date().toISOString(),
       // keys inside data should follow snake case and outside should follow camel case
       data: {
         url: opptyData.type === 'form-accessibility' ? opptyData.data?.accessibility?.[0]?.form || '' : opptyData.data?.form || '',
         cr: opptyData.data?.trackedFormKPIValue || 0,
-        metrics: opptyData.data?.metrics || {},
+        metrics: opptyData.data?.metrics || [],
         cta_source: opptyData.data?.formNavigation?.source || '',
         cta_text: opptyData.data?.formNavigation?.text || '',
         opportunityId: opptyData.opportunityId || '',
