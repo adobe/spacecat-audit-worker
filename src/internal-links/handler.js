@@ -119,9 +119,13 @@ export async function runAuditAndImportTopPagesStep(context) {
 
 export async function prepareScrapingStep(context) {
   const {
-    log, site, dataAccess,
+    log, site, dataAccess, audit,
   } = context;
   const { SiteTopPage } = dataAccess;
+  const { success } = audit.getAuditResult();
+  if (!success) {
+    throw new Error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skip scraping and suggestion generation`);
+  }
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
   log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found ${topPages.length} top pages`);
