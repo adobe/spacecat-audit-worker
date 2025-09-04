@@ -202,7 +202,7 @@ describe('Detect Form Details Handler', () => {
 
   it('should update accessibility data for forms-accessibility type', async () => {
     dataAccessStub.Opportunity.findById.resolves({
-      getType: () => 'forms-accessibility',
+      getType: () => 'form-accessibility',
       getData: () => ({
         accessibility: [
           { form: 'testUrl1', formSource: 'formSource1', a11yIssues: [] },
