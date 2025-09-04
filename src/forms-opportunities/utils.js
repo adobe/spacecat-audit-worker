@@ -510,7 +510,7 @@ export async function sendMessageToFormsQualityAgent(context, opportunity, forms
       type: 'detect:form-details',
       siteId: opportunityData.siteId,
       auditId: opportunityData.opportunityId,
-      deliveryType: site.getDeliveryType(),
+      deliveryType: site ? site.getDeliveryType() : 'aem_cs',
       time: new Date().toISOString(),
       data,
     };
