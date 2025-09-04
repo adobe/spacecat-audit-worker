@@ -13,4 +13,3 @@ test-results.xml
 .aws-sam/
 env.sh
 output.txt
-
