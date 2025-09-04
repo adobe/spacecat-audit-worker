@@ -11,6 +11,7 @@
  */
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { extractCustomerDomain } from '../utils/cdn-utils.js';
 
 // ============================================================================
 // CONSTANTS
@@ -36,6 +37,36 @@ const REGEX_PATTERNS = {
 };
 
 const CDN_LOGS_PREFIX = 'cdn-logs-';
+
+// Country patterns for URL-based country extraction
+const DEFAULT_COUNTRY_PATTERNS = [
+  // Matches locale with dash format: /en-us/, /fr-fr/, https://example.com/de-de/page
+  { name: 'locale_dash_full', regex: '(?i)^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)?[a-z]{2}-([a-z]{2})(?:/|$)' },
+
+  // Matches locale with underscore format: /en_us/, /fr_fr/, https://example.com/de_de/page
+  { name: 'locale_underscore_full', regex: '(?i)^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)?[a-z]{2}_([a-z]{2})(?:/|$)' },
+
+  // Matches locale files: /en_us.html, /fr_ca.jsp, etc.
+  { name: 'locale_underscore_file', regex: '(?i)^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)?[a-z]{2}_([a-z]{2})\\.[a-z]+$' },
+
+  // Matches global/international prefix: /global/us/, /international/fr/, https://example.com/global/de/
+  { name: 'global_prefix', regex: '(?i)^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)(?:global|international)/([a-z]{2})(?:/|$)' },
+
+  // Matches countries/regions prefix: /countries/us/, /regions/fr/, https://example.com/country/de/
+  { name: 'countries_prefix', regex: '(?i)^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)(?:countries?|regions?)/([a-z]{2})(?:/|$)' },
+
+  // Matches country/language format: /us/en/, /ca/fr/, https://example.com/de/en/page
+  { name: 'country_lang', regex: '(?i)^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)([a-z]{2})/[a-z]{2}(?:/|$)' },
+
+  // Matches 2-letter country codes: /us/, /fr/, /de/, https://example.com/gb/page
+  { name: 'path_2letter_full', regex: '(?i)^(?:/|(?:https?:\\/\\/|\\/\\/)?[^/]+/)?([a-z]{2})(?:/|$)' },
+
+  // Matches country query parameter: ?country=us, &country=fr, ?country=usa
+  { name: 'query_country', regex: '(?i)[?&]country=([a-z]{2,3})(?:&|$)' },
+
+  // Matches locale query parameter: ?locale=en-us, &locale=fr-fr
+  { name: 'query_locale', regex: '(?i)[?&]locale=[a-z]{2}-([a-z]{2})(?:&|$)' },
+];
 
 // ============================================================================
 // LLM USER AGENT UTILITIES
@@ -65,26 +96,191 @@ export function buildLlmUserAgentFilter(providers = null) {
   return `REGEXP_LIKE(user_agent, '${patterns.join('|')}')`;
 }
 
+/**
+ * User agent display name mappings for better readability in reports
+ * Each entry maps a pattern to a display name
+ */
+const USER_AGENT_DISPLAY_PATTERNS = [
+  // ChatGPT/OpenAI
+  { pattern: /chatgpt-user/i, displayName: 'ChatGPT-User' },
+  { pattern: /gptbot/i, displayName: 'GPTBot' },
+  { pattern: /oai-searchbot/i, displayName: 'OAI-SearchBot' },
+
+  // Perplexity
+  { pattern: /perplexitybot/i, displayName: 'PerplexityBot' },
+  { pattern: /perplexity-user/i, displayName: 'Perplexity-User' },
+  { pattern: /perplexity/i, displayName: 'Perplexity' },
+
+  // Other providers
+  { pattern: /claude/i, displayName: 'Claude' },
+  { pattern: /anthropic/i, displayName: 'Anthropic' },
+  { pattern: /gemini/i, displayName: 'Gemini' },
+  { pattern: /copilot/i, displayName: 'Copilot' },
+];
+
+/**
+ * User agent display patterns for SQL LIKE matching (from CDN logs report pattern)
+ */
+const USER_AGENT_DISPLAY_PATTERNS_SQL = [
+  // ChatGPT/OpenAI
+  { pattern: '%chatgpt-user%', displayName: 'ChatGPT-User' },
+  { pattern: '%gptbot%', displayName: 'GPTBot' },
+  { pattern: '%oai-searchbot%', displayName: 'OAI-SearchBot' },
+
+  // Perplexity
+  { pattern: '%perplexitybot%', displayName: 'PerplexityBot' },
+  { pattern: '%perplexity-user%', displayName: 'Perplexity-User' },
+];
+
 export function normalizeUserAgentToProvider(rawUserAgent) {
   if (!rawUserAgent || typeof rawUserAgent !== 'string') return 'Unknown';
 
-  if (/chatgpt|gptbot|oai-searchbot/i.test(rawUserAgent)) {
-    return 'ChatGPT';
-  }
-  if (/perplexity/i.test(rawUserAgent)) {
-    return 'Perplexity';
-  }
-  if (/claude|anthropic/i.test(rawUserAgent)) {
-    return 'Claude';
-  }
-  if (/gemini/i.test(rawUserAgent)) {
-    return 'Gemini';
-  }
-  if (/copilot/i.test(rawUserAgent)) {
-    return 'Copilot';
+  // Find matching display pattern
+  for (const { pattern, displayName } of USER_AGENT_DISPLAY_PATTERNS) {
+    if (pattern.test(rawUserAgent)) {
+      return displayName;
+    }
   }
 
-  return rawUserAgent;
+  // Return truncated original if no pattern matches
+  return rawUserAgent.length > 50 ? rawUserAgent.substring(0, 50) : rawUserAgent;
+}
+
+// ============================================================================
+// SQL BUILDING UTILITIES (from CDN logs report pattern)
+// ============================================================================
+
+/**
+ * Builds SQL CASE statement for user agent display names
+ * @returns {string} SQL CASE statement
+ */
+function buildUserAgentDisplaySQL() {
+  const cases = USER_AGENT_DISPLAY_PATTERNS_SQL
+    .map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.displayName}'`)
+    .join('\n    ');
+
+  return `CASE 
+    ${cases}
+    ELSE SUBSTR(user_agent, 1, 100)
+  END`;
+}
+
+/**
+ * Builds SQL CASE statement for agent type classification
+ * @returns {string} SQL CASE statement
+ */
+function buildAgentTypeClassificationSQL() {
+  const patterns = [
+    // ChatGPT/OpenAI
+    { pattern: '%gptbot%', result: 'Training bots' },
+    { pattern: '%oai-searchbot%', result: 'Web search crawlers' },
+    { pattern: '%chatgpt-user%', result: 'Chatbots' },
+    { pattern: '%chatgpt%', result: 'Chatbots' },
+    // Perplexity
+    { pattern: '%perplexitybot%', result: 'Web search crawlers' },
+    { pattern: '%perplexity-user%', result: 'Chatbots' },
+    { pattern: '%perplexity%', result: 'Chatbots' },
+  ];
+
+  const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');
+
+  return `CASE\n          ${cases}\n          ELSE 'Other'\n        END`;
+}
+
+/**
+ * Builds country extraction SQL using patterns from CDN logs report
+ */
+function buildCountryExtractionSQL() {
+  const extracts = DEFAULT_COUNTRY_PATTERNS
+    .map(({ regex }) => `NULLIF(UPPER(REGEXP_EXTRACT(url, '${regex}', 1)), '')`)
+    .join(',\n    ');
+
+  return `COALESCE(\n    ${extracts},\n    'GLOBAL'\n  )`;
+}
+
+/**
+ * Builds topic extraction SQL using remote patterns
+ */
+function buildTopicExtractionSQL(remotePatterns = null) {
+  const patterns = remotePatterns?.topicPatterns || [];
+
+  if (Array.isArray(patterns) && patterns.length > 0) {
+    const namedPatterns = [];
+    const extractPatterns = [];
+
+    patterns.forEach(({ regex, name }) => {
+      if (name) {
+        namedPatterns.push(`WHEN REGEXP_LIKE(url, '${regex}') THEN '${name}'`);
+      } else {
+        extractPatterns.push(`NULLIF(REGEXP_EXTRACT(url, '${regex}', 1), '')`);
+      }
+    });
+
+    if (namedPatterns.length > 0 && extractPatterns.length > 0) {
+      const caseClause = `CASE\n          ${namedPatterns.join('\n          ')}\n          ELSE NULL\n        END`;
+      const coalesceClause = extractPatterns.join(',\n    ');
+      return `COALESCE(\n    ${caseClause},\n    ${coalesceClause},\n    'Other'\n  )`;
+    } else if (namedPatterns.length > 0) {
+      return `CASE\n          ${namedPatterns.join('\n          ')}\n          ELSE 'Other'\n        END`;
+    } else {
+      return `COALESCE(\n    ${extractPatterns.join(',\n    ')},\n    'Other'\n  )`;
+    }
+  }
+  return "CASE WHEN url IS NOT NULL THEN 'Other' END";
+}
+
+/**
+ * Builds page category classification SQL using remote patterns
+ */
+function generatePageTypeClassification(remotePatterns = null) {
+  const patterns = remotePatterns?.pagePatterns || [];
+
+  if (patterns.length === 0) {
+    return "'Uncategorized'";
+  }
+
+  const caseConditions = patterns
+    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.regex}') THEN '${pattern.name}'`)
+    .join('\n');
+
+  return `CASE\n${caseConditions}\n      ELSE 'Uncategorized'\n    END`;
+}
+
+/**
+ * Fetches remote patterns for a site (local implementation)
+ * @param {Object} site - Site object
+ * @returns {Promise<Object|null>} Remote patterns or null
+ */
+async function fetchRemotePatterns(site) {
+  const dataFolder = site.getConfig()?.getLlmoDataFolder();
+
+  if (!dataFolder) {
+    return null;
+  }
+
+  try {
+    const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/agentic-traffic/patterns/patterns.json`;
+
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'spacecat-audit-worker',
+        Authorization: `token ${process.env.ADMIN_HLX_API_KEY}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch pattern data from ${url}: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+
+    return {
+      pagePatterns: data.pagetype?.data || [],
+      topicPatterns: data.products?.data || [],
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================================
@@ -131,7 +327,7 @@ function buildWhereClause(conditions = [], llmProviders = null, siteFilters = []
   return `WHERE ${allConditions.join(' AND ')}`;
 }
 
-export function buildLlmErrorPagesQuery(options) {
+export async function buildLlmErrorPagesQuery(options) {
   const {
     databaseName,
     tableName,
@@ -139,6 +335,7 @@ export function buildLlmErrorPagesQuery(options) {
     endDate,
     llmProviders = null,
     siteFilters = [],
+    site,
   } = options;
 
   const conditions = [];
@@ -150,7 +347,15 @@ export function buildLlmErrorPagesQuery(options) {
 
   const whereClause = buildWhereClause(conditions, llmProviders, siteFilters);
 
+  // Fetch remote patterns for product/category classification
+  const remotePatterns = site ? await fetchRemotePatterns(site) : null;
+
   return getStaticContent({
+    agentTypeClassification: buildAgentTypeClassificationSQL(),
+    userAgentDisplay: buildUserAgentDisplaySQL(),
+    countryExtraction: buildCountryExtractionSQL(),
+    topicExtraction: buildTopicExtractionSQL(remotePatterns),
+    pageCategoryClassification: generatePageTypeClassification(remotePatterns),
     databaseName,
     tableName,
     whereClause,
@@ -160,12 +365,6 @@ export function buildLlmErrorPagesQuery(options) {
 // ============================================================================
 // SITE AND CONFIGURATION UTILITIES
 // ============================================================================
-
-export function extractCustomerDomain(site) {
-  return new URL(site.getBaseURL()).host
-    .replace(REGEX_PATTERNS.URL_SANITIZATION, '_')
-    .toLowerCase();
-}
 
 export function getAnalysisBucket(customerDomain) {
   const bucketCustomer = customerDomain.replace(REGEX_PATTERNS.BUCKET_SANITIZATION, '-');
@@ -321,13 +520,23 @@ export function processErrorPagesResults(results) {
   const uniqueUserAgents = new Set();
 
   results.forEach((row) => {
-    const totalRequestsParsed = parseInt(row.total_requests, 10);
+    // Handle new field names from CDN logs report structure
+    const numberOfHits = parseInt(row.number_of_hits || row.total_requests, 10);
     // eslint-disable-next-line no-param-reassign
-    row.total_requests = Number.isNaN(totalRequestsParsed) ? 0 : totalRequestsParsed;
+    row.number_of_hits = Number.isNaN(numberOfHits) ? 0 : numberOfHits;
+
+    // Ensure avg_ttfb_ms is a number
+    const avgTtfb = parseFloat(row.avg_ttfb_ms);
+    // eslint-disable-next-line no-param-reassign
+    row.avg_ttfb_ms = Number.isNaN(avgTtfb) ? 0 : avgTtfb;
+
     const status = row.status || 'Unknown';
-    statusCodes[status] = (statusCodes[status] || 0) + row.total_requests;
+    statusCodes[status] = (statusCodes[status] || 0) + row.number_of_hits;
     uniqueUrls.add(row.url);
-    uniqueUserAgents.add(row.user_agent);
+    const userAgent = row.user_agent_display || row.user_agent;
+    if (userAgent) {
+      uniqueUserAgents.add(userAgent);
+    }
   });
 
   const totalErrors = Object.values(statusCodes).reduce((sum, count) => sum + count, 0);
@@ -345,23 +554,31 @@ export function processErrorPagesResults(results) {
 
 /**
  * Categorizes error pages by status code into 404, 403, and 5xx groups
+ * Limits each category to top 100 URLs for processing
  * @param {Array} errorPages - Raw error page data from Athena
  * @returns {Object} - Object with categorized errors
  */
 export function categorizeErrorsByStatusCode(errorPages) {
   const categorized = {};
+  const MAX_URLS_PER_CATEGORY = 100;
 
   errorPages.forEach((error) => {
     const statusCode = error.status?.toString();
     if (statusCode === '404') {
       if (!categorized[404]) categorized[404] = [];
-      categorized[404].push(error);
+      if (categorized[404].length < MAX_URLS_PER_CATEGORY) {
+        categorized[404].push(error);
+      }
     } else if (statusCode === '403') {
       if (!categorized[403]) categorized[403] = [];
-      categorized[403].push(error);
+      if (categorized[403].length < MAX_URLS_PER_CATEGORY) {
+        categorized[403].push(error);
+      }
     } else if (statusCode && statusCode.startsWith('5')) {
       if (!categorized['5xx']) categorized['5xx'] = [];
-      categorized['5xx'].push(error);
+      if (categorized['5xx'].length < MAX_URLS_PER_CATEGORY) {
+        categorized['5xx'].push(error);
+      }
     }
   });
 
@@ -377,20 +594,39 @@ export function consolidateErrorsByUrl(errors) {
   const urlMap = new Map();
 
   errors.forEach((error) => {
-    // Normalize user agent to clean provider name
-    const normalizedUserAgent = normalizeUserAgentToProvider(error.user_agent);
-    const key = `${error.url}|${normalizedUserAgent}`;
+    // Use the already processed user agent display name from SQL
+    const userAgentDisplay = error.user_agent_display
+      || normalizeUserAgentToProvider(error.user_agent);
+    const key = `${error.url}|${userAgentDisplay}`;
     if (urlMap.has(key)) {
       const existing = urlMap.get(key);
-      existing.totalRequests += error.total_requests;
-      existing.rawUserAgents.add(error.user_agent); // Track all raw UAs for this provider
+      const existingHits = existing.numberOfHits;
+      const newHits = error.number_of_hits || error.total_requests || 0;
+      existing.numberOfHits += newHits;
+      existing.totalRequests = existing.numberOfHits; // Keep backward compatibility
+      existing.rawUserAgents.add(error.user_agent || userAgentDisplay);
+      // Update TTFB with weighted average
+      const totalHits = existing.numberOfHits;
+      const existingTtfb = existing.avgTtfbMs || 0;
+      const newTtfb = error.avg_ttfb_ms || 0;
+      existing.avgTtfbMs = totalHits > 0
+        ? ((existingTtfb * existingHits) + (newTtfb * newHits)) / totalHits
+        : newTtfb;
     } else {
       urlMap.set(key, {
         url: error.url,
         status: error.status,
-        userAgent: normalizedUserAgent, // Clean provider name (e.g., "ChatGPT")
-        rawUserAgents: new Set([error.user_agent]), // Raw UA strings
-        totalRequests: error.total_requests,
+        userAgent: userAgentDisplay,
+        agent_type: error.agent_type || 'Other',
+        user_agent_display: userAgentDisplay,
+        numberOfHits: error.number_of_hits || error.total_requests || 0,
+        avgTtfbMs: error.avg_ttfb_ms || 0,
+        country_code: error.country_code || 'GLOBAL',
+        product: error.product || 'Other',
+        category: error.category || 'Uncategorized',
+        rawUserAgents: new Set([error.user_agent || userAgentDisplay]),
+        // Keep backward compatibility
+        totalRequests: error.number_of_hits || error.total_requests || 0,
       });
     }
   });
@@ -407,7 +643,8 @@ export function consolidateErrorsByUrl(errors) {
  * @returns {Array} - Sorted errors by traffic volume
  */
 export function sortErrorsByTrafficVolume(errors) {
-  return errors.sort((a, b) => b.totalRequests - a.totalRequests);
+  return errors.sort((a, b) => (b.numberOfHits || b.totalRequests || 0)
+    - (a.numberOfHits || a.totalRequests || 0));
 }
 
 // =========================================================================

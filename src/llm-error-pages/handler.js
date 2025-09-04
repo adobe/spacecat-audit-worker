@@ -59,6 +59,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
       endDate,
       llmProviders: getAllLlmProviders(), // Query all LLM providers
       siteFilters,
+      site, // Pass site for remote pattern fetching
     });
 
     log.info('Executing LLM error pages query...');
@@ -89,14 +90,32 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('data');
-      sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+      sheet.addRow([
+        'Agent Type',
+        'User Agent',
+        'Number of Hits',
+        'Avg TTFB (ms)',
+        'Country Code',
+        'URL',
+        'Product',
+        'Category',
+        'Suggested URLs',
+        'AI Rationale',
+        'Confidence score',
+      ]);
       sorted.forEach((e) => {
         sheet.addRow([
-          e.userAgent,
+          e.agent_type || 'Other',
+          e.user_agent_display || e.userAgent || 'Unknown',
+          Number(e.numberOfHits || e.totalRequests) || 0,
+          Number(e.avgTtfbMs) || 0,
+          e.country_code || 'GLOBAL',
           toPathOnly(e.url, baseUrl),
-          '',
-          '',
-          '',
+          e.product || 'Other',
+          e.category || 'Uncategorized',
+          '', // Suggested URLs (filled by Mystique)
+          '', // AI Rationale (filled by Mystique)
+          '', // Confidence score (filled by Mystique)
         ]);
       });
 
