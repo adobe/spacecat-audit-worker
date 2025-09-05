@@ -1,3 +1,10 @@
+## [1.177.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.0...v1.177.1) (2025-09-05)
+
+
+### Bug Fixes
+
+* showing ai agents blocked if all user agents are blocked ([#1236](https://github.com/adobe/spacecat-audit-worker/issues/1236)) ([81acf3b](https://github.com/adobe/spacecat-audit-worker/commit/81acf3b60dfb37c2adb2991e61c3444953bf224d))
+
 # [1.177.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.176.3...v1.177.0) (2025-09-05)
 
 
