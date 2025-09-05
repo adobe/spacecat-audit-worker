@@ -175,9 +175,7 @@ async function generateSuggestions(
   }
 }
 
-export default async function headingsAutoSuggest(allHeadings, context, site, options = {
-  forceAutoSuggest: false,
-}) {
+export default async function headingsAutoSuggest(allHeadings, context, site) {
   // Validate required parameters
   if (!context) {
     throw new Error('Context object is required for headingsAutoSuggest');
@@ -207,19 +205,13 @@ export default async function headingsAutoSuggest(allHeadings, context, site, op
     throw new Error('AllHeadings must contain detectedHeadings, extractedHeadings, and healthyHeadings properties');
   }
 
-  const { forceAutoSuggest = false } = options;
-  const { Configuration } = dataAccess;
+  // const { forceAutoSuggest = false } = options;
+  // const { Configuration } = dataAccess;
 
   log.info(`[Headings Auto-Suggest] Starting AI suggestions generation for site: ${site.getBaseURL()}`);
   log.info(`[Headings Auto-Suggest] Detected headings count: ${Object.keys(detectedHeadings).length}`);
   log.info(`[Headings Auto-Suggest] Extracted headings count: ${Object.keys(extractedHeadings).length}`);
   log.info(`[Headings Auto-Suggest] Healthy headings samples - H1: ${healthyHeadings.h1?.length || 0}, H2: ${healthyHeadings.h2?.length || 0}, H3: ${healthyHeadings.h3?.length || 0}`);
-
-  const configuration = await Configuration.findLatest();
-  if (!forceAutoSuggest && !configuration.isHandlerEnabledForSite('headings-auto-suggest', site)) {
-    log.info('[Headings Auto-Suggest] Feature is disabled for this site, skipping AI suggestions');
-    return detectedHeadings;
-  }
 
   log.info('[Headings Auto-Suggest] Feature is enabled, proceeding with AI suggestions generation');
 
