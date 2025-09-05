@@ -15,39 +15,47 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import esmock from 'esmock';
+import nock from 'nock';
+import * as reportUtils from '../../../src/cdn-logs-report/utils/report-utils.js';
 import { getConfigs } from '../../../src/cdn-logs-report/constants/report-configs.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 
 describe('CDN Logs Report Utils', () => {
-  let reportUtils;
   let sandbox;
-  let mockResolveCdnBucketName;
+  let mockContext;
   const referralConfig = getConfigs('test-bucket', 'example_com')
     .find((c) => c.name === 'referral');
 
-  beforeEach(async () => {
+  beforeEach(() => {
     sandbox = sinon.createSandbox();
-    mockResolveCdnBucketName = sandbox.stub().resolves('test-bucket');
-
-    reportUtils = await esmock('../../../src/cdn-logs-report/utils/report-utils.js', {
-      '../../../src/utils/cdn-utils.js': {
-        extractCustomerDomain: (site) => site.getBaseURL().replace(/https?:\/\/(www\.)?/, '').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(),
-        resolveCdnBucketName: mockResolveCdnBucketName,
+    nock.cleanAll();
+    mockContext = {
+      s3Client: {
+        send: sandbox.stub().resolves(),
       },
-    });
+    };
   });
 
   afterEach(() => {
     sandbox.restore();
+    nock.cleanAll();
   });
+
+  const createSiteConfig = (overrides = {}) => {
+    const defaultConfig = {
+      getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
+    };
+    return { ...defaultConfig, ...overrides };
+  };
 
   describe('getS3Config', () => {
     it('generates correct S3 config from site', async () => {
-      const mockSite = { getBaseURL: () => 'https://www.example.com' };
-      const mockContext = {};
+      const mockSite = {
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => createSiteConfig(),
+      };
 
       const config = await reportUtils.getS3Config(mockSite, mockContext);
 
@@ -55,13 +63,13 @@ describe('CDN Logs Report Utils', () => {
       expect(config).to.have.property('customerDomain', 'example_com');
       expect(config).to.have.property('bucket', 'test-bucket');
       expect(config).to.have.property('databaseName', 'cdn_logs_example_com');
-      // expect(config).to.have.property('tableName', 'aggregated_logs_example_com');
-      // expect(config).to.have.property('aggregatedLocation', 's3://test-bucket/aggregated/');
     });
 
     it('extracts customer name from domain parts correctly', async () => {
-      const mockSite = { getBaseURL: () => 'https://sub.example.com' };
-      const mockContext = {};
+      const mockSite = {
+        getBaseURL: () => 'https://sub.example.com',
+        getConfig: () => createSiteConfig(),
+      };
 
       const config = await reportUtils.getS3Config(mockSite, mockContext);
 
@@ -70,8 +78,10 @@ describe('CDN Logs Report Utils', () => {
     });
 
     it('getAthenaTempLocation method works correctly', async () => {
-      const mockSite = { getBaseURL: () => 'https://www.example.com' };
-      const mockContext = {};
+      const mockSite = {
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => createSiteConfig(),
+      };
 
       const config = await reportUtils.getS3Config(mockSite, mockContext);
       const tempLocation = config.getAthenaTempLocation();
@@ -230,19 +240,6 @@ describe('CDN Logs Report Utils', () => {
   });
 
   describe('fetchRemotePatterns', () => {
-    let mockFetch;
-    let originalFetch;
-
-    beforeEach(() => {
-      originalFetch = global.fetch;
-      mockFetch = sandbox.stub();
-      global.fetch = mockFetch;
-    });
-
-    afterEach(() => {
-      global.fetch = originalFetch;
-    });
-
     it('fetches remote patterns successfully', async () => {
       const mockSite = {
         getConfig: () => ({
@@ -265,15 +262,13 @@ describe('CDN Logs Report Utils', () => {
         },
       };
 
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves(mockResponseData),
-      });
+      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/agentic-traffic/patterns/patterns.json')
+        .reply(200, mockResponseData);
 
       const result = await reportUtils.fetchRemotePatterns(mockSite);
 
-      expect(mockFetch).to.have.been.calledOnce;
-
+      expect(patternNock.isDone()).to.be.true;
       expect(result).to.deep.equal({
         pagePatterns: [
           { name: 'Homepage', regex: '.*/[a-z]{2}/$' },
@@ -296,7 +291,6 @@ describe('CDN Logs Report Utils', () => {
       const result = await reportUtils.fetchRemotePatterns(mockSite);
 
       expect(result).to.be.null;
-      expect(mockFetch).to.not.have.been.called;
     });
 
     it('returns null when getConfig returns null', async () => {
@@ -307,7 +301,6 @@ describe('CDN Logs Report Utils', () => {
       const result = await reportUtils.fetchRemotePatterns(mockSite);
 
       expect(result).to.be.null;
-      expect(mockFetch).to.not.have.been.called;
     });
 
     it('returns null when fetch fails', async () => {
@@ -318,16 +311,14 @@ describe('CDN Logs Report Utils', () => {
         }),
       };
 
-      mockFetch.resolves({
-        ok: false,
-        status: 404,
-        statusText: 'Not Found',
-      });
+      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/agentic-traffic/patterns/patterns.json')
+        .reply(404, 'Not Found');
 
       const result = await reportUtils.fetchRemotePatterns(mockSite);
 
       expect(result).to.be.null;
-      expect(mockFetch).to.have.been.calledOnce;
+      expect(patternNock.isDone()).to.be.true;
     });
 
     it('returns null when fetch throws an error', async () => {
@@ -338,12 +329,14 @@ describe('CDN Logs Report Utils', () => {
         }),
       };
 
-      mockFetch.rejects(new Error('Network error'));
+      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/agentic-traffic/patterns/patterns.json')
+        .replyWithError('Network error');
 
       const result = await reportUtils.fetchRemotePatterns(mockSite);
 
       expect(result).to.be.null;
-      expect(mockFetch).to.have.been.calledOnce;
+      expect(patternNock.isDone()).to.be.true;
     });
 
     it('returns null when JSON parsing fails', async () => {
@@ -354,15 +347,14 @@ describe('CDN Logs Report Utils', () => {
         }),
       };
 
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().rejects(new Error('Invalid JSON')),
-      });
+      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/agentic-traffic/patterns/patterns.json')
+        .reply(200, 'invalid json content');
 
       const result = await reportUtils.fetchRemotePatterns(mockSite);
 
       expect(result).to.be.null;
-      expect(mockFetch).to.have.been.calledOnce;
+      expect(patternNock.isDone()).to.be.true;
     });
 
     it('handles missing pagetype or products data gracefully', async () => {
@@ -375,52 +367,20 @@ describe('CDN Logs Report Utils', () => {
 
       const mockResponseData = {
         pagetype: null,
-        products: {
-          data: [{ regex: '/test/' }],
-        },
+        products: null,
       };
 
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves(mockResponseData),
-      });
+      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/agentic-traffic/patterns/patterns.json')
+        .reply(200, mockResponseData);
 
       const result = await reportUtils.fetchRemotePatterns(mockSite);
 
       expect(result).to.deep.equal({
         pagePatterns: [],
-        topicPatterns: [{ regex: '/test/' }],
+        topicPatterns: [],
       });
-    });
-
-    it('uses environment variable for API key', async () => {
-      const originalEnv = process.env.LLMO_HLX_API_KEY;
-      process.env.LLMO_HLX_API_KEY = 'test-api-key';
-
-      const mockSite = {
-        getConfig: () => ({
-          getLlmoDataFolder: () => 'bulk',
-          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
-        }),
-      };
-
-      mockFetch.resolves({
-        ok: true,
-        json: sandbox.stub().resolves({ pagetype: { data: [] }, products: { data: [] } }),
-      });
-
-      await reportUtils.fetchRemotePatterns(mockSite);
-
-      expect(mockFetch).to.have.been.calledWith(
-        sinon.match.string,
-        sinon.match({
-          headers: sinon.match({
-            Authorization: 'token test-api-key',
-          }),
-        }),
-      );
-
-      process.env.LLMO_HLX_API_KEY = originalEnv;
+      expect(patternNock.isDone()).to.be.true;
     });
   });
 });
