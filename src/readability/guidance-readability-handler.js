@@ -173,8 +173,8 @@ export default async function handler(message, context) {
           if (pageResult.audits) {
             const updatedAudits = pageResult.audits.map((auditItem) => {
               if (auditItem.name === 'readability') {
-                // Get all suggestions from job metadata (preflight audit pattern)
-                const allSuggestions = updatedReadabilityMetadata.suggestions || [];
+                // Get all suggestions from job metadata e tests to (preflight audit pattern)
+                const allSuggestions = updatedReadabilityMetadata.suggestions;
 
                 // The AsyncJob may have 0 opportunities if cleared during async processing
                 // We need to reconstruct them from the stored suggestions

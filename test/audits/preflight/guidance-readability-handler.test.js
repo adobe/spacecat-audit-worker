@@ -1206,4 +1206,201 @@ describe('Guidance Readability Handler Tests', () => {
       expect(mappedSuggestion.targetFleschScore).to.equal(60);
     });
   });
+
+  describe('Coverage for uncovered lines', () => {
+    beforeEach(() => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Test' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+          },
+        },
+      });
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+    });
+
+    it('should cover line 302: return auditItem unchanged when name is not readability', async () => {
+      mockAsyncJob.getResult.returns([
+        {
+          audits: [
+            {
+              name: 'other-audit', // Not 'readability' - should trigger line 302
+              opportunities: [{ someData: 'unchanged' }],
+            },
+            {
+              name: 'readability',
+              opportunities: [{ textContent: 'Test content', fleschReadingEase: 25 }],
+            },
+          ],
+        },
+      ]);
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'line-302-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+
+      // Verify that non-readability audit items are returned unchanged
+      const setResultCall = mockAsyncJob.setResult.getCall(0);
+      const updatedResult = setResultCall.args[0];
+      const otherAuditItem = updatedResult[0].audits.find((audit) => audit.name === 'other-audit');
+      expect(otherAuditItem).to.deep.equal({
+        name: 'other-audit',
+        opportunities: [{ someData: 'unchanged' }],
+      });
+    });
+
+    it('should cover line 307: return pageResult unchanged when audits property is missing', async () => {
+      mockAsyncJob.getResult.returns([
+        {
+          // Page result without 'audits' property - should trigger line 307
+          url: 'https://example.com/page1',
+          status: 'completed',
+          someOtherData: 'unchanged',
+        },
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [{ textContent: 'Test content', fleschReadingEase: 25 }],
+            },
+          ],
+        },
+      ]);
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'line-307-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+
+      // Verify that page results without audits are returned unchanged
+      const setResultCall = mockAsyncJob.setResult.getCall(0);
+      const updatedResult = setResultCall.args[0];
+      const pageWithoutAudits = updatedResult[0];
+      expect(pageWithoutAudits).to.deep.equal({
+        url: 'https://example.com/page1',
+        status: 'completed',
+        someOtherData: 'unchanged',
+      });
+    });
+  });
+
+  describe('Branch Coverage for || fallback operators', () => {
+    beforeEach(() => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Test' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+          },
+        },
+      });
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+    });
+
+    it('should cover line 23: pageUrl || "unknown" when pageUrl is falsy', async () => {
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          suggestions: [
+            {
+              pageUrl: null, // Falsy pageUrl to trigger || 'unknown'
+              original_paragraph: 'Original text',
+              improved_paragraph: 'Improved text',
+              current_flesch_score: 20,
+              improved_flesch_score: 80,
+            },
+            {
+              pageUrl: '', // Empty string pageUrl to trigger || 'unknown'
+              original_paragraph: 'Original text 2',
+              improved_paragraph: 'Improved text 2',
+              current_flesch_score: 25,
+              improved_flesch_score: 75,
+            },
+          ],
+        },
+        id: 'pageurl-fallback-test',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+
+      // Verify suggestions with 'unknown' pageUrl fallback were created
+      const setMetadataCall = mockAsyncJob.setMetadata.getCall(0);
+      const updatedMetadata = setMetadataCall.args[0];
+      const { suggestions } = updatedMetadata.payload.readabilityMetadata;
+
+      expect(suggestions[0].id).to.include('readability-unknown-0');
+      expect(suggestions[1].id).to.include('readability-unknown-1');
+    });
+
+    it('should cover line 48: data || {} when message.data is falsy', async () => {
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: null, // Falsy data to trigger || {} fallback
+        id: 'data-fallback-test',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.warn).to.have.been.calledWithMatch('No valid readability improvements found');
+    });
+
+    it('should cover line 74: getMetadata() || {} when getMetadata returns null', async () => {
+      // Make getMetadata return null to trigger || {} fallback
+      mockAsyncJob.getMetadata.returns(null);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'metadata-fallback-test',
+      };
+
+      try {
+        await handler.default(message, mockContext);
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.include('No readability metadata found in job');
+      }
+    });
+  });
 });

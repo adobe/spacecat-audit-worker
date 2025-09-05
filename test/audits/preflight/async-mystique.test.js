@@ -301,6 +301,61 @@ describe('Async Mystique Tests', () => {
       expect(log.error).to.have.been.calledWithMatch('2 messages failed to send to Mystique');
     }); */
 
+    it('should handle partial SQS failures and throw error (covers lines 116-123, 133-135)', async () => {
+      // Setup: No existing job metadata
+      mockAsyncJob.findById.resolves(existingJob);
+      existingJob.getMetadata.returns({});
+      existingJob.save.resolves();
+
+      // Setup: First message succeeds, second fails
+      mockSqs.sendMessage
+        .onFirstCall().resolves({ MessageId: 'msg-success' })
+        .onSecondCall().rejects(new Error('SQS timeout'));
+
+      await expect(
+        sendReadabilityToMystique(
+          'https://example.com',
+          sampleReadabilityIssues,
+          'test-site',
+          'test-job',
+          context,
+        ),
+      ).to.be.rejectedWith('Failed to send 1 out of 2 messages to Mystique');
+
+      // Verify error logging for failed message (lines 116-123)
+      expect(log.error).to.have.been.calledWithMatch('Failed to send SQS message 2:');
+
+      // Verify error logging for overall failure (lines 133-135)
+      expect(log.error).to.have.been.calledWithMatch('1 messages failed to send to Mystique');
+    });
+
+    it('should handle complete SQS failures (covers lines 116-123, 133-135)', async () => {
+      // Setup: No existing job metadata
+      mockAsyncJob.findById.resolves(existingJob);
+      existingJob.getMetadata.returns({});
+      existingJob.save.resolves();
+
+      // Setup: All messages fail
+      mockSqs.sendMessage.rejects(new Error('Queue unavailable'));
+
+      await expect(
+        sendReadabilityToMystique(
+          'https://example.com',
+          sampleReadabilityIssues,
+          'test-site',
+          'test-job',
+          context,
+        ),
+      ).to.be.rejectedWith('Failed to send 2 out of 2 messages to Mystique');
+
+      // Verify error logging for failed messages (lines 116-123)
+      expect(log.error).to.have.been.calledWithMatch('Failed to send SQS message 1:');
+      expect(log.error).to.have.been.calledWithMatch('Failed to send SQS message 2:');
+
+      // Verify error logging for overall failure (lines 133-135)
+      expect(log.error).to.have.been.calledWithMatch('2 messages failed to send to Mystique');
+    });
+
     it('should handle dataAccess.Site.findById failure', async () => {
       mockDataAccess.Site.findById.rejects(new Error('Database connection failed'));
 
