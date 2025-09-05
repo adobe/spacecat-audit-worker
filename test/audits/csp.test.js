@@ -585,6 +585,7 @@ describe('CSP Post-processor', () => {
             {
               type: 'static-content',
               url: 'https://adobe.com/head.html',
+              page: '/head.html',
               findings: [
                 {
                   scriptContent: '<script src="/scripts/lib-franklin.js" type="module"></script>',
@@ -607,6 +608,7 @@ describe('CSP Post-processor', () => {
             {
               type: 'static-content',
               url: 'https://adobe.com/404.html',
+              page: '/404.html',
               findings: [
                 {
                   scriptContent: "<script type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>",
@@ -661,6 +663,7 @@ describe('CSP Post-processor', () => {
             {
               type: 'static-content',
               url: 'https://adobe.com/head.html',
+              page: '/head.html',
               findings: [
                 {
                   scriptContent: '<script \n   src="/scripts/lib-franklin.js" \n  type="module">\n</script>',

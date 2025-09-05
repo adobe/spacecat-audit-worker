@@ -15,7 +15,7 @@ import { load as cheerioLoad } from 'cheerio';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_CSP;
 
-async function determineSuggestionsForPage(url, context, site) {
+async function determineSuggestionsForPage(url, page, context, site) {
   const { log } = context;
 
   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Fetching page '${url}' for CSP auto-suggest`);
@@ -70,6 +70,7 @@ async function determineSuggestionsForPage(url, context, site) {
   return {
     type: 'static-content',
     url: url.toString(),
+    page,
     findings,
     suggestedBody,
   };
@@ -101,15 +102,16 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
     type: 'csp-header',
   });
 
-  const fetchPromises = pageUrls.map(async (url) => {
+  const fetchPromises = pageUrls.map(async (pageUrl) => {
     try {
-      const finding = await determineSuggestionsForPage(new URL(url, auditUrl), context, site);
+      const fullUrl = new URL(pageUrl, auditUrl);
+      const finding = await determineSuggestionsForPage(fullUrl, pageUrl, context, site);
 
       if (finding) {
         findings.push(finding);
       }
     } catch (error) {
-      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Error downloading page ${url}:`, error);
+      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Error downloading page ${pageUrl}:`, error);
       autoSuggestError = true;
     }
   });
