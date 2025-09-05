@@ -415,7 +415,7 @@ export async function saveOpptyWithRetry(opportunity, auditId, Opportunity, log,
         // Calculate delay: 200ms, 400ms, 800ms, etc.
         const delay = 2 ** attemptNumber * 100;
 
-        log.warn(`[A11yRemediationGuidance] Conditional check failed on attempt ${attemptNumber}, retrying in ${delay}ms`);
+        log.error(`[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt ${attemptNumber}, retrying in ${delay}ms`);
 
         // Wait before retrying
         await new Promise((resolve) => {
