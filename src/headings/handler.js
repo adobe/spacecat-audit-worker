@@ -203,7 +203,7 @@ export async function validatePageHeadings(url, log) {
     }
 
     // Check for duplicate heading text content
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // eslint-disable-next-line no-unused-vars
     for (const [lowerText, headingsWithSameText] of headingTexts) {
       if (headingsWithSameText.length > 1) {
         checks.push({

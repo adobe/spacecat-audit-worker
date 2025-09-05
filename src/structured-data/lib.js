@@ -361,7 +361,7 @@ export function generateErrorMarkupForIssue(issue) {
           JSON.stringify(JSON.parse(issue.source), null, 4),
           '```',
         ].join('\n');
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // eslint-disable-next-line no-unused-vars
       } catch (error) {
         markup = [
           '```json',
@@ -382,7 +382,7 @@ export function generateErrorMarkupForIssue(issue) {
           cleanup,
           '```',
         ].join('\n');
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // eslint-disable-next-line no-unused-vars
       } catch (error) {
         markup = [
           '```html',
