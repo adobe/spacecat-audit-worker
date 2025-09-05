@@ -60,7 +60,7 @@ async function addScreenshots(context, siteId, markdown, jobId) {
 export function isLowSeverityGuidanceBody(body) {
   if (body.issueSeverity) {
     const sev = body.issueSeverity.toLowerCase();
-    return sev === 'none' || sev === 'low';
+    return sev.includes('none') || sev.includes('low');
   }
 
   return false;
