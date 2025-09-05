@@ -495,7 +495,7 @@ export async function sendMessageToFormsQualityAgent(context, opportunity, forms
       log, sqs, site, env,
     } = context;
 
-    log.info(`forms quality agent message sent to mystique : ${JSON.stringify(opportunity)}`);
+    log.info(`Received forms quality agent message for mystique : ${JSON.stringify(opportunity)}`);
     const opportunityData = JSON.parse(JSON.stringify(opportunity));
 
     const data = {
@@ -517,7 +517,7 @@ export async function sendMessageToFormsQualityAgent(context, opportunity, forms
 
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueFormsQualityAgentMessage);
-    log.info(`forms quality agent message sent to mystique 1 : ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
+    log.info(`Forms quality agent message sent to mystique: ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
   }
 }
 
@@ -527,7 +527,7 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
   } = context;
 
   if (opportunity) {
-    log.info(`forms quality agent message sent to mystique : ${JSON.stringify(opportunity)}`);
+    log.info(`Received forms opportunity for guidance: ${JSON.stringify(opportunity)}`);
     const opptyData = JSON.parse(JSON.stringify(opportunity));
     // Normalize type: convert forms-accessibility → forms-a11y
     const normalizedType = opptyData.type === 'form-accessibility' ? 'forms-a11y' : opptyData.type;
@@ -562,6 +562,6 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
 
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.info(`forms opportunity sent to mystique for guidance: ${JSON.stringify(mystiqueMessage)}`);
+    log.info(`Forms opportunity sent to mystique for guidance: ${JSON.stringify(mystiqueMessage)}`);
   }
 }

@@ -12,6 +12,7 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { sendMessageToMystiqueForGuidance } from '../utils.js';
+import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 
 export default async function handler(message, context) {
   const {
@@ -19,16 +20,15 @@ export default async function handler(message, context) {
   } = context;
   const { Opportunity } = dataAccess;
   const { data, auditId: id } = message;
-  log.info(`Message received in form details handler 1: ${JSON.stringify(message, null, 2)}`);
+  log.info(`Message received in form details handler : ${JSON.stringify(message, null, 2)}`);
   const { form_details: formDetails } = data;
 
   const opportunity = await Opportunity.findById(id);
   if (opportunity) {
-    log.info(`Opportunity found: ${JSON.stringify(opportunity)}`);
-    if (opportunity.getType() === 'form-accessibility') {
-      log.info(`Opportunity found accessibility : ${JSON.stringify(opportunity)}`);
+    log.info(`Opportunity found in form details handler: ${JSON.stringify(opportunity)}`);
+    if (opportunity.getType() === FORM_OPPORTUNITY_TYPES.FORM_A11Y) {
       const opportunityData = opportunity.getData();
-      log.info(`Opportunity found accessibility data : ${JSON.stringify(opportunityData)}`);
+      log.info(`Opportunity found accessibility data in form details handler: ${JSON.stringify(opportunityData)}`);
       const updatedAccessibility = opportunityData.accessibility.map((item) => {
         // eslint-disable-next-line max-len
         const matchingFormDetail = formDetails.find((detail) => detail.url === item.form && detail.form_source === item.formSource);
@@ -58,9 +58,8 @@ export default async function handler(message, context) {
     }
 
     opportunity.setUpdatedBy('system');
-    // eslint-disable-next-line no-await-in-loop
     await opportunity.save();
-    log.info(`Updated opportunity: ${JSON.stringify(opportunity, null, 2)}`);
+    log.info(`Updated opportunity with form details: ${JSON.stringify(opportunity, null, 2)}`);
     await sendMessageToMystiqueForGuidance(context, opportunity);
   }
   return ok();
