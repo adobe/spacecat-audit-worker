@@ -10,11 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { JSDOM } from 'jsdom';
-// eslint-disable-next-line import/no-unresolved
-import { isLangCode } from 'is-language-code';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { isLangCode } from 'is-language-code';
+import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';

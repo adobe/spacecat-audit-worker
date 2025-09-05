@@ -83,7 +83,7 @@
     "@adobe/spacecat-shared-gpt-client": "1.6.0",
     "@adobe/spacecat-shared-http-utils": "1.17.0",
     "@adobe/spacecat-shared-rum-api-client": "2.37.0",
-    "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@2.37.0",
+    "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-utils": "1.50.0",
     "@adobe/spacecat-shared-scrape-client": "2.1.1",
     "@adobe/structured-data-validator": "1.5.0",

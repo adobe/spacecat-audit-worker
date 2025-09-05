@@ -42,7 +42,7 @@ export default defineConfig([
     },
     rules: {
       'no-unused-expressions': 'off',
-      'import/no-unresolved': ['error', { ignore: ['@octokit/rest'] }],
+      'import/no-unresolved': ['error', { ignore: ['@octokit/rest', 'is-language-code'] }],
     },
   },
   {
