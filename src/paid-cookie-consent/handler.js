@@ -51,7 +51,6 @@ function getConfig(env) {
 // Transform direct SQL query results to RUM-compatible segments
 function transformQueryResultsToSegments(results, baseURL) {
   const segments = [];
-  const urlSegmentData = [];
   const urlTrafficSourceData = [];
   const urlConsentData = [];
 
@@ -74,9 +73,7 @@ function transformQueryResultsToSegments(results, baseURL) {
       projectedTrafficLost: (parseFloat(row.bounce_rate || 0)) * parseInt(row.pageviews || 0, 10),
     };
 
-    if (row.segment_type === 'url') {
-      urlSegmentData.push(item);
-    } else if (row.segment_type === 'urlTrafficSource') {
+    if (row.segment_type === 'urlTrafficSource') {
       urlTrafficSourceData.push({ ...item, url: row.utm_source });
     } else if (row.segment_type === 'urlConsent') {
       // For urlConsent, keep the constructed URL for mystique
@@ -85,13 +82,6 @@ function transformQueryResultsToSegments(results, baseURL) {
   });
 
   // Create segments
-  if (urlSegmentData.length > 0) {
-    segments.push({
-      key: 'url',
-      value: urlSegmentData,
-    });
-  }
-
   if (urlTrafficSourceData.length > 0) {
     segments.push({
       key: 'urlTrafficSource',
@@ -183,18 +173,17 @@ export async function paidAuditRunner(auditUrl, context, site) {
     log.info(`[paid-audit] [Site: ${auditUrl}] Executing three separate Athena queries for paid traffic segments`);
 
     // Execute all three segment queries
-    const urlResults = await executeSegmentQuery(athenaClient, ['path'], 'URL', siteId, temporalCondition, config.pageViewThreshold, config, log);
-
     const urlTrafficSourceResults = await executeSegmentQuery(athenaClient, ['path', 'utm_source'], 'URL Traffic Source', siteId, temporalCondition, config.pageViewThreshold, config, log);
 
     const urlConsentResults = await executeSegmentQuery(athenaClient, ['path', 'consent'], 'URL Consent', siteId, temporalCondition, config.pageViewThreshold, config, log);
 
-    // Combine results manually with segment type identifiers
+    // Combine results manually with segment type identifiers and filter consent data early
     const results = [
-      ...urlResults.map((row) => ({ ...row, segment_type: 'url' })),
       ...urlTrafficSourceResults.map((row) => ({ ...row, segment_type: 'urlTrafficSource' })),
-      ...urlConsentResults.map((row) => ({ ...row, segment_type: 'urlConsent' })),
+      ...urlConsentResults.filter((row) => row.consent === 'show').map((row) => ({ ...row, segment_type: 'urlConsent' })),
     ];
+
+    log.info(`[paid-audit] [Site: ${auditUrl}] Filtered urlConsent from ${urlConsentResults.length} to ${urlConsentResults.filter((row) => row.consent === 'show').length} rows`);
 
     log.info(`[paid-audit] [Site: ${auditUrl}] Processing ${results?.length} combined query result rows`);
 
@@ -202,6 +191,11 @@ export async function paidAuditRunner(auditUrl, context, site) {
     const allSegments = transformQueryResultsToSegments(results, baseURL);
 
     log.info(`[paid-audit] [Site: ${auditUrl}] Processing ${allSegments?.length} segments`);
+
+    // Log segment sizes before saving
+    allSegments.forEach((segment) => {
+      log.info(`[paid-audit] [Site: ${auditUrl}] Segment '${segment.key}' contains ${segment.value.length} items`);
+    });
     const auditResult = allSegments.filter(hasValues);
     return {
       auditResult,
