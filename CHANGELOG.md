@@ -1,3 +1,73 @@
+# [1.175.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.174.1...v1.175.0) (2025-09-05)
+
+
+### Features
+
+* moving a11y metrics save logic to import-worker ([#1190](https://github.com/adobe/spacecat-audit-worker/issues/1190)) ([46cea76](https://github.com/adobe/spacecat-audit-worker/commit/46cea76912f74e4546969b36bbbcb0aa9b9695c9))
+
+## [1.174.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.174.0...v1.174.1) (2025-09-05)
+
+
+### Bug Fixes
+
+* CSP analysis reported wrong line numbers ([#1178](https://github.com/adobe/spacecat-audit-worker/issues/1178)) ([ab450ba](https://github.com/adobe/spacecat-audit-worker/commit/ab450ba6f12a953defa7d227eddfceda6629b455))
+
+# [1.174.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.173.3...v1.174.0) (2025-09-04)
+
+
+### Features
+
+* s3 restructure to use single bucket for CDN logs ([#1213](https://github.com/adobe/spacecat-audit-worker/issues/1213)) ([d8a09e9](https://github.com/adobe/spacecat-audit-worker/commit/d8a09e9a7ed3ac32c8a553123273b10ec28939bd))
+
+## [1.173.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.173.2...v1.173.3) (2025-09-04)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** add step for OpTel import ([#1225](https://github.com/adobe/spacecat-audit-worker/issues/1225)) ([d4dd5df](https://github.com/adobe/spacecat-audit-worker/commit/d4dd5dfd04b8bcde9e077e0b44d0a6642cbcd3d7))
+
+## [1.173.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.173.1...v1.173.2) (2025-09-04)
+
+
+### Bug Fixes
+
+* use config id if provided then imsOrgId ([#1223](https://github.com/adobe/spacecat-audit-worker/issues/1223)) ([653fc26](https://github.com/adobe/spacecat-audit-worker/commit/653fc26ae7109a35179741d4adad0ebcaf8ab61c))
+
+## [1.173.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.173.0...v1.173.1) (2025-09-03)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** properly define options for not taking screenshots ([#1224](https://github.com/adobe/spacecat-audit-worker/issues/1224)) ([1a478be](https://github.com/adobe/spacecat-audit-worker/commit/1a478be00e54cc5bcf886093a967e5fd3d0a3642))
+
+# [1.173.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.172.1...v1.173.0) (2025-09-03)
+
+
+### Features
+
+* Introduce AI suggestions for readability audit in preflight ([#1218](https://github.com/adobe/spacecat-audit-worker/issues/1218)) ([648c6b4](https://github.com/adobe/spacecat-audit-worker/commit/648c6b4744a7af4708f3f28199277a9d561ac908))
+
+## [1.172.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.172.0...v1.172.1) (2025-09-03)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-gpt-client to v1.6.0 ([#1219](https://github.com/adobe/spacecat-audit-worker/issues/1219)) ([f2ff31b](https://github.com/adobe/spacecat-audit-worker/commit/f2ff31b82715bd7cd7e15908499150bb8c5bc01d))
+
+# [1.172.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.171.0...v1.172.0) (2025-09-03)
+
+
+### Features
+
+* cookie consent banner improvements ([#1217](https://github.com/adobe/spacecat-audit-worker/issues/1217)) ([7c2446c](https://github.com/adobe/spacecat-audit-worker/commit/7c2446c3f68d4d2ce8e0593cfe450470dd4a16aa))
+
+# [1.171.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.170.3...v1.171.0) (2025-09-03)
+
+
+### Features
+
+* added jiraLink field to a11y suggestion data structure ([#1204](https://github.com/adobe/spacecat-audit-worker/issues/1204)) ([f925653](https://github.com/adobe/spacecat-audit-worker/commit/f925653b18ee07a276411f4017f615b9741c78d2))
+
 ## [1.170.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.170.2...v1.170.3) (2025-09-02)
 
 

@@ -42,11 +42,10 @@ async function runCdnLogsReport(url, context, site, auditContext) {
   /* c8 ignore start */
   const { orgId } = site.getConfig().getLlmoCdnBucketConfig() || {};
   // for non-adobe customers, use the orgId from the config
-  const imsOrgId = await getImsOrgId(site, dataAccess, log) || orgId;
-  /* c8 ignore stop */
-
+  const imsOrgId = orgId || await getImsOrgId(site, dataAccess, log);
   // create db if not exists
   const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
+  /* c8 ignore stop */
   const sqlDbDescription = `[Athena Query] Create database ${s3Config.databaseName}`;
   await athenaClient.execute(sqlDb, s3Config.databaseName, sqlDbDescription);
 
