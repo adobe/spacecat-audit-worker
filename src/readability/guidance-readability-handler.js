@@ -307,11 +307,25 @@ export default async function handler(message, context) {
           return pageResult;
         });
 
-        // Update AsyncJob with completed results
+        // Update AsyncJob with completed results (only if not already completed)
         asyncJob.setResult(updatedResult);
-        asyncJob.setStatus(AsyncJobEntity.Status.COMPLETED);
-        asyncJob.setEndedAt(new Date().toISOString());
-        await asyncJob.save();
+
+        // Only update status and endedAt if the job is not already completed
+        // This prevents race conditions when multiple Mystique responses arrive simultaneously
+        if (asyncJob.getStatus() !== AsyncJobEntity.Status.COMPLETED) {
+          asyncJob.setStatus(AsyncJobEntity.Status.COMPLETED);
+          asyncJob.setEndedAt(new Date().toISOString());
+        }
+
+        // Reload job before saving to avoid stale updatedAt conflicts
+        const freshAsyncJob = await AsyncJobEntity.findById(auditId);
+        freshAsyncJob.setResult(asyncJob.getResult());
+        if (freshAsyncJob.getStatus() !== AsyncJobEntity.Status.COMPLETED) {
+          freshAsyncJob.setStatus(AsyncJobEntity.Status.COMPLETED);
+          freshAsyncJob.setEndedAt(new Date().toISOString());
+        }
+
+        await freshAsyncJob.save();
 
         log.info(`[readability-suggest guidance]: Successfully updated AsyncJob ${auditId} `
           + 'with completed readability suggestions');
