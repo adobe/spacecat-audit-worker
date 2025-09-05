@@ -1,3 +1,10 @@
+## [1.174.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.174.0...v1.174.1) (2025-09-05)
+
+
+### Bug Fixes
+
+* CSP analysis reported wrong line numbers ([#1178](https://github.com/adobe/spacecat-audit-worker/issues/1178)) ([ab450ba](https://github.com/adobe/spacecat-audit-worker/commit/ab450ba6f12a953defa7d227eddfceda6629b455))
+
 # [1.174.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.173.3...v1.174.0) (2025-09-04)
 
 
