@@ -97,11 +97,6 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
   let autoSuggestError = false;
   const findings = [];
 
-  // Add a finding for the CSP header - uto-suggest is only called if this is not properly set
-  findings.push({
-    type: 'csp-header',
-  });
-
   const fetchPromises = pageUrls.map(async (pageUrl) => {
     try {
       const fullUrl = new URL(pageUrl, auditUrl);
@@ -122,6 +117,11 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Error fetching one or more pages. Skipping CSP auto-suggest.`);
     return csp;
   }
+
+  // Add a finding for the CSP header - auto-suggest is only called if this is not properly set
+  findings.push({
+    type: 'csp-header',
+  });
 
   const result = [...csp];
   result[0].findings = findings;

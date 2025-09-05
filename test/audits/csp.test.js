@@ -297,7 +297,7 @@ describe('CSP Post-processor', () => {
       description: 'Content Security Policy can help protect applications from Cross Site Scripting (XSS) attacks, but in order for it to be effective one needs to define a secure policy. The recommended CSP setup is "Strict CSP with (cached) nonce + strict-dynamic".',
       data: {
         securityScoreImpact: 10,
-        howToFix: '**Warning:** This solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.  \nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
+        howToFix: '### ⚠ **Warning**\nThis solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.\nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
         dataSources: [
           'Page',
         ],
@@ -361,7 +361,7 @@ describe('CSP Post-processor', () => {
       description: 'Content Security Policy can help protect applications from Cross Site Scripting (XSS) attacks, but in order for it to be effective one needs to define a secure policy. The recommended CSP setup is "Strict CSP with (cached) nonce + strict-dynamic".',
       data: {
         securityScoreImpact: 10,
-        howToFix: '**Warning:** This solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.  \nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
+        howToFix: '### ⚠ **Warning**\nThis solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.\nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
         dataSources: [
           'Page',
         ],
@@ -458,7 +458,7 @@ describe('CSP Post-processor', () => {
       description: 'Content Security Policy can help protect applications from Cross Site Scripting (XSS) attacks, but in order for it to be effective one needs to define a secure policy. The recommended CSP setup is "Strict CSP with (cached) nonce + strict-dynamic".',
       data: {
         securityScoreImpact: 10,
-        howToFix: '**Warning:** This solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.  \nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
+        howToFix: '### ⚠ **Warning**\nThis solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.\nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
         dataSources: [
           'Page',
         ],
@@ -580,9 +580,6 @@ describe('CSP Post-processor', () => {
           ...csp[0],
           findings: [
             {
-              type: 'csp-header',
-            },
-            {
               type: 'static-content',
               url: 'https://adobe.com/head.html',
               page: '/head.html',
@@ -632,7 +629,11 @@ describe('CSP Post-processor', () => {
                 },
               ],
               suggestedBody: "<!DOCTYPE html>\n<html>\n\n<head>\n  \n  <title>Page not found</title>\n  <script nonce=\"aem\" type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <meta property=\"og:title\" content=\"Page not found\">\n  <script nonce=\"aem\" src=\"/scripts/scripts.js\" type=\"module\" crossorigin=\"use-credentials\"></script>\n  <script nonce=\"aem\" type=\"module\">\n    window.addEventListener('load', () => {\n      if (document.referrer) {\n        const { origin, pathname } = new URL(document.referrer);\n        if (origin === window.location.origin) {\n          const backBtn = document.createElement('a');\n          backBtn.classList.add('button', 'error-button-back');\n          backBtn.href = pathname;\n          backBtn.textContent = 'Go back';\n          backBtn.title = 'Go back';\n          const btnContainer = document.querySelector('.button-container');\n          btnContainer.append(backBtn);\n        }\n      }\n    });\n  </script>\n  <script nonce=\"aem\" type=\"module\">\n    import { sampleRUM } from '/scripts/lib-franklin.js';\n    import { applyRedirects } from '/scripts/redirects.js';\n    await applyRedirects();\n    sampleRUM('404', { source: document.referrer });\n  </script>\n  <link rel=\"stylesheet\" href=\"/styles/styles.css\">\n  <style>\n    main.error {\n      min-height: calc(100vh - var(--nav-height));\n      display: flex;\n      align-items: center;\n    }\n\n    main.error .error-number {\n      width: 100%;\n    }\n\n    main.error .error-number text {\n      font-family: monospace;\n    }\n  </style>\n  <link rel=\"stylesheet\" href=\"/styles/lazy-styles.css\">\n</head>\n\n<body>\n  <header></header>\n  <main class=\"error\">\n    <div class=\"section\">\n      <svg viewBox=\"1 0 38 18\" class=\"error-number\">\n        <text x=\"0\" y=\"17\">404</text>\n      </svg>\n      <h2 class=\"error-message\">Page Not Found</h2>\n      <p class=\"button-container\">\n        <a href=\"/\" class=\"button secondary error-button-home\">Go home</a>\n      </p>\n    </div>\n  </main>\n  <footer></footer>\n</body>\n\n</html>",
-            }],
+            },
+            {
+              type: 'csp-header',
+            },
+          ],
         },
       ];
 
@@ -658,9 +659,6 @@ describe('CSP Post-processor', () => {
           ...csp[0],
           findings: [
             {
-              type: 'csp-header',
-            },
-            {
               type: 'static-content',
               url: 'https://adobe.com/head.html',
               page: '/head.html',
@@ -682,7 +680,11 @@ describe('CSP Post-processor', () => {
                 },
               ],
               suggestedBody: '<!-- v7 -->\n\n<meta name="viewport" content="width=device-width, initial-scale=1"/>\n<script nonce="aem" \n   src="/scripts/lib-franklin.js" \n  type="module">\n</script>\n<script nonce="aem" src="/scripts/scripts.js" type="module"></script>\n<script nonce="aem" src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>\n<link rel="stylesheet" href="/styles/styles.css"/>\n',
-            }],
+            },
+            {
+              type: 'csp-header',
+            },
+          ],
         },
       ];
 
