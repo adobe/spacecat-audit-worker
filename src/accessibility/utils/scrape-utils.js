@@ -402,3 +402,39 @@ export async function saveMystiqueValidationMetricsToS3(
     };
   }
 }
+
+export async function saveOpptyWithRetry(opportunity, auditId, Opportunity, log, maxRetries = 3) {
+  async function attemptSave(currentOpportunity, attemptNumber) {
+    try {
+      await currentOpportunity.save();
+      log.info(`[A11yRemediationGuidance] Successfully saved opportunity on attempt ${attemptNumber}`);
+      return currentOpportunity;
+    } catch (error) {
+      // Check if we have retries left
+      if (attemptNumber < maxRetries) {
+        // Calculate delay: 200ms, 400ms, 800ms, etc.
+        const delay = 2 ** attemptNumber * 100;
+
+        log.warn(`[A11yRemediationGuidance] Conditional check failed on attempt ${attemptNumber}, retrying in ${delay}ms`);
+
+        // Wait before retrying
+        await new Promise((resolve) => {
+          setTimeout(resolve, delay);
+        });
+
+        // Get fresh data from database and reapply our changes
+        const refreshed = await Opportunity.findById(currentOpportunity.getId());
+        refreshed.setAuditId(auditId);
+        refreshed.setUpdatedBy('system');
+
+        // Recursively try again with the refreshed opportunity
+        return attemptSave(refreshed, attemptNumber + 1);
+      }
+
+      // If it's a different error or we're out of retries, give up
+      throw error;
+    }
+  }
+
+  return attemptSave(opportunity, 1);
+}
