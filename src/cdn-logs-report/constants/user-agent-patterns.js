@@ -42,10 +42,6 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   // { pattern: '%copilot%', displayName: 'Copilot' },
 ];
 
-export function getProviderPattern(provider) {
-  return PROVIDER_USER_AGENT_PATTERNS[provider?.toLowerCase()] || null;
-}
-
 /**
  * Builds SQL CASE statement for user agent display names
  * @returns {string} SQL CASE statement
