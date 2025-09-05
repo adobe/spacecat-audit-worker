@@ -159,6 +159,36 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
+  it('should use existing opportunity with form details', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
+    const { auditDataWithExistingOppty } = testData;
+    formsOppty.getData = sinon.stub().returns({
+      form: 'https://www.surest.com/info/win-1',
+      screenshot: '',
+      trackedFormKPIName: 'Conversion Rate',
+      trackedFormKPIValue: 0.5,
+      formViews: 1000,
+      pageViews: 5000,
+      samples: 5000,
+      formDetails: {
+        is_lead_gen: true,
+        industry: 'Insurance',
+        form_type: 'Quote Request Form',
+        form_category: 'B2C',
+        cpl: 230.6,
+      },
+    });
+    await createLowConversionOpportunities(
+      auditUrl,
+      auditDataWithExistingOppty,
+      undefined,
+      context,
+    );
+    expect(formsOppty.setUpdatedBy).to.be.calledWith('system');
+    expect(formsOppty.save).to.be.callCount(1);
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+  });
+
   it('should throw error if fetching opportunity fails', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
     try {

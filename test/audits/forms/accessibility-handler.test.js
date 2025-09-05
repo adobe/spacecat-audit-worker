@@ -1298,9 +1298,10 @@ describe('Forms Opportunities - Accessibility Handler', () => {
     const siteId = 'test-site-id';
     const auditId = 'test-audit-id';
     const opportunityId = 'test-opportunity-id';
+    let mockOpportunityData;
 
     beforeEach(() => {
-      let mockOpportunityData = {
+      mockOpportunityData = {
         accessibility: [{
           form: 'https://example.com/form1',
           formSource: '#form1',
@@ -1370,7 +1371,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         .build();
     });
 
-    it('should process message and send to mystique', async () => {
+    it('should process message and send to mystique for quality agent', async () => {
       const message = {
         auditId,
         siteId,
@@ -1395,6 +1396,95 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sqsMessage = context.sqs.sendMessage.getCall(0).args[1];
       expect(sqsMessage.type).to.equal('detect:form-details');
+    });
+
+    it('should process message and send to mystique for guidance', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          opportunityId,
+          a11y: [{
+            form: 'https://example.com/form1',
+            formSource: '#form1',
+            a11yIssues: [{
+              issue: 'Missing alt text',
+              level: 'error',
+              successCriterias: ['1.1.1'],
+              htmlWithIssues: ['<img src="test.jpg">'],
+              recommendation: 'Add alt text to image',
+            }],
+          }],
+        },
+      };
+
+      context = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          runtime: { name: 'aws-lambda', region: 'us-east-1' },
+          func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+          site: {
+            getId: sinon.stub().returns(siteId),
+            getBaseURL: sinon.stub().returns('https://example.com'),
+            getDeliveryType: sinon.stub().returns('aem'),
+          },
+          env: {
+            QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+          },
+          sqs: {
+            sendMessage: sandbox.stub().resolves(),
+          },
+          log: {
+            info: sinon.stub(),
+            error: sinon.stub(),
+          },
+          dataAccess: {
+            Opportunity: {
+              allBySiteIdAndStatus: sandbox.stub().resolves([]),
+              findById: sandbox.stub().resolves({
+                getId: () => opportunityId,
+                save: sandbox.stub().resolves({
+                  getType: () => 'form-accessibility',
+                  getId: () => opportunityId,
+                  getData: () => ({
+                    accessibility: [{
+                      form: 'test-form-2',
+                      formDetails: {
+                        is_lead_gen: true,
+                        industry: 'Insurance',
+                        form_type: 'Quote Request Form',
+                        form_category: 'B2C',
+                        cpl: 230.6,
+                      },
+                      formsource: 'test-source',
+                      a11yIssues: [],
+                    }],
+                  }),
+                }),
+                getData: () => mockOpportunityData,
+                setData: (data) => {
+                  mockOpportunityData = data;
+                },
+              }),
+              create: sandbox.stub().resolves({
+                getId: () => opportunityId,
+                setUpdatedBy: sandbox.stub(),
+                setAuditId: sandbox.stub(),
+              }),
+            },
+            Site: {
+              findById: sandbox.stub().resolves({
+                getDeliveryType: sinon.stub().returns('aem'),
+                getBaseURL: sinon.stub().returns('https://example.com'),
+              }),
+            },
+          },
+        })
+        .build();
+
+      await mystiqueDetectedFormAccessibilityHandler(message, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
 
     it('should not send message to mystique when no opportunity is found', async () => {
@@ -1433,7 +1523,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           }],
         },
       };
-      let mockOpportunityData = {
+      mockOpportunityData = {
         accessibility: [{
           form: 'https://example.com/form1',
           formSource: '#form1',
@@ -1487,7 +1577,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           }],
         },
       };
-      let mockOpportunityData = {
+      mockOpportunityData = {
         accessibility: [{
           form: 'https://example.com/form2',
           formSource: '#form2',
