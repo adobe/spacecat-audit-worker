@@ -13,7 +13,7 @@
 import ExcelJS from 'exceljs';
 import { getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { startOfISOWeek, addDays, format } from 'date-fns';
-import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
+import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
 
 export async function prompt(systemPrompt, userPrompt, env) {
   const {
@@ -90,12 +90,20 @@ async function createAndSaveWorkbook(config, site, context) {
     }
   }
 
-  const filename = `${filePrefix}.xlsx`;
+  let filename = `${filePrefix}.xlsx`;
 
   try {
     const sharepointClient = await createLLMOSharepointClient(context);
     const llmoFolder = site.getConfig()?.getLlmoDataFolder();
     const outputLocation = `${llmoFolder}/${folderName}`;
+
+    try {
+      await readFromSharePoint(filename, outputLocation, sharepointClient, log);
+      filename = `${filePrefix}-automation.xlsx`;
+      log.info(`File ${filePrefix}.xlsx already exists, using ${filename} instead`);
+    } catch (e) {
+      log.debug(`File ${filename} doesn't exist, proceeding with original filename`, e);
+    }
 
     await saveExcelReport({
       sharepointClient,
@@ -128,7 +136,7 @@ export async function uploadUrlsWorkbook(insights, site, context) {
 
   const config = {
     folderName: 'prompts',
-    filePrefix: 'urls-wip',
+    filePrefix: 'urls',
     successMessage: 'Successfully uploaded urls Excel file to SharePoint',
     worksheets: [{
       name: 'URLs',
@@ -169,7 +177,7 @@ export async function uploadPatternsWorkbook(products, pagetypes, site, context)
 
   const config = {
     folderName: 'agentic-traffic/patterns',
-    filePrefix: 'patterns-wip',
+    filePrefix: 'patterns',
     successMessage: 'Successfully uploaded patterns Excel file to SharePoint',
     worksheets: [
       {
