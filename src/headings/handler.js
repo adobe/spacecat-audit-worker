@@ -390,18 +390,18 @@ export function generateSuggestions(auditUrl, auditData, context) {
   return { ...auditData, suggestions };
 }
 
-export async function generateAISuggestions(auditUrl, auditData, context) {
+export async function generateAISuggestions(auditUrl, auditData, context, site) {
   try {
     const { log } = context;
 
     // Validate required context properties
-    if (!context.site) {
-      log.error('[Headings AI Suggestions] Site object is missing from context, skipping AI suggestions generation');
+    if (!site) {
+      log.error('[Headings AI Suggestions] Site object is missing from auditData, skipping AI suggestions generation');
       log.debug(`[Headings AI Suggestions] Available context keys: ${Object.keys(context).join(', ')}`);
       return { ...auditData };
     }
 
-    const { site } = context;
+    // const { siteId } = auditData;
 
     // Validate site object has required methods
     if (typeof site.getId !== 'function' || typeof site.getBaseURL !== 'function') {
