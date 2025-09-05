@@ -13,45 +13,23 @@
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { aggregateAccessibilityData, getUrlsForAudit, generateReportOpportunities } from './utils/data-processing.js';
+import {
+  aggregateAccessibilityData,
+  getUrlsForAudit,
+  generateReportOpportunities,
+  sendRunImportMessage,
+} from './utils/data-processing.js';
 import {
   getExistingObjectKeysFromFailedAudits,
   getRemainingUrls,
   getExistingUrlsFromFailedAudits,
   updateStatusToIgnored,
-  saveA11yMetricsToS3,
 } from './utils/scrape-utils.js';
 import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
-import { URL_SOURCE_SEPARATOR } from './utils/constants.js';
+import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from './utils/constants.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
-
-/**
- * Extracts unique URLs from aggregated data, handling both direct site URLs
- * and composite keys with source identifiers (url{separator}sourceId).
- *
- * @param {Object} data - The aggregated accessibility data
- * @returns {number} Count of unique URLs processed
- */
-export function getUniqueUrlCount(data) {
-  if (!data) return 0;
-
-  const uniqueUrls = Object.keys(data).reduce((urlSet, key) => {
-    // Skip the 'overall' key as it's not a URL
-    if (key === 'overall') return urlSet;
-
-    // Extract base URL from compositeKey if it has a source identifier, otherwise use the key as-is
-    const url = key.includes(URL_SOURCE_SEPARATOR)
-      ? key.split(URL_SOURCE_SEPARATOR)[0]
-      : key;
-    urlSet.add(url);
-
-    return urlSet;
-  }, new Set());
-
-  return uniqueUrls.size;
-}
 
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
@@ -143,7 +121,7 @@ export async function scrapeAccessibilityData(context) {
 // Second step: gets data from the first step and processes it to create new opportunities
 export async function processAccessibilityOpportunities(context) {
   const {
-    site, log, s3Client, env, dataAccess,
+    site, log, s3Client, env, dataAccess, sqs,
   } = context;
   const siteId = site.getId();
   const version = new Date().toISOString().split('T')[0];
@@ -225,15 +203,24 @@ export async function processAccessibilityOpportunities(context) {
 
   // step 3 save a11y metrics to s3
   try {
-    // TODO: Get forms a11y metrics from the forms-accessibility/siteId/version-final-result.json
-    //  file, merge with the current metrics and save to s3
-    const metricsResult = await saveA11yMetricsToS3(
-      aggregationResult.finalResultFiles.current,
-      context,
+    // Send message to importer-worker to save a11y metrics
+    await sendRunImportMessage(
+      sqs,
+      env.IMPORT_WORKER_QUEUE_URL,
+      A11Y_METRICS_AGGREGATOR_IMPORT_TYPE,
+      siteId,
+      {
+        scraperBucketName: env.S3_SCRAPER_BUCKET_NAME,
+        importerBucketName: env.S3_IMPORTER_BUCKET_NAME,
+        version,
+        urlSourceSeparator: URL_SOURCE_SEPARATOR,
+        totalChecks: WCAG_CRITERIA_COUNTS.TOTAL,
+        options: {},
+      },
     );
-    log.debug(`[A11yAudit] Saved a11y metrics for site ${siteId} - Result:`, metricsResult);
+    log.debug(`[A11yAudit] Sent message to importer-worker to save a11y metrics for site ${siteId}`);
   } catch (error) {
-    log.error(`[A11yAudit][A11yProcessingError] Error saving a11y metrics to s3 for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+    log.error(`[A11yAudit][A11yProcessingError] Error sending message to importer-worker to save a11y metrics for site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
     return {
       status: 'PROCESSING_FAILED',
       error: error.message,
@@ -242,8 +229,8 @@ export async function processAccessibilityOpportunities(context) {
 
   // Extract key metrics for the audit result summary
   const totalIssues = aggregationResult.finalResultFiles.current.overall.violations.total;
-  // Get the actual count of unique URLs processed (handles both site and form URLs)
-  const urlsProcessed = getUniqueUrlCount(aggregationResult.finalResultFiles.current);
+  // Subtract 1 for the 'overall' key to get actual URL count
+  const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length - 1;
 
   log.info(`[A11yAudit] Found ${totalIssues} issues across ${urlsProcessed} unique URLs for site ${siteId} (${site.getBaseURL()})`);
 

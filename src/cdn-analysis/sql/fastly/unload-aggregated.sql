@@ -15,7 +15,7 @@ UNLOAD (
     AND hour  = '{{hour}}'
     
      -- match known LLM-related user-agents
-    AND REGEXP_LIKE(request_user_agent, '(?i)ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot')
+    AND REGEXP_LIKE(request_user_agent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot|^Google$)')
 
     -- only count text/html responses with robots.txt and sitemaps
     AND (
