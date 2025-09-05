@@ -33,6 +33,7 @@ import {
   getEnvAsoDomain,
   aggregateAccessibilityData,
   getAuditPrefixes,
+  sendRunImportMessage,
 } from '../../../src/accessibility/utils/data-processing.js';
 
 use(sinonChai);
@@ -5069,6 +5070,45 @@ describe('data-processing utility functions', () => {
       expect(accessibilityResult).to.not.deep.equal(formsResult);
       expect(accessibilityResult.logIdentifier).to.not.equal(formsResult.logIdentifier);
       expect(accessibilityResult.storagePrefix).to.not.equal(formsResult.storagePrefix);
+    });
+  });
+
+  describe('sendRunImportMessage', () => {
+    it('should create data object with a11y-metrics-aggregator import type', async () => {
+      // Mock SQS message sending to capture the message structure
+      const sqsMessageCapture = sinon.stub();
+
+      // Call sendRunImportMessage directly to test data structure
+      await sendRunImportMessage(
+        { sendMessage: sqsMessageCapture },
+        'test-queue',
+        'a11y-metrics-aggregator',
+        'site-123',
+        {
+          scraperBucketName: 'test-scraper-bucket',
+          importerBucketName: 'test-importer-bucket',
+          version: '2024-01-01',
+          urlSourceSeparator: '|',
+          totalChecks: 10,
+          options: {},
+        },
+      );
+
+      // Verify the message structure includes the data object
+      expect(sqsMessageCapture.calledOnce).to.be.true;
+      const sentMessage = sqsMessageCapture.firstCall.args[1];
+
+      expect(sentMessage).to.have.property('type', 'a11y-metrics-aggregator');
+      expect(sentMessage).to.have.property('siteId', 'site-123');
+      expect(sentMessage).to.have.property('data');
+      expect(sentMessage.data).to.deep.equal({
+        scraperBucketName: 'test-scraper-bucket',
+        importerBucketName: 'test-importer-bucket',
+        version: '2024-01-01',
+        urlSourceSeparator: '|',
+        totalChecks: 10,
+        options: {},
+      });
     });
   });
 });

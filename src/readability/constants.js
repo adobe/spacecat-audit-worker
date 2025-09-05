@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Adobe. All rights reserved.
+ * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -10,27 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-module.exports = {
-  root: true,
-  parser: '@typescript-eslint/parser',
-  parserOptions: {
-    ecmaVersion: 2020,
-    sourceType: 'module',
-  },
-  extends: [
-    '@adobe/helix',
-    'plugin:@typescript-eslint/recommended',
-  ],
-  plugins: [
-    'import',
-    '@typescript-eslint',
-  ],
-  overrides: [
-    {
-      files: ['*.test.js'],
-      rules: {
-        '@typescript-eslint/no-unused-expressions': 'off',
-      },
-    },
-  ],
-};
+export const READABILITY_GUIDANCE_TYPE = 'guidance:readability';
+export const READABILITY_OBSERVATION = 'Content readability needs improvement';
+export const MYSTIQUE_BATCH_SIZE = 10;
+export const TARGET_FLESCH_SCORE = 30.0; // Target score for readability improvements
+export const MIN_TEXT_LENGTH = 100; // Minimum text length to analyze for readability
+export const MIN_FLESCH_SCORE_FOR_ANALYSIS = 50; // Only analyze text with flesch score below this

@@ -50,7 +50,7 @@ function flattenCSP(csp) {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// eslint-disable-next-line no-unused-vars
 export async function cspOpportunityAndSuggestions(auditUrl, auditData, context, site) {
   const { dataAccess, log } = context;
   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Classifying CSP suggestions for ${JSON.stringify(auditData)}`);

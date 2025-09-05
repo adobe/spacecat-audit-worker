@@ -34,11 +34,13 @@ async function determineSuggestionsForPage(url, context, site) {
 
   let suggestedBody = responseBody;
   const findings = [];
-  const $ = cheerioLoad(responseBody);
+  const $ = cheerioLoad(responseBody, { sourceCodeLocationInfo: true }, false);
+
   const scriptTags = $('script');
 
   scriptTags.each((index, element) => {
-    const scriptContent = $.html(element);
+    const scriptContent = responseBody
+      .substring(element.sourceCodeLocation.startOffset, element.sourceCodeLocation.endOffset);
 
     // no suggestion if nonce is already present
     if ($(element).attr('nonce')) {
@@ -48,7 +50,7 @@ async function determineSuggestionsForPage(url, context, site) {
 
     // prepare finding
     const suggestedContent = scriptContent.replace(/<script/, '<script nonce="aem"');
-    const lineNumber = responseBody.slice(0, $(element).startIndex).split('\n').length;
+    const lineNumber = element.sourceCodeLocation.startLine;
 
     findings.push({
       scriptContent,
