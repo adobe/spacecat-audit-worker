@@ -33,7 +33,7 @@ describe('Guidance Readability Handler Tests', () => {
   // One-time module mocking to avoid timeout issues
   before(async function () {
     // Increase timeout for module mocking operations
-    this.timeout(10000);
+    this.timeout(5000);
 
     // Mock the addReadabilitySuggestions function
     mockAddReadabilitySuggestions = sinon.stub();
