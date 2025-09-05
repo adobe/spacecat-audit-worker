@@ -43,11 +43,11 @@ export async function sendReadabilityToMystique(
   } = context;
 
   if (!sqs || !env || !env.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    log.error('[readability-async] Missing required context - sqs or queue configuration');
+    log.error('[readability-suggest async] Missing required context - sqs or queue configuration');
     throw new Error('Missing SQS context or queue configuration');
   }
 
-  log.info(`[readability-async] Sending ${readabilityIssues.length} readability issues to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+  log.info(`[readability-suggest async] Sending ${readabilityIssues.length} readability issues to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
 
   try {
     const site = await dataAccess.Site.findById(siteId);
@@ -80,7 +80,7 @@ export async function sendReadabilityToMystique(
       },
     });
     await jobEntity.save();
-    log.info(`[readability-async] Stored readability metadata in job ${jobId}`);
+    log.info(`[readability-suggest async] Stored readability metadata in job ${jobId}`);
 
     // Send each readability issue as a separate message to Mystique
     const messagePromises = readabilityIssues.map((issue, index) => {
@@ -105,7 +105,7 @@ export async function sendReadabilityToMystique(
 
       return sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage)
         .then(() => {
-          log.debug(`[readability-async] Sent message ${index + 1}/${readabilityIssues.length} to Mystique`, {
+          log.debug(`[readability-suggest async] Sent message ${index + 1}/${readabilityIssues.length} to Mystique`, {
             pageUrl: issue.pageUrl,
             textLength: issue.textContent.length,
             fleschScore: issue.fleschReadingEase,
@@ -113,7 +113,7 @@ export async function sendReadabilityToMystique(
           return { success: true, index, pageUrl: issue.pageUrl };
         })
         .catch((sqsError) => {
-          log.error(`[readability-async] Failed to send SQS message ${index + 1}:`, {
+          log.error(`[readability-suggest async] Failed to send SQS message ${index + 1}:`, {
             error: sqsError.message,
             queueUrl: env.QUEUE_SPACECAT_TO_MYSTIQUE,
             pageUrl: issue.pageUrl,
@@ -130,13 +130,13 @@ export async function sendReadabilityToMystique(
     const failedMessages = results.filter((result) => !result.success);
 
     if (failedMessages.length > 0) {
-      log.error(`[readability-async] ${failedMessages.length} messages failed to send to Mystique`);
+      log.error(`[readability-suggest async] ${failedMessages.length} messages failed to send to Mystique`);
       throw new Error(`Failed to send ${failedMessages.length} out of ${readabilityIssues.length} messages to Mystique`);
     }
 
-    log.info(`[readability-async] Successfully sent ${successfulMessages.length} messages to Mystique for processing`);
+    log.info(`[readability-suggest async] Successfully sent ${successfulMessages.length} messages to Mystique for processing`);
   } catch (error) {
-    log.error(`[readability-async] Failed to send readability issues to Mystique: ${error.message}`);
+    log.error(`[readability-suggest async] Failed to send readability issues to Mystique: ${error.message}`);
     throw error;
   }
 }
