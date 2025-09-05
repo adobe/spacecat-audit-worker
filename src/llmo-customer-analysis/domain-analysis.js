@@ -28,15 +28,11 @@ TASK: Analyze the provided product list and create a concentrated version by gro
 INSTRUCTIONS:
 
 1. Primary Focus - Product Grouping:
-   - Aggressively group products with similar categories, overlapping topics, or related functionality
    - Merge products that represent the same core offering but with slight variations
-   - Group products that serve similar customer needs or use cases
    - Create a representative entry for each group with the most comprehensive information
    - Use the most descriptive category name and combine all relevant topics
-   - Aim to reduce the total number of products significantly through grouping
 
 2. Limited Standalone Product Identification:
-   - Only keep products standalone if the domain has very few total offerings (less than 5 distinct product areas)
    - Products that are completely unrelated to any other offerings
    - Major business lines that are clearly distinct and cannot be reasonably grouped
 
@@ -56,7 +52,7 @@ INSTRUCTIONS:
    - If input is empty or invalid, return empty array: []
    - Ensure each output entry has all required fields
    - Maintain regional accuracy
-   - Always favor fewer, more comprehensive product entries
+   - Make sure to not exceed 10 consolidated products unless absolutely necessary
 
 RESPONSE FORMAT: Return only a valid JSON array with no additional text or formatting.
 
@@ -199,12 +195,12 @@ Example outputs:
     if ('canonical' in scrapeResult) filtered.canonical = scrapeResult.canonical;
     if (scrapeResult.structuredData && scrapeResult.structuredData.microdata && 'Product' in scrapeResult.structuredData.microdata) {
       filtered.products = Array.isArray(scrapeResult.structuredData.microdata.Product)
-        ? scrapeResult.structuredData.microdata.Product?.slice(0, 10)
+        ? scrapeResult.structuredData.microdata.Product?.slice(0, 5)
         : scrapeResult.structuredData.microdata.Product;
     }
 
     if (Object.keys(filtered).length === 0 || !('products' in filtered)) {
-      filtered.rawResult = scrapeResult.rawBody.slice(0, 20000);
+      filtered.rawResult = scrapeResult.rawBody.slice(0, 10000);
     }
 
     const stringified = JSON.stringify(filtered);

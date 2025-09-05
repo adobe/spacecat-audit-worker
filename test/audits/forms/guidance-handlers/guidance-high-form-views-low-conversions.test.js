@@ -107,7 +107,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
 
     try {
       await handler(message, context);
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // eslint-disable-next-line no-unused-vars
     } catch (error) {
       expect(error.message).to.deep.equal('fetch error');
     }

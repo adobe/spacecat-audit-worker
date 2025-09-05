@@ -137,7 +137,7 @@ export class BaseAudit {
   }
 
   // Abstract method that subclasses must implement
-  // eslint-disable-next-line class-methods-use-this,@typescript-eslint/no-unused-vars
+  // eslint-disable-next-line class-methods-use-this, no-unused-vars
   async run(message, context) {
     throw new Error('Subclasses must implement run()');
   }
