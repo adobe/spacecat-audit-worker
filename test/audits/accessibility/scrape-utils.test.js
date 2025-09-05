@@ -1951,8 +1951,8 @@ describe('Scrape Utils', () => {
         // Original opportunity should not have setAuditId/setUpdatedBy called
         expect(mockOpportunity.setAuditId).to.not.have.been.called;
         expect(mockOpportunity.setUpdatedBy).to.not.have.been.called;
-        expect(mockLog.warn).to.have.been.calledWith(
-          '[A11yRemediationGuidance] Conditional check failed on attempt 1, retrying in 200ms',
+        expect(mockLog.error).to.have.been.calledWith(
+          '[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt 1, retrying in 200ms',
         );
         expect(mockLog.info).to.have.been.calledWith(
           '[A11yRemediationGuidance] Successfully saved opportunity on attempt 2',
@@ -2003,11 +2003,11 @@ describe('Scrape Utils', () => {
         expect(refreshedOpportunity2.save).to.have.been.calledOnce;
         expect(mockOpportunityClass.findById).to.have.been.calledTwice;
 
-        expect(mockLog.warn).to.have.been.calledWith(
-          '[A11yRemediationGuidance] Conditional check failed on attempt 1, retrying in 200ms',
+        expect(mockLog.error).to.have.been.calledWith(
+          '[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt 1, retrying in 200ms',
         );
-        expect(mockLog.warn).to.have.been.calledWith(
-          '[A11yRemediationGuidance] Conditional check failed on attempt 2, retrying in 400ms',
+        expect(mockLog.error).to.have.been.calledWith(
+          '[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt 2, retrying in 400ms',
         );
         expect(mockLog.info).to.have.been.calledWith(
           '[A11yRemediationGuidance] Successfully saved opportunity on attempt 3',
@@ -2086,14 +2086,14 @@ describe('Scrape Utils', () => {
         const result = await promise;
 
         // Assert exponential backoff delays were logged correctly
-        expect(mockLog.warn).to.have.been.calledWith(
-          '[A11yRemediationGuidance] Conditional check failed on attempt 1, retrying in 200ms',
+        expect(mockLog.error).to.have.been.calledWith(
+          '[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt 1, retrying in 200ms',
         );
-        expect(mockLog.warn).to.have.been.calledWith(
-          '[A11yRemediationGuidance] Conditional check failed on attempt 2, retrying in 400ms',
+        expect(mockLog.error).to.have.been.calledWith(
+          '[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt 2, retrying in 400ms',
         );
-        expect(mockLog.warn).to.have.been.calledWith(
-          '[A11yRemediationGuidance] Conditional check failed on attempt 3, retrying in 800ms',
+        expect(mockLog.error).to.have.been.calledWith(
+          '[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt 3, retrying in 800ms',
         );
         expect(result).to.equal(successOpportunity);
       });
@@ -2293,17 +2293,17 @@ describe('Scrape Utils', () => {
         const result = await promise;
 
         // Assert correct attempt numbers in logs
-        expect(mockLog.warn).to.have.been.calledWith(
-          '[A11yRemediationGuidance] Conditional check failed on attempt 1, retrying in 200ms',
+        expect(mockLog.error).to.have.been.calledWith(
+          '[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt 1, retrying in 200ms',
         );
-        expect(mockLog.warn).to.have.been.calledWith(
-          '[A11yRemediationGuidance] Conditional check failed on attempt 2, retrying in 400ms',
+        expect(mockLog.error).to.have.been.calledWith(
+          '[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt 2, retrying in 400ms',
         );
-        expect(mockLog.warn).to.have.been.calledWith(
-          '[A11yRemediationGuidance] Conditional check failed on attempt 3, retrying in 800ms',
+        expect(mockLog.error).to.have.been.calledWith(
+          '[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt 3, retrying in 800ms',
         );
-        expect(mockLog.warn).to.have.been.calledWith(
-          '[A11yRemediationGuidance] Conditional check failed on attempt 4, retrying in 1600ms',
+        expect(mockLog.error).to.have.been.calledWith(
+          '[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt 4, retrying in 1600ms',
         );
         expect(mockLog.info).to.have.been.calledWith(
           '[A11yRemediationGuidance] Successfully saved opportunity on attempt 5',
@@ -2415,8 +2415,8 @@ describe('Scrape Utils', () => {
         // Original opportunity should not have setAuditId/setUpdatedBy called
         expect(mockOpportunity.setAuditId).to.not.have.been.called;
         expect(mockOpportunity.setUpdatedBy).to.not.have.been.called;
-        expect(mockLog.warn).to.have.been.calledWith(
-          '[A11yRemediationGuidance] Conditional check failed on attempt 1, retrying in 200ms',
+        expect(mockLog.error).to.have.been.calledWith(
+          '[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt 1, retrying in 200ms',
         );
         expect(mockLog.info).to.have.been.calledWith(
           '[A11yRemediationGuidance] Successfully saved opportunity on attempt 2',
