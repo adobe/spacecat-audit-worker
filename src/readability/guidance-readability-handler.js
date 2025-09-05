@@ -11,7 +11,7 @@
  */
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { AsyncJob as AsyncJobEntity } from '@adobe/spacecat-shared-data-access';
+import { AsyncJob } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Maps Mystique readability suggestions to the same format used in opportunityHandler.js
@@ -40,7 +40,7 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const {
-    Site, AsyncJob,
+    Site, AsyncJob: AsyncJobEntity,
   } = dataAccess;
   const {
     auditId, siteId, data, id: messageId,
@@ -63,7 +63,7 @@ export default async function handler(message, context) {
   log.info(`[readability-suggest guidance]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
 
   // Validate that the AsyncJob (preflight job) exists
-  const asyncJob = await AsyncJob.findById(auditId);
+  const asyncJob = await AsyncJobEntity.findById(auditId);
   if (!asyncJob) {
     log.error(`[readability-suggest guidance]: AsyncJob not found for auditId: ${auditId}. This may indicate the preflight job was deleted or expired.`);
     return notFound('AsyncJob not found');
@@ -312,16 +312,16 @@ export default async function handler(message, context) {
 
         // Only update status and endedAt if the job is not already completed
         // This prevents race conditions when multiple Mystique responses arrive simultaneously
-        if (asyncJob.getStatus() !== AsyncJobEntity.Status.COMPLETED) {
-          asyncJob.setStatus(AsyncJobEntity.Status.COMPLETED);
+        if (asyncJob.getStatus() !== AsyncJob.Status.COMPLETED) {
+          asyncJob.setStatus(AsyncJob.Status.COMPLETED);
           asyncJob.setEndedAt(new Date().toISOString());
         }
 
         // Reload job before saving to avoid stale updatedAt conflicts
         const freshAsyncJob = await AsyncJobEntity.findById(auditId);
         freshAsyncJob.setResult(asyncJob.getResult());
-        if (freshAsyncJob.getStatus() !== AsyncJobEntity.Status.COMPLETED) {
-          freshAsyncJob.setStatus(AsyncJobEntity.Status.COMPLETED);
+        if (freshAsyncJob.getStatus() !== AsyncJob.Status.COMPLETED) {
+          freshAsyncJob.setStatus(AsyncJob.Status.COMPLETED);
           freshAsyncJob.setEndedAt(new Date().toISOString());
         }
 
