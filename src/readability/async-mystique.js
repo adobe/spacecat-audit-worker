@@ -10,7 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { DATA_SOURCES } from '../common/constants.js';
 import { READABILITY_GUIDANCE_TYPE, READABILITY_OBSERVATION, TARGET_FLESCH_SCORE } from './constants.js';
 
 /**
@@ -52,78 +51,36 @@ export async function sendReadabilityToMystique(
 
   try {
     const site = await dataAccess.Site.findById(siteId);
+    const { AsyncJob: AsyncJobEntity } = dataAccess;
 
-    // Create or update opportunity to track Mystique responses (like alt-text does)
-    const { Opportunity } = dataAccess;
+    // Store original order mapping in job metadata to preserve identify-step order
+    // This is how preflight audits handle async processing data
+    const originalOrderMapping = readabilityIssues.map((issue, index) => ({
+      textContent: issue.textContent,
+      originalIndex: index,
+    }));
 
-    // Check if opportunity already exists
-    // Note: auditId & jobId refer to the same entity
-    // opportunities are linked to jobs via auditId
-    const existingOpportunities = await Opportunity.allBySiteId(siteId);
-    let opportunity = existingOpportunities.find(
-      (oppty) => oppty.getAuditId() === jobId && oppty.getData()?.subType === 'readability',
-    );
+    // Update job with readability metadata for async processing
+    const jobEntity = await AsyncJobEntity.findById(jobId);
+    const currentPayload = jobEntity.getMetadata()?.payload || {};
+    const readabilityMetadata = {
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: readabilityIssues.length,
+      totalReadabilityIssues: readabilityIssues.length,
+      lastMystiqueRequest: new Date().toISOString(),
+      originalOrderMapping, // Store original order for reconstruction
+    };
 
-    if (opportunity) {
-      // Update existing opportunity
-      const existingData = opportunity.getData() || {};
-
-      // Store original order mapping to preserve identify-step order
-      const originalOrderMapping = readabilityIssues.map((issue, index) => ({
-        textContent: issue.textContent,
-        originalIndex: index,
-      }));
-
-      const updatedData = {
-        ...existingData,
-        mystiqueResponsesReceived: 0, // Reset for new batch
-        mystiqueResponsesExpected: readabilityIssues.length,
-        totalReadabilityIssues: readabilityIssues.length,
-        processedSuggestionIds: existingData.processedSuggestionIds || [],
-        lastMystiqueRequest: new Date().toISOString(),
-        originalOrderMapping, // Store original order for reconstruction
-      };
-      opportunity.setData(updatedData);
-      await opportunity.save();
-      log.info(`[readability-async] Updated existing opportunity with ID: ${opportunity.getId()}`);
-    } else {
-      // Create new opportunity
-      // Store original order mapping to preserve identify-step order
-      const originalOrderMapping = readabilityIssues.map((issue, index) => ({
-        textContent: issue.textContent,
-        originalIndex: index,
-      }));
-
-      const opportunityData = {
-        siteId,
-        auditId: jobId, // auditId is set to jobId to link this opportunity to the current job
-        type: 'generic-opportunity',
-        origin: 'AUTOMATION',
-        title: 'Readability Improvement Suggestions',
-        description: 'AI-generated suggestions to improve content readability using advanced text analysis',
-        status: 'NEW',
-        runbook: auditUrl,
-        tags: ['Readability', 'Content', 'SEO'],
-        data: {
-          subType: 'readability',
-          mystiqueResponsesReceived: 0,
-          mystiqueResponsesExpected: readabilityIssues.length,
-          totalReadabilityIssues: readabilityIssues.length,
-          processedSuggestionIds: [],
-          dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.PAGE],
-          lastMystiqueRequest: new Date().toISOString(),
-          originalOrderMapping, // Store original order for reconstruction
-        },
-      };
-
-      try {
-        opportunity = await Opportunity.create(opportunityData);
-        log.info(`[readability-async] Created opportunity with ID: ${opportunity.getId()}`);
-      } catch (createError) {
-        log.error(`[readability-async] Failed to create opportunity: ${createError.message}`);
-        throw createError;
-      }
-    }
+    // Store readability metadata in job payload
+    jobEntity.setMetadata({
+      ...jobEntity.getMetadata(),
+      payload: {
+        ...currentPayload,
+        readabilityMetadata,
+      },
+    });
+    await jobEntity.save();
+    log.info(`[readability-async] Stored readability metadata in job ${jobId}`);
 
     // Send each readability issue as a separate message to Mystique
     const messagePromises = readabilityIssues.map((issue, index) => {
@@ -136,7 +93,7 @@ export async function sendReadabilityToMystique(
         url: auditUrl,
         observation: READABILITY_OBSERVATION,
         data: {
-          opportunityId: opportunity.getId(),
+          jobId, // Use jobId instead of opportunityId for preflight audit
           original_paragraph: issue.textContent,
           target_flesch_score: TARGET_FLESCH_SCORE,
           current_flesch_score: issue.fleschReadingEase,

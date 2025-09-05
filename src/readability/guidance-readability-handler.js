@@ -11,8 +11,7 @@
  */
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { AsyncJob as AsyncJobEntity, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
-import { addReadabilitySuggestions } from './opportunity-handler.js';
+import { AsyncJob as AsyncJobEntity } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Maps Mystique readability suggestions to the same format used in opportunityHandler.js
@@ -27,7 +26,7 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
       id: suggestionId,
       pageUrl: suggestion.pageUrl,
       originalText: suggestion.original_paragraph,
-      improvedText: suggestion.improved_paragraph,
+      improvedText: `READ ${suggestion.improved_paragraph}`,
       originalFleschScore: suggestion.current_flesch_score,
       improvedFleschScore: suggestion.improved_flesch_score,
       seoRecommendation: suggestion.seo_recommendation,
@@ -41,7 +40,7 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const {
-    Opportunity, Site, AsyncJob,
+    Site, AsyncJob,
   } = dataAccess;
   const {
     auditId, siteId, data, id: messageId,
@@ -71,25 +70,18 @@ export default async function handler(message, context) {
   }
   log.info(`[readability-suggest]: Found AsyncJob with status: ${asyncJob.getStatus()}`);
 
-  let readabilityOppty;
-  try {
-    const opportunities = await Opportunity.allBySiteId(siteId);
-    readabilityOppty = opportunities.find(
-      (oppty) => oppty.getAuditId() === auditId && oppty.getData()?.subType === 'readability',
-    );
-  } catch (e) {
-    log.error(`[readability-suggest]: Fetching opportunities for siteId ${siteId} failed with error: ${e.message}`);
-    throw new Error(`[readability-suggest]: Failed to fetch opportunities for siteId ${siteId}: ${e.message}`);
-  }
+  // Get readability metadata from job instead of opportunity (preflight audit pattern)
+  const jobMetadata = asyncJob.getMetadata() || {};
+  const readabilityMetadata = jobMetadata.payload?.readabilityMetadata || {};
 
-  if (!readabilityOppty) {
-    const errorMsg = `[readability-suggest]: No existing opportunity found for siteId ${siteId}. Opportunity should be created by main handler before processing suggestions.`;
+  if (!readabilityMetadata.originalOrderMapping) {
+    const errorMsg = `[readability-suggest]: No readability metadata found in job ${auditId}. Data should be stored by async-mystique handler.`;
     log.error(errorMsg);
     throw new Error(errorMsg);
   }
 
-  const existingData = readabilityOppty.getData() || {};
-  const processedSuggestionIds = new Set(existingData.processedSuggestionIds || []);
+  // Track processed suggestions in job metadata
+  const processedSuggestionIds = new Set(readabilityMetadata.processedSuggestionIds || []);
   if (processedSuggestionIds.has(messageId)) {
     log.info(`[readability-suggest]: Suggestions with id ${messageId} already processed. Skipping processing.`);
     return ok();
@@ -106,7 +98,7 @@ export default async function handler(message, context) {
       id: `readability-${auditId}-${messageId}`,
       pageUrl: data.pageUrl || auditUrl,
       originalText: data.original_paragraph,
-      improvedText: data.improved_paragraph,
+      improvedText: `READ ${data.improved_paragraph}`,
       originalFleschScore: data.current_flesch_score,
       improvedFleschScore: data.improved_flesch_score,
       seoRecommendation: data.seo_recommendation,
@@ -127,52 +119,48 @@ export default async function handler(message, context) {
     return ok();
   }
 
-  // Update opportunity data
-  const updatedOpportunityData = {
-    ...existingData,
-    mystiqueResponsesReceived: (existingData.mystiqueResponsesReceived || 0) + 1,
-    mystiqueResponsesExpected: existingData.mystiqueResponsesExpected || 0,
-    totalReadabilityIssues: mappedSuggestions.length,
+  // Update job metadata with response tracking (preflight audit pattern)
+  const updatedReadabilityMetadata = {
+    ...readabilityMetadata,
+    mystiqueResponsesReceived: (readabilityMetadata.mystiqueResponsesReceived || 0) + 1,
+    mystiqueResponsesExpected: readabilityMetadata.mystiqueResponsesExpected || 0,
+    totalReadabilityIssues: readabilityMetadata.totalReadabilityIssues || 0,
     processedSuggestionIds: [...processedSuggestionIds],
     lastMystiqueResponse: new Date().toISOString(),
+    // Store suggestions directly in job metadata
+    suggestions: [...(readabilityMetadata.suggestions || []), ...mappedSuggestions],
   };
 
-  log.info(`[readability-suggest]: Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
+  log.info(`[readability-suggest]: Received ${updatedReadabilityMetadata.mystiqueResponsesReceived}/${updatedReadabilityMetadata.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
 
-  // Update opportunity with accumulated data
+  // Update job with accumulated data (preflight audit pattern)
   try {
-    readabilityOppty.setAuditId(auditId);
-    readabilityOppty.setData(updatedOpportunityData);
-    readabilityOppty.setUpdatedBy('system');
-    await readabilityOppty.save();
-    log.info('[readability-suggest]: Updated opportunity with accumulated data');
+    const updatedJobMetadata = {
+      ...jobMetadata,
+      payload: {
+        ...jobMetadata.payload,
+        readabilityMetadata: updatedReadabilityMetadata,
+      },
+    };
+    asyncJob.setMetadata(updatedJobMetadata);
+    await asyncJob.save();
+    log.info('[readability-suggest]: Updated job with accumulated readability metadata');
   } catch (e) {
-    log.error(`[readability-suggest]: Updating opportunity for siteId ${siteId} failed with error: ${e.message}`, e);
-    throw new Error(`[readability-suggest]: Failed to update opportunity for siteId ${siteId}: ${e.message}`);
+    log.error(`[readability-suggest]: Updating job metadata for job ${auditId} failed with error: ${e.message}`, e);
+    throw new Error(`[readability-suggest]: Failed to update job metadata for job ${auditId}: ${e.message}`);
   }
 
-  // Process suggestions from Mystique
+  // For preflight audits, suggestions are stored in job metadata (not as opportunity suggestions)
   if (mappedSuggestions.length > 0) {
-    await addReadabilitySuggestions({
-      opportunity: readabilityOppty,
-      newSuggestionDTOs: mappedSuggestions.map((suggestion) => ({
-        opportunityId: readabilityOppty.getId(),
-        type: SuggestionModel.TYPES.CONTENT_UPDATE,
-        data: { recommendations: [suggestion] },
-        rank: 1,
-      })),
-      log,
-    });
-
     log.info(`[readability-suggest]: Successfully processed ${mappedSuggestions.length} suggestions from Mystique for siteId: ${siteId}`);
   }
 
   // Check if all Mystique responses have been received and update AsyncJob if complete
-  const allResponsesReceived = updatedOpportunityData.mystiqueResponsesReceived
-    >= updatedOpportunityData.mystiqueResponsesExpected;
-  if (allResponsesReceived && updatedOpportunityData.mystiqueResponsesExpected > 0) {
+  const allResponsesReceived = updatedReadabilityMetadata.mystiqueResponsesReceived
+    >= updatedReadabilityMetadata.mystiqueResponsesExpected;
+  if (allResponsesReceived && updatedReadabilityMetadata.mystiqueResponsesExpected > 0) {
     try {
-      log.info(`[readability-suggest]: All ${updatedOpportunityData.mystiqueResponsesExpected} `
+      log.info(`[readability-suggest]: All ${updatedReadabilityMetadata.mystiqueResponsesExpected} `
         + `Mystique responses received. Updating AsyncJob ${auditId} to COMPLETED.`);
 
       // Use the AsyncJob we already validated earlier
@@ -181,12 +169,12 @@ export default async function handler(message, context) {
         const currentResult = asyncJob.getResult() || [];
 
         // Update the readability audit opportunities with the completed suggestions
-        const updatedResult = await Promise.all(currentResult.map(async (pageResult) => {
+        const updatedResult = currentResult.map((pageResult) => {
           if (pageResult.audits) {
-            const updatedAudits = await Promise.all(pageResult.audits.map(async (auditItem) => {
+            const updatedAudits = pageResult.audits.map((auditItem) => {
               if (auditItem.name === 'readability') {
-                // Get all suggestions for this opportunity
-                const allSuggestions = await readabilityOppty.getSuggestions();
+                // Get all suggestions from job metadata (preflight audit pattern)
+                const allSuggestions = updatedReadabilityMetadata.suggestions || [];
 
                 // The AsyncJob may have 0 opportunities if cleared during async processing
                 // We need to reconstruct them from the stored suggestions
@@ -200,20 +188,19 @@ export default async function handler(message, context) {
                 if (auditItem.opportunities.length === 0 && allSuggestions.length > 0) {
                   log.info(`[readability-suggest]: Reconstructing opportunities from ${allSuggestions.length} stored suggestions`);
                   opportunitiesToProcess = allSuggestions.map((suggestion, index) => {
-                    const suggestionData = suggestion.getData();
-                    log.info(`[readability-suggest]: Examining suggestion ${index}: ${JSON.stringify(suggestionData, null, 2)}`);
+                    log.info(`[readability-suggest]: Examining suggestion ${index}: ${JSON.stringify(suggestion, null, 2)}`);
 
-                    const recommendation = suggestionData.recommendations?.[0];
-                    if (recommendation) {
-                      log.info(`[readability-suggest]: Found recommendation with originalText: "${recommendation.originalText?.substring(0, 50)}..."`);
+                    // Suggestions are stored directly as objects (not wrapped in .getData())
+                    if (suggestion) {
+                      log.info(`[readability-suggest]: Found suggestion with originalText: "${suggestion.originalText?.substring(0, 50)}..."`);
 
                       const reconstructedOpportunity = {
                         check: 'poor-readability',
-                        issue: `Text element is difficult to read: "${(recommendation.originalText || 'Unknown text')?.substring(0, 100)}..."`
+                        issue: `Text element is difficult to read: "${(suggestion.originalText || 'Unknown text')?.substring(0, 100)}..."`
                           .replace(/\n/g, ' '),
                         seoImpact: 'Moderate',
-                        fleschReadingEase: recommendation.originalFleschScore || 0,
-                        textContent: recommendation.originalText,
+                        fleschReadingEase: suggestion.originalFleschScore || 0,
+                        textContent: suggestion.originalText,
                         seoRecommendation: 'Improve readability by using shorter sentences, '
                           + 'simpler words, and clearer structure',
                       };
@@ -221,7 +208,7 @@ export default async function handler(message, context) {
                       log.info(`[readability-suggest]: Successfully reconstructed opportunity: ${JSON.stringify(reconstructedOpportunity, null, 2)}`);
                       return reconstructedOpportunity;
                     } else {
-                      log.warn(`[readability-suggest]: No recommendation found in suggestion ${index} - suggestionData structure: ${JSON.stringify(suggestionData, null, 2)}`);
+                      log.warn(`[readability-suggest]: No valid suggestion found at index ${index}`);
                     }
                     return null;
                   }).filter(Boolean);
@@ -229,10 +216,9 @@ export default async function handler(message, context) {
                     + 'opportunities from suggestions');
                 }
 
-                // Get stored original order mapping from opportunity data,
+                // Get stored original order mapping from job metadata,
                 // or create from current order as fallback
-                const opportunityData = readabilityOppty.getData() || {};
-                const storedOrderMapping = opportunityData.originalOrderMapping;
+                const storedOrderMapping = updatedReadabilityMetadata.originalOrderMapping;
 
                 let originalOrder;
                 if (storedOrderMapping && Array.isArray(storedOrderMapping)) {
@@ -254,24 +240,21 @@ export default async function handler(message, context) {
                   log.info(`[readability-suggest]: Found ${allSuggestions.length} stored suggestions`);
 
                   const matchingSuggestion = allSuggestions.find((suggestion) => {
-                    const suggestionData = suggestion.getData();
                     log.info('[readability-suggest]: Checking suggestion with data: '
-                      + `${JSON.stringify(suggestionData, null, 2)}`);
+                      + `${JSON.stringify(suggestion, null, 2)}`);
 
-                    // All suggestions are stored as { recommendations: [suggestion] }
-                    const recommendation = suggestionData.recommendations?.[0];
-                    if (recommendation) {
-                      log.info(`[readability-suggest]: Comparing "${recommendation.originalText?.substring(0, 80)}..."`
+                    // Suggestions are stored directly as objects (not wrapped in .getData())
+                    if (suggestion) {
+                      log.info(`[readability-suggest]: Comparing "${suggestion.originalText?.substring(0, 80)}..."`
                           + ` vs "${opportunity.textContent?.substring(0, 80)}..."`);
-                      return recommendation.originalText === opportunity.textContent;
+                      return suggestion.originalText === opportunity.textContent;
                     }
                     return false;
                   });
 
                   if (matchingSuggestion) {
-                    const suggestionData = matchingSuggestion.getData();
-                    // All suggestions use the standard format
-                    const recommendation = suggestionData.recommendations[0];
+                    // Suggestions are stored directly as objects
+                    const recommendation = matchingSuggestion;
 
                     const updatedOpportunity = {
                       ...opportunity,
@@ -317,12 +300,12 @@ export default async function handler(message, context) {
                 return { ...auditItem, opportunities: sortedOpportunities };
               }
               return auditItem;
-            }));
+            });
 
             return { ...pageResult, audits: updatedAudits };
           }
           return pageResult;
-        }));
+        });
 
         // Update AsyncJob with completed results
         asyncJob.setResult(updatedResult);

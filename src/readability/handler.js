@@ -31,19 +31,17 @@ async function checkForExistingSuggestions(
   context,
 ) {
   const { log, dataAccess } = context;
-  const { Opportunity } = dataAccess;
+  const { AsyncJob: AsyncJobEntity } = dataAccess;
 
   try {
-    // Find existing readability opportunity for this site/job
-    // Note: auditId and jobId refer to the same entity
-    // opportunities are linked to jobs via auditId
-    const existingOpportunities = await Opportunity.allBySiteId(siteId);
-    const readabilityOpportunity = existingOpportunities.find(
-      (oppty) => oppty.getAuditId() === jobId && oppty.getData()?.subType === 'readability',
-    );
+    // Check for existing readability metadata in job (preflight audit pattern)
+    const jobEntity = await AsyncJobEntity.findById(jobId);
+    const jobMetadata = jobEntity?.getMetadata() || {};
+    const readabilityMetadata = jobMetadata.payload?.readabilityMetadata || {};
+    const suggestions = readabilityMetadata.suggestions || [];
 
-    if (!readabilityOpportunity) {
-      log.debug(`[preflight-audit] readability: No existing opportunity found for jobId: ${jobId}`);
+    if (!readabilityMetadata.originalOrderMapping) {
+      log.debug(`[preflight-audit] readability: No existing readability metadata found for jobId: ${jobId}`);
       // Set all to processing status
       for (const pageResult of auditsResult) {
         const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
@@ -62,8 +60,7 @@ async function checkForExistingSuggestions(
       return;
     }
 
-    // Get all suggestions for this opportunity
-    const suggestions = await readabilityOpportunity.getSuggestions();
+    // Get all suggestions from job metadata (preflight audit pattern)
     log.info(
       `[preflight-audit] readability: Found ${suggestions.length} existing suggestions `
       + `for jobId: ${jobId}`,
@@ -74,16 +71,14 @@ async function checkForExistingSuggestions(
       const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
       if (audit && audit.opportunities.length > 0) {
         audit.opportunities.forEach((opportunity, index) => {
-          // Find matching suggestion by original text
-          const matchingSuggestion = suggestions.find((suggestion) => {
-            const suggestionData = suggestion.getData();
-            const recommendation = suggestionData.recommendations?.[0];
-            return recommendation?.originalText === opportunity.textContent;
-          });
+          // Find matching suggestion by original text (suggestions stored directly as objects)
+          const matchingSuggestion = suggestions.find(
+            (suggestion) => suggestion?.originalText === opportunity.textContent,
+          );
 
           if (matchingSuggestion) {
-            const suggestionData = matchingSuggestion.getData();
-            const recommendation = suggestionData.recommendations?.[0];
+            // Suggestions are stored directly as objects (not wrapped in .getData())
+            const recommendation = matchingSuggestion;
             const improvedScore = recommendation?.improvedFleschScore;
             const originalScore = recommendation?.originalFleschScore
               || opportunity.fleschReadingEase;
@@ -99,7 +94,7 @@ async function checkForExistingSuggestions(
               readabilityImprovement: Math.round((improvedScore - originalScore) * 100) / 100,
               aiSuggestion: recommendation?.seoRecommendation,
               aiRationale: recommendation?.aiRationale,
-              mystiqueProcessingCompleted: suggestionData.lastMystiqueResponse
+              mystiqueProcessingCompleted: readabilityMetadata.lastMystiqueResponse
                 || new Date().toISOString(),
             };
           } else {
