@@ -18,7 +18,7 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import esmock from 'esmock';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
-import { Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 import {
   internalLinksAuditRunner,
@@ -32,6 +32,7 @@ import {
 } from '../../fixtures/internal-links-data.js';
 import { MockContextBuilder } from '../../shared.js';
 
+const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 const topPages = [{ getUrl: () => 'https://example.com/page1' }, { getUrl: () => 'https://example.com/page2' }];
 const AUDIT_RESULT_DATA = [
   {
@@ -195,6 +196,12 @@ describe('Broken internal links audit ', () => {
     context.dataAccess.SiteTopPage = {
       allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
     };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: true,
+      }),
+    };
 
     const result = await prepareScrapingStep(context);
     expect(result).to.deep.equal({
@@ -202,6 +209,24 @@ describe('Broken internal links audit ', () => {
       type: 'broken-internal-links',
       urls: topPages.map((page) => ({ url: page.getUrl() })),
     });
+  }).timeout(5000);
+
+  it('prepareScrapingStep should throw error when audit failed', async () => {
+    context.dataAccess.SiteTopPage = {
+      allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
+    };
+    context.audit = {
+      getAuditResult: () => ({
+        brokenInternalLinks: AUDIT_RESULT_DATA,
+        success: false,
+      }),
+    };
+
+    await expect(prepareScrapingStep(context))
+      .to.be.rejectedWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skip scraping and suggestion generation`);
+    
+    // Verify that SiteTopPage.allBySiteIdAndSourceAndGeo was not called since we exit early
+    expect(context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.not.have.been.called;
   }).timeout(5000);
 });
 
