@@ -1,3 +1,10 @@
+# [1.176.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.175.0...v1.176.0) (2025-09-05)
+
+
+### Features
+
+* support just Google user agent ([#1230](https://github.com/adobe/spacecat-audit-worker/issues/1230)) ([e6dc762](https://github.com/adobe/spacecat-audit-worker/commit/e6dc7623de332989fc27adb475f84cbea10b1730))
+
 # [1.175.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.174.1...v1.175.0) (2025-09-05)
 
 
