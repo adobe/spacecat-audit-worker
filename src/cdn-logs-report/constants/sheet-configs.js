@@ -43,7 +43,7 @@ export const SHEET_CONFIGS = {
       Number(row.number_of_hits) || 0,
       Number(row.avg_ttfb_ms) || 0,
       validateCountryCode(row.country_code),
-      row.url || '',
+      row.url === '-' ? '/' : (row.url || ''),
       capitalizeFirstLetter(row.product) || 'Other',
       row.category || 'Uncategorized',
     ]) || [],

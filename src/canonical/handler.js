@@ -70,15 +70,11 @@ export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
 export async function validateCanonicalTag(url, log, options = {}, isPreview = false) {
   // in case of undefined or null URL in the 200 top pages list
   if (!url) {
-    const errorMessage = 'URL is undefined or null';
-    log.error(errorMessage);
+    log.error('URL is undefined or null, cannot validate canonical tags');
+    // Return empty result - URL validation errors should only be logged
     return {
       canonicalUrl: null,
-      checks: [{
-        check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-        success: false,
-        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-      }],
+      checks: [],
     };
   }
 
@@ -223,11 +219,7 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
     base = new URL(baseUrl);
   } catch {
     log.error(`Invalid URL: ${baseUrl}`);
-    checks.push({
-      check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-      success: false,
-      explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-    });
+    // Skip adding check for invalid URL - validation errors should only be logged
     return checks;
   }
 
@@ -249,11 +241,8 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
         });
       }
     } else {
-      checks.push({
-        check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-        success: false,
-        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-      });
+      log.error(`Canonical URL is not a string: ${typeof canonicalUrl}`);
+      // Skip adding check for invalid type - validation errors should only be logged
       return checks;
     }
   }
@@ -276,12 +265,8 @@ export function validateCanonicalFormat(canonicalUrl, baseUrl, log, isPreview = 
     try {
       url = new URL(canonicalUrl);
     } catch {
-      log.error(`Invalid URL: ${canonicalUrl}`);
-      checks.push({
-        check: CANONICAL_CHECKS.URL_UNDEFINED.check,
-        success: false,
-        explanation: CANONICAL_CHECKS.URL_UNDEFINED.explanation,
-      });
+      log.error(`Invalid canonical URL: ${canonicalUrl}`);
+      // Skip adding check for invalid URL - validation errors should only be logged
       return checks;
     }
 

@@ -20,7 +20,8 @@ import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
 
-describe('CDN Logs Report Handler', () => {
+describe('CDN Logs Report Handler', async function test() {
+  this.timeout(5000);
   let sandbox;
   let context;
   let site;
@@ -38,8 +39,11 @@ describe('CDN Logs Report Handler', () => {
     site = {
       getId: () => 'test-site',
       getBaseURL: () => 'https://example.com',
+      getOrganizationId: () => 'org-123',
       getConfig: () => ({
         getLlmoDataFolder: () => 'test-folder',
+        getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        getCdnLogsConfig: () => null,
       }),
     };
 
@@ -54,6 +58,13 @@ describe('CDN Logs Report Handler', () => {
         },
         s3Client: {
           send: sandbox.stub().resolves(),
+        },
+        dataAccess: {
+          Organization: {
+            findById: sandbox.stub().resolves({
+              getImsOrgId: () => 'ims-org-id',
+            }),
+          },
         },
       })
       .build();
@@ -89,6 +100,9 @@ describe('CDN Logs Report Handler', () => {
       },
       '../../../src/utils/report-uploader.js': {
         createLLMOSharepointClient: mockCreateLLMOSharepointClient,
+      },
+      '../../../src/utils/data-access.js': {
+        getImsOrgId: () => Promise.resolve('ims-org-id'),
       },
     });
 

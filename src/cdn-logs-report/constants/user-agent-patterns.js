@@ -64,12 +64,12 @@ export function buildUserAgentDisplaySQL() {
 export function buildAgentTypeClassificationSQL() {
   const patterns = [
     // ChatGPT/OpenAI
-    { pattern: '%gptbot%', result: 'Crawlers' },
-    { pattern: '%oai-searchbot%', result: 'Crawlers' },
+    { pattern: '%gptbot%', result: 'Training bots' },
+    { pattern: '%oai-searchbot%', result: 'Web search crawlers' },
     { pattern: '%chatgpt-user%', result: 'Chatbots' },
     { pattern: '%chatgpt%', result: 'Chatbots' },
     // Perplexity
-    { pattern: '%perplexitybot%', result: 'Crawlers' },
+    { pattern: '%perplexitybot%', result: 'Web search crawlers' },
     { pattern: '%perplexity-user%', result: 'Chatbots' },
     { pattern: '%perplexity%', result: 'Chatbots' },
   ];

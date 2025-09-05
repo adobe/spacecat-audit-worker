@@ -44,7 +44,27 @@ export function createLLMOSharepointClient({ env, log }) {
 }
 /* c8 ignore end */
 
-async function publishToAdminHlx(filename, outputLocation, log) {
+/**
+ * Downloads a document from SharePoint and returns its raw buffer
+ * @param {string} fileLocation - The path to the document in SharePoint
+ * @param {SharepointClient} sharepointClient - The SharePoint client instance
+ * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} log - Logger instance
+ * @returns {Promise<Buffer>} - The document content as a buffer
+ */
+export async function readFromSharePoint(filename, outputLocation, sharepointClient, log) {
+  try {
+    const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
+    const sharepointDoc = sharepointClient.getDocument(documentPath);
+    const buffer = await sharepointDoc.getDocumentContent();
+    log.info(`Document successfully downloaded from SharePoint: ${documentPath}`);
+    return buffer;
+  } catch (error) {
+    log.error(`Failed to read from SharePoint: ${error.message}`);
+    throw error;
+  }
+}
+
+export async function publishToAdminHlx(filename, outputLocation, log) {
   try {
     const org = 'adobe';
     const site = 'project-elmo-ui-data';

@@ -27,7 +27,6 @@ export async function getS3Config(site, context) {
   const domainParts = customerDomain.split(/[._]/);
   /* c8 ignore next */
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-
   const bucket = await resolveCdnBucketName(site, context);
 
   return {
@@ -138,7 +137,7 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
   };
 }
 
-export function buildSiteFilters(filters) {
+export function buildSiteFilters(filters = []) {
   if (!filters || filters.length === 0) return '';
 
   const clauses = filters.map(({ key, value, type }) => {

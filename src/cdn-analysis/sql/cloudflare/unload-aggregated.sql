@@ -6,7 +6,8 @@ UNLOAD (
     try(url_extract_host(ClientRequestReferer)) AS referer,
     ClientRequestHost AS host,
     CAST(EdgeTimeToFirstByteMs AS DOUBLE) AS time_to_first_byte,
-    COUNT(*) AS count
+    COUNT(*) AS count,
+    '{{serviceProvider}}' AS cdn_provider
 
   FROM {{database}}.{{rawTable}}
 
@@ -38,6 +39,7 @@ UNLOAD (
     EdgeResponseStatus,
     try(url_extract_host(ClientRequestReferer)),
     ClientRequestHost,
-    CAST(EdgeTimeToFirstByteMs AS DOUBLE)
-) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/08/'
+    CAST(EdgeTimeToFirstByteMs AS DOUBLE),
+    '{{serviceProvider}}'
+) TO '{{aggregatedOutput}}'
 WITH (format = 'PARQUET');

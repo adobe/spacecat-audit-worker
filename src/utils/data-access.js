@@ -61,6 +61,38 @@ export async function retrieveAuditById(dataAccess, auditId, log) {
 }
 
 /**
+ * Retrieves the IMS org ID for a given site.
+ *
+ * @param {Object} site - The site object.
+ * @param {Object} dataAccess - The data access object for database operations.
+ * @param {Object} log - The logging object.
+ * @returns {Promise<string|null>} - Returns the IMS org ID if found, otherwise null.
+ */
+export async function getImsOrgId(site, dataAccess, log) {
+  try {
+    const organizationId = site.getOrganizationId();
+    if (!organizationId) {
+      log.warn(`No organization ID found for site: ${site.getBaseURL()}`);
+      return null;
+    }
+
+    const { Organization } = dataAccess;
+    const organization = await Organization.findById(organizationId);
+    const imsOrgId = organization?.getImsOrgId();
+
+    if (!imsOrgId) {
+      log.warn(`No IMS org ID found for organization: ${organizationId}`);
+      return null;
+    }
+
+    return imsOrgId;
+  } catch (error) {
+    log.warn(`Failed to get IMS org ID for site ${site.getBaseURL()}: ${error.message}`);
+    return null;
+  }
+}
+
+/**
  * Handles outdated suggestions by updating their status to OUTDATED by default,
  * or the status given as input.
  *
