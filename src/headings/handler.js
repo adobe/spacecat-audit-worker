@@ -277,7 +277,7 @@ export async function validatePageHeadings(url, log) {
 export async function headingsAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess } = context;
-  log.info(`Starting Headings Audit with siteId: ${siteId}`);
+  log.info(`Starting Headings Audit with siteId- ${siteId} and baseURL- ${baseURL}`);
 
   try {
     // Get top 200 pages
