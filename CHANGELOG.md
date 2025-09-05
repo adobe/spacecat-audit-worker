@@ -1,3 +1,10 @@
+## [1.176.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.176.2...v1.176.3) (2025-09-05)
+
+
+### Bug Fixes
+
+* proper test for cdn analysis and reports ([#1233](https://github.com/adobe/spacecat-audit-worker/issues/1233)) ([220d6b6](https://github.com/adobe/spacecat-audit-worker/commit/220d6b6a927087df207e6b5bb8e635143a24d581))
+
 ## [1.176.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.176.1...v1.176.2) (2025-09-05)
 
 
