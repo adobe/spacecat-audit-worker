@@ -1,3 +1,10 @@
+# [1.175.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.174.1...v1.175.0) (2025-09-05)
+
+
+### Features
+
+* moving a11y metrics save logic to import-worker ([#1190](https://github.com/adobe/spacecat-audit-worker/issues/1190)) ([46cea76](https://github.com/adobe/spacecat-audit-worker/commit/46cea76912f74e4546969b36bbbcb0aa9b9695c9))
+
 ## [1.174.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.174.0...v1.174.1) (2025-09-05)
 
 
