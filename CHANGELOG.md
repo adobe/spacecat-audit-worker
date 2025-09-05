@@ -1,3 +1,10 @@
+# [1.177.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.176.3...v1.177.0) (2025-09-05)
+
+
+### Features
+
+* cookie-consent banner oppty fixes ([#1229](https://github.com/adobe/spacecat-audit-worker/issues/1229)) ([7b49426](https://github.com/adobe/spacecat-audit-worker/commit/7b494268af6824b2101dbe90455a32f6405b8556))
+
 ## [1.176.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.176.2...v1.176.3) (2025-09-05)
 
 
