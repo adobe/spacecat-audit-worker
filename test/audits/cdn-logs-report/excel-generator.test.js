@@ -14,14 +14,18 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import ExcelJS from 'exceljs';
 import { getSheetConfig, createSheet, createExcelReport } from '../../../src/cdn-logs-report/utils/excel-generator.js';
+import { getConfigs } from '../../../src/cdn-logs-report/constants/report-configs.js';
 
 use(sinonChai);
 
 describe('CDN Logs Excel Generator', () => {
-  let AGENTIC_REPORT_CONFIG;
+  let agenticConfig;
+  let referralConfig;
 
   before(async () => {
-    ({ AGENTIC_REPORT_CONFIG } = await import('../../../src/cdn-logs-report/constants/report-configs.js'));
+    const reportConfigs = getConfigs('bucket', 'space_cat');
+    agenticConfig = reportConfigs.find((c) => c.name === 'agentic');
+    referralConfig = reportConfigs.find((c) => c.name === 'referral');
   });
 
   it('validates agentic flat report data structure', () => {
@@ -67,10 +71,15 @@ describe('CDN Logs Excel Generator', () => {
     });
 
     // Validate config structure
-    expect(AGENTIC_REPORT_CONFIG).to.have.property('filePrefix', 'agentictraffic');
-    expect(AGENTIC_REPORT_CONFIG).to.have.property('folderSuffix', 'agentic-traffic');
-    expect(AGENTIC_REPORT_CONFIG).to.have.property('workbookCreator');
-    expect(AGENTIC_REPORT_CONFIG).to.have.property('sheetName', 'shared-all');
+    expect(agenticConfig).to.have.property('filePrefix', 'agentictraffic');
+    expect(agenticConfig).to.have.property('folderSuffix', 'agentic-traffic');
+    expect(agenticConfig).to.have.property('workbookCreator');
+    expect(agenticConfig).to.have.property('sheetName', 'shared-all');
+
+    expect(referralConfig).to.have.property('filePrefix', 'referral-traffic');
+    expect(referralConfig).to.have.property('folderSuffix', 'referral-traffic-cdn');
+    expect(referralConfig).to.have.property('workbookCreator');
+    expect(referralConfig).to.have.property('sheetName', 'shared-all');
   });
 
   it('validates agentic data with different agent types', () => {
@@ -138,8 +147,8 @@ describe('CDN Logs Excel Generator', () => {
     expect(mockData).to.have.length(0);
 
     // Config should still be valid
-    expect(AGENTIC_REPORT_CONFIG).to.be.an('object');
-    expect(AGENTIC_REPORT_CONFIG.sheetName).to.equal('shared-all');
+    expect(agenticConfig).to.be.an('object');
+    expect(agenticConfig.sheetName).to.equal('shared-all');
   });
 
   describe('getSheetConfig', () => {
