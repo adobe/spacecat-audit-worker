@@ -795,6 +795,141 @@ describe('Preflight Readability Audit', () => {
       expect(result.processing).to.be.false;
     });
 
+    it('should cover line 39: jobEntity.getMetadata() fallback to empty object', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
+        + 'words and intricate grammatical constructions, making it extremely difficult for '
+        + `the average reader to comprehend without considerable effort and ${
+          'concentration.'.repeat(3)}`;
+
+      // Set step to 'suggest' to trigger checkForExistingSuggestions
+      auditContext.step = 'suggest';
+      auditContext.scrapedObjects = [];
+
+      // Pre-populate audit results with readability opportunities
+      auditsResult[0].audits = [{
+        name: 'readability',
+        opportunities: [{
+          textContent: poorText,
+          fleschReadingEase: 15,
+        }],
+      }];
+
+      // Mock AsyncJob with getMetadata returning undefined (triggers || {} fallback)
+      const mockJob = {
+        getMetadata: () => undefined, // This will trigger line 39: || {}
+      };
+      context.dataAccess.AsyncJob.findById.resolves(mockJob);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(log.debug).to.have.been.calledWithMatch(
+        'No existing readability metadata found for jobId: test-job',
+      );
+      expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
+      expect(result.processing).to.be.true;
+    });
+
+    it('should cover line 84: recommendation.originalFleschScore fallback to opportunity.fleschReadingEase', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
+        + 'words and intricate grammatical constructions, making it extremely difficult for '
+        + `the average reader to comprehend without considerable effort and ${
+          'concentration.'.repeat(3)}`;
+
+      // Set step to 'suggest' to trigger checkForExistingSuggestions
+      auditContext.step = 'suggest';
+      auditContext.scrapedObjects = [];
+
+      // Pre-populate audit results with readability opportunities
+      auditsResult[0].audits = [{
+        name: 'readability',
+        opportunities: [{
+          textContent: poorText,
+          fleschReadingEase: 25, // This will be used as fallback
+        }],
+      }];
+
+      // Mock AsyncJob with suggestion that has no originalFleschScore
+      const mockJob = {
+        getMetadata: () => ({
+          payload: {
+            readabilityMetadata: {
+              originalOrderMapping: [{ originalIndex: 0, textContent: poorText }],
+              suggestions: [{
+                originalText: poorText,
+                improvedText: 'This is a simple sentence. It is easy to read.',
+                // originalFleschScore: undefined, // Missing to trigger line 84 fallback
+                improvedFleschScore: 85,
+                seoRecommendation: 'Use shorter sentences',
+                aiRationale: 'Shorter sentences improve readability',
+              }],
+              lastMystiqueResponse: '2023-01-01T00:00:00.000Z',
+            },
+          },
+        }),
+      };
+      context.dataAccess.AsyncJob.findById.resolves(mockJob);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(result.processing).to.be.false;
+
+      // Check that the fallback originalFleschScore was used (line 84)
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      const opportunity = audit.opportunities[0];
+      expect(opportunity.readabilityImprovement).to.equal(60); // 85 - 25 (fallback score)
+    });
+
+    it('should cover line 98: lastMystiqueResponse fallback to new Date().toISOString()', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
+        + 'words and intricate grammatical constructions, making it extremely difficult for '
+        + `the average reader to comprehend without considerable effort and ${
+          'concentration.'.repeat(3)}`;
+
+      // Set step to 'suggest' to trigger checkForExistingSuggestions
+      auditContext.step = 'suggest';
+      auditContext.scrapedObjects = [];
+
+      // Pre-populate audit results with readability opportunities
+      auditsResult[0].audits = [{
+        name: 'readability',
+        opportunities: [{
+          textContent: poorText,
+          fleschReadingEase: 15,
+        }],
+      }];
+
+      // Mock AsyncJob with suggestion that has no lastMystiqueResponse
+      const mockJob = {
+        getMetadata: () => ({
+          payload: {
+            readabilityMetadata: {
+              originalOrderMapping: [{ originalIndex: 0, textContent: poorText }],
+              suggestions: [{
+                originalText: poorText,
+                improvedText: 'This is a simple sentence. It is easy to read.',
+                originalFleschScore: 15,
+                improvedFleschScore: 85,
+                seoRecommendation: 'Use shorter sentences',
+                aiRationale: 'Shorter sentences improve readability',
+              }],
+              // lastMystiqueResponse: undefined, // Missing to trigger line 98 fallback
+            },
+          },
+        }),
+      };
+      context.dataAccess.AsyncJob.findById.resolves(mockJob);
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(result.processing).to.be.false;
+
+      // Check that the fallback date was used (line 98)
+      const audit = auditsResult[0].audits.find((a) => a.name === 'readability');
+      const opportunity = audit.opportunities[0];
+      expect(opportunity.mystiqueProcessingCompleted).to.be.a('string');
+      expect(opportunity.mystiqueProcessingCompleted).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    });
+
     /* it('should cover lines 44-61: no existing readability metadata found', async () => {
       const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
         + 'words and intricate grammatical constructions, making it extremely difficult for '
