@@ -44,6 +44,8 @@
     "static": [
       "static/prompts/broken-backlinks.prompt",
       "static/prompts/broken-backlinks-followup.prompt",
+      "static/prompts/headings-brand-guidelines.prompt",
+      "static/prompts/headings-suggestions.prompt",
       "static/schemaorg-current-https.jsonld",
       "src/cdn-analysis/sql",
       "src/cdn-logs-report/sql",
