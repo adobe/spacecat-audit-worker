@@ -31,19 +31,17 @@ async function checkForExistingSuggestions(
   context,
 ) {
   const { log, dataAccess } = context;
-  const { Opportunity } = dataAccess;
+  const { AsyncJob: AsyncJobEntity } = dataAccess;
 
   try {
-    // Find existing readability opportunity for this site/job
-    // Note: auditId and jobId refer to the same entity
-    // opportunities are linked to jobs via auditId
-    const existingOpportunities = await Opportunity.allBySiteId(siteId);
-    const readabilityOpportunity = existingOpportunities.find(
-      (oppty) => oppty.getAuditId() === jobId && oppty.getData()?.subType === 'readability',
-    );
+    // Check for existing readability metadata in job (preflight audit pattern)
+    const jobEntity = await AsyncJobEntity.findById(jobId);
+    const jobMetadata = jobEntity?.getMetadata() || {};
+    const readabilityMetadata = jobMetadata.payload?.readabilityMetadata || {};
+    const suggestions = readabilityMetadata.suggestions || [];
 
-    if (!readabilityOpportunity) {
-      log.debug(`[preflight-audit] readability: No existing opportunity found for jobId: ${jobId}`);
+    if (!readabilityMetadata.originalOrderMapping) {
+      log.debug(`[readability-suggest handler] readability: No existing readability metadata found for jobId: ${jobId}`);
       // Set all to processing status
       for (const pageResult of auditsResult) {
         const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
@@ -62,10 +60,9 @@ async function checkForExistingSuggestions(
       return;
     }
 
-    // Get all suggestions for this opportunity
-    const suggestions = await readabilityOpportunity.getSuggestions();
+    // Get all suggestions from job metadata (preflight audit pattern)
     log.info(
-      `[preflight-audit] readability: Found ${suggestions.length} existing suggestions `
+      `[readability-suggest handler] readability: Found ${suggestions.length} existing suggestions `
       + `for jobId: ${jobId}`,
     );
 
@@ -74,16 +71,14 @@ async function checkForExistingSuggestions(
       const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
       if (audit && audit.opportunities.length > 0) {
         audit.opportunities.forEach((opportunity, index) => {
-          // Find matching suggestion by original text
-          const matchingSuggestion = suggestions.find((suggestion) => {
-            const suggestionData = suggestion.getData();
-            const recommendation = suggestionData.recommendations?.[0];
-            return recommendation?.originalText === opportunity.textContent;
-          });
+          // Find matching suggestion by original text (suggestions stored directly as objects)
+          const matchingSuggestion = suggestions.find(
+            (suggestion) => suggestion?.originalText === opportunity.textContent,
+          );
 
           if (matchingSuggestion) {
-            const suggestionData = matchingSuggestion.getData();
-            const recommendation = suggestionData.recommendations?.[0];
+            // Suggestions are stored directly as objects (not wrapped in .getData())
+            const recommendation = matchingSuggestion;
             const improvedScore = recommendation?.improvedFleschScore;
             const originalScore = recommendation?.originalFleschScore
               || opportunity.fleschReadingEase;
@@ -99,7 +94,7 @@ async function checkForExistingSuggestions(
               readabilityImprovement: Math.round((improvedScore - originalScore) * 100) / 100,
               aiSuggestion: recommendation?.seoRecommendation,
               aiRationale: recommendation?.aiRationale,
-              mystiqueProcessingCompleted: suggestionData.lastMystiqueResponse
+              mystiqueProcessingCompleted: readabilityMetadata.lastMystiqueResponse
                 || new Date().toISOString(),
             };
           } else {
@@ -116,7 +111,7 @@ async function checkForExistingSuggestions(
       }
     }
   } catch (error) {
-    log.error(`[preflight-audit] readability: Error checking for existing suggestions: ${error.message}`);
+    log.error(`[readability-suggest handler] readability: Error checking for existing suggestions: ${error.message}`);
     // Set all to processing status as fallback
     for (const pageResult of auditsResult) {
       const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
@@ -175,7 +170,7 @@ export default async function readability(context, auditContext) {
       const pageResult = audits.get(normalizedFinalUrl);
 
       if (!pageResult) {
-        log.warn(`[preflight-audit] readability: No page result found for ${normalizedFinalUrl}`);
+        log.warn(`[readability-suggest handler] readability: No page result found for ${normalizedFinalUrl}`);
         return;
       }
 
@@ -227,7 +222,7 @@ export default async function readability(context, auditContext) {
         } catch (error) {
           const errorContext = `element with index ${elementIndex}`;
           log.error(
-            `[preflight-audit] readability: Error calculating readability for ${errorContext} `
+            `[readability-suggest handler] readability: Error calculating readability for ${errorContext} `
             + `on ${normalizedFinalUrl}: ${error.message}`,
           );
         }
@@ -287,7 +282,7 @@ export default async function readability(context, auditContext) {
       });
 
       log.info(
-        `[preflight-audit] readability: Processed ${processedElements} text element(s) on `
+        `[readability-suggest handler] readability: Processed ${processedElements} text element(s) on `
         + `${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability`,
       );
     });
@@ -330,7 +325,7 @@ export default async function readability(context, auditContext) {
 
           if (stillProcessing > 0) {
             log.info(
-              `[preflight-audit] readability: Sending ${stillProcessing} readability issues `
+              `[readability-suggest handler] readability: Sending ${stillProcessing} readability issues `
               + 'to Mystique for async processing...',
             );
 
@@ -343,7 +338,7 @@ export default async function readability(context, auditContext) {
               context,
             );
 
-            log.info(`[preflight-audit] readability: Successfully sent ${allReadabilityIssues.length} `
+            log.info(`[readability-suggest handler] readability: Successfully sent ${allReadabilityIssues.length} `
               + 'readability issues to Mystique for processing');
             // Indicate to preflight runner that we are still processing
             isProcessing = true;
@@ -355,11 +350,11 @@ export default async function readability(context, auditContext) {
               }
             });
           } else {
-            log.info(`[preflight-audit] readability: All ${allReadabilityIssues.length} `
+            log.info(`[readability-suggest handler] readability: All ${allReadabilityIssues.length} `
               + 'readability issues already have suggestions');
           }
         } catch (error) {
-          log.error('[preflight-audit] readability: Error sending issues to Mystique:', {
+          log.error('[readability-suggest handler] readability: Error sending issues to Mystique:', {
             error: error.message,
             stack: error.stack,
             siteId: site.getId(),
@@ -393,7 +388,7 @@ export default async function readability(context, auditContext) {
           }
         }
       } else {
-        log.info('[preflight-audit] readability: No readability issues found to send to Mystique');
+        log.info('[readability-suggest handler] readability: No readability issues found to send to Mystique');
       }
     }
 
@@ -402,7 +397,7 @@ export default async function readability(context, auditContext) {
     const readabilityElapsed = ((readabilityEndTime - readabilityStartTime) / 1000).toFixed(2);
     const auditStepName = step === 'suggest' ? 'readability-suggestions' : 'readability';
     log.info(
-      `[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. `
+      `[readability-suggest handler] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. `
       + `Readability audit completed in ${readabilityElapsed} seconds`,
     );
 
