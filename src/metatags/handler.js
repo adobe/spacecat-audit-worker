@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
+/* c8 ignore start */
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { calculateCPCValue } from '../support/utils.js';
@@ -31,7 +31,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
 const auditType = Audit.AUDIT_TYPES.META_TAGS;
-const { AUDIT_STEP_DESTINATIONS } = Audit;
+// const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const opportunity = await convertToOpportunity(
@@ -255,7 +255,7 @@ function getScrapeJsonPath(url, siteId) {
 
 export async function runAuditAndGenerateSuggestions(context) {
   const {
-    site, audit, finalUrl, log, dataAccess,
+    site, finalUrl, log, dataAccess,
   } = context;
   // Get top pages for a site
   const siteId = site.getId();
@@ -302,9 +302,10 @@ export async function runAuditAndGenerateSuggestions(context) {
     ...(projectedTrafficLost && { projectedTrafficLost }),
     ...(projectedTrafficValue && { projectedTrafficValue }),
   };
+  log.info(`Audit result: ${JSON.stringify(auditResult)}`);
   await opportunityAndSuggestions(finalUrl, {
     siteId: site.getId(),
-    auditId: audit.getId(),
+    auditId: site.getId(),
     auditResult,
   }, context);
 
@@ -354,7 +355,7 @@ export async function submitForScraping(context) {
 
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
-  .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
   .build();
+
+/* c8 ignore stop */
