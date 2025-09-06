@@ -32,7 +32,7 @@ export async function formsAuditRunner(auditUrl, context) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const options = {
     domain: auditUrl,
-    interval: FORMS_AUDIT_INTERVAL,
+    interval: 10,
     granularity: 'hourly',
   };
 

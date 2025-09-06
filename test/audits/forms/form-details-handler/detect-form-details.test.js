@@ -40,7 +40,7 @@ describe('Detect Form Details Handler', () => {
     };
     dataAccessStub = {
       Opportunity: {
-        allBySiteId: sinon.stub().resolves([
+        findById: sinon.stub().resolves([
           {
             getType: () => 'testOpportunityType',
             getData: () => ({ form: 'testUrl', formsource: 'testFormSource' }),
@@ -69,10 +69,10 @@ describe('Detect Form Details Handler', () => {
       auditId: 'testAuditId',
       siteId: 'testSiteId',
       data: {
-        url: 'testUrl',
-        form_source: 'testFormSource',
-        form_details: { detailKey: 'detailValue' },
-        opportunity_type: 'testOpportunityType',
+        form_details: [
+          { url: 'testUrl1', form_source: 'formSource1', testKey: 'testValue1' },
+          { url: 'testUrl2', form_source: 'formSource2', testKey: 'testValue1' },
+        ],
       },
     };
   });
@@ -82,92 +82,171 @@ describe('Detect Form Details Handler', () => {
   });
 
   it('should update existing opportunity', async () => {
+    dataAccessStub.Opportunity.findById.resolves({
+      getType: () => 'testOpportunityType',
+      getData: () => (
+        {
+          form: 'testUrl1',
+          formsource: 'formSource1',
+          formViews: 100,
+          samples: 987,
+          projectedConversionValue: 8789.0,
+        }
+      ),
+      setUpdatedBy: sinon.stub(),
+      setData: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+    });
+
+    message.data.form_details = [
+      {
+        url: 'testUrl1',
+        form_source: 'formSource1',
+        is_lead_gen: true,
+        form_type: 'Contact Form',
+        form_category: 'B2B',
+        industry: 'Telecommunications',
+        cpl: 94.0,
+      },
+    ];
+
     await handler(message, context);
+    const opportunity = await dataAccessStub.Opportunity.findById();
 
-    // Directly access the resolved value
-    const opportunities = await dataAccessStub.Opportunity.allBySiteId();
-    const opportunity = opportunities[0];
+    expect(opportunity.setData).to.have.been.calledWith(
+      sinon.match({
+        form: 'testUrl1',
+        formsource: 'formSource1',
+        formViews: 100,
+        samples: 987,
+        projectedConversionValue: 8789.0,
+        formDetails: {
+          is_lead_gen: true,
+          form_type: 'Contact Form',
+          form_category: 'B2B',
+          industry: 'Telecommunications',
+          cpl: 94.0,
+        },
+      }),
+    );
 
-    expect(opportunity.setData).to.have.been.calledWith(sinon.match.object);
     expect(opportunity.save).to.have.been.calledOnce;
   });
 
   it('should send message to mystique', async () => {
-    await handler(message, context);
+    dataAccessStub.Opportunity.findById.resolves({
+      getType: () => 'testOpportunityType',
+      getData: () => ({
+        form: 'testUrl1',
+        formsource: 'formSource1',
+        formViews: 100,
+        samples: 987,
+        projectedConversionValue: 8789.0,
+      }),
+      setUpdatedBy: sinon.stub(),
+      setData: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+    });
 
+    await handler(message, context);
     expect(sqsStub.sendMessage).to.have.been.calledWith('mockQueue', sinon.match.object);
   });
 
   it('should log opportunity sent to mystique', async () => {
+    dataAccessStub.Opportunity.findById.resolves({
+      getType: () => 'testOpportunityType',
+      getData: () => ({
+        form: 'testUrl1',
+        formsource: 'formSource1',
+        formViews: 100,
+        samples: 987,
+        projectedConversionValue: 8789.0,
+      }),
+      data: { // Directly include the data property
+        form: 'testUrl',
+        trackedFormKPIValue: 5,
+        pageViews: 20,
+        formViews: 10,
+        metrics: { key: 'value' },
+        formNavigation: { source: 'testSource', text: 'testText' },
+        formsource: 'testFormSource',
+      },
+      setUpdatedBy: sinon.stub(),
+      setData: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+    });
+
     await handler(message, context);
 
     expect(logStub.info).to.have.been.calledWith(sinon.match.string);
   });
 
   it('should return ok response', async () => {
+    dataAccessStub.Opportunity.findById.resolves({
+      getType: () => 'testOpportunityType',
+      getData: () => ({
+        form: 'testUrl1',
+        formsource: 'formSource1',
+        formViews: 100,
+        samples: 987,
+        projectedConversionValue: 8789.0,
+      }),
+      setUpdatedBy: sinon.stub(),
+      setData: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+    });
+
     const response = await handler(message, context);
     expect(response.status).to.equal(ok().status);
   });
 
-  it('should handle errors when fetching opportunities', async () => {
-    dataAccessStub.Opportunity.allBySiteId.rejects(new Error('fetch error'));
+  it('should update accessibility data for forms-accessibility type', async () => {
+    dataAccessStub.Opportunity.findById.resolves({
+      getType: () => 'form-accessibility',
+      getData: () => ({
+        accessibility: [
+          { form: 'testUrl1', formSource: 'formSource1', a11yIssues: [] },
+          { form: 'testUrl2', formSource: 'formSource2', a11yIssues: [] },
+        ],
+      }),
+      setUpdatedBy: sinon.stub(),
+      setData: sinon.stub(),
+      save: sinon.stub().resolvesThis(),
+    });
 
-    try {
-      await handler(message, context);
-    } catch (error) {
-      expect(error.message).to.equal('fetch error');
-    }
-  });
-
-  it('should set correct values in mystiqueMessage', async () => {
-    // Explicitly mock the values returned by getData
-    dataAccessStub.Opportunity.allBySiteId.resolves([
+    message.data.form_details = [
       {
-        getType: () => 'testOpportunityType',
-        getData: () => ({
-          form: 'testUrl',
-          trackedFormKPIValue: 5,
-          metrics: { key: 'value' },
-          formNavigation: { source: 'testSource', text: 'testText' },
-          formsource: 'testFormSource',
-        }),
-        data: { // Directly include the data property
-          form: 'testUrl',
-          trackedFormKPIValue: 5,
-          pageViews: 20,
-          formViews: 10,
-          metrics: { key: 'value' },
-          formNavigation: { source: 'testSource', text: 'testText' },
-          formsource: 'testFormSource',
-        },
-        getSiteId: () => 'testSiteId',
-        getAuditId: () => 'testAuditId',
-        getDeliveryType: () => 'testDeliveryType',
-        setAuditId: sinon.stub(),
-        setUpdatedBy: sinon.stub(),
-        setData: sinon.stub(),
-        save: sinon.stub().resolvesThis(),
+        url: 'testUrl1',
+        form_source: 'formSource1',
+        is_lead_gen: true,
+        form_type: 'Contact Form',
+        form_category: 'B2B',
+        industry: 'Telecommunications',
+        cpl: 94.0,
       },
-    ]);
+    ];
 
     await handler(message, context);
 
-    const expectedData = {
-      url: 'testUrl',
-      cr: 5,
-      metrics: { key: 'value' },
-      cta_source: 'testSource',
-      cta_text: 'testText',
-      form_source: 'testFormSource',
-      page_views: 20,
-      form_views: 10,
-    };
+    const opportunity = await dataAccessStub.Opportunity.findById();
 
-    expect(sqsStub.sendMessage).to.have.been.calledWith(
-      'mockQueue',
-      sinon.match({
-        data: expectedData,
-      }),
-    );
+    expect(opportunity.setData).to.have.been.calledWith(sinon.match({
+      accessibility: sinon.match.array.deepEquals([
+        {
+          form: 'testUrl1',
+          formSource: 'formSource1',
+          a11yIssues: [],
+          formDetails: {
+            is_lead_gen: true,
+            form_type: 'Contact Form',
+            form_category: 'B2B',
+            industry: 'Telecommunications',
+            cpl: 94,
+          },
+        },
+        { form: 'testUrl2', formSource: 'formSource2', a11yIssues: [] },
+      ]),
+    }));
+    expect(opportunity.save).to.have.been.calledOnce;
   });
 });
