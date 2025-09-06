@@ -13,6 +13,7 @@
 import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getRUMUrl, toggleWWW } from '../support/utils.js';
 import {
   CPC, PENALTY_PER_IMAGE, RUM_INTERVAL, ALT_TEXT_GUIDANCE_TYPE, ALT_TEXT_OBSERVATION,
@@ -285,5 +286,61 @@ export async function cleanupOutdatedSuggestions(opportunity, log) {
     }
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions: ${error.message}`);
+  }
+}
+
+/**
+ * Generates alt-text metrics in the unified accessibility format
+ * @param {Object} opportunity - The alt-text opportunity object
+ * @param {Object} context - Context object with s3Client, env, log
+ * @returns {Promise<void>}
+ */
+export async function saveAltTextMetrics(opportunity, context) {
+  const { s3Client, env, log } = context;
+  const siteId = opportunity.getSiteId();
+  const version = new Date().toISOString().split('T')[0];
+  const outputKey = `assets-accessibility/${siteId}/${version}-final-result.json`;
+
+  try {
+    const suggestions = await opportunity.getSuggestions();
+
+    // Filter active suggestions only (exclude OUTDATED, FIXED, SKIPPED)
+    const activeSuggestions = suggestions.filter((s) => !['OUTDATED', 'FIXED', 'SKIPPED'].includes(s.getStatus()));
+
+    const urlCounts = {};
+    let totalCount = 0;
+
+    // Count violations per URL
+    activeSuggestions.forEach((suggestion) => {
+      const recommendations = suggestion.getData()?.recommendations || [];
+      recommendations.forEach((rec) => {
+        const url = rec.pageUrl;
+        if (!urlCounts[url]) {
+          urlCounts[url] = { count: 0 };
+        }
+        urlCounts[url].count += 1;
+        totalCount += 1;
+      });
+    });
+
+    // Generate unified metrics structure
+    const metricsData = {
+      overall: {
+        total: totalCount,
+      },
+      ...urlCounts,
+    };
+
+    // Save to S3
+    await s3Client.send(new PutObjectCommand({
+      Bucket: env.S3_SCRAPER_BUCKET_NAME,
+      Key: outputKey,
+      Body: JSON.stringify(metricsData, null, 2),
+      ContentType: 'application/json',
+    }));
+
+    log.info(`[${AUDIT_TYPE}]: Updated accessibility metrics with ${totalCount} violations to ${outputKey}`);
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}]: Failed to save accessibility metrics: ${error.message}`);
   }
 }

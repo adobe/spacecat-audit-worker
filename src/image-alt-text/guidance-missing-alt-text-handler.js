@@ -12,7 +12,7 @@
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
-import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
+import { addAltTextSuggestions, getProjectedMetrics, saveAltTextMetrics } from './opportunityHandler.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
@@ -229,6 +229,9 @@ export default async function handler(message, context) {
     altTextOppty.setData(updatedOpportunityData);
     altTextOppty.setUpdatedBy('system');
     await altTextOppty.save();
+
+    // Save updated metrics to S3 after each batch
+    await saveAltTextMetrics(altTextOppty, context);
 
     log.info(`[${AUDIT_TYPE}]: 
       Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
