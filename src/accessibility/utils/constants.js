@@ -726,6 +726,10 @@ export const accessibilityOpportunitiesMap = {
     'link-name',
     'select-name',
   ],
+  'a11y-color-contrast': [
+    'color-contrast',
+    'link-in-text-block',
+  ],
 };
 
 /**
