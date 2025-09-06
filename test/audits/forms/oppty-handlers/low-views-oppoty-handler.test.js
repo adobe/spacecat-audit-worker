@@ -163,6 +163,10 @@ describe('createLowFormViewsOpportunities handler method', () => {
             },
           },
         ],
+        formCTAWithinPage: [
+          '#text-84bada8460 a',
+          '#text-84bada8 button',
+        ],
       },
       guidance: {
         recommendations: [
