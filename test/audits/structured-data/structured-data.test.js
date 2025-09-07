@@ -622,7 +622,7 @@ describe('Structured Data Audit', () => {
         getIncludedURLs: () => [],
       });
 
-      expect(submitForScraping(context)).to.be.rejectedWith('No URLs found for site neither top pages nor included URLs');
+      await expect(submitForScraping(context)).to.be.rejectedWith('No URLs found for site neither top pages nor included URLs');
     });
 
     it('works with only included URLs when no top pages are available for scraping', async () => {
