@@ -231,17 +231,15 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
       rawValidatorIssues.forEach((issue, index) => {
         log.info(`SDA DEBUG: Page ${page} - Issue ${index}: ${issue.severity} - ${issue.rootType} - ${issue.issueMessage}`);
       });
-      
+
       validatorIssues = rawValidatorIssues
         // For now, ignore issues with severity lower than ERROR
         //          and suppress unnecessary issues for AEM customers
         .filter((issue) => includeIssue(context, issue, imageObjectFlag));
-        
       log.info(`SDA DEBUG: Page ${page} - After filtering: ${validatorIssues.length} issues remain`);
     } catch (e) {
       log.error(`SDA: Failed to validate structured data for ${page}.`, e);
     }
-    
     log.info(`SDA DEBUG: Page ${page} - Final issues to add: ${validatorIssues.length}`);
     for (const issue of validatorIssues) {
       // Only add if same issue for the same source does not exist already.
