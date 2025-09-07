@@ -66,7 +66,7 @@ describe('Forms Vitals audit', () => {
     );
     expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
       domain: 'www.example.com',
-      interval: 15,
+      interval: 7,
       granularity: 'hourly',
     });
     expect(result).to.deep.equal(expectedFormVitalsData);
@@ -124,7 +124,7 @@ describe('audit and send scraping step', () => {
     const result = await runAuditAndSendUrlsForScrapingStep(context);
     expect(context.rumApiClient.queryMulti).calledWith(FORMS_OPPTY_QUERIES, {
       domain: 'www.example.com',
-      interval: 15,
+      interval: 7,
       granularity: 'hourly',
     });
     expect(result).to.deep.equal(expectedFormSendToScraperData);
