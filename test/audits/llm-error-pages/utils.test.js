@@ -20,9 +20,6 @@ import {
   getAllLlmProviders,
   buildLlmUserAgentFilter,
   normalizeUserAgentToProvider,
-  extractCustomerDomain,
-  getAnalysisBucket,
-  getS3Config,
   formatDateString,
   getWeekRange,
   createDateRange,
@@ -35,6 +32,7 @@ import {
   sortErrorsByTrafficVolume,
   toPathOnly,
 } from '../../../src/llm-error-pages/utils.js';
+import { extractCustomerDomain } from '../../../src/utils/cdn-utils.js';
 
 use(sinonChai);
 
@@ -326,7 +324,7 @@ describe('LLM Error Pages Utils', () => {
       };
 
       const result = extractCustomerDomain(mockSite);
-      expect(result).to.equal('www_example_com');
+      expect(result).to.equal('example_com');
     });
 
     it('should handle special characters in domain', () => {
@@ -339,76 +337,159 @@ describe('LLM Error Pages Utils', () => {
     });
   });
 
-  describe('getAnalysisBucket', () => {
-    it('should create bucket name with CDN logs prefix', () => {
-      const result = getAnalysisBucket('test_example_com');
-      expect(result).to.equal('cdn-logs-test-example-com');
-    });
-
-    it('should replace dots and underscores with hyphens', () => {
-      const result = getAnalysisBucket('test.example.com');
-      expect(result).to.equal('cdn-logs-test-example-com');
-    });
-  });
-
   describe('getS3Config', () => {
-    it('should return config with custom bucket when CDN logs config exists', () => {
+    it('should return config with resolved bucket name', async () => {
       const mockSite = {
-        getConfig: () => ({
-          getCdnLogsConfig: () => ({
-            bucketName: 'custom-bucket',
-          }),
-        }),
+        getConfig: () => ({}),
         getBaseURL: () => 'https://www.example.com',
       };
 
-      const result = getS3Config(mockSite);
-      expect(result.bucket).to.equal('custom-bucket');
-      expect(result.customerName).to.equal('www');
-      expect(result.customerDomain).to.equal('www_example_com');
-      expect(result.aggregatedLocation).to.equal('s3://custom-bucket/aggregated/');
-      expect(result.databaseName).to.equal('cdn_logs_www_example_com');
-      expect(result.tableName).to.equal('aggregated_logs_www_example_com');
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveCdnBucketName: sinon.stub().resolves('resolved-bucket'),
+          extractCustomerDomain: () => 'example_com',
+          isStandardAdobeCdnBucket: () => false,
+        },
+      });
+
+      const result = await mockedUtils.getS3Config(mockSite, {});
+      expect(result.bucket).to.equal('resolved-bucket');
+      expect(result.customerName).to.equal('example');
+      expect(result.customerDomain).to.equal('example_com');
+      expect(result.aggregatedLocation).to.equal('s3://resolved-bucket/aggregated/');
+      expect(result.databaseName).to.equal('cdn_logs_example_com');
+      expect(result.tableName).to.equal('aggregated_logs_example_com');
     });
 
-    it('should return config with default bucket when no CDN logs config', () => {
+    it('should use resolveCdnBucketName by default', async () => {
       const mockSite = {
-        getConfig: () => ({
-          getCdnLogsConfig: () => null,
-        }),
+        getConfig: () => ({}),
         getBaseURL: () => 'https://www.example.com',
       };
 
-      const result = getS3Config(mockSite);
-      expect(result.bucket).to.equal('cdn-logs-www-example-com');
-      expect(result.customerName).to.equal('www');
-      expect(result.customerDomain).to.equal('www_example_com');
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveCdnBucketName: async () => 'resolved-bucket-name',
+          extractCustomerDomain: () => 'example_com',
+          isStandardAdobeCdnBucket: () => false,
+        },
+      });
+
+      const result = await mockedUtils.getS3Config(mockSite, {});
+      expect(result.bucket).to.equal('resolved-bucket-name');
+      expect(result.customerName).to.equal('example');
+      expect(result.customerDomain).to.equal('example_com');
     });
 
-    it('should handle site with null config', () => {
-      const mockSite = {
-        getConfig: () => ({
-          getCdnLogsConfig: () => null,
-        }),
-        getBaseURL: () => 'https://www.example.com',
-      };
-
-      const result = getS3Config(mockSite);
-      expect(result.bucket).to.equal('cdn-logs-www-example-com');
-    });
-
-    it('should return config with callable getAthenaTempLocation function', () => {
+    it('should return config with callable getAthenaTempLocation function', async () => {
       const mockSite = {
         getBaseURL: () => 'https://test.example.com',
-        getConfig: () => ({
-          getCdnLogsConfig: () => ({ bucketName: 'custom-bucket' }),
-        }),
+        getConfig: () => ({}),
       };
 
-      const result = getS3Config(mockSite);
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveCdnBucketName: async () => 'custom-bucket',
+        },
+      });
+
+      const result = await mockedUtils.getS3Config(mockSite, {});
 
       expect(result.getAthenaTempLocation).to.be.a('function');
       expect(result.getAthenaTempLocation()).to.equal('s3://custom-bucket/temp/athena-results/');
+    });
+
+    it('should throw error when resolver fails', async () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => ({}),
+      };
+
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveCdnBucketName: async () => { throw new Error('boom'); },
+        },
+      });
+
+      try {
+        await mockedUtils.getS3Config(mockSite, {});
+        expect.fail('Should have thrown error');
+      } catch (error) {
+        expect(error.message).to.equal('boom');
+      }
+    });
+
+    it('should include imsOrgId in aggregatedLocation for standard Adobe bucket', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ orgId: 'IMS_ORG_123' }),
+        }),
+        getBaseURL: () => 'https://www.example.com',
+      };
+
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
+          extractCustomerDomain: () => 'example_com',
+          isStandardAdobeCdnBucket: () => true,
+        },
+        '../../../src/utils/data-access.js': {
+          getImsOrgId: async () => null,
+        },
+      });
+
+      const result = await mockedUtils.getS3Config(mockSite, {
+        dataAccess: {},
+        log: { info: sinon.stub() },
+      });
+      expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/IMS_ORG_123/aggregated/');
+    });
+
+    it('should keep default aggregatedLocation when IMS lookup throws', async () => {
+      const mockSite = {
+        getConfig: () => ({}),
+        getBaseURL: () => 'https://www.example.com',
+      };
+
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
+          extractCustomerDomain: () => 'example_com',
+          isStandardAdobeCdnBucket: () => true,
+        },
+        '../../../src/utils/data-access.js': {
+          getImsOrgId: async () => { throw new Error('IMS failure'); },
+        },
+      });
+
+      const result = await mockedUtils.getS3Config(mockSite, {});
+      expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/aggregated/');
+    });
+
+    it('should use default aggregatedLocation when both orgId and IMS lookup return falsy', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoCdnBucketConfig: () => ({ orgId: null }), // orgId is falsy
+        }),
+        getBaseURL: () => 'https://www.example.com',
+      };
+
+      const mockedUtils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '../../../src/utils/cdn-utils.js': {
+          resolveCdnBucketName: sinon.stub().resolves('cdn-logs-adobe-prod'),
+          extractCustomerDomain: () => 'example_com',
+          isStandardAdobeCdnBucket: () => true,
+        },
+        '../../../src/utils/data-access.js': {
+          getImsOrgId: async () => null, // Also returns falsy
+        },
+      });
+
+      const result = await mockedUtils.getS3Config(mockSite, {
+        dataAccess: {},
+        log: { info: sinon.stub() },
+      });
+      expect(result.aggregatedLocation).to.equal('s3://cdn-logs-adobe-prod/aggregated/'); // Default location without IMS org
     });
   });
 
@@ -820,6 +901,234 @@ describe('LLM Error Pages Utils', () => {
       const result = toPathOnly(invalid);
       // With base fallback, this is treated as a path
       expect(result).to.equal('/://not-a-valid-url');
+    });
+
+    it('returns original string when URL construction fails', () => {
+      const result = toPathOnly('\\\\invalid\\\\url');
+      expect(result).to.equal('//url');
+    });
+
+    it('handles URL with search params but no query', () => {
+      const result = toPathOnly('https://example.com/path');
+      expect(result).to.equal('/path');
+    });
+  });
+
+  // ============================================================================
+  // Additional coverage tests for missing functions
+  // ============================================================================
+
+  describe('buildLlmErrorPagesQuery', () => {
+    beforeEach(async () => {
+      mockGetStaticContent = sinon.stub().returns('SELECT * FROM table');
+      utils = await esmock('../../../src/llm-error-pages/utils.js', {
+        '@adobe/spacecat-shared-utils': {
+          getStaticContent: mockGetStaticContent,
+        },
+      });
+    });
+
+    it('should build query with all parameters', async () => {
+      const options = {
+        databaseName: 'test_db',
+        tableName: 'test_table',
+        startDate: new Date('2024-01-01'),
+        endDate: new Date('2024-01-07'),
+        llmProviders: ['chatgpt'],
+        siteFilters: ['test'],
+      };
+
+      await utils.buildLlmErrorPagesQuery(options);
+
+      expect(mockGetStaticContent).to.have.been.calledOnce;
+      expect(mockGetStaticContent.firstCall.args[0]).to.have.property('databaseName', 'test_db');
+      expect(mockGetStaticContent.firstCall.args[0]).to.have.property('tableName', 'test_table');
+      expect(mockGetStaticContent.firstCall.args[0]).to.have.property('whereClause');
+    });
+
+    it('should handle null llmProviders', async () => {
+      const options = {
+        databaseName: 'test_db',
+        tableName: 'test_table',
+        llmProviders: null,
+        siteFilters: [],
+      };
+
+      await utils.buildLlmErrorPagesQuery(options);
+
+      expect(mockGetStaticContent).to.have.been.calledOnce;
+    });
+
+    it('should handle empty providers that return no filter', async () => {
+      const options = {
+        databaseName: 'test_db',
+        tableName: 'test_table',
+        llmProviders: ['invalid-provider'],
+        siteFilters: [],
+      };
+
+      await utils.buildLlmErrorPagesQuery(options);
+
+      expect(mockGetStaticContent).to.have.been.calledOnce;
+    });
+  });
+
+  describe('buildLlmUserAgentFilter edge cases', () => {
+    it('should return null for empty providers array', () => {
+      const result = buildLlmUserAgentFilter([]);
+      expect(result).to.be.null;
+    });
+
+    it('should filter out invalid providers', () => {
+      const result = buildLlmUserAgentFilter(['invalid', 'chatgpt']);
+      expect(result).to.contain('ChatGPT');
+      expect(result).not.to.contain('invalid');
+    });
+
+    it('should handle null providers parameter', () => {
+      const result = buildLlmUserAgentFilter(null);
+      expect(result).to.contain('ChatGPT');
+      expect(result).to.contain('Perplexity');
+    });
+  });
+
+  describe('normalizeUserAgentToProvider edge cases', () => {
+    it('should handle null user agent', () => {
+      const result = normalizeUserAgentToProvider(null);
+      expect(result).to.equal('Unknown');
+    });
+
+    it('should handle undefined user agent', () => {
+      const result = normalizeUserAgentToProvider(undefined);
+      expect(result).to.equal('Unknown');
+    });
+
+    it('should handle non-string user agent', () => {
+      const result = normalizeUserAgentToProvider(123);
+      expect(result).to.equal('Unknown');
+    });
+
+    it('should return original string for unrecognized user agents', () => {
+      const result = normalizeUserAgentToProvider('Custom-Bot/1.0');
+      expect(result).to.equal('Custom-Bot/1.0');
+    });
+  });
+
+  describe('getLlmProviderPattern edge cases', () => {
+    it('should return null for empty string', () => {
+      const result = getLlmProviderPattern('');
+      expect(result).to.be.null;
+    });
+
+    it('should return null for whitespace-only string', () => {
+      const result = getLlmProviderPattern('   ');
+      expect(result).to.be.null;
+    });
+
+    it('should return null for non-string input', () => {
+      const result = getLlmProviderPattern(123);
+      expect(result).to.be.null;
+    });
+
+    it('should return null for null input', () => {
+      const result = getLlmProviderPattern(null);
+      expect(result).to.be.null;
+    });
+  });
+
+  describe('buildSiteFilters', () => {
+    it('should build include filters for host using REGEXP_LIKE', () => {
+      const filters = [{ key: 'host', value: ['example.com', 'test.com'] }];
+      const result = buildSiteFilters(filters);
+      expect(result).to.include("REGEXP_LIKE(host, '(?i)(example.com|test.com)')");
+    });
+
+    it('should build exclude filters using NOT REGEXP_LIKE', () => {
+      const filters = [{ key: 'host', value: ['example.com'], type: 'exclude' }];
+      const result = buildSiteFilters(filters);
+      expect(result).to.include("NOT REGEXP_LIKE(host, '(?i)(example.com)')");
+    });
+
+    it('should handle url filters using REGEXP_LIKE', () => {
+      const filters = [{ key: 'url', value: ['/page1', '/page2'] }];
+      const result = buildSiteFilters(filters);
+      expect(result).to.include("REGEXP_LIKE(url, '(?i)(/page1|/page2)')");
+    });
+
+    it('should handle multiple filter types with AND join', () => {
+      const filters = [
+        { key: 'host', value: ['example.com'] },
+        { key: 'url', value: ['/page1'], type: 'exclude' },
+      ];
+      const result = buildSiteFilters(filters);
+      expect(result).to.include("REGEXP_LIKE(host, '(?i)(example.com)')");
+      expect(result).to.include("NOT REGEXP_LIKE(url, '(?i)(/page1)')");
+      expect(result).to.include(' AND ');
+    });
+
+    it('should return empty string for empty filters', () => {
+      const result = buildSiteFilters([]);
+      expect(result).to.equal('');
+    });
+
+    it('should handle filters with empty values by generating empty pattern', () => {
+      const filters = [{ key: 'host', value: [] }];
+      const result = buildSiteFilters(filters);
+      expect(result).to.include("REGEXP_LIKE(host, '(?i)()')");
+    });
+  });
+
+  describe('processErrorPagesResults', () => {
+    it('should calculate summary from results and return object shape', () => {
+      const results = [
+        {
+          url: '/page1', total_requests: '10', status: '404', user_agent: 'bot',
+        },
+        {
+          url: '/page1', total_requests: '5', status: '404', user_agent: 'human',
+        },
+        {
+          url: '/page2', total_requests: '3', status: '403', user_agent: 'bot',
+        },
+      ];
+
+      const processed = processErrorPagesResults(results);
+      expect(processed.totalErrors).to.equal(18);
+      expect(processed.errorPages).to.equal(results);
+      expect(processed.summary.uniqueUrls).to.equal(2);
+      expect(processed.summary.uniqueUserAgents).to.equal(2);
+      expect(processed.summary.statusCodes).to.deep.equal({ 404: 15, 403: 3 });
+    });
+
+    it('should handle empty results', () => {
+      const processed = processErrorPagesResults([]);
+      expect(processed).to.deep.equal({
+        totalErrors: 0,
+        errorPages: [],
+        summary: {
+          uniqueUrls: 0,
+          uniqueUserAgents: 0,
+          statusCodes: {},
+        },
+      });
+    });
+
+    it('should coerce non-numeric total_requests to 0 and compute counts', () => {
+      const results = [{
+        url: '/page1', total_requests: 'invalid', status: '404', user_agent: 'bot',
+      }];
+      const processed = processErrorPagesResults(results);
+      expect(processed.totalErrors).to.equal(0);
+      expect(processed.summary.statusCodes).to.deep.equal({ 404: 0 });
+    });
+
+    it('should not crash when user_agent/status missing and still produce summary', () => {
+      const results = [
+        { url: '/page1', total_requests: '2' },
+      ];
+      const processed = processErrorPagesResults(results);
+      expect(processed.totalErrors).to.equal(2);
+      expect(processed.summary.statusCodes).to.deep.equal({ Unknown: 2 });
     });
   });
 });

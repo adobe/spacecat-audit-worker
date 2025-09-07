@@ -13,7 +13,7 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude|Anthropic',
-  gemini: '(?i)Gemini',
+  gemini: '(?i)Gemini|Gemini-Deep-Research',
   copilot: '(?i)Copilot',
   google: '(?i)Googlebot',
   bing: '(?i)Bingbot',
@@ -41,10 +41,6 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   // { pattern: '%gemini%', displayName: 'Gemini' },
   // { pattern: '%copilot%', displayName: 'Copilot' },
 ];
-
-export function getProviderPattern(provider) {
-  return PROVIDER_USER_AGENT_PATTERNS[provider?.toLowerCase()] || null;
-}
 
 /**
  * Builds SQL CASE statement for user agent display names

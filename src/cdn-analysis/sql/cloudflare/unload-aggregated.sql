@@ -20,7 +20,7 @@ UNLOAD (
     -- The 'hour' column in output provides hourly breakdown within the daily aggregation
 
     -- match known LLM-related user-agents
-    AND REGEXP_LIKE(ClientRequestUserAgent, '(?i)ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot')
+    AND REGEXP_LIKE(ClientRequestUserAgent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot|^Google$)')
 
     -- only count text/html responses with robots.txt and sitemaps
     AND (

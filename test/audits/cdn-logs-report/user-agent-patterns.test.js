@@ -34,24 +34,6 @@ describe('User Agent Patterns', () => {
     });
   });
 
-  describe('getProviderPattern', () => {
-    it('returns correct pattern for known providers', () => {
-      const { getProviderPattern } = userAgentPatterns;
-
-      expect(getProviderPattern('chatgpt')).to.include('ChatGPT');
-      expect(getProviderPattern('CHATGPT')).to.include('ChatGPT');
-      expect(getProviderPattern('perplexity')).to.include('Perplexity');
-    });
-
-    it('returns null for unknown providers', () => {
-      const { getProviderPattern } = userAgentPatterns;
-
-      expect(getProviderPattern('unknown')).to.be.null;
-      expect(getProviderPattern(null)).to.be.null;
-      expect(getProviderPattern(undefined)).to.be.null;
-    });
-  });
-
   describe('buildAgentTypeClassificationSQL', () => {
     it('builds SQL for ChatGPT and Perplexity agent types', () => {
       const { buildAgentTypeClassificationSQL } = userAgentPatterns;

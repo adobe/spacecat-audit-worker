@@ -91,8 +91,7 @@ export async function resolveCdnBucketName(site, context) {
     return bucketName;
   }
 
-  // Try standardized environment-based bucket first (if env is available)
-  log.info(`Trying standardized bucket for environment: ${env?.AWS_ENV}`);
+  // Try standardized environment-based bucket (if env is available)
   if (env?.AWS_ENV) {
     const environment = env.AWS_ENV;
     const standardBucket = generateStandardBucketName(environment);

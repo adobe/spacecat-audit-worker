@@ -78,7 +78,7 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
   const { host } = new URL(site.getBaseURL());
   const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
   // for non-adobe customers, use the orgId from the config
-  const imsOrgId = await getImsOrgId(site, dataAccess, log) || orgId;
+  const imsOrgId = orgId || await getImsOrgId(site, dataAccess, log);
 
   const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName, imsOrgId);
   const serviceProviders = isLegacy
