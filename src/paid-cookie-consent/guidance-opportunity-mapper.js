@@ -17,6 +17,9 @@ import { DATA_SOURCES } from '../common/constants.js';
 const ESTIMATED_CPC = 0.80;
 
 function formatNumberWithK(num) {
+  if (num == null || num === undefined) {
+    return '0';
+  }
   if (num >= 1000) {
     return `${(num / 1000).toFixed(1)}K`;
   }
@@ -57,7 +60,7 @@ async function addScreenshots(context, siteId, markdown, jobId) {
 export function isLowSeverityGuidanceBody(body) {
   if (body.issueSeverity) {
     const sev = body.issueSeverity.toLowerCase();
-    return sev === 'none' || sev === 'low';
+    return sev.includes('none') || sev.includes('low');
   }
 
   return false;
@@ -68,12 +71,26 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
   const stats = audit.getAuditResult();
   const urlConsentSegment = stats.find((item) => item.key === 'urlConsent');
   const pagesWithConsent = urlConsentSegment?.value?.filter((item) => item.consent === 'show') || [];
-  const pageData = pagesWithConsent.find((item) => item.url === url) || {};
 
-  const pageViews = pageData.pageViews || 0;
-  const bounceRate = pageData.bounceRate || 0;
-  const projectedTrafficLost = pageData.projectedTrafficLost || bounceRate * pageViews;
-  const projectedTrafficValue = projectedTrafficLost * ESTIMATED_CPC;
+  // Get individual page data for the specific URL
+  const pageData = pagesWithConsent.find((item) => item.url === url) || {};
+  const { pageViews } = pageData;
+  const { bounceRate } = pageData;
+  const { projectedTrafficLost } = pageData;
+
+  // Aggregate data across all pages with consent='show'
+  const pageViewsSum = pagesWithConsent.reduce((sum, page) => sum
+  + page.pageViews, 0);
+  const projectedTrafficLossSum = pagesWithConsent.reduce((sum, page) => {
+    const pageTrafficLoss = page.projectedTrafficLost;
+    return sum + pageTrafficLoss;
+  }, 0);
+
+  // Calculate total aggregate bounce rate
+  const totalAggBounceRate = pageViewsSum > 0 ? projectedTrafficLossSum / pageViewsSum : 0;
+
+  const projectedTrafficValue = projectedTrafficLossSum * ESTIMATED_CPC;
+
   return {
     siteId,
     id: randomUUID(),
@@ -81,7 +98,7 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
     type: 'generic-opportunity',
     origin: 'AUTOMATION',
     title: 'Consent Banner covers essential page content',
-    description: `The consent banner hides essential page content. ${(bounceRate * 100).toFixed(1)}% of paid traffic bounces on consent banner without interaction. Most affected page: ${url} (${formatNumberWithK(projectedTrafficLost)})`,
+    description: `The consent banner hides essential page content. ${(totalAggBounceRate * 100).toFixed(1)}% of total paid traffic (${formatNumberWithK(projectedTrafficLossSum)}) bounces on consent banner without interaction. Most affected page: ${url} (${formatNumberWithK(projectedTrafficLost)})`,
     guidance: {
       recommendations: [
         {
@@ -98,7 +115,7 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
         DATA_SOURCES.RUM,
         DATA_SOURCES.PAGE,
       ],
-      projectedTrafficLost,
+      projectedTrafficLost: projectedTrafficLossSum,
       projectedTrafficValue,
       opportunityType: 'paid-cookie-consent',
       page: url,

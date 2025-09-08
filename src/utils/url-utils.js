@@ -36,7 +36,7 @@ export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
         }
       }
       return null;
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // eslint-disable-next-line no-unused-vars
     } catch (error) {
       return null;
     }
