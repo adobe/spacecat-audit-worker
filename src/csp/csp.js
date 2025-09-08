@@ -9,7 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { cspAutoSuggest } from './csp-auto-suggest.js';
@@ -50,6 +51,61 @@ function flattenCSP(csp) {
   });
 }
 
+/**
+ * Checks for an existing opportunity instance and markes all suggestions as completed.
+ *
+ * @param {Object} auditData - The audit data containing the audit result and additional details.
+ * @param {Object} context - The context object containing the data access and logger objects.
+ * @param {string} auditType - The type of the audit.
+ * @returns {Promise<void>} No result.
+ * @throws {Error} If fetching or creating the opportunity fails.
+ */
+export async function resolveOpportunity(auditData, context, auditType) {
+  const { dataAccess, log } = context;
+  const { Opportunity, Suggestion } = dataAccess;
+  let opportunity;
+
+  // Check for existing opportunity
+  try {
+    const opportunities = await Opportunity.allBySiteIdAndStatus(
+      auditData.siteId,
+      Oppty.STATUSES.NEW,
+    );
+    opportunity = opportunities.find((oppty) => oppty.getType() === auditType);
+  } catch (e) {
+    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
+    throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
+  }
+
+  if (!opportunity) {
+    return;
+  }
+
+  // Mark all suggestions as completed
+  try {
+    opportunity.setStatus(Oppty.STATUSES.RESOLVED);
+    await opportunity.save();
+
+    const existingSuggestions = await opportunity.getSuggestions();
+    const existingOutdatedSuggestions = existingSuggestions
+      .filter((existing) => ![
+        SuggestionDataAccess.STATUSES.OUTDATED,
+        SuggestionDataAccess.STATUSES.FIXED,
+        SuggestionDataAccess.STATUSES.ERROR,
+        SuggestionDataAccess.STATUSES.SKIPPED,
+      ].includes(existing.getStatus()));
+    if (isNonEmptyArray(existingOutdatedSuggestions)) {
+      await Suggestion.bulkUpdateStatus(
+        existingOutdatedSuggestions,
+        SuggestionDataAccess.STATUSES.OUTDATED,
+      );
+    }
+  } catch (e) {
+    log.error(`Failed to resolve suggestions for siteId ${auditData.siteId} and auditId ${auditData.id}: ${e.message}`);
+    throw new Error(`Failed to resolve suggestions for siteId ${auditData.siteId}: ${e.message}`);
+  }
+}
+
 // eslint-disable-next-line no-unused-vars
 export async function cspOpportunityAndSuggestions(auditUrl, auditData, context, site) {
   const { dataAccess, log } = context;
@@ -88,6 +144,11 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   });
 
   if (!csp.length) {
+    await resolveOpportunity(
+      { siteId: auditData.siteId, id: auditData.auditId },
+      context,
+      AUDIT_TYPE,
+    );
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No CSP information found for ${site.getId()}`);
     return { ...auditData };
   }

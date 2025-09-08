@@ -18,7 +18,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { isIsoDate } from '@adobe/spacecat-shared-utils';
 import createLHSAuditRunner from '../../src/lhs/lib.js';
 import { MockContextBuilder } from '../shared.js';
@@ -184,6 +184,7 @@ describe('CSP Post-processor', () => {
   let cspSite;
   let auditData;
   let opportunityStub;
+  let suggestionStub;
   let cspOpportunity;
   let configuration;
 
@@ -238,6 +239,11 @@ describe('CSP Post-processor', () => {
     };
     context.dataAccess.Opportunity = opportunityStub;
 
+    suggestionStub = {
+      bulkUpdateStatus: sinon.stub().resolves([]),
+    };
+    context.dataAccess.Suggestion = suggestionStub;
+
     configuration = {
       isHandlerEnabledForSite: sandbox.stub(),
     };
@@ -247,6 +253,7 @@ describe('CSP Post-processor', () => {
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
       setData: sinon.stub(),
+      setStatus: sinon.stub(),
       save: sinon.stub(),
       getSuggestions: sinon.stub().returns([]),
       addSuggestions: sinon
@@ -272,7 +279,103 @@ describe('CSP Post-processor', () => {
     assertAuditData(cspAuditData);
 
     expect(opportunityStub.create).to.not.have.been.called;
+    expect(cspOpportunity.setStatus).to.not.have.been.called;
+    expect(cspOpportunity.save).to.not.have.been.called;
     expect(cspOpportunity.addSuggestions).to.not.have.been.called;
+    expect(suggestionStub.bulkUpdateStatus).to.not.have.been.called;
+  });
+
+  it('should resolve existing opportunity if no CSP findings in lighthouse report', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [];
+
+    sinon.replace(opportunityStub, 'allBySiteIdAndStatus', sinon.stub().resolves([cspOpportunity]));
+    sinon.replace(cspOpportunity, 'getSuggestions', sinon.stub().resolves([
+      {
+        getStatus: () => Suggestion.STATUSES.OUTDATED,
+      },
+    ]));
+
+    const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+    assertAuditData(cspAuditData);
+
+    // Existing opportunity is being updated
+    expect(opportunityStub.create).to.not.have.been.called;
+    expect(cspOpportunity.setStatus).to.have.been.calledWith(Opportunity.STATUSES.RESOLVED);
+    expect(cspOpportunity.save).to.have.been.called;
+    expect(cspOpportunity.addSuggestions).to.not.have.been.called;
+
+    // No suggestions are updated as all already resolved
+    expect(suggestionStub.bulkUpdateStatus).to.not.have.been.called;
+  });
+
+  it('should resolve existing opportunity and all suggestions if no CSP findings in lighthouse report', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [];
+
+    sinon.replace(opportunityStub, 'allBySiteIdAndStatus', sinon.stub().resolves([cspOpportunity]));
+    const activeSuggestion = {
+      getStatus: () => Suggestion.STATUSES.NEW,
+    };
+    const outdatedSuggestion = {
+      getStatus: () => Suggestion.STATUSES.OUTDATED,
+    };
+    sinon.replace(cspOpportunity, 'getSuggestions', sinon.stub().resolves([
+      ...[activeSuggestion],
+      ...[outdatedSuggestion],
+      ...[activeSuggestion],
+    ]));
+
+    const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+    assertAuditData(cspAuditData);
+
+    // Existing opportunity is being updated
+    expect(opportunityStub.create).to.not.have.been.called;
+    expect(cspOpportunity.setStatus).to.have.been.calledWith(Opportunity.STATUSES.RESOLVED);
+    expect(cspOpportunity.save).to.have.been.called;
+    expect(cspOpportunity.addSuggestions).to.not.have.been.called;
+
+    // All suggestions are updated
+    expect(suggestionStub.bulkUpdateStatus).to.have.been.calledWith([
+      ...[activeSuggestion],
+      ...[activeSuggestion],
+    ], Suggestion.STATUSES.OUTDATED);
+  });
+
+  it('should resolve existing opportunity if no CSP findings in lighthouse report - error case 1', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [];
+
+    sinon.replace(opportunityStub, 'allBySiteIdAndStatus', sinon.stub().throws());
+    sinon.replace(cspOpportunity, 'getSuggestions', sinon.stub().resolves([
+      {
+        getStatus: () => Suggestion.STATUSES.OUTDATED,
+      },
+    ]));
+
+    try {
+      await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('Failed to fetch opportunities for siteId test-site-id: Error');
+    }
+  });
+
+  it('should resolve existing opportunity if no CSP findings in lighthouse report - error case 2', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [];
+
+    sinon.replace(opportunityStub, 'allBySiteIdAndStatus', sinon.stub().resolves([cspOpportunity]));
+    sinon.replace(cspOpportunity, 'getSuggestions', sinon.stub().throws());
+
+    try {
+      await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('Failed to resolve suggestions for siteId test-site-id: Error');
+    }
   });
 
   it('should extract CSP opportunity', async () => {
