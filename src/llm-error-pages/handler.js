@@ -112,7 +112,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
     // Generate and upload Excel files for each category
     await Promise.all([
-      writeCategoryExcel('404', categorizedResults[404]),
+      writeCategoryExcel('404', categorizedResults[404]?.slice(0, 50)),
       writeCategoryExcel('403', categorizedResults[403]),
       writeCategoryExcel('5xx', categorizedResults['5xx']),
     ]);
@@ -194,8 +194,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const messageBaseUrl = site.getBaseURL?.() || '';
     const consolidated404 = consolidateErrorsByUrl(errors404);
-    const sorted404 = sortErrorsByTrafficVolume(consolidated404)
-      .slice(0, 50); // Limit to top 50 URLs
+    const sorted404 = sortErrorsByTrafficVolume(consolidated404).slice(0, 50);
     const { SiteTopPage } = dataAccess;
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
 
