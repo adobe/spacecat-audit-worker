@@ -1,3 +1,10 @@
+## [1.177.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.1...v1.177.2) (2025-09-08)
+
+
+### Bug Fixes
+
+* **internal-links:** update destination to ScrapeClient ([#1227](https://github.com/adobe/spacecat-audit-worker/issues/1227)) ([1d41234](https://github.com/adobe/spacecat-audit-worker/commit/1d4123409ce074ae5e12515e9e51343c40610148))
+
 ## [1.177.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.0...v1.177.1) (2025-09-05)
 
 
