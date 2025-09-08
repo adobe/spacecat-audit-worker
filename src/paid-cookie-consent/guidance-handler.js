@@ -13,17 +13,8 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { mapToPaidOpportunity, mapToPaidSuggestion, isLowSeverityGuidanceBody } from './guidance-opportunity-mapper.js';
 
 function getGuidanceObj(guidance) {
-  let body = guidance && guidance[0] && guidance[0].body;
-  try {
-    const parsed = JSON.parse(body);
-    if (parsed && typeof parsed === 'object') {
-      body = parsed;
-    }
-  } catch {
-    body = {
-      markdown: body,
-    };
-  }
+  const body = guidance && guidance[0] && guidance[0].body;
+
   return {
     ...guidance[0],
     body,
@@ -52,25 +43,12 @@ export default async function handler(message, context) {
     return ok();
   }
 
-  const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  let opportunity = existingOpportunities
-    .filter((oppty) => oppty.getType() === 'generic-opportunity')
-    .find((oppty) => oppty.getData()?.page === url && oppty.getData().opportunityType === 'paid-cookie-consent');
   const entity = mapToPaidOpportunity(siteId, url, audit, guidanceParsed);
-  if (!opportunity) {
-    log.info(`No existing Opportunity found for ${siteId} page: ${url}. Creating a new one.`);
-    opportunity = await Opportunity.create(entity);
-  } else {
-    log.info(`Found existing paid Opportunity for page ${url} with status ${opportunity.getStatus()}. Updating it with new data`);
-    opportunity.setAuditId(entity.id);
-    opportunity.setData(entity.data);
-    opportunity.setGuidance(entity.guidance);
-    opportunity.setTitle(entity.title);
-    opportunity.setDescription(entity.description);
-    opportunity = await opportunity.save();
-  }
-  const existingSuggestions = await opportunity.getSuggestions();
+  // Always create a new opportunity
+  log.info(`Creating new paid-cookie-consent opportunity for ${siteId} page: ${url}`);
 
+  const opportunity = await Opportunity.create(entity);
+  // Create suggestion for the new opportunity first
   const suggestionData = await mapToPaidSuggestion(
     context,
     siteId,
@@ -79,9 +57,25 @@ export default async function handler(message, context) {
     guidanceParsed,
   );
   await Suggestion.create(suggestionData);
+  log.info(`Created suggestion for opportunity ${opportunity.getId()}`);
 
-  // delete previous suggestions only after new one is successfully created
-  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+  // Only after suggestion is successfully created,
+  // find and mark existing NEW system opportunities as IGNORED
+  const existingOpportunities = await Opportunity.allBySiteId(siteId);
+  const existingMatches = existingOpportunities
+    .filter((oppty) => oppty.getType() === 'generic-opportunity')
+    .filter((oppty) => oppty.getData()?.page === url && oppty.getData().opportunityType === 'paid-cookie-consent')
+    .filter((oppty) => oppty.getStatus() === 'NEW' && oppty.getUpdatedBy() === 'system')
+    .filter((oppty) => oppty.getId() !== opportunity.getId()); // Exclude the newly created one
+
+  if (existingMatches.length > 0) {
+    log.info(`Found ${existingMatches.length} existing NEW system opportunities for page ${url}. Marking them as IGNORED.`);
+    await Promise.all(existingMatches.map(async (oldOppty) => {
+      oldOppty.setStatus('IGNORED');
+      await oldOppty.save();
+      log.info(`Marked opportunity ${oldOppty.getId()} as IGNORED`);
+    }));
+  }
 
   log.info(`paid-cookie-consent  opportunity succesfully added for site: ${siteId} page: ${url} audit: ${auditId}  opportunity: ${JSON.stringify(opportunity, null, 2)}`);
 
