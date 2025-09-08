@@ -339,7 +339,7 @@ describe('CSP Post-processor', () => {
     expect(suggestionStub.bulkUpdateStatus).to.have.been.calledWith([
       ...[activeSuggestion],
       ...[activeSuggestion],
-    ], Suggestion.STATUSES.OUTDATED);
+    ], Suggestion.STATUSES.FIXED);
   });
 
   it('should resolve existing opportunity if no CSP findings in lighthouse report - error case 1', async () => {

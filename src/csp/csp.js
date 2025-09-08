@@ -97,7 +97,7 @@ export async function resolveOpportunity(auditData, context, auditType) {
     if (isNonEmptyArray(existingOutdatedSuggestions)) {
       await Suggestion.bulkUpdateStatus(
         existingOutdatedSuggestions,
-        SuggestionDataAccess.STATUSES.OUTDATED,
+        SuggestionDataAccess.STATUSES.FIXED,
       );
     }
   } catch (e) {
