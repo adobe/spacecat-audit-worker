@@ -12,6 +12,8 @@
 
 /* eslint-env mocha */
 
+/* eslint-disable no-console */
+
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import esmock from 'esmock';
