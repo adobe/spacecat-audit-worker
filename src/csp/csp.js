@@ -185,9 +185,7 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
       type: 'CODE_CHANGE',
       rank: 0,
       data: {
-        severity: data.severity,
-        directive: data.directive,
-        description: data.description,
+        ...data,
       },
     }),
   });
