@@ -16,6 +16,11 @@ import { franc } from 'franc-min';
 import { saveIntermediateResults } from '../preflight/utils.js';
 
 import { sendReadabilityToMystique } from './async-mystique.js';
+import {
+  calculateReadabilityScore,
+  isSupportedLanguage,
+  getLanguageName,
+} from './multilingual-readability.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 
@@ -130,6 +135,7 @@ async function checkForExistingSuggestions(
 }
 
 // Target Flesch Reading Ease score - scores below this will be flagged as poor readability
+// Applied to all languages since the custom formulas already account for language differences
 const TARGET_READABILITY_SCORE = 30;
 
 // Minimum character length for text chunks to be considered for readability analysis
@@ -183,22 +189,36 @@ export default async function readability(context, auditContext) {
 
       let processedElements = 0;
       let poorReadabilityCount = 0;
+      const detectedLanguages = new Set(); // Track languages actually detected
 
-      // Helper function to detect if text is in English
-      const isEnglishContent = (text) => {
-        const detectedLanguage = franc(text);
-        return detectedLanguage === 'eng';
+      // Helper function to detect if text is in a supported language
+      const getSupportedLanguage = (text) => {
+        const detectedLanguageCode = franc(text);
+        if (isSupportedLanguage(detectedLanguageCode)) {
+          return getLanguageName(detectedLanguageCode);
+        }
+        return null; // Unsupported language
       };
 
       // Helper function to calculate readability score and create audit opportunity
       const analyzeReadability = (text, element, elementIndex) => {
         try {
-          // Check if text is in English before analyzing readability
-          if (!isEnglishContent(text)) {
-            return; // Skip non-English content
+          // Check if text is in a supported language before analyzing readability
+          const detectedLanguage = getSupportedLanguage(text);
+          if (!detectedLanguage) {
+            return; // Skip unsupported languages
           }
 
-          const readabilityScore = rs.fleschReadingEase(text.trim());
+          // Track detected language
+          detectedLanguages.add(detectedLanguage);
+
+          // Use text-readability library for English, custom function for other languages
+          let readabilityScore;
+          if (detectedLanguage === 'english') {
+            readabilityScore = rs.fleschReadingEase(text.trim());
+          } else {
+            readabilityScore = calculateReadabilityScore(text.trim(), detectedLanguage);
+          }
 
           if (readabilityScore < TARGET_READABILITY_SCORE) {
             poorReadabilityCount += 1;
@@ -208,13 +228,14 @@ export default async function readability(context, auditContext) {
               ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
               : text;
 
-            const issueText = `Text element is difficult to read: "${displayText}"`;
+            const issueText = `Text element (${detectedLanguage}) is difficult to read: "${displayText}"`;
 
             audit.opportunities.push({
               check: 'poor-readability',
               issue: issueText,
               seoImpact: 'Moderate',
               fleschReadingEase: readabilityScore,
+              language: detectedLanguage,
               seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
               textContent: text, // Store full text for AI processing
             });
@@ -281,9 +302,13 @@ export default async function readability(context, auditContext) {
         }
       });
 
+      const detectedLanguagesList = detectedLanguages.size > 0
+        ? Array.from(detectedLanguages).join(', ')
+        : 'none detected';
+
       log.info(
         `[readability-suggest handler] readability: Processed ${processedElements} text element(s) on `
-        + `${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability`,
+        + `${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability (detected languages: ${detectedLanguagesList})`,
       );
     });
 
