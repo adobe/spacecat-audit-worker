@@ -263,13 +263,16 @@ export function generateSuggestions(auditUrl, auditData, context) {
 
   if (success && Object.keys(issues).length > 0) {
     log.info(`Found ${Object.keys(issues).length} locale(s) with missing products in sitemap`);
-    const suggestions = Object.entries(issues).map(([locale, urls]) => {
-      const issueCount = urls.length;
-      return {
-        locale,
-        recommendedAction: `Found ${issueCount} product URLs missing in the sitemap for locale ${locale}. Please manually check why it happens.`,
-        urls,
-      };
+
+    const suggestions = [];
+    Object.entries(issues).forEach(([locale, urls]) => {
+      urls.forEach((url) => {
+        suggestions.push({
+          locale,
+          recommendedAction: `Product URL missing in the sitemap for locale ${locale}. Please manually check why it happens.`,
+          url,
+        });
+      });
     });
     return { ...auditData, suggestions };
   }
@@ -335,7 +338,7 @@ export async function generateOpportunity(auditUrl, auditData, context) {
     auditType,
   );
 
-  const buildKey = (data) => data.locale;
+  const buildKey = (data) => data.url;
   await syncSuggestions({
     opportunity,
     newData: auditData.suggestions,

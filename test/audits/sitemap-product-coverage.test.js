@@ -582,12 +582,22 @@ describe('Sitemap Product Coverage Audit', () => {
       const result = generateSuggestions(auditUrl, auditData, context);
 
       expect(result.suggestions).to.be.an('array');
-      expect(result.suggestions).to.have.length(2);
+      expect(result.suggestions).to.have.length(3); // Now each URL gets its own suggestion
+
+      // Check first suggestion for 'en' locale
       expect(result.suggestions[0]).to.have.property('locale', 'en');
       expect(result.suggestions[0]).to.have.property('recommendedAction');
-      expect(result.suggestions[0].recommendedAction).to.include('2 product URLs missing');
-      expect(result.suggestions[1]).to.have.property('locale', 'fr');
-      expect(result.suggestions[1].recommendedAction).to.include('1 product URLs missing');
+      expect(result.suggestions[0]).to.have.property('url', 'https://example.com/en/products/missing1/sku1');
+      expect(result.suggestions[0].recommendedAction).to.include('Product URL missing in the sitemap for locale en');
+
+      // Check second suggestion for 'en' locale
+      expect(result.suggestions[1]).to.have.property('locale', 'en');
+      expect(result.suggestions[1]).to.have.property('url', 'https://example.com/en/products/missing2/sku2');
+
+      // Check suggestion for 'fr' locale
+      expect(result.suggestions[2]).to.have.property('locale', 'fr');
+      expect(result.suggestions[2]).to.have.property('url', 'https://example.com/fr/products/missing3/sku3');
+      expect(result.suggestions[2].recommendedAction).to.include('Product URL missing in the sitemap for locale fr');
     });
 
     it('should return auditData unchanged when audit fails', () => {
@@ -793,7 +803,7 @@ describe('Sitemap Product Coverage Audit', () => {
       expect(context.log.info).to.have.been.calledWith('No existing opportunity found - nothing to resolve');
     });
 
-    it('should create opportunity when audit succeeds with suggestions and test mapNewSuggestion callback (lines 280-283)', async () => {
+    it('should create opportunity when audit succeeds with suggestions and test mapNewSuggestion callback (lines 347-352)', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
         auditResult: {
@@ -802,8 +812,8 @@ describe('Sitemap Product Coverage Audit', () => {
         suggestions: [
           {
             locale: 'en',
-            recommendedAction: 'Found 2 product URLs missing in the sitemap for locale en',
-            urls: ['https://example.com/en/products/missing1/sku1'],
+            recommendedAction: 'Product URL missing in the sitemap for locale en. Please manually check why it happens.',
+            url: 'https://example.com/en/products/missing1/sku1',
           },
         ],
       };
@@ -813,13 +823,13 @@ describe('Sitemap Product Coverage Audit', () => {
       expect(result).to.deep.equal(auditData);
 
       // Verify syncSuggestions was called with mapNewSuggestion callback
-      // This exercises lines 280-283 in the mapNewSuggestion function
+      // This exercises lines 347-352 in the mapNewSuggestion function
       expect(syncSuggestionsMock).to.have.been.calledOnce;
       const callArgs = syncSuggestionsMock.getCall(0).args[0];
       expect(callArgs).to.have.property('mapNewSuggestion');
       expect(callArgs.mapNewSuggestion).to.be.a('function');
 
-      // Test the mapNewSuggestion callback directly to ensure lines 280-283 are covered
+      // Test the mapNewSuggestion callback directly to ensure lines 347-352 are covered
       const mappedSuggestion = callArgs.mapNewSuggestion(auditData.suggestions[0]);
       expect(mappedSuggestion).to.deep.equal({
         opportunityId: 'opportunity-123',
