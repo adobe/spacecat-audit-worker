@@ -17,42 +17,23 @@ import {
   getYear,
   differenceInDays,
 } from 'date-fns';
+import {
+  extractCustomerDomain,
+  resolveCdnBucketName,
+} from '../../utils/cdn-utils.js';
 
-const REGEX_PATTERNS = {
-  URL_SANITIZATION: /[^a-zA-Z0-9]/g,
-  BUCKET_SANITIZATION: /[._]/g,
-};
-
-const CDN_LOGS_PREFIX = 'cdn-logs-';
-
-export function extractCustomerDomain(site) {
-  const { host } = new URL(site.getBaseURL());
-  const cleanHost = host.startsWith('www.') ? host.substring(4) : host;
-  return cleanHost
-    .replace(REGEX_PATTERNS.URL_SANITIZATION, '_')
-    .toLowerCase();
-}
-
-export function getAnalysisBucket(customerDomain) {
-  const bucketCustomer = customerDomain.replace(REGEX_PATTERNS.BUCKET_SANITIZATION, '-');
-  return `${CDN_LOGS_PREFIX}${bucketCustomer}`;
-}
-
-export function getS3Config(site) {
+export async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
   const domainParts = customerDomain.split(/[._]/);
   /* c8 ignore next */
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig()
-    || { bucketName: getAnalysisBucket(customerDomain) };
+  const bucket = await resolveCdnBucketName(site, context);
 
   return {
     bucket,
     customerName,
     customerDomain,
-    aggregatedLocation: `s3://${bucket}/aggregated/`,
     databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
   };
 }
@@ -63,7 +44,7 @@ export async function loadSql(filename, variables) {
 
 export function validateCountryCode(code) {
   const DEFAULT_COUNTRY_CODE = 'GLOBAL';
-  if (!code) return DEFAULT_COUNTRY_CODE;
+  if (!code || typeof code !== 'string') return DEFAULT_COUNTRY_CODE;
 
   const upperCode = code.toUpperCase();
 
@@ -76,6 +57,7 @@ export function validateCountryCode(code) {
     if (countryName && countryName !== upperCode) {
       return upperCode;
     }
+    /* c8 ignore next 3 */
   } catch {
     // Invalid country code
   }
@@ -83,11 +65,13 @@ export function validateCountryCode(code) {
   return DEFAULT_COUNTRY_CODE;
 }
 
-export async function ensureTableExists(athenaClient, s3Config, log) {
-  const { tableName, databaseName, aggregatedLocation } = s3Config;
+export async function ensureTableExists(athenaClient, databaseName, reportConfig, log) {
+  const {
+    createTableSql, tableName, aggregatedLocation,
+  } = reportConfig;
 
   try {
-    const createTableQuery = await loadSql('create-aggregated-table', {
+    const createTableQuery = await loadSql(createTableSql, {
       databaseName,
       tableName,
       aggregatedLocation,
@@ -117,6 +101,7 @@ export function generatePeriodIdentifier(startDate, endDate) {
     const year = getYear(startDate);
     return `w${String(weekNum).padStart(2, '0')}-${year}`;
   }
+
   return `${format(startDate, 'yyyy-MM-dd')}_to_${format(endDate, 'yyyy-MM-dd')}`;
 }
 
@@ -134,6 +119,7 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
   ));
 
   const dayOfWeek = refUTC.getUTCDay();
+  /* c8 ignore next */
   const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   const weekStart = new Date(refUTC);
   weekStart.setUTCDate(refUTC.getUTCDate() - daysToMonday - (Math.abs(offsetWeeks) * 7));
@@ -154,7 +140,7 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
   };
 }
 
-export function buildSiteFilters(filters) {
+export function buildSiteFilters(filters = []) {
   if (!filters || filters.length === 0) return '';
 
   const clauses = filters.map(({ key, value, type }) => {
@@ -167,4 +153,39 @@ export function buildSiteFilters(filters) {
 
   const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
   return `(${filterConditions})`;
+}
+
+/**
+ * Fetches remote patterns for a site
+ */
+export async function fetchRemotePatterns(site) {
+  const dataFolder = site.getConfig()?.getLlmoDataFolder();
+
+  if (!dataFolder) {
+    return null;
+  }
+
+  try {
+    const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/agentic-traffic/patterns/patterns.json`;
+
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'spacecat-audit-worker',
+        Authorization: `token ${process.env.LLMO_HLX_API_KEY}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch pattern data from ${url}: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+
+    return {
+      pagePatterns: data.pagetype?.data || [],
+      topicPatterns: data.products?.data || [],
+    };
+  } catch {
+    return null;
+  }
 }

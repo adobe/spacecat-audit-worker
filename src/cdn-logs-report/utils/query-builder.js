@@ -11,10 +11,8 @@
  */
 
 import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
-import { loadSql } from './report-utils.js';
-import { DEFAULT_PATTERNS } from '../constants/page-patterns.js';
+import { loadSql, fetchRemotePatterns, buildSiteFilters } from './report-utils.js';
 import { PROVIDER_USER_AGENT_PATTERNS, buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../constants/user-agent-patterns.js';
-import { TOPIC_PATTERNS } from '../constants/topic-patterns.js';
 
 function buildDateFilter(startDate, endDate) {
   const formatPart = (date) => ({
@@ -26,10 +24,12 @@ function buildDateFilter(startDate, endDate) {
   const start = formatPart(startDate);
   const end = formatPart(endDate);
 
+  /* c8 ignore start */
   return start.year === end.year && start.month === end.month
     ? `(year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}' AND day <= '${end.day}')`
     : `((year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}')
        OR (year = '${end.year}' AND month = '${end.month}' AND day <= '${end.day}'))`;
+  /* c8 ignore stop */
 }
 
 function buildWhereClause(conditions = [], siteFilters = []) {
@@ -49,12 +49,15 @@ function buildWhereClause(conditions = [], siteFilters = []) {
 }
 
 // Page Type Classification
-function generatePageTypeClassification(site) {
-  /* c8 ignore next */
-  const patterns = site?.getConfig()?.getGroupedURLs('cdn-analysis') || DEFAULT_PATTERNS;
+function generatePageTypeClassification(remotePatterns = null) {
+  const patterns = remotePatterns?.pagePatterns || [];
+
+  if (patterns.length === 0) {
+    return "'Uncategorized'";
+  }
 
   const caseConditions = patterns
-    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.pattern}') THEN '${pattern.name}'`)
+    .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.regex}') THEN '${pattern.name}'`)
     .join('\n');
 
   return `CASE\n${caseConditions}\n      ELSE 'Uncategorized'\n    END`;
@@ -70,14 +73,10 @@ function buildCountryExtractionSQL() {
 }
 
 // Topic Classification
-function buildTopicExtractionSQL(site) {
-  const siteUrl = site.getBaseURL();
-  const domain = new URL(siteUrl).hostname.replace('www.', '');
+function buildTopicExtractionSQL(remotePatterns = null) {
+  const patterns = remotePatterns?.topicPatterns || [];
 
-  const patterns = TOPIC_PATTERNS[domain];
-
-  /* c8 ignore start */
-  if (Array.isArray(patterns)) {
+  if (Array.isArray(patterns) && patterns.length > 0) {
     const namedPatterns = [];
     const extractPatterns = [];
 
@@ -99,15 +98,16 @@ function buildTopicExtractionSQL(site) {
       return `COALESCE(\n    ${extractPatterns.join(',\n    ')},\n    'Other'\n  )`;
     }
   }
-  /* c8 ignore stop */
-
   return "CASE WHEN url IS NOT NULL THEN 'Other' END";
 }
 
 async function createAgenticReportQuery(options) {
   const {
-    periods, databaseName, tableName, site, siteFilters = [],
+    periods, databaseName, tableName, site,
   } = options;
+
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
+  const siteFilters = buildSiteFilters(filters);
 
   const lastWeek = periods.weeks[periods.weeks.length - 1];
   const whereClause = buildWhereClause(
@@ -115,18 +115,53 @@ async function createAgenticReportQuery(options) {
     siteFilters,
   );
 
+  const remotePatterns = await fetchRemotePatterns(site);
+
   return loadSql('agentic-traffic-report', {
     agentTypeClassification: buildAgentTypeClassificationSQL(),
     userAgentDisplay: buildUserAgentDisplaySQL(),
     countryExtraction: buildCountryExtractionSQL(),
-    topicExtraction: buildTopicExtractionSQL(site),
-    pageCategoryClassification: generatePageTypeClassification(site),
+    topicExtraction: buildTopicExtractionSQL(remotePatterns),
+    pageCategoryClassification: generatePageTypeClassification(remotePatterns),
     databaseName,
     tableName,
     whereClause,
   });
 }
 
+function buildWhereClauseReferral(conditions = [], siteFilters = []) {
+  const allConditions = [...conditions];
+
+  if (siteFilters && siteFilters.length > 0) {
+    allConditions.push(siteFilters);
+  }
+
+  /* c8 ignore next */
+  return allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : '';
+}
+
+async function createReferralReportQuery(options) {
+  const {
+    periods, databaseName, tableName, site,
+  } = options;
+
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
+  const siteFilters = buildSiteFilters(filters);
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClauseReferral(
+    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
+    siteFilters,
+  );
+
+  return loadSql('referral-traffic-report', {
+    databaseName,
+    tableName,
+    whereClause,
+    countryExtraction: buildCountryExtractionSQL(),
+  });
+}
+
 export const weeklyBreakdownQueries = {
   createAgenticReportQuery,
+  createReferralReportQuery,
 };

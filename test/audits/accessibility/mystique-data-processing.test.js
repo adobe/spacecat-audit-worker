@@ -59,6 +59,7 @@ describe('mystique-data-processing', () => {
       const mockSuggestion = {
         getData: () => ({ issues: [] }),
         getId: () => 'sugg-1',
+        getStatus: () => 'NEW',
       };
       const result = processSuggestionsForMystique([mockSuggestion]);
       expect(result).to.be.an('array').that.is.empty;
@@ -68,6 +69,7 @@ describe('mystique-data-processing', () => {
       const mockSuggestion = {
         getData: () => ({ issues: null }),
         getId: () => 'sugg-1',
+        getStatus: () => 'NEW',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
@@ -92,6 +94,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-1',
+        getStatus: () => 'NEW',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
@@ -121,16 +124,13 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-1',
+        getStatus: () => 'NEW',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
 
-      // Should return URL entry with empty issuesList when no htmlWithIssues to process
-      expect(result).to.have.length(1);
-      expect(result[0]).to.deep.equal({
-        url: 'https://example.com',
-        issuesList: [],
-      });
+      // Should not include URL entry when no htmlWithIssues to process
+      expect(result).to.have.length(0);
     });
 
     it('should handle issues with empty htmlWithIssues array', () => {
@@ -146,16 +146,13 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-1',
+        getStatus: () => 'NEW',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
 
-      // Should return URL entry with empty issuesList when htmlWithIssues is empty
-      expect(result).to.have.length(1);
-      expect(result[0]).to.deep.equal({
-        url: 'https://example.com',
-        issuesList: [],
-      });
+      // Should not include URL entry when no htmlWithIssues to process
+      expect(result).to.have.length(0);
     });
 
     it('should handle issues without target_selector', () => {
@@ -176,6 +173,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-1',
+        getStatus: () => 'NEW',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
@@ -207,6 +205,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-1',
+        getStatus: () => 'NEW',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
@@ -249,6 +248,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-1',
+        getStatus: () => 'NEW',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);
@@ -277,6 +277,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-1',
+        getStatus: () => 'NEW',
       };
 
       const mockSuggestion2 = {
@@ -296,6 +297,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-2',
+        getStatus: () => 'IN_PROGRESS',
       };
 
       const mockSuggestion3 = {
@@ -315,6 +317,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-3',
+        getStatus: () => 'APPROVED',
       };
 
       const result = processSuggestionsForMystique(
@@ -350,6 +353,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-1',
+        getStatus: () => 'NEW',
       };
 
       const mockSuggestion2 = {
@@ -369,6 +373,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-2',
+        getStatus: () => 'NEW',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion1, mockSuggestion2]);
@@ -398,6 +403,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-1',
+        getStatus: () => 'NEW',
       };
 
       const mockSuggestion2 = {
@@ -417,6 +423,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-2',
+        getStatus: () => 'NEW',
       };
 
       const mockSuggestion3 = {
@@ -436,6 +443,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-3',
+        getStatus: () => 'NEW',
       };
 
       const result = processSuggestionsForMystique([
@@ -468,6 +476,7 @@ describe('mystique-data-processing', () => {
           ],
         }),
         getId: () => 'sugg-1',
+        getStatus: () => 'NEW',
       };
 
       const result = processSuggestionsForMystique([mockSuggestion]);

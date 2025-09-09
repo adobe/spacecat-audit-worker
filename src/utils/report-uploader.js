@@ -9,9 +9,66 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import * as helixContentSDK from '@adobe/spacecat-helix-content-sdk';
+
 import { sleep } from '../support/utils.js';
 
-async function publishToAdminHlx(filename, outputLocation, log) {
+const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
+
+/**
+ * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
+ */
+
+/* c8 ignore start */
+/**
+ * @param {object} context
+ * @param {object} context.env - Environment configuration object
+ * @param {string} context.env.SHAREPOINT_CLIENT_ID - SharePoint client ID
+ * @param {string} context.env.SHAREPOINT_CLIENT_SECRET - SharePoint client secret
+ * @param {string} context.env.SHAREPOINT_AUTHORITY - SharePoint authority URL
+ * @param {string} context.env.SHAREPOINT_DOMAIN_ID - SharePoint domain ID
+ * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} context.log - Logger instance
+ * @param {object} [options] - Options for testing
+ * @param {object} [options.helixContentSDK] - Custom helix content SDK for testing
+ * @returns {Promise<SharepointClient>}
+ */
+export function createLLMOSharepointClient({ env, log }, options = {}) {
+  const sdk = options.helixContentSDK || helixContentSDK;
+
+  return sdk.createFrom(
+    {
+      clientId: env.SHAREPOINT_CLIENT_ID,
+      clientSecret: env.SHAREPOINT_CLIENT_SECRET,
+      authority: env.SHAREPOINT_AUTHORITY,
+      domainId: env.SHAREPOINT_DOMAIN_ID,
+    },
+    { url: SHAREPOINT_URL, type: 'onedrive' },
+    log,
+  );
+}
+/* c8 ignore end */
+
+/**
+ * Downloads a document from SharePoint and returns its raw buffer
+ * @param {string} fileLocation - The path to the document in SharePoint
+ * @param {SharepointClient} sharepointClient - The SharePoint client instance
+ * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} log - Logger instance
+ * @returns {Promise<Buffer>} - The document content as a buffer
+ */
+export async function readFromSharePoint(filename, outputLocation, sharepointClient, log) {
+  try {
+    const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
+    const sharepointDoc = sharepointClient.getDocument(documentPath);
+    const buffer = await sharepointDoc.getDocumentContent();
+    log.info(`Document successfully downloaded from SharePoint: ${documentPath}`);
+    return buffer;
+  } catch (error) {
+    log.error(`Failed to read from SharePoint: ${error.message}`);
+    throw error;
+  }
+}
+
+export async function publishToAdminHlx(filename, outputLocation, log) {
   try {
     const org = 'adobe';
     const site = 'project-elmo-ui-data';

@@ -16,18 +16,25 @@
 import { getDateRanges, getStaticContent, isInteger } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import ExcelJS from 'exceljs';
-import { createFrom } from '@adobe/spacecat-helix-content-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { getPreviousWeekYear, getTemporalCondition } from '../utils/date-utils.js';
-import { saveExcelReport } from '../utils/report-uploader.js';
+import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../cdn-logs-report/constants/country-patterns.js';
 
-const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
+const COMPILED_COUNTRY_PATTERNS = DEFAULT_COUNTRY_PATTERNS.map(({ name, regex }) => {
+  let flags = '';
+
+  if (regex.startsWith('(?i)')) {
+    flags += 'i';
+    regex = regex.slice(4);
+  }
+
+  return { name, re: new RegExp(regex, flags) };
+});
 
 function extractCountryCode(url) {
-  for (const { regex } of DEFAULT_COUNTRY_PATTERNS) {
-    const re = new RegExp(regex, 'i');
+  for (const { re } of COMPILED_COUNTRY_PATTERNS) {
     const match = url.match(re);
     if (match && match[1]) {
       return match[1].toUpperCase();
@@ -90,33 +97,19 @@ export async function referralTrafficRunner(auditUrl, context, site, auditContex
   const description = `[Athena Query] Fetching referral traffic data for ${site.getBaseURL()}`;
   const results = await athenaClient.query(query, databaseName, description);
   const pageIntents = await site.getPageIntents();
-  const baseURL = site.getBaseURL();
-  const memo = {};
-
-  const findPageIntentByPath = (path) => {
-    if (memo[path]) {
-      return memo[path];
-    }
-
-    const url = `${baseURL}${path}`;
-    const pageIntent = pageIntents.find((pi) => pi.getUrl() === url) || '';
-    memo[path] = pageIntent;
-    return pageIntent;
-  };
+  const pageIntentMap = pageIntents.reduce((acc, cur) => {
+    acc[new URL(cur.getUrl()).pathname] = cur.getPageIntent();
+    return acc;
+  }, {});
 
   // enrich with extra fields
   results.forEach((result) => {
-    result.page_intent = findPageIntentByPath(result.path);
+    result.page_intent = pageIntentMap[result.path] || '';
     result.region = extractCountryCode(result.path);
   });
 
   // upload to sharepoint & publish via hlx admin api
-  const sharepointClient = await createFrom({
-    clientId: context.env.SHAREPOINT_CLIENT_ID,
-    clientSecret: context.env.SHAREPOINT_CLIENT_SECRET,
-    authority: context.env.SHAREPOINT_AUTHORITY,
-    domainId: context.env.SHAREPOINT_DOMAIN_ID,
-  }, { url: SHAREPOINT_URL, type: 'onedrive' });
+  const sharepointClient = await createLLMOSharepointClient(context);
 
   const workbook = await createWorkbook(results);
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();

@@ -13,7 +13,7 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude|Anthropic',
-  gemini: '(?i)Gemini',
+  gemini: '(?i)Gemini|Gemini-Deep-Research',
   copilot: '(?i)Copilot',
   google: '(?i)Googlebot',
   bing: '(?i)Bingbot',
@@ -42,10 +42,6 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   // { pattern: '%copilot%', displayName: 'Copilot' },
 ];
 
-export function getProviderPattern(provider) {
-  return PROVIDER_USER_AGENT_PATTERNS[provider?.toLowerCase()] || null;
-}
-
 /**
  * Builds SQL CASE statement for user agent display names
  * @returns {string} SQL CASE statement
@@ -64,12 +60,12 @@ export function buildUserAgentDisplaySQL() {
 export function buildAgentTypeClassificationSQL() {
   const patterns = [
     // ChatGPT/OpenAI
-    { pattern: '%gptbot%', result: 'Crawlers' },
-    { pattern: '%oai-searchbot%', result: 'Crawlers' },
+    { pattern: '%gptbot%', result: 'Training bots' },
+    { pattern: '%oai-searchbot%', result: 'Web search crawlers' },
     { pattern: '%chatgpt-user%', result: 'Chatbots' },
     { pattern: '%chatgpt%', result: 'Chatbots' },
     // Perplexity
-    { pattern: '%perplexitybot%', result: 'Crawlers' },
+    { pattern: '%perplexitybot%', result: 'Web search crawlers' },
     { pattern: '%perplexity-user%', result: 'Chatbots' },
     { pattern: '%perplexity%', result: 'Chatbots' },
   ];

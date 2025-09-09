@@ -11,9 +11,8 @@
  */
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { sendAltTextOpportunityToMystique, clearAltTextSuggestions, chunkArray } from './opportunityHandler.js';
+import { sendAltTextOpportunityToMystique, chunkArray, cleanupOutdatedSuggestions } from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
-import { checkGoogleConnection } from '../common/opportunity-utils.js';
 import { MYSTIQUE_BATCH_SIZE } from './constants.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
@@ -42,7 +41,6 @@ export async function processAltTextWithMystique(context) {
   try {
     const { Opportunity } = dataAccess;
     const siteId = site.getId();
-    const auditUrl = site.getBaseURL();
 
     // Get top pages and included URLs
     const { SiteTopPage } = dataAccess;
@@ -64,22 +62,19 @@ export async function processAltTextWithMystique(context) {
     );
 
     if (altTextOppty) {
-      log.info(`[${AUDIT_TYPE}]: Clearing existing suggestions before sending to Mystique`);
-      await clearAltTextSuggestions({ opportunity: altTextOppty, log });
+      log.info(`[${AUDIT_TYPE}]: Updating opportunity for new audit run`);
 
-      // Reset opportunity data to start fresh for new audit run
+      // Reset only Mystique-related data, keep existing metrics
+      const existingData = altTextOppty.getData() || {};
       const resetData = {
-        projectedTrafficLost: 0,
-        projectedTrafficValue: 0,
-        decorativeImagesCount: 0,
-        dataSources: altTextOppty.getData()?.dataSources || [], // Preserve data sources
+        ...existingData,
         mystiqueResponsesReceived: 0,
         mystiqueResponsesExpected: urlBatches.length,
         processedSuggestionIds: [],
       };
       altTextOppty.setData(resetData);
       await altTextOppty.save();
-      log.info(`[${AUDIT_TYPE}]: Reset opportunity data for fresh audit run`);
+      log.info(`[${AUDIT_TYPE}]: Updated opportunity data for new audit run`);
     } else {
       log.info(`[${AUDIT_TYPE}]: Creating new opportunity for site ${siteId}`);
       const opportunityDTO = {
@@ -108,7 +103,6 @@ export async function processAltTextWithMystique(context) {
             DATA_SOURCES.RUM,
             DATA_SOURCES.SITE,
             DATA_SOURCES.AHREFS,
-            DATA_SOURCES.GSC,
           ],
           mystiqueResponsesReceived: 0,
           mystiqueResponsesExpected: urlBatches.length,
@@ -116,12 +110,6 @@ export async function processAltTextWithMystique(context) {
         },
         tags: ['seo', 'accessibility'],
       };
-
-      const isGoogleConnected = await checkGoogleConnection(auditUrl, context);
-      if (!isGoogleConnected) {
-        opportunityDTO.data.dataSources = opportunityDTO.data.dataSources
-          .filter((source) => source !== DATA_SOURCES.GSC);
-      }
 
       altTextOppty = await Opportunity.create(opportunityDTO);
       log.info(`[${AUDIT_TYPE}]: Created new opportunity with ID ${altTextOppty.getId()}`);
@@ -136,6 +124,13 @@ export async function processAltTextWithMystique(context) {
     );
 
     log.info(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
+
+    // Clean up outdated suggestions
+    // Small delay to ensure no concurrent operations
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1000);
+    });
+    await cleanupOutdatedSuggestions(altTextOppty, log);
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to process with Mystique: ${error.message}`);
     throw error;

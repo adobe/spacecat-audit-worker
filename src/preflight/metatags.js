@@ -44,26 +44,31 @@ export default async function metatags(context, auditContext) {
       detectedTags,
       extractedTags,
     } = await metatagsAutoDetect(site, s3Keys, context);
-    const tagCollection = step === 'suggest'
-      ? await metatagsAutoSuggest({
-        detectedTags,
-        healthyTags: seoChecks.getFewHealthyTags(),
-        extractedTags,
-      }, context, site, { forceAutoSuggest: true })
-      : detectedTags;
-    Object.entries(tagCollection).forEach(([path, tags]) => {
-      const pageUrl = previewUrls.find((url) => {
-        const u = new URL(url);
-        const previewPath = stripTrailingSlash(u.pathname);
-        const targetPath = stripTrailingSlash(path);
-        return previewPath === targetPath;
+    try {
+      const tagCollection = step === 'suggest'
+        ? await metatagsAutoSuggest({
+          detectedTags,
+          healthyTags: seoChecks.getFewHealthyTags(),
+          extractedTags,
+        }, context, site, { forceAutoSuggest: true })
+        : detectedTags;
+      Object.entries(tagCollection).forEach(([path, tags]) => {
+        const pageUrl = previewUrls.find((url) => {
+          const u = new URL(url);
+          const previewPath = stripTrailingSlash(u.pathname);
+          const targetPath = stripTrailingSlash(path);
+          return previewPath === targetPath;
+        });
+        const audit = audits.get(pageUrl)?.audits.find((a) => a.name === PREFLIGHT_METATAGS);
+        return tags && Object.values(tags).forEach((data, tag) => audit.opportunities.push({
+          ...data,
+          tagName: Object.keys(tags)[tag],
+        }));
       });
-      const audit = audits.get(pageUrl)?.audits.find((a) => a.name === PREFLIGHT_METATAGS);
-      return tags && Object.values(tags).forEach((data, tag) => audit.opportunities.push({
-        ...data,
-        tagName: Object.keys(tags)[tag],
-      }));
-    });
+    } catch (error) {
+      log.error(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit failed: ${error.message}`);
+    }
+
     const metatagsEndTime = Date.now();
     const metatagsEndTimestamp = new Date().toISOString();
     const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
