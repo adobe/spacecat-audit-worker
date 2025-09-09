@@ -27,7 +27,7 @@ import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
 import sitemapProductCoverage from './sitemap-product-coverage/handler.js';
 import redirectChains from './redirect-chains/handler.js';
-import paid from './paid/handler.js';
+import paid from './paid-cookie-consent/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
 import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
