@@ -228,7 +228,7 @@ export default async function readability(context, auditContext) {
               ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
               : text;
 
-            const issueText = `Text element (${detectedLanguage}) is difficult to read: "${displayText}"`;
+            const issueText = `Text element is difficult to read: "${displayText}"`;
 
             audit.opportunities.push({
               check: 'poor-readability',
