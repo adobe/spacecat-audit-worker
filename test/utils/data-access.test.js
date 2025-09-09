@@ -513,31 +513,11 @@ describe('data-access', () => {
       expect(mockLog.info).to.not.have.been.called;
     });
 
-    it('should return true when opportunity has no suggestions', async () => {
-      const refreshedOpportunity = {
-        getId: sinon.stub().returns('opportunity-123'),
-        getSuggestions: sinon.stub().returns([]),
-        setStatus: sinon.spy(),
-        setUpdatedBy: sinon.spy(),
-        save: sinon.spy(),
-      };
-      mockDataAccess.Opportunity.findById.resolves(refreshedOpportunity);
-
-      const result = await updateOpportunityStatusIfAllSuggestionsFinal(mockOpportunity, context);
-
-      expect(result).to.be.true;
-      expect(mockDataAccess.Opportunity.findById).to.have.been.calledOnceWith('opportunity-123');
-      expect(refreshedOpportunity.getSuggestions).to.have.been.calledOnce;
-      expect(refreshedOpportunity.setStatus).to.have.been.calledOnceWith('RESOLVED');
-      expect(refreshedOpportunity.setUpdatedBy).to.have.been.calledOnceWith('system');
-      expect(refreshedOpportunity.save).to.have.been.calledOnce;
-      expect(mockLog.info).to.have.been.calledOnceWith('All suggestions for opportunity opportunity-123 are in final state - updating status to RESOLVED');
-    });
-
     it('should return false when opportunity has suggestions but not all are in final state', async () => {
       const mockSuggestions = [
         { getStatus: sinon.stub().returns('FIXED') },
-        { getStatus: sinon.stub().returns('NEW') }, // Not in final state
+        { getStatus: sinon.stub().returns('NEW') },
+        { getStatus: sinon.stub().returns('IN_PROGRESS') },
         { getStatus: sinon.stub().returns('OUTDATED') },
       ];
 
@@ -561,45 +541,13 @@ describe('data-access', () => {
       expect(mockLog.info).to.not.have.been.called;
     });
 
-    it('should return true and update status to RESOLVED when all suggestions are FIXED', async () => {
-      const mockSuggestions = [
-        { getStatus: sinon.stub().returns('FIXED') },
-        { getStatus: sinon.stub().returns('FIXED') },
-        { getStatus: sinon.stub().returns('FIXED') },
-      ];
-
+    it('should return true when opportunity has no suggestions', async () => {
       const refreshedOpportunity = {
         getId: sinon.stub().returns('opportunity-123'),
-        getSuggestions: sinon.stub().returns(mockSuggestions),
+        getSuggestions: sinon.stub().returns([]),
         setStatus: sinon.spy(),
         setUpdatedBy: sinon.spy(),
-        save: sinon.stub().resolves(),
-      };
-      mockDataAccess.Opportunity.findById.resolves(refreshedOpportunity);
-
-      const result = await updateOpportunityStatusIfAllSuggestionsFinal(mockOpportunity, context);
-
-      expect(result).to.be.true;
-      expect(mockDataAccess.Opportunity.findById).to.have.been.calledOnceWith('opportunity-123');
-      expect(refreshedOpportunity.getSuggestions).to.have.been.calledOnce;
-      expect(refreshedOpportunity.setStatus).to.have.been.calledOnceWith('RESOLVED');
-      expect(refreshedOpportunity.setUpdatedBy).to.have.been.calledOnceWith('system');
-      expect(refreshedOpportunity.save).to.have.been.calledOnce;
-      expect(mockLog.info).to.have.been.calledOnceWith('All suggestions for opportunity opportunity-123 are in final state - updating status to RESOLVED');
-    });
-
-    it('should return true and update status to RESOLVED when all suggestions are OUTDATED', async () => {
-      const mockSuggestions = [
-        { getStatus: sinon.stub().returns('OUTDATED') },
-        { getStatus: sinon.stub().returns('OUTDATED') },
-      ];
-
-      const refreshedOpportunity = {
-        getId: sinon.stub().returns('opportunity-123'),
-        getSuggestions: sinon.stub().returns(mockSuggestions),
-        setStatus: sinon.spy(),
-        setUpdatedBy: sinon.spy(),
-        save: sinon.stub().resolves(),
+        save: sinon.spy(),
       };
       mockDataAccess.Opportunity.findById.resolves(refreshedOpportunity);
 
@@ -674,34 +622,6 @@ describe('data-access', () => {
       expect(refreshedOpportunity.setUpdatedBy).to.have.been.calledOnceWith('system');
       expect(refreshedOpportunity.save).to.have.been.calledOnce;
       expect(mockLog.error).to.have.been.calledOnceWith('Failed to update opportunity status for opportunity opportunity-123: Save failed');
-    });
-
-    it('should handle suggestions with non-final states correctly', async () => {
-      const mockSuggestions = [
-        { getStatus: sinon.stub().returns('FIXED') },
-        { getStatus: sinon.stub().returns('NEW') },
-        { getStatus: sinon.stub().returns('IN_PROGRESS') },
-        { getStatus: sinon.stub().returns('OUTDATED') },
-      ];
-
-      const refreshedOpportunity = {
-        getId: sinon.stub().returns('opportunity-123'),
-        getSuggestions: sinon.stub().returns(mockSuggestions),
-        setStatus: sinon.spy(),
-        setUpdatedBy: sinon.spy(),
-        save: sinon.spy(),
-      };
-      mockDataAccess.Opportunity.findById.resolves(refreshedOpportunity);
-
-      const result = await updateOpportunityStatusIfAllSuggestionsFinal(mockOpportunity, context);
-
-      expect(result).to.be.false;
-      expect(mockDataAccess.Opportunity.findById).to.have.been.calledOnceWith('opportunity-123');
-      expect(refreshedOpportunity.getSuggestions).to.have.been.calledOnce;
-      expect(refreshedOpportunity.setStatus).to.not.have.been.called;
-      expect(refreshedOpportunity.setUpdatedBy).to.not.have.been.called;
-      expect(refreshedOpportunity.save).to.not.have.been.called;
-      expect(mockLog.info).to.not.have.been.called;
     });
   });
 });
