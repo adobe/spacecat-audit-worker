@@ -407,13 +407,15 @@ describe('Preflight Readability Audit', () => {
       await readability(context, auditContext);
 
       // German content is now supported and should be processed
-      // This particular text has good readability (score ~58.5 > 30), so no opportunities
+      // With our FIXED syllable counting, this text now correctly identifies as poor readability
       const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
-      expect(audit.opportunities).to.have.lengthOf(0);
+      expect(audit.opportunities).to.have.lengthOf(1);
+      expect(audit.opportunities[0].language).to.equal('german');
+      expect(audit.opportunities[0].fleschReadingEase).to.be.below(30);
 
       // Should log that German content was detected and processed
       expect(log.info).to.have.been.calledWithMatch('detected languages: german');
-      expect(log.info).to.have.been.calledWithMatch('found 0 with poor readability');
+      expect(log.info).to.have.been.calledWithMatch('found 1 with poor readability');
     });
 
     it('should skip elements with block-level children to avoid duplicate analysis', async () => {
