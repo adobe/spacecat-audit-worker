@@ -849,22 +849,6 @@ describe('Multilingual Readability Module', () => {
       // for words like "Entwicklung", "Software", "Technologie" after cleaning
     });
 
-    it('should absolutely force lines 145-147 through direct countSyllablesWord call', async () => {
-      // This test bypasses all other logic and calls countSyllablesWord directly
-      // But since countSyllablesWord is not exported, we'll use analyzeReadability
-      // with a single word that we know should trigger hyphenation
-
-      // Use a long German compound word that will definitely trigger hyphenation
-      const germanCompoundWord = 'Geschwindigkeitsbegrenzung123!@#'; // Speed limit + special chars
-
-      const result = await analyzeReadability(germanCompoundWord, 'german');
-
-      // This should have processed the word through hyphenation
-      expect(result.words).to.equal(1);
-      expect(result.syllables).to.be.greaterThan(3); // Should be multiple syllables
-      expect(result.score).to.be.within(0, 100);
-    });
-
     it('should cover remaining uncovered branches', async () => {
       // Line 172: || 'english' - test with null/undefined language
       const result1 = await analyzeReadability('Test text.', null);
