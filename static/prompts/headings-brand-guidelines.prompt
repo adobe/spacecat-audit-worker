@@ -29,7 +29,6 @@ Your response must be a valid JSON object with the following structure:
 
 ### Data:
 - **Website URL:** {{baseUrl}}
-- **Healthy Headings Examples:** {{healthyHeadings}}
 
 ### Important Notes:
 - Base your analysis solely on the provided healthy heading examples

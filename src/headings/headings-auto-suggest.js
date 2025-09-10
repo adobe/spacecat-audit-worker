@@ -209,8 +209,8 @@ export default async function headingsAutoSuggest(allHeadings, context, site) {
   // const { Configuration } = dataAccess;
 
   log.info(`[Headings Auto-Suggest] Starting AI suggestions generation for site: ${site.getBaseURL()}`);
-  log.info(`[Headings Auto-Suggest] Detected headings count: ${Object.keys(detectedHeadings).length}`);
-  log.info(`[Headings Auto-Suggest] Extracted headings count: ${Object.keys(extractedHeadings).length}`);
+  log.info(`[Headings Auto-Suggest] Detected headings count: ${JSON.stringify(detectedHeadings)}`);
+  log.info(`[Headings Auto-Suggest] Extracted headings count: ${JSON.stringify(extractedHeadings)}`);
   log.info(`[Headings Auto-Suggest] Healthy headings samples - H1: ${healthyHeadings.h1?.length || 0}, H2: ${healthyHeadings.h2?.length || 0}, H3: ${healthyHeadings.h3?.length || 0}`);
 
   log.info('[Headings Auto-Suggest] Feature is enabled, proceeding with AI suggestions generation');
