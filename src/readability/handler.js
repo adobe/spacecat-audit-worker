@@ -21,6 +21,11 @@ import {
   isSupportedLanguage,
   getLanguageName,
 } from './multilingual-readability.js';
+import {
+  TARGET_READABILITY_SCORE,
+  MIN_TEXT_LENGTH,
+  MAX_CHARACTERS_DISPLAY,
+} from './constants.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 
@@ -133,16 +138,6 @@ async function checkForExistingSuggestions(
     }
   }
 }
-
-// Target Flesch Reading Ease score - scores below this will be flagged as poor readability
-// Applied to all languages since the custom formulas already account for language differences
-const TARGET_READABILITY_SCORE = 30;
-
-// Minimum character length for text chunks to be considered for readability analysis
-const MIN_TEXT_LENGTH = 100;
-
-// Maximum characters to display in the audit report
-const MAX_CHARACTERS_DISPLAY = 200;
 
 export default async function readability(context, auditContext) {
   const {
