@@ -273,6 +273,30 @@ describe('createLowNavigationOpportunities handler method', () => {
     expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
   });
 
+  it('should use existing high page views low form navigation opportunity with existing form details', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);
+    formsCTAOppty.getData = sinon.stub().returns({
+      form: 'https://www.surest.com/newsletter',
+      screenshot: '',
+      trackedFormKPIName: 'Conversion Rate',
+      trackedFormKPIValue: 0.5,
+      formViews: 1000,
+      pageViews: 5000,
+      samples: 5000,
+      formDetails: {
+        is_lead_gen: true,
+        industry: 'Insurance',
+        form_type: 'Quote Request Form',
+        form_category: 'B2C',
+        cpl: 230.6,
+      },
+    });
+    await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
+    expect(formsCTAOppty.setUpdatedBy).to.be.calledWith('system');
+    expect(formsCTAOppty.save).to.be.calledOnce;
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+  });
+
   it('should not process opportunities with origin ESS_OPS', async () => {
     formsCTAOppty.getOrigin = sinon.stub().returns(ORIGINS.ESS_OPS);
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);

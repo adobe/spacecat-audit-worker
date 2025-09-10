@@ -1,3 +1,38 @@
+## [1.177.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.6...v1.177.7) (2025-09-10)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1246](https://github.com/adobe/spacecat-audit-worker/issues/1246)) ([c45f8f5](https://github.com/adobe/spacecat-audit-worker/commit/c45f8f5c8887d42c4c2fba90f398a409c1ac73ef))
+
+## [1.177.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.5...v1.177.6) (2025-09-10)
+
+
+### Bug Fixes
+
+* [preflight] updating lorem-ipsum check name ([#1242](https://github.com/adobe/spacecat-audit-worker/issues/1242)) ([fb046ed](https://github.com/adobe/spacecat-audit-worker/commit/fb046ed711500e94f9ba94ccd02419267dd5aeca))
+
+## [1.177.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.4...v1.177.5) (2025-09-10)
+
+
+### Bug Fixes
+
+* incorporating forms quality agent in forms a11y oppties ([#1169](https://github.com/adobe/spacecat-audit-worker/issues/1169)) ([42fe8d2](https://github.com/adobe/spacecat-audit-worker/commit/42fe8d2017185b00b125599e67c56ce882ed4659))
+
+## [1.177.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.3...v1.177.4) (2025-09-09)
+
+
+### Bug Fixes
+
+* minimal CSP data format adjustment ([#1234](https://github.com/adobe/spacecat-audit-worker/issues/1234)) ([ed841f3](https://github.com/adobe/spacecat-audit-worker/commit/ed841f3376f8335d1c44054acd907c32a21c4df5))
+
+## [1.177.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.2...v1.177.3) (2025-09-08)
+
+
+### Bug Fixes
+
+* use AsyncJobEntity metadata instead of creating opportunity object for preflight readability audit ([#1237](https://github.com/adobe/spacecat-audit-worker/issues/1237)) ([8453153](https://github.com/adobe/spacecat-audit-worker/commit/84531534709572327c77ed9ad9ad2292f77f91dd))
+
 ## [1.177.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.1...v1.177.2) (2025-09-08)
 
 
