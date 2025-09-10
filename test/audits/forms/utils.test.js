@@ -20,7 +20,9 @@ import {
   calculateProjectedConversionValue,
   sendMessageToFormsQualityAgent,
   sendMessageToMystiqueForGuidance,
+  getFormTitle,
 } from '../../../src/forms-opportunities/utils.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
 
 describe('isSearchForm', () => {
   it('should return true for search form type', () => {
@@ -629,5 +631,47 @@ describe('sendMessageToMystiqueForGuidance', () => {
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
     expect(message.data.url).to.equal('');
+  });
+});
+
+describe('getFormTitle', () => {
+  it('should return an empty string if formDetails is null', () => {
+    const result = getFormTitle(null, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION });
+    expect(result).to.equal('');
+  });
+
+  it('should return an empty string if formDetails is not an object', () => {
+    const result = getFormTitle('not-an-object', { getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION });
+    expect(result).to.equal('');
+  });
+
+  it('should return an empty string if opportunity is null', () => {
+    const result = getFormTitle({ form_type: 'Contact Form' }, null);
+    expect(result).to.equal('');
+  });
+
+  it('should return an empty string if opportunity type is not available', () => {
+    const result = getFormTitle({ form_type: 'Contact Form' }, { getType: () => null });
+    expect(result).to.equal('');
+  });
+
+  it('should return the form type with suffix for LOW_CONVERSION', () => {
+    const result = getFormTitle({ form_type: 'Contact Form' }, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION });
+    expect(result).to.equal('Contact Form has low conversions');
+  });
+
+  it('should return the form type with suffix for LOW_NAVIGATION', () => {
+    const result = getFormTitle({ form_type: 'Contact Form' }, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION });
+    expect(result).to.equal('Contact Form has low views');
+  });
+
+  it('should return the form type with suffix for LOW_VIEWS', () => {
+    const result = getFormTitle({ form_type: 'Contact Form' }, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_VIEWS });
+    expect(result).to.equal('Contact Form has low views');
+  });
+
+  it('should return the form type without suffix for FORM_A11Y', () => {
+    const result = getFormTitle({ form_type: 'Contact Form' }, { getType: () => FORM_OPPORTUNITY_TYPES.FORM_A11Y });
+    expect(result).to.equal('Contact Form');
   });
 });

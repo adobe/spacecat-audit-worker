@@ -12,7 +12,7 @@
 
 import {
   FORMS_AUDIT_INTERVAL,
-  isNonEmptyArray,
+  isNonEmptyArray, isNonEmptyObject,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -564,4 +564,27 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
     log.info(`Forms opportunity sent to mystique for guidance: ${JSON.stringify(mystiqueMessage)}`);
   }
+}
+
+/**
+ * get the title for opportunity based on form details.
+ * @param {Object} formDetails - The form details object.
+ * @param {Object} opportunity - Object with setTitle method.
+ */
+export function getFormTitle(formDetails, opportunity) {
+  if (!formDetails || !isNonEmptyObject(formDetails)) return '';
+  if (!opportunity || !opportunity.getType()) return '';
+
+  const { form_type: formType } = formDetails;
+  if (!formType || !formType.trim()) return '';
+
+  const suffixMap = {
+    [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: 'has low conversions',
+    [FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION]: 'has low views',
+    [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]: 'has low views',
+    [FORM_OPPORTUNITY_TYPES.FORM_A11Y]: '',
+  };
+
+  const suffix = suffixMap[opportunity.getType()] || '';
+  return suffix ? `${formType.trim()} ${suffix}` : formType.trim();
 }
