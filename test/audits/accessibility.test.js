@@ -17,7 +17,6 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../shared.js';
-import { getUniqueUrlCount } from '../../src/accessibility/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -36,7 +35,7 @@ describe('Accessibility Audit Handler', () => {
   let createAccessibilityIndividualOpportunitiesStub;
   let getExistingObjectKeysFromFailedAuditsStub;
   let getExistingUrlsFromFailedAuditsStub;
-  let saveA11yMetricsToS3Stub;
+  let sendRunImportMessageStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -59,6 +58,8 @@ describe('Accessibility Audit Handler', () => {
         s3Client: mockS3Client,
         env: {
           S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+          S3_IMPORTER_BUCKET_NAME: 'test-bucket-2',
+          IMPORT_WORKER_QUEUE_URL: 'test-queue',
         },
         dataAccess: {
           Opportunity: {
@@ -78,13 +79,14 @@ describe('Accessibility Audit Handler', () => {
     createAccessibilityIndividualOpportunitiesStub = sandbox.stub();
     getExistingObjectKeysFromFailedAuditsStub = sandbox.stub().resolves([]);
     getExistingUrlsFromFailedAuditsStub = sandbox.stub().resolves([]);
-    saveA11yMetricsToS3Stub = sandbox.stub().resolves();
+    sendRunImportMessageStub = sandbox.stub().resolves();
 
     const accessibilityModule = await esmock('../../src/accessibility/handler.js', {
       '../../src/accessibility/utils/data-processing.js': {
         getUrlsForAudit: getUrlsForAuditStub,
         aggregateAccessibilityData: aggregateAccessibilityDataStub,
         generateReportOpportunities: generateReportOpportunitiesStub,
+        sendRunImportMessage: sendRunImportMessageStub,
       },
       '../../src/accessibility/utils/generate-individual-opportunities.js': {
         createAccessibilityIndividualOpportunities: createAccessibilityIndividualOpportunitiesStub,
@@ -92,7 +94,6 @@ describe('Accessibility Audit Handler', () => {
       '../../src/accessibility/utils/scrape-utils.js': {
         getExistingObjectKeysFromFailedAudits: getExistingObjectKeysFromFailedAuditsStub,
         getExistingUrlsFromFailedAudits: getExistingUrlsFromFailedAuditsStub,
-        saveA11yMetricsToS3: saveA11yMetricsToS3Stub,
       },
     });
 
@@ -1123,7 +1124,7 @@ describe('Accessibility Audit Handler', () => {
       );
     });
 
-    it('should successfully call saveA11yMetricsToS3 and log debug message', async () => {
+    it('should successfully call sendRunImportMessage and log debug message', async () => {
       // Arrange
       const mockAggregationResult = {
         success: true,
@@ -1147,28 +1148,33 @@ describe('Accessibility Audit Handler', () => {
       aggregateAccessibilityDataStub.resolves(mockAggregationResult);
       generateReportOpportunitiesStub.resolves();
       createAccessibilityIndividualOpportunitiesStub.resolves();
-      saveA11yMetricsToS3Stub.resolves({
-        success: true,
-        message: 'A11y metrics saved to S3',
-        s3Key: 'metrics/test-site-id/axe-core/a11y-audit.json',
-      });
+      sendRunImportMessageStub.resolves();
 
       // Act
       await processAccessibilityOpportunities(mockContext);
 
       // Assert
-      expect(saveA11yMetricsToS3Stub).to.have.been.calledOnceWith(
-        mockAggregationResult.finalResultFiles.current,
-        mockContext,
+      expect(sendRunImportMessageStub).to.have.been.calledOnceWith(
+        mockContext.sqs,
+        'test-queue',
+        'a11y-metrics-aggregator',
+        'test-site-id',
+        sinon.match({
+          scraperBucketName: 'test-bucket',
+          importerBucketName: 'test-bucket-2',
+          version: sinon.match(/\d{4}-\d{2}-\d{2}/),
+          urlSourceSeparator: '?source=',
+          totalChecks: 50,
+          options: {},
+        }),
       );
 
       expect(mockContext.log.debug).to.have.been.calledWith(
-        '[A11yAudit] Saved a11y metrics for site test-site-id - Result:',
-        sinon.match.object,
+        '[A11yAudit] Sent message to importer-worker to save a11y metrics for site test-site-id',
       );
     });
 
-    it('should handle error from saveA11yMetricsToS3 and return failure status', async () => {
+    it('should handle error from sendRunImportMessage and return failure status', async () => {
       // Arrange
       const mockAggregationResult = {
         success: true,
@@ -1192,40 +1198,38 @@ describe('Accessibility Audit Handler', () => {
       aggregateAccessibilityDataStub.resolves(mockAggregationResult);
       generateReportOpportunitiesStub.resolves();
       createAccessibilityIndividualOpportunitiesStub.resolves();
-      const error = new Error('S3 upload failed');
-      saveA11yMetricsToS3Stub.rejects(error);
+      const error = new Error('Queue message failed');
+      sendRunImportMessageStub.rejects(error);
 
       // Act
       const result = await processAccessibilityOpportunities(mockContext);
 
       // Assert
-      expect(saveA11yMetricsToS3Stub).to.have.been.calledOnceWith(
-        mockAggregationResult.finalResultFiles.current,
-        mockContext,
+      expect(sendRunImportMessageStub).to.have.been.calledOnceWith(
+        mockContext.sqs,
+        'test-queue',
+        'a11y-metrics-aggregator',
+        'test-site-id',
+        sinon.match.object,
       );
 
       expect(mockContext.log.error).to.have.been.calledWith(
-        '[A11yAudit][A11yProcessingError] Error saving a11y metrics to s3 for site test-site-id (https://example.com): S3 upload failed',
+        '[A11yAudit][A11yProcessingError] Error sending message to importer-worker to save a11y metrics for site test-site-id (https://example.com): Queue message failed',
         error,
       );
 
       expect(result).to.deep.equal({
         status: 'PROCESSING_FAILED',
-        error: 'S3 upload failed',
+        error: 'Queue message failed',
       });
 
       // Should have called previous functions successfully
       expect(aggregateAccessibilityDataStub).to.have.been.called;
       expect(generateReportOpportunitiesStub).to.have.been.called;
       expect(createAccessibilityIndividualOpportunitiesStub).to.have.been.called;
-
-      // Should not call debug log when error occurs
-      expect(mockContext.log.debug).to.not.have.been.calledWith(
-        '[A11yAudit] Saved a11y metrics to s3',
-      );
     });
 
-    it('should call saveA11yMetricsToS3 after createAccessibilityIndividualOpportunities completes', async () => {
+    it('should call sendRunImportMessage after createAccessibilityIndividualOpportunities completes', async () => {
       // Arrange
       const mockAggregationResult = {
         success: true,
@@ -1249,141 +1253,27 @@ describe('Accessibility Audit Handler', () => {
       aggregateAccessibilityDataStub.resolves(mockAggregationResult);
       generateReportOpportunitiesStub.resolves();
       createAccessibilityIndividualOpportunitiesStub.resolves();
-      saveA11yMetricsToS3Stub.resolves();
+      sendRunImportMessageStub.resolves();
 
       // Act
       await processAccessibilityOpportunities(mockContext);
 
       // Assert - Verify call order by checking callCount at different points
       expect(createAccessibilityIndividualOpportunitiesStub).to.have.been.called;
-      expect(saveA11yMetricsToS3Stub).to.have.been.called;
+      expect(sendRunImportMessageStub).to.have.been.called;
 
       // Verify both were called with correct parameters
       expect(createAccessibilityIndividualOpportunitiesStub).to.have.been.calledWith(
         mockAggregationResult.finalResultFiles.current,
         mockContext,
       );
-      expect(saveA11yMetricsToS3Stub).to.have.been.calledWith(
-        mockAggregationResult.finalResultFiles.current,
-        mockContext,
+      expect(sendRunImportMessageStub).to.have.been.calledWith(
+        mockContext.sqs,
+        'test-queue',
+        'a11y-metrics-aggregator',
+        'test-site-id',
+        sinon.match.object,
       );
-    });
-  });
-
-  describe('getUniqueUrlCount', () => {
-    it('should return 0 for null or undefined data', () => {
-      // Act & Assert
-      expect(getUniqueUrlCount(null)).to.equal(0);
-      expect(getUniqueUrlCount(undefined)).to.equal(0);
-    });
-
-    it('should return 0 for empty data object', () => {
-      // Arrange
-      const data = {};
-
-      // Act
-      const result = getUniqueUrlCount(data);
-
-      // Assert
-      expect(result).to.equal(0);
-    });
-
-    it('should count unique URLs from regular site data', () => {
-      // Arrange
-      const data = {
-        overall: { violations: { total: 5 } },
-        'https://example.com/page1': { violations: { total: 3 } },
-        'https://example.com/page2': { violations: { total: 2 } },
-        'https://example.com/page3': { violations: { total: 1 } },
-      };
-
-      // Act
-      const result = getUniqueUrlCount(data);
-
-      // Assert
-      expect(result).to.equal(3); // page1, page2, page3 (excluding 'overall')
-    });
-
-    it('should count unique URLs from forms analysis data with composite keys', () => {
-      // Arrange
-      const data = {
-        overall: { violations: { total: 10 } },
-        'https://example.com/page1?source=contact-form': { violations: { total: 5 } },
-        'https://example.com/page1?source=newsletter-form': { violations: { total: 3 } },
-        'https://example.com/page2?source=feedback-form': { violations: { total: 2 } },
-        'https://example.com/page3?source=subscribe-form': { violations: { total: 1 } },
-      };
-
-      // Act
-      const result = getUniqueUrlCount(data);
-
-      // Assert
-      expect(result).to.equal(3); // page1 (from 2 forms), page2, page3
-    });
-
-    it('should count unique URLs from mixed site and forms data', () => {
-      // Arrange
-      const data = {
-        overall: { violations: { total: 15 } },
-        'https://example.com/page1': { violations: { total: 5 } },
-        'https://example.com/page1?source=contact-form': { violations: { total: 3 } },
-        'https://example.com/page1?source=newsletter-form': { violations: { total: 2 } },
-        'https://example.com/page2': { violations: { total: 4 } },
-        'https://example.com/page2?source=feedback-form': { violations: { total: 1 } },
-        'https://example.com/page3': { violations: { total: 3 } },
-      };
-
-      // Act
-      const result = getUniqueUrlCount(data);
-
-      // Assert
-      expect(result).to.equal(3); // page1 (site + 2 forms), page2 (site + 1 form), page3
-    });
-
-    it('should handle data with only overall key', () => {
-      // Arrange
-      const data = {
-        overall: { violations: { total: 0 } },
-      };
-
-      // Act
-      const result = getUniqueUrlCount(data);
-
-      // Assert
-      expect(result).to.equal(0); // No URLs, only overall summary
-    });
-
-    it('should handle data with malformed composite keys', () => {
-      // Arrange
-      const data = {
-        overall: { violations: { total: 5 } },
-        'https://example.com/page1?source=': { violations: { total: 3 } }, // Empty form source
-        'https://example.com/page2?source=form1': { violations: { total: 2 } },
-        'https://example.com/page3': { violations: { total: 1 } },
-      };
-
-      // Act
-      const result = getUniqueUrlCount(data);
-
-      // Assert
-      expect(result).to.equal(3); // page1, page2, page3 (malformed key still counts as page1)
-    });
-
-    it('should handle data with complex form source identifiers', () => {
-      // Arrange
-      const data = {
-        overall: { violations: { total: 10 } },
-        'https://example.com/page1?source=contact-form-v2': { violations: { total: 5 } },
-        'https://example.com/page1?source=newsletter-signup-form': { violations: { total: 3 } },
-        'https://example.com/page2?source=user-registration-form': { violations: { total: 2 } },
-        'https://example.com/page3?source=checkout-form-step1': { violations: { total: 1 } },
-      };
-
-      // Act
-      const result = getUniqueUrlCount(data);
-
-      // Assert
-      expect(result).to.equal(3); // page1 (2 forms), page2, page3
     });
   });
 });

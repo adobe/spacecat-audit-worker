@@ -32,7 +32,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
   const {
     log, audit,
   } = context;
-  const s3Config = getS3Config(site);
+  const s3Config = await getS3Config(site, context);
 
   log.info(`Starting LLM error pages audit for ${url}`);
   log.info(`Running LLM error pages audit ${audit}`);
@@ -47,8 +47,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
     log.info(`Running weekly audit for ${periodIdentifier}`);
 
     // Get site configuration
-    const cdnLogsConfig = site.getConfig()?.getCdnLogsConfig?.() || {};
-    const { filters } = cdnLogsConfig;
+    const filters = site.getConfig()?.getLlmoCdnlogsFilter?.() || [];
     const siteFilters = buildSiteFilters(filters);
 
     // Build and execute query
@@ -80,7 +79,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
     const baseUrl = site.getBaseURL?.() || 'https://example.com';
 
-    const buildFilename = (code) => `agentictraffic-${periodIdentifier}-${code}-ui.xlsx`;
+    const buildFilename = (code) => `agentictraffic-errors-${code}-${periodIdentifier}.xlsx`;
 
     const writeCategoryExcel = async (code, errors) => {
       if (!errors || errors.length === 0) return;
@@ -113,7 +112,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
     // Generate and upload Excel files for each category
     await Promise.all([
-      writeCategoryExcel('404', categorizedResults[404]),
+      writeCategoryExcel('404', categorizedResults[404]?.slice(0, 50)),
       writeCategoryExcel('403', categorizedResults[403]),
       writeCategoryExcel('5xx', categorizedResults['5xx']),
     ]);
@@ -195,7 +194,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const messageBaseUrl = site.getBaseURL?.() || '';
     const consolidated404 = consolidateErrorsByUrl(errors404);
-    const sorted404 = sortErrorsByTrafficVolume(consolidated404);
+    const sorted404 = sortErrorsByTrafficVolume(consolidated404).slice(0, 50);
     const { SiteTopPage } = dataAccess;
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
 

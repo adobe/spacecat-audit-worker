@@ -37,14 +37,15 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
   log.info(`Starting CDN logs report audit for ${url}`);
 
-  const sharepointClient = await createLLMOSharepointClient(context);
+  const sharepointClient = await createLLMOSharepointClient(
+    context,
+    auditContext?.sharepointOptions,
+  );
   const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
-  /* c8 ignore start */
+  /* c8 ignore next */
   const { orgId } = site.getConfig().getLlmoCdnBucketConfig() || {};
   // for non-adobe customers, use the orgId from the config
-  const imsOrgId = await getImsOrgId(site, dataAccess, log) || orgId;
-  /* c8 ignore stop */
-
+  const imsOrgId = orgId || await getImsOrgId(site, dataAccess, log);
   // create db if not exists
   const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
   const sqlDbDescription = `[Athena Query] Create database ${s3Config.databaseName}`;

@@ -108,6 +108,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           log: {
             info: sinon.stub(),
             error: sinon.stub(),
+            debug: sinon.stub(),
           },
         })
         .build();
@@ -144,7 +145,9 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
           env: {
             S3_SCRAPER_BUCKET_NAME: bucketName,
+            S3_IMPORTER_BUCKET_NAME: 'test-importer-bucket',
             QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+            IMPORT_WORKER_QUEUE_URL: 'test-import-worker-queue',
           },
           s3Client: {
             send: sandbox.stub(),
@@ -155,6 +158,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           log: {
             info: sinon.stub(),
             error: sinon.stub(),
+            debug: sinon.stub(),
           },
           dataAccess: {
             Opportunity: {
@@ -196,9 +200,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -236,9 +242,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -283,9 +291,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -354,9 +364,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -373,8 +385,27 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(createArgs.data.accessibility[0].formSource).to.equal('contact-form');
       expect(createArgs.data.accessibility[0].a11yIssues).to.have.lengthOf(2);
 
-      // Verify SQS message was sent
+      // Verify SQS messages were sent - both to importer-worker and mystique
+      expect(sendRunImportMessageStub).to.have.been.calledOnce;
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
+
+      // Verify importer-worker message parameters
+      expect(sendRunImportMessageStub).to.have.been.calledWith(
+        context.sqs,
+        'test-import-worker-queue',
+        'a11y-metrics-aggregator',
+        siteId,
+        sinon.match({
+          scraperBucketName: 'test-bucket',
+          importerBucketName: 'test-importer-bucket',
+          version: sinon.match.string,
+          urlSourceSeparator: '?source=',
+          totalChecks: 50,
+          options: {},
+        }),
+      );
+
+      // Verify mystique message parameters
       const sqsMessage = context.sqs.sendMessage.getCall(0).args[1];
       expect(sqsMessage.type).to.equal('detect:forms-a11y');
       expect(sqsMessage.siteId).to.equal(siteId);
@@ -472,9 +503,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -493,6 +526,10 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(createArgs.data.accessibility[1].form).to.equal('https://example.com/form2');
       expect(createArgs.data.accessibility[1].formSource).to.equal('newsletter-form');
       expect(createArgs.data.accessibility[1].a11yIssues).to.have.lengthOf(2);
+
+      // Verify both importer-worker and mystique messages were sent
+      expect(sendRunImportMessageStub).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
 
     it('should handle forms without composite keys (legacy format)', async () => {
@@ -543,9 +580,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -572,9 +611,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       aggregateAccessibilityDataStub.rejects(new Error('Aggregation error'));
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -632,9 +673,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -707,9 +750,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       context.dataAccess.Opportunity.create.resolves(createdOpportunity);
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
         '../../../src/accessibility/utils/scrape-utils.js': {
           updateStatusToIgnored: updateStatusToIgnoredStub,
@@ -724,7 +769,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       // Verify that the opportunity was still created despite updateStatusToIgnored failure
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
 
-      // Verify that the SQS message was still sent
+      // Verify that both SQS messages were still sent
+      expect(sendRunImportMessageStub).to.have.been.calledOnce;
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       expect(context.sqs.sendMessage).to.have.been.calledWith(
         'test-queue',
@@ -792,9 +838,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -856,9 +904,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -900,9 +950,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -953,9 +1005,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -996,9 +1050,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -1089,9 +1145,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -1195,9 +1253,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       context.dataAccess.Opportunity.create.resolves(createdOpportunity);
 
       // Mock the module to override the imported function
+      const sendRunImportMessageStub = sandbox.stub().resolves();
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
         '../../../src/accessibility/utils/data-processing.js': {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
         },
       });
 
@@ -1261,6 +1321,22 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
       expect(newsletterForm.a11yIssues).to.have.lengthOf(1);
 
+      // Assert - Verify message was sent to importer-worker queue
+      expect(sendRunImportMessageStub).to.have.been.calledOnce;
+      expect(sendRunImportMessageStub).to.have.been.calledWith(
+        context.sqs,
+        'test-import-worker-queue',
+        'a11y-metrics-aggregator',
+        siteId,
+        sinon.match({
+          scraperBucketName: 'test-bucket',
+          importerBucketName: 'test-importer-bucket',
+          version: sinon.match.string,
+          urlSourceSeparator: '?source=',
+          totalChecks: 50,
+          options: {},
+        }),
+      );
       // Assert - Verify message was sent to Mystique queue
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       expect(context.sqs.sendMessage).to.have.been.calledWith(
@@ -1289,6 +1365,234 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       // Assert - Verify success log message
       expect(context.log.info).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] a11y opportunity created (if issues found) and sent to mystique',
+      );
+    });
+
+    it('should handle sendRunImportMessage failure gracefully but prevent mystique message', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success with violations data
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 1,
+                critical: { count: 1, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+            'https://example.com/form1?source=contact-form': {
+              violations: {
+                total: 1,
+                critical: {
+                  count: 1,
+                  items: {
+                    'select-name': {
+                      count: 1,
+                      description: 'Select element must have an accessible name',
+                      level: 'A',
+                      successCriteriaTags: ['wcag412'],
+                      htmlWithIssues: ['<select id="inquiry">'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+                serious: {
+                  count: 0,
+                  items: {},
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Mock sendRunImportMessage to fail
+      const sendRunImportMessageStub = sandbox.stub().rejects(new Error('Import worker queue unavailable'));
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      // Verify sendRunImportMessage was called and failed
+      expect(sendRunImportMessageStub).to.have.been.calledOnce;
+
+      // Verify that failure is handled gracefully and error is logged
+      expect(context.log.error).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] Error creating a11y issues: Import worker queue unavailable',
+      );
+
+      // Verify that opportunity creation happened (it occurs before sendRunImportMessage)
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+
+      // Verify that mystique message sending didn't happen due to error
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('should verify importer-worker message parameters are correct', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success with violations data
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 1,
+                critical: { count: 1, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+            'https://example.com/form1?source=test-form': {
+              violations: {
+                total: 1,
+                critical: {
+                  count: 1,
+                  items: {
+                    'button-name': {
+                      count: 1,
+                      description: 'Buttons must have discernible text',
+                      level: 'A',
+                      successCriteriaTags: ['wcag412'],
+                      htmlWithIssues: ['<button></button>'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+                serious: {
+                  count: 0,
+                  items: {},
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const sendRunImportMessageStub = sandbox.stub().resolves();
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
+        },
+      });
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      // Verify sendRunImportMessage was called with exactly the right parameters
+      expect(sendRunImportMessageStub).to.have.been.calledOnce;
+      expect(sendRunImportMessageStub).to.have.been.calledWith(
+        context.sqs,
+        'test-import-worker-queue',
+        'a11y-metrics-aggregator',
+        'test-site-id',
+        sinon.match({
+          scraperBucketName: 'test-bucket',
+          importerBucketName: 'test-importer-bucket',
+          version: sinon.match(/^\d{4}-\d{2}-\d{2}$/), // Should match YYYY-MM-DD format
+          urlSourceSeparator: '?source=',
+          totalChecks: 50,
+          options: sinon.match({}),
+        }),
+      );
+
+      // Verify the data object structure has all required properties
+      const importMessageCall = sendRunImportMessageStub.getCall(0);
+      const dataParam = importMessageCall.args[4];
+      expect(dataParam).to.have.property('scraperBucketName', 'test-bucket');
+      expect(dataParam).to.have.property('importerBucketName', 'test-importer-bucket');
+      expect(dataParam).to.have.property('urlSourceSeparator', '?source=');
+      expect(dataParam).to.have.property('totalChecks', 50);
+      expect(dataParam).to.have.property('options');
+      expect(dataParam.options).to.be.an('object');
+    });
+
+    it('should send importer-worker message even when mystique message fails', async () => {
+      const latestAudit = {
+        siteId,
+        auditId: 'test-audit-id',
+        getSiteId: () => siteId,
+        getAuditId: () => 'test-audit-id',
+      };
+
+      // Mock aggregateAccessibilityData to return success with violations data
+      const aggregateAccessibilityDataStub = sandbox.stub();
+      aggregateAccessibilityDataStub.resolves({
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 1,
+                critical: { count: 1, items: {} },
+                serious: { count: 0, items: {} },
+              },
+            },
+            'https://example.com/form1?source=contact-form': {
+              violations: {
+                total: 1,
+                critical: {
+                  count: 1,
+                  items: {
+                    'image-alt': {
+                      count: 1,
+                      description: 'Images must have alternative text',
+                      level: 'A',
+                      successCriteriaTags: ['wcag111'],
+                      htmlWithIssues: ['<img src="test.jpg">'],
+                      failureSummary: 'Fix any of the following...',
+                    },
+                  },
+                },
+                serious: {
+                  count: 0,
+                  items: {},
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const sendRunImportMessageStub = sandbox.stub().resolves();
+      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/accessibility/utils/data-processing.js': {
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          sendRunImportMessage: sendRunImportMessageStub,
+        },
+      });
+
+      // Mock SQS to fail for mystique message
+      context.sqs.sendMessage = sandbox.stub().rejects(new Error('Mystique queue unavailable'));
+
+      await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
+
+      // Verify both opportunity creation and importer-worker message were successful
+      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      expect(sendRunImportMessageStub).to.have.been.calledOnce;
+
+      // Verify error was logged due to mystique message failure
+      expect(context.log.error).to.have.been.calledWith(
+        '[Form Opportunity] [Site Id: test-site-id] Error creating a11y issues: Mystique queue unavailable',
       );
     });
   });
@@ -1333,6 +1637,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           log: {
             info: sinon.stub(),
             error: sinon.stub(),
+            debug: sinon.stub(),
           },
           dataAccess: {
             Opportunity: {

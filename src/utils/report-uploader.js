@@ -28,10 +28,14 @@ const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/S
  * @param {string} context.env.SHAREPOINT_AUTHORITY - SharePoint authority URL
  * @param {string} context.env.SHAREPOINT_DOMAIN_ID - SharePoint domain ID
  * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} context.log - Logger instance
+ * @param {object} [options] - Options for testing
+ * @param {object} [options.helixContentSDK] - Custom helix content SDK for testing
  * @returns {Promise<SharepointClient>}
  */
-export function createLLMOSharepointClient({ env, log }) {
-  return helixContentSDK.createFrom(
+export function createLLMOSharepointClient({ env, log }, options = {}) {
+  const sdk = options.helixContentSDK || helixContentSDK;
+
+  return sdk.createFrom(
     {
       clientId: env.SHAREPOINT_CLIENT_ID,
       clientSecret: env.SHAREPOINT_CLIENT_SECRET,

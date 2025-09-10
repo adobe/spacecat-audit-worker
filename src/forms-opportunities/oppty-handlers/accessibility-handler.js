@@ -15,8 +15,8 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 import { getSuccessCriteriaDetails, sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
-import { aggregateAccessibilityData } from '../../accessibility/utils/data-processing.js';
-import { URL_SOURCE_SEPARATOR } from '../../accessibility/utils/constants.js';
+import { aggregateAccessibilityData, sendRunImportMessage } from '../../accessibility/utils/data-processing.js';
+import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from '../../accessibility/utils/constants.js';
 
 const filterAccessibilityOpportunities = (opportunities) => opportunities.filter((opportunity) => opportunity.getTags()?.includes('Forms Accessibility'));
 
@@ -232,6 +232,23 @@ export async function createAccessibilityOpportunity(auditData, context) {
 
     // Create opportunity
     const opportunity = await createOrUpdateOpportunity(auditId, siteId, a11yData, context);
+
+    // Send message to importer-worker to create/update a11y metrics
+    log.debug(`[FormA11yAudit] [Site Id: ${siteId}] Sending message to importer-worker to create/update a11y metrics`);
+    await sendRunImportMessage(
+      sqs,
+      env.IMPORT_WORKER_QUEUE_URL,
+      A11Y_METRICS_AGGREGATOR_IMPORT_TYPE,
+      siteId,
+      {
+        scraperBucketName: env.S3_SCRAPER_BUCKET_NAME,
+        importerBucketName: env.S3_IMPORTER_BUCKET_NAME,
+        version,
+        urlSourceSeparator: URL_SOURCE_SEPARATOR,
+        totalChecks: WCAG_CRITERIA_COUNTS.TOTAL,
+        options: {},
+      },
+    );
 
     // Send message to mystique for detection
     const mystiqueMessage = {

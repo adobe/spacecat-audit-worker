@@ -26,7 +26,7 @@ import lhsMobile from './lhs/handler-mobile.js';
 import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
 import redirectChains from './redirect-chains/handler.js';
-import paid from './paid/handler.js';
+import paid from './paid-cookie-consent/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
 import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
@@ -46,7 +46,7 @@ import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
 import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
-import paidConsentGuidance from './paid/guidance-handler.js';
+import paidConsentGuidance from './paid-cookie-consent/guidance-handler.js';
 import paidTrafficAnalysisGuidance from './paid-traffic-analysis/guidance-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
@@ -63,6 +63,7 @@ import analyticsReport from './analytics-report/handler.js';
 import detectPageIntent from './page-intent/handler.detect.js';
 import updatePageIntent from './page-intent/handler.update.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
+import readabilityGuidance from './readability/guidance-readability-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
@@ -112,6 +113,7 @@ const HANDLERS = {
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
+  'guidance:readability': readabilityGuidance,
   'guidance:structured-data-remediation': structuredDataGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,

@@ -16,7 +16,9 @@ import { expect, use } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { retrieveSiteBySiteId, syncSuggestions, getImsOrgId } from '../../src/utils/data-access.js';
+import {
+  retrieveSiteBySiteId, syncSuggestions, getImsOrgId, retrieveAuditById, keepSameDataFunction,
+} from '../../src/utils/data-access.js';
 import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
@@ -393,6 +395,73 @@ describe('data-access', () => {
       mockSite.getOrganizationId = () => null;
       const result = await getImsOrgId(mockSite, mockDataAccess, mockLog);
       expect(result).to.be.null;
+    });
+
+    it('returns null and logs warning when Organization.findById throws an error', async () => {
+      mockDataAccess.Organization.findById.rejects(new Error('Database connection failed'));
+      const result = await getImsOrgId(mockSite, mockDataAccess, mockLog);
+      expect(result).to.be.null;
+      expect(mockLog.warn).to.have.been.calledWith('Failed to get IMS org ID for site https://example.com: Database connection failed');
+    });
+  });
+
+  describe('retrieveAuditById', () => {
+    let mockDataAccess;
+    let mockLog;
+
+    beforeEach(() => {
+      mockDataAccess = {
+        Audit: {
+          findById: sinon.stub(),
+        },
+      };
+      mockLog = {
+        warn: sinon.spy(),
+      };
+    });
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('returns audit when Audit.findById returns a valid object', async () => {
+      const audit = { id: 'audit1' };
+      mockDataAccess.Audit.findById.resolves(audit);
+
+      const result = await retrieveAuditById(mockDataAccess, 'audit1', mockLog);
+
+      expect(result).to.equal(audit);
+      expect(mockDataAccess.Audit.findById).to.have.been.calledOnceWith('audit1');
+      expect(mockLog.warn).to.not.have.been.called;
+    });
+
+    it('returns null and logs a warning when Audit.findById returns a non-object', async () => {
+      mockDataAccess.Audit.findById.resolves('not an object');
+
+      const result = await retrieveAuditById(mockDataAccess, 'audit1', mockLog);
+
+      expect(result).to.be.null;
+      expect(mockDataAccess.Audit.findById).to.have.been.calledOnceWith('audit1');
+      expect(mockLog.warn).to.have.been.calledOnceWith('Audit not found for auditId: audit1');
+    });
+
+    it('throws an error when Audit.findById throws an error', async () => {
+      mockDataAccess.Audit.findById.rejects(new Error('database error'));
+
+      await expect(retrieveAuditById(mockDataAccess, 'audit1', mockLog)).to.be.rejectedWith('Error getting audit audit1: database error');
+      expect(mockDataAccess.Audit.findById).to.have.been.calledOnceWith('audit1');
+      expect(mockLog.warn).to.not.have.been.called;
+    });
+  });
+
+  describe('keepSameDataFunction', () => {
+    it('returns a shallow copy of the input data', () => {
+      const inputData = { key: 'value', nested: { prop: 'test' } };
+      const result = keepSameDataFunction(inputData);
+
+      expect(result).to.deep.equal(inputData);
+      expect(result).to.not.equal(inputData);
+      expect(result.nested).to.equal(inputData.nested);
     });
   });
 });
