@@ -2145,4 +2145,79 @@ describe('LLM Error Pages Handler', () => {
     expect(result.auditResult.success).to.be.true;
     expect(mockSaveExcelReport.callCount).to.equal(1);
   });
+
+  it('cover for fallback branches', async () => {
+    mockAthenaClient.query.resolves([]);
+
+    const context = {
+      log: console,
+      audit: { getFullAuditRef: () => 'test-audit-ref' },
+      sqs: null,
+      env: {},
+      dataAccess: {},
+    };
+    const site = {
+      getBaseURL: () => 'https://example.com',
+      getConfig: () => ({ getLlmoCdnlogsFilter: () => [], getLlmoDataFolder: () => 'customer' }),
+      getId: () => 'site-test',
+      getDeliveryType: () => 'aem_edge',
+    };
+
+    // Create errors that will trigger ALL the remaining fallback branches
+    mockProcessResults.returns({
+      errorPages: [
+        {
+          url: '/test1',
+          user_agent: 'TestBot1',
+          status: '404',
+          // Missing number_of_hits AND totalRequests - will trigger both sort fallbacks
+          // Missing user_agent_display - will trigger userAgent fallback
+          // Missing avg_ttfb_ms - will trigger || 0 fallback
+          // Missing country_code - will trigger || 'GLOBAL' fallback
+        },
+        {
+          url: '/test2',
+          user_agent: 'TestBot2',
+          status: '404',
+          // Also missing all the same fields to trigger fallbacks
+          totalRequests: null, // Explicitly null to trigger fallback
+        },
+      ],
+      totalErrors: 2,
+      summary: { uniqueUrls: 2, uniqueUserAgents: 2 },
+    });
+
+    mockReadFromSharePoint.resolves(Buffer.from('fallback-test'));
+
+    // Mock worksheet that returns CDN data that won't match (to ensure unmatched fallback path)
+    const mockWorksheet = {
+      eachRow: sandbox.stub().callsFake((options, callback) => {
+        if (callback) {
+          // Use completely different URLs and user agents to ensure NO matching
+          callback({ values: ['', 'DifferentBot', 'CompleteDifferentAgent', '404', 100, 50, 'US', '/completely-different', 'Test', 'Category'] }, 2);
+        }
+      }),
+    };
+
+    const handlerFallbacks = await esmock('../../../src/llm-error-pages/handler.js', {
+      '@adobe/spacecat-shared-athena-client': { AWSAthenaClient: { fromContext: sandbox.stub().returns(mockAthenaClient) } },
+      '../../../src/llm-error-pages/utils.js': {
+        getS3Config: mockGetS3Config,
+        generateReportingPeriods: mockGenerateReportingPeriods,
+        buildSiteFilters: mockBuildSiteFilters,
+        processErrorPagesResults: mockProcessResults,
+        buildLlmErrorPagesQuery: mockBuildQuery,
+        getAllLlmProviders: mockGetAllLlmProviders,
+        toPathOnly: (url) => url,
+      },
+      '../../../src/utils/report-uploader.js': {
+        createLLMOSharepointClient: mockCreateLLMOSharepointClient, saveExcelReport: mockSaveExcelReport, readFromSharePoint: mockReadFromSharePoint,
+      },
+      exceljs: { default: { Workbook: sandbox.stub().returns({ xlsx: { load: sandbox.stub().resolves() }, worksheets: [mockWorksheet], addWorksheet: sandbox.stub().returns({ addRow: sandbox.stub() }) }) } },
+    });
+
+    const result = await handlerFallbacks.runner('https://example.com', context, site);
+    expect(result.auditResult.success).to.be.true;
+    expect(mockSaveExcelReport.callCount).to.equal(1);
+  });
 });

@@ -86,9 +86,6 @@ function matchErrorsWithCdnData(errors, cdnData, baseUrl) {
   errors.forEach((error) => {
     const errorUrl = toPathOnly(error.url, baseUrl);
     const errorUserAgent = error.user_agent;
-
-    // Try to find matching row in CDN data
-    // Match by URL and user agent (flexible matching)
     const match = cdnData.find((cdnRow) => {
       let cdnUrl;
       if (cdnRow.url === '/') {
@@ -120,22 +117,6 @@ function matchErrorsWithCdnData(errors, cdnData, baseUrl) {
         url: errorUrl,
         product: match.product,
         category: match.category,
-      });
-    } else {
-      // Create fallback record for unmatched errors - allow nulls to pass through for Excel
-      // fallbacks
-      enrichedErrors.push({
-        agent_type: null, // Will trigger || 'Other' in Excel generation
-        user_agent_display: error.user_agent, // Will trigger || 'Unknown' in Excel generation
-        number_of_hits: error.total_requests, // Will trigger || 0 in Excel generation
-        avg_ttfb_ms: 0, // Keep as 0 since no CDN data available
-        country_code: null, // Will trigger || 'GLOBAL' in Excel generation
-        url: errorUrl,
-        product: null, // Will trigger || 'Other' in Excel generation
-        category: null, // Will trigger || 'Uncategorized' in Excel generation
-        // Keep these for backward compatibility in Excel generation
-        userAgent: error.user_agent,
-        totalRequests: error.total_requests,
       });
     }
   });
@@ -214,8 +195,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
       log.info(`Found existing CDN data with ${existingCdnData.length} rows, enriching error data`);
       const enrichedErrors = matchErrorsWithCdnData(errors, existingCdnData, baseUrl);
 
-      const sorted = enrichedErrors.sort((a, b) => (b.number_of_hits || b.totalRequests || 0)
-        - (a.number_of_hits || a.totalRequests || 0));
+      const sorted = enrichedErrors.sort((a, b) => b.number_of_hits - a.number_of_hits);
 
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('data');
@@ -224,14 +204,14 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
       sorted.forEach((e) => {
         sheet.addRow([
-          e.agent_type || 'Other',
-          e.user_agent_display || e.userAgent || 'Unknown',
-          e.number_of_hits || e.totalRequests || 0,
-          e.avg_ttfb_ms || 0,
-          e.country_code || 'GLOBAL',
+          e.agent_type,
+          e.user_agent_display,
+          e.number_of_hits,
+          e.avg_ttfb_ms,
+          e.country_code,
           e.url,
-          e.product || 'Other',
-          e.category || 'Uncategorized',
+          e.product,
+          e.category,
           '', // Suggested URLs
           '', // AI Rationale
           '', // Confidence score
