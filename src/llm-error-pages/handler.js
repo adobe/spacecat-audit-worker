@@ -48,13 +48,10 @@ async function downloadExistingCdnSheet(periodIdentifier, outputLocation, sharep
     const worksheet = workbook.worksheets[0]; // First sheet
     const rows = [];
 
-    // Skip header row, start from row 2
     worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber === 1) return; // Skip header
+      if (rowNumber === 1) return;
 
       const { values } = row;
-      // Map to expected structure based on CDN sheet format
-      // Allow null values to pass through - fallbacks will be handled in Excel generation
       rows.push({
         agent_type: values[1],
         user_agent_display: values[2],
@@ -202,7 +199,6 @@ async function runLlmErrorPagesAudit(url, context, site) {
     const writeCategoryExcel = async (code, errors) => {
       if (!errors || errors.length === 0) return;
 
-      // Download existing CDN sheet for data enrichment
       const existingCdnData = await downloadExistingCdnSheet(
         periodIdentifier,
         outputLocation,
@@ -215,18 +211,15 @@ async function runLlmErrorPagesAudit(url, context, site) {
         return;
       }
 
-      // Match error data with existing CDN data
       log.info(`Found existing CDN data with ${existingCdnData.length} rows, enriching error data`);
       const enrichedErrors = matchErrorsWithCdnData(errors, existingCdnData, baseUrl);
 
-      // Sort by traffic volume
       const sorted = enrichedErrors.sort((a, b) => (b.number_of_hits || b.totalRequests || 0)
         - (a.number_of_hits || a.totalRequests || 0));
 
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('data');
 
-      // Use CDN-style headers (same as agentic traffic report)
       sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
 
       sorted.forEach((e) => {
@@ -239,9 +232,9 @@ async function runLlmErrorPagesAudit(url, context, site) {
           e.url,
           e.product || 'Other',
           e.category || 'Uncategorized',
-          '', // Suggested URLs (filled by Mystique)
-          '', // AI Rationale (filled by Mystique)
-          '', // Confidence score (filled by Mystique)
+          '', // Suggested URLs
+          '', // AI Rationale
+          '', // Confidence score
         ]);
       });
 
