@@ -34,7 +34,7 @@ export default async function handler(message, context) {
         const matchingFormDetail = formDetails.find((detail) => detail.url === item.form && detail.form_source === item.formSource);
         if (matchingFormDetail) {
           log.info(`Matching form details : ${JSON.stringify(matchingFormDetail)}`);
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars,camelcase
+          // eslint-disable-next-line
           const { url, form_source, ...cleanedFormDetail } = matchingFormDetail;
           return { ...item, formDetails: cleanedFormDetail };
         }
@@ -48,7 +48,7 @@ export default async function handler(message, context) {
       // eslint-disable-next-line max-len
       const matchingFormDetail = formDetails.find((detail) => detail.url === opportunityData.form && detail.form_source === opportunityData.formsource);
       if (matchingFormDetail) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars,camelcase
+        // eslint-disable-next-line
         const { form, form_source, ...cleanedFormDetail } = matchingFormDetail;
         opportunity.setData({
           ...opportunityData,
