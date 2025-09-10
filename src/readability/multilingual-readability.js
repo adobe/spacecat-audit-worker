@@ -146,7 +146,7 @@ async function countSyllablesWord(word, language) {
   // Preserve inner apostrophes/dashes, remove other junk
   const cleaned = word.replace(/[^\p{L}\p{M}''-]/gu, '');
   const parts = hyphenate(cleaned);
-  return Math.max(1, Array.isArray(parts) ? parts.length : 1);
+  return Math.max(1, parts.length);
 }
 
 // --- Public API ---

@@ -876,11 +876,19 @@ describe('Multilingual Readability Module', () => {
       const result3 = await analyzeReadability('Test text.', '');
       expect(result3.score).to.be.within(0, 100);
 
-      // Line 109: || [] - test text with no sentence-ending punctuation using real text
-      const textWithoutPunctuation = 'Hello world this has no punctuation marks';
-      const result4 = await analyzeReadability(textWithoutPunctuation, 'english');
-      expect(result4.sentences).to.equal(1); // Should default to 1 sentence
-      expect(result4.score).to.be.within(0, 100);
+      // Line 109: || [] - force fallback path and test text with no punctuation
+      const originalSegmenter = global.Intl.Segmenter;
+      delete global.Intl.Segmenter;
+
+      try {
+        const textWithoutPunctuation = 'Hello world this has no punctuation marks';
+        const result4 = await analyzeReadability(textWithoutPunctuation, 'english');
+        expect(result4.sentences).to.equal(1); // Should default to 1 sentence
+        expect(result4.score).to.be.within(0, 100);
+      } finally {
+        // Always restore Intl.Segmenter
+        global.Intl.Segmenter = originalSegmenter;
+      }
     });
   });
 });
