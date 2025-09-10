@@ -68,7 +68,8 @@ async function getHyphenator(language /* 'german' etc. */) {
     default:
       mod = null;
   }
-  const hyphenate = mod?.hyphenate ?? null;
+  // Handle CommonJS default export correctly
+  const hyphenate = mod?.default?.hyphenate ?? mod?.hyphenate ?? null;
   hyphenatorCache.set(key, hyphenate);
   return hyphenate;
 }
