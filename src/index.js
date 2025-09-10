@@ -72,6 +72,7 @@ import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
+import permissions from './permissions/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 
 const HANDLERS = {
@@ -130,6 +131,7 @@ const HANDLERS = {
   'llmo-customer-analysis': llmoCustomerAnalysis,
   hreflang,
   headings,
+  'security-permissions': permissions,
   'security-vulnerabilities': vulnerabilities,
   dummy: (message) => ok(message),
 };
