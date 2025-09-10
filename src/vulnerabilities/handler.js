@@ -10,19 +10,18 @@
  * governing permissions and limitations under the License.
  */
 
-import { Opportunity as Oppty, Suggestion as SuggestionDataAccess }
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
   from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { wwwUrlResolver } from '../common/index.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityProps } from './opportunity-data-mapper.js';
 import { getImsOrgId, syncSuggestions } from '../utils/data-access.js';
 import { mapVulnerabilityToSuggestion } from './suggestion-data-mapper.js';
 
 const INTERVAL = 7; // days
-const AUDIT_TYPE = 'security-vulnerabilities'; // Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES;
+const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES;
 
 /**
  * @typedef {import('./vulnerability-report.d.ts').VulnerabilityReport} VulnerabilityReport
@@ -47,11 +46,17 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
   }
 
   // Get service access-token
-  const imsContext = {
-    log, env,
-  };
-  const imsClient = ImsClient.createFrom(imsContext);
-  const token = await imsClient.getServiceAccessToken();
+  let token;
+  try {
+    const imsContext = {
+      log,
+      env,
+    };
+    const imsClient = ImsClient.createFrom(imsContext);
+    token = await imsClient.getServiceAccessToken();
+  } catch (e) {
+    throw new Error(`Failed to retrieve IMS token: ${e.message}`);
+  }
 
   // Fetch vulnerability report
   try {
@@ -87,6 +92,19 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
  */
 export async function vulnerabilityAuditRunner(baseURL, context, site) {
   const { log } = context;
+
+  // This opportunity is only relevant for aem_cs delivery-type at the moment
+  if (site.getDeliveryType() !== 'aem_cs') {
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping vulnerability audit as site is of delivery type ${site.getDeliveryType()}`);
+    return {
+      auditResult: {
+        finalUrl: baseURL,
+        error: `Unsupported delivery type ${site.getDeliveryType()}`,
+        success: false,
+      },
+      fullAuditRef: baseURL,
+    };
+  }
 
   try {
     const vulnerabilityReport = await fetchVulnerabilityReport(baseURL, context, site);
@@ -132,13 +150,6 @@ export async function vulnerabilityAuditRunner(baseURL, context, site) {
 export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context, site) => {
   const { log, dataAccess } = context;
   const { Configuration, Suggestion } = dataAccess;
-
-  // Check whether the audit is enabled for the site
-  const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('security-vulnerabilities', site)) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
-    return { status: 'complete' };
-  }
 
   // This opportunity is only relevant for aem_cs delivery-type at the moment
   if (site.getDeliveryType() !== 'aem_cs') {
@@ -199,6 +210,7 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
     createOpportunityProps(auditData.auditResult.vulnerabilityReport),
   );
 
+  const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site)) {
     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-suggest not configured, skipping suggestion creation`);
     return { status: 'complete' };
@@ -232,7 +244,6 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
 };
 
 export default new AuditBuilder()
-  .withUrlResolver(wwwUrlResolver)
   .withRunner(vulnerabilityAuditRunner)
   .withPostProcessors([opportunityAndSuggestionsStep])
   .build();

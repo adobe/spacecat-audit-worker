@@ -47,7 +47,7 @@ export function mapVulnerabilityToSuggestion(opportunity, vulnerability) {
 
   return {
     opportunityId: opportunity.getId(),
-    type: 'CONTENT_UPDATE',
+    type: 'CODE_CHANGE',
     rank: highestScore(safeVulnerabilities), // Used for sorting
     data: {
       library: name,

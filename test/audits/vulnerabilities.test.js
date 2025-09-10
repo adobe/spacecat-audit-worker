@@ -184,7 +184,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       const result = await vulnerabilityAuditRunner('https://example.com', context, site);
 
       expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.include('Invalid delivery config for AEM_CS');
+      expect(result.auditResult.error).to.include('Unsupported delivery type aem_on_premise');
     });
 
     it('should handle IMS authentication failure', async () => {
@@ -193,7 +193,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       const result = await vulnerabilityAuditRunner('https://example.com', context, site);
 
       expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.include('IMS getServiceAccessToken request failed with status: 401');
+      expect(result.auditResult.error).to.include('Failed to retrieve IMS token');
     });
 
     it('should handle Starfish Backend API failure', async () => {
@@ -378,7 +378,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       // Verify suggestion structure
       const suggestion = suggestions[0];
       expect(suggestion).to.have.property('opportunityId', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890');
-      expect(suggestion).to.have.property('type', 'CONTENT_UPDATE');
+      expect(suggestion).to.have.property('type', 'CODE_CHANGE');
       expect(suggestion).to.have.property('rank', 7.5);
       expect(suggestion).to.have.property('data');
       expect(suggestion.data).to.have.property('library', 'com.fasterxml.jackson.core:jackson-databind');
@@ -454,24 +454,6 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
       expect(context.log.info).to.have.been.calledWithMatch(/security-vulnerabilities-auto-suggest not configured/);
-    });
-
-    it('should skip processing when handler is disabled', async () => {
-      const configuration = {
-        isHandlerEnabledForSite: sandbox.stub(),
-      };
-      context.dataAccess.Configuration.findLatest.resolves(configuration);
-
-      // Disable the main handler
-      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities').returns(false);
-
-      const auditData = createAuditData();
-      const result = await opportunityAndSuggestionsStep('https://example.com', auditData, context, site);
-
-      expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
-      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWithMatch(/audit is disabled for site/);
     });
 
     it('should skip auto-suggest when auto-suggest handler is disabled', async () => {

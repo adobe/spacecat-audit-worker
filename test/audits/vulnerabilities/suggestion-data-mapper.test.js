@@ -71,7 +71,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
 
       expect(result).to.deep.equal({
         opportunityId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-        type: 'CONTENT_UPDATE',
+        type: 'CODE_CHANGE',
         rank: 7.5,
         data: {
           library: 'com.fasterxml.jackson.core:jackson-databind',
