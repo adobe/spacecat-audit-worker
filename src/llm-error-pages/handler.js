@@ -26,7 +26,125 @@ import {
   toPathOnly,
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
+import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
+
+/**
+ * Downloads and parses existing CDN agentic traffic sheet
+ * @param {string} periodIdentifier - The period identifier (e.g., 'w35-2025')
+ * @param {string} outputLocation - SharePoint folder location
+ * @param {Object} sharepointClient - SharePoint client instance
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Array>} - Array of CDN data rows
+ */
+async function downloadExistingCdnSheet(periodIdentifier, outputLocation, sharepointClient, log) {
+  try {
+    const filename = `agentictraffic-${periodIdentifier}.xlsx`;
+    log.info(`Attempting to download existing CDN sheet: ${filename}`);
+
+    const buffer = await readFromSharePoint(filename, outputLocation, sharepointClient, log);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+
+    const worksheet = workbook.worksheets[0]; // First sheet
+    const rows = [];
+
+    // Skip header row, start from row 2
+    worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber === 1) return; // Skip header
+
+      const { values } = row;
+      // Map to expected structure based on CDN sheet format
+      // Allow null values to pass through - fallbacks will be handled in Excel generation
+      rows.push({
+        agent_type: values[1],
+        user_agent_display: values[2],
+        status: values[3],
+        number_of_hits: Number(values[4]) || 0,
+        avg_ttfb_ms: Number(values[5]) || 0,
+        country_code: values[6],
+        url: values[7],
+        product: values[8],
+        category: values[9],
+      });
+    });
+
+    log.info(`Successfully loaded ${rows.length} rows from existing CDN sheet`);
+    return rows;
+  } catch (error) {
+    log.warn(`Could not download existing CDN sheet: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Matches error data with existing CDN data and enriches it
+ * @param {Array} errors - Error data from Athena
+ * @param {Array} cdnData - Existing CDN data from sheet
+ * @param {string} baseUrl - Base URL for path conversion
+ * @returns {Array} - Enriched error data with CDN fields
+ */
+function matchErrorsWithCdnData(errors, cdnData, baseUrl) {
+  const enrichedErrors = [];
+
+  errors.forEach((error) => {
+    const errorUrl = toPathOnly(error.url, baseUrl);
+    const errorUserAgent = error.user_agent;
+
+    // Try to find matching row in CDN data
+    // Match by URL and user agent (flexible matching)
+    const match = cdnData.find((cdnRow) => {
+      let cdnUrl;
+      if (cdnRow.url === '/') {
+        cdnUrl = '/';
+      } else {
+        cdnUrl = cdnRow.url || '';
+      }
+
+      const urlMatch = errorUrl === cdnUrl
+        || errorUrl.includes(cdnUrl)
+        || cdnUrl.includes(errorUrl);
+
+      const userAgentMatch = cdnRow.user_agent_display === errorUserAgent
+        || (cdnRow.user_agent_display && errorUserAgent
+          && cdnRow.user_agent_display.toLowerCase().includes(errorUserAgent.toLowerCase()))
+        || (errorUserAgent && cdnRow.user_agent_display
+          && errorUserAgent.toLowerCase().includes(cdnRow.user_agent_display.toLowerCase()));
+
+      return urlMatch && userAgentMatch;
+    });
+
+    if (match) {
+      enrichedErrors.push({
+        agent_type: match.agent_type,
+        user_agent_display: match.user_agent_display,
+        number_of_hits: error.total_requests || match.number_of_hits,
+        avg_ttfb_ms: match.avg_ttfb_ms,
+        country_code: match.country_code,
+        url: errorUrl,
+        product: match.product,
+        category: match.category,
+      });
+    } else {
+      // Create fallback record for unmatched errors - allow nulls to pass through for Excel
+      // fallbacks
+      enrichedErrors.push({
+        agent_type: null, // Will trigger || 'Other' in Excel generation
+        user_agent_display: error.user_agent, // Will trigger || 'Unknown' in Excel generation
+        number_of_hits: error.total_requests, // Will trigger || 0 in Excel generation
+        avg_ttfb_ms: 0, // Keep as 0 since no CDN data available
+        country_code: null, // Will trigger || 'GLOBAL' in Excel generation
+        url: errorUrl,
+        product: null, // Will trigger || 'Other' in Excel generation
+        category: null, // Will trigger || 'Uncategorized' in Excel generation
+        // Keep these for backward compatibility in Excel generation
+        userAgent: error.user_agent,
+        totalRequests: error.total_requests,
+      });
+    }
+  });
+
+  return enrichedErrors;
+}
 
 async function runLlmErrorPagesAudit(url, context, site) {
   const {
@@ -83,19 +201,47 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
     const writeCategoryExcel = async (code, errors) => {
       if (!errors || errors.length === 0) return;
-      const consolidated = consolidateErrorsByUrl(errors);
-      const sorted = sortErrorsByTrafficVolume(consolidated);
+
+      // Download existing CDN sheet for data enrichment
+      const existingCdnData = await downloadExistingCdnSheet(
+        periodIdentifier,
+        outputLocation,
+        sharepointClient,
+        log,
+      );
+
+      if (!existingCdnData || existingCdnData.length === 0) {
+        log.warn(`No existing CDN data found for ${periodIdentifier}, skipping ${code} error report`);
+        return;
+      }
+
+      // Match error data with existing CDN data
+      log.info(`Found existing CDN data with ${existingCdnData.length} rows, enriching error data`);
+      const enrichedErrors = matchErrorsWithCdnData(errors, existingCdnData, baseUrl);
+
+      // Sort by traffic volume
+      const sorted = enrichedErrors.sort((a, b) => (b.number_of_hits || b.totalRequests || 0)
+        - (a.number_of_hits || a.totalRequests || 0));
 
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('data');
-      sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+
+      // Use CDN-style headers (same as agentic traffic report)
+      sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+
       sorted.forEach((e) => {
         sheet.addRow([
-          e.userAgent,
-          toPathOnly(e.url, baseUrl),
-          '',
-          '',
-          '',
+          e.agent_type || 'Other',
+          e.user_agent_display || e.userAgent || 'Unknown',
+          e.number_of_hits || e.totalRequests || 0,
+          e.avg_ttfb_ms || 0,
+          e.country_code || 'GLOBAL',
+          e.url,
+          e.product || 'Other',
+          e.category || 'Uncategorized',
+          '', // Suggested URLs (filled by Mystique)
+          '', // AI Rationale (filled by Mystique)
+          '', // Confidence score (filled by Mystique)
         ]);
       });
 
