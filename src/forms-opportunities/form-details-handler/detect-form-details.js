@@ -11,66 +11,56 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
+import { sendMessageToMystiqueForGuidance } from '../utils.js';
+import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 
 export default async function handler(message, context) {
   const {
-    log, dataAccess, sqs, env,
+    log, dataAccess,
   } = context;
   const { Opportunity } = dataAccess;
-  const { siteId, data } = message;
-  log.info(`Message received in form details handler: ${JSON.stringify(message, null, 2)}`);
-  const {
-    url, form_source: formsource, form_details: formDetails,
-  } = data;
+  const { data, auditId: id } = message;
+  log.info(`Message received in form details handler : ${JSON.stringify(message, null, 2)}`);
+  const { form_details: formDetails } = data;
 
-  const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  // eslint-disable-next-line max-len
-  const opportunity = existingOpportunities.find((oppty) => oppty.getData()?.form === url && (!formsource || oppty.getData()?.formsource === formsource));
-
+  const opportunity = await Opportunity.findById(id);
   if (opportunity) {
-    log.info(`Opportunity found: ${JSON.stringify(opportunity)}`);
+    log.info(`Opportunity found in form details handler: ${JSON.stringify(opportunity)}`);
+    if (opportunity.getType() === FORM_OPPORTUNITY_TYPES.FORM_A11Y) {
+      const opportunityData = opportunity.getData();
+      log.info(`Opportunity found accessibility data in form details handler: ${JSON.stringify(opportunityData)}`);
+      const updatedAccessibility = opportunityData.accessibility.map((item) => {
+        // eslint-disable-next-line max-len
+        const matchingFormDetail = formDetails.find((detail) => detail.url === item.form && detail.form_source === item.formSource);
+        if (matchingFormDetail) {
+          log.info(`Matching form details : ${JSON.stringify(matchingFormDetail)}`);
+          // eslint-disable-next-line
+          const { url, form_source, ...cleanedFormDetail } = matchingFormDetail;
+          return { ...item, formDetails: cleanedFormDetail };
+        }
+        return item;
+      });
+      opportunity.setData({
+        accessibility: updatedAccessibility,
+      });
+    } else {
+      const opportunityData = opportunity.getData();
+      // eslint-disable-next-line max-len
+      const matchingFormDetail = formDetails.find((detail) => detail.url === opportunityData.form && detail.form_source === opportunityData.formsource);
+      if (matchingFormDetail) {
+        // eslint-disable-next-line
+        const { form, form_source, ...cleanedFormDetail } = matchingFormDetail;
+        opportunity.setData({
+          ...opportunityData,
+          formDetails: cleanedFormDetail,
+        });
+      }
+    }
+
     opportunity.setUpdatedBy('system');
-    opportunity.setData({
-      ...opportunity.getData(),
-      formDetails,
-    });
-
-    // eslint-disable-next-line no-await-in-loop
     await opportunity.save();
-    log.info(`Updated opportunity: ${JSON.stringify(opportunity, null, 2)}`);
-
-    const opptyData = JSON.parse(JSON.stringify(opportunity));
-    // sending message to mystique for guidance
-    log.info('sending message to mystique');
-    const mystiqueMessage = {
-      type: `guidance:${opptyData.type}`,
-      siteId: opptyData.siteId,
-      auditId: opptyData.auditId,
-      time: new Date().toISOString(),
-      // keys inside data should follow snake case and outside should follow camel case
-      data: {
-        url: opptyData.data?.form || '',
-        cr: opptyData.data?.trackedFormKPIValue || 0,
-        metrics: opptyData.data?.metrics || {},
-        cta_source: opptyData.data?.formNavigation?.source || '',
-        cta_text: opptyData.data?.formNavigation?.text || '',
-        form_source: opptyData.data?.formsource || '',
-        form_details: opptyData.data?.formDetails,
-        page_views: opptyData.data?.pageViews,
-        form_views: opptyData.data?.formViews,
-        form_navigation: {
-          url: opptyData.data?.formNavigation?.url || '',
-          source: opptyData.data?.formNavigation?.source || '',
-          cta_clicks: opptyData.data?.formNavigation?.clicksOnCTA || 0,
-          page_views: opptyData.data?.formNavigation?.pageViews || 0,
-        },
-      },
-    };
-
-    // eslint-disable-next-line no-await-in-loop
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.info(`forms opportunity sent to mystique for guidance: ${JSON.stringify(mystiqueMessage)}`);
+    log.info(`Updated opportunity with form details: ${JSON.stringify(opportunity, null, 2)}`);
+    await sendMessageToMystiqueForGuidance(context, opportunity);
   }
-
   return ok();
 }

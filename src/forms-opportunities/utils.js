@@ -489,24 +489,79 @@ export async function calculateProjectedConversionValue(context, siteId, opportu
   }
 }
 
-export async function sendMessageToFormsQualityAgent(auditDataObject, context, opportunityData) {
-  const auditData = JSON.parse(JSON.stringify(auditDataObject));
-  const {
-    log, sqs, site, env,
-  } = context;
-  const mystiqueFormsQualityAgentMessage = {
-    type: 'detect:form-details',
-    siteId: auditData.siteId,
-    auditId: auditData.auditId,
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      url: opportunityData.data.form,
-      form_source: opportunityData.data.formsource,
-    },
-  };
+export async function sendMessageToFormsQualityAgent(context, opportunity, formsList) {
+  if (opportunity) {
+    const {
+      log, sqs, site, env,
+    } = context;
 
-  // eslint-disable-next-line no-await-in-loop
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueFormsQualityAgentMessage);
-  log.info(`forms quality agent message sent to mystique : ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
+    log.info(`Received forms quality agent message for mystique : ${JSON.stringify(opportunity)}`);
+    const opportunityData = JSON.parse(JSON.stringify(opportunity));
+
+    const data = {
+      url: site ? site.getBaseURL() : formsList[0]?.form,
+      form_details: formsList.map(({ form, formSource }) => ({
+        url: form,
+        form_source: formSource,
+      })),
+    };
+
+    const mystiqueFormsQualityAgentMessage = {
+      type: 'detect:form-details',
+      siteId: opportunityData.siteId,
+      auditId: opportunityData.opportunityId,
+      deliveryType: site ? site.getDeliveryType() : 'aem_cs',
+      time: new Date().toISOString(),
+      data,
+    };
+
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueFormsQualityAgentMessage);
+    log.info(`Forms quality agent message sent to mystique: ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
+  }
+}
+
+export async function sendMessageToMystiqueForGuidance(context, opportunity) {
+  const {
+    log, sqs, env, site,
+  } = context;
+
+  if (opportunity) {
+    log.info(`Received forms opportunity for guidance: ${JSON.stringify(opportunity)}`);
+    const opptyData = JSON.parse(JSON.stringify(opportunity));
+    // Normalize type: convert forms-accessibility → forms-a11y
+    const normalizedType = opptyData.type === 'form-accessibility' ? 'forms-a11y' : opptyData.type;
+    const mystiqueMessage = {
+      type: `guidance:${normalizedType}`,
+      siteId: opptyData.siteId,
+      auditId: opptyData.auditId,
+      deliveryType: site ? site.getDeliveryType() : 'aem_cs',
+      time: new Date().toISOString(),
+      // keys inside data should follow snake case and outside should follow camel case
+      data: {
+        url: opptyData.type === 'form-accessibility' ? opptyData.data?.accessibility?.[0]?.form || '' : opptyData.data?.form || '',
+        cr: opptyData.data?.trackedFormKPIValue || 0,
+        metrics: opptyData.data?.metrics || [],
+        cta_source: opptyData.data?.formNavigation?.source || '',
+        cta_text: opptyData.data?.formNavigation?.text || '',
+        opportunityId: opptyData.opportunityId || '',
+        form_source: opptyData.data?.formsource || '',
+        // form_details: opptyData.data?.formDetails,
+        // eslint-disable-next-line max-len,no-nested-ternary
+        form_details: Array.isArray(opptyData.data?.formDetails) ? opptyData.data.formDetails : (opptyData.data?.formDetails ? [opptyData.data.formDetails] : []),
+        page_views: opptyData.data?.pageViews,
+        form_views: opptyData.data?.formViews,
+        form_navigation: {
+          url: opptyData.data?.formNavigation?.url || '',
+          source: opptyData.data?.formNavigation?.source || '',
+          cta_clicks: opptyData.data?.formNavigation?.clicksOnCTA || 0,
+          page_views: opptyData.data?.formNavigation?.pageViews || 0,
+        },
+      },
+    };
+
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+    log.info(`Forms opportunity sent to mystique for guidance: ${JSON.stringify(mystiqueMessage)}`);
+  }
 }
