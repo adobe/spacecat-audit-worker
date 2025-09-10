@@ -864,5 +864,23 @@ describe('Multilingual Readability Module', () => {
       expect(result.syllables).to.be.greaterThan(3); // Should be multiple syllables
       expect(result.score).to.be.within(0, 100);
     });
+
+    it('should cover remaining uncovered branches', async () => {
+      // Line 172: || 'english' - test with null/undefined language
+      const result1 = await analyzeReadability('Test text.', null);
+      expect(result1.score).to.be.within(0, 100);
+
+      const result2 = await analyzeReadability('Test text.', undefined);
+      expect(result2.score).to.be.within(0, 100);
+
+      const result3 = await analyzeReadability('Test text.', '');
+      expect(result3.score).to.be.within(0, 100);
+
+      // Line 109: || [] - test text with no sentence-ending punctuation using real text
+      const textWithoutPunctuation = 'Hello world this has no punctuation marks';
+      const result4 = await analyzeReadability(textWithoutPunctuation, 'english');
+      expect(result4.sentences).to.equal(1); // Should default to 1 sentence
+      expect(result4.score).to.be.within(0, 100);
+    });
   });
 });
