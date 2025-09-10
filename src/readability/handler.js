@@ -170,7 +170,7 @@ export default async function readability(context, auditContext) {
     });
 
     // Process each scraped page
-    scrapedObjects.forEach(({ data }) => {
+    for (const { data } of scrapedObjects) {
       const { finalUrl, scrapeResult: { rawBody } } = data;
       const normalizedFinalUrl = new URL(finalUrl).origin + new URL(finalUrl).pathname.replace(/\/$/, '');
       const pageResult = audits.get(normalizedFinalUrl);
@@ -201,7 +201,7 @@ export default async function readability(context, auditContext) {
       };
 
       // Helper function to calculate readability score and create audit opportunity
-      const analyzeReadability = (text, element, elementIndex) => {
+      const analyzeReadability = async (text, element, elementIndex) => {
         try {
           // Check if text is in a supported language before analyzing readability
           const detectedLanguage = getSupportedLanguage(text);
@@ -217,7 +217,7 @@ export default async function readability(context, auditContext) {
           if (detectedLanguage === 'english') {
             readabilityScore = rs.fleschReadingEase(text.trim());
           } else {
-            readabilityScore = calculateReadabilityScore(text.trim(), detectedLanguage);
+            readabilityScore = await calculateReadabilityScore(text.trim(), detectedLanguage);
           }
 
           if (readabilityScore < TARGET_READABILITY_SCORE) {
@@ -249,7 +249,7 @@ export default async function readability(context, auditContext) {
         }
       };
 
-      textElements.forEach((element, index) => {
+      for (const [index, element] of textElements.entries()) {
         // Check if element has child elements
         if (element.children.length > 0) {
           // If it has children, check if they are only inline formatting elements
@@ -260,13 +260,15 @@ export default async function readability(context, auditContext) {
 
           // Skip if it has block-level children (to avoid duplicate analysis)
           if (!hasOnlyInlineChildren) {
-            return;
+            // eslint-disable-next-line no-continue
+            continue;
           }
         }
 
         const textContent = element.textContent?.trim();
         if (!textContent || textContent.length < MIN_TEXT_LENGTH) {
-          return;
+          // eslint-disable-next-line no-continue
+          continue;
         }
 
         // Check if the element contains <br> tags (indicating multiple paragraphs)
@@ -290,17 +292,19 @@ export default async function readability(context, auditContext) {
             .map((p) => p.trim())
             .filter((p) => p.length >= MIN_TEXT_LENGTH);
 
-          paragraphs.forEach((paragraph) => {
-            analyzeReadability(paragraph, element, index);
-          });
+          for (const paragraph of paragraphs) {
+            // eslint-disable-next-line no-await-in-loop
+            await analyzeReadability(paragraph, element, index);
+          }
 
           processedElements += paragraphs.length;
         } else {
           // Analyze as a single text block
           processedElements += 1;
-          analyzeReadability(textContent, element, index);
+          // eslint-disable-next-line no-await-in-loop
+          await analyzeReadability(textContent, element, index);
         }
-      });
+      }
 
       const detectedLanguagesList = detectedLanguages.size > 0
         ? Array.from(detectedLanguages).join(', ')
@@ -310,7 +314,7 @@ export default async function readability(context, auditContext) {
         `[readability-suggest handler] readability: Processed ${processedElements} text element(s) on `
         + `${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability (detected languages: ${detectedLanguagesList})`,
       );
-    });
+    }
 
     // Process suggestions if this is the suggest step
     if (step === 'suggest') {
@@ -437,5 +441,6 @@ export default async function readability(context, auditContext) {
   }
 
   // Always return a value to satisfy consistent-return
+  // eslint-disable-next-line consistent-return
   return { processing: isProcessing };
 }

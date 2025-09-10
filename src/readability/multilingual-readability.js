@@ -11,11 +11,13 @@
  */
 
 /**
- * Multilingual readability calculation utilities
+ * Advanced multilingual readability calculation utilities
+ * Uses proper hyphenation patterns and Unicode-aware text processing
  * Supports English, German, Spanish, Italian, French, and Dutch
  */
 
-// Language codes mapping for franc library
+import { syllable as syllableEn } from 'syllable';
+
 export const SUPPORTED_LANGUAGES = {
   eng: 'english',
   deu: 'german',
@@ -25,392 +27,219 @@ export const SUPPORTED_LANGUAGES = {
   nld: 'dutch',
 };
 
-/**
- * Count syllables in English text
- */
-function countSyllablesEnglish(word) {
-  let processedWord = word.toLowerCase().replace(/[^a-z]/g, '');
+const NAME_TO_LOCALE = {
+  english: 'en',
+  german: 'de',
+  spanish: 'es',
+  italian: 'it',
+  french: 'fr',
+  dutch: 'nl',
+};
 
-  if (processedWord.length <= 3) {
-    return 1;
-  }
+const clamp = (x) => Math.max(0, Math.min(100, x));
 
-  // Specific exceptions for English
-  if (processedWord === 'every') {
-    return 2;
-  }
-  if (processedWord === 'somewhere') {
-    return 2;
-  }
-  if (processedWord === 'through') {
-    return 1;
-  }
+// --- Hyphenation loader (lazy) ---
+/** Cache of async hyphenate functions per language name */
+const hyphenatorCache = new Map();
+/** Returns a function hyphenate(word) -> string[] */
+async function getHyphenator(language /* 'german' etc. */) {
+  const key = language.toLowerCase();
+  if (hyphenatorCache.has(key)) return hyphenatorCache.get(key);
 
-  // Handle common suffixes
-  processedWord = processedWord.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '');
-  processedWord = processedWord.replace(/^y/, '');
-
-  // Count vowel groups as syllables
-  const matches = processedWord.match(/[aeiouy]{1,2}/g);
-  let count = matches ? matches.length : 0;
-
-  // Common corrections
-  if (/[^aeiou]le$/.test(processedWord)) {
-    count += 1; // Handle 'ble', 'cle', etc.
-  }
-  if (/[aeiou]ing$/.test(processedWord)) {
-    count += 1; // Handle 'ing'
-  }
-
-  return count > 0 ? count : 1;
-}
-
-/**
- * Count syllables in German text
- */
-function countSyllablesGerman(word) {
-  const processedWord = word.toLowerCase().replace(/[^a-zäöüß]/g, '');
-
-  if (processedWord.length <= 3) {
-    return 1;
-  }
-
-  // German vowels including umlauts
-  const vowels = 'aeiouäöü';
-  let count = 0;
-  let previousWasVowel = false;
-
-  for (let i = 0; i < processedWord.length; i += 1) {
-    const isVowel = vowels.includes(processedWord[i]);
-    if (isVowel && !previousWasVowel) {
-      count += 1;
-    }
-    previousWasVowel = isVowel;
-  }
-
-  // German-specific rules
-  if (processedWord.endsWith('e') && count > 1) {
-    count -= 1; // Silent 'e' at end
-  }
-  if (processedWord.includes('ie')) {
-    count -= 1; // 'ie' is one syllable
-  }
-
-  return count > 0 ? count : 1;
-}
-
-/**
- * Count syllables in Spanish text
- */
-function countSyllablesSpanish(word) {
-  const processedWord = word.toLowerCase().replace(/[^a-záéíóúñü]/g, '');
-
-  if (processedWord.length <= 3) {
-    return 1;
-  }
-
-  // Spanish vowels including accented ones
-  const vowels = 'aeiouáéíóúü';
-  let count = 0;
-  let previousWasVowel = false;
-
-  for (let i = 0; i < processedWord.length; i += 1) {
-    const isVowel = vowels.includes(processedWord[i]);
-    if (isVowel && !previousWasVowel) {
-      count += 1;
-    }
-    previousWasVowel = isVowel;
-  }
-
-  // Spanish diphthongs and triphthongs adjustments
-  const diphthongs = ['ai', 'au', 'ei', 'eu', 'oi', 'ou', 'ia', 'ie', 'io', 'iu', 'ua', 'ue', 'ui', 'uo'];
-  diphthongs.forEach((diphthong) => {
-    const matches = (processedWord.match(new RegExp(diphthong, 'g')) || []).length;
-    count -= matches; // Each diphthong reduces syllable count by 1
-  });
-
-  return count > 0 ? count : 1;
-}
-
-/**
- * Count syllables in Italian text
- */
-function countSyllablesItalian(word) {
-  const processedWord = word.toLowerCase().replace(/[^a-zàèéìíîòóù]/g, '');
-
-  if (processedWord.length <= 3) {
-    return 1;
-  }
-
-  // Italian vowels including accented ones
-  const vowels = 'aeiouàèéìíîòóù';
-  let count = 0;
-  let previousWasVowel = false;
-
-  for (let i = 0; i < processedWord.length; i += 1) {
-    const isVowel = vowels.includes(processedWord[i]);
-    if (isVowel && !previousWasVowel) {
-      count += 1;
-    }
-    previousWasVowel = isVowel;
-  }
-
-  // Italian-specific adjustments for common vowel combinations
-  const combinations = ['ia', 'ie', 'io', 'iu', 'ua', 'ue', 'ui', 'uo'];
-  combinations.forEach((combo) => {
-    const matches = (processedWord.match(new RegExp(combo, 'g')) || []).length;
-    count -= matches; // Reduce count for vowel combinations
-  });
-
-  return count > 0 ? count : 1;
-}
-
-/**
- * Count syllables in French text
- */
-function countSyllablesFrench(word) {
-  const processedWord = word.toLowerCase().replace(/[^a-zàâäéèêëïîôöùûüÿç]/g, '');
-
-  if (processedWord.length <= 3) {
-    return 1;
-  }
-
-  // French vowels including accented ones
-  const vowels = 'aeiouyàâäéèêëïîôöùûüÿ';
-  let count = 0;
-  let previousWasVowel = false;
-
-  for (let i = 0; i < processedWord.length; i += 1) {
-    const isVowel = vowels.includes(processedWord[i]);
-    if (isVowel && !previousWasVowel) {
-      count += 1;
-    }
-    previousWasVowel = isVowel;
-  }
-
-  // French-specific rules
-  if (processedWord.endsWith('e') && count > 1) {
-    count -= 1; // Silent 'e' at end
-  }
-  if (processedWord.endsWith('es') && count > 1) {
-    count -= 1; // Silent 'es' at end
-  }
-
-  // Common French vowel combinations that form one syllable
-  const combinations = ['ai', 'au', 'eau', 'ei', 'eu', 'ou', 'oi'];
-  combinations.forEach((combo) => {
-    const matches = (processedWord.match(new RegExp(combo, 'g')) || []).length;
-    count -= matches;
-  });
-
-  return count > 0 ? count : 1;
-}
-
-/**
- * Count syllables in Dutch text
- */
-function countSyllablesDutch(word) {
-  const processedWord = word.toLowerCase().replace(/[^a-zàáâäèéêëìíîïòóôöùúûü]/g, '');
-
-  if (processedWord.length <= 3) {
-    return 1;
-  }
-
-  // Dutch vowels including accented ones
-  const vowels = 'aeiouàáâäèéêëìíîïòóôöùúûü';
-  let count = 0;
-  let previousWasVowel = false;
-
-  for (let i = 0; i < processedWord.length; i += 1) {
-    const isVowel = vowels.includes(processedWord[i]);
-    if (isVowel && !previousWasVowel) {
-      count += 1;
-    }
-    previousWasVowel = isVowel;
-  }
-
-  // Dutch-specific rules
-  if (processedWord.endsWith('e') && count > 1) {
-    count -= 1; // Silent 'e' at end
-  }
-
-  // Dutch diphthongs
-  const diphthongs = ['ai', 'au', 'ei', 'eu', 'ie', 'oe', 'ou', 'ui'];
-  diphthongs.forEach((diphthong) => {
-    const matches = (processedWord.match(new RegExp(diphthong, 'g')) || []).length;
-    count -= matches;
-  });
-
-  return count > 0 ? count : 1;
-}
-
-/**
- * Count syllables based on language
- */
-function countSyllables(word, language) {
-  switch (language.toLowerCase()) {
+  // Load only what you need; all MIT (package "hyphen")
+  let mod;
+  switch (key) {
     case 'german':
-      return countSyllablesGerman(word);
-    case 'spanish':
-      return countSyllablesSpanish(word);
-    case 'italian':
-      return countSyllablesItalian(word);
-    case 'french':
-      return countSyllablesFrench(word);
-    case 'dutch':
-      return countSyllablesDutch(word);
-    case 'english':
-    default:
-      return countSyllablesEnglish(word);
-  }
-}
-
-/**
- * Count sentences in text - works across languages
- */
-function countSentences(text, language) {
-  // Remove common abbreviations to avoid false positives
-  let processedText = text;
-
-  // Language-specific abbreviation patterns
-  switch (language.toLowerCase()) {
-    case 'german':
-      processedText = text.replace(/Dr\.|Prof\.|Herr|Frau|bzw\.|z\.B\.|u\.a\.|etc\./gi, '');
+      mod = await import('hyphen/de/index.js');
       break;
     case 'spanish':
-      processedText = text.replace(/Sr\.|Sra\.|Dr\.|Dra\.|etc\.|p\.ej\./gi, '');
+      mod = await import('hyphen/es/index.js');
       break;
     case 'italian':
-      processedText = text.replace(/Sig\.|Sig\.ra|Dr\.|Dott\.|Prof\.|ecc\./gi, '');
+      mod = await import('hyphen/it/index.js');
       break;
     case 'french':
-      processedText = text.replace(/M\.|Mme|Dr\.|Prof\.|etc\.|p\.ex\./gi, '');
+      mod = await import('hyphen/fr/index.js');
       break;
     case 'dutch':
-      processedText = text.replace(/Mr\.|Mw\.|Dr\.|Prof\.|etc\.|bijv\./gi, '');
+      mod = await import('hyphen/nl/index.js');
       break;
-    case 'english':
+    // english hyphenation is not used for syllables (we use syllableEn)
     default:
-      processedText = text.replace(/Mr\.|Mrs\.|Dr\.|Ph\.D\.|etc\.|i\.e\.|e\.g\./gi, '');
-      break;
+      mod = null;
   }
+  const hyphenate = mod?.hyphenate ?? null;
+  hyphenatorCache.set(key, hyphenate);
+  return hyphenate;
+}
 
-  // Count sentence terminators
-  const matches = processedText.match(/[.!?]+["\s)]*(\s|$)/g) || [];
-  return Math.max(matches.length, 1); // Ensure at least 1 sentence
+// --- Tokenization (streaming, locale-aware) ---
+function* iterateWords(text, locale) {
+  const s = typeof Intl?.Segmenter === 'function'
+    ? new Intl.Segmenter(locale, { granularity: 'word' }).segment(text)
+    : null;
+
+  if (s) {
+    for (const seg of s) {
+      const w = seg.segment;
+      // keep inner apostrophes/dashes; drop other punctuation
+      const cleaned = w.normalize('NFKC').replace(/[^\p{L}\p{M}\p{N}''-]/gu, '');
+      if (cleaned && /[\p{L}\p{N}]/u.test(cleaned)) yield cleaned;
+    }
+  } else {
+    // conservative fallback
+    for (const w of text.split(/\s+/)) {
+      const cleaned = w.normalize('NFKC').replace(/[^\p{L}\p{M}\p{N}''-]/gu, '');
+      if (cleaned && /[\p{L}\p{N}]/u.test(cleaned)) yield cleaned;
+    }
+  }
+}
+
+function countSentences(text, locale) {
+  if (typeof Intl?.Segmenter === 'function') {
+    const seg = new Intl.Segmenter(locale, { granularity: 'sentence' }).segment(text);
+    let n = 0;
+    for (const it of seg) {
+      if (/[\p{L}\p{N}]/u.test(it.segment)) n += 1;
+    }
+    return Math.max(n, 1);
+  }
+  // Conservative fallback; avoid aggressive abbreviation stripping
+  const matches = text.match(/(?<!\b[A-Z])[.!?]+(?=\s|$)/g) || [];
+  return Math.max(matches.length, 1);
+}
+
+// --- Syllable counting (adapter) ---
+/** cheap memo for per-run caching */
+function makeWordCache(limit = 2000) {
+  const m = new Map();
+  return {
+    get(k) { return m.get(k); },
+    set(k, v) {
+      if (m.size >= limit) { // cheap FIFO-ish eviction
+        const first = m.keys().next().value;
+        m.delete(first);
+      }
+      m.set(k, v);
+    },
+  };
+}
+
+const defaultComplexThreshold = 3;
+
+/**
+ * Count syllables for a single word in a given language.
+ * EN uses "syllable"; others use hyphenation splits as proxy.
+ */
+async function countSyllablesWord(word, language) {
+  const lang = language.toLowerCase();
+  if (lang === 'english') {
+    return Math.max(1, syllableEn(word));
+  }
+  const hyphenate = await getHyphenator(lang);
+  if (!hyphenate) {
+    // generic Unicode vowel group fallback
+    const m = word.toLowerCase().match(/[aeiouyà-ɏ]+/giu);
+    return Math.max(1, m ? m.length : 1);
+  }
+  // Preserve inner apostrophes/dashes, remove other junk
+  const cleaned = word.replace(/[^\p{L}\p{M}''-]/gu, '');
+  const parts = hyphenate(cleaned);
+  return Math.max(1, Array.isArray(parts) ? parts.length : 1);
+}
+
+// --- Public API ---
+export function isSupportedLanguage(codeOrName = '') {
+  if (!codeOrName || typeof codeOrName !== 'string') {
+    return false;
+  }
+  const v = codeOrName.toLowerCase();
+  return Object.keys(SUPPORTED_LANGUAGES).includes(v)
+         || Object.values(SUPPORTED_LANGUAGES).includes(v);
+}
+
+export function getLanguageName(francCode) {
+  return SUPPORTED_LANGUAGES[francCode] || 'unknown';
 }
 
 /**
- * Process text and extract metrics
+ * Analyze text and return metrics + score.
+ * Options:
+ * - complexThreshold: number of syllables to qualify as complex (default 3)
  */
-function processText(text, language) {
-  // Count sentences
-  const sentenceCount = countSentences(text, language);
+export async function analyzeReadability(text, language, opts = {}) {
+  const lang = (language || 'english').toLowerCase();
+  const locale = NAME_TO_LOCALE[lang] || 'en';
+  const complexThreshold = opts.complexThreshold ?? defaultComplexThreshold;
 
-  // Count words - split by whitespace and filter valid words
-  const words = text.split(/\s+/).filter((w) => w.match(/[\w\u00C0-\u017F\u0100-\u024F]/));
-  const wordCount = words.length;
+  if (!text?.trim()) {
+    return {
+      sentences: 0, words: 0, syllables: 0, complexWords: 0, score: 100,
+    };
+  }
 
-  // Count syllables
+  const sentenceCount = countSentences(text, locale);
+
+  const cache = makeWordCache();
+  let wordCount = 0;
   let syllableCount = 0;
-  let complexWords = 0; // Words with 3+ syllables
+  let complexWords = 0;
 
-  words.forEach((word) => {
-    const syllables = countSyllables(word, language);
-    syllableCount += syllables;
-    if (syllables >= 3) {
-      complexWords += 1;
+  for (const w of iterateWords(text, locale)) {
+    wordCount += 1;
+    const key = `${lang}:${w}`;
+    let s = cache.get(key);
+    if (s == null) {
+      // eslint-disable-next-line no-await-in-loop
+      s = await countSyllablesWord(w, lang);
+      cache.set(key, s);
     }
-  });
+    syllableCount += s;
+    if (s >= complexThreshold) complexWords += 1;
+  }
+
+  const wordsPerSentence = wordCount > 0 ? wordCount / sentenceCount : 0;
+  const syllablesPerWord = wordCount > 0 ? syllableCount / wordCount : 0;
+  const syllablesPer100Words = syllablesPerWord * 100;
+
+  let score;
+  switch (lang) {
+    case 'german':
+      score = 180 - wordsPerSentence - 58.5 * syllablesPerWord;
+      break;
+    case 'spanish':
+      score = 206.84 - 1.02 * wordsPerSentence - 0.60 * syllablesPer100Words;
+      break;
+    case 'italian':
+      score = 217 - 1.3 * wordsPerSentence - 0.6 * syllablesPer100Words;
+      break;
+    case 'french':
+      score = 207 - 1.015 * wordsPerSentence - 73.6 * syllablesPerWord;
+      break;
+    case 'dutch':
+      score = 206.84 - 0.77 * syllablesPer100Words - 0.93 * wordsPerSentence;
+      break;
+    case 'english':
+    default:
+      score = 206.835 - 1.015 * wordsPerSentence - 84.6 * syllablesPerWord;
+  }
 
   return {
     sentences: sentenceCount,
     words: wordCount,
     syllables: syllableCount,
     complexWords,
+    score: clamp(score),
   };
 }
 
-/**
- * Calculate language-specific Flesch reading ease score
- * Note: For English text, use the text-readability library instead as it has
- * better exception handling and English-specific rules
- */
-export function calculateReadabilityScore(text, language) {
-  if (!text || text.trim().length === 0) {
-    return 100; // Default to easiest score for empty text
-  }
-
-  // For English, the text-readability library should be used instead
-  // This function is optimized for non-English languages
-
-  const metrics = processText(text, language);
-
-  if (metrics.words === 0 || metrics.sentences === 0) {
-    return 100; // Default to easiest score if insufficient content
-  }
-
-  const wordsPerSentence = metrics.words / metrics.sentences;
-  const syllablesPerWord = metrics.syllables / metrics.words;
-  const syllablesPer100Words = syllablesPerWord * 100;
-
-  let score;
-
-  // Calculate score using language-specific formulas
-  switch (language.toLowerCase()) {
-    case 'german':
-      // German: 180 - (words/sentences) - 58.5 * (syllables/words)
-      score = 180 - wordsPerSentence - 58.5 * syllablesPerWord;
-      break;
-    case 'spanish':
-      // Spanish: 206.84 - 1.02 * (words/sentences) - 0.60 * (syllables per 100 words)
-      score = 206.84 - 1.02 * wordsPerSentence - 0.60 * syllablesPer100Words;
-      break;
-    case 'italian':
-      // Italian: 217 - 1.3 * (words/sentences) - 0.6 * (syllables per 100 words)
-      score = 217 - 1.3 * wordsPerSentence - 0.6 * syllablesPer100Words;
-      break;
-    case 'french':
-      // French: 207 - 1.015 * (words/sentences) - 73.6 * (syllables/words)
-      score = 207 - 1.015 * wordsPerSentence - 73.6 * syllablesPerWord;
-      break;
-    case 'dutch':
-      // Dutch: 206.84 - 0.77 * (syllables per 100 words) - 0.93 * (words/sentences)
-      score = 206.84 - 0.77 * syllablesPer100Words - 0.93 * wordsPerSentence;
-      break;
-    case 'english':
-    default:
-      // English: 206.835 - 1.015 * (words/sentences) - 84.6 * (syllables/words)
-      score = 206.835 - 1.015 * wordsPerSentence - 84.6 * syllablesPerWord;
-      break;
-  }
-
-  // Ensure score is within 0-100 range
-  return Math.max(0, Math.min(100, score));
+/** Backwards compatibility with your previous naming */
+export async function calculateReadabilityScore(text, language) {
+  const r = await analyzeReadability(text, language);
+  return r.score;
 }
 
-/**
- * Get the target readability score for a language
- * Note: This function is deprecated. Use a consistent target score across all languages
- * since the language-specific formulas already account for differences.
- */
+/** Kept for compatibility */
 export function getTargetScore() {
-  // Deprecated: Use consistent target across languages
-  // The language-specific formulas already account for baseline differences
   return 30;
-}
-
-/**
- * Check if a language is supported by this module
- */
-export function isSupportedLanguage(languageCode) {
-  return Object.keys(SUPPORTED_LANGUAGES).includes(languageCode)
-         || Object.values(SUPPORTED_LANGUAGES).includes(languageCode.toLowerCase());
-}
-
-/**
- * Convert franc language code to readable language name
- */
-export function getLanguageName(francCode) {
-  return SUPPORTED_LANGUAGES[francCode] || 'unknown';
 }
