@@ -1,3 +1,10 @@
+## [1.177.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.5...v1.177.6) (2025-09-10)
+
+
+### Bug Fixes
+
+* [preflight] updating lorem-ipsum check name ([#1242](https://github.com/adobe/spacecat-audit-worker/issues/1242)) ([fb046ed](https://github.com/adobe/spacecat-audit-worker/commit/fb046ed711500e94f9ba94ccd02419267dd5aeca))
+
 ## [1.177.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.4...v1.177.5) (2025-09-10)
 
 
