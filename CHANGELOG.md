@@ -1,3 +1,10 @@
+## [1.177.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.4...v1.177.5) (2025-09-10)
+
+
+### Bug Fixes
+
+* incorporating forms quality agent in forms a11y oppties ([#1169](https://github.com/adobe/spacecat-audit-worker/issues/1169)) ([42fe8d2](https://github.com/adobe/spacecat-audit-worker/commit/42fe8d2017185b00b125599e67c56ce882ed4659))
+
 ## [1.177.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.3...v1.177.4) (2025-09-09)
 
 
