@@ -71,7 +71,8 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
       opportunity.setAuditId(auditData.id);
       if (auditType === Audit.AUDIT_TYPES.CWV
           || auditType === Audit.AUDIT_TYPES.META_TAGS
-          || auditType === Audit.AUDIT_TYPES.SECURITY_CSP) {
+          || auditType === Audit.AUDIT_TYPES.SECURITY_CSP
+          || auditType === 'security-vulnerabilities') { // TODO: Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES
         opportunity.setData({
           ...opportunity.getData(),
           ...props, // kpiDeltas
