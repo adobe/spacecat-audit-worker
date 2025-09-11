@@ -12,696 +12,581 @@
 
 /* eslint-env mocha */
 
-import { expect, use } from 'chai';
-import sinonChai from 'sinon-chai';
+import { expect } from 'chai';
 import sinon from 'sinon';
 import esmock from 'esmock';
 
-use(sinonChai);
-
 describe('Guidance Readability Handler Tests', () => {
-  let guidanceHandler;
-  let mockDataAccess;
+  let handler;
+  let mockContext;
   let mockSite;
   let mockAsyncJob;
-  let mockOpportunity;
-  let mockSuggestion;
-  let mockAddReadabilitySuggestions;
-  let log;
-  let context;
+  let mockAsyncJobEntity;
+  let mockDataAccess;
+  let logStub;
 
-  // One-time module mocking to avoid timeout issues
-  before(async function () {
-    // Increase timeout for module mocking operations
+  before(async function setupMocks() {
     this.timeout(5000);
 
-    // Mock the addReadabilitySuggestions function
-    mockAddReadabilitySuggestions = sinon.stub();
-
-    // Mock the module once
-    guidanceHandler = await esmock(
-      '../../../src/readability/guidance-readability-handler.js',
-      {},
-      {
-        '../../../src/readability/opportunity-handler.js': {
-          addReadabilitySuggestions: mockAddReadabilitySuggestions,
-        },
-        '@adobe/spacecat-shared-http-utils': {
-          ok: () => ({ statusCode: 200, body: 'OK' }),
-          notFound: (message) => ({ statusCode: 404, body: message }),
+    // Mock the handler with dependencies
+    handler = await esmock('../../../src/readability/guidance-readability-handler.js', {
+      '@adobe/spacecat-shared-http-utils': {
+        ok: sinon.stub().returns({ ok: true }),
+        notFound: sinon.stub().returns({ notFound: true }),
+      },
+      '@adobe/spacecat-shared-data-access': {
+        AsyncJob: {
+          Status: {
+            COMPLETED: 'COMPLETED',
+            IN_PROGRESS: 'IN_PROGRESS',
+          },
         },
       },
-    );
-
-    guidanceHandler = guidanceHandler.default;
+    });
   });
 
   beforeEach(() => {
-    // Setup mocks (reset for each test)
-    log = {
+    logStub = {
       info: sinon.stub(),
-      warn: sinon.stub(),
       error: sinon.stub(),
+      warn: sinon.stub(),
       debug: sinon.stub(),
     };
 
     mockSite = {
-      getId: () => 'test-site-id',
-      getBaseURL: () => 'https://test-site.com',
+      getId: sinon.stub().returns('test-site-id'),
+      getBaseURL: sinon.stub().returns('https://example.com'),
     };
 
     mockAsyncJob = {
-      getId: () => 'test-job-id',
-      getStatus: () => 'running',
+      getId: sinon.stub().returns('test-job-id'),
+      getStatus: sinon.stub().returns('IN_PROGRESS'),
+      getMetadata: sinon.stub(),
+      setMetadata: sinon.stub(),
       getResult: sinon.stub(),
       setResult: sinon.stub(),
       setStatus: sinon.stub(),
       setEndedAt: sinon.stub(),
-      save: sinon.stub(),
+      save: sinon.stub().resolves(),
     };
 
-    mockOpportunity = {
-      getId: () => 'test-opportunity-id',
-      getAuditId: () => 'test-job-id',
-      getData: sinon.stub(),
-      setAuditId: sinon.stub(),
-      setData: sinon.stub(),
-      setUpdatedBy: sinon.stub(),
-      save: sinon.stub(),
-      getSuggestions: sinon.stub(),
-    };
-
-    mockSuggestion = {
-      getData: sinon.stub(),
+    mockAsyncJobEntity = {
+      findById: sinon.stub().resolves(mockAsyncJob),
     };
 
     mockDataAccess = {
       Site: {
-        findById: sinon.stub(),
+        findById: sinon.stub().resolves(mockSite),
       },
-      AsyncJob: {
-        findById: sinon.stub(),
-      },
-      Opportunity: {
-        allBySiteId: sinon.stub(),
-      },
+      AsyncJob: mockAsyncJobEntity,
     };
 
-    context = {
-      log,
+    mockContext = {
+      log: logStub,
       dataAccess: mockDataAccess,
     };
-
-    // Reset the stub for each test
-    mockAddReadabilitySuggestions.reset();
   });
 
   afterEach(() => {
     sinon.restore();
   });
 
-  describe('Handler function', () => {
-    const baseMessage = {
-      auditId: 'test-job-id',
-      siteId: 'test-site-id',
-      id: 'message-123',
-      data: {},
-    };
-
-    it('should return 404 when site is not found', async () => {
+  describe('Input Validation', () => {
+    it('should return notFound when site is not found', async () => {
       mockDataAccess.Site.findById.resolves(null);
 
-      const result = await guidanceHandler(baseMessage, context);
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'non-existent-site',
+        data: {},
+        id: 'message-id',
+      };
 
-      expect(result.statusCode).to.equal(404);
-      expect(result.body).to.contain('Site not found');
-      expect(log.error).to.have.been.calledWithMatch('Site not found for siteId: test-site-id');
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ notFound: true });
+      expect(logStub.error).to.have.been.calledWithMatch('Site not found for siteId');
     });
 
-    it('should return 404 when AsyncJob is not found', async () => {
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(null);
+    it('should return notFound when AsyncJob is not found', async () => {
+      mockAsyncJobEntity.findById.resolves(null);
 
-      const result = await guidanceHandler(baseMessage, context);
+      const message = {
+        auditId: 'non-existent-job',
+        siteId: 'test-site-id',
+        data: {},
+        id: 'message-id',
+      };
 
-      expect(result.statusCode).to.equal(404);
-      expect(result.body).to.contain('AsyncJob not found');
-      expect(log.error).to.have.been.calledWithMatch('AsyncJob not found for auditId: test-job-id');
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ notFound: true });
+      expect(logStub.error).to.have.been.calledWithMatch('AsyncJob not found for auditId');
     });
 
-    it('should throw error when opportunity fetch fails', async () => {
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-      mockDataAccess.Opportunity.allBySiteId.rejects(new Error('Database error'));
+    it('should throw error when no readability metadata is found', async () => {
+      mockAsyncJob.getMetadata.returns({});
 
-      await expect(guidanceHandler(baseMessage, context))
-        .to.be.rejectedWith('Failed to fetch opportunities for siteId test-site-id: Database error');
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {},
+        id: 'message-id',
+      };
 
-      expect(log.error).to.have.been.calledWithMatch('Fetching opportunities for siteId test-site-id failed');
+      try {
+        await handler.default(message, mockContext);
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.include('No readability metadata found in job');
+      }
     });
 
-    it('should throw error when no readability opportunity exists', async () => {
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-      mockDataAccess.Opportunity.allBySiteId.resolves([]);
-
-      await expect(guidanceHandler(baseMessage, context))
-        .to.be.rejectedWith('No existing opportunity found for siteId test-site-id');
-
-      expect(log.error).to.have.been.calledWithMatch('No existing opportunity found for siteId test-site-id');
-    });
-
-    it('should skip processing if suggestion already processed', async () => {
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: ['message-123'],
+    it('should throw error when readability metadata has no originalOrderMapping', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            mystiqueResponsesExpected: 2,
+          },
+        },
       });
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
 
-      const result = await guidanceHandler(baseMessage, context);
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {},
+        id: 'message-id',
+      };
 
-      expect(result.statusCode).to.equal(200);
-      expect(log.info).to.have.been.calledWithMatch('Suggestions with id message-123 already processed');
-      expect(mockAddReadabilitySuggestions).not.to.have.been.called;
+      try {
+        await handler.default(message, mockContext);
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.include('No readability metadata found in job');
+      }
+    });
+  });
+
+  describe('Duplicate Processing Prevention', () => {
+    it('should skip processing when message ID is already processed', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'test' }],
+            processedSuggestionIds: ['duplicate-message-id'],
+          },
+        },
+      });
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {},
+        id: 'duplicate-message-id',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.info).to.have.been.calledWithMatch('already processed. Skipping processing');
+    });
+  });
+
+  describe('Mystique Response Format Processing', () => {
+    beforeEach(() => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'test' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+          },
+        },
+      });
     });
 
     it('should process direct improved paragraph data format', async () => {
-      const messageWithDirectData = {
-        ...baseMessage,
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
         data: {
-          improved_paragraph: 'Improved text here',
-          improved_flesch_score: 75,
-          original_paragraph: 'Original complex text',
-          current_flesch_score: 25,
-          pageUrl: 'https://test-site.com/page1',
-          seo_recommendation: 'Use simpler words',
-          ai_rationale: 'Text was too complex',
-          target_flesch_score: 70,
+          improved_paragraph: 'Improved text here.',
+          improved_flesch_score: 85.5,
+          original_paragraph: 'Original complex text.',
+          current_flesch_score: 25.3,
+          seo_recommendation: 'Simplify language',
+          ai_rationale: 'Use shorter sentences',
+          target_flesch_score: 60,
+          pageUrl: 'https://example.com/page1',
         },
+        id: 'message-id-1',
       };
 
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
+      const result = await handler.default(message, mockContext);
 
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 0,
-        mystiqueResponsesExpected: 1,
-      });
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result = await guidanceHandler(messageWithDirectData, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(mockOpportunity.setData).to.have.been.calledOnce;
-      expect(mockOpportunity.save).to.have.been.calledOnce;
-      expect(mockAddReadabilitySuggestions).to.have.been.calledOnce;
-
-      // Verify the mapped suggestion structure
-      const addSuggestionsCall = mockAddReadabilitySuggestions.firstCall.args[0];
-      expect(addSuggestionsCall.newSuggestionDTOs).to.have.lengthOf(1);
-      expect(addSuggestionsCall.newSuggestionDTOs[0].data.recommendations[0]).to.deep.include({
-        id: 'readability-test-job-id-message-123',
-        pageUrl: 'https://test-site.com/page1',
-        originalText: 'Original complex text',
-        improvedText: 'Improved text here',
-        originalFleschScore: 25,
-        improvedFleschScore: 75,
-        seoRecommendation: 'Use simpler words',
-        aiRationale: 'Text was too complex',
-        targetFleschScore: 70,
-      });
+      expect(result).to.deep.equal({ ok: true });
+      expect(mockAsyncJob.setMetadata).to.have.been.called;
+      expect(logStub.info).to.have.been.calledWithMatch('Successfully processed 1 suggestions');
     });
 
     it('should process suggestions array format', async () => {
-      const messageWithSuggestions = {
-        ...baseMessage,
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
         data: {
           suggestions: [
             {
-              pageUrl: 'https://test-site.com/page1',
-              original_paragraph: 'First complex text',
-              improved_paragraph: 'First improved text',
+              pageUrl: 'https://example.com/page1',
+              original_paragraph: 'Original text 1',
+              improved_paragraph: 'Improved text 1',
               current_flesch_score: 20,
               improved_flesch_score: 80,
               seo_recommendation: 'Simplify',
-              ai_rationale: 'Too complex',
-              target_flesch_score: 70,
+              ai_rationale: 'Use simpler words',
+              target_flesch_score: 60,
             },
             {
-              pageUrl: 'https://test-site.com/page2',
-              original_paragraph: 'Second complex text',
-              improved_paragraph: 'Second improved text',
+              pageUrl: 'https://example.com/page2',
+              original_paragraph: 'Original text 2',
+              improved_paragraph: 'Improved text 2',
               current_flesch_score: 15,
-              improved_flesch_score: 85,
-              seo_recommendation: 'Use shorter sentences',
-              ai_rationale: 'Sentences too long',
-              target_flesch_score: 70,
+              improved_flesch_score: 75,
+              seo_recommendation: 'Shorten sentences',
+              ai_rationale: 'Break up long sentences',
+              target_flesch_score: 60,
             },
           ],
         },
+        id: 'message-id-2',
       };
 
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
+      const result = await handler.default(message, mockContext);
 
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 0,
-        mystiqueResponsesExpected: 1,
-      });
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result = await guidanceHandler(messageWithSuggestions, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(mockAddReadabilitySuggestions).to.have.been.calledOnce;
-
-      // Verify mapped suggestions
-      const addSuggestionsCall = mockAddReadabilitySuggestions.firstCall.args[0];
-      expect(addSuggestionsCall.newSuggestionDTOs).to.have.lengthOf(2);
-      expect(addSuggestionsCall.newSuggestionDTOs[0].data.recommendations[0]).to.deep.include({
-        pageUrl: 'https://test-site.com/page1',
-        originalText: 'First complex text',
-        improvedText: 'First improved text',
-      });
-      expect(addSuggestionsCall.newSuggestionDTOs[1].data.recommendations[0]).to.deep.include({
-        pageUrl: 'https://test-site.com/page2',
-        originalText: 'Second complex text',
-        improvedText: 'Second improved text',
-      });
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.info).to.have.been.calledWithMatch('Successfully processed 2 suggestions');
     });
 
     it('should process guidance array format', async () => {
-      const messageWithGuidance = {
-        ...baseMessage,
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
         data: {
           guidance: [
             {
-              pageUrl: 'https://test-site.com/page1',
+              pageUrl: 'https://example.com/page1',
               original_paragraph: 'Guidance text',
-              improved_paragraph: 'Improved guidance text',
+              improved_paragraph: 'Improved guidance',
               current_flesch_score: 30,
               improved_flesch_score: 70,
-              seo_recommendation: 'Improve readability',
-              ai_rationale: 'Text needs improvement',
-              target_flesch_score: 65,
+              seo_recommendation: 'Use clearer language',
+              ai_rationale: 'Make more accessible',
+              target_flesch_score: 60,
             },
           ],
         },
+        id: 'message-id-3',
       };
 
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
+      const result = await handler.default(message, mockContext);
 
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 0,
-        mystiqueResponsesExpected: 1,
-      });
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result = await guidanceHandler(messageWithGuidance, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(mockAddReadabilitySuggestions).to.have.been.calledOnce;
-
-      const addSuggestionsCall = mockAddReadabilitySuggestions.firstCall.args[0];
-      expect(addSuggestionsCall.newSuggestionDTOs).to.have.lengthOf(1);
-      expect(addSuggestionsCall.newSuggestionDTOs[0].data.recommendations[0]).to.deep.include({
-        originalText: 'Guidance text',
-        improvedText: 'Improved guidance text',
-      });
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.info).to.have.been.calledWithMatch('Successfully processed 1 suggestions');
     });
 
-    it('should return ok when no valid suggestions found', async () => {
-      const messageWithNoSuggestions = {
-        ...baseMessage,
+    it('should handle empty or invalid suggestions gracefully', async () => {
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
         data: {
-          // No valid suggestion format
-          someOtherData: 'value',
+          invalid_field: 'no valid suggestions here',
         },
+        id: 'message-id-4',
       };
 
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
+      const result = await handler.default(message, mockContext);
 
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-      });
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-
-      const result = await guidanceHandler(messageWithNoSuggestions, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(log.warn).to.have.been.calledWithMatch('No valid readability improvements found');
-      expect(mockAddReadabilitySuggestions).not.to.have.been.called;
-    });
-
-    it('should handle opportunity update errors', async () => {
-      const messageWithDirectData = {
-        ...baseMessage,
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 75,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-      });
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockOpportunity.save.rejects(new Error('Save failed'));
-
-      await expect(guidanceHandler(messageWithDirectData, context))
-        .to.be.rejectedWith('Failed to update opportunity for siteId test-site-id: Save failed');
-
-      expect(log.error).to.have.been.calledWithMatch('Updating opportunity for siteId test-site-id failed');
-    });
-
-    it('should handle opportunity with null getData()', async () => {
-      const messageWithDirectData = {
-        ...baseMessage,
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 75,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-
-      // Mock opportunity to return valid data first (for finding), then null (for testing fallback)
-      mockOpportunity.getData
-        .onFirstCall().returns({ subType: 'readability' }) // For finding the opportunity
-        .onSecondCall().returns(null); // For triggering the fallback
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result = await guidanceHandler(messageWithDirectData, context);
-
-      expect(result.statusCode).to.equal(200);
-
-      // Verify opportunity data was set with default values
-      const updatedData = mockOpportunity.setData.firstCall.args[0];
-      expect(updatedData).to.include({
-        mystiqueResponsesReceived: 1, // 0 + 1
-        mystiqueResponsesExpected: 0, // Default from || 0
-        totalReadabilityIssues: 1,
-      });
-      expect(updatedData.processedSuggestionIds).to.include('message-123');
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.warn).to.have.been.calledWithMatch('No valid readability improvements found');
     });
   });
 
-  describe('mapMystiqueSuggestionsToOpportunityFormat function', () => {
-    it('should correctly map Mystique suggestions to opportunity format', async () => {
-      const messageWithSuggestions = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          suggestions: [
-            {
-              pageUrl: 'https://test-site.com/page1',
-              original_paragraph: 'Complex text here',
-              improved_paragraph: 'Simple text here',
-              current_flesch_score: 25,
-              improved_flesch_score: 75,
-              seo_recommendation: 'Use shorter sentences',
-              ai_rationale: 'Original text was too complex',
-              target_flesch_score: 70,
-            },
-          ],
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-      });
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      await guidanceHandler(messageWithSuggestions, context);
-
-      expect(mockAddReadabilitySuggestions).to.have.been.calledOnce;
-      const addSuggestionsCall = mockAddReadabilitySuggestions.firstCall.args[0];
-      const mappedSuggestion = addSuggestionsCall.newSuggestionDTOs[0].data.recommendations[0];
-
-      // Verify mapping creates correct ID
-      expect(mappedSuggestion.id).to.equal('readability-https://test-site.com/page1-0');
-      expect(mappedSuggestion.pageUrl).to.equal('https://test-site.com/page1');
-      expect(mappedSuggestion.originalText).to.equal('Complex text here');
-      expect(mappedSuggestion.improvedText).to.equal('Simple text here');
-      expect(mappedSuggestion.originalFleschScore).to.equal(25);
-      expect(mappedSuggestion.improvedFleschScore).to.equal(75);
-      expect(mappedSuggestion.seoRecommendation).to.equal('Use shorter sentences');
-      expect(mappedSuggestion.aiRationale).to.equal('Original text was too complex');
-      expect(mappedSuggestion.targetFleschScore).to.equal(70);
-    });
-
-    it('should handle suggestions with missing pageUrl', async () => {
-      const messageWithSuggestions = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          suggestions: [
-            {
-              // No pageUrl provided
-              original_paragraph: 'Text without URL',
-              improved_paragraph: 'Improved text without URL',
-              current_flesch_score: 30,
-              improved_flesch_score: 80,
-            },
-          ],
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-      });
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      await guidanceHandler(messageWithSuggestions, context);
-
-      const addSuggestionsCall = mockAddReadabilitySuggestions.firstCall.args[0];
-      const mappedSuggestion = addSuggestionsCall.newSuggestionDTOs[0].data.recommendations[0];
-
-      // Should use 'unknown' when pageUrl is missing
-      expect(mappedSuggestion.id).to.equal('readability-unknown-0');
-      expect(mappedSuggestion.pageUrl).to.be.undefined;
-    });
-
-    it('should handle multiple suggestions with correct indexing', async () => {
-      const messageWithMultipleSuggestions = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          suggestions: [
-            { pageUrl: 'https://test-site.com/page1', original_paragraph: 'Text 1' },
-            { pageUrl: 'https://test-site.com/page2', original_paragraph: 'Text 2' },
-            { pageUrl: 'https://test-site.com/page3', original_paragraph: 'Text 3' },
-          ],
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-      });
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      await guidanceHandler(messageWithMultipleSuggestions, context);
-
-      const addSuggestionsCall = mockAddReadabilitySuggestions.firstCall.args[0];
-      expect(addSuggestionsCall.newSuggestionDTOs).to.have.lengthOf(3);
-
-      // Verify correct indexing in IDs
-      expect(addSuggestionsCall.newSuggestionDTOs[0].data.recommendations[0].id)
-        .to.equal('readability-https://test-site.com/page1-0');
-      expect(addSuggestionsCall.newSuggestionDTOs[1].data.recommendations[0].id)
-        .to.equal('readability-https://test-site.com/page2-1');
-      expect(addSuggestionsCall.newSuggestionDTOs[2].data.recommendations[0].id)
-        .to.equal('readability-https://test-site.com/page3-2');
-    });
-  });
-
-  describe('AsyncJob completion logic', () => {
-    const baseMessage = {
-      auditId: 'test-job-id',
-      siteId: 'test-site-id',
-      id: 'message-123',
-      data: {
-        improved_paragraph: 'Improved text',
-        improved_flesch_score: 75,
-        original_paragraph: 'Original text',
-        current_flesch_score: 25,
-      },
-    };
-
+  describe('Job Metadata Updates', () => {
     beforeEach(() => {
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'test' }],
+            mystiqueResponsesExpected: 2,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+            processedSuggestionIds: [],
+          },
+        },
+      });
     });
 
-    it('should complete AsyncJob when all Mystique responses received', async () => {
-      // Setup: This is the final response (2/2)
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1, // Will become 2 after increment
-        mystiqueResponsesExpected: 2,
+    it('should update job metadata successfully', async () => {
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+          original_paragraph: 'Original text',
+          current_flesch_score: 20,
+        },
+        id: 'message-id-5',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(mockAsyncJob.setMetadata).to.have.been.called;
+      expect(mockAsyncJob.save).to.have.been.called;
+
+      const setMetadataCall = mockAsyncJob.setMetadata.getCall(0);
+      const updatedMetadata = setMetadataCall.args[0];
+      expect(updatedMetadata.payload.readabilityMetadata.mystiqueResponsesReceived).to.equal(1);
+      expect(updatedMetadata.payload.readabilityMetadata.processedSuggestionIds).to.include('message-id-5');
+      expect(updatedMetadata.payload.readabilityMetadata.suggestions).to.have.lengthOf(1);
+    });
+
+    it('should handle job metadata update failures', async () => {
+      mockAsyncJob.save.rejects(new Error('Database error'));
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'message-id-6',
+      };
+
+      try {
+        await handler.default(message, mockContext);
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.include('Failed to update job metadata');
+        expect(logStub.error).to.have.been.calledWithMatch('Updating job metadata for job');
+      }
+    });
+  });
+
+  describe('All Responses Received Logic', () => {
+    it('should complete AsyncJob when all responses are received', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [
+              { originalIndex: 0, textContent: 'Text 1' },
+              { originalIndex: 1, textContent: 'Text 2' },
+            ],
+            mystiqueResponsesExpected: 2,
+            mystiqueResponsesReceived: 1, // This will become 2 after processing
+            suggestions: [
+              {
+                id: 'suggestion-1',
+                originalText: 'Text 1',
+                improvedText: 'Improved Text 1',
+                originalFleschScore: 20,
+                improvedFleschScore: 80,
+                aiRationale: 'Simplified language',
+              },
+            ],
+          },
+        },
       });
 
-      // Mock AsyncJob result with readability audit
-      const mockJobResult = [
+      mockAsyncJob.getResult.returns([
         {
           audits: [
             {
               name: 'readability',
               opportunities: [
                 {
+                  textContent: 'Text 1',
+                  fleschReadingEase: 20,
                   check: 'poor-readability',
-                  textContent: 'Original text',
-                  fleschReadingEase: 25,
+                },
+                {
+                  textContent: 'Text 2',
+                  fleschReadingEase: 15,
+                  check: 'poor-readability',
                 },
               ],
             },
           ],
         },
-      ];
-      mockAsyncJob.getResult.returns(mockJobResult);
+      ]);
 
-      // Mock suggestion data
-      mockSuggestion.getData.returns({
-        recommendations: [
-          {
-            originalText: 'Original text',
-            improvedText: 'Improved text',
-            originalFleschScore: 25,
-            improvedFleschScore: 75,
-            aiRationale: 'Much better readability',
-          },
-        ],
-      });
-      mockOpportunity.getSuggestions.resolves([mockSuggestion]);
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
 
-      const result = await guidanceHandler(baseMessage, context);
+      // Mock fresh job reload
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
 
-      expect(result.statusCode).to.equal(200);
-      expect(log.info).to.have.been.calledWithMatch('All 2 Mystique responses received');
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved Text 2',
+          improved_flesch_score: 85,
+          original_paragraph: 'Text 2',
+          current_flesch_score: 15,
+          ai_rationale: 'Made clearer',
+        },
+        id: 'final-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(mockAsyncJob.setResult).to.have.been.called;
       expect(mockAsyncJob.setStatus).to.have.been.calledWith('COMPLETED');
       expect(mockAsyncJob.setEndedAt).to.have.been.called;
-      expect(mockAsyncJob.setResult).to.have.been.called;
-      expect(mockAsyncJob.save).to.have.been.called;
-
-      // Verify the opportunity was updated with suggestion data
-      const updatedResult = mockAsyncJob.setResult.firstCall.args[0];
-      const readabilityAudit = updatedResult[0].audits.find((audit) => audit.name === 'readability');
-      expect(readabilityAudit.opportunities[0]).to.include({
-        suggestionStatus: 'completed',
-        improvedFleschScore: 75,
-        aiSuggestion: 'Improved text',
-        aiRationale: 'Much better readability',
-      });
+      expect(logStub.info).to.have.been.calledWithMatch('All 2 Mystique responses received');
     });
 
-    it('should handle AsyncJob with empty opportunities (reconstruction scenario)', async () => {
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1, // Will become 2 after increment
-        mystiqueResponsesExpected: 2,
+    it('should handle race condition when job is already completed', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Text 1' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0, // This will become 1 after processing
+            suggestions: [],
+          },
+        },
       });
 
-      // Mock AsyncJob result with empty opportunities (cleared during async processing)
-      const mockJobResult = [
+      mockAsyncJob.getResult.returns([
         {
           audits: [
             {
               name: 'readability',
-              opportunities: [], // Empty - needs reconstruction
+              opportunities: [
+                {
+                  textContent: 'Text 1',
+                  fleschReadingEase: 20,
+                },
+              ],
             },
           ],
         },
-      ];
-      mockAsyncJob.getResult.returns(mockJobResult);
+      ]);
 
-      // Mock suggestion data for reconstruction
-      mockSuggestion.getData.returns({
-        recommendations: [
-          {
-            originalText: 'Original text from suggestion',
-            improvedText: 'Improved text from suggestion',
-            originalFleschScore: 30,
-            improvedFleschScore: 80,
-            aiRationale: 'Reconstructed rationale',
-          },
-        ],
-      });
-      mockOpportunity.getSuggestions.resolves([mockSuggestion]);
+      // Simulate race condition - job is already COMPLETED
+      mockAsyncJob.getStatus.returns('COMPLETED');
 
-      const result = await guidanceHandler(baseMessage, context);
+      // Fresh job is also COMPLETED
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('COMPLETED');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
 
-      expect(result.statusCode).to.equal(200);
-      expect(log.info).to.have.been.calledWithMatch('Reconstructing opportunities from 1 stored suggestions');
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved Text',
+          improved_flesch_score: 80,
+          original_paragraph: 'Text 1',
+          current_flesch_score: 20,
+        },
+        id: 'race-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
       expect(mockAsyncJob.setResult).to.have.been.called;
+      // Status should not be set again since it's already COMPLETED
+      expect(mockAsyncJob.setStatus).to.not.have.been.called;
+      expect(mockAsyncJob.setEndedAt).to.not.have.been.called;
+    });
+  });
 
-      // Verify opportunities were reconstructed from suggestions
-      const updatedResult = mockAsyncJob.setResult.firstCall.args[0];
-      const readabilityAudit = updatedResult[0].audits.find((audit) => audit.name === 'readability');
-      expect(readabilityAudit.opportunities).to.have.lengthOf(1);
-      expect(readabilityAudit.opportunities[0]).to.include({
-        check: 'poor-readability',
-        textContent: 'Original text from suggestion',
-        fleschReadingEase: 30,
-        suggestionStatus: 'completed',
+  describe('Opportunity Reconstruction', () => {
+    it('should reconstruct opportunities from stored suggestions when AsyncJob has none', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [
+              { originalIndex: 0, textContent: 'Original Text 1' },
+              { originalIndex: 1, textContent: 'Original Text 2' },
+            ],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0, // Will become 1
+            suggestions: [
+              {
+                id: 'suggestion-1',
+                originalText: 'Original Text 1',
+                improvedText: 'Improved Text 1',
+                originalFleschScore: 25,
+                improvedFleschScore: 75,
+              },
+              {
+                id: 'suggestion-2',
+                originalText: 'Original Text 2',
+                improvedText: 'Improved Text 2',
+                originalFleschScore: 30,
+                improvedFleschScore: 80,
+              },
+            ],
+          },
+        },
       });
+
+      // AsyncJob has no opportunities (cleared during async processing)
+      mockAsyncJob.getResult.returns([
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [], // Empty - need to reconstruct
+            },
+          ],
+        },
+      ]);
+
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Additional improved text',
+          improved_flesch_score: 85,
+        },
+        id: 'reconstruct-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.info).to.have.been.calledWithMatch('Reconstructing opportunities from 3 stored suggestions');
+      expect(logStub.info).to.have.been.calledWithMatch('Reconstructed 3 opportunities from suggestions');
     });
 
-    it('should handle suggestions with no recommendations', async () => {
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 2,
+    it('should handle null suggestions during reconstruction', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Text 1' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [null, undefined, { originalText: 'Valid suggestion' }], // Mixed valid/invalid
+          },
+        },
       });
 
-      const mockJobResult = [
+      mockAsyncJob.getResult.returns([
         {
           audits: [
             {
@@ -710,1107 +595,812 @@ describe('Guidance Readability Handler Tests', () => {
             },
           ],
         },
-      ];
-      mockAsyncJob.getResult.returns(mockJobResult);
-
-      // Mock suggestion with no recommendations
-      mockSuggestion.getData.returns({
-        someOtherData: 'value',
-        // No recommendations array
-      });
-      mockOpportunity.getSuggestions.resolves([mockSuggestion]);
-
-      const result = await guidanceHandler(baseMessage, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(log.warn).to.have.been.calledWithMatch('No recommendation found in suggestion 0');
-      expect(mockAsyncJob.setResult).to.have.been.called;
-
-      // Verify no opportunities were reconstructed
-      const updatedResult = mockAsyncJob.setResult.firstCall.args[0];
-      const readabilityAudit = updatedResult[0].audits.find((audit) => audit.name === 'readability');
-      expect(readabilityAudit.opportunities).to.have.lengthOf(0);
-    });
-
-    it('should handle AsyncJob update errors gracefully', async () => {
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 2,
-      });
-
-      mockAsyncJob.save.rejects(new Error('AsyncJob save failed'));
-
-      const result = await guidanceHandler(baseMessage, context);
-
-      // Should still return success - AsyncJob errors don't fail the whole process
-      expect(result.statusCode).to.equal(200);
-      expect(log.error).to.have.been.calledWithMatch('Error updating AsyncJob test-job-id');
-      expect(log.info).to.have.been.calledWithMatch('Successfully processed Mystique guidance');
-    });
-
-    it('should not complete AsyncJob when not all responses received', async () => {
-      // Only 1 out of 3 responses received
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 0, // Will become 1 after increment
-        mystiqueResponsesExpected: 3,
-      });
-
-      const result = await guidanceHandler(baseMessage, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(mockAsyncJob.setStatus).not.to.have.been.called;
-      expect(log.info).not.to.have.been.calledWithMatch('All 3 Mystique responses received');
-    });
-
-    it('should not complete AsyncJob when no responses expected', async () => {
-      // Edge case: 0 responses expected
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 0,
-        mystiqueResponsesExpected: 0,
-      });
-
-      const result = await guidanceHandler(baseMessage, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(mockAsyncJob.setStatus).not.to.have.been.called;
-    });
-
-    it('should handle missing AsyncJob in completion logic', async () => {
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 2,
-      });
-
-      // Reset the AsyncJob mock to null to test the guard clause
-      mockDataAccess.AsyncJob.findById.resolves(null);
-
-      const result = await guidanceHandler(baseMessage, context);
-
-      // Should return 404 for missing AsyncJob
-      expect(result.statusCode).to.equal(404);
-      expect(result.body).to.contain('AsyncJob not found');
-    });
-
-    it('should handle no matching suggestions during AsyncJob completion', async () => {
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 2,
-      });
-
-      const mockJobResult = [
-        {
-          audits: [
-            {
-              name: 'readability',
-              opportunities: [
-                {
-                  check: 'poor-readability',
-                  textContent: 'Different text that will not match',
-                  fleschReadingEase: 25,
-                },
-              ],
-            },
-          ],
-        },
-      ];
-      mockAsyncJob.getResult.returns(mockJobResult);
-
-      // Mock suggestion with different text
-      mockSuggestion.getData.returns({
-        recommendations: [
-          {
-            originalText: 'Completely different text',
-            improvedText: 'Improved different text',
-            originalFleschScore: 30,
-            improvedFleschScore: 80,
-          },
-        ],
-      });
-      mockOpportunity.getSuggestions.resolves([mockSuggestion]);
-
-      const result = await guidanceHandler(baseMessage, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(log.warn).to.have.been.calledWithMatch('No matching suggestion found for opportunity');
-      expect(mockAsyncJob.setResult).to.have.been.called;
-
-      // Verify opportunity remained unchanged (no suggestion applied)
-      const updatedResult = mockAsyncJob.setResult.firstCall.args[0];
-      const readabilityAudit = updatedResult[0].audits.find((audit) => audit.name === 'readability');
-      expect(readabilityAudit.opportunities[0]).to.not.have.property('suggestionStatus');
-    });
-
-    it('should handle AsyncJob with no audits array', async () => {
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 2,
-      });
-
-      // Mock AsyncJob result with no audits
-      const mockJobResult = [
-        {
-          // No audits array
-          someOtherProperty: 'value',
-        },
-      ];
-      mockAsyncJob.getResult.returns(mockJobResult);
-
-      const result = await guidanceHandler(baseMessage, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(mockAsyncJob.setResult).to.have.been.called;
-
-      // Should pass through unchanged
-      const updatedResult = mockAsyncJob.setResult.firstCall.args[0];
-      expect(updatedResult[0]).to.deep.equal({
-        someOtherProperty: 'value',
-      });
-    });
-
-    it('should handle AsyncJob with null result', async () => {
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 2,
-      });
-
-      // Mock AsyncJob with null result (triggers || [] fallback)
-      mockAsyncJob.getResult.returns(null);
-
-      const result = await guidanceHandler(baseMessage, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(mockAsyncJob.setResult).to.have.been.called;
-
-      // Should set empty array
-      const updatedResult = mockAsyncJob.setResult.firstCall.args[0];
-      expect(updatedResult).to.deep.equal([]);
-    });
-
-    it('should handle suggestion with no recommendation data', async () => {
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 2,
-      });
-
-      const mockJobResult = [
-        {
-          audits: [
-            {
-              name: 'readability',
-              opportunities: [
-                {
-                  check: 'poor-readability',
-                  textContent: 'Some text',
-                  fleschReadingEase: 25,
-                },
-              ],
-            },
-          ],
-        },
-      ];
-      mockAsyncJob.getResult.returns(mockJobResult);
-
-      // Mock suggestion with no recommendations property (triggers return false at line 249)
-      mockSuggestion.getData.returns({
-        someOtherData: 'value',
-        // No recommendations property
-      });
-      mockOpportunity.getSuggestions.resolves([mockSuggestion]);
-
-      const result = await guidanceHandler(baseMessage, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(mockAsyncJob.setResult).to.have.been.called;
-
-      // Verify no matching suggestion was found (because return false was triggered)
-      const updatedResult = mockAsyncJob.setResult.firstCall.args[0];
-      const readabilityAudit = updatedResult[0].audits.find((audit) => audit.name === 'readability');
-      expect(readabilityAudit.opportunities[0]).to.not.have.property('suggestionStatus');
-    });
-
-    it('should handle non-readability audit items during completion', async () => {
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 2,
-      });
-
-      // Mock AsyncJob with non-readability audit (triggers return auditItem at line 284)
-      const mockJobResult = [
-        {
-          audits: [
-            {
-              name: 'canonical', // Not 'readability'
-              opportunities: [
-                {
-                  check: 'missing-canonical',
-                  issue: 'No canonical tag found',
-                },
-              ],
-            },
-          ],
-        },
-      ];
-      mockAsyncJob.getResult.returns(mockJobResult);
-
-      const result = await guidanceHandler(baseMessage, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(mockAsyncJob.setResult).to.have.been.called;
-
-      // Verify non-readability audit passed through unchanged
-      const updatedResult = mockAsyncJob.setResult.firstCall.args[0];
-      const canonicalAudit = updatedResult[0].audits.find((audit) => audit.name === 'canonical');
-      expect(canonicalAudit).to.deep.equal({
-        name: 'canonical',
-        opportunities: [
-          {
-            check: 'missing-canonical',
-            issue: 'No canonical tag found',
-          },
-        ],
-      });
-    });
-  });
-
-  describe('Edge cases and unreachable code', () => {
-    it('should handle edge case for unreachable else branch (lines 167-168)', async () => {
-      // Note: Lines 167-168 appear to be unreachable due to early return at line 125
-      // when mappedSuggestions.length === 0. This test documents the potential dead code.
-
-      const messageWithDirectData = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 75,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-      });
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result = await guidanceHandler(messageWithDirectData, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(log.info).to.have.been.calledWithMatch('Successfully processed 1 suggestions from Mystique');
-
-      // Lines 167-168 would only be reachable if mappedSuggestions.length becomes 0
-      // after being > 0, which seems impossible in the current code structure
-    });
-  });
-
-  describe('Fallback coverage tests', () => {
-    it('should cover data fallback on line 48: || {}', async () => {
-      // Test when message.data is null/undefined, triggering the || {} fallback
-      const messageWithNullData = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: null, // This will trigger the || {} fallback on line 48
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-      });
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-
-      const result = await guidanceHandler(messageWithNullData, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(log.warn).to.have.been.calledWithMatch('No valid readability improvements found');
-    });
-
-    it('should cover existingData fallback on line 90: || {}', async () => {
-      // Test when readabilityOppty.getData() returns null, triggering the || {} fallback
-      const messageWithValidData = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 75,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-
-      // Mock opportunity that returns valid data first (to be found),
-      // then null (to trigger line 90 fallback)
-      mockOpportunity.getData
-        .onFirstCall().returns({ subType: 'readability' })
-        .onSecondCall().returns(null); // For triggering the || {} fallback
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result = await guidanceHandler(messageWithValidData, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(mockOpportunity.setData).to.have.been.called;
-    });
-
-    it('should cover processedSuggestionIds fallback on line 91: || []', async () => {
-      // Test when existingData.processedSuggestionIds is undefined, triggering the || [] fallback
-      const messageWithValidData = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 75,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJob);
-
-      // Mock opportunity with data that has no processedSuggestionIds - triggers line 91 fallback
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        // processedSuggestionIds: undefined - this will trigger the || [] fallback
-      });
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result = await guidanceHandler(messageWithValidData, context);
-
-      expect(result.statusCode).to.equal(200);
-      expect(mockOpportunity.setData).to.have.been.called;
-    });
-
-    it('should cover AsyncJob completion fallbacks: lines 210, 213, 264', async () => {
-      // Test all the fallbacks in the AsyncJob completion logic
-      const messageWithValidData = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 85,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-
-      // Create AsyncJob with result that will trigger completion logic
-      const mockAsyncJobWithResult = {
-        ...mockAsyncJob,
-        getResult: () => [{
-          pageUrl: 'https://test-site.com/page1',
-          audits: [{
-            name: 'readability',
-            opportunities: [{
-              check: 'poor-readability',
-              textContent: 'Original text',
-              fleschReadingEase: 30,
-            }],
-          }],
-        }],
-      };
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithResult);
-
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 0,
-        mystiqueResponsesExpected: 1,
-      });
-
-      // Create mock suggestion that will trigger the fallbacks
-      const mockSuggestionForFallbacks = {
-        getData: () => ({
-          recommendations: [{
-            originalText: null, // This will trigger line 210 fallback: || 'Unknown text'
-            improvedText: 'Improved text',
-            originalFleschScore: null, // This will trigger line 213 and 264 fallbacks
-            improvedFleschScore: 85,
-            seoRecommendation: 'Use shorter sentences',
-            aiRationale: 'Shorter sentences improve readability',
-          }],
-        }),
-      };
-      mockOpportunity.getSuggestions.resolves([mockSuggestionForFallbacks]);
-
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result = await guidanceHandler(messageWithValidData, context);
-
-      expect(result.statusCode).to.equal(200);
-
-      // Verify that AsyncJob completion logic was triggered
-      expect(mockAsyncJobWithResult.setResult).to.have.been.called;
-      expect(mockAsyncJobWithResult.setStatus).to.have.been.called;
-      expect(mockAsyncJobWithResult.save).to.have.been.called;
-
-      // Verify the fallbacks were used in log messages
-      expect(log.info).to.have.been.calledWithMatch('All 1 Mystique responses received');
-    });
-
-    it('should cover all branches for line 210: originalText with value vs null', async () => {
-      // Test both branches: when originalText exists vs when it's null (triggering 'Unknown text')
-      const messageWithValidData = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 85,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-
-      const mockAsyncJobForBranches = {
-        ...mockAsyncJob,
-        getResult: () => [{
-          pageUrl: 'https://test-site.com/page1',
-          audits: [{
-            name: 'readability',
-            opportunities: [], // Empty - will trigger reconstruction
-          }],
-        }],
-      };
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobForBranches);
-
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 1,
-      });
-
-      // Test BOTH branches for line 210
-      const mockSuggestionWithText = {
-        getData: () => ({
-          recommendations: [{
-            originalText: 'Some actual text', // This will NOT trigger the fallback
-            improvedText: 'Improved text',
-            originalFleschScore: 25,
-            improvedFleschScore: 85,
-          }],
-        }),
-      };
-
-      const mockSuggestionWithNullText = {
-        getData: () => ({
-          recommendations: [{
-            originalText: null, // This WILL trigger the 'Unknown text' fallback
-            improvedText: 'Improved text',
-            originalFleschScore: 25,
-            improvedFleschScore: 85,
-          }],
-        }),
-      };
-
-      // First call - test with actual text (left branch of ||)
-      mockOpportunity.getSuggestions.resolves([mockSuggestionWithText]);
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result1 = await guidanceHandler(messageWithValidData, context);
-      expect(result1.statusCode).to.equal(200);
-
-      // Reset mocks for second test
-      mockOpportunity.getSuggestions.reset();
-      mockAddReadabilitySuggestions.reset();
-
-      // Second call - test with null text (right branch of ||)
-      mockOpportunity.getSuggestions.resolves([mockSuggestionWithNullText]);
-
-      const result2 = await guidanceHandler(messageWithValidData, context);
-      expect(result2.statusCode).to.equal(200);
-
-      // Both branches of line 210 should now be covered
-    });
-
-    it('should cover all branches for line 213: originalFleschScore with value vs null', async () => {
-      // Test both branches for the fallback: recommendation.originalFleschScore || 0
-      const messageWithValidData = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 85,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-
-      const mockAsyncJobForScores = {
-        ...mockAsyncJob,
-        getResult: () => [{
-          pageUrl: 'https://test-site.com/page1',
-          audits: [{
-            name: 'readability',
-            opportunities: [], // Empty - will trigger reconstruction
-          }],
-        }],
-      };
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobForScores);
-
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 1,
-      });
-
-      // Test with actual score (left branch of ||)
-      const mockSuggestionWithScore = {
-        getData: () => ({
-          recommendations: [{
-            originalText: 'Test text',
-            improvedText: 'Improved text',
-            originalFleschScore: 30, // This will NOT trigger the fallback
-            improvedFleschScore: 85,
-          }],
-        }),
-      };
-
-      // Test with null score (right branch of ||)
-      const mockSuggestionWithNullScore = {
-        getData: () => ({
-          recommendations: [{
-            originalText: 'Test text',
-            improvedText: 'Improved text',
-            originalFleschScore: null, // This WILL trigger the 0 fallback
-            improvedFleschScore: 85,
-          }],
-        }),
-      };
-
-      // First test - with actual score
-      mockOpportunity.getSuggestions.resolves([mockSuggestionWithScore]);
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result1 = await guidanceHandler(messageWithValidData, context);
-      expect(result1.statusCode).to.equal(200);
-
-      // Reset and test with null score
-      mockOpportunity.getSuggestions.reset();
-      mockAddReadabilitySuggestions.reset();
-      mockOpportunity.getSuggestions.resolves([mockSuggestionWithNullScore]);
-
-      const result2 = await guidanceHandler(messageWithValidData, context);
-      expect(result2.statusCode).to.equal(200);
-    });
-
-    it('should cover stored order mapping usage (lines 239-241)', async () => {
-      // Test the case where we DO have stored order mapping and use it
-      const messageWithValidData = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 85,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-
-      const mockAsyncJobWithStoredMapping = {
-        ...mockAsyncJob,
-        getResult: () => [{
-          pageUrl: 'https://test-site.com/page1',
-          audits: [{
-            name: 'readability',
-            opportunities: [{
-              check: 'poor-readability',
-              textContent: 'Original text',
-              fleschReadingEase: 25,
-            }],
-          }],
-        }],
-      };
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithStoredMapping);
-
-      // Key: Mock opportunity data WITH stored order mapping
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 1,
-        originalOrderMapping: [
-          { textContent: 'Original text', originalIndex: 0 },
-        ], // This will trigger lines 239-241
-      });
-
-      const mockSuggestionWithMapping = {
-        getData: () => ({
-          recommendations: [{
-            originalText: 'Original text',
-            improvedText: 'Improved text',
-            originalFleschScore: 25,
-            improvedFleschScore: 85,
-          }],
-        }),
-      };
-      mockOpportunity.getSuggestions.resolves([mockSuggestionWithMapping]);
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result = await guidanceHandler(messageWithValidData, context);
-
-      expect(result.statusCode).to.equal(200);
-      // Verify that stored order mapping was used (lines 239-241)
-      expect(log.info).to.have.been.calledWithMatch('Using stored original order mapping with 1 items');
-      expect(log.info).to.have.been.calledWithMatch('Sorted 1 opportunities back to original order');
-    });
-
-    it('should cover sorting logic with mixed order scenarios (lines 306-312)', async () => {
-      // Test the sorting logic when opportunities need to be reordered
-      const messageWithValidData = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 85,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-
-      const mockAsyncJobWithMixedOrder = {
-        ...mockAsyncJob,
-        getResult: () => [{
-          pageUrl: 'https://test-site.com/page1',
-          audits: [{
-            name: 'readability',
-            opportunities: [
-              {
-                check: 'poor-readability',
-                textContent: 'Third text', // This should be sorted last
-                fleschReadingEase: 15,
-              },
-              {
-                check: 'poor-readability',
-                textContent: 'First text', // This should be sorted first
-                fleschReadingEase: 25,
-              },
-              {
-                check: 'poor-readability',
-                textContent: 'Second text', // This should be sorted second
-                fleschReadingEase: 20,
-              },
-            ],
-          }],
-        }],
-      };
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithMixedOrder);
-
-      // Mock opportunity data with stored order mapping that defines the correct order
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 1,
-        originalOrderMapping: [
-          { textContent: 'First text', originalIndex: 0 },
-          { textContent: 'Second text', originalIndex: 1 },
-          { textContent: 'Third text', originalIndex: 2 },
-        ],
-      });
-
-      // Mock suggestions for all three texts
-      const mockSuggestions = [
-        {
-          getData: () => ({
-            recommendations: [{
-              originalText: 'First text',
-              improvedText: 'Improved first text',
-              originalFleschScore: 25,
-              improvedFleschScore: 75,
-            }],
-          }),
-        },
-        {
-          getData: () => ({
-            recommendations: [{
-              originalText: 'Second text',
-              improvedText: 'Improved second text',
-              originalFleschScore: 20,
-              improvedFleschScore: 80,
-            }],
-          }),
-        },
-        {
-          getData: () => ({
-            recommendations: [{
-              originalText: 'Third text',
-              improvedText: 'Improved third text',
-              originalFleschScore: 15,
-              improvedFleschScore: 85,
-            }],
-          }),
-        },
-      ];
-      mockOpportunity.getSuggestions.resolves(mockSuggestions);
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result = await guidanceHandler(messageWithValidData, context);
-
-      expect(result.statusCode).to.equal(200);
-
-      // Verify sorting logic was executed (lines 306-312)
-      expect(log.info).to.have.been.calledWithMatch('Sorted 3 opportunities back to original order');
-      expect(mockAsyncJobWithMixedOrder.setResult).to.have.been.called;
-
-      // Verify the opportunities were sorted in the correct order
-      const updatedResult = mockAsyncJobWithMixedOrder.setResult.firstCall.args[0];
-      const readabilityAudit = updatedResult[0].audits.find((audit) => audit.name === 'readability');
-      expect(readabilityAudit.opportunities[0].textContent).to.equal('First text');
-      expect(readabilityAudit.opportunities[1].textContent).to.equal('Second text');
-      expect(readabilityAudit.opportunities[2].textContent).to.equal('Third text');
-    });
-
-    it('should cover fallback scenario when textContent not found in originalOrder (lines 306-312)', async () => {
-      // Test the Number.MAX_SAFE_INTEGER fallback in sorting logic
-      const messageWithValidData = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 85,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-
-      const mockAsyncJobWithUnmatchedText = {
-        ...mockAsyncJob,
-        getResult: () => [{
-          pageUrl: 'https://test-site.com/page1',
-          audits: [{
-            name: 'readability',
-            opportunities: [{
-              check: 'poor-readability',
-              textContent: 'Unmatched text content', // This won't be in originalOrderMapping
-              fleschReadingEase: 25,
-            }],
-          }],
-        }],
-      };
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithUnmatchedText);
-
-      // Mock opportunity data with stored order mapping
-      // that DOESN'T include the opportunity's textContent
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 1,
-        originalOrderMapping: [
-          { textContent: 'Different text', originalIndex: 0 },
-        ], // This doesn't match "Unmatched text content"
-      });
-
-      const mockSuggestionUnmatched = {
-        getData: () => ({
-          recommendations: [{
-            originalText: 'Unmatched text content',
-            improvedText: 'Improved unmatched text',
-            originalFleschScore: 25,
-            improvedFleschScore: 85,
-          }],
-        }),
-      };
-      mockOpportunity.getSuggestions.resolves([mockSuggestionUnmatched]);
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
-
-      const result = await guidanceHandler(messageWithValidData, context);
-
-      expect(result.statusCode).to.equal(200);
-
-      // This will test the ?? Number.MAX_SAFE_INTEGER fallback in lines 308 and 311
-      expect(log.info).to.have.been.calledWithMatch('Sorted 1 opportunities back to original order');
-      expect(mockAsyncJobWithUnmatchedText.setResult).to.have.been.called;
-    });
-
-    it('should cover line 234: opportunityData fallback when getData returns null', async () => {
-      // Test the case where readabilityOppty.getData() returns null, triggering || {} fallback
-      const messageWithValidData = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 85,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-
-      // Create a stub that returns different values for different calls
-      const mockGetDataStub = sinon.stub();
-      // First call (line 78 - finding opportunity): return valid data with subType
-      mockGetDataStub.onCall(0).returns({
-        subType: 'readability',
-        mystiqueResponsesReceived: 0,
-        mystiqueResponsesExpected: 1,
-      });
-      // Second call (line 91 - existingData): return valid data
-      mockGetDataStub.onCall(1).returns({
-        subType: 'readability',
-        mystiqueResponsesReceived: 0,
-        mystiqueResponsesExpected: 1,
-      });
-      // Third call (line 234 - opportunityData): return null to trigger || {} fallback
-      mockGetDataStub.onCall(2).returns(null);
-      // All subsequent calls: return valid data
-      mockGetDataStub.returns({
-        subType: 'readability',
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 1,
-      });
-
-      const mockReadabilityOpportunityWithNullData = {
-        getId: () => 'opp-123',
-        getAuditId: () => 'test-job-id',
-        getData: mockGetDataStub, // This will trigger the || {} fallback on line 234
-        getSuggestions: sinon.stub().resolves([]),
-        save: sinon.stub().resolves(),
-        setAuditId: sinon.stub(),
-        setData: sinon.stub(),
-        setUpdatedBy: sinon.stub(),
-      };
-
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockReadabilityOpportunityWithNullData]);
-
-      const mockAsyncJobWithOpportunities = {
-        ...mockAsyncJob,
-        getResult: () => [{
-          pageUrl: 'https://test-site.com/page1',
-          audits: [{
-            name: 'readability',
-            opportunities: [{
-              textContent: 'Original text',
-              fleschReadingEase: 25,
-              selector: 'p:nth-child(1)',
-            }],
-          }],
-        }],
-      };
-
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithOpportunities);
-
-      await guidanceHandler(messageWithValidData, context);
-
-      // Verify that getData was called multiple times and returned null on line 234
-      expect(mockGetDataStub.callCount).to.be.at.least(3);
-      expect(mockGetDataStub.getCall(2).returnValue).to.be.null;
-    });
-
-    it('should cover lines 308,311: sorting fallback when textContent not found in originalOrder', async () => {
-      // Test the case where originalOrder.find() returns undefined,
-      // triggering ?? Number.MAX_SAFE_INTEGER
-      const messageWithValidData = {
-        auditId: 'test-job-id',
-        siteId: 'test-site-id',
-        id: 'message-123',
-        data: {
-          improved_paragraph: 'Improved text',
-          improved_flesch_score: 85,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
-        },
-      };
-
-      mockDataAccess.Site.findById.resolves(mockSite);
-
-      // Create opportunities with textContent that won't match the originalOrder mapping
-      const mockAsyncJobWithMismatchedOpportunities = {
-        ...mockAsyncJob,
-        getResult: () => [{
-          pageUrl: 'https://test-site.com/page1',
-          audits: [{
-            name: 'readability',
-            opportunities: [
-              {
-                textContent: 'Unmatched text A that does not exist in original order mapping',
-                fleschReadingEase: 25,
-                selector: 'p:nth-child(1)',
-              },
-              {
-                textContent: 'Unmatched text B that does not exist in mapping either',
-                fleschReadingEase: 30,
-                selector: 'p:nth-child(2)',
-              },
-            ],
-          }],
-        }],
-      };
-
-      const mockReadabilityOpportunityWithStoredMapping = {
-        getId: () => 'opp-123',
-        getAuditId: () => 'test-job-id',
-        getData: () => ({
-          subType: 'readability', // Required to find the opportunity
-          mystiqueResponsesReceived: 1,
-          mystiqueResponsesExpected: 1,
-          // Stored mapping with different textContent than the opportunities above
-          // This will cause originalOrder.find() to return undefined,
-          // triggering ?? Number.MAX_SAFE_INTEGER on lines 308 and 311
-          originalOrderMapping: [
-            { textContent: 'Different text 1', originalIndex: 0 },
-            { textContent: 'Different text 2', originalIndex: 1 },
-          ],
-        }),
-        getSuggestions: sinon.stub().resolves([]),
-        save: sinon.stub().resolves(),
-        setAuditId: sinon.stub(),
-        setData: sinon.stub(),
-        setUpdatedBy: sinon.stub(),
-      };
-
-      mockDataAccess.Opportunity.allBySiteId.resolves([
-        mockReadabilityOpportunityWithStoredMapping,
       ]);
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithMismatchedOpportunities);
 
-      await guidanceHandler(messageWithValidData, context);
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
 
-      // The sort should still work, using Number.MAX_SAFE_INTEGER for unfound items
-      expect(mockReadabilityOpportunityWithStoredMapping.save).to.have.been.called;
-      // Verify that the sorting was attempted (this would happen in the AsyncJob completion logic)
-      expect(log.info).to.have.been.calledWithMatch('Sorted');
-    });
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
 
-    it('should cover all branches for line 264: calculation fallback scenarios', async () => {
-      // Test both branches: recommendation.originalFleschScore || opportunity.fleschReadingEase
-      const messageWithValidData = {
-        auditId: 'test-job-id',
+      const message = {
+        auditId: 'test-audit-id',
         siteId: 'test-site-id',
-        id: 'message-123',
         data: {
           improved_paragraph: 'Improved text',
-          improved_flesch_score: 85,
-          original_paragraph: 'Original text',
-          current_flesch_score: 25,
+          improved_flesch_score: 80,
         },
+        id: 'null-suggestions-message',
       };
 
-      mockDataAccess.Site.findById.resolves(mockSite);
+      const result = await handler.default(message, mockContext);
 
-      const mockAsyncJobWithOpps = {
-        ...mockAsyncJob,
-        getResult: () => [{
-          pageUrl: 'https://test-site.com/page1',
-          audits: [{
-            name: 'readability',
-            opportunities: [{
-              check: 'poor-readability',
-              textContent: 'Original text',
-              fleschReadingEase: 20, // This will be used as fallback
-            }],
-          }],
-        }],
-      };
-      mockDataAccess.AsyncJob.findById.resolves(mockAsyncJobWithOpps);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.warn).to.have.been.calledWithMatch('No valid suggestion found at index');
+    });
+  });
 
-      mockOpportunity.getData.returns({
-        subType: 'readability',
-        processedSuggestionIds: [],
-        mystiqueResponsesReceived: 1,
-        mystiqueResponsesExpected: 1,
+  describe('Original Order Mapping', () => {
+    it('should use stored original order mapping when available', async () => {
+      const storedOrderMapping = [
+        { originalIndex: 1, textContent: 'Second text' },
+        { originalIndex: 0, textContent: 'First text' },
+      ];
+
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: storedOrderMapping,
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [
+              {
+                originalText: 'First text',
+                improvedText: 'Improved first',
+                originalFleschScore: 20,
+                improvedFleschScore: 80,
+              },
+              {
+                originalText: 'Second text',
+                improvedText: 'Improved second',
+                originalFleschScore: 25,
+                improvedFleschScore: 75,
+              },
+            ],
+          },
+        },
       });
 
-      // Test with originalFleschScore present (left branch)
-      const mockSuggestionWithOriginalScore = {
-        getData: () => ({
-          recommendations: [{
-            originalText: 'Original text',
-            improvedText: 'Improved text',
-            originalFleschScore: 30, // This will be used, NOT the fallback
-            improvedFleschScore: 85,
-          }],
-        }),
+      mockAsyncJob.getResult.returns([
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [
+                { textContent: 'Second text', fleschReadingEase: 25 },
+                { textContent: 'First text', fleschReadingEase: 20 },
+              ],
+            },
+          ],
+        },
+      ]);
+
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Final improvement',
+          improved_flesch_score: 85,
+        },
+        id: 'order-mapping-message',
       };
 
-      // Test with originalFleschScore null (right branch)
-      const mockSuggestionWithoutOriginalScore = {
-        getData: () => ({
-          recommendations: [{
-            originalText: 'Original text',
-            improvedText: 'Improved text',
-            originalFleschScore: null,
-            improvedFleschScore: 85,
-          }],
-        }),
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.info).to.have.been.calledWithMatch('Using stored original order mapping with 2 items');
+      expect(logStub.info).to.have.been.calledWithMatch('Sorted 2 opportunities back to original order');
+    });
+
+    it('should create fallback order mapping when none is stored', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: 'invalid-mapping', // Non-array value to trigger fallback
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+          },
+        },
+      });
+
+      mockAsyncJob.getResult.returns([
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [
+                { textContent: 'Text 1', fleschReadingEase: 20 },
+                { textContent: 'Text 2', fleschReadingEase: 25 },
+              ],
+            },
+          ],
+        },
+      ]);
+
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Fallback improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'fallback-order-message',
       };
 
-      // Test first branch - with original score
-      mockOpportunity.getSuggestions.resolves([mockSuggestionWithOriginalScore]);
-      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
-      mockAddReadabilitySuggestions.resolves();
+      const result = await handler.default(message, mockContext);
 
-      const result1 = await guidanceHandler(messageWithValidData, context);
-      expect(result1.statusCode).to.equal(200);
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.warn).to.have.been.calledWithMatch('No stored order mapping found, using current order as fallback');
+    });
+  });
 
-      // Reset and test second branch - without original score
-      mockOpportunity.getSuggestions.reset();
-      mockAddReadabilitySuggestions.reset();
-      mockOpportunity.getSuggestions.resolves([mockSuggestionWithoutOriginalScore]);
+  describe('Suggestion Matching and Math Calculations', () => {
+    it('should match suggestions correctly and calculate scores with proper rounding', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Test content' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [
+              {
+                originalText: 'Test content',
+                improvedText: 'Improved test content',
+                originalFleschScore: 23.456, // Should be rounded
+                improvedFleschScore: 78.789, // Should be rounded
+                aiRationale: 'Made it simpler',
+              },
+            ],
+          },
+        },
+      });
 
-      const result2 = await guidanceHandler(messageWithValidData, context);
-      expect(result2.statusCode).to.equal(200);
+      mockAsyncJob.getResult.returns([
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [
+                {
+                  textContent: 'Test content',
+                  fleschReadingEase: 23.456,
+                  check: 'poor-readability',
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Final improvement',
+          improved_flesch_score: 85,
+        },
+        id: 'math-calculation-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+
+      // Verify setResult was called with properly rounded values
+      const setResultCall = mockAsyncJob.setResult.getCall(0);
+      const updatedResult = setResultCall.args[0];
+      const opportunity = updatedResult[0].audits[0].opportunities[0];
+
+      expect(opportunity.improvedFleschScore).to.equal(78.79); // Rounded to 2 decimal places
+      expect(opportunity.readabilityImprovement).to.equal(55.33); // 78.789 - 23.456 rounded
+      expect(opportunity.suggestionStatus).to.equal('completed');
+      expect(opportunity.aiSuggestion).to.equal('Improved test content');
+      expect(opportunity.aiRationale).to.equal('Made it simpler');
+    });
+
+    it('should handle missing original score by using opportunity flesch reading ease', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Test content' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [
+              {
+                originalText: 'Test content',
+                improvedText: 'Improved content',
+                originalFleschScore: null, // Missing original score
+                improvedFleschScore: 80,
+              },
+            ],
+          },
+        },
+      });
+
+      mockAsyncJob.getResult.returns([
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [
+                {
+                  textContent: 'Test content',
+                  fleschReadingEase: 25, // Should be used as fallback
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Final improvement',
+          improved_flesch_score: 85,
+        },
+        id: 'fallback-score-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+
+      const setResultCall = mockAsyncJob.setResult.getCall(0);
+      const updatedResult = setResultCall.args[0];
+      const opportunity = updatedResult[0].audits[0].opportunities[0];
+
+      expect(opportunity.readabilityImprovement).to.equal(55); // 80 - 25
+    });
+
+    it('should warn when no matching suggestion is found', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Unmatched content' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [
+              {
+                originalText: 'Different content', // Does not match opportunity
+                improvedText: 'Improved different content',
+                originalFleschScore: 20,
+                improvedFleschScore: 80,
+              },
+            ],
+          },
+        },
+      });
+
+      mockAsyncJob.getResult.returns([
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [
+                {
+                  textContent: 'Unmatched content', // No matching suggestion
+                  fleschReadingEase: 25,
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Final improvement',
+          improved_flesch_score: 85,
+        },
+        id: 'no-match-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.warn).to.have.been.calledWithMatch('No matching suggestion found for opportunity');
+    });
+  });
+
+  describe('Error Handling', () => {
+    beforeEach(() => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Test' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+          },
+        },
+      });
+
+      mockAsyncJob.getResult.returns([
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [{ textContent: 'Test', fleschReadingEase: 25 }],
+            },
+          ],
+        },
+      ]);
+    });
+
+    it('should handle AsyncJob completion errors gracefully', async () => {
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+
+      // Simulate error during job completion
+      const freshJob = { ...mockAsyncJob };
+      freshJob.save = sinon.stub().rejects(new Error('Save failed'));
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'error-handling-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      // Should still return ok() even though completion failed
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.error).to.have.been.calledWithMatch('Error updating AsyncJob');
+    });
+
+    it('should handle fresh job reload failure', async () => {
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+
+      // Simulate error during fresh job reload
+      mockAsyncJobEntity.findById.onSecondCall().rejects(new Error('Job not found'));
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'reload-error-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.error).to.have.been.calledWithMatch('Error updating AsyncJob');
+    });
+  });
+
+  describe('Edge Cases and Boundary Conditions', () => {
+    it('should handle empty getResult() gracefully', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Test' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+          },
+        },
+      });
+
+      mockAsyncJob.getResult.returns([]); // Empty result
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'empty-result-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+    });
+
+    it('should handle zero mystiqueResponsesExpected', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Test' }],
+            mystiqueResponsesExpected: 0, // Zero expected responses
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+          },
+        },
+      });
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'zero-expected-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      // Should not trigger completion logic since expected is 0
+      expect(logStub.info).to.not.have.been.calledWithMatch('All 0 Mystique responses received');
+    });
+
+    it('should handle missing pageUrl in suggestion data', async () => {
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+          original_paragraph: 'Original text',
+          current_flesch_score: 20,
+          // pageUrl is missing
+        },
+        id: 'missing-pageurl-message',
+      };
+
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Test' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+          },
+        },
+      });
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+
+      // Should use auditUrl as fallback
+      const setMetadataCall = mockAsyncJob.setMetadata.getCall(0);
+      const updatedMetadata = setMetadataCall.args[0];
+      const suggestion = updatedMetadata.payload.readabilityMetadata.suggestions[0];
+      expect(suggestion.pageUrl).to.equal('https://example.com'); // Site's base URL
+    });
+
+    it('should handle sort with identical originalIndex values', async () => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [
+              { originalIndex: 0, textContent: 'Text A' },
+              { originalIndex: 0, textContent: 'Text B' }, // Duplicate index
+            ],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+          },
+        },
+      });
+
+      mockAsyncJob.getResult.returns([
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [
+                { textContent: 'Text B', fleschReadingEase: 25 },
+                { textContent: 'Text A', fleschReadingEase: 20 },
+              ],
+            },
+          ],
+        },
+      ]);
+
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'duplicate-index-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.info).to.have.been.calledWithMatch('Sorted 2 opportunities back to original order');
+    });
+  });
+
+  describe('Helper Function Tests', () => {
+    it('should map Mystique suggestions correctly', async () => {
+      // Test the mapMystiqueSuggestionsToOpportunityFormat function indirectly
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          suggestions: [
+            {
+              pageUrl: 'https://example.com/page1',
+              original_paragraph: 'Original complex text here.',
+              improved_paragraph: 'Improved simple text here.',
+              current_flesch_score: 15.5,
+              improved_flesch_score: 75.8,
+              seo_recommendation: 'Use shorter sentences and simpler words.',
+              ai_rationale: 'The text was too complex for average readers.',
+              target_flesch_score: 60,
+            },
+          ],
+        },
+        id: 'mapping-test-message',
+      };
+
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Test' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+          },
+        },
+      });
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+
+      // Verify the mapped suggestion structure
+      const setMetadataCall = mockAsyncJob.setMetadata.getCall(0);
+      const updatedMetadata = setMetadataCall.args[0];
+      const mappedSuggestion = updatedMetadata.payload.readabilityMetadata.suggestions[0];
+
+      expect(mappedSuggestion.id).to.include('readability-https://example.com/page1-0');
+      expect(mappedSuggestion.pageUrl).to.equal('https://example.com/page1');
+      expect(mappedSuggestion.originalText).to.equal('Original complex text here.');
+      expect(mappedSuggestion.improvedText).to.equal('Improved simple text here.');
+      expect(mappedSuggestion.originalFleschScore).to.equal(15.5);
+      expect(mappedSuggestion.improvedFleschScore).to.equal(75.8);
+      expect(mappedSuggestion.seoRecommendation).to.equal('Use shorter sentences and simpler words.');
+      expect(mappedSuggestion.aiRationale).to.equal('The text was too complex for average readers.');
+      expect(mappedSuggestion.targetFleschScore).to.equal(60);
+    });
+  });
+
+  describe('Coverage for uncovered lines', () => {
+    beforeEach(() => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Test' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+          },
+        },
+      });
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+    });
+
+    it('should cover line 302: return auditItem unchanged when name is not readability', async () => {
+      mockAsyncJob.getResult.returns([
+        {
+          audits: [
+            {
+              name: 'other-audit', // Not 'readability' - should trigger line 302
+              opportunities: [{ someData: 'unchanged' }],
+            },
+            {
+              name: 'readability',
+              opportunities: [{ textContent: 'Test content', fleschReadingEase: 25 }],
+            },
+          ],
+        },
+      ]);
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'line-302-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+
+      // Verify that non-readability audit items are returned unchanged
+      const setResultCall = mockAsyncJob.setResult.getCall(0);
+      const updatedResult = setResultCall.args[0];
+      const otherAuditItem = updatedResult[0].audits.find((audit) => audit.name === 'other-audit');
+      expect(otherAuditItem).to.deep.equal({
+        name: 'other-audit',
+        opportunities: [{ someData: 'unchanged' }],
+      });
+    });
+
+    it('should cover line 307: return pageResult unchanged when audits property is missing', async () => {
+      mockAsyncJob.getResult.returns([
+        {
+          // Page result without 'audits' property - should trigger line 307
+          url: 'https://example.com/page1',
+          status: 'completed',
+          someOtherData: 'unchanged',
+        },
+        {
+          audits: [
+            {
+              name: 'readability',
+              opportunities: [{ textContent: 'Test content', fleschReadingEase: 25 }],
+            },
+          ],
+        },
+      ]);
+
+      const freshJob = { ...mockAsyncJob };
+      freshJob.getStatus = sinon.stub().returns('IN_PROGRESS');
+      mockAsyncJobEntity.findById.onSecondCall().resolves(freshJob);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'line-307-message',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+
+      // Verify that page results without audits are returned unchanged
+      const setResultCall = mockAsyncJob.setResult.getCall(0);
+      const updatedResult = setResultCall.args[0];
+      const pageWithoutAudits = updatedResult[0];
+      expect(pageWithoutAudits).to.deep.equal({
+        url: 'https://example.com/page1',
+        status: 'completed',
+        someOtherData: 'unchanged',
+      });
+    });
+  });
+
+  describe('Branch Coverage for || fallback operators', () => {
+    beforeEach(() => {
+      mockAsyncJob.getMetadata.returns({
+        payload: {
+          readabilityMetadata: {
+            originalOrderMapping: [{ originalIndex: 0, textContent: 'Test' }],
+            mystiqueResponsesExpected: 1,
+            mystiqueResponsesReceived: 0,
+            suggestions: [],
+          },
+        },
+      });
+      mockAsyncJob.getStatus.returns('IN_PROGRESS');
+    });
+
+    it('should cover line 23: pageUrl || "unknown" when pageUrl is falsy', async () => {
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          suggestions: [
+            {
+              pageUrl: null, // Falsy pageUrl to trigger || 'unknown'
+              original_paragraph: 'Original text',
+              improved_paragraph: 'Improved text',
+              current_flesch_score: 20,
+              improved_flesch_score: 80,
+            },
+            {
+              pageUrl: '', // Empty string pageUrl to trigger || 'unknown'
+              original_paragraph: 'Original text 2',
+              improved_paragraph: 'Improved text 2',
+              current_flesch_score: 25,
+              improved_flesch_score: 75,
+            },
+          ],
+        },
+        id: 'pageurl-fallback-test',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+
+      // Verify suggestions with 'unknown' pageUrl fallback were created
+      const setMetadataCall = mockAsyncJob.setMetadata.getCall(0);
+      const updatedMetadata = setMetadataCall.args[0];
+      const { suggestions } = updatedMetadata.payload.readabilityMetadata;
+
+      expect(suggestions[0].id).to.include('readability-unknown-0');
+      expect(suggestions[1].id).to.include('readability-unknown-1');
+    });
+
+    it('should cover line 48: data || {} when message.data is falsy', async () => {
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: null, // Falsy data to trigger || {} fallback
+        id: 'data-fallback-test',
+      };
+
+      const result = await handler.default(message, mockContext);
+
+      expect(result).to.deep.equal({ ok: true });
+      expect(logStub.warn).to.have.been.calledWithMatch('No valid readability improvements found');
+    });
+
+    it('should cover line 74: getMetadata() || {} when getMetadata returns null', async () => {
+      // Make getMetadata return null to trigger || {} fallback
+      mockAsyncJob.getMetadata.returns(null);
+
+      const message = {
+        auditId: 'test-audit-id',
+        siteId: 'test-site-id',
+        data: {
+          improved_paragraph: 'Improved text',
+          improved_flesch_score: 80,
+        },
+        id: 'metadata-fallback-test',
+      };
+
+      try {
+        await handler.default(message, mockContext);
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.include('No readability metadata found in job');
+      }
     });
   });
 });
