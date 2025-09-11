@@ -244,27 +244,34 @@ export default async function readability(context, auditContext) {
         }
       };
 
-      for (const [index, element] of textElements.entries()) {
-        // Check if element has child elements
-        if (element.children.length > 0) {
-          // If it has children, check if they are only inline formatting elements
-          const hasOnlyInlineChildren = Array.from(element.children).every((child) => {
-            const inlineTags = ['strong', 'b', 'em', 'i', 'span', 'a', 'mark', 'small', 'sub', 'sup', 'u', 'code', 'br'];
-            return inlineTags.includes(child.tagName.toLowerCase());
-          });
+      // Collect all readability analysis promises to run in parallel
+      const readabilityPromises = [];
+
+      // Filter and process elements without using continue statements
+      const elementsToProcess = textElements
+        .map((element, index) => ({ element, index }))
+        .filter(({ element }) => {
+          // Check if element has child elements
+          const hasBlockChildren = element.children.length > 0
+            && !Array.from(element.children).every((child) => {
+              const inlineTags = [
+                'strong', 'b', 'em', 'i', 'span', 'a', 'mark',
+                'small', 'sub', 'sup', 'u', 'code', 'br',
+              ];
+              return inlineTags.includes(child.tagName.toLowerCase());
+            });
 
           // Skip if it has block-level children (to avoid duplicate analysis)
-          if (!hasOnlyInlineChildren) {
-            // eslint-disable-next-line no-continue
-            continue;
-          }
-        }
+          return !hasBlockChildren;
+        })
+        .filter(({ element }) => {
+          const textContent = element.textContent?.trim();
+          return textContent && textContent.length >= MIN_TEXT_LENGTH;
+        });
 
+      // Process filtered elements
+      elementsToProcess.forEach(({ element, index }) => {
         const textContent = element.textContent?.trim();
-        if (!textContent || textContent.length < MIN_TEXT_LENGTH) {
-          // eslint-disable-next-line no-continue
-          continue;
-        }
 
         // Check if the element contains <br> tags (indicating multiple paragraphs)
         if (element.innerHTML.includes('<br')) {
@@ -287,19 +294,22 @@ export default async function readability(context, auditContext) {
             .map((p) => p.trim())
             .filter((p) => p.length >= MIN_TEXT_LENGTH);
 
-          for (const paragraph of paragraphs) {
-            // eslint-disable-next-line no-await-in-loop
-            await analyzeReadability(paragraph, element, index);
-          }
+          // Add promises for each paragraph
+          paragraphs.forEach((paragraph) => {
+            readabilityPromises.push(analyzeReadability(paragraph, element, index));
+          });
 
           processedElements += paragraphs.length;
         } else {
-          // Analyze as a single text block
+          // Add promise for single text block
+          readabilityPromises.push(analyzeReadability(textContent, element, index));
           processedElements += 1;
-          // eslint-disable-next-line no-await-in-loop
-          await analyzeReadability(textContent, element, index);
         }
-      }
+      });
+
+      // Execute all readability analyses in parallel
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.all(readabilityPromises);
 
       const detectedLanguagesList = detectedLanguages.size > 0
         ? Array.from(detectedLanguages).join(', ')
