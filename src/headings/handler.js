@@ -491,67 +491,75 @@ export async function generateAISuggestions(auditUrl, auditData, context, site) 
   log.info(`[Headings AI Suggestions] Starting AI suggestions generation for audit: ${auditUrl}`);
   log.info(`[Headings AI Suggestions] Site ID: ${site.getId()}, Base URL: ${site.getBaseURL()}`);
   log.info(`[Headings AI Suggestions] Audit data: ${JSON.stringify(auditData)}`);
-  Object.entries(auditData.auditResult).forEach(([checkType, checkResult]) => {
-    if (checkResult.success === false && Array.isArray(checkResult.urls)) {
-      checkResult.urls.forEach(async (url) => {
-        if (checkType !== 'heading-empty') {
-          return;
-        }
-        log.info(`[Headings AI Suggestions] Generating AI suggestions for ${url} with check type: ${checkType}`);
-        const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
-        // check if the scrape.json path is in the allKeys
-        if (!allKeys.includes(scrapeJsonPath)) {
-          log.info(`[Headings AI Suggestions] Scrape JSON path: ${scrapeJsonPath} not found in allKeys`);
-          return;
-        } else {
-          log.info(`[Headings AI Suggestions] Scrape JSON path: ${scrapeJsonPath} found in allKeys`);
-        }
-        // get the scrape.json object
-        try {
-          const scrapeJsonObject = await getObjectFromKey(
-            s3Client,
-            S3_SCRAPER_BUCKET_NAME,
-            scrapeJsonPath,
-            log,
-          );
-          log.info(`[Headings AI Suggestions] Scrape JSON object received: ${JSON.stringify(scrapeJsonObject)}`);
-          log.info(`[Headings AI Suggestions] AZURE_OPENAI_ENDPOINT: ${JSON.stringify(context.env.AZURE_OPENAI_ENDPOINT)}`);
-          const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
-          log.info('[Headings AI Suggestions] Azure OpenAI client created');
-          const prompt = await getPrompt(
-            {
-              scrapedData: JSON.stringify(scrapeJsonObject),
-            },
-            'heading-empty-suggestion',
-            log,
-          );
+  const updatedAuditData = { ...auditData };
+  updatedAuditData.auditResult = { ...auditData.auditResult };
+  const tasks = [];
 
-          log.info(`[Headings AI Suggestions] Prompt generated ${prompt}`);
-          const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
-            responseFormat: 'json_object',
-          });
-          log.info(`[Headings AI Suggestions] AI response received ${JSON.stringify(aiResponse)}`);
-          const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
-          log.info(`[Headings AI Suggestions] AI response content received ${JSON.stringify(aiResponseContent)}`);
-          log.info(`[Headings AI Suggestions] AI response content h1 received ${JSON.stringify(aiResponseContent.h1)}`);
-          log.info(`[Headings AI Suggestions] AI response content h1 aiSuggestion received ${JSON.stringify(aiResponseContent.h1.aiSuggestion)}`);
-          const { aiSuggestion } = aiResponseContent.h1;
-          log.info(`[Headings AI Suggestions] AI suggestion for empty h1 for ${url}: ${aiSuggestion}`);
-          auditData.auditResult[checkType].aiSuggestions.push({
-            url,
-            aiSuggestion,
-          });
-        } catch (error) {
-          log.error(`[Headings AI Suggestions] Error getting scrape JSON object for ${url}: ${error.message}`);
+  for (const [checkType, checkResult] of Object.entries(auditData.auditResult)) {
+    if (checkResult.success === false && Array.isArray(checkResult.urls)) {
+      for (const url of checkResult.urls) {
+        if (checkType === 'heading-empty') {
+          tasks.push(
+            (async () => {
+              log.info(`[Headings AI Suggestions] Generating AI suggestions for ${url} with check type: ${checkType}`);
+              const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
+
+              if (allKeys.includes(scrapeJsonPath)) {
+                log.info(`[Headings AI Suggestions] Scrape JSON path: ${scrapeJsonPath} found in allKeys`);
+
+                try {
+                  const scrapeJsonObject = await getObjectFromKey(
+                    s3Client,
+                    S3_SCRAPER_BUCKET_NAME,
+                    scrapeJsonPath,
+                    log,
+                  );
+
+                  log.info(`[Headings AI Suggestions] Scrape JSON object received for ${url}`);
+
+                  const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
+                  const prompt = await getPrompt(
+                    { scrapedData: JSON.stringify(scrapeJsonObject) },
+                    'heading-empty-suggestion',
+                    log,
+                  );
+
+                  const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
+                    responseFormat: 'json_object',
+                  });
+
+                  const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
+                  const { aiSuggestion } = aiResponseContent.h1;
+
+                  log.info(`[Headings AI Suggestions] AI suggestion for empty h1 for ${url}: ${aiSuggestion}`);
+
+                  if (!updatedAuditData.auditResult[checkType].aiSuggestions) {
+                    updatedAuditData.auditResult[checkType].aiSuggestions = [];
+                  }
+
+                  updatedAuditData.auditResult[checkType].aiSuggestions.push({
+                    url,
+                    aiSuggestion,
+                  });
+                } catch (error) {
+                  log.error(`[Headings AI Suggestions] Error processing ${url}: ${error.message}`);
+                }
+              } else {
+                log.info(`[Headings AI Suggestions] Scrape JSON path: ${scrapeJsonPath} not found in allKeys`);
+              }
+            })(),
+          );
         }
-      });
+      }
     }
-  });
+  }
+
+  await Promise.all(tasks);
   // log.info(`[Headings AI Suggestions] Context: ${JSON.stringify(context)}`);
   // log.info(`[Headings AI Suggestions] Site: ${JSON.stringify(site)}`);
   // log.info('[Headings AI Suggestions] Ending AI suggestions generation');
-  log.info(`[Headings AI Suggestions] completed Audit data: ${JSON.stringify(auditData)}`);
-  return { ...auditData };
+  log.info(`[Headings AI Suggestions] completed Audit data: ${JSON.stringify(updatedAuditData)}`);
+  return { ...updatedAuditData };
 }
 
 function generateRecommendedAction(checkType) {
