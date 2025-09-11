@@ -1,3 +1,10 @@
+# [1.178.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.8...v1.178.0) (2025-09-11)
+
+
+### Features
+
+* populating form title from mystique for forms opportunities ([#1247](https://github.com/adobe/spacecat-audit-worker/issues/1247)) ([abb9eba](https://github.com/adobe/spacecat-audit-worker/commit/abb9ebadfd9e5332e7edd2ace86262c019301f72))
+
 ## [1.177.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.7...v1.177.8) (2025-09-10)
 
 
