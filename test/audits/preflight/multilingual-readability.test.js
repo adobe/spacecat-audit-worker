@@ -874,5 +874,23 @@ describe('Multilingual Readability Module', () => {
         global.Intl.Segmenter = originalSegmenter;
       }
     });
+
+    it('should correctly score simple German text (regression test for syllable bug)', async () => {
+      // This is a regression test for the bug where ALL German texts were getting score 0
+      // Simple German text should get a good readability score (~70), not 0
+      const simpleGermanText = 'Eine wunderschöne Stadt in der Schweiz. Basel liegt am Rhein und hat viele alte Gebäude und Museen. Besucher genießen es, durch die Altstadt zu spazieren und die hellen, bunten Häuser zu sehen.';
+
+      const result = await analyzeReadability(simpleGermanText, 'german');
+
+      // Should have realistic syllable counts (not impossibly high like 177)
+      expect(result.syllables).to.be.within(45, 60); // Should be around 52
+      expect(result.words).to.equal(32);
+      expect(result.sentences).to.equal(3);
+
+      // Should get a good readability score (~70), not 0
+      const score = await calculateReadabilityScore(simpleGermanText, 'german');
+      expect(score).to.be.within(65, 80); // Should be around 74
+      expect(score).to.not.equal(0); // Critical: should NOT be 0
+    });
   });
 });

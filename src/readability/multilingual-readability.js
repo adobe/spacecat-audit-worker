@@ -68,7 +68,7 @@ async function getHyphenator(language /* 'german' etc. */) {
     default:
       mod = null;
   }
-  // Handle CommonJS default export
+  // Use correct CommonJS default export structure
   const hyphenate = mod?.default?.hyphenate || null;
   hyphenatorCache.set(key, hyphenate);
   return hyphenate;
@@ -145,8 +145,10 @@ async function countSyllablesWord(word, language) {
   }
   // Preserve inner apostrophes/dashes, remove other junk
   const cleaned = word.replace(/[^\p{L}\p{M}''-]/gu, '');
-  const parts = await hyphenate(cleaned);
-  return Math.max(1, parts?.length || 1);
+  const hyphenatedString = await hyphenate(cleaned);
+  // Split by soft hyphen character (U+00AD) to get syllable parts
+  const syllableParts = hyphenatedString ? hyphenatedString.split('\u00AD') : [word];
+  return Math.max(1, syllableParts.length);
 }
 
 // --- Public API ---
