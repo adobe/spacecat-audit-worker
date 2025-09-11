@@ -86,17 +86,6 @@ export async function getHyphenator(language) {
       if (hyphenate) {
         // eslint-disable-next-line no-console
         console.info(`[readability-suggest multilingual] ✅ Successfully loaded hyphenation patterns for ${language}`);
-
-        // Test hyphenation with a sample word to verify it's working
-        try {
-          const testWord = 'Epistemologisch';
-          await hyphenate(testWord);
-        } catch (testError) {
-        // Hyphenation test failed, but module is still usable
-        }
-      } else {
-        // eslint-disable-next-line no-console
-        console.warn(`[readability-suggest multilingual] ⚠️ Hyphenation module loaded but no hyphenate function found for ${language}`);
       }
       return hyphenate;
     } catch (error) {
