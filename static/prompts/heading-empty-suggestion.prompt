@@ -15,7 +15,6 @@ Analyze the scraped page data and provide an AI-powered H1 tag suggestion that i
 - **Current H1:** {{scrapeData.scrapeResult.tags.h1}}
 - **Current Description:** {{scrapeData.scrapeResult.tags.description}}
 - **Page Language:** {{scrapeData.scrapeResult.tags.lang}}
-- **Raw Body Content:** {{scrapeData.scrapeResult.rawBody}}
 
 ### Output Format:
 Your response must be a valid JSON object with the following structure:
