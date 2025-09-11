@@ -18,28 +18,6 @@
 
 import { syllable as syllableEn } from 'syllable';
 
-// Diagnostic logging for cloud debugging
-// eslint-disable-next-line no-console
-console.info('[readability-suggest multilingual] 🚀 Multilingual readability module initialized');
-// eslint-disable-next-line no-console
-console.info(`[readability-suggest multilingual] 📋 Environment: Node.js ${process.version}, Platform: ${process.platform}`);
-// eslint-disable-next-line no-console
-console.info(`[readability-suggest multilingual] 🔧 Intl.Segmenter available: ${typeof Intl?.Segmenter === 'function' ? 'YES' : 'NO'}`);
-// eslint-disable-next-line no-console
-console.info(`[readability-suggest multilingual] 📚 Syllable library loaded: ${typeof syllableEn === 'function' ? 'YES' : 'NO'}`);
-
-// Check hyphen package accessibility
-try {
-  // eslint-disable-next-line no-console
-  console.info('[readability-suggest multilingual] 🔍 Checking hyphen package accessibility...');
-  const hyphenPackage = await import('hyphen/package.json');
-  // eslint-disable-next-line no-console
-  console.info(`[readability-suggest multilingual] 📦 Hyphen package version: ${hyphenPackage.default?.version || 'unknown'}`);
-} catch (hyphenError) {
-  // eslint-disable-next-line no-console
-  console.warn(`[readability-suggest multilingual] ⚠️ Cannot access hyphen package info: ${hyphenError.message}`);
-}
-
 export const SUPPORTED_LANGUAGES = {
   eng: 'english',
   deu: 'german',
@@ -112,12 +90,9 @@ export async function getHyphenator(language) {
         // Test hyphenation with a sample word to verify it's working
         try {
           const testWord = 'Epistemologisch';
-          const testResult = await hyphenate(testWord);
-          // eslint-disable-next-line no-console
-          console.info(`[readability-suggest multilingual] 🔍 Hyphenation test "${testWord}" → "${testResult}" (${testResult ? testResult.split('\u00AD').length : 0} syllables)`);
+          await hyphenate(testWord);
         } catch (testError) {
-          // eslint-disable-next-line no-console
-          console.warn(`[readability-suggest multilingual] ⚠️ Hyphenation test failed: ${testError.message}`);
+        // Hyphenation test failed, but module is still usable
         }
       } else {
         // eslint-disable-next-line no-console
@@ -210,11 +185,6 @@ async function countSyllablesWord(word, language) {
       fallbackLoggedLanguages.add(language);
     }
 
-    // Log specific words that fall back to vowel counting
-    if (word.length > 8) {
-      // eslint-disable-next-line no-console
-      console.info(`[readability-suggest multilingual] 🔄 Vowel fallback: "${word}" → ${syllableCount} syllables (${m ? m.length : 0} vowel groups)`);
-    }
     return syllableCount;
   }
   // Preserve inner apostrophes/dashes, remove other junk
@@ -223,12 +193,6 @@ async function countSyllablesWord(word, language) {
   // Split by soft hyphen character (U+00AD) to get syllable parts
   const syllableParts = hyphenatedString ? hyphenatedString.split('\u00AD') : [word];
   const syllableCount = Math.max(1, syllableParts.length);
-
-  // Debug complex words that might be causing discrepancies
-  if (word.length > 8) {
-    // eslint-disable-next-line no-console
-    console.info(`[readability-suggest multilingual] 🔍 Complex word: "${word}" → "${hyphenatedString}" → ${syllableCount} syllables`);
-  }
 
   return syllableCount;
 }
@@ -280,14 +244,6 @@ export async function analyzeReadability(text, language, opts = {}) {
     else entries.set(key, { word: w, count: 1 });
   }
 
-  // Debug word tokenization for significant texts
-  if (wordCount > 60) {
-    // eslint-disable-next-line no-console
-    console.info(`[readability-suggest multilingual] 📝 Word tokenization: ${wordCount} words, first 10: [${allWords.slice(0, 10).join(', ')}]`);
-    // eslint-disable-next-line no-console
-    console.info(`[readability-suggest multilingual] 📝 Unique words: ${entries.size}, last 5: [${allWords.slice(-5).join(', ')}]`);
-  }
-
   // 2) Resolve syllables per unique word, using cache and deduped promises
   const toResolve = [];
   for (const [key, { word }] of entries) {
@@ -318,8 +274,6 @@ export async function analyzeReadability(text, language, opts = {}) {
     if (s === undefined || s === null || (s === 0 && word.length > 0)) {
       toRecalculate.push(countSyllablesWord(word, lang).then((n) => {
         cache.set(key, n);
-        // eslint-disable-next-line no-console
-        console.info(`[readability-suggest multilingual] 🔧 Cache miss/corruption fixed: "${word}" → ${n} syllables`);
         return n;
       }).catch((error) => {
         // eslint-disable-next-line no-console
@@ -359,28 +313,6 @@ export async function analyzeReadability(text, language, opts = {}) {
     - coeff.wps * wordsPerSentence
     - (coeff.spw ? coeff.spw * syllablesPerWord : 0)
     - (coeff.sp100 ? coeff.sp100 * syllablesPer100Words : 0);
-
-  // Diagnostic logging for cloud debugging (only for non-trivial texts)
-  if (wordCount > 10) {
-    // eslint-disable-next-line no-console
-    console.info(`[readability-suggest multilingual] 📊 Readability Analysis [${lang}]: Words=${wordCount}, Sentences=${sentenceCount}, Syllables=${syllableCount}, SPW=${syllablesPerWord.toFixed(2)}, Score=${clamp(score).toFixed(2)}`);
-
-    // Log the full paragraph being analyzed (truncated if too long)
-    const textPreview = text.length > 500 ? `${text.substring(0, 500)}...` : text;
-    // eslint-disable-next-line no-console
-    console.info(`[readability-suggest multilingual] 📄 Full text being analyzed: "${textPreview}"`);
-
-    // Log first few words for comparison
-    const firstWords = allWords.slice(0, 10);
-    // eslint-disable-next-line no-console
-    console.info(`[readability-suggest multilingual] 🔍 First 10 words: ${firstWords.join(', ')}`);
-
-    // Log any words that were processed with vowel fallback
-    if (fallbackLoggedLanguages.has(lang)) {
-      // eslint-disable-next-line no-console
-      console.info(`[readability-suggest multilingual] ⚠️ Some words used vowel fallback for ${lang}`);
-    }
-  }
 
   return {
     sentences: sentenceCount,
