@@ -209,6 +209,12 @@ async function countSyllablesWord(word, language) {
       console.warn(`[readability-suggest multilingual] 🔄 Using vowel-based fallback for ${language} syllable counting (hyphenation unavailable)`);
       fallbackLoggedLanguages.add(language);
     }
+
+    // Log specific words that fall back to vowel counting
+    if (word.length > 8) {
+      // eslint-disable-next-line no-console
+      console.info(`[readability-suggest multilingual] 🔄 Vowel fallback: "${word}" → ${syllableCount} syllables (${m ? m.length : 0} vowel groups)`);
+    }
     return syllableCount;
   }
   // Preserve inner apostrophes/dashes, remove other junk
@@ -219,9 +225,9 @@ async function countSyllablesWord(word, language) {
   const syllableCount = Math.max(1, syllableParts.length);
 
   // Debug complex words that might be causing discrepancies
-  if (word.length > 10 && syllableCount !== syllableParts.length) {
+  if (word.length > 8) {
     // eslint-disable-next-line no-console
-    console.info(`[readability-suggest multilingual] 🔍 Complex word debug: "${word}" → "${hyphenatedString}" → ${syllableCount} syllables`);
+    console.info(`[readability-suggest multilingual] 🔍 Complex word: "${word}" → "${hyphenatedString}" → ${syllableCount} syllables`);
   }
 
   return syllableCount;
@@ -264,12 +270,22 @@ export async function analyzeReadability(text, language, opts = {}) {
   // 1) Tokenize once; build frequency map of normalized word keys
   let wordCount = 0;
   const entries = new Map(); // key -> { word, count }
+  const allWords = []; // Collect for debugging
   for (const w of iterateWords(text, locale)) {
     wordCount += 1;
+    allWords.push(w);
     const key = `${lang}:${w}`;
     const e = entries.get(key);
     if (e) e.count += 1;
     else entries.set(key, { word: w, count: 1 });
+  }
+
+  // Debug word tokenization for significant texts
+  if (wordCount > 60) {
+    // eslint-disable-next-line no-console
+    console.info(`[readability-suggest multilingual] 📝 Word tokenization: ${wordCount} words, first 10: [${allWords.slice(0, 10).join(', ')}]`);
+    // eslint-disable-next-line no-console
+    console.info(`[readability-suggest multilingual] 📝 Unique words: ${entries.size}, last 5: [${allWords.slice(-5).join(', ')}]`);
   }
 
   // 2) Resolve syllables per unique word, using cache and deduped promises
@@ -293,10 +309,22 @@ export async function analyzeReadability(text, language, opts = {}) {
   // 3) Aggregate syllables/complex words using frequencies
   let syllableCount = 0;
   let complexWords = 0;
-  for (const [key, { count }] of entries) {
+  const syllableBreakdown = []; // For debugging
+  for (const [key, { word, count }] of entries) {
     const s = cache.get(key) ?? 0;
     syllableCount += s * count;
     if (s >= complexThreshold) complexWords += count;
+
+    // Collect syllable breakdown for debugging
+    if (s > 3 && wordCount > 60) {
+      syllableBreakdown.push(`${word}:${s}×${count}`);
+    }
+  }
+
+  // Debug syllable breakdown for significant texts
+  if (wordCount > 60 && syllableBreakdown.length > 0) {
+    // eslint-disable-next-line no-console
+    console.info(`[readability-suggest multilingual] 🔢 High-syllable words (>3): [${syllableBreakdown.slice(0, 8).join(', ')}]`);
   }
 
   // 4) Compute metrics once
@@ -314,6 +342,22 @@ export async function analyzeReadability(text, language, opts = {}) {
   if (wordCount > 10) {
     // eslint-disable-next-line no-console
     console.info(`[readability-suggest multilingual] 📊 Readability Analysis [${lang}]: Words=${wordCount}, Sentences=${sentenceCount}, Syllables=${syllableCount}, SPW=${syllablesPerWord.toFixed(2)}, Score=${clamp(score).toFixed(2)}`);
+
+    // Log the full paragraph being analyzed (truncated if too long)
+    const textPreview = text.length > 500 ? `${text.substring(0, 500)}...` : text;
+    // eslint-disable-next-line no-console
+    console.info(`[readability-suggest multilingual] 📄 Full text being analyzed: "${textPreview}"`);
+
+    // Log first few words for comparison
+    const firstWords = allWords.slice(0, 10);
+    // eslint-disable-next-line no-console
+    console.info(`[readability-suggest multilingual] 🔍 First 10 words: ${firstWords.join(', ')}`);
+
+    // Log any words that were processed with vowel fallback
+    if (fallbackLoggedLanguages.has(lang)) {
+      // eslint-disable-next-line no-console
+      console.info(`[readability-suggest multilingual] ⚠️ Some words used vowel fallback for ${lang}`);
+    }
   }
 
   return {
