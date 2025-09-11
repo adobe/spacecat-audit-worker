@@ -310,6 +310,28 @@ export async function analyzeReadability(text, language, opts = {}) {
   let syllableCount = 0;
   let complexWords = 0;
   const syllableBreakdown = []; // For debugging
+  // CRITICAL FIX: Check for corrupted cache entries and recalculate if needed
+  const toRecalculate = [];
+  for (const [key, { word }] of entries) {
+    const s = cache.get(key);
+    // If cache returns undefined/null or 0 for a non-empty word, need to recalculate
+    if (s === undefined || s === null || (s === 0 && word.length > 0)) {
+      toRecalculate.push(countSyllablesWord(word, lang).then((n) => {
+        cache.set(key, n);
+        // eslint-disable-next-line no-console
+        console.info(`[readability-suggest multilingual] 🔧 Cache miss/corruption fixed: "${word}" → ${n} syllables`);
+        return n;
+      }).catch((error) => {
+        // eslint-disable-next-line no-console
+        console.warn(`[readability-suggest multilingual] ⚠️ Syllable calculation failed for "${word}":`, error.message);
+        const fallback = word.length <= 3 ? 1 : Math.ceil(word.length / 2); // Emergency fallback
+        cache.set(key, fallback);
+        return fallback;
+      }));
+    }
+  }
+  if (toRecalculate.length) await Promise.all(toRecalculate);
+
   for (const [key, { word, count }] of entries) {
     const s = cache.get(key) ?? 0;
     syllableCount += s * count;
@@ -325,17 +347,6 @@ export async function analyzeReadability(text, language, opts = {}) {
   if (wordCount > 60 && syllableBreakdown.length > 0) {
     // eslint-disable-next-line no-console
     console.info(`[readability-suggest multilingual] 🔢 High-syllable words (>3): [${syllableBreakdown.slice(0, 8).join(', ')}]`);
-  }
-
-  // Debug ALL words for the complex German text to find the missing syllables
-  if (wordCount === 66) {
-    const allWordsBreakdown = [];
-    for (const [key, { word, count }] of entries) {
-      const s = cache.get(key) ?? 0;
-      allWordsBreakdown.push(`${word}:${s}×${count}`);
-    }
-    // eslint-disable-next-line no-console
-    console.info(`[readability-suggest multilingual] 📝 ALL WORDS [66-word text]: ${allWordsBreakdown.join(', ')}`);
   }
 
   // 4) Compute metrics once
