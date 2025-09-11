@@ -329,6 +329,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
                 explanation: check.explanation,
                 suggestion: check.suggestion,
                 urls: [],
+                aiSuggestions: [],
               };
             }
 
@@ -418,7 +419,6 @@ async function getPrompt(placeholders, filename, log = console) {
   - **Current H1:** ${scrapedData.scrapeResult?.tags?.h1 || 'N/A'}
   - **Current Description:** ${scrapedData.scrapeResult?.tags?.description || 'N/A'}
   - **Page Language:** ${scrapedData.scrapeResult?.tags?.lang || 'N/A'}
-  - **Raw Body Content:** ${scrapedData.scrapeResult?.rawBody || 'N/A'}
 
   ### Output Format:
   Your response must be a valid JSON object with the following structure:
@@ -498,7 +498,6 @@ export async function generateAISuggestions(auditUrl, auditData, context, site) 
           return;
         }
         log.info(`[Headings AI Suggestions] Generating AI suggestions for ${url} with check type: ${checkType}`);
-        // get the scrape.json path
         const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
         // check if the scrape.json path is in the allKeys
         if (!allKeys.includes(scrapeJsonPath)) {
@@ -527,7 +526,7 @@ export async function generateAISuggestions(auditUrl, auditData, context, site) 
             log,
           );
 
-          // log.info(`[Headings AI Suggestions] Prompt generated ${prompt}`);
+          log.info(`[Headings AI Suggestions] Prompt generated ${prompt}`);
           const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
             responseFormat: 'json_object',
           });
@@ -538,15 +537,20 @@ export async function generateAISuggestions(auditUrl, auditData, context, site) 
           log.info(`[Headings AI Suggestions] AI response content h1 aiSuggestion received ${JSON.stringify(aiResponseContent.h1.aiSuggestion)}`);
           const { aiSuggestion } = aiResponseContent.h1;
           log.info(`[Headings AI Suggestions] AI suggestion for empty h1 for ${url}: ${aiSuggestion}`);
+          auditData.auditResult[checkType].aiSuggestions.push({
+            url,
+            aiSuggestion,
+          });
         } catch (error) {
           log.error(`[Headings AI Suggestions] Error getting scrape JSON object for ${url}: ${error.message}`);
         }
       });
     }
   });
-  log.info(`[Headings AI Suggestions] Context: ${JSON.stringify(context)}`);
-  log.info(`[Headings AI Suggestions] Site: ${JSON.stringify(site)}`);
-  log.info('[Headings AI Suggestions] Ending AI suggestions generation');
+  // log.info(`[Headings AI Suggestions] Context: ${JSON.stringify(context)}`);
+  // log.info(`[Headings AI Suggestions] Site: ${JSON.stringify(site)}`);
+  // log.info('[Headings AI Suggestions] Ending AI suggestions generation');
+  log.info(`[Headings AI Suggestions] Audit data: ${JSON.stringify(auditData)}`);
   return { ...auditData };
 }
 
