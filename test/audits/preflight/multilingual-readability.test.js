@@ -19,6 +19,7 @@ import {
   getTargetScore,
   isSupportedLanguage,
   getLanguageName,
+  getHyphenator,
   SUPPORTED_LANGUAGES,
 } from '../../../src/readability/multilingual-readability.js';
 
@@ -627,14 +628,45 @@ describe('Multilingual Readability Module', () => {
     });
   });
 
-  describe('Coverage for uncovered lines', () => {
-    it('should handle unsupported language in getHyphenator (line 69)', async () => {
-      // Test default case in getHyphenator function
+  describe('Enhanced getHyphenator function', () => {
+    it('should handle unsupported language (not in LOCALE_MAP)', async () => {
+      // Test when language is not in LOCALE_MAP
+      const hyphenator = await getHyphenator('unsupported-language');
+      expect(hyphenator).to.be.null;
+    });
+
+    it('should handle edge cases gracefully', async () => {
+      // Test error handling for null/undefined inputs
+      const hyphenator1 = await getHyphenator(null);
+      expect(hyphenator1).to.be.null;
+
+      const hyphenator2 = await getHyphenator(undefined);
+      expect(hyphenator2).to.be.null;
+
+      const hyphenator3 = await getHyphenator('');
+      expect(hyphenator3).to.be.null;
+    });
+
+    it('should cache promises to prevent duplicate imports', async () => {
+      // Test that concurrent calls to same language use cached promise
+      const [hyphenator1, hyphenator2] = await Promise.all([
+        getHyphenator('german'),
+        getHyphenator('german'),
+      ]);
+
+      expect(hyphenator1).to.equal(hyphenator2);
+      expect(typeof hyphenator1).to.equal('function');
+    });
+
+    it('should work with fallback readability calculation for unsupported languages', async () => {
+      // Test end-to-end behavior with unsupported language
       const score = await calculateReadabilityScore('Test text for coverage.', 'unsupported');
       expect(score).to.be.a('number');
       expect(score).to.be.within(0, 100);
     });
+  });
 
+  describe('Coverage for uncovered lines', () => {
     it('should use fallback when Intl.Segmenter is not available (lines 90-95, 107)', async () => {
       // Mock Intl.Segmenter to be undefined to test fallback paths
       const originalSegmenter = global.Intl.Segmenter;

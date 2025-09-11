@@ -27,51 +27,61 @@ export const SUPPORTED_LANGUAGES = {
   nld: 'dutch',
 };
 
-const NAME_TO_LOCALE = {
-  english: 'en',
+// Hyphenation language codes
+const LOCALE_MAP = Object.freeze({
   german: 'de',
   spanish: 'es',
   italian: 'it',
   french: 'fr',
   dutch: 'nl',
-};
+  // english intentionally omitted (use syllableEn elsewhere)
+});
+
+const NAME_TO_LOCALE = Object.freeze({
+  english: 'en',
+  ...LOCALE_MAP, // { german:'de', spanish:'es', italian:'it', french:'fr', dutch:'nl' }
+});
+
+// Flesch(-like) coefficients per language
+// score = A - wps*WPS - spw*SPW - sp100*SP100 (undefined treated as 0)
+const COEFFS = Object.freeze({
+  german: { A: 180, wps: 1.0, spw: 58.5 },
+  spanish: { A: 206.84, wps: 1.02, sp100: 0.60 },
+  italian: { A: 217, wps: 1.3, sp100: 0.6 },
+  french: { A: 207, wps: 1.015, spw: 73.6 },
+  dutch: { A: 206.84, wps: 0.93, sp100: 0.77 },
+  english: { A: 206.835, wps: 1.015, spw: 84.6 },
+});
+
+// Optional: in-flight promise cache to dedupe concurrent analyze() calls
+const syllablePromiseCache = new Map(); // key -> Promise<number>
 
 const clamp = (x) => Math.max(0, Math.min(100, x));
 
 // --- Hyphenation loader (lazy) ---
-/** Cache of async hyphenate functions per language name */
-const hyphenatorCache = new Map();
-/** Returns a function hyphenate(word) -> string[] */
-async function getHyphenator(language /* 'german' etc. */) {
-  const key = language.toLowerCase();
-  if (hyphenatorCache.has(key)) return hyphenatorCache.get(key);
+// cache promises to dedupe concurrent calls
+const hyphenatorCache = new Map(); // Map<string, Promise<Function|null>>
 
-  // Load only what you need; all MIT (package "hyphen")
-  let mod;
-  switch (key) {
-    case 'german':
-      mod = await import('hyphen/de/index.js');
-      break;
-    case 'spanish':
-      mod = await import('hyphen/es/index.js');
-      break;
-    case 'italian':
-      mod = await import('hyphen/it/index.js');
-      break;
-    case 'french':
-      mod = await import('hyphen/fr/index.js');
-      break;
-    case 'dutch':
-      mod = await import('hyphen/nl/index.js');
-      break;
-    // english hyphenation is not used for syllables (we use syllableEn)
-    default:
-      mod = null;
-  }
-  // Use correct CommonJS default export structure
-  const hyphenate = mod?.default?.hyphenate || null;
-  hyphenatorCache.set(key, hyphenate);
-  return hyphenate;
+export async function getHyphenator(language) {
+  const key = String(language).toLowerCase();
+  const cached = hyphenatorCache.get(key);
+  if (cached) return cached;
+
+  const loader = (async () => {
+    const locale = LOCALE_MAP[key];
+    if (!locale) return null;
+
+    try {
+      const mod = await import(`hyphen/${locale}/index.js`);
+      return mod?.default?.hyphenate ?? mod?.hyphenate ?? null;
+    } catch {
+      // On missing locale/module just return null, keep callers simple.
+      return null;
+    }
+  })();
+
+  hyphenatorCache.set(key, loader);
+  return loader;
 }
 
 // --- Tokenization (streaming, locale-aware) ---
@@ -171,9 +181,10 @@ export function getLanguageName(francCode) {
  * - complexThreshold: number of syllables to qualify as complex (default 3)
  */
 export async function analyzeReadability(text, language, opts = {}) {
-  const lang = (language || 'english').toLowerCase();
+  const lang = String(language || 'english').toLowerCase();
   const locale = NAME_TO_LOCALE[lang] || 'en';
   const complexThreshold = opts.complexThreshold ?? defaultComplexThreshold;
+  const coeff = COEFFS[lang] || COEFFS.english;
 
   if (!text?.trim()) {
     return {
@@ -181,51 +192,61 @@ export async function analyzeReadability(text, language, opts = {}) {
     };
   }
 
-  const sentenceCount = countSentences(text, locale);
-
+  const sentenceCount = Math.max(1, countSentences(text, locale)); // guard against 0
   const cache = makeWordCache();
-  let wordCount = 0;
-  let syllableCount = 0;
-  let complexWords = 0;
 
+  // 1) Tokenize once; build frequency map of normalized word keys
+  let wordCount = 0;
+  const entries = new Map(); // key -> { word, count }
   for (const w of iterateWords(text, locale)) {
     wordCount += 1;
     const key = `${lang}:${w}`;
-    let s = cache.get(key);
-    if (s == null) {
-      // eslint-disable-next-line no-await-in-loop
-      s = await countSyllablesWord(w, lang);
-      cache.set(key, s);
-    }
-    syllableCount += s;
-    if (s >= complexThreshold) complexWords += 1;
+    const e = entries.get(key);
+    if (e) e.count += 1;
+    else entries.set(key, { word: w, count: 1 });
   }
 
-  const wordsPerSentence = wordCount > 0 ? wordCount / sentenceCount : 0;
-  const syllablesPerWord = wordCount > 0 ? syllableCount / wordCount : 0;
+  // 2) Resolve syllables per unique word, using cache and deduped promises
+  const toResolve = [];
+  for (const [key, { word }] of entries) {
+    if (cache.get(key) == null) {
+      let p = syllablePromiseCache.get(key);
+      if (!p) {
+        p = countSyllablesWord(word, lang).then((n) => {
+          cache.set(key, n);
+          syllablePromiseCache.delete(key); // keep cache small
+          return n;
+        }).catch(() => {
+          cache.set(key, 0);
+          syllablePromiseCache.delete(key);
+          return 0;
+        });
+        syllablePromiseCache.set(key, p);
+      }
+      toResolve.push(p);
+    }
+  }
+  if (toResolve.length) await Promise.all(toResolve);
+
+  // 3) Aggregate syllables/complex words using frequencies
+  let syllableCount = 0;
+  let complexWords = 0;
+  for (const [key, { count }] of entries) {
+    const s = cache.get(key) ?? 0;
+    syllableCount += s * count;
+    if (s >= complexThreshold) complexWords += count;
+  }
+
+  // 4) Compute metrics once
+  const wordsPerSentence = wordCount / sentenceCount;
+  const syllablesPerWord = wordCount ? (syllableCount / wordCount) : 0;
   const syllablesPer100Words = syllablesPerWord * 100;
 
-  let score;
-  switch (lang) {
-    case 'german':
-      score = 180 - wordsPerSentence - 58.5 * syllablesPerWord;
-      break;
-    case 'spanish':
-      score = 206.84 - 1.02 * wordsPerSentence - 0.60 * syllablesPer100Words;
-      break;
-    case 'italian':
-      score = 217 - 1.3 * wordsPerSentence - 0.6 * syllablesPer100Words;
-      break;
-    case 'french':
-      score = 207 - 1.015 * wordsPerSentence - 73.6 * syllablesPerWord;
-      break;
-    case 'dutch':
-      score = 206.84 - 0.77 * syllablesPer100Words - 0.93 * wordsPerSentence;
-      break;
-    case 'english':
-    default:
-      score = 206.835 - 1.015 * wordsPerSentence - 84.6 * syllablesPerWord;
-  }
+  // 5) Unified scoring using coefficients
+  const score = coeff.A
+    - (coeff.wps ? coeff.wps * wordsPerSentence : 0)
+    - (coeff.spw ? coeff.spw * syllablesPerWord : 0)
+    - (coeff.sp100 ? coeff.sp100 * syllablesPer100Words : 0);
 
   return {
     sentences: sentenceCount,
