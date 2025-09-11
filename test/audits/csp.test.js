@@ -18,7 +18,12 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 
-import { Audit, Opportunity, Suggestion } from '@adobe/spacecat-shared-data-access';
+import {
+  Audit,
+  Opportunity,
+  Site,
+  Suggestion,
+} from '@adobe/spacecat-shared-data-access';
 import { isIsoDate } from '@adobe/spacecat-shared-utils';
 import createLHSAuditRunner from '../../src/lhs/lib.js';
 import { MockContextBuilder } from '../shared.js';
@@ -212,7 +217,7 @@ describe('CSP Post-processor', () => {
 
     cspSite = {
       ...site,
-      getDeliveryType: () => 'aem_edge',
+      getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
     };
 
     auditData = await mobileAuditRunner(siteUrl, context, cspSite);
@@ -643,7 +648,7 @@ describe('CSP Post-processor', () => {
         description: 'No CSP found in enforcement mode',
       },
     ];
-    cspSite.getDeliveryType = () => 'other';
+    cspSite.getDeliveryType = () => Site.DELIVERY_TYPES.OTHER;
 
     const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
     assertAuditData(cspAuditData);
