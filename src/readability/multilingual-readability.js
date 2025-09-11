@@ -327,6 +327,17 @@ export async function analyzeReadability(text, language, opts = {}) {
     console.info(`[readability-suggest multilingual] 🔢 High-syllable words (>3): [${syllableBreakdown.slice(0, 8).join(', ')}]`);
   }
 
+  // Debug ALL words for the complex German text to find the missing syllables
+  if (wordCount === 66) {
+    const allWordsBreakdown = [];
+    for (const [key, { word, count }] of entries) {
+      const s = cache.get(key) ?? 0;
+      allWordsBreakdown.push(`${word}:${s}×${count}`);
+    }
+    // eslint-disable-next-line no-console
+    console.info(`[readability-suggest multilingual] 📝 ALL WORDS [66-word text]: ${allWordsBreakdown.join(', ')}`);
+  }
+
   // 4) Compute metrics once
   const wordsPerSentence = wordCount / sentenceCount;
   const syllablesPerWord = wordCount ? (syllableCount / wordCount) : 0;
