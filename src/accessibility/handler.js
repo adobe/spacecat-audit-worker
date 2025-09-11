@@ -63,7 +63,7 @@ export async function scrapeAccessibilityData(context) {
   log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
   let urlsToScrape = [];
-  urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
+  urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log, dataAccess);
 
   if (urlsToScrape.length === 0) {
     const { SiteTopPage } = dataAccess;
