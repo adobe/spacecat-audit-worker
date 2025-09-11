@@ -16,6 +16,6 @@
         "@adobe/spacecat-shared-rum-api-client-v1"
       ],
       "allowedVersions": "<2.0.0"
-    }}
+    }
   ]
 }
