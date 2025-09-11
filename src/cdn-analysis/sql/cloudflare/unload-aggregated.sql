@@ -6,7 +6,8 @@ UNLOAD (
     try(url_extract_host(ClientRequestReferer)) AS referer,
     ClientRequestHost AS host,
     CAST(EdgeTimeToFirstByteMs AS DOUBLE) AS time_to_first_byte,
-    COUNT(*) AS count
+    COUNT(*) AS count,
+    '{{serviceProvider}}' AS cdn_provider
 
   FROM {{database}}.{{rawTable}}
 
@@ -19,7 +20,7 @@ UNLOAD (
     -- The 'hour' column in output provides hourly breakdown within the daily aggregation
 
     -- match known LLM-related user-agents
-    AND REGEXP_LIKE(ClientRequestUserAgent, '(?i)ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot')
+    AND REGEXP_LIKE(ClientRequestUserAgent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot|^Google$)')
 
     -- only count text/html responses with robots.txt and sitemaps
     AND (
@@ -38,6 +39,7 @@ UNLOAD (
     EdgeResponseStatus,
     try(url_extract_host(ClientRequestReferer)),
     ClientRequestHost,
-    CAST(EdgeTimeToFirstByteMs AS DOUBLE)
-) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/08/'
+    CAST(EdgeTimeToFirstByteMs AS DOUBLE),
+    '{{serviceProvider}}'
+) TO '{{aggregatedOutput}}'
 WITH (format = 'PARQUET');

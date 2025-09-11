@@ -30,6 +30,12 @@ Resources:
           IMS_CLIENT_CODE: !Ref IMS_CLIENT_CODE
           IMS_CLIENT_SECRET: !Ref IMS_CLIENT_SECRET
           DYNAMO_TABLE_NAME_DATA: !Ref DYNAMO_TABLE_NAME_DATA
+          QUEUE_SPACECAT_TO_MYSTIQUE: !Ref QUEUE_SPACECAT_TO_MYSTIQUE
+          SHAREPOINT_AUTHORITY: !Ref SHAREPOINT_AUTHORITY
+          SHAREPOINT_CLIENT_ID: !Ref SHAREPOINT_CLIENT_ID
+          SHAREPOINT_CLIENT_SECRET: !Ref SHAREPOINT_CLIENT_SECRET
+          SHAREPOINT_DOMAIN_ID: !Ref SHAREPOINT_DOMAIN_ID
+          ADMIN_HLX_API_KEY: !Ref ADMIN_HLX_API_KEY
       Role: arn:aws:iam::682033462621:role/spacecat-role-lambda-generic
       Events:
         ApiEvent:
@@ -97,3 +103,21 @@ Parameters:
   DYNAMO_TABLE_NAME_DATA:
     Type: String
     Description: DynamoDB Table Name for Data
+  QUEUE_SPACECAT_TO_MYSTIQUE:
+    Type: String
+    Description: Queue Name for Spacecat to Mystique
+  SHAREPOINT_AUTHORITY:
+    Type: String
+    Description: Sharepoint Authority
+  SHAREPOINT_CLIENT_ID:
+    Type: String
+    Description: Sharepoint Client ID
+  SHAREPOINT_CLIENT_SECRET:
+    Type: String
+    Description: Sharepoint Client Secret
+  SHAREPOINT_DOMAIN_ID:
+    Type: String
+    Description: Sharepoint Domain ID
+  ADMIN_HLX_API_KEY:
+    Type: String
+    Description: Admin HLX API Key

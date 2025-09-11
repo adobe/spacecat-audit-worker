@@ -18,13 +18,16 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { describe } from 'mocha';
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import handler from '../../../src/paid/guidance-handler.js';
+import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
+import handler from '../../../src/paid-cookie-consent/guidance-handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
 
 // Helper to create a fresh stubbed opportunity instance
-function makeOppty({ page, opportunityType }) {
+function makeOppty({
+  page, opportunityType, status = 'NEW', updatedBy = 'system', updatedAt = new Date().toISOString(),
+}) {
   return {
     getId: () => `opptyId-${page}-${opportunityType}`,
     getSuggestions: async () => [],
@@ -33,16 +36,19 @@ function makeOppty({ page, opportunityType }) {
     setGuidance: sinon.stub(),
     setTitle: sinon.stub(),
     setDescription: sinon.stub(),
+    setStatus: sinon.stub(),
     save: sinon.stub().resolvesThis(),
     getType: () => 'generic-opportunity',
     getData: () => ({ page, opportunityType }),
-    getStatus: () => 'NEW',
+    getStatus: () => status,
+    getUpdatedBy: () => updatedBy,
+    getUpdatedAt: () => updatedAt,
   };
 }
 
 const TEST_PAGE = 'https://example-page/to-check';
 
-describe('Paid Guidance Handler', () => {
+describe('Paid Cookie Consent Guidance Handler', () => {
   let sandbox;
   let logStub;
   let context;
@@ -73,6 +79,8 @@ describe('Paid Guidance Handler', () => {
       getType: () => 'generic-opportunity',
       getData: () => ({ page: TEST_PAGE, opportunityType: 'paid-cookie-consent' }),
       getStatus: () => 'NEW',
+      getUpdatedBy: () => 'system',
+      getUpdatedAt: () => new Date().toISOString(),
     };
     Opportunity = {
       allBySiteId: sandbox.stub(),
@@ -89,14 +97,21 @@ describe('Paid Guidance Handler', () => {
       getAuditId: () => 'auditId',
       getAuditResult: () => [
         {
-          key: 'url',
+          key: 'urlConsent',
           value: [{
-            url: 'https://example-page/to-check', pageViews: 10, ctr: 0.5, bounceRate: 0.2,
+            url: 'https://example-page/to-check', pageViews: 10, bounceRate: 0.8, projectedTrafficLost: 8, consent: 'show',
           }],
         },
-        { key: 'pageType', value: [{ topURLs: ['https://example-url'], type: 'product-page' }] },
       ],
     });
+
+    // Mock ScrapeClient
+    const mockScrapeClient = {
+      getScrapeJobUrlResults: sandbox.stub().resolves([{
+        path: 'path/to/scrape.json',
+      }]),
+    };
+    sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
   });
 
   afterEach(() => {
@@ -116,7 +131,11 @@ describe('Paid Guidance Handler', () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
     const guidance = [{
-      body: 'plain\nmarkdown', insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+      body: { markdown: 'plain\nmarkdown' },
+      insight: 'insight',
+      rationale: 'rationale',
+      recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
     }];
     const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
     const result = await handler(message, context);
@@ -133,7 +152,11 @@ markdown`);
     Opportunity.create.resolves(opportunityInstance);
     const markdown = 'json\nmarkdown';
     const guidance = [{
-      body: JSON.stringify({ markdown }), insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+      body: { markdown },
+      insight: 'insight',
+      rationale: 'rationale',
+      recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
     }];
     const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
     const result = await handler(message, context);
@@ -145,89 +168,135 @@ markdown`);
     expect(result.status).to.equal(ok().status);
   });
 
-  it('should update an existing opportunity and replace suggestions', async () => {
-    // Override getSuggestions for this test to simulate existing suggestions
-    const removeStub = sinon.stub().resolves();
-    opportunityInstance.getSuggestions = async () => [{ remove: removeStub }];
-    Opportunity.allBySiteId.resolves([opportunityInstance]);
-    const guidance = [{
-      body: 'plain\nmarkdown', insight: 'insight', rationale: 'rationale', recommendation: 'rec',
-    }];
-    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
-    const result = await handler(message, context);
-    expect(opportunityInstance.setAuditId).to.have.been.called;
-    expect(opportunityInstance.setData).to.have.been.called;
-    expect(opportunityInstance.setGuidance).to.have.been.called;
-    expect(opportunityInstance.setTitle).to.have.been.called;
-    expect(opportunityInstance.setDescription).to.have.been.called;
-    expect(opportunityInstance.save).to.have.been.called;
-    expect(removeStub).to.have.been.called;
-    expect(Suggestion.create).to.have.been.called;
-    expect(opportunityInstance.setStatus).to.not.have.been.called;
-    const suggestion = Suggestion.create.getCall(0).args[0];
-    expect(suggestion.data.suggestionValue).include(`plain
-markdown`);
-    expect(result.status).to.equal(ok().status);
-  });
-
-  // it('should handle missing guidance/body gracefully', async () => {
-  //   Opportunity.allBySiteId.resolves([]);
-  //   Opportunity.create.resolves(opportunityInstance);
-  //   const guidance = [{}];
-  //   const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
-  //   const result = await handler(message, context);
-  //   expect(Opportunity.create).to.have.been.called;
-  //   expect(Suggestion.create).to.have.been.called;
-  //   const suggestion = Suggestion.create.getCall(0).args[0];
-  //   expect(suggestion.data.suggestionValue).to.be.undefined;
-  //   expect(result.status).to.equal(ok().status);
-  // });
-
-  it('should match existing opportunity by page and opportunityType', async () => {
+  it('should create new opportunity and mark existing matching NEW system opportunities as IGNORED', async () => {
     const correctOppty = makeOppty({ page: TEST_PAGE, opportunityType: 'paid-cookie-consent' });
     const wrongPageOppty = makeOppty({ page: 'wrong-url', opportunityType: 'paid-cookie-consent' });
     const wrongTypeOppty = makeOppty({ page: 'url', opportunityType: 'other-type' });
 
     Opportunity.allBySiteId.resolves([wrongPageOppty, wrongTypeOppty, correctOppty]);
+    Opportunity.create.resolves(opportunityInstance);
     Audit.findById.resolves({
       getAuditId: () => 'auditId',
       getAuditResult: () => [
         {
-          key: 'url',
+          key: 'urlConsent',
           value: [{
-            url: TEST_PAGE, pageViews: 10, ctr: 0.5, bounceRate: 0.2,
+            url: TEST_PAGE, pageViews: 10, bounceRate: 0.8, projectedTrafficLost: 8, consent: 'show',
           }],
         },
-        { key: 'pageType', value: [{ topURLs: [TEST_PAGE], type: 'landing' }] },
       ],
     });
     const guidance = [{
-      body: 'plain\nmarkdown', insight: 'insight', rationale: 'rationale', recommendation: 'rec',
+      body: { markdown: 'plain\nmarkdown' },
+      insight: 'insight',
+      rationale: 'rationale',
+      recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
     }];
     const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
 
     // Act
     const result = await handler(message, context);
 
-    // Assert: Only the correctOppty should be updated
-    expect(correctOppty.setAuditId).to.have.been.called;
-    expect(correctOppty.setData).to.have.been.called;
-    expect(correctOppty.setGuidance).to.have.been.called;
-    expect(correctOppty.setTitle).to.have.been.called;
-    expect(correctOppty.setDescription).to.have.been.called;
-    expect(correctOppty.save).to.have.been.called;
-    expect(result.status).to.equal(ok().status);
+    // Assert: A new opportunity should be created
+    expect(Opportunity.create).to.have.been.called;
+    expect(Suggestion.create).to.have.been.called;
 
-    // The wrong ones should not be updated
-    expect(wrongPageOppty.setAuditId).to.not.have.been.called;
-    expect(wrongTypeOppty.setAuditId).to.not.have.been.called;
+    // The matching existing opportunity should be marked as IGNORED
+    expect(correctOppty.setStatus).to.have.been.calledWith('IGNORED');
+    expect(correctOppty.save).to.have.been.called;
+
+    // The non-matching ones should not be touched
+    expect(wrongPageOppty.setStatus).to.not.have.been.called;
+    expect(wrongTypeOppty.setStatus).to.not.have.been.called;
+
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should create new opportunity and mark all existing NEW system opportunities as IGNORED', async () => {
+    const olderOppty = makeOppty({
+      page: TEST_PAGE,
+      opportunityType: 'paid-cookie-consent',
+      updatedAt: '2024-01-01T00:00:00Z',
+    });
+    const newerOppty = makeOppty({
+      page: TEST_PAGE,
+      opportunityType: 'paid-cookie-consent',
+      updatedAt: '2024-01-02T00:00:00Z',
+    });
+    const nonSystemOppty = makeOppty({
+      page: TEST_PAGE,
+      opportunityType: 'paid-cookie-consent',
+      updatedBy: 'user',
+    });
+
+    Opportunity.allBySiteId.resolves([olderOppty, newerOppty, nonSystemOppty]);
+    Opportunity.create.resolves(opportunityInstance);
+    Audit.findById.resolves({
+      getAuditId: () => 'auditId',
+      getAuditResult: () => [
+        {
+          key: 'urlConsent',
+          value: [{
+            url: TEST_PAGE, pageViews: 10, bounceRate: 0.8, projectedTrafficLost: 8, consent: 'show',
+          }],
+        },
+      ],
+    });
+    const guidance = [{
+      body: { markdown: 'plain\nmarkdown' },
+      insight: 'insight',
+      rationale: 'rationale',
+      recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+
+    const result = await handler(message, context);
+
+    // Assert: A new opportunity should be created
+    expect(Opportunity.create).to.have.been.called;
+    expect(Suggestion.create).to.have.been.called;
+
+    // Both system opportunities should be marked as IGNORED
+    expect(newerOppty.setStatus).to.have.been.calledWith('IGNORED');
+    expect(newerOppty.save).to.have.been.called;
+    expect(olderOppty.setStatus).to.have.been.calledWith('IGNORED');
+    expect(olderOppty.save).to.have.been.called;
+
+    // The non-system opportunity should not be touched
+    expect(nonSystemOppty.setStatus).to.not.have.been.called;
+
+    expect(result.status).to.equal(ok().status);
+  });
+
+  it('should handle guidance body as JSON object', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    const guidance = [{
+      body: {
+        markdown: 'Direct JSON object markdown',
+        issueSeverity: 'high',
+      },
+      insight: 'insight',
+      rationale: 'rationale',
+      recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+
+    const result = await handler(message, context);
+
+    expect(Opportunity.create).to.have.been.called;
+    expect(Suggestion.create).to.have.been.called;
+    expect(result.status).to.equal(ok().status);
   });
 
   it('should skip opportunity creation and log for low severity (low)', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
-    const body = JSON.stringify({ issueSeverity: 'loW', markdown: 'irrelevant' });
-    const guidance = [{ body }];
+    const body = { issueSeverity: 'loW', markdown: 'irrelevant' };
+    const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
     const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
     const result = await handler(message, context);
     expect(Opportunity.create).not.to.have.been.called;
@@ -239,8 +308,8 @@ markdown`);
   it('should create opportunity if severity is medium', async () => {
     Opportunity.allBySiteId.resolves([]);
     Opportunity.create.resolves(opportunityInstance);
-    const body = JSON.stringify({ issueSeverity: 'Medium', markdown: 'irrelevant' });
-    const guidance = [{ body }];
+    const body = { issueSeverity: 'Medium', markdown: 'irrelevant' };
+    const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
     const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
     const result = await handler(message, context);
     expect(Opportunity.create).to.have.been.called;
@@ -248,21 +317,15 @@ markdown`);
     expect(result.status).to.equal(ok().status);
   });
 
-  it('should wrap non-JSON guidance body in markdown property', async () => {
+  it('should skip opportunity creation for none severity', async () => {
     Opportunity.allBySiteId.resolves([]);
-    Opportunity.create.resolves(opportunityInstance);
-    // This is not a valid JSON string
-    const body = 'not a json string';
-    const guidance = [{
-      body, insight: 'insight', rationale: 'rationale', recommendation: 'rec',
-    }];
+    const body = { issueSeverity: 'none', markdown: 'test' };
+    const guidance = [{ body, metadata: { scrape_job_id: 'test-job-id' } }];
     const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+
     const result = await handler(message, context);
-    expect(Opportunity.create).to.have.been.called;
-    const calledWith = Opportunity.create.getCall(0).args[0];
-    expect(calledWith.guidance.recommendations[0].insight).to.equal('insight');
-    expect(calledWith.guidance.recommendations[0].recommendation).to.equal('rec');
-    expect(calledWith.guidance.recommendations[0].rationale).to.equal('rationale');
+
+    expect(Opportunity.create).not.to.have.been.called;
     expect(result.status).to.equal(ok().status);
   });
 });

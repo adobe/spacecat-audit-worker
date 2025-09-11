@@ -740,6 +740,8 @@ export const issueTypesForMystique = [
   'aria-valid-attr-value',
   'button-name',
   'link-name',
+  'select-name',
+  'aria-required-parent',
 ];
 
 /**
@@ -777,3 +779,5 @@ export const AUDIT_PREFIXES = {
     storagePrefix: 'forms-accessibility',
   },
 };
+
+export const A11Y_METRICS_AGGREGATOR_IMPORT_TYPE = 'a11y-metrics-aggregator';

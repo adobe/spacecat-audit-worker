@@ -15,7 +15,7 @@ import { load as cheerioLoad } from 'cheerio';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_CSP;
 
-async function determineSuggestionsForPage(url, context, site) {
+async function determineSuggestionsForPage(url, page, context, site) {
   const { log } = context;
 
   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Fetching page '${url}' for CSP auto-suggest`);
@@ -34,11 +34,13 @@ async function determineSuggestionsForPage(url, context, site) {
 
   let suggestedBody = responseBody;
   const findings = [];
-  const $ = cheerioLoad(responseBody);
+  const $ = cheerioLoad(responseBody, { sourceCodeLocationInfo: true }, false);
+
   const scriptTags = $('script');
 
   scriptTags.each((index, element) => {
-    const scriptContent = $.html(element);
+    const scriptContent = responseBody
+      .substring(element.sourceCodeLocation.startOffset, element.sourceCodeLocation.endOffset);
 
     // no suggestion if nonce is already present
     if ($(element).attr('nonce')) {
@@ -48,7 +50,7 @@ async function determineSuggestionsForPage(url, context, site) {
 
     // prepare finding
     const suggestedContent = scriptContent.replace(/<script/, '<script nonce="aem"');
-    const lineNumber = responseBody.slice(0, $(element).startIndex).split('\n').length;
+    const lineNumber = element.sourceCodeLocation.startLine;
 
     findings.push({
       scriptContent,
@@ -68,6 +70,7 @@ async function determineSuggestionsForPage(url, context, site) {
   return {
     type: 'static-content',
     url: url.toString(),
+    page,
     findings,
     suggestedBody,
   };
@@ -94,20 +97,16 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
   let autoSuggestError = false;
   const findings = [];
 
-  // Add a finding for the CSP header - uto-suggest is only called if this is not properly set
-  findings.push({
-    type: 'csp-header',
-  });
-
-  const fetchPromises = pageUrls.map(async (url) => {
+  const fetchPromises = pageUrls.map(async (pageUrl) => {
     try {
-      const finding = await determineSuggestionsForPage(new URL(url, auditUrl), context, site);
+      const fullUrl = new URL(pageUrl, auditUrl);
+      const finding = await determineSuggestionsForPage(fullUrl, pageUrl, context, site);
 
       if (finding) {
         findings.push(finding);
       }
     } catch (error) {
-      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Error downloading page ${url}:`, error);
+      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Error downloading page ${pageUrl}:`, error);
       autoSuggestError = true;
     }
   });
@@ -118,6 +117,11 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Error fetching one or more pages. Skipping CSP auto-suggest.`);
     return csp;
   }
+
+  // Add a finding for the CSP header - auto-suggest is only called if this is not properly set
+  findings.push({
+    type: 'csp-header',
+  });
 
   const result = [...csp];
   result[0].findings = findings;

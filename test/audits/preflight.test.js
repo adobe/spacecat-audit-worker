@@ -724,7 +724,7 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
+          checks: ['body-size', 'placeholder "lorem-ipsum" detection', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
         },
       });
 
@@ -827,7 +827,7 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links'],
+          checks: ['body-size', 'placeholder "lorem-ipsum" detection', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
         },
       });
 
@@ -930,7 +930,7 @@ describe('Preflight Audit', () => {
           step: PREFLIGHT_STEP_IDENTIFY,
           // Input URL has trailing slash, will get normalized to remove it
           urls: ['https://main--example--page.aem.page/'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links'],
+          checks: ['body-size', 'placeholder "lorem-ipsum" detection', 'h1-count', 'canonical', 'metatags', 'links'],
           enableAuthentication: false,
         },
       });
@@ -959,7 +959,7 @@ describe('Preflight Audit', () => {
       const bodySizeAudit = actualResult[0].audits.find((audit) => audit.name === 'body-size');
       expect(bodySizeAudit).to.exist;
       expect(bodySizeAudit.opportunities).to.be.an('array');
-      const loremIpsumAudit = actualResult[0].audits.find((audit) => audit.name === 'lorem-ipsum');
+      const loremIpsumAudit = actualResult[0].audits.find((audit) => audit.name === 'placeholder "lorem-ipsum" detection');
       expect(loremIpsumAudit).to.exist;
       expect(loremIpsumAudit.opportunities).to.have.lengthOf(1);
       expect(loremIpsumAudit.opportunities[0].check).to.equal('placeholder-text');
@@ -1014,7 +1014,7 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
+          checks: ['body-size', 'placeholder "lorem-ipsum" detection', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
           enableAuthentication: false,
         },
       });
@@ -1394,6 +1394,136 @@ describe('Preflight Audit', () => {
       // Verify other checks were not performed
       expect(audits.find((a) => a.name === AUDIT_BODY_SIZE)).to.not.exist;
       expect(audits.find((a) => a.name === AUDIT_LOREM_IPSUM)).to.not.exist;
+    });
+
+    it('should keep job in progress when audit handler returns processing: true (lines 273-275)', async () => {
+      // Create a new test with its own setup that mocks readability to return processing: true
+      const mockContext = new MockContextBuilder()
+        .withSandbox(sinon.createSandbox())
+        .withOverrides({
+          job: {
+            getMetadata: () => ({
+              payload: {
+                step: PREFLIGHT_STEP_SUGGEST,
+                urls: ['https://main--example--page.aem.page/page1'],
+                checks: ['readability'], // Only readability to test processing scenario
+              },
+            }),
+            getStatus: sinon.stub().returns('IN_PROGRESS'),
+            getId: () => 'job-123',
+            setStatus: sinon.stub(),
+            setResultType: sinon.stub(),
+            setResult: sinon.stub(),
+            setEndedAt: sinon.stub(),
+            setError: sinon.stub(),
+            save: sinon.stub().resolves(),
+          },
+          site,
+          s3Client,
+          func: {
+            version: 'test',
+          },
+        })
+        .build();
+
+      mockContext.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
+        getId: () => 'job-123',
+        setResult: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        save: sinon.stub().resolves(),
+      }));
+
+      // Mock the preflight audit with readability handler returning processing: true
+      const { preflightAudit: testPreflightAudit } = await esmock('../../src/preflight/handler.js', {
+        '../../src/readability/handler.js': {
+          default: sinon.stub().resolves({ processing: true }),
+        },
+        '../../src/preflight/accessibility.js': {
+          default: sinon.stub().resolves(),
+        },
+      });
+
+      await testPreflightAudit(mockContext);
+
+      // Verify that AsyncJob.findById was called for the final save
+      expect(mockContext.dataAccess.AsyncJob.findById).to.have.been.called;
+
+      // Get the final job entity (last call)
+      const jobEntityCalls = mockContext.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      // Verify lines 273-275: job kept in progress when anyProcessing is true
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('IN_PROGRESS');
+      expect(finalJobEntity.setEndedAt).not.to.have.been.called; // Should not set endedAt yet
+      expect(finalJobEntity.save).to.have.been.called;
+    });
+
+    it('should handle null handlerResults and use fallback (line 269)', async () => {
+      // This test covers the || [] fallback on line 269 when handlerResults is null/undefined
+      const mockContext = new MockContextBuilder()
+        .withSandbox(sinon.createSandbox())
+        .withOverrides({
+          job: {
+            getMetadata: () => ({
+              payload: {
+                step: PREFLIGHT_STEP_SUGGEST,
+                urls: ['https://main--example--page.aem.page/page1'],
+                checks: [], // Empty checks to minimize processing
+              },
+            }),
+            getStatus: sinon.stub().returns('IN_PROGRESS'),
+            getId: () => 'job-123',
+            setStatus: sinon.stub(),
+            setResultType: sinon.stub(),
+            setResult: sinon.stub(),
+            setEndedAt: sinon.stub(),
+            setError: sinon.stub(),
+            save: sinon.stub().resolves(),
+          },
+          site,
+          s3Client,
+          func: {
+            version: 'test',
+          },
+        })
+        .build();
+
+      mockContext.dataAccess.AsyncJob.findById = sinon.stub().callsFake(() => Promise.resolve({
+        getId: () => 'job-123',
+        setResult: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        save: sinon.stub().resolves(),
+      }));
+
+      // Create a simple test that just executes with empty handlers
+      // to see if we can hit the edge case
+      const { preflightAudit: testPreflightAudit } = await esmock('../../src/preflight/handler.js', {
+        '../../src/preflight/canonical.js': { default: async () => undefined },
+        '../../src/preflight/metatags.js': { default: async () => undefined },
+        '../../src/preflight/links.js': { default: async () => undefined },
+        '../../src/readability/handler.js': { default: async () => undefined },
+        '../../src/preflight/accessibility.js': { default: async () => undefined },
+      });
+
+      await testPreflightAudit(mockContext);
+
+      // Verify that AsyncJob.findById was called for the final save
+      expect(mockContext.dataAccess.AsyncJob.findById).to.have.been.called;
+
+      // Get the final job entity
+      const jobEntityCalls = mockContext.dataAccess.AsyncJob.findById.returnValues;
+      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+
+      // Verify the fallback worked - job should complete normally since no processing
+      expect(finalJobEntity.setStatus).to.have.been.calledWith('COMPLETED');
+      expect(finalJobEntity.setEndedAt).to.have.been.called;
+      expect(finalJobEntity.save).to.have.been.called;
     });
   });
 

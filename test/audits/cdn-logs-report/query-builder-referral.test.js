@@ -42,25 +42,24 @@ describe('CDN Logs Query Builder (Referral)', () => {
     tableName: 'aggregated_referral_logs',
     site: {
       getConfig: () => ({
-        getCdnLogsConfig: () => ({
-          filters: [
-            {
-              type: 'exclude',
-              value: [
-                'preprod',
-                'stag',
-                'catalog',
-                'test',
-              ],
-              key: 'host',
-            }, {
-              value: [
-                'www.another.com',
-              ],
-              key: 'host',
-            },
-          ],
-        }),
+        getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        getLlmoCdnlogsFilter: () => [
+          {
+            type: 'exclude',
+            value: [
+              'preprod',
+              'stag',
+              'catalog',
+              'test',
+            ],
+            key: 'host',
+          }, {
+            value: [
+              'www.another.com',
+            ],
+            key: 'host',
+          },
+        ],
       }),
     },
   };
@@ -75,5 +74,15 @@ describe('CDN Logs Query Builder (Referral)', () => {
     const query = await createReferralReportQuery(options);
 
     expect(query).to.equal(expectedQuery);
+  });
+
+  it('handles llmo cdn logs site filters correctly', async () => {
+    options.site.getConfig = () => ({
+      getLlmoCdnlogsFilter: () => ([{ value: ['test'], key: 'url' }]
+      ),
+    });
+
+    const query = await createReferralReportQuery(options);
+    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
   });
 });

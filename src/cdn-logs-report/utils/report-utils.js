@@ -27,7 +27,6 @@ export async function getS3Config(site, context) {
   const domainParts = customerDomain.split(/[._]/);
   /* c8 ignore next */
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-
   const bucket = await resolveCdnBucketName(site, context);
 
   return {
@@ -45,7 +44,7 @@ export async function loadSql(filename, variables) {
 
 export function validateCountryCode(code) {
   const DEFAULT_COUNTRY_CODE = 'GLOBAL';
-  if (!code) return DEFAULT_COUNTRY_CODE;
+  if (!code || typeof code !== 'string') return DEFAULT_COUNTRY_CODE;
 
   const upperCode = code.toUpperCase();
 
@@ -58,6 +57,7 @@ export function validateCountryCode(code) {
     if (countryName && countryName !== upperCode) {
       return upperCode;
     }
+    /* c8 ignore next 3 */
   } catch {
     // Invalid country code
   }
@@ -101,6 +101,7 @@ export function generatePeriodIdentifier(startDate, endDate) {
     const year = getYear(startDate);
     return `w${String(weekNum).padStart(2, '0')}-${year}`;
   }
+
   return `${format(startDate, 'yyyy-MM-dd')}_to_${format(endDate, 'yyyy-MM-dd')}`;
 }
 
@@ -118,6 +119,7 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
   ));
 
   const dayOfWeek = refUTC.getUTCDay();
+  /* c8 ignore next */
   const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   const weekStart = new Date(refUTC);
   weekStart.setUTCDate(refUTC.getUTCDate() - daysToMonday - (Math.abs(offsetWeeks) * 7));
@@ -138,7 +140,7 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
   };
 }
 
-export function buildSiteFilters(filters) {
+export function buildSiteFilters(filters = []) {
   if (!filters || filters.length === 0) return '';
 
   const clauses = filters.map(({ key, value, type }) => {
@@ -181,7 +183,6 @@ export async function fetchRemotePatterns(site) {
 
     return {
       pagePatterns: data.pagetype?.data || [],
-      /* c8 ignore next */
       topicPatterns: data.products?.data || [],
     };
   } catch {

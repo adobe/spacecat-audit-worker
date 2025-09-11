@@ -13,9 +13,9 @@
     },
     {
       "matchPackageNames": [
-        "eslint"
+        "@adobe/spacecat-shared-rum-api-client-v1"
       ],
-      "allowedVersions": "<9.0.0"
+      "allowedVersions": "<2.0.0"
     }
   ]
 }

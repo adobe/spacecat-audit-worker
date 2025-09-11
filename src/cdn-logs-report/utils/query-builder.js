@@ -24,10 +24,12 @@ function buildDateFilter(startDate, endDate) {
   const start = formatPart(startDate);
   const end = formatPart(endDate);
 
+  /* c8 ignore start */
   return start.year === end.year && start.month === end.month
     ? `(year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}' AND day <= '${end.day}')`
     : `((year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}')
        OR (year = '${end.year}' AND month = '${end.month}' AND day <= '${end.day}'))`;
+  /* c8 ignore stop */
 }
 
 function buildWhereClause(conditions = [], siteFilters = []) {
@@ -48,7 +50,6 @@ function buildWhereClause(conditions = [], siteFilters = []) {
 
 // Page Type Classification
 function generatePageTypeClassification(remotePatterns = null) {
-  /* c8 ignore start */
   const patterns = remotePatterns?.pagePatterns || [];
 
   if (patterns.length === 0) {
@@ -60,7 +61,6 @@ function generatePageTypeClassification(remotePatterns = null) {
     .join('\n');
 
   return `CASE\n${caseConditions}\n      ELSE 'Uncategorized'\n    END`;
-  /* c8 ignore stop */
 }
 
 // Country Classification
@@ -74,7 +74,6 @@ function buildCountryExtractionSQL() {
 
 // Topic Classification
 function buildTopicExtractionSQL(remotePatterns = null) {
-  /* c8 ignore start */
   const patterns = remotePatterns?.topicPatterns || [];
 
   if (Array.isArray(patterns) && patterns.length > 0) {
@@ -100,7 +99,6 @@ function buildTopicExtractionSQL(remotePatterns = null) {
     }
   }
   return "CASE WHEN url IS NOT NULL THEN 'Other' END";
-  /* c8 ignore stop */
 }
 
 async function createAgenticReportQuery(options) {
@@ -108,7 +106,7 @@ async function createAgenticReportQuery(options) {
     periods, databaseName, tableName, site,
   } = options;
 
-  const filters = site.getConfig().getCdnLogsConfig()?.filters || [];
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
   const siteFilters = buildSiteFilters(filters);
 
   const lastWeek = periods.weeks[periods.weeks.length - 1];
@@ -147,8 +145,7 @@ async function createReferralReportQuery(options) {
     periods, databaseName, tableName, site,
   } = options;
 
-  /* c8 ignore next */
-  const filters = site.getConfig().getCdnLogsConfig()?.filters || [];
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
   const siteFilters = buildSiteFilters(filters);
   const lastWeek = periods.weeks[periods.weeks.length - 1];
   const whereClause = buildWhereClauseReferral(

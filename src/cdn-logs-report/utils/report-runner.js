@@ -29,7 +29,6 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
   const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
 
   log.info(`Running ${reportConfig.name} report for ${periodIdentifier} (week offset: ${weekOffset})`);
-  /* c8 ignore next */
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();
   const outputLocation = `${llmoFolder}/${reportConfig.folderSuffix}`;
 

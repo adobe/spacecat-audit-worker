@@ -12,7 +12,8 @@ UNLOAD (
     try(url_extract_host(referer)) AS referer,
     reqHost AS host,
     CAST(timeToFirstByte AS DOUBLE) AS time_to_first_byte,
-    COUNT(*) AS count
+    COUNT(*) AS count,
+    '{{serviceProvider}}' AS cdn_provider
 
   FROM {{database}}.{{rawTable}}
 
@@ -22,7 +23,7 @@ UNLOAD (
     AND hour  = '{{hour}}'
 
     -- match known LLM-related user-agents
-    AND REGEXP_LIKE(ua, '(?i)ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot')
+    AND REGEXP_LIKE(ua, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot|^Google$)')
 
     -- only count text/html responses with robots.txt and sitemaps
     AND (
@@ -45,7 +46,8 @@ UNLOAD (
     statusCode,
     try(url_extract_host(referer)),
     reqHost,
-    CAST(timeToFirstByte AS DOUBLE)
+    CAST(timeToFirstByte AS DOUBLE),
+    '{{serviceProvider}}'
 
-) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'
+) TO '{{aggregatedOutput}}'
 WITH (format = 'PARQUET');
