@@ -15,6 +15,8 @@
  * @typedef {import('./vulnerability-report.d.ts').Vulnerability} Vulnerability
  */
 
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+
 /**
  * Calculates and returns the highest score from a list of vulnerabilities.
  *
@@ -22,7 +24,7 @@
  * @return {number} The highest score found among the vulnerabilities.
  */
 function highestScore(vulnerabilities) {
-  if (!vulnerabilities || vulnerabilities.length === 0) {
+  if (!isNonEmptyArray(vulnerabilities)) {
     return 0;
   }
 

@@ -12,15 +12,16 @@
 
 import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
   from '@adobe/spacecat-shared-data-access';
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, DELIVERY_TYPES } from '@adobe/spacecat-shared-utils';
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
+import { createHash } from 'node:crypto';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityProps } from './opportunity-data-mapper.js';
 import { getImsOrgId, syncSuggestions } from '../utils/data-access.js';
 import { mapVulnerabilityToSuggestion } from './suggestion-data-mapper.js';
 
-const INTERVAL = 7; // days
+const INTERVAL = 1; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES;
 
 /**
@@ -69,12 +70,16 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
       `https://aem-trustcenter-dev.adobe.io/api/reports/${programId}/${environmentId}/vulnerabilities`,
       { headers },
     );
+    if (resp.status === 404) {
+      log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] vulnerability report not found`);
+      return null;
+    }
+
     const json = await resp.json();
 
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] successfully fetched vulnerability report`);
 
     return json.data;
-    // return TEST_REPORT_RESOLVED;
   } catch (error) {
     throw new Error('Failed to fetch vulnerability report');
   }
@@ -94,7 +99,7 @@ export async function vulnerabilityAuditRunner(baseURL, context, site) {
   const { log } = context;
 
   // This opportunity is only relevant for aem_cs delivery-type at the moment
-  if (site.getDeliveryType() !== 'aem_cs') {
+  if (site.getDeliveryType() !== DELIVERY_TYPES.AEM_CS) {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping vulnerability audit as site is of delivery type ${site.getDeliveryType()}`);
     return {
       auditResult: {
@@ -108,12 +113,24 @@ export async function vulnerabilityAuditRunner(baseURL, context, site) {
 
   try {
     const vulnerabilityReport = await fetchVulnerabilityReport(baseURL, context, site);
+    if (vulnerabilityReport === null) {
+      const errorMessage = `[${AUDIT_TYPE}] [Site: ${site.getId()}] fetch successful, but report was empty / null`;
+      log.debug(errorMessage);
+      return {
+        auditResult: {
+          finalUrl: baseURL,
+          error: errorMessage,
+          success: false,
+        },
+        fullAuditRef: baseURL,
+      };
+    }
+
     const compCount = vulnerabilityReport.summary.totalComponents;
     const vulnCount = vulnerabilityReport.summary.totalVulnerabilities;
 
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] identified: ${vulnCount} vulnerabilities in ${compCount} components`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] identified: ${vulnCount} vulnerabilities in ${compCount} components`);
 
-    // Build and return audit result
     return {
       auditResult: {
         finalUrl: baseURL,
@@ -151,27 +168,19 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
   const { log, dataAccess } = context;
   const { Configuration, Suggestion } = dataAccess;
 
-  // This opportunity is only relevant for aem_cs delivery-type at the moment
-  if (site.getDeliveryType() !== 'aem_cs') {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping vulnerability opportunity as it is of delivery type ${site.getDeliveryType()}`);
-    return { status: 'complete' };
-  }
-
   const { vulnerabilityReport, success } = auditData.auditResult;
 
   if (!success) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
     return { status: 'complete' };
   }
 
   if (!isNonEmptyArray(vulnerabilityReport.vulnerableComponents)) {
     // No vulnerabilities found
     // Fetch opportunity
-    const { Opportunity } = dataAccess;
     let opportunity;
     try {
-      const opportunities = await Opportunity.allBySiteIdAndStatus(
-        site.getId(),
+      const opportunities = await site.getOpportunitiesByStatus(
         Oppty.STATUSES.NEW,
       );
       opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
@@ -182,7 +191,7 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
 
     if (opportunity) {
       // No vulnerabilities found, update opportunity status to RESOLVED
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no vulnerabilities found, but found opportunity, updating status to RESOLVED`);
+      log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no vulnerabilities found, but found opportunity, updating status to RESOLVED`);
       await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
 
       // We also need to update all suggestions inside this opportunity
@@ -212,21 +221,14 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
 
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site)) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-suggest not configured, skipping suggestion creation`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-suggest not configured, skipping suggestion creation`);
     return { status: 'complete' };
   }
 
   // As a buildKey we hash all the component details and add name and version for readability
   const buildKey = (data) => {
     const s = JSON.stringify(data);
-    let hash = 0;
-    for (let i = 0; i < s.length; i += 1) {
-      const code = s.charCodeAt(i);
-      // eslint-disable-next-line no-bitwise
-      hash = ((hash << 5) - hash) + code;
-      // eslint-disable-next-line no-bitwise
-      hash &= hash; // Convert to 32bit integer
-    }
+    const hash = createHash('sha256').update(s).digest('hex').slice(0, 8);
     return `${data.name}@${data.version}#${hash}`;
   };
 
