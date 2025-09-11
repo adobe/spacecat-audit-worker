@@ -1285,7 +1285,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         auditId: 'test-audit-id',
         type: 'form-accessibility',
         origin: 'AUTOMATION',
-        title: 'Form accessibility report',
+        title: '3 issues in 2 forms are affecting user experience',
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
       });
 

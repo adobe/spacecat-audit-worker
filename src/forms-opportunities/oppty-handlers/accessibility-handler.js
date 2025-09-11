@@ -21,6 +21,17 @@ import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERI
 const filterAccessibilityOpportunities = (opportunities) => opportunities.filter((opportunity) => opportunity.getTags()?.includes('Forms Accessibility'));
 
 /**
+ * Generate a title for the a11y opportunity
+ * @param {object} a11yOpptyData - The a11y opportunity data
+ * @returns {string} The title for the a11y opportunity
+ */
+function generateTitle(a11yOpptyData) {
+  const numForms = a11yOpptyData.length;
+  const numIssues = a11yOpptyData.reduce((acc, form) => acc + form.a11yIssues.length, 0);
+  return `${numIssues} issues in ${numForms} forms are affecting user experience`;
+}
+
+/**
  * Create a11y opportunity for the given siteId and auditId
  * @param {string} auditId - The auditId of the audit
  * @param {string} siteId - The siteId of the site
@@ -93,8 +104,11 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
         }
       });
 
+      const title = generateTitle(mergedData);
+
       opportunity.setData({
         ...data,
+        title,
         accessibility: mergedData,
       });
       opportunity = await opportunity.save();
@@ -106,13 +120,15 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
       // change status to IGNORED for older opportunities
       await updateStatusToIgnored(dataAccess, siteId, log, filterAccessibilityOpportunities);
 
+      const title = generateTitle(a11yOpptyData);
+
       const opportunityData = {
         siteId,
         auditId,
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
         type: FORM_OPPORTUNITY_TYPES.FORM_A11Y,
         origin: 'AUTOMATION',
-        title: 'Form accessibility report',
+        title,
         description: '',
         tags: [
           'Forms Accessibility',
