@@ -28,6 +28,18 @@ console.info(`[readability-suggest multilingual] 🔧 Intl.Segmenter available: 
 // eslint-disable-next-line no-console
 console.info(`[readability-suggest multilingual] 📚 Syllable library loaded: ${typeof syllableEn === 'function' ? 'YES' : 'NO'}`);
 
+// Check hyphen package accessibility
+try {
+  // eslint-disable-next-line no-console
+  console.info('[readability-suggest multilingual] 🔍 Checking hyphen package accessibility...');
+  const hyphenPackage = await import('hyphen/package.json');
+  // eslint-disable-next-line no-console
+  console.info(`[readability-suggest multilingual] 📦 Hyphen package version: ${hyphenPackage.default?.version || 'unknown'}`);
+} catch (hyphenError) {
+  // eslint-disable-next-line no-console
+  console.warn(`[readability-suggest multilingual] ⚠️ Cannot access hyphen package info: ${hyphenError.message}`);
+}
+
 export const SUPPORTED_LANGUAGES = {
   eng: 'english',
   deu: 'german',
@@ -96,6 +108,17 @@ export async function getHyphenator(language) {
       if (hyphenate) {
         // eslint-disable-next-line no-console
         console.info(`[readability-suggest multilingual] ✅ Successfully loaded hyphenation patterns for ${language}`);
+
+        // Test hyphenation with a sample word to verify it's working
+        try {
+          const testWord = 'Epistemologisch';
+          const testResult = await hyphenate(testWord);
+          // eslint-disable-next-line no-console
+          console.info(`[readability-suggest multilingual] 🔍 Hyphenation test "${testWord}" → "${testResult}" (${testResult ? testResult.split('\u00AD').length : 0} syllables)`);
+        } catch (testError) {
+          // eslint-disable-next-line no-console
+          console.warn(`[readability-suggest multilingual] ⚠️ Hyphenation test failed: ${testError.message}`);
+        }
       } else {
         // eslint-disable-next-line no-console
         console.warn(`[readability-suggest multilingual] ⚠️ Hyphenation module loaded but no hyphenate function found for ${language}`);
@@ -193,7 +216,15 @@ async function countSyllablesWord(word, language) {
   const hyphenatedString = await hyphenate(cleaned);
   // Split by soft hyphen character (U+00AD) to get syllable parts
   const syllableParts = hyphenatedString ? hyphenatedString.split('\u00AD') : [word];
-  return Math.max(1, syllableParts.length);
+  const syllableCount = Math.max(1, syllableParts.length);
+
+  // Debug complex words that might be causing discrepancies
+  if (word.length > 10 && syllableCount !== syllableParts.length) {
+    // eslint-disable-next-line no-console
+    console.info(`[readability-suggest multilingual] 🔍 Complex word debug: "${word}" → "${hyphenatedString}" → ${syllableCount} syllables`);
+  }
+
+  return syllableCount;
 }
 
 // --- Public API ---
