@@ -313,6 +313,49 @@ describe('Paid-Traffic Analysis Cache Warmer', () => {
     });
   });
 
+  describe('no data scenarios', () => {
+    it('should throw error when all queries fail due to no data', async () => {
+      // Mock Athena to return empty results for all queries
+      mockAthenaQuery.resolves([]);
+
+      await expect(
+        warmCacheForSite(
+          mockContext,
+          mockLog,
+          mockEnv,
+          mockSite,
+          { yearInt: 2025, weekInt: 2, monthInt: 0 },
+        ),
+      ).to.be.rejectedWith('No paid traffic data found for site site-123. Please ensure data is imported first before running paid traffic analysis.');
+
+      expect(mockAthenaQuery).to.have.been.called;
+    });
+
+    it('should throw error when some queries succeed but others fail due to no data', async () => {
+      let callCount = 0;
+      mockAthenaQuery.callsFake(() => {
+        callCount += 1;
+        // First few calls succeed, rest return empty
+        if (callCount <= 2) {
+          return Promise.resolve([{ dimension1: 'value1', pageViews: 1000 }]);
+        }
+        return Promise.resolve([]);
+      });
+
+      // Should not throw because some queries succeeded
+      const result = await warmCacheForSite(
+        mockContext,
+        mockLog,
+        mockEnv,
+        mockSite,
+        { yearInt: 2025, weekInt: 2, monthInt: 0 },
+      );
+
+      expect(result.success).to.be.true;
+      expect(mockAthenaQuery).to.have.been.called;
+    });
+  });
+
   describe('warmCacheForQuery', () => {
     it('should pass object CWV thresholds to mapper', async () => {
       mockS3.send.callsFake((cmd) => {
@@ -359,6 +402,76 @@ describe('Paid-Traffic Analysis Cache Warmer', () => {
         { lcp: 3000, cls: 0.2 },
         'https://example.com',
       );
+    });
+
+    it('should throw NO_DATA error when Athena returns empty results', async () => {
+      const config = {
+        rumMetricsDatabase: 'rum_db',
+        rumMetricsCompactTable: 'compact_table',
+        bucketName: 'test-bucket',
+        pageViewThreshold: 2000,
+        cwvThresholds: { lcp: 3000, cls: 0.2 },
+        athenaTemp: 's3://test-bucket/rum-metrics-compact/temp/out',
+        cacheLocation: 's3://test-bucket/rum-metrics-compact/cache',
+      };
+
+      const mapper = { toJSON: sandbox.stub().returns({}) };
+      const queryConfig = { dimensions: ['utm_campaign'], mapper };
+
+      // Mock Athena to return empty results
+      mockAthenaQuery.resolves([]);
+
+      await expect(
+        warmCacheForQuery(
+          mockContext,
+          mockLog,
+          config,
+          siteId,
+          queryConfig,
+          { yearInt: 2025, weekInt: 2, monthInt: 0 },
+          'rum_db.compact_table',
+          null,
+          'https://example.com',
+        ),
+      ).to.be.rejectedWith('NO_DATA: No paid traffic data found for site site-123 with dimensions [utm_campaign]. Please ensure data is imported first before running paid traffic analysis.');
+    });
+
+    it('should throw NO_DATA error when mapper filters out all results', async () => {
+      const config = {
+        rumMetricsDatabase: 'rum_db',
+        rumMetricsCompactTable: 'compact_table',
+        bucketName: 'test-bucket',
+        pageViewThreshold: 2000,
+        cwvThresholds: { lcp: 3000, cls: 0.2 },
+        athenaTemp: 's3://test-bucket/rum-metrics-compact/temp/out',
+        cacheLocation: 's3://test-bucket/rum-metrics-compact/cache',
+      };
+
+      // Mock mapper to return null for each row (filtered out)
+      const mapper = { toJSON: sandbox.stub().returns(null) };
+      const queryConfig = { dimensions: ['utm_campaign'], mapper };
+      mockAthenaQuery.resolves([{ utm_campaign: 'spring' }]);
+
+      // Since results.map() with null returns [null], we need to filter it
+      const originalMap = Array.prototype.map;
+      sandbox.stub(Array.prototype, 'map').callsFake(function (callback) {
+        const result = originalMap.call(this, callback);
+        return result.filter((item) => item !== null); // This creates empty array
+      });
+
+      await expect(
+        warmCacheForQuery(
+          mockContext,
+          mockLog,
+          config,
+          siteId,
+          queryConfig,
+          { yearInt: 2025, weekInt: 2, monthInt: 0 },
+          'rum_db.compact_table',
+          null,
+          'https://example.com',
+        ),
+      ).to.be.rejectedWith('NO_DATA: No valid paid traffic data found after processing for site site-123 with dimensions [utm_campaign]. Please ensure data is imported first before running paid traffic analysis.');
     });
   });
 });
