@@ -18,6 +18,16 @@
 
 import { syllable as syllableEn } from 'syllable';
 
+// Diagnostic logging for cloud debugging
+// eslint-disable-next-line no-console
+console.info('[readability-suggest multilingual] 🚀 Multilingual readability module initialized');
+// eslint-disable-next-line no-console
+console.info(`[readability-suggest multilingual] 📋 Environment: Node.js ${process.version}, Platform: ${process.platform}`);
+// eslint-disable-next-line no-console
+console.info(`[readability-suggest multilingual] 🔧 Intl.Segmenter available: ${typeof Intl?.Segmenter === 'function' ? 'YES' : 'NO'}`);
+// eslint-disable-next-line no-console
+console.info(`[readability-suggest multilingual] 📚 Syllable library loaded: ${typeof syllableEn === 'function' ? 'YES' : 'NO'}`);
+
 export const SUPPORTED_LANGUAGES = {
   eng: 'english',
   deu: 'german',
@@ -41,6 +51,9 @@ const NAME_TO_LOCALE = Object.freeze({
   english: 'en',
   ...LOCALE_MAP, // { german:'de', spanish:'es', italian:'it', french:'fr', dutch:'nl' }
 });
+
+// Track which languages have already logged fallback warnings to avoid spam
+const fallbackLoggedLanguages = new Set();
 
 // Flesch(-like) coefficients per language
 // score = A - wps*WPS - spw*SPW - sp100*SP100 (undefined treated as 0)
@@ -69,10 +82,30 @@ export async function getHyphenator(language) {
 
   const loader = (async () => {
     const locale = LOCALE_MAP[key];
-    if (!locale) return null;
+    if (!locale) {
+      // eslint-disable-next-line no-console
+      console.info(`[readability-suggest multilingual] 🔤 No hyphenation patterns available for language: ${language}`);
+      return null;
+    }
 
-    const mod = await import(`hyphen/${locale}/index.js`);
-    return mod?.default?.hyphenate;
+    // eslint-disable-next-line no-console
+    console.info(`[readability-suggest multilingual] 📚 Loading hyphenation patterns for ${language} (locale: ${locale})`);
+    try {
+      const mod = await import(`hyphen/${locale}/index.js`);
+      const hyphenate = mod?.default?.hyphenate;
+      if (hyphenate) {
+        // eslint-disable-next-line no-console
+        console.info(`[readability-suggest multilingual] ✅ Successfully loaded hyphenation patterns for ${language}`);
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn(`[readability-suggest multilingual] ⚠️ Hyphenation module loaded but no hyphenate function found for ${language}`);
+      }
+      return hyphenate;
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error(`[readability-suggest multilingual] ❌ Failed to load hyphenation patterns for ${language}:`, error.message);
+      return null;
+    }
   })();
 
   hyphenatorCache.set(key, loader);
@@ -146,7 +179,14 @@ async function countSyllablesWord(word, language) {
   if (!hyphenate) {
     // generic Unicode vowel group fallback
     const m = word.toLowerCase().match(/[aeiouyà-ɏ]+/giu);
-    return Math.max(1, m ? m.length : 1);
+    const syllableCount = Math.max(1, m ? m.length : 1);
+    // Only log fallback once per session to avoid spam
+    if (!fallbackLoggedLanguages.has(language)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[readability-suggest multilingual] 🔄 Using vowel-based fallback for ${language} syllable counting (hyphenation unavailable)`);
+      fallbackLoggedLanguages.add(language);
+    }
+    return syllableCount;
   }
   // Preserve inner apostrophes/dashes, remove other junk
   const cleaned = word.replace(/[^\p{L}\p{M}''-]/gu, '');
@@ -238,6 +278,12 @@ export async function analyzeReadability(text, language, opts = {}) {
     - coeff.wps * wordsPerSentence
     - (coeff.spw ? coeff.spw * syllablesPerWord : 0)
     - (coeff.sp100 ? coeff.sp100 * syllablesPer100Words : 0);
+
+  // Diagnostic logging for cloud debugging (only for non-trivial texts)
+  if (wordCount > 10) {
+    // eslint-disable-next-line no-console
+    console.info(`[readability-suggest multilingual] 📊 Readability Analysis [${lang}]: Words=${wordCount}, Sentences=${sentenceCount}, Syllables=${syllableCount}, SPW=${syllablesPerWord.toFixed(2)}, Score=${clamp(score).toFixed(2)}`);
+  }
 
   return {
     sentences: sentenceCount,
