@@ -11,7 +11,7 @@
  */
 
 import { JSDOM } from 'jsdom';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { tracingFetch as fetch, getPrompt } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -398,74 +398,6 @@ function getScrapeJsonPath(url, siteId) {
   return `scrapes/${siteId}${pathname}/scrape.json`;
 }
 
-async function getPrompt(placeholders, filename, log = console) {
-  try {
-    const scrapedData = JSON.parse(placeholders.scrapedData);
-    return `
-  You are an expert SEO consultant tasked with optimizing heading tags for improved accessibility, user experience, and search engine performance.
-
-  ### Task:
-  Analyze the scraped page data and provide an AI-powered H1 tag suggestion that improves accessibility, user experience, and search engine performance.
-
-  ### System Context:
-  - You are optimizing the H1 tag for the specific page: ${scrapedData.finalUrl}
-  - Your task is to suggest an improved H1 for the specific page
-  - Focus on accessibility, user experience, and SEO best practices
-  - Consider the page's purpose and content context
-
-  ### Scraped Page Data:
-  - **Page URL:** ${scrapedData.finalUrl}
-  - **Current Title:** ${scrapedData.scrapeResult?.tags?.title || 'N/A'}
-  - **Current H1:** ${scrapedData.scrapeResult?.tags?.h1 || 'N/A'}
-  - **Current Description:** ${scrapedData.scrapeResult?.tags?.description || 'N/A'}
-  - **Page Language:** ${scrapedData.scrapeResult?.tags?.lang || 'N/A'}
-
-  ### Output Format:
-  Your response must be a valid JSON object with the following structure:
-  json
-  {
-    "h1": {
-      "aiSuggestion": "string",
-      "aiRationale": "string"
-    }
-  }
-
-  ### H1 Tag Guidelines:
-
-  #### Core Requirements:
-  - Must be unique and descriptive for the specific page
-  - Should clearly indicate the main topic and purpose of the page
-  - Keep under 60 characters for optimal display in search results
-  - Use primary keywords naturally without stuffing
-  - Be specific and actionable when appropriate
-
-  #### Content Analysis:
-  - Analyze the page URL structure to understand the page's purpose
-  - Consider the current title tag and how it relates to the H1
-  - Review the meta description for additional context
-  - Extract key themes from the raw body content
-  - Identify the primary value proposition or main topic
-
-  #### SEO Best Practices:
-  - Include the most important keyword for the page
-  - Make it descriptive and user-friendly
-  - Ensure it matches user search intent
-  - Consider the page's position in the site hierarchy
-
-  ### Important Notes:
-  - Base your suggestion on the actual scraped content and page context
-  - Provide a clear rationale explaining why your suggestion improves upon the current H1
-  - Ensure the suggestion is specific to this page and not generic
-  - Consider the page's purpose based on URL structure and content
-  - Output only valid JSON without additional text or formatting
-  - If the current H1 is already optimal, suggest minor improvements or explain why it's good as-is
-  `;
-  } catch (error) {
-    log.error(`Error in getPrompt: ${error.message}`);
-    throw error;
-  }
-}
-
 export async function generateAISuggestions(auditUrl, auditData, context, site) {
   const { log, s3Client } = context;
   const { S3_SCRAPER_BUCKET_NAME, AZURE_OPENAI_ENDPOINT } = context.env;
@@ -579,6 +511,7 @@ function generateRecommendedAction(checkType) {
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
+  log.info(`[Headings Opportunity and Suggestions] Audit data: ${JSON.stringify(auditData)}`);
   if (!auditData.suggestions?.length) {
     log.info('Headings audit has no issues, skipping opportunity creation');
     return { ...auditData };
