@@ -2627,6 +2627,7 @@ describe('data-processing utility functions', () => {
     let getUrlsForAuditMocked;
     let mockS3ClientForAudit;
     let mockLogForAudit;
+    let mockDataAccess;
 
     beforeEach(async () => {
       // Create mocks for the s3-utils functions
@@ -2646,6 +2647,13 @@ describe('data-processing utility functions', () => {
         info: sandbox.stub(),
         error: sandbox.stub(),
         warn: sandbox.stub(),
+      };
+
+      // Mock dataAccess object
+      mockDataAccess = {
+        LatestAudit: {
+          findBySiteIdAndAuditType: sandbox.stub(),
+        },
       };
     });
 
@@ -2702,6 +2710,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -2750,6 +2759,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -2789,6 +2799,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -2841,6 +2852,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -2888,6 +2900,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -2909,7 +2922,7 @@ describe('data-processing utility functions', () => {
     });
 
     describe('error scenarios', () => {
-      it('should return empty array when no final result files found', async () => {
+      it('should return empty array and log warning when no final result files found for first run', async () => {
         // Arrange
         const bucketName = 'test-bucket';
         const siteId = 'no-files-site';
@@ -2925,19 +2938,62 @@ describe('data-processing utility functions', () => {
           )
           .resolves([]);
 
+        // Mock no previous audit (first run)
+        mockDataAccess.LatestAudit.findBySiteIdAndAuditType
+          .withArgs(siteId, 'accessibility')
+          .resolves(null);
+
         // Act
         const result = await getUrlsForAuditMocked(
           mockS3ClientForAudit,
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
+        );
+
+        // Assert
+        expect(result).to.be.an('array');
+        expect(result).to.have.length(0);
+        expect(mockLogForAudit.warn.calledWith(
+          '[A11yProcessingWarning] No final result files found for no-files-site - First time running accessibility audit',
+        )).to.be.true;
+      });
+
+      it('should return empty array and log error when no final result files found for subsequent run', async () => {
+        // Arrange
+        const bucketName = 'test-bucket';
+        const siteId = 'no-files-site';
+
+        mockGetObjectKeysUsingPrefix
+          .withArgs(
+            mockS3ClientForAudit,
+            bucketName,
+            'accessibility/no-files-site/',
+            mockLogForAudit,
+            10,
+            '-final-result.json',
+          )
+          .resolves([]);
+        // Mock previous audit exists (subsequent run)
+        mockDataAccess.LatestAudit.findBySiteIdAndAuditType
+          .withArgs(siteId, 'accessibility')
+          .resolves({ siteId, auditType: 'accessibility' });
+
+        // Act
+        const result = await getUrlsForAuditMocked(
+          mockS3ClientForAudit,
+          bucketName,
+          siteId,
+          mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
         expect(result).to.be.an('array');
         expect(result).to.have.length(0);
         expect(mockLogForAudit.error.calledWith(
-          '[A11yProcessingError] [A11yAudit] No final result files found for no-files-site',
+          '[A11yProcessingError] No final result files found for no-files-site',
         )).to.be.true;
       });
 
@@ -2964,6 +3020,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -2996,6 +3053,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -3029,6 +3087,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -3067,6 +3126,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -3097,6 +3157,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -3125,6 +3186,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -3163,6 +3225,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -3203,6 +3266,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -3252,6 +3316,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -3292,6 +3357,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -3324,6 +3390,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
@@ -3360,6 +3427,7 @@ describe('data-processing utility functions', () => {
           bucketName,
           siteId,
           mockLogForAudit,
+          mockDataAccess,
         );
 
         // Assert
