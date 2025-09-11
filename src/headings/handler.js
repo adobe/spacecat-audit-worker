@@ -430,7 +430,8 @@ export async function generateAISuggestions(auditUrl, auditData, context, site) 
   for (const [checkType, checkResult] of Object.entries(auditData.auditResult)) {
     if (checkResult.success === false && Array.isArray(checkResult.urls)) {
       for (const url of checkResult.urls) {
-        if (checkType === 'heading-empty') {
+        if (checkType === HEADINGS_CHECKS.HEADING_EMPTY.check
+          || checkType === HEADINGS_CHECKS.HEADING_MISSING_H1.check) {
           tasks.push(
             (async () => {
               log.info(`[Headings AI Suggestions] Generating AI suggestions for ${url} with check type: ${checkType}`);
@@ -447,14 +448,22 @@ export async function generateAISuggestions(auditUrl, auditData, context, site) 
                     log,
                   );
 
-                  log.info(`[Headings AI Suggestions] Scrape JSON object received for ${url}`);
+                  log.info(`[Headings AI Suggestions] Scrape JSON object received for ${scrapeJsonObject.finalUrl}`);
+                  log.info(`[Headings AI Suggestions] Scrape JSON object: ${JSON.stringify(scrapeJsonObject.scrapeResult.tags)}`);
 
                   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
                   const prompt = await getPrompt(
-                    { scrapedData: JSON.stringify(scrapeJsonObject) },
+                    {
+                      finalUrl: scrapeJsonObject.finalUrl,
+                      title: scrapeJsonObject.scrapeResult.tags.title,
+                      h1: scrapeJsonObject.scrapeResult.tags.h1,
+                      description: scrapeJsonObject.scrapeResult.tags.description,
+                      lang: scrapeJsonObject.scrapeResult.tags.lang,
+                    },
                     'heading-empty-suggestion',
                     log,
                   );
+                  log.info(`[Headings AI Suggestions] Prompt: ${prompt}`);
 
                   const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
                     responseFormat: 'json_object',
