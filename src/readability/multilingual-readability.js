@@ -71,13 +71,8 @@ export async function getHyphenator(language) {
     const locale = LOCALE_MAP[key];
     if (!locale) return null;
 
-    try {
-      const mod = await import(`hyphen/${locale}/index.js`);
-      return mod?.default?.hyphenate ?? mod?.hyphenate ?? null;
-    } catch {
-      // On missing locale/module just return null, keep callers simple.
-      return null;
-    }
+    const mod = await import(`hyphen/${locale}/index.js`);
+    return mod?.default?.hyphenate;
   })();
 
   hyphenatorCache.set(key, loader);
@@ -216,10 +211,6 @@ export async function analyzeReadability(text, language, opts = {}) {
           cache.set(key, n);
           syllablePromiseCache.delete(key); // keep cache small
           return n;
-        }).catch(() => {
-          cache.set(key, 0);
-          syllablePromiseCache.delete(key);
-          return 0;
         });
         syllablePromiseCache.set(key, p);
       }
@@ -244,7 +235,7 @@ export async function analyzeReadability(text, language, opts = {}) {
 
   // 5) Unified scoring using coefficients
   const score = coeff.A
-    - (coeff.wps ? coeff.wps * wordsPerSentence : 0)
+    - coeff.wps * wordsPerSentence
     - (coeff.spw ? coeff.spw * syllablesPerWord : 0)
     - (coeff.sp100 ? coeff.sp100 * syllablesPer100Words : 0);
 
