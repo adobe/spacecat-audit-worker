@@ -11,7 +11,7 @@
  */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { sendMessageToMystiqueForGuidance } from '../utils.js';
+import { getFormTitle, sendMessageToMystiqueForGuidance } from '../utils.js';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
 
 export default async function handler(message, context) {
@@ -36,7 +36,8 @@ export default async function handler(message, context) {
           log.info(`Matching form details : ${JSON.stringify(matchingFormDetail)}`);
           // eslint-disable-next-line
           const { url, form_source, ...cleanedFormDetail } = matchingFormDetail;
-          return { ...item, formDetails: cleanedFormDetail };
+          const formTitle = getFormTitle(cleanedFormDetail, opportunity);
+          return { ...item, formTitle, formDetails: cleanedFormDetail };
         }
         return item;
       });
@@ -50,6 +51,8 @@ export default async function handler(message, context) {
       if (matchingFormDetail) {
         // eslint-disable-next-line
         const { form, form_source, ...cleanedFormDetail } = matchingFormDetail;
+        const formTitle = getFormTitle(cleanedFormDetail, opportunity);
+        opportunity.setTitle(formTitle);
         opportunity.setData({
           ...opportunityData,
           formDetails: cleanedFormDetail,
