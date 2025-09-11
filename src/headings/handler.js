@@ -550,7 +550,7 @@ export async function generateAISuggestions(auditUrl, auditData, context, site) 
   // log.info(`[Headings AI Suggestions] Context: ${JSON.stringify(context)}`);
   // log.info(`[Headings AI Suggestions] Site: ${JSON.stringify(site)}`);
   // log.info('[Headings AI Suggestions] Ending AI suggestions generation');
-  log.info(`[Headings AI Suggestions] Audit data: ${JSON.stringify(auditData)}`);
+  log.info(`[Headings AI Suggestions] completed Audit data: ${JSON.stringify(auditData)}`);
   return { ...auditData };
 }
 
