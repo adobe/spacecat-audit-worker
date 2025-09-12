@@ -45,10 +45,11 @@ function mapToPaidOpportunity(siteId, audit, { year, month, week }) {
 }
 
 function mapToAIInsightsSuggestions(opportunityId, guidanceArr) {
-  // Expect guidanceArr[0].body to be an array of sections with reportType and recommendations[]
+  // Expect guidanceArr[0].body to be an object with reports array
   const root = guidanceArr[0] || {};
-  const body = Array.isArray(root.body) ? root.body : [];
-  return body.map((section) => ({
+  const body = root.body || {};
+  const reports = Array.isArray(body.reports) ? body.reports : [];
+  return reports.map((section) => ({
     opportunityId,
     type: 'AI_INSIGHTS',
     rank: 1,
