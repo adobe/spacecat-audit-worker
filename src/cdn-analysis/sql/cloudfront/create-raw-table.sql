@@ -8,7 +8,6 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
   `sc-status`               string,
   `cs(referer)`             string,
   `cs(user-agent)`          string,
-  `cs-protocol`             string,
   `time-to-first-byte`      string,
   `sc-content-type`         string
 )
@@ -20,7 +19,7 @@ PARTITIONED BY (
 )
 ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
 WITH SERDEPROPERTIES (
-  'paths'='date,time,x-edge-location,cs-method,cs(Host),cs-uri-stem,sc-status,cs(Referer),cs(User-Agent),cs-protocol,time-to-first-byte,sc-content-type'
+  'paths'='date,time,x-edge-location,cs-method,cs(Host),cs-uri-stem,sc-status,cs(Referer),cs(User-Agent),time-to-first-byte,sc-content-type'
 )
 LOCATION '{{rawLocation}}'
 TBLPROPERTIES (
