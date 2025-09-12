@@ -82,7 +82,7 @@ export async function scrapeAccessibilityData(context, auditContext, scrapeClien
       ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
     },
     customHeaders: {},
-    processingType: 'accessibility-preflight',
+    processingType: 'accessibility',
     maxScrapeAge: 0, // Force fresh scrape
   };
 

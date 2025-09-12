@@ -1808,7 +1808,7 @@ describe('Preflight Audit', () => {
 
         expect(scrapeJobData).to.deep.include({
           urls: ['https://example.com/page1', 'https://example.com/page2'],
-          processingType: 'accessibility-preflight',
+          processingType: 'accessibility',
           maxScrapeAge: 0,
         });
 
