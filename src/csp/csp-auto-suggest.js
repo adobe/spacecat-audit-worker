@@ -15,7 +15,7 @@ import { load as cheerioLoad } from 'cheerio';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_CSP;
 
-async function determineSuggestionsForPage(url, context, site) {
+async function determineSuggestionsForPage(url, page, context, site) {
   const { log } = context;
 
   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Fetching page '${url}' for CSP auto-suggest`);
@@ -70,6 +70,7 @@ async function determineSuggestionsForPage(url, context, site) {
   return {
     type: 'static-content',
     url: url.toString(),
+    page,
     findings,
     suggestedBody,
   };
@@ -96,20 +97,16 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
   let autoSuggestError = false;
   const findings = [];
 
-  // Add a finding for the CSP header - uto-suggest is only called if this is not properly set
-  findings.push({
-    type: 'csp-header',
-  });
-
-  const fetchPromises = pageUrls.map(async (url) => {
+  const fetchPromises = pageUrls.map(async (pageUrl) => {
     try {
-      const finding = await determineSuggestionsForPage(new URL(url, auditUrl), context, site);
+      const fullUrl = new URL(pageUrl, auditUrl);
+      const finding = await determineSuggestionsForPage(fullUrl, pageUrl, context, site);
 
       if (finding) {
         findings.push(finding);
       }
     } catch (error) {
-      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Error downloading page ${url}:`, error);
+      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Error downloading page ${pageUrl}:`, error);
       autoSuggestError = true;
     }
   });
@@ -120,6 +117,11 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
     log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Error fetching one or more pages. Skipping CSP auto-suggest.`);
     return csp;
   }
+
+  // Add a finding for the CSP header - auto-suggest is only called if this is not properly set
+  findings.push({
+    type: 'csp-header',
+  });
 
   const result = [...csp];
   result[0].findings = findings;

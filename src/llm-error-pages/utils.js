@@ -426,3 +426,108 @@ export function toPathOnly(maybeUrl, baseUrl) {
     return maybeUrl;
   }
 }
+
+/**
+ * Downloads and parses existing CDN agentic traffic sheet
+ * @param {string} periodIdentifier - The period identifier (e.g., 'w35-2025')
+ * @param {string} outputLocation - SharePoint folder location
+ * @param {Object} sharepointClient - SharePoint client
+ * @param {Object} log - Logger instance
+ * @param {Function} readFromSharePoint - Function to read from SharePoint
+ * @param {Object} ExcelJS - ExcelJS module
+ * @returns {Array|null} - Array of CDN data rows or null if failed
+ */
+export async function downloadExistingCdnSheet(
+  periodIdentifier,
+  outputLocation,
+  sharepointClient,
+  log,
+  readFromSharePoint,
+  ExcelJS,
+) {
+  try {
+    const filename = `agentictraffic-${periodIdentifier}.xlsx`;
+    log.info(`Attempting to download existing CDN sheet: ${filename}`);
+
+    const buffer = await readFromSharePoint(filename, outputLocation, sharepointClient, log);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+
+    const worksheet = workbook.worksheets[0]; // First sheet
+    const rows = [];
+
+    worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber === 1) return;
+
+      const { values } = row;
+      rows.push({
+        agent_type: values[1],
+        user_agent_display: values[2],
+        status: values[3],
+        number_of_hits: Number(values[4]) || 0,
+        avg_ttfb_ms: Number(values[5]) || 0,
+        country_code: values[6],
+        url: values[7],
+        product: values[8],
+        category: values[9],
+      });
+    });
+
+    log.info(`Successfully loaded ${rows.length} rows from existing CDN sheet`);
+    return rows;
+  } catch (error) {
+    log.warn(`Could not download existing CDN sheet: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Matches error data with existing CDN data and enriches it
+ * @param {Array} errors - Error data from Athena
+ * @param {Array} cdnData - Existing CDN data from sheet
+ * @param {string} baseUrl - Base URL for path conversion
+ * @returns {Array} - Enriched error data with CDN fields
+ */
+export function matchErrorsWithCdnData(errors, cdnData, baseUrl) {
+  const enrichedErrors = [];
+
+  errors.forEach((error) => {
+    const errorUrl = toPathOnly(error.url, baseUrl);
+    const errorUserAgent = error.user_agent;
+    const match = cdnData.find((cdnRow) => {
+      let cdnUrl;
+      if (cdnRow.url === '/') {
+        cdnUrl = '/';
+      } else {
+        cdnUrl = cdnRow.url || '';
+      }
+
+      const urlMatch = errorUrl === cdnUrl
+        || errorUrl.includes(cdnUrl)
+        || cdnUrl.includes(errorUrl);
+
+      const userAgentMatch = cdnRow.user_agent_display === errorUserAgent
+        || (cdnRow.user_agent_display && errorUserAgent
+          && cdnRow.user_agent_display.toLowerCase().includes(errorUserAgent.toLowerCase()))
+        || (errorUserAgent && cdnRow.user_agent_display
+          && errorUserAgent.toLowerCase().includes(cdnRow.user_agent_display.toLowerCase()));
+
+      return urlMatch && userAgentMatch;
+    });
+
+    if (match) {
+      enrichedErrors.push({
+        agent_type: match.agent_type,
+        user_agent_display: match.user_agent_display,
+        number_of_hits: error.total_requests || match.number_of_hits,
+        avg_ttfb_ms: match.avg_ttfb_ms,
+        country_code: match.country_code,
+        url: errorUrl,
+        product: match.product,
+        category: match.category,
+      });
+    }
+  });
+
+  return enrichedErrors;
+}
