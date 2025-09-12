@@ -88,7 +88,7 @@ export async function scrapeAccessibilityData(context, auditContext, scrapeClien
 
   try {
     log.debug(`[preflight-audit] Creating ScrapeJob for accessibility audit: ${JSON.stringify(scrapeJobData, null, 2)}`);
-    scrapeJob = scrapeClient.createScrapeJob(scrapeJobData);
+    scrapeJob = await scrapeClient.createScrapeJob(scrapeJobData);
 
     log.debug(`[preflight-audit] Created ScrapeJob: ${JSON.stringify(scrapeJob, null, 2)}`);
     log.debug(`[preflight-audit] Processing type: ${scrapeJob.processingType}`);
