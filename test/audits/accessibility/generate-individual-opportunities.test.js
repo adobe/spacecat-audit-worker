@@ -1798,7 +1798,7 @@ describe('createIndividualOpportunitySuggestions', () => {
             ],
           },
         ],
-        isCreateTicketClicked: false,
+        jiraLink: '',
       },
     });
   });
