@@ -1,3 +1,10 @@
+## [1.178.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.178.1...v1.178.2) (2025-09-11)
+
+
+### Bug Fixes
+
+* updated excel to match columns in cdn-logs-report ([#1249](https://github.com/adobe/spacecat-audit-worker/issues/1249)) ([410734f](https://github.com/adobe/spacecat-audit-worker/commit/410734f3d8bc663166faa755e922a6a8c4d9516c))
+
 ## [1.178.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.178.0...v1.178.1) (2025-09-11)
 
 
