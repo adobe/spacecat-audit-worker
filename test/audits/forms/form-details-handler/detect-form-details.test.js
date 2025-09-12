@@ -95,6 +95,7 @@ describe('Detect Form Details Handler', () => {
       ),
       setUpdatedBy: sinon.stub(),
       setData: sinon.stub(),
+      setTitle: sinon.stub(),
       save: sinon.stub().resolvesThis(),
     });
 
@@ -145,6 +146,7 @@ describe('Detect Form Details Handler', () => {
       }),
       setUpdatedBy: sinon.stub(),
       setData: sinon.stub(),
+      setTitle: sinon.stub(),
       save: sinon.stub().resolvesThis(),
     });
 
@@ -173,6 +175,7 @@ describe('Detect Form Details Handler', () => {
       },
       setUpdatedBy: sinon.stub(),
       setData: sinon.stub(),
+      setTitle: sinon.stub(),
       save: sinon.stub().resolvesThis(),
     });
 
@@ -193,6 +196,7 @@ describe('Detect Form Details Handler', () => {
       }),
       setUpdatedBy: sinon.stub(),
       setData: sinon.stub(),
+      setTitle: sinon.stub(),
       save: sinon.stub().resolvesThis(),
     });
 
@@ -211,6 +215,7 @@ describe('Detect Form Details Handler', () => {
       }),
       setUpdatedBy: sinon.stub(),
       setData: sinon.stub(),
+      setTitle: sinon.stub(),
       save: sinon.stub().resolvesThis(),
     });
 
@@ -236,6 +241,7 @@ describe('Detect Form Details Handler', () => {
           form: 'testUrl1',
           formSource: 'formSource1',
           a11yIssues: [],
+          formTitle: 'Contact Form',
           formDetails: {
             is_lead_gen: true,
             form_type: 'Contact Form',
