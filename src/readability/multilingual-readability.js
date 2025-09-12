@@ -46,13 +46,13 @@ const NAME_TO_LOCALE = Object.freeze({
 const fallbackLoggedLanguages = new Set();
 
 // Flesch(-like) coefficients per language
-// score = A - wps*WPS - spw*SPW - sp100*SP100 (undefined treated as 0)
+// score = A - wps*WPS - spw*SPW (standardized to syllables per word)
 const COEFFS = Object.freeze({
   german: { A: 180, wps: 1.0, spw: 58.5 },
-  spanish: { A: 206.84, wps: 1.02, sp100: 0.60 },
-  italian: { A: 217, wps: 1.3, sp100: 0.6 },
+  spanish: { A: 206.84, wps: 1.02, spw: 60 },
+  italian: { A: 217, wps: 1.3, spw: 60 },
   french: { A: 207, wps: 1.015, spw: 73.6 },
-  dutch: { A: 206.84, wps: 0.93, sp100: 0.77 },
+  dutch: { A: 206.84, wps: 0.93, spw: 77 },
   english: { A: 206.835, wps: 1.015, spw: 84.6 },
 });
 
@@ -319,13 +319,9 @@ export async function analyzeReadability(text, language, opts = {}) {
   // 4) Compute metrics once
   const wordsPerSentence = wordCount / sentenceCount;
   const syllablesPerWord = wordCount ? (syllableCount / wordCount) : 0;
-  const syllablesPer100Words = syllablesPerWord * 100;
 
-  // 5) Unified scoring using coefficients
-  const score = coeff.A
-    - coeff.wps * wordsPerSentence
-    - (coeff.spw ? coeff.spw * syllablesPerWord : 0)
-    - (coeff.sp100 ? coeff.sp100 * syllablesPer100Words : 0);
+  // 5) Unified scoring using standardized coefficients
+  const score = coeff.A - coeff.wps * wordsPerSentence - coeff.spw * syllablesPerWord;
 
   return {
     sentences: sentenceCount,
