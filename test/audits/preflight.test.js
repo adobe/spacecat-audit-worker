@@ -2185,7 +2185,7 @@ describe('Preflight Audit', () => {
             processingType: 'accessibility-preflight',
           }),
           getScrapeJobStatus: sinon.stub().resolves({
-            status: 'COMPLETED',
+            status: 'COMPLETE',
           }),
           getScrapeResultPaths: sinon.stub().returns(new Map([
             ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
@@ -2245,7 +2245,7 @@ describe('Preflight Audit', () => {
             processingType: 'accessibility-preflight',
           }),
           getScrapeJobStatus: sinon.stub().resolves({
-            status: 'COMPLETED',
+            status: 'COMPLETE',
           }),
           getScrapeResultPaths: sinon.stub().returns(new Map([
             ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
@@ -3024,7 +3024,7 @@ describe('Preflight Audit', () => {
             processingType: 'accessibility-preflight',
           }),
           getScrapeJobStatus: sinon.stub().resolves({
-            status: 'COMPLETED',
+            status: 'COMPLETE',
           }),
           getScrapeResultPaths: sinon.stub().returns(new Map([
             ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
@@ -3061,7 +3061,7 @@ describe('Preflight Audit', () => {
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Scrape Job ID: scrape-job-123');
         expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Expected files: ["example_com_page1.json","example_com_page2.json"]');
         expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETED');
+        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
         expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
         expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
 
@@ -3207,7 +3207,7 @@ describe('Preflight Audit', () => {
           processingType: 'accessibility-preflight',
         }),
         getScrapeJobStatus: sinon.stub().resolves({
-          status: 'COMPLETED',
+          status: 'COMPLETE',
         }),
         getScrapeResultPaths: sinon.stub().returns(new Map([
           ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
@@ -3550,7 +3550,7 @@ describe('Preflight Audit', () => {
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Scrape Job ID: scrape-job-123');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Expected files: ["example_com_page1.json","example_com_page2.json"]');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETED');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
       expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
 
@@ -3600,7 +3600,7 @@ describe('Preflight Audit', () => {
       // Verify that the ScrapeClient polling workflow was executed
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETED');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
       expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
 
       // Verify ScrapeClient methods were called
@@ -3649,7 +3649,7 @@ describe('Preflight Audit', () => {
       // Verify that the ScrapeClient polling workflow was executed
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETED');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
       expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
 
       // Verify ScrapeClient methods were called
@@ -3699,7 +3699,7 @@ describe('Preflight Audit', () => {
       // Verify that the ScrapeClient polling workflow was executed
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETED');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
       expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
 
       // Verify ScrapeClient methods were called
@@ -3749,7 +3749,7 @@ describe('Preflight Audit', () => {
       // Verify that the ScrapeClient polling workflow was executed
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETED');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
       expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
 
       // ScrapeClient methods were called to ensure processAccessibilityOpportunities is called
@@ -3859,7 +3859,7 @@ describe('Preflight Audit', () => {
           }
           // Second polling attempt - return success
           return Promise.resolve({
-            status: 'COMPLETED',
+            status: 'COMPLETE',
           });
         }),
         getScrapeResultPaths: sinon.stub().returns(new Map([
@@ -3894,7 +3894,7 @@ describe('Preflight Audit', () => {
       // Verify that the polling error was logged
       expect(log.error).to.have.been.calledWith('[preflight-audit] Error polling for accessibility data: ScrapeJob status check failed');
       // Verify that polling continued and eventually succeeded
-      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETED');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
       expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
       // Verify that both polling attempts were made
@@ -3924,7 +3924,7 @@ describe('Preflight Audit', () => {
           }
           // Second polling attempt - return success
           return Promise.resolve({
-            status: 'COMPLETED',
+            status: 'COMPLETE',
           });
         }),
         getScrapeResultPaths: sinon.stub().returns(new Map([
@@ -3961,7 +3961,7 @@ describe('Preflight Audit', () => {
       expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: IN_PROGRESS');
       expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob not completed yet, waiting...');
       // Verify that polling continued and eventually succeeded
-      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETED');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
       expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
       // Verify that both polling attempts were made
