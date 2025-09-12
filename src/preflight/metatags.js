@@ -27,8 +27,8 @@ export default async function metatags(context, auditContext) {
     step,
     audits,
     auditsResult,
-    s3Keys,
     timeExecutionBreakdown,
+    scrapeResultMap,
   } = auditContext;
   if (!checks || checks.includes(PREFLIGHT_METATAGS)) {
     const metatagsStartTime = Date.now();
@@ -43,7 +43,7 @@ export default async function metatags(context, auditContext) {
       seoChecks,
       detectedTags,
       extractedTags,
-    } = await metatagsAutoDetect(site, s3Keys, context);
+    } = await metatagsAutoDetect(site, scrapeResultMap, context);
     try {
       const tagCollection = step === 'suggest'
         ? await metatagsAutoSuggest({
