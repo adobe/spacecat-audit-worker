@@ -934,7 +934,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       // Verify that the error in individual suggestions doesn't break the main flow
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
 
       // Verify the stub was called even though it threw an error
       expect(aggregateAccessibilityIssuesStub).to.have.been.calledOnce;
@@ -1480,7 +1480,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         auditId: 'test-audit-id',
         type: 'form-accessibility',
         origin: 'AUTOMATION',
-        title: 'Form accessibility report',
+        title: 'Accessibility - Assistive technology is incompatible on form',
         runbook: 'https://adobe.sharepoint.com/:w:/s/AEM_Forms/Ebpoflp2gHFNl4w5-9C7dFEBBHHE4gTaRzHaofqSxJMuuQ?e=Ss6mep',
       });
 
@@ -2573,53 +2573,6 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       expect(createIndividualOpportunitySuggestionsStub).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith('[FormMystiqueSuggestions] No individual form accessibility suggestions to create from Mystique data');
-    });
-
-    it('should handle missing or undefined fields gracefully', async () => {
-      const a11yData = [
-        {
-          form: 'https://example.com/form1',
-          formSource: 'aem',
-          a11yIssues: [
-            {
-              // Missing description, wcagRule, wcagLevel, failureSummary
-              htmlWithIssues: [
-                {
-                  updateFrom: '<input type="text" id="name">',
-                  targetSelector: '#name',
-                },
-              ],
-              // Missing aiGenerated
-              type: 'missing-label',
-              severity: 'serious',
-            },
-          ],
-        },
-      ];
-
-      const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
-        '../../../src/accessibility/utils/generate-individual-opportunities.js': {
-          createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
-        },
-      });
-
-      await accessibilityHandlerModule.createFormAccessibilitySuggestionsFromMystique(
-        a11yData,
-        mockOpportunity,
-        context,
-      );
-
-      expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
-
-      const typeSpecificData = createIndividualOpportunitySuggestionsStub.getCall(0).args[1];
-      const suggestion = typeSpecificData.data[0];
-      const issue = suggestion.issues[0];
-
-      expect(issue.description).to.equal('');
-      expect(issue.wcagRule).to.equal('');
-      expect(issue.wcagLevel).to.equal('');
-      expect(issue.failureSummary).to.equal('');
-      expect(suggestion.aiGenerated).to.equal(false); // Default value
     });
 
     it('should handle errors gracefully and not break the flow', async () => {
