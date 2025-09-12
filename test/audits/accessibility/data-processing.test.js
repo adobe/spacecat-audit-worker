@@ -2936,8 +2936,8 @@ describe('data-processing utility functions', () => {
         // Assert
         expect(result).to.be.an('array');
         expect(result).to.have.length(0);
-        expect(mockLogForAudit.error.calledWith(
-          '[A11yProcessingError] [A11yAudit] No final result files found for no-files-site',
+        expect(mockLogForAudit.warn.calledWith(
+          '[A11yProcessingWarning] [A11yAudit] No final result files found for no-files-site',
         )).to.be.true;
       });
 
