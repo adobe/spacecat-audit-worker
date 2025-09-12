@@ -454,7 +454,7 @@ describe('Paid-Traffic Analysis Cache Warmer', () => {
 
       // Since results.map() with null returns [null], we need to filter it
       const originalMap = Array.prototype.map;
-      sandbox.stub(Array.prototype, 'map').callsFake(function (callback) {
+      sandbox.stub(Array.prototype, 'map').callsFake(function mapWithFilter(callback) {
         const result = originalMap.call(this, callback);
         return result.filter((item) => item !== null); // This creates empty array
       });
