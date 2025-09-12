@@ -1,3 +1,10 @@
+## [1.180.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.0...v1.180.1) (2025-09-12)
+
+
+### Bug Fixes
+
+* add-retry-logic-for-oppty-save-on-remediation ([#1232](https://github.com/adobe/spacecat-audit-worker/issues/1232)) ([6d462d4](https://github.com/adobe/spacecat-audit-worker/commit/6d462d4f7ed9b4acff417a7338fbc087910ade69))
+
 # [1.180.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.179.0...v1.180.0) (2025-09-12)
 
 
