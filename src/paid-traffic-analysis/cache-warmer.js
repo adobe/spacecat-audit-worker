@@ -279,7 +279,6 @@ export async function warmCacheForQuery(
 
   log.info(`Warming cache for dimensions [${dimensions.join(', ')}]: ${cacheKey}`);
 
-  log.info(`query [${dimensions.join(', ')}]: ${cacheKey}`);
   log.info(`query: ${query}`);
 
   const resultLocation = `${config.athenaTemp}/${outPrefix}`;
