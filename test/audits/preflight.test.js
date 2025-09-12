@@ -727,7 +727,7 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
+          checks: ['body-size', 'placeholder "lorem-ipsum" detection', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
         },
       });
 
@@ -830,7 +830,7 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
+          checks: ['body-size', 'placeholder "lorem-ipsum" detection', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
         },
       });
 
@@ -934,7 +934,7 @@ describe('Preflight Audit', () => {
           step: PREFLIGHT_STEP_IDENTIFY,
           // Input URL has trailing slash, will get normalized to remove it
           urls: ['https://main--example--page.aem.page/'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links'],
+          checks: ['body-size', 'placeholder "lorem-ipsum" detection', 'h1-count', 'canonical', 'metatags', 'links'],
           enableAuthentication: false,
         },
       });
@@ -963,7 +963,7 @@ describe('Preflight Audit', () => {
       const bodySizeAudit = actualResult[0].audits.find((audit) => audit.name === 'body-size');
       expect(bodySizeAudit).to.exist;
       expect(bodySizeAudit.opportunities).to.be.an('array');
-      const loremIpsumAudit = actualResult[0].audits.find((audit) => audit.name === 'lorem-ipsum');
+      const loremIpsumAudit = actualResult[0].audits.find((audit) => audit.name === 'placeholder "lorem-ipsum" detection');
       expect(loremIpsumAudit).to.exist;
       expect(loremIpsumAudit.opportunities).to.have.lengthOf(1);
       expect(loremIpsumAudit.opportunities[0].check).to.equal('placeholder-text');
@@ -1019,7 +1019,7 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
+          checks: ['body-size', 'placeholder "lorem-ipsum" detection', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
           enableAuthentication: false,
         },
       });
