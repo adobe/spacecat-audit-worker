@@ -255,6 +255,11 @@ describe('Featured Snippet Audit', () => {
           volume: 600,
           isInformational: true,
         },
+        {
+          url: 'https://example.com/page3',
+          keyword: 'test keyword 3',
+          isInformational: true,
+        },
       ]);
 
       context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([
