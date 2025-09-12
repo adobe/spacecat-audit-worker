@@ -13,14 +13,14 @@
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
-import { getSuccessCriteriaDetails } from '../utils.js';
+import { getSuccessCriteriaDetails, sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
-import { aggregateAccessibilityData } from '../../accessibility/utils/data-processing.js';
-import { URL_SOURCE_SEPARATOR } from '../../accessibility/utils/constants.js';
 import {
   aggregateAccessibilityIssues,
   createIndividualOpportunitySuggestions,
 } from '../../accessibility/utils/generate-individual-opportunities.js';
+import { aggregateAccessibilityData, sendRunImportMessage } from '../../accessibility/utils/data-processing.js';
+import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from '../../accessibility/utils/constants.js';
 
 const filterAccessibilityOpportunities = (opportunities) => opportunities.filter((opportunity) => opportunity.getTags()?.includes('Forms Accessibility'));
 
@@ -402,6 +402,22 @@ export async function createAccessibilityOpportunity(auditData, context) {
     if (opportunity) {
       await createFormAccessibilityIndividualSuggestions(aggregatedData, opportunity, context);
     }
+    // Send message to importer-worker to create/update a11y metrics
+    log.debug(`[FormA11yAudit] [Site Id: ${siteId}] Sending message to importer-worker to create/update a11y metrics`);
+    await sendRunImportMessage(
+      sqs,
+      env.IMPORT_WORKER_QUEUE_URL,
+      A11Y_METRICS_AGGREGATOR_IMPORT_TYPE,
+      siteId,
+      {
+        scraperBucketName: env.S3_SCRAPER_BUCKET_NAME,
+        importerBucketName: env.S3_IMPORTER_BUCKET_NAME,
+        version,
+        urlSourceSeparator: URL_SOURCE_SEPARATOR,
+        totalChecks: WCAG_CRITERIA_COUNTS.TOTAL,
+        options: {},
+      },
+    );
 
     // Send message to mystique for detection
     const mystiqueMessage = {
@@ -425,10 +441,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
 }
 
 export default async function handler(message, context) {
-  const {
-    log, env, sqs, dataAccess,
-  } = context;
-  const { Site } = dataAccess;
+  const { log } = context;
   const { auditId, siteId, data } = message;
   const { opportunityId, a11y } = data;
   log.info(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
@@ -448,21 +461,15 @@ export default async function handler(message, context) {
     // Create individual suggestions from Mystique data
     await createFormAccessibilitySuggestionsFromMystique(a11y, opportunity, context);
 
-    const site = await Site.findById(siteId);
-    // send message to mystique for guidance
-    const mystiqueMessage = {
-      type: 'guidance:forms-a11y',
-      siteId,
-      auditId,
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      data: {
-        url: site.getBaseURL(),
-        opportunityId: opportunity?.getId(),
-      },
-    };
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.info(`[Form Opportunity] [Site Id: ${siteId}] Sent a11y message to mystique for guidance`);
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] a11y opportunity: ${JSON.stringify(opportunity, null, 2)}`);
+    const opportunityData = opportunity.getData();
+    const a11yData = opportunityData.accessibility;
+    // eslint-disable-next-line max-len
+    const formsList = a11yData.filter((item) => !item.formDetails).map((item) => ({ form: item.form, formSource: item.formSource }));
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] formsList: ${JSON.stringify(formsList, null, 2)}`);
+    await (formsList.length === 0
+      ? sendMessageToMystiqueForGuidance(context, opportunity)
+      : sendMessageToFormsQualityAgent(context, opportunity, formsList));
   } catch (error) {
     log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to process a11y opportunity from mystique: ${error.message}`);
   }

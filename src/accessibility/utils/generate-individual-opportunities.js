@@ -21,7 +21,7 @@ import { successCriteriaLinks, accessibilityOpportunitiesMap, URL_SOURCE_SEPARAT
 import { getAuditData } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
-import { saveMystiqueValidationMetricsToS3 } from './scrape-utils.js';
+import { saveMystiqueValidationMetricsToS3, saveOpptyWithRetry } from './scrape-utils.js';
 
 /**
  * Extracts the 'source' query parameter from a URL and returns a clean URL
@@ -429,7 +429,7 @@ export async function createIndividualOpportunitySuggestions(
           type: urlData.type,
           issues: urlData.issues, // Array of formatted accessibility issues
           ...(urlData.source && { source: urlData.source }),
-          isCreateTicketClicked: false,
+          jiraLink: '',
         },
       }),
       mergeDataFunction: keepSameDataFunction,
@@ -898,7 +898,8 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
     // Update the opportunity with new audit ID
     opportunity.setAuditId(auditId);
     opportunity.setUpdatedBy('system');
-    await opportunity.save();
+    // await opportunity.save();
+    await saveOpptyWithRetry(opportunity, auditId, Opportunity, log);
 
     if (invalidRemediations.length > 0) {
       log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: ${invalidRemediations.length} remediations missing suggestionId`);

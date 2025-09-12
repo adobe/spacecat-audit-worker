@@ -10,10 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { JSDOM } from 'jsdom';
-import { isLangCode } from 'is-language-code';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { isLangCode } from 'is-language-code';
+import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -40,10 +40,6 @@ export const HREFLANG_CHECKS = Object.freeze({
     check: 'top-pages',
     explanation: 'No top pages found',
   },
-  URL_UNDEFINED: {
-    check: 'url-defined',
-    explanation: 'The URL is undefined or null, which prevents the hreflang validation process.',
-  },
 
 });
 
@@ -55,13 +51,11 @@ export const HREFLANG_CHECKS = Object.freeze({
  */
 export async function validatePageHreflang(url, log) {
   if (!url) {
+    log.error('URL is undefined or null, cannot validate hreflang');
+    // Return empty result - URL validation errors should only be logged
     return {
       url,
-      checks: [{
-        check: HREFLANG_CHECKS.URL_UNDEFINED.check,
-        success: false,
-        explanation: HREFLANG_CHECKS.URL_UNDEFINED.explanation,
-      }],
+      checks: [],
     };
   }
 

@@ -11,7 +11,7 @@
  */
 
 import { DEFAULT_COUNTRY_PATTERNS } from '../constants/country-patterns.js';
-import { loadSql, fetchRemotePatterns } from './report-utils.js';
+import { loadSql, fetchRemotePatterns, buildSiteFilters } from './report-utils.js';
 import { PROVIDER_USER_AGENT_PATTERNS, buildAgentTypeClassificationSQL, buildUserAgentDisplaySQL } from '../constants/user-agent-patterns.js';
 
 function buildDateFilter(startDate, endDate) {
@@ -24,10 +24,12 @@ function buildDateFilter(startDate, endDate) {
   const start = formatPart(startDate);
   const end = formatPart(endDate);
 
+  /* c8 ignore start */
   return start.year === end.year && start.month === end.month
     ? `(year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}' AND day <= '${end.day}')`
     : `((year = '${start.year}' AND month = '${start.month}' AND day >= '${start.day}')
        OR (year = '${end.year}' AND month = '${end.month}' AND day <= '${end.day}'))`;
+  /* c8 ignore stop */
 }
 
 function buildWhereClause(conditions = [], siteFilters = []) {
@@ -48,7 +50,6 @@ function buildWhereClause(conditions = [], siteFilters = []) {
 
 // Page Type Classification
 function generatePageTypeClassification(remotePatterns = null) {
-  /* c8 ignore start */
   const patterns = remotePatterns?.pagePatterns || [];
 
   if (patterns.length === 0) {
@@ -60,7 +61,6 @@ function generatePageTypeClassification(remotePatterns = null) {
     .join('\n');
 
   return `CASE\n${caseConditions}\n      ELSE 'Uncategorized'\n    END`;
-  /* c8 ignore stop */
 }
 
 // Country Classification
@@ -74,7 +74,6 @@ function buildCountryExtractionSQL() {
 
 // Topic Classification
 function buildTopicExtractionSQL(remotePatterns = null) {
-  /* c8 ignore start */
   const patterns = remotePatterns?.topicPatterns || [];
 
   if (Array.isArray(patterns) && patterns.length > 0) {
@@ -100,13 +99,15 @@ function buildTopicExtractionSQL(remotePatterns = null) {
     }
   }
   return "CASE WHEN url IS NOT NULL THEN 'Other' END";
-  /* c8 ignore stop */
 }
 
 async function createAgenticReportQuery(options) {
   const {
-    periods, databaseName, tableName, site, siteFilters = [],
+    periods, databaseName, tableName, site,
   } = options;
+
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
+  const siteFilters = buildSiteFilters(filters);
 
   const lastWeek = periods.weeks[periods.weeks.length - 1];
   const whereClause = buildWhereClause(
@@ -128,6 +129,39 @@ async function createAgenticReportQuery(options) {
   });
 }
 
+function buildWhereClauseReferral(conditions = [], siteFilters = []) {
+  const allConditions = [...conditions];
+
+  if (siteFilters && siteFilters.length > 0) {
+    allConditions.push(siteFilters);
+  }
+
+  /* c8 ignore next */
+  return allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : '';
+}
+
+async function createReferralReportQuery(options) {
+  const {
+    periods, databaseName, tableName, site,
+  } = options;
+
+  const filters = site.getConfig().getLlmoCdnlogsFilter();
+  const siteFilters = buildSiteFilters(filters);
+  const lastWeek = periods.weeks[periods.weeks.length - 1];
+  const whereClause = buildWhereClauseReferral(
+    [buildDateFilter(lastWeek.startDate, lastWeek.endDate)],
+    siteFilters,
+  );
+
+  return loadSql('referral-traffic-report', {
+    databaseName,
+    tableName,
+    whereClause,
+    countryExtraction: buildCountryExtractionSQL(),
+  });
+}
+
 export const weeklyBreakdownQueries = {
   createAgenticReportQuery,
+  createReferralReportQuery,
 };

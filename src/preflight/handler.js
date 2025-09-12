@@ -22,7 +22,7 @@ import {
 import canonical from './canonical.js';
 import metatags from './metatags.js';
 import links from './links.js';
-import readability from './readability.js';
+import readability from '../readability/handler.js';
 import accessibility from './accessibility.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -30,7 +30,7 @@ export const PREFLIGHT_STEP_IDENTIFY = 'identify';
 export const PREFLIGHT_STEP_SUGGEST = 'suggest';
 
 export const AUDIT_BODY_SIZE = 'body-size';
-export const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
+export const AUDIT_LOREM_IPSUM = 'placeholder "lorem-ipsum" detection';
 export const AUDIT_H1_COUNT = 'h1-count';
 
 /**
@@ -226,7 +226,7 @@ export const preflightAudit = async (context) => {
     }
 
     // Execute all preflight handlers
-    await Object.keys(PREFLIGHT_HANDLERS).reduce(
+    const handlerResults = await Object.keys(PREFLIGHT_HANDLERS).reduce(
       async (accPromise, handler) => {
         const acc = await accPromise;
         const res = await PREFLIGHT_HANDLERS[handler](context, {
@@ -263,13 +263,20 @@ export const preflightAudit = async (context) => {
       },
     }));
 
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. ${JSON.stringify(resultWithProfiling)}`);
+    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. resultWithProfiling: ${JSON.stringify(resultWithProfiling)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
-    jobEntity.setStatus(AsyncJob.Status.COMPLETED);
+    const anyProcessing = handlerResults.some((r) => r && r.processing === true);
     jobEntity.setResultType(AsyncJob.ResultType.INLINE);
     jobEntity.setResult(resultWithProfiling);
-    jobEntity.setEndedAt(new Date().toISOString());
+    if (anyProcessing) {
+      // Keep the job in progress while waiting for Mystique guidance
+      jobEntity.setStatus(AsyncJob.Status.IN_PROGRESS);
+      // Do not set endedAt yet
+    } else {
+      jobEntity.setStatus(AsyncJob.Status.COMPLETED);
+      jobEntity.setEndedAt(new Date().toISOString());
+    }
     await jobEntity.save();
   } catch (error) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Error during preflight audit.`, error);
