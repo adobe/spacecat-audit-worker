@@ -1,3 +1,10 @@
+# [1.180.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.179.0...v1.180.0) (2025-09-12)
+
+
+### Features
+
+* traffic analysis intg update expected body from mystique ([#1257](https://github.com/adobe/spacecat-audit-worker/issues/1257)) ([83fc4a1](https://github.com/adobe/spacecat-audit-worker/commit/83fc4a1e56934b65656d20809cab50bbb2b75e3d))
+
 # [1.179.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.178.2...v1.179.0) (2025-09-12)
 
 
