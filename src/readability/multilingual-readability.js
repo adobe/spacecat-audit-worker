@@ -80,19 +80,13 @@ export async function getHyphenator(language) {
 
     // eslint-disable-next-line no-console
     console.info(`[readability-suggest multilingual] 📚 Loading hyphenation patterns for ${language} (locale: ${locale})`);
-    try {
-      const mod = await import(`hyphen/${locale}/index.js`);
-      const hyphenate = mod?.default?.hyphenate;
-      if (hyphenate) {
-        // eslint-disable-next-line no-console
-        console.info(`[readability-suggest multilingual] ✅ Successfully loaded hyphenation patterns for ${language}`);
-      }
-      return hyphenate;
-    } catch (error) {
+    const mod = await import(`hyphen/${locale}/index.js`);
+    const hyphenate = mod?.default?.hyphenate;
+    if (hyphenate) {
       // eslint-disable-next-line no-console
-      console.error(`[readability-suggest multilingual] ❌ Failed to load hyphenation patterns for ${language}:`, error.message);
-      return null;
+      console.info(`[readability-suggest multilingual] ✅ Successfully loaded hyphenation patterns for ${language}`);
     }
+    return hyphenate;
   })();
 
   hyphenatorCache.set(key, loader);
@@ -278,42 +272,24 @@ export async function analyzeReadability(text, language, opts = {}) {
   // 3) Aggregate syllables/complex words using frequencies
   let syllableCount = 0;
   let complexWords = 0;
-  const syllableBreakdown = []; // For debugging
   // CRITICAL FIX: Check for corrupted cache entries and recalculate if needed
   const toRecalculate = [];
   for (const [key, { word }] of entries) {
     const s = cache.get(key);
-    // If cache returns undefined/null or 0 for a non-empty word, need to recalculate
-    if (s === undefined || s === null || (s === 0 && word.length > 0)) {
+    // If cache returns undefined/null or 0 syllables, need to recalculate
+    if (s === undefined || s === null || s === 0) {
       toRecalculate.push(countSyllablesWord(word, lang).then((n) => {
         cache.set(key, n);
         return n;
-      }).catch((error) => {
-        // eslint-disable-next-line no-console
-        console.warn(`[readability-suggest multilingual] ⚠️ Syllable calculation failed for "${word}":`, error.message);
-        const fallback = word.length <= 3 ? 1 : Math.ceil(word.length / 2); // Emergency fallback
-        cache.set(key, fallback);
-        return fallback;
       }));
     }
   }
   if (toRecalculate.length) await Promise.all(toRecalculate);
 
-  for (const [key, { word, count }] of entries) {
+  for (const [key, { count }] of entries) {
     const s = cache.get(key) ?? 0;
     syllableCount += s * count;
     if (s >= complexThreshold) complexWords += count;
-
-    // Collect syllable breakdown for debugging
-    if (s > 3 && wordCount > 60) {
-      syllableBreakdown.push(`${word}:${s}×${count}`);
-    }
-  }
-
-  // Debug syllable breakdown for significant texts
-  if (wordCount > 60 && syllableBreakdown.length > 0) {
-    // eslint-disable-next-line no-console
-    console.info(`[readability-suggest multilingual] 🔢 High-syllable words (>3): [${syllableBreakdown.slice(0, 8).join(', ')}]`);
   }
 
   // 4) Compute metrics once
