@@ -1,3 +1,10 @@
+# [1.179.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.178.2...v1.179.0) (2025-09-12)
+
+
+### Features
+
+* Introduce multilingual support for Readability audits ([#1244](https://github.com/adobe/spacecat-audit-worker/issues/1244)) ([61c8904](https://github.com/adobe/spacecat-audit-worker/commit/61c89043eae19265ee327088422275488f25476f))
+
 ## [1.178.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.178.1...v1.178.2) (2025-09-11)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.178.2",
+  "version": "1.179.0",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -101,10 +101,12 @@
     "franc-min": "6.2.0",
     "get-xpath": "3.3.0",
     "hyparquet": "1.17.4",
+    "hyphen": "1.10.6",
     "is-language-code": "5.0.16",
     "js-beautify": "^1.15.4",
     "jsdom": "26.1.0",
     "robots-parser": "3.0.1",
+    "syllable": "5.0.1",
     "text-readability": "1.1.1",
     "urijs": "1.19.11"
   },
