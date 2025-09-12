@@ -1807,7 +1807,7 @@ describe('Preflight Audit', () => {
         const scrapeJobData = mockScrapeClient.createScrapeJob.getCall(0).args[0];
 
         expect(scrapeJobData).to.deep.include({
-          previewUrls: ['https://example.com/page1', 'https://example.com/page2'],
+          urls: ['https://example.com/page1', 'https://example.com/page2'],
           processingType: 'accessibility-preflight',
           maxScrapeAge: 0,
         });
@@ -1967,7 +1967,7 @@ describe('Preflight Audit', () => {
 
         expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
         const scrapeJobData = mockScrapeClient.createScrapeJob.getCall(0).args[0];
-        expect(scrapeJobData.previewUrls).to.deep.equal([
+        expect(scrapeJobData.urls).to.deep.equal([
           'https://example.com/single-page',
         ]);
         expect(log.info).to.have.been.calledWith(
@@ -1990,7 +1990,7 @@ describe('Preflight Audit', () => {
 
         expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
         const scrapeJobData = mockScrapeClient.createScrapeJob.getCall(0).args[0];
-        expect(scrapeJobData.previewUrls).to.have.lengthOf(50);
+        expect(scrapeJobData.urls).to.have.lengthOf(50);
         expect(log.info).to.have.been.calledWith(
           '[preflight-audit] Sending 50 URLs to content scraper for accessibility audit',
         );
@@ -2009,7 +2009,7 @@ describe('Preflight Audit', () => {
 
         expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
         const scrapeJobData = mockScrapeClient.createScrapeJob.getCall(0).args[0];
-        expect(scrapeJobData.previewUrls).to.deep.equal([
+        expect(scrapeJobData.urls).to.deep.equal([
           'https://example.com/page with spaces',
           'https://example.com/page-with-query?param=value&other=123',
           'https://example.com/page#fragment',

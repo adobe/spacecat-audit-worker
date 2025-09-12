@@ -75,7 +75,7 @@ export async function scrapeAccessibilityData(context, auditContext, scrapeClien
   log.info(`[preflight-audit] Sending ${previewUrls.length} URLs to content scraper for accessibility audit`);
   let scrapeJob = null;
   const scrapeJobData = {
-    previewUrls,
+    urls: previewUrls,
     options: {
       enableAuthentication,
       a11yPreflight: true,
