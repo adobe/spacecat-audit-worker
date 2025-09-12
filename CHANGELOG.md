@@ -1,3 +1,10 @@
+## [1.180.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.1...v1.180.2) (2025-09-12)
+
+
+### Bug Fixes
+
+* a11y logging for missing accessibility final result files ([#1255](https://github.com/adobe/spacecat-audit-worker/issues/1255)) ([3c1f2e7](https://github.com/adobe/spacecat-audit-worker/commit/3c1f2e74f678cf3ed872d49662d64a265dbc586a))
+
 ## [1.180.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.0...v1.180.1) (2025-09-12)
 
 
