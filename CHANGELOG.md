@@ -1,3 +1,59 @@
+## [1.180.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.1...v1.180.2) (2025-09-12)
+
+
+### Bug Fixes
+
+* a11y logging for missing accessibility final result files ([#1255](https://github.com/adobe/spacecat-audit-worker/issues/1255)) ([3c1f2e7](https://github.com/adobe/spacecat-audit-worker/commit/3c1f2e74f678cf3ed872d49662d64a265dbc586a))
+
+## [1.180.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.0...v1.180.1) (2025-09-12)
+
+
+### Bug Fixes
+
+* add-retry-logic-for-oppty-save-on-remediation ([#1232](https://github.com/adobe/spacecat-audit-worker/issues/1232)) ([6d462d4](https://github.com/adobe/spacecat-audit-worker/commit/6d462d4f7ed9b4acff417a7338fbc087910ade69))
+
+# [1.180.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.179.0...v1.180.0) (2025-09-12)
+
+
+### Features
+
+* traffic analysis intg update expected body from mystique ([#1257](https://github.com/adobe/spacecat-audit-worker/issues/1257)) ([83fc4a1](https://github.com/adobe/spacecat-audit-worker/commit/83fc4a1e56934b65656d20809cab50bbb2b75e3d))
+
+# [1.179.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.178.2...v1.179.0) (2025-09-12)
+
+
+### Features
+
+* Introduce multilingual support for Readability audits ([#1244](https://github.com/adobe/spacecat-audit-worker/issues/1244)) ([61c8904](https://github.com/adobe/spacecat-audit-worker/commit/61c89043eae19265ee327088422275488f25476f))
+
+## [1.178.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.178.1...v1.178.2) (2025-09-11)
+
+
+### Bug Fixes
+
+* updated excel to match columns in cdn-logs-report ([#1249](https://github.com/adobe/spacecat-audit-worker/issues/1249)) ([410734f](https://github.com/adobe/spacecat-audit-worker/commit/410734f3d8bc663166faa755e922a6a8c4d9516c))
+
+## [1.178.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.178.0...v1.178.1) (2025-09-11)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.37.3 ([#1251](https://github.com/adobe/spacecat-audit-worker/issues/1251)) ([ca7c26e](https://github.com/adobe/spacecat-audit-worker/commit/ca7c26eacbd92e59dfcc28ef3c1f7321beb6bca3))
+
+# [1.178.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.8...v1.178.0) (2025-09-11)
+
+
+### Features
+
+* populating form title from mystique for forms opportunities ([#1247](https://github.com/adobe/spacecat-audit-worker/issues/1247)) ([abb9eba](https://github.com/adobe/spacecat-audit-worker/commit/abb9ebadfd9e5332e7edd2ace86262c019301f72))
+
+## [1.177.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.7...v1.177.8) (2025-09-10)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.62.0 ([#1250](https://github.com/adobe/spacecat-audit-worker/issues/1250)) ([d5a24b9](https://github.com/adobe/spacecat-audit-worker/commit/d5a24b945246a4539d71a0a0f1114930cc511b3d))
+
 ## [1.177.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.177.6...v1.177.7) (2025-09-10)
 
 

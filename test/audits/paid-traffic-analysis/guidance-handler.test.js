@@ -33,21 +33,23 @@ describe('Paid-traffic-analysis guidance handler', () => {
   const newOpportunityId = 'oppty-new';
 
   const guidancePayload = [{
-    body: [
-      {
-        reportType: 'PAID_CAMPAIGN_PERFORMANCE',
-        recommendations: [
-          { markdown: 'Improve ad targeting for channel A' },
-          { markdown: 'Reduce spend on low-performing channel B' },
-        ],
-      },
-      {
-        reportType: 'PAGE_TYPE_PERFORMANCE',
-        recommendations: [
-          { markdown: 'Optimize hero for campaign LP' },
-        ],
-      },
-    ],
+    body: {
+      reports: [
+        {
+          reportType: 'PAID_CAMPAIGN_PERFORMANCE',
+          recommendations: [
+            { markdown: 'Improve ad targeting for channel A' },
+            { markdown: 'Reduce spend on low-performing channel B' },
+          ],
+        },
+        {
+          reportType: 'PAGE_TYPE_PERFORMANCE',
+          recommendations: [
+            { markdown: 'Optimize hero for campaign LP' },
+          ],
+        },
+      ],
+    },
   }];
 
   let dummyAudit;
@@ -187,8 +189,8 @@ describe('Paid-traffic-analysis guidance handler', () => {
     expect(createdArg.data).to.include({ week: 2, month: 1 });
   });
 
-  it('handles guidance with non-array body by creating no suggestions', async () => {
-    // body is an object, not an array -> mapToAIInsightsSuggestions should return []
+  it('handles guidance with missing reports array by creating no suggestions', async () => {
+    // body has no reports array -> mapToAIInsightsSuggestions should return []
     const nonArrayGuidance = [{ body: { foo: 'bar' } }];
     const message = {
       auditId,
@@ -224,10 +226,12 @@ describe('Paid-traffic-analysis guidance handler', () => {
   it('handles section without recommendations by using empty list', async () => {
     // One section has no recommendations array
     const guidanceMissingRecs = [{
-      body: [
-        { reportType: 'PAID_CHANNEL_PERFORMANCE', recommendations: [{ markdown: 'A' }] },
-        { reportType: 'PAGE_TYPE_PERFORMANCE' }, // no recommendations -> [] branch
-      ],
+      body: {
+        reports: [
+          { reportType: 'PAID_CHANNEL_PERFORMANCE', recommendations: [{ markdown: 'A' }] },
+          { reportType: 'PAGE_TYPE_PERFORMANCE' }, // no recommendations -> [] branch
+        ],
+      },
     }];
 
     const message = {
