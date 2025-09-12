@@ -507,24 +507,15 @@ export async function createReportOpportunitySuggestion(
  * @param {string} bucketName - the name of the S3 bucket
  * @param {string} siteId - the site ID to look for
  * @param {import('@azure/logger').Logger} log - a logger instance
- * @param {Object} dataAccess - the data access object to check for previous audits
  */
-export async function getUrlsForAudit(s3Client, bucketName, siteId, log, dataAccess) {
+export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
   let finalResultFiles;
   const urlsToScrape = [];
   try {
     finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
     if (finalResultFiles.length === 0) {
-      // Check if this is the first run by looking for previous accessibility audits
-      const { LatestAudit } = dataAccess;
-      const latestAudit = await LatestAudit.findBySiteIdAndAuditType(siteId, 'accessibility');
-      if (!latestAudit) {
-        // First run - log as warning
-        log.warn(`[A11yProcessingWarning] No final result files found for ${siteId} - First time running accessibility audit`);
-      } else {
-        // Subsequent run - log as error
-        log.error(`[A11yProcessingError] No final result files found for ${siteId}`);
-      }
+      const warningMessage = `[A11yAudit] No final result files found for ${siteId}`;
+      log.warn(`[A11yProcessingWarning] ${warningMessage}`);
       return urlsToScrape;
     }
   } catch (error) {
