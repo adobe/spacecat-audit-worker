@@ -48,8 +48,6 @@ export async function detectFeaturedSnippet(context) {
     return [];
   }
 
-  // TODO: Consider geo, but top pages not filtered by it?
-
   // Get top pages
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
@@ -123,7 +121,7 @@ export async function detectFeaturedSnippet(context) {
 export async function opportunityAndSuggestions(context, metrics) {
   return metrics.map((metric) => ({
     ...metric,
-    suggestion: `Further optimize this page for the query '${metric.keyword}' to increase the chances of qualifying for a featured snippet and a higher CTR.`,
+    suggestion: `Further optimize the content of this page for search requests related to "${metric.keyword}".`,
   }));
 }
 
