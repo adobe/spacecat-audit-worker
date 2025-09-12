@@ -1148,19 +1148,63 @@ describe('Preflight Audit', () => {
           urls: ['https://main--example--page.aem.page/page1'],
         },
       });
-      s3Client.send.onCall(0).rejects(new Error('S3 error'));
 
-      await expect(preflightAuditFunction(context)).to.be.rejectedWith('S3 error');
+      // Mock one of the PREFLIGHT_HANDLERS to throw an error
+      // This will cause an error during the handler execution phase
+      const canonicalStub = sinon.stub().rejects(new Error('Handler execution failed'));
 
-      // Verify that AsyncJob.findById was called for the error handling
-      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+      // Use esmock to replace the canonical handler with our failing stub
+      const { preflightAudit: failingPreflightAudit } = await esmock('../../src/preflight/handler.js', {
+        '../../src/preflight/canonical.js': {
+          default: canonicalStub,
+        },
+        '../../src/preflight/accessibility.js': {
+          default: sinon.stub().resolves(), // Keep accessibility mocked as no-op
+        },
+      });
 
-      // Get the last call to AsyncJob.findById (which is the final save)
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      // Create error handling job entity
+      const errorJobEntity = {
+        getId: () => 'job-123',
+        setResult: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
 
-      expect(finalJobEntity.setStatus).to.have.been.calledWith('FAILED');
-      expect(finalJobEntity.save).to.have.been.called;
+      // Mock AsyncJob.findById to succeed normally, then succeed for error handling
+      context.dataAccess.AsyncJob.findById = sinon.stub()
+        .onCall(0).resolves({
+          getId: () => 'job-123',
+          setResult: sinon.stub(),
+          setStatus: sinon.stub(),
+          setResultType: sinon.stub(),
+          setEndedAt: sinon.stub(),
+          setError: sinon.stub(),
+          save: sinon.stub().resolves(),
+        })
+        .onCall(1)
+        .resolves(errorJobEntity);
+
+      // The function should re-throw the error after handling it
+      await expect(failingPreflightAudit(context)).to.be.rejectedWith('Handler execution failed');
+
+      // Verify that AsyncJob.findById was called twice:
+      // 1. First call during normal execution (succeeds)
+      // 2. Second call in the catch block for error handling
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.calledTwice;
+
+      // Verify error handling behavior
+      expect(errorJobEntity.setStatus).to.have.been.calledWith('FAILED');
+      expect(errorJobEntity.setError).to.have.been.calledWith({
+        code: 'EXCEPTION',
+        message: 'Handler execution failed',
+        details: sinon.match.string, // Stack trace
+      });
+      expect(errorJobEntity.setEndedAt).to.have.been.called;
+      expect(errorJobEntity.save).to.have.been.called;
     });
 
     it('logs timing information for each sub-audit', async () => {
