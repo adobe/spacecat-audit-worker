@@ -344,7 +344,7 @@ export default async function accessibility(context, auditContext) {
 
         log.info(`[preflight-audit] ScrapeJob Status: ${scrapeJob.status}`);
 
-        if (scrapeJob.status === 'COMPLETED') {
+        if (scrapeJob.status === 'COMPLETE') {
           log.info('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
           return;
         }
