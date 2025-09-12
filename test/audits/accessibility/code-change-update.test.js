@@ -156,7 +156,7 @@ describe('AccessibilityCodeChangeHandler', () => {
 
       expect(result.status).to.equal(400);
       expect(context.log.error).to.have.been.calledWith(
-        'AccessibilityCodeChangeHandler: No opportunityId provided',
+        '[AccessibilityCodeChangeHandler] No opportunityId provided',
       );
     });
 
@@ -189,7 +189,7 @@ describe('AccessibilityCodeChangeHandler', () => {
 
       expect(result.status).to.equal(404);
       expect(context.log.error).to.have.been.calledWith(
-        'AccessibilityCodeChangeHandler: Opportunity not found for ID: opportunity-123',
+        '[AccessibilityCodeChangeHandler] Opportunity not found for ID: opportunity-123',
       );
     });
 
@@ -455,7 +455,7 @@ describe('AccessibilityCodeChangeHandler', () => {
 
       expect(result.status).to.equal(200);
       expect(context.log.warn).to.have.been.calledWith(
-        'AccessibilityCodeChangeHandler: Skipping update without URL',
+        '[AccessibilityCodeChangeHandler] Skipping update without URL',
       );
       expect(context.log.warn).to.have.been.calledWith(
         sinon.match(/Skipping update for URL.*without types/),

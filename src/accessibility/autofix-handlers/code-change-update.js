@@ -121,7 +121,7 @@ async function updateSuggestionsWithCodeChange(suggestions, url, source, ruleId,
  * Expected message format:
  * {
  *   "siteId": "<site-id>",
- *   "type": "<handler-type>",
+ *   "type": "accessibility-code-change",
  *   "data": {
  *     "opportunityId": "<uuid>",
  *     "updates": [
@@ -138,7 +138,7 @@ async function updateSuggestionsWithCodeChange(suggestions, url, source, ruleId,
  * @param {Object} context - The context object containing dataAccess, log, s3Client, etc.
  * @returns {Promise<Response>} - HTTP response
  */
-export default async function AccessibilityCodeChangeHandler(message, context) {
+export default async function accessibilityCodeChangeHandler(message, context) {
   const {
     log, dataAccess, s3Client, env,
   } = context;
@@ -153,31 +153,29 @@ export default async function AccessibilityCodeChangeHandler(message, context) {
   const { opportunityId, updates } = data;
 
   if (!opportunityId) {
-    log.error('AccessibilityCodeChangeHandler: No opportunityId provided');
+    log.error('[AccessibilityCodeChangeHandler] No opportunityId provided');
     return badRequest('No opportunityId provided');
   }
 
   if (!isNonEmptyArray(updates)) {
-    log.error('AccessibilityCodeChangeHandler: No updates provided or updates is empty');
+    log.error('[AccessibilityCodeChangeHandler] No updates provided or updates is empty');
     return badRequest('No updates provided or updates is empty');
   }
 
-  const siteIdMsg = `AccessibilityCodeChangeHandler: Processing message for siteId: ${siteId}, opportunityId: ${opportunityId}`;
-  log.info(siteIdMsg);
-  log.info(`AccessibilityCodeChangeHandler: Updates to process: ${JSON.stringify(updates, null, 2)}`);
+  log.info(`[AccessibilityCodeChangeHandler] Processing message for siteId: ${siteId}, opportunityId: ${opportunityId}`);
 
   try {
     // Find the opportunity
     const opportunity = await Opportunity.findById(opportunityId);
 
     if (!opportunity) {
-      log.error(`AccessibilityCodeChangeHandler: Opportunity not found for ID: ${opportunityId}`);
+      log.error(`[AccessibilityCodeChangeHandler] Opportunity not found for ID: ${opportunityId}`);
       return notFound('Opportunity not found');
     }
 
     // Verify the opportunity belongs to the correct site
     if (opportunity.getSiteId() !== siteId) {
-      const errorMsg = `AccessibilityCodeChangeHandler: Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
+      const errorMsg = `[AccessibilityCodeChangeHandler] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
       log.error(errorMsg);
       return badRequest('Site ID mismatch');
     }
@@ -186,13 +184,10 @@ export default async function AccessibilityCodeChangeHandler(message, context) {
     const suggestions = await opportunity.getSuggestions();
 
     if (!isNonEmptyArray(suggestions)) {
-      log.warn(`AccessibilityCodeChangeHandler: No suggestions found for opportunity: ${opportunityId}`);
+      log.warn(`[AccessibilityCodeChangeHandler] No suggestions found for opportunity: ${opportunityId}`);
       return ok('No suggestions found for opportunity');
     }
 
-    log.info(`AccessibilityCodeChangeHandler: Found ${suggestions.length} suggestions for opportunity: ${opportunityId}`);
-
-    // Get the S3 bucket name from environment
     const bucketName = env.S3_MYSTIQUE_BUCKET_NAME;
 
     if (!bucketName) {
@@ -207,17 +202,16 @@ export default async function AccessibilityCodeChangeHandler(message, context) {
       const { url, source, type: types } = update;
 
       if (!url) {
-        log.warn('AccessibilityCodeChangeHandler: Skipping update without URL');
+        log.warn('[AccessibilityCodeChangeHandler] Skipping update without URL');
         return;
       }
 
       if (!isNonEmptyArray(types)) {
-        log.warn(`AccessibilityCodeChangeHandler: Skipping update for URL ${url} without types`);
+        log.warn(`[AccessibilityCodeChangeHandler] Skipping update for URL ${url} without types`);
         return;
       }
 
-      const urlMsg = `AccessibilityCodeChangeHandler: Processing update for URL: ${url}, source: ${source || 'N/A'}, types: ${types.join(', ')}`;
-      log.info(urlMsg);
+      log.info(`[AccessibilityCodeChangeHandler] Processing update for URL: ${url}, source: ${source || 'N/A'}, types: ${types.join(', ')}`);
 
       // For each type in the update, try to read the code change report
       await Promise.all(types.map(async (ruleId) => {
@@ -232,8 +226,7 @@ export default async function AccessibilityCodeChangeHandler(message, context) {
         );
 
         if (!reportData) {
-          const warnMsg = `AccessibilityCodeChangeHandler: No code change report found for URL: ${url}, source: ${source}, type: ${ruleId}`;
-          log.warn(warnMsg);
+          log.warn(`[AccessibilityCodeChangeHandler] No code change report found for URL: ${url}, source: ${source}, type: ${ruleId}`);
           return;
         }
 
@@ -249,14 +242,13 @@ export default async function AccessibilityCodeChangeHandler(message, context) {
           log,
         );
         totalUpdatedSuggestions += updatedSuggestions.length;
-        log.info(`AccessibilityCodeChangeHandler: Updated ${updatedSuggestions.length} suggestions for type: ${ruleId}`);
       }));
     }));
 
-    log.info(`AccessibilityCodeChangeHandler: Successfully processed all updates. Total suggestions updated: ${totalUpdatedSuggestions}`);
+    log.info(`[AccessibilityCodeChangeHandler] Successfully processed all updates. Total suggestions updated: ${totalUpdatedSuggestions}`);
     return ok();
   } catch (error) {
-    log.error(`AccessibilityCodeChangeHandler: Error processing message: ${error.message}`, error);
+    log.error(`[AccessibilityCodeChangeHandler] Error processing message: ${error.message}`, error);
     return internalServerError(`Error processing message: ${error.message}`);
   }
 }
