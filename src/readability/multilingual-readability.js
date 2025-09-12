@@ -217,14 +217,38 @@ export async function analyzeReadability(text, language, opts = {}) {
     };
   }
 
-  const sentenceCount = Math.max(1, countSentences(text, locale)); // guard against 0
+  // Language-specific abbreviation preprocessing to improve sentence/word counting accuracy
+  let processedText = text;
+  switch (lang) {
+    case 'german':
+      processedText = text.replace(/Dr\.|Prof\.|Herr|Frau|bzw\.|z\.B\.|u\.a\.|etc\./gi, '');
+      break;
+    case 'spanish':
+      processedText = text.replace(/Sr\.|Sra\.|Dr\.|Dra\.|etc\.|p\.ej\./gi, '');
+      break;
+    case 'italian':
+      processedText = text.replace(/Sig\.|Sig\.ra|Dr\.|Dott\.|Prof\.|ecc\./gi, '');
+      break;
+    case 'french':
+      processedText = text.replace(/M\.|Mme|Dr\.|Prof\.|etc\.|p\.ex\./gi, '');
+      break;
+    case 'dutch':
+      processedText = text.replace(/Mr\.|Mw\.|Dr\.|Prof\.|etc\.|bijv\./gi, '');
+      break;
+    case 'english':
+    default:
+      processedText = text.replace(/Mr\.|Mrs\.|Dr\.|Ph\.D\.|etc\.|i\.e\.|e\.g\./gi, '');
+      break;
+  }
+
+  const sentenceCount = Math.max(1, countSentences(processedText, locale)); // guard against 0
   const cache = makeWordCache();
 
   // 1) Tokenize once; build frequency map of normalized word keys
   let wordCount = 0;
   const entries = new Map(); // key -> { word, count }
   const allWords = []; // Collect for debugging
-  for (const w of iterateWords(text, locale)) {
+  for (const w of iterateWords(processedText, locale)) {
     wordCount += 1;
     allWords.push(w);
     const key = `${lang}:${w}`;
