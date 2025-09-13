@@ -16,6 +16,7 @@ import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
 import {
   syncSuggestions,
   keepSameDataFunction,
+  updateOpportunityStatusIfAllSuggestionsFinal,
 } from '../../utils/data-access.js';
 import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
 import { getAuditData } from './data-processing.js';
@@ -654,6 +655,8 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
             log.error(`[A11yProcessingError] ${errorMsg}`);
             throw new Error(error.message);
           }
+
+          await updateOpportunityStatusIfAllSuggestionsFinal(opportunity, context);
 
           // Calculate metrics for this opportunity type
           const typeMetrics = calculateAccessibilityMetrics(typeSpecificData);
