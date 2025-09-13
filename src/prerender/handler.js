@@ -272,8 +272,6 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     initialWords: result.initialWords,
     finalWords: result.finalWords,
     recommendation: result.recommendation,
-    priority: result.contentGainRatio >= 2.0 ? 'high' : 'medium',
-    estimatedImpact: result.contentGainRatio >= 2.0 ? 'significant' : 'moderate',
   }));
 
   log.info(`Generated ${suggestions.length} prerender suggestions for ${auditUrl}`);
@@ -298,7 +296,6 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: AUDIT_TYPE,
-      rank: suggestion.priority === 'high' ? 1 : 2,
       data: suggestion,
     }),
   });
