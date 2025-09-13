@@ -128,6 +128,11 @@ function hasContentBetweenElements(startElement, endElement) {
   return false;
 }
 
+function getScrapeJsonPath(url, siteId) {
+  const pathname = new URL(url).pathname.replace(/\/$/, '');
+  return `scrapes/${siteId}${pathname}/scrape.json`;
+}
+
 /**
  * Validate heading semantics for a single page.
  * - Ensure heading level increases by at most 1 when going deeper (no jumps, e.g., h1 → h3)
@@ -137,7 +142,14 @@ function hasContentBetweenElements(startElement, endElement) {
  * @param {Object} log
  * @returns {Promise<{url: string, checks: Array}>}
  */
-export async function validatePageHeadings(url, log) {
+export async function validatePageHeadings(
+  url,
+  log,
+  site,
+  allKeys,
+  s3Client,
+  S3_SCRAPER_BUCKET_NAME,
+) {
   if (!url) {
     log.error('URL is undefined or null, cannot validate headings');
     return {
@@ -148,12 +160,23 @@ export async function validatePageHeadings(url, log) {
 
   try {
     log.info(`Checking headings for URL: ${url}`);
-    const response = await fetch(url);
-    const html = await response.text();
-    const dom = new JSDOM(html);
-    const { document } = dom.window;
+    const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
+    const s3Key = allKeys.find((key) => key.includes(scrapeJsonPath));
+    let document = null;
+    if (!s3Key) {
+      log.info(`Scrape JSON path not found for ${url}`);
+      document = new JSDOM(await fetch(url).then((response) => response.text())).window;
+    } else {
+      log.info(`Scrape JSON path found for ${url}`);
+      const scrapeJsonObject = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, s3Key, log);
+      log.info(`Scrape JSON object: ${JSON.stringify(scrapeJsonObject)}`);
+      document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
+    }
+
+    log.info(`Document: ${document.documentElement.outerHTML}`);
 
     const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+
     const checks = [];
 
     const h1Elements = headings.filter((h) => h.tagName === 'H1');
@@ -278,7 +301,8 @@ export async function validatePageHeadings(url, log) {
  */
 export async function headingsAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
-  const { log, dataAccess } = context;
+  const { log, dataAccess, s3Client } = context;
+  const { S3_SCRAPER_BUCKET_NAME } = context.env;
   log.info(`[Headings Audit] AZURE_OPENAI_ENDPOINT: ${JSON.stringify(context.env.AZURE_OPENAI_ENDPOINT)}`);
   log.info(`[Headings Audit] Starting Headings Audit with siteId: ${siteId}`);
   log.info(`[Headings Audit] Base URL: ${baseURL}`);
@@ -304,10 +328,18 @@ export async function headingsAuditRunner(baseURL, context, site) {
         },
       };
     }
+    const prefix = `scrapes/${site.getId()}/`;
+    const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
 
     // Validate headings for each page
-    const auditPromises = topPages
-      .map(async (page) => validatePageHeadings(page.url, log));
+    const auditPromises = topPages.map(async (page) => validatePageHeadings(
+      page.url,
+      log,
+      site,
+      allKeys,
+      s3Client,
+      S3_SCRAPER_BUCKET_NAME,
+    ));
     const auditResults = await Promise.allSettled(auditPromises);
 
     // Aggregate results by check type
@@ -352,6 +384,8 @@ export async function headingsAuditRunner(baseURL, context, site) {
       };
     }
 
+    log.info(`Aggregated results: ${JSON.stringify(aggregatedResults)}`);
+
     return {
       fullAuditRef: baseURL,
       auditResult: aggregatedResults,
@@ -391,11 +425,6 @@ export function generateSuggestions(auditUrl, auditData, context) {
 
   log.info(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`);
   return { ...auditData, suggestions };
-}
-
-function getScrapeJsonPath(url, siteId) {
-  const pathname = new URL(url).pathname.replace(/\/$/, '');
-  return `scrapes/${siteId}${pathname}/scrape.json`;
 }
 
 export async function generateAISuggestions(auditUrl, auditData, context, site) {
