@@ -15,7 +15,7 @@ import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
 import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopPersister, noopUrlResolver } from '../common/index.js';
-import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 import {
   getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults,
 } from './utils.js';
@@ -79,7 +79,7 @@ export const preflightAudit = async (context) => {
   const startTimestamp = new Date().toISOString();
 
   const {
-    site, job, s3Client, log, dataAccess,
+    site, job, s3Client, log, dataAccess, scrapeResultMap,
   } = context;
   const { AsyncJob: AsyncJobEntity } = dataAccess;
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
@@ -129,15 +129,11 @@ export const preflightAudit = async (context) => {
     const authHeader = pageAuthToken ? { headers: { Authorization: pageAuthToken } } : {};
 
     // Retrieve scraped pages
-    const prefix = `scrapes/${site.getId()}/`;
-    const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
-    const s3Keys = new Set(previewUrls.map((u) => `scrapes/${site.getId()}${new URL(u).pathname.replace(/\/$/, '')}/scrape.json`));
+    const s3Keys = new Set(scrapeResultMap.values());
     const scrapedObjects = await Promise.all(
-      allKeys
-        .filter((key) => s3Keys.has(key))
-        .map(async (Key) => ({
-          Key, data: await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, Key, log),
-        })),
+      [...s3Keys].map(async (Key) => ({
+        Key, data: await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, Key, log),
+      })),
     );
 
     // Initialize results
@@ -242,6 +238,7 @@ export const preflightAudit = async (context) => {
           pageAuthToken,
           urls,
           timeExecutionBreakdown,
+          scrapeResultMap,
         });
         return [...acc, res];
       },
@@ -298,7 +295,7 @@ export const preflightAudit = async (context) => {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withPersister(noopPersister)
-  .addStep('scrape-pages', scrapePages, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('scrape-pages', scrapePages, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('preflight-audit', preflightAudit)
   .withAsyncJob()
   .build();

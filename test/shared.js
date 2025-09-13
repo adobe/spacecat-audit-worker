@@ -74,6 +74,17 @@ export class MockContextBuilder {
 
     const mockEnv = {
       S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      SCRAPE_JOB_CONFIGURATION: {
+        queues: ['spacecat-scrape-queue-1', 'spacecat-scrape-queue-2', 'spacecat-scrape-queue-3'],
+        scrapeWorkerQueue: 'https://sqs.us-east-1.amazonaws.com/1234567890/scrape-worker-queue',
+        scrapeQueueUrlPrefix: 'https://sqs.us-east-1.amazonaws.com/1234567890/',
+        s3Bucket: 's3-bucket',
+        options: {
+          enableJavascript: true,
+          hideConsentBanners: false,
+        },
+        maxUrlsPerJob: 3,
+      },
     };
 
     let context = {
