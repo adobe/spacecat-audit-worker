@@ -11,14 +11,16 @@
  */
 
 import { JSDOM } from 'jsdom';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { tracingFetch as fetch, getPrompt } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
+import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 
 const auditType = Audit.AUDIT_TYPES.HEADINGS;
 
@@ -277,17 +279,22 @@ export async function validatePageHeadings(url, log) {
 export async function headingsAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess } = context;
-  log.info(`Starting Headings Audit with siteId: ${siteId}`);
+  log.info(`[Headings Audit] AZURE_OPENAI_ENDPOINT: ${JSON.stringify(context.env.AZURE_OPENAI_ENDPOINT)}`);
+  log.info(`[Headings Audit] Starting Headings Audit with siteId: ${siteId}`);
+  log.info(`[Headings Audit] Base URL: ${baseURL}`);
+  log.info(`[Headings Audit] Site delivery type: ${site.getDeliveryType() || 'Unknown'}`);
 
   try {
     // Get top 200 pages
+    log.info(`[Headings Audit] Fetching top pages for site: ${siteId}`);
     const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
     const topPages = allTopPages.slice(0, 200);
 
-    log.info(`Processing ${topPages.length} top pages for headings audit (limited to 200)`);
+    log.info(`[Headings Audit] Processing ${topPages.length} top pages for headings audit (limited to 200)`);
+    log.debug(`[Headings Audit] Top pages sample: ${topPages.slice(0, 3).map((p) => p.url).join(', ')}`);
 
     if (topPages.length === 0) {
-      log.info('No top pages found, ending audit.');
+      log.warn('[Headings Audit] No top pages found, ending audit.');
       return {
         fullAuditRef: baseURL,
         auditResult: {
@@ -322,6 +329,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
                 explanation: check.explanation,
                 suggestion: check.suggestion,
                 urls: [],
+                aiSuggestions: [],
               };
             }
 
@@ -385,6 +393,116 @@ export function generateSuggestions(auditUrl, auditData, context) {
   return { ...auditData, suggestions };
 }
 
+function getScrapeJsonPath(url, siteId) {
+  const pathname = new URL(url).pathname.replace(/\/$/, '');
+  return `scrapes/${siteId}${pathname}/scrape.json`;
+}
+
+export async function generateAISuggestions(auditUrl, auditData, context, site) {
+  const { log, s3Client } = context;
+  const { S3_SCRAPER_BUCKET_NAME, AZURE_OPENAI_ENDPOINT } = context.env;
+  const prefix = `scrapes/${site.getId()}/`;
+  if (!s3Client) {
+    log.error('[Headings AI Suggestions] Missing required parameters s3Client, skipping AI suggestions generation');
+    return { ...auditData };
+  }
+  if (!S3_SCRAPER_BUCKET_NAME) {
+    log.error('[Headings AI Suggestions] Missing required parameters S3_SCRAPER_BUCKET_NAME, skipping AI suggestions generation');
+    return { ...auditData };
+  }
+  if (!AZURE_OPENAI_ENDPOINT) {
+    log.error('[Headings AI Suggestions] Missing required parameters AZURE_OPENAI_ENDPOINT, skipping AI suggestions generation');
+    return { ...auditData };
+  }
+  if (!prefix) {
+    log.error('[Headings AI Suggestions] Missing required parameters prefix, skipping AI suggestions generation');
+    return { ...auditData };
+  }
+  const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
+  log.info(`[Headings AI Suggestions] All keys: ${allKeys}`);
+  log.info(`[Headings AI Suggestions] Starting AI suggestions generation for audit: ${auditUrl}`);
+  log.info(`[Headings AI Suggestions] Site ID: ${site.getId()}, Base URL: ${site.getBaseURL()}`);
+  log.info(`[Headings AI Suggestions] Audit data: ${JSON.stringify(auditData)}`);
+  const updatedAuditData = { ...auditData };
+  updatedAuditData.auditResult = { ...auditData.auditResult };
+  const tasks = [];
+
+  for (const [checkType, checkResult] of Object.entries(auditData.auditResult)) {
+    if (checkResult.success === false && Array.isArray(checkResult.urls)) {
+      for (const url of checkResult.urls) {
+        if (checkType === HEADINGS_CHECKS.HEADING_EMPTY.check
+          || checkType === HEADINGS_CHECKS.HEADING_MISSING_H1.check) {
+          tasks.push(
+            (async () => {
+              log.info(`[Headings AI Suggestions] Generating AI suggestions for ${url} with check type: ${checkType}`);
+              const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
+
+              if (allKeys.includes(scrapeJsonPath)) {
+                log.info(`[Headings AI Suggestions] Scrape JSON path: ${scrapeJsonPath} found in allKeys`);
+
+                try {
+                  const scrapeJsonObject = await getObjectFromKey(
+                    s3Client,
+                    S3_SCRAPER_BUCKET_NAME,
+                    scrapeJsonPath,
+                    log,
+                  );
+
+                  log.info(`[Headings AI Suggestions] Scrape JSON object received for ${scrapeJsonObject.finalUrl}`);
+                  log.info(`[Headings AI Suggestions] Scrape JSON object: ${JSON.stringify(scrapeJsonObject.scrapeResult.tags)}`);
+
+                  const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
+                  const prompt = await getPrompt(
+                    {
+                      finalUrl: scrapeJsonObject.finalUrl,
+                      title: scrapeJsonObject.scrapeResult.tags.title,
+                      h1: scrapeJsonObject.scrapeResult.tags.h1,
+                      description: scrapeJsonObject.scrapeResult.tags.description,
+                      lang: scrapeJsonObject.scrapeResult.tags.lang,
+                    },
+                    'heading-empty-suggestion',
+                    log,
+                  );
+                  log.info(`[Headings AI Suggestions] Prompt: ${prompt}`);
+
+                  const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
+                    responseFormat: 'json_object',
+                  });
+
+                  const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
+                  const { aiSuggestion } = aiResponseContent.h1;
+
+                  log.info(`[Headings AI Suggestions] AI suggestion for empty h1 for ${url}: ${aiSuggestion}`);
+
+                  if (!updatedAuditData.auditResult[checkType].aiSuggestions) {
+                    updatedAuditData.auditResult[checkType].aiSuggestions = [];
+                  }
+
+                  updatedAuditData.auditResult[checkType].aiSuggestions.push({
+                    url,
+                    aiSuggestion,
+                  });
+                } catch (error) {
+                  log.error(`[Headings AI Suggestions] Error processing ${url}: ${error.message}`);
+                }
+              } else {
+                log.info(`[Headings AI Suggestions] Scrape JSON path: ${scrapeJsonPath} not found in allKeys`);
+              }
+            })(),
+          );
+        }
+      }
+    }
+  }
+
+  await Promise.all(tasks);
+  // log.info(`[Headings AI Suggestions] Context: ${JSON.stringify(context)}`);
+  // log.info(`[Headings AI Suggestions] Site: ${JSON.stringify(site)}`);
+  // log.info('[Headings AI Suggestions] Ending AI suggestions generation');
+  log.info(`[Headings AI Suggestions] completed Audit data: ${JSON.stringify(updatedAuditData)}`);
+  return { ...updatedAuditData };
+}
+
 function generateRecommendedAction(checkType) {
   switch (checkType) {
     case HEADINGS_CHECKS.HEADING_ORDER_INVALID.check:
@@ -402,6 +520,7 @@ function generateRecommendedAction(checkType) {
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
+  log.info(`[Headings Opportunity and Suggestions] Audit data: ${JSON.stringify(auditData)}`);
   if (!auditData.suggestions?.length) {
     log.info('Headings audit has no issues, skipping opportunity creation');
     return { ...auditData };
@@ -444,5 +563,5 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(headingsAuditRunner)
-  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
+  .withPostProcessors([generateSuggestions, generateAISuggestions, opportunityAndSuggestions])
   .build();
