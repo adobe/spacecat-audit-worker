@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 /* eslint-disable no-continue, no-await-in-loop */
-import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+
 import { Audit } from '@adobe/spacecat-shared-data-access';
 
 import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access/src/models/suggestion/index.js';
@@ -162,18 +162,24 @@ export async function submitForScraping(context) {
     site,
     dataAccess,
     log,
-    finalUrl,
   } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  if (topPages.length === 0) {
-    throw new Error('No top pages found for site');
+
+  const topPagesUrls = topPages.map((page) => page.getUrl());
+  // Combine includedURLs and topPages URLs to scrape
+  // just for testing will replace again by structured data
+  const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
+
+  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
+  log.info(`SDA: Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
+
+  if (finalUrls.length === 0) {
+    throw new Error('No URLs found for site neither top pages nor included URLs');
   }
 
-  log.info(`SDA: Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}`);
-
   return {
-    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'structured-data',
   };
@@ -192,19 +198,28 @@ export async function runAuditAndGenerateSuggestions(context) {
   const scrapeCache = new Map();
 
   try {
-    let topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-    if (!isNonEmptyArray(topPages)) {
-      log.error(`SDA: No top pages for site ID ${siteId} found. Ensure that top pages were imported.`);
-      throw new Error(`No top pages for site ID ${siteId} found.`);
-    } else {
-      topPages = topPages.map((page) => ({ url: page.getUrl() }));
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    const topPagesUrls = topPages.map((page) => page.getUrl());
+
+    // Combine includedURLs and topPages URLs to process
+    // just for testing will replace again by structured data
+    const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
+    const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
+    log.info(`SDA: Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to process after removing duplicates: ${finalUrls.length}`);
+
+    if (finalUrls.length === 0) {
+      log.error(`SDA: No URLs found for site ID ${siteId} (neither top pages nor included URLs). Ensure that top pages were imported or included URLs are configured.`);
+      throw new Error(`No URLs found for site ID ${siteId} (neither top pages nor included URLs).`);
     }
 
-    // Filter out files from the top pages as these are not scraped
-    const dataTypesToIgnore = ['pdf', 'ps', 'dwf', 'kml', 'kmz', 'xls', 'xlsx', 'ppt', 'pptx', 'doc', 'docx', 'rtf', 'swf'];
-    topPages = topPages.filter((page) => !dataTypesToIgnore.some((dataType) => page.url.endsWith(`.${dataType}`)));
+    // Convert URLs to the format expected by processStructuredData
+    let urlsToProcess = finalUrls.map((url) => ({ url }));
 
-    const auditResult = await processStructuredData(finalUrl, context, topPages, scrapeCache);
+    // Filter out files from the URLs as these are not scraped
+    const dataTypesToIgnore = ['pdf', 'ps', 'dwf', 'kml', 'kmz', 'xls', 'xlsx', 'ppt', 'pptx', 'doc', 'docx', 'rtf', 'swf'];
+    urlsToProcess = urlsToProcess.filter((page) => !dataTypesToIgnore.some((dataType) => page.url.endsWith(`.${dataType}`)));
+
+    const auditResult = await processStructuredData(finalUrl, context, urlsToProcess, scrapeCache);
 
     // Create opportunities and suggestions
     const oppAndAudit = await opportunityAndSuggestions(finalUrl, {

@@ -206,8 +206,13 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
 
     const waeResult = scrapeResult?.scrapeResult?.structuredData;
 
+    // DEBUG: Log what we extracted
+    log.info(`SDA DEBUG: Page ${page} - Extracted structured data:`, JSON.stringify(waeResult, null, 2));
+    log.info(`SDA DEBUG: Page ${page} - waeResult type: ${typeof waeResult}, isArray: ${Array.isArray(waeResult)}`);
+
     // If scrape contains old format of structured data, skip
     if (isNonEmptyArray(waeResult)) {
+      log.info(`SDA DEBUG: Page ${page} - Skipping old format (array)`);
       return;
     }
 
@@ -221,13 +226,21 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
     const validator = new StructuredDataValidator(schemaOrgJson);
     let validatorIssues = [];
     try {
-      validatorIssues = (await validator.validate(waeResult))
+      const rawValidatorIssues = await validator.validate(waeResult);
+      log.info(`SDA DEBUG: Page ${page} - Raw validator found ${rawValidatorIssues.length} issues`);
+      rawValidatorIssues.forEach((issue, index) => {
+        log.info(`SDA DEBUG: Page ${page} - Issue ${index}: ${issue.severity} - ${issue.rootType} - ${issue.issueMessage}`);
+      });
+
+      validatorIssues = rawValidatorIssues
         // For now, ignore issues with severity lower than ERROR
         //          and suppress unnecessary issues for AEM customers
         .filter((issue) => includeIssue(context, issue, imageObjectFlag));
+      log.info(`SDA DEBUG: Page ${page} - After filtering: ${validatorIssues.length} issues remain`);
     } catch (e) {
       log.error(`SDA: Failed to validate structured data for ${page}.`, e);
     }
+    log.info(`SDA DEBUG: Page ${page} - Final issues to add: ${validatorIssues.length}`);
     for (const issue of validatorIssues) {
       // Only add if same issue for the same source does not exist already.
       // This can happen e.g. if a field is missing for every item in a list.
