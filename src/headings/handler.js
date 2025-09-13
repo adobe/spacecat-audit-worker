@@ -146,7 +146,11 @@ export async function validatePageHeadings(url, log) {
 
   try {
     log.info(`Checking headings for URL: ${url}`);
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Spacecat/1.0',
+      },
+    });
     const html = await response.text();
     const dom = new JSDOM(html);
     const { document } = dom.window;
