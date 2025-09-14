@@ -410,6 +410,62 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     expect(logMock.warn.calledWith('No suggested URLs for broken link: https://example.com/test-page')).to.be.true;
   });
 
+  it('handles user agent mismatch scenario', async () => {
+    // Test the case where URL matches but user agent doesn't match (lines 118-119)
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+    sheet.addRow(['Chatbots', 'Claude', 150, 245.5, 'US', '/test-page', 'Adobe Creative', 'Product Page', '', '', '']); // Different user agent
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: {
+        brokenLinks: [{
+          urlFrom: 'ChatGPT', // This won't match "Claude" in the Excel
+          urlTo: 'https://example.com/test-page',
+          suggestedUrls: ['/products'],
+          aiRationale: 'Test user agent mismatch',
+        }],
+      },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getCdnLogsConfig: () => null,
+            getLlmoDataFolder: () => 'test-customer',
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const logMock = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    const context = {
+      log: logMock,
+      dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+
+    // Verify that the user agent mismatch warning was logged (lines 118-119)
+    expect(logMock.warn.calledWith('❌ User agent "Claude" not found in matches: ["ChatGPT"]')).to.be.true;
+  });
+
   it('covers workbook.worksheets[0] || addWorksheet fallback', async () => {
     // Create workbook with no worksheets to test the || fallback
     const emptyWorkbook = new ExcelJS.Workbook();
