@@ -410,8 +410,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     expect(logMock.warn.calledWith('No suggested URLs for broken link: https://example.com/test-page')).to.be.true;
   });
 
-  it('handles user agent mismatch scenario', async () => {
-    // Test the case where URL matches but user agent doesn't match (lines 118-119)
+  it('handles user agent mismatch scenario - now updates regardless', async () => {
+    // Test that URL matches update Excel regardless of user agent differences
     const existingWorkbook = new ExcelJS.Workbook();
     const sheet = existingWorkbook.addWorksheet('data');
     sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
@@ -424,10 +424,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       siteId: 'site-1',
       data: {
         brokenLinks: [{
-          urlFrom: 'ChatGPT', // This won't match "Claude" in the Excel
+          urlFrom: 'ChatGPT', // Different from "Claude" in Excel, but should still update
           urlTo: 'https://example.com/test-page',
           suggestedUrls: ['/products'],
-          aiRationale: 'Test user agent mismatch',
+          aiRationale: 'Test user agent mismatch - should still update',
         }],
       },
     };
@@ -462,8 +462,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
 
-    // Verify that the user agent mismatch warning was logged (lines 118-119)
-    expect(logMock.warn.calledWith('❌ User agent "Claude" not found in matches: ["ChatGPT"]')).to.be.true;
+    // Verify that the Excel was updated despite user agent mismatch
+    expect(logMock.info.calledWith('✅ Updated row 2 for URL: /test-page with 1 suggestions')).to.be.true;
+    // Verify debug logging shows both user agents
+    expect(logMock.info.calledWith('Found match for URL: /test-page, Mystique userAgents: "ChatGPT", Excel userAgent: "Claude"')).to.be.true;
   });
 
   it('covers workbook.worksheets[0] || addWorksheet fallback', async () => {

@@ -99,48 +99,16 @@ export default async function handler(message, context) {
         // Look up the URL in brokenUrls and update if found
         const brokenUrlData = brokenUrlsMap.get(pathOnlyUrl);
         if (brokenUrlData) {
-          log.info(`Found match for URL: ${pathOnlyUrl}, userAgents: "${brokenUrlData.userAgents}"`);
+          log.info(`Found match for URL: ${pathOnlyUrl}, Mystique userAgents: "${brokenUrlData.userAgents}", Excel userAgent: "${userAgentCell}"`);
 
-          // Check if the user agent matches any in the comma-separated list
-          const userAgentMatches = brokenUrlData.userAgents.split(',').map((ua) => ua.trim());
-          log.info(`User agent matches: ${JSON.stringify(userAgentMatches)}, looking for: "${userAgentCell}"`);
+          const suggested = brokenUrlData.suggestedUrls.join('\n');
 
-          // More flexible matching: check for partial matches too
-          const hasMatch = userAgentMatches.some((mystique) => {
-            const mystiqueNormalized = mystique.toLowerCase();
-            const excelNormalized = userAgentCell.toLowerCase();
+          // Update only the Suggested URLs and AI Rationale columns
+          sheet.getCell(i, 9).value = suggested; // Column 9: Suggested URLs
+          sheet.getCell(i, 10).value = brokenUrlData.aiRationale; // Column 10: AI Rationale
+          updatedRows += 1;
 
-            // Exact match
-            if (mystiqueNormalized === excelNormalized) return true;
-
-            // Partial matches for common cases
-            if (mystiqueNormalized.includes('chatgpt') && excelNormalized.includes('chatgpt')) return true;
-            if (mystiqueNormalized.includes('perplexity') && excelNormalized.includes('perplexity')) return true;
-            if (mystiqueNormalized.includes('claude') && excelNormalized.includes('claude')) return true;
-            if (mystiqueNormalized.includes('gemini') && excelNormalized.includes('gemini')) return true;
-            if (mystiqueNormalized.includes('copilot') && excelNormalized.includes('copilot')) return true;
-
-            // Check if Excel user agent contains the Mystique user agent or vice versa
-            return mystiqueNormalized.includes(excelNormalized)
-              || excelNormalized.includes(mystiqueNormalized);
-          });
-
-          log.info(`User agent matching result: ${hasMatch}`);
-
-          if (hasMatch) {
-            const suggested = brokenUrlData.suggestedUrls.join('\n');
-
-            // Update only the Suggested URLs and AI Rationale columns
-            sheet.getCell(i, 9).value = suggested; // Column 9: Suggested URLs
-            sheet.getCell(i, 10).value = brokenUrlData.aiRationale; // Column 10: AI Rationale
-            updatedRows += 1;
-
-            log.info(`✅ Updated row ${i} for URL: ${pathOnlyUrl} with ${brokenUrlData.suggestedUrls.length} suggestions`);
-            log.info(`✅ Cell(${i},9) set to: "${suggested}"`);
-            log.info(`✅ Cell(${i},10) set to: "${brokenUrlData.aiRationale}"`);
-          } else {
-            log.warn(`❌ User agent "${userAgentCell}" not found in matches: ${JSON.stringify(userAgentMatches)}`);
-          }
+          log.info(`✅ Updated row ${i} for URL: ${pathOnlyUrl} with ${brokenUrlData.suggestedUrls.length} suggestions`);
         } else {
           log.info(`No Mystique data found for URL: ${pathOnlyUrl}`);
         }
