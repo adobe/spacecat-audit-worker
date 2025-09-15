@@ -1,3 +1,31 @@
+## [1.180.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.5...v1.180.6) (2025-09-14)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-helix-content-sdk to v1.4.22 ([#1263](https://github.com/adobe/spacecat-audit-worker/issues/1263)) ([a8859b3](https://github.com/adobe/spacecat-audit-worker/commit/a8859b3f1d769929c69b2c58a7719d49ba33cdaf))
+
+## [1.180.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.4...v1.180.5) (2025-09-13)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1261](https://github.com/adobe/spacecat-audit-worker/issues/1261)) ([4c59bbd](https://github.com/adobe/spacecat-audit-worker/commit/4c59bbdb009f90d90bda781f4ceee8b854120687))
+
+## [1.180.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.3...v1.180.4) (2025-09-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.37.4 ([#1260](https://github.com/adobe/spacecat-audit-worker/issues/1260)) ([f098746](https://github.com/adobe/spacecat-audit-worker/commit/f098746faf9ae492b31a70f89e4045c3b3c30f06))
+
+## [1.180.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.2...v1.180.3) (2025-09-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.62.1 ([#1258](https://github.com/adobe/spacecat-audit-worker/issues/1258)) ([4bc694d](https://github.com/adobe/spacecat-audit-worker/commit/4bc694d9fd359eaf36547faa782fadccff7dcea0))
+
 ## [1.180.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.1...v1.180.2) (2025-09-12)
 
 
