@@ -38,7 +38,12 @@ function buildWhereClause(conditions = [], siteFilters = []) {
   // Filter for ChatGPT and Perplexity
   const chatgptPattern = PROVIDER_USER_AGENT_PATTERNS.chatgpt;
   const perplexityPattern = PROVIDER_USER_AGENT_PATTERNS.perplexity;
-  allConditions.push(`(REGEXP_LIKE(user_agent, '${chatgptPattern}') OR REGEXP_LIKE(user_agent, '${perplexityPattern}'))`);
+  const googlePattern = PROVIDER_USER_AGENT_PATTERNS.google;
+  allConditions.push(`(
+    REGEXP_LIKE(user_agent, '${chatgptPattern}') OR 
+    REGEXP_LIKE(user_agent, '${perplexityPattern}') OR 
+    REGEXP_LIKE(user_agent, '${googlePattern}')
+  )`);
 
   if (siteFilters && siteFilters.length > 0) {
     allConditions.push(siteFilters);
