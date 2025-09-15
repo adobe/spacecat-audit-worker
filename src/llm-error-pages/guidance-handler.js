@@ -105,7 +105,27 @@ export default async function handler(message, context) {
           const userAgentMatches = brokenUrlData.userAgents.split(',').map((ua) => ua.trim());
           log.info(`User agent matches: ${JSON.stringify(userAgentMatches)}, looking for: "${userAgentCell}"`);
 
-          if (userAgentMatches.includes(userAgentCell)) {
+          // More flexible user agent matching - check for partial matches too
+          const hasMatch = userAgentMatches.some((mystique) => {
+            // Exact match
+            if (mystique === userAgentCell) {
+              log.info(`✅ Exact match found: "${mystique}" === "${userAgentCell}"`);
+              return true;
+            }
+            // Partial match (e.g., "Perplexity" matches "PerplexityBot")
+            if (userAgentCell.toLowerCase().includes(mystique.toLowerCase())) {
+              log.info(`✅ Partial match found: "${userAgentCell}" contains "${mystique}"`);
+              return true;
+            }
+            if (mystique.toLowerCase().includes(userAgentCell.toLowerCase())) {
+              log.info(`✅ Reverse partial match found: "${mystique}" contains "${userAgentCell}"`);
+              return true;
+            }
+            log.info(`❌ No match: "${mystique}" vs "${userAgentCell}"`);
+            return false;
+          });
+
+          if (hasMatch) {
             const suggested = brokenUrlData.suggestedUrls.join('\n');
 
             // Update only the Suggested URLs and AI Rationale columns
