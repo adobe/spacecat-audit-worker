@@ -33,8 +33,8 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%perplexity-user%', displayName: 'Perplexity-User' },
 
   // Google
-  { pattern: '%google%', displayName: 'Google' },
   { pattern: '%gemini-deep-research%', displayName: 'Gemini-Deep-Research' },
+  { pattern: 'google', displayName: 'Google' },
 
   // Other providers TODO: add these if needed
   // { pattern: '%googlebot%', displayName: 'Googlebot' },
@@ -72,8 +72,8 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%perplexity-user%', result: 'Chatbots' },
     { pattern: '%perplexity%', result: 'Chatbots' },
     // Google
-    { pattern: '^google$', result: 'Web search crawlers' },
     { pattern: '%gemini-deep-research%', result: 'Training bots' },
+    { pattern: 'google', result: 'Web search crawlers' },
   ];
 
   const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');
