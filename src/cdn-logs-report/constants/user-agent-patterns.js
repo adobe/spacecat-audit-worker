@@ -13,9 +13,8 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude|Anthropic',
-  gemini: '(?i)Gemini|Gemini-Deep-Research',
+  google: '(?i)(^Google$|Gemini-Deep-Research)',
   copilot: '(?i)Copilot',
-  google: '(?i)Googlebot',
   bing: '(?i)Bingbot',
 };
 
