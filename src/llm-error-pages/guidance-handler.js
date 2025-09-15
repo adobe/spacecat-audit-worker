@@ -105,25 +105,27 @@ export default async function handler(message, context) {
           const userAgentMatches = brokenUrlData.userAgents.split(',').map((ua) => ua.trim());
           log.info(`User agent matches: ${JSON.stringify(userAgentMatches)}, looking for: "${userAgentCell}"`);
 
-          // More flexible user agent matching - check for partial matches too
+          // More flexible matching: check for partial matches too
           const hasMatch = userAgentMatches.some((mystique) => {
+            const mystiqueNormalized = mystique.toLowerCase();
+            const excelNormalized = userAgentCell.toLowerCase();
+
             // Exact match
-            if (mystique === userAgentCell) {
-              log.info(`✅ Exact match found: "${mystique}" === "${userAgentCell}"`);
-              return true;
-            }
-            // Partial match (e.g., "Perplexity" matches "PerplexityBot")
-            if (userAgentCell.toLowerCase().includes(mystique.toLowerCase())) {
-              log.info(`✅ Partial match found: "${userAgentCell}" contains "${mystique}"`);
-              return true;
-            }
-            if (mystique.toLowerCase().includes(userAgentCell.toLowerCase())) {
-              log.info(`✅ Reverse partial match found: "${mystique}" contains "${userAgentCell}"`);
-              return true;
-            }
-            log.info(`❌ No match: "${mystique}" vs "${userAgentCell}"`);
-            return false;
+            if (mystiqueNormalized === excelNormalized) return true;
+
+            // Partial matches for common cases
+            if (mystiqueNormalized.includes('chatgpt') && excelNormalized.includes('chatgpt')) return true;
+            if (mystiqueNormalized.includes('perplexity') && excelNormalized.includes('perplexity')) return true;
+            if (mystiqueNormalized.includes('claude') && excelNormalized.includes('claude')) return true;
+            if (mystiqueNormalized.includes('gemini') && excelNormalized.includes('gemini')) return true;
+            if (mystiqueNormalized.includes('copilot') && excelNormalized.includes('copilot')) return true;
+
+            // Check if Excel user agent contains the Mystique user agent or vice versa
+            return mystiqueNormalized.includes(excelNormalized)
+              || excelNormalized.includes(mystiqueNormalized);
           });
+
+          log.info(`User agent matching result: ${hasMatch}`);
 
           if (hasMatch) {
             const suggested = brokenUrlData.suggestedUrls.join('\n');
@@ -134,6 +136,8 @@ export default async function handler(message, context) {
             updatedRows += 1;
 
             log.info(`✅ Updated row ${i} for URL: ${pathOnlyUrl} with ${brokenUrlData.suggestedUrls.length} suggestions`);
+            log.info(`✅ Cell(${i},9) set to: "${suggested}"`);
+            log.info(`✅ Cell(${i},10) set to: "${brokenUrlData.aiRationale}"`);
           } else {
             log.warn(`❌ User agent "${userAgentCell}" not found in matches: ${JSON.stringify(userAgentMatches)}`);
           }
