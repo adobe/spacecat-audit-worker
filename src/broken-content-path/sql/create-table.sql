@@ -5,8 +5,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{tableName}} (
 PARTITIONED BY (
   year string,
   month string,
-  day string,
-  hour string
+  day string
 )
 STORED AS PARQUET
 LOCATION '{{location}}'
@@ -20,9 +19,6 @@ TBLPROPERTIES (
   'projection.day.type' = 'integer',
   'projection.day.range' = '1,31',
   'projection.day.digits' = '2',
-  'projection.hour.type' = 'integer',
-  'projection.hour.range' = '0,23',
-  'projection.hour.digits' = '2',
-  'storage.location.template' = '{{location}}/${year}/${month}/${day}/${hour}/',
+  'storage.location.template' = '{{location}}/${year}/${month}/${day}/',
   'has_encrypted_data' = 'false'
 );
