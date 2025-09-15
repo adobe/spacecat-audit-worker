@@ -14,5 +14,5 @@ UNLOAD (
     AND url LIKE '/content/dam/%'
 
   GROUP BY url, COALESCE(REGEXP_EXTRACT(url, '/content/dam/([^/]+)', 1), 'unknown')
-) TO 's3://{{bucket}}/aggregated/{{year}}/{{month}}/{{day}}/{{hour}}/'
+) TO '{{output}}'
 WITH (format = 'PARQUET');
