@@ -67,7 +67,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
   describe('mapVulnerabilityToSuggestion', () => {
     it('should map vulnerability to suggestion with single vulnerability', () => {
       const vulnerability = createVulnerability();
-      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability);
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability, true);
 
       expect(result).to.deep.equal({
         opportunityId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
@@ -99,7 +99,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
         ]),
       });
 
-      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability);
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability, true);
 
       expect(result.rank).to.equal(9.5);
       expect(result.data.cves).to.have.lengthOf(3);
@@ -120,7 +120,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
 
       testCases.forEach(({ vulnerabilities }) => {
         const vulnerability = createVulnerability({ vulnerabilities });
-        const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability);
+        const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability, true);
 
         expect(result.rank).to.equal(0);
         expect(result.data.cves).to.deep.equal([]);
@@ -140,7 +140,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
         ]),
       });
 
-      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability);
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability, true);
 
       expect(result.data.library).to.equal('test-library');
       expect(result.data.current_version).to.equal('1.0.0');
@@ -162,7 +162,7 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
         ]),
       });
 
-      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability);
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability, true);
 
       expect(result.rank).to.equal(7.5);
       expect(result.data.cves).to.have.lengthOf(3);
@@ -199,12 +199,31 @@ describe('Vulnerabilities Suggestion Data Mapper', () => {
         ],
       });
 
-      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability);
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability, true);
 
       expect(result.data.cves).to.have.lengthOf(3);
       expect(result.data.cves[0].url).to.equal('https://example.com/cve');
       expect(result.data.cves[1].url).to.equal(''); // null URL should become empty string
       expect(result.data.cves[2].url).to.equal(''); // undefined URL should become empty string
+    });
+
+    it('should handle generateSuggestions=false by setting empty recommended_version', () => {
+      const vulnerability = createVulnerability({
+        name: 'test-library',
+        version: '1.0.0',
+        recommendedVersion: '2.0.0',
+        vulnerabilities: createVulnerabilities([
+          { score: 7.5, severity: 'High' },
+        ]),
+      });
+
+      const result = mapVulnerabilityToSuggestion(mockOpportunity, vulnerability, false);
+
+      expect(result.data.library).to.equal('test-library');
+      expect(result.data.current_version).to.equal('1.0.0');
+      expect(result.data.recommended_version).to.equal(''); // Should be empty when generateSuggestions=false
+      expect(result.rank).to.equal(7.5);
+      expect(result.data.cves).to.have.lengthOf(1);
     });
   });
 });

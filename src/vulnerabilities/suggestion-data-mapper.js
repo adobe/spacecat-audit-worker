@@ -37,9 +37,10 @@ function highestScore(vulnerabilities) {
  *
  * @param {Object} opportunity - The opportunity object
  * @param {VulnerableComponent} vulnerability - The vulnerability object
+ * @param {boolean} generateSuggestions - Whether to generate version recommendations
  * @return {Object} A suggestion object providing a structured representation of the vulnerability
  */
-export function mapVulnerabilityToSuggestion(opportunity, vulnerability) {
+export function mapVulnerabilityToSuggestion(opportunity, vulnerability, generateSuggestions) {
   const {
     name, version, recommendedVersion, vulnerabilities,
   } = vulnerability;
@@ -54,7 +55,7 @@ export function mapVulnerabilityToSuggestion(opportunity, vulnerability) {
     data: {
       library: name,
       current_version: version,
-      recommended_version: recommendedVersion,
+      recommended_version: generateSuggestions ? recommendedVersion : '',
       cves: safeVulnerabilities.sort((a, b) => b.score - a.score).map((vuln) => ({
         cve_id: vuln.id,
         score: vuln.score,

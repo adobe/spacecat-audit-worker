@@ -405,7 +405,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(suggestion).to.have.property('data');
       expect(suggestion.data).to.have.property('library', 'com.fasterxml.jackson.core:jackson-databind');
       expect(suggestion.data).to.have.property('current_version', '2.12.3');
-      expect(suggestion.data).to.have.property('recommended_version', '2.12.6.1');
+      expect(suggestion.data).to.have.property('recommended_version', '2.12.6.1'); // Should have recommended version when auto-suggest is enabled
       expect(suggestion.data).to.have.property('cves');
       expect(suggestion.data.cves).to.be.an('array');
       expect(suggestion.data.cves[0]).to.have.property('cve_id', 'CVE-2020-36518');
@@ -475,30 +475,17 @@ describe('Vulnerabilities Handler Integration Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
-      expect(context.log.debug).to.have.been.calledWithMatch(/security-vulnerabilities-auto-suggest not configured/);
-    });
+      expect(context.log.debug).to.have.been.calledWithMatch(/security-vulnerabilities-auto-suggest not configured, skipping version recommendations/);
 
-    it('should skip auto-suggest when auto-suggest handler is disabled', async () => {
-      const configuration = {
-        isHandlerEnabledForSite: sandbox.stub(),
-      };
-      context.dataAccess.Configuration.findLatest.resolves(configuration);
-
-      // Enable main handler but disable auto-suggest
-      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities').returns(true);
-      configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-suggest').returns(false);
-
-      const auditData = createAuditData();
-      const result = await opportunityAndSuggestionsStep('https://example.com', auditData, context, site);
-
-      expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
-
-      // Verify opportunity was created but addSuggestions was not called (returns early)
+      // Verify opportunity was created and addSuggestions was called
       const createdOpportunity = await context.dataAccess.Opportunity.create.getCall(0).returnValue;
-      expect(createdOpportunity.addSuggestions).to.not.have.been.called;
-      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
-      expect(context.log.debug).to.have.been.calledWithMatch(/security-vulnerabilities-auto-suggest not configured/);
+      expect(createdOpportunity.addSuggestions).to.have.been.calledOnce;
+
+      // Verify suggestions were created with empty recommended_version (generateSuggestions=false)
+      const suggestionsCall = createdOpportunity.addSuggestions.getCall(0);
+      const suggestions = suggestionsCall.args[0];
+      expect(suggestions).to.be.an('array');
+      expect(suggestions[0].data.recommended_version).to.equal('');
     });
 
     it('should handle configuration lookup failure gracefully', async () => {

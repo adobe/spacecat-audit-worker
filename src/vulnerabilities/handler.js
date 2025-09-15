@@ -220,9 +220,9 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
   );
 
   const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site)) {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-suggest not configured, skipping suggestion creation`);
-    return { status: 'complete' };
+  const generateSuggestions = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site);
+  if (!generateSuggestions) {
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-suggest not configured, skipping version recommendations`);
   }
 
   // As a buildKey we hash all the component details and add name and version for readability
@@ -238,7 +238,8 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
     newData: vulnerabilityReport.vulnerableComponents,
     context,
     buildKey,
-    mapNewSuggestion: (entry) => mapVulnerabilityToSuggestion(opportunity, entry),
+    mapNewSuggestion:
+      (entry) => mapVulnerabilityToSuggestion(opportunity, entry, generateSuggestions),
     log,
   });
 
