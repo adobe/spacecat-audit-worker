@@ -31,14 +31,14 @@ export class AthenaCollector extends BaseCollector {
   }
 
   getAthenaConfig() {
-    const { bucket, tenant } = this.context;
+    const { rawBucket, imsOrg, tenant } = this.context;
+    const bucket = `${rawBucket}/${imsOrg}`;
 
     return {
-      bucket,
       database: AthenaCollector.DATABASE_NAME,
       tableName: AthenaCollector.TABLE_NAME,
-      location: `s3://${bucket}/aggregated/`,
-      tempLocation: `s3://${bucket}/temp/athena-results/`,
+      location: `s3://${bucket}/aggregated-404`,
+      tempLocation: `s3://${rawBucket}/temp/athena-results/`,
       tenant,
     };
   }
