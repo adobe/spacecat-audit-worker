@@ -28,6 +28,8 @@ import formVitalsData from '../../fixtures/forms/formvitalsdata.json' with { typ
 import expectedFormVitalsData from '../../fixtures/forms/expectedformvitalsdata.json' with { type: 'json' };
 import expectedFormSendToScraperData from '../../fixtures/forms/expectedformsendtoscraperdata.json' with { type: 'json' };
 import expectedFormA11yScraperData from '../../fixtures/forms/expectedforma11ysendtoscraperdata.json' with { type: 'json' };
+import heavyFormVitals from '../../fixtures/forms/heavyformvitals.json' with { type: 'json' };
+import trimmedHeavyFormVitals from '../../fixtures/forms/trimmedheavyformvitals.json' with { type: 'json' };
 
 use(sinonChai);
 
@@ -184,6 +186,14 @@ describe('audit and send scraping step', () => {
     context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
     const result = await runAuditAndSendUrlsForScrapingStep(context);
     expect(result.urls.length).to.equal(10);
+  });
+
+  it('should trim audit data when not safe for dynamo', async () => {
+    context.rumApiClient.queryMulti = sinon.stub().resolves(heavyFormVitals);
+    context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves([]);
+    const result = await runAuditAndSendUrlsForScrapingStep(context);
+    // Verify that formVitals are trimmed
+    expect(result.auditResult.formVitals).to.deep.equal(trimmedHeavyFormVitals);
   });
 
   it('should include top forms without form source and sort by pageviews when less than 10 urls', async () => {
