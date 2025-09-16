@@ -20,47 +20,43 @@ import { AuditBuilder } from '../common/audit-builder.js';
  * @returns {Object} Extracted data
  */
 function extractFromMetaTags(html) {
-  try {
-    const dom = new JSDOM(html);
-    const { document } = dom.window;
+  const dom = new JSDOM(html);
+  const { document } = dom.window;
 
-    let sku = null;
-    let thumbnailUrl = null;
+  let sku = null;
+  let thumbnailUrl = null;
 
-    // Extract SKU from meta tag
-    const skuMeta = document.querySelector('meta[name="sku"]');
-    if (skuMeta) {
-      sku = skuMeta.getAttribute('content');
-    }
+  // Extract SKU from meta tag
+  const skuMeta = document.querySelector('meta[name="sku"]');
+  if (skuMeta) {
+    sku = skuMeta.getAttribute('content');
+  }
 
-    // Extract thumbnail from various meta tags (in order of preference)
-    const imageSelectors = [
-      'meta[property="og:image"]',
-      'meta[name="twitter:image"]',
-      'meta[property="product:image"]',
-      'meta[name="thumbnail"]',
-      'meta[property="image"]',
-    ];
+  // Extract thumbnail from various meta tags (in order of preference)
+  const imageSelectors = [
+    'meta[property="og:image"]',
+    'meta[name="twitter:image"]',
+    'meta[property="product:image"]',
+    'meta[name="thumbnail"]',
+    'meta[property="image"]',
+  ];
 
-    for (const selector of imageSelectors) {
-      const imageMeta = document.querySelector(selector);
-      if (imageMeta) {
-        const content = imageMeta.getAttribute('content');
-        if (content && content.startsWith('http')) {
-          thumbnailUrl = content;
-          break;
-        }
+  for (const selector of imageSelectors) {
+    const imageMeta = document.querySelector(selector);
+    if (imageMeta) {
+      const content = imageMeta.getAttribute('content');
+      if (content && content.startsWith('http')) {
+        thumbnailUrl = content;
+        break;
       }
     }
-
-    return {
-      sku,
-      thumbnailUrl,
-      found: sku !== null || thumbnailUrl !== null,
-    };
-  } catch (error) {
-    return { sku: null, thumbnailUrl: null, found: false };
   }
+
+  return {
+    sku,
+    thumbnailUrl,
+    found: sku !== null || thumbnailUrl !== null,
+  };
 }
 
 /**

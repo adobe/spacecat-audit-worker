@@ -222,5 +222,57 @@ describe('Product MetaTags Audit', () => {
       // Should skip relative URL and use the HTTP URL
       expect(result.auditResult.thumbnailUrl).to.equal('https://www.example.com/valid.jpg');
     });
+
+    it('should handle meta tags with empty content attributes', async () => {
+      const baseURL = 'https://example.com/product';
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta name="sku" content="">
+          <meta property="og:image" content="">
+        </head>
+        <body>Product page</body>
+        </html>
+      `;
+
+      nock('https://example.com')
+        .get('/product')
+        .reply(200, htmlContent);
+
+      const result = await productMetatagsAuditRunner(baseURL, context);
+
+      // Should handle empty content and return null values
+      expect(result.auditResult.success).to.equal(true);
+      expect(result.auditResult.sku).to.equal('');
+      expect(result.auditResult.thumbnailUrl).to.be.null;
+      expect(result.auditResult.extractionMethod).to.equal('meta-tags');
+    });
+
+    it('should handle meta tags without content attributes', async () => {
+      const baseURL = 'https://example.com/product';
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta name="sku">
+          <meta property="og:image">
+        </head>
+        <body>Product page</body>
+        </html>
+      `;
+
+      nock('https://example.com')
+        .get('/product')
+        .reply(200, htmlContent);
+
+      const result = await productMetatagsAuditRunner(baseURL, context);
+
+      // Should handle missing content attributes
+      expect(result.auditResult.success).to.equal(true);
+      expect(result.auditResult.sku).to.be.null;
+      expect(result.auditResult.thumbnailUrl).to.be.null;
+      expect(result.auditResult.extractionMethod).to.equal('none');
+    });
   });
 });
