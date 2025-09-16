@@ -10,7 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import {
+  SPACECAT_USER_AGENT,
+  tracingFetch as fetch,
+} from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -24,7 +27,6 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 // Configuration constants
 const CONTENT_INCREASE_THRESHOLD = 1.2; // Content increase ratio threshold
-const REQUEST_TIMEOUT_MS = 10000; // 10 second timeout
 
 /**
  * Fetches HTML content directly from a URL
@@ -32,22 +34,17 @@ const REQUEST_TIMEOUT_MS = 10000; // 10 second timeout
  * @param {Object} context - Audit context with logger
  * @returns {Promise<string|null>} - HTML content or null if failed
  */
-async function fetchDirectHtml(url, context) {
+export async function fetchDirectHtml(url, context) {
   const { log } = context;
 
+  log.info(`Prerender -  Fetching HTML content for ${url}`);
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
     const response = await fetch(url, {
       method: 'GET',
-      signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; SpaceCat/1.0)',
+        'User-Agent': SPACECAT_USER_AGENT,
       },
     });
-
-    clearTimeout(timeoutId);
 
     if (!response.ok) {
       log.warn(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
@@ -56,17 +53,14 @@ async function fetchDirectHtml(url, context) {
 
     const contentType = response.headers.get('content-type') || '';
     if (!contentType.includes('text/html')) {
-      log.warn(`Non-HTML content type for ${url}: ${contentType}`);
+      log.warn(`Prerender - Non-HTML content type for ${url}: ${contentType}`);
       return null;
     }
-
-    return await response.text();
+    const html = await response.text();
+    log.info(`Prerender -  Successfully fetched HTML content for ${url}`);
+    return html;
   } catch (error) {
-    if (error.name === 'AbortError') {
-      log.warn(`Request timeout for ${url}`);
-    } else {
-      log.warn(`Error fetching ${url}: ${error.message}`);
-    }
+    log.warn(`Prerender - Error fetching ${url}: ${error.message}`);
     return null;
   }
 }
@@ -96,16 +90,18 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const key = getScrapeJsonPath(url, siteId);
 
+    log.info(`Prerender -  Getting scraped content for URL: ${url} (key: ${key})`);
     const scrapeData = await getObjectFromKey(s3Client, bucketName, key, log);
 
     if (scrapeData?.scrapeResult?.rawBody) {
+      log.info(`Prerender -  Found scraped content for URL: ${url} (key: ${key})`);
       return scrapeData.scrapeResult.rawBody;
     }
 
-    log.error(`[Prerender] No scraped content found for URL: ${url} (key: ${key})`);
+    log.warn(`Prerender -  No scraped content found for URL: ${url} (key: ${key})`);
     return null;
   } catch (error) {
-    log.error(`[Prerender] Could not get scraped content for ${url}: ${error.message}`);
+    log.warn(`Prerender -  Could not get scraped content for ${url}: ${error.message}`);
     return null;
   }
 }
@@ -129,7 +125,7 @@ async function compareHtmlContent(url, siteId, context) {
   ]);
 
   if (!directHtml) {
-    log.error(`[Prerender] Could not fetch direct HTML for ${url}`);
+    log.error(`Prerender -  Could not fetch direct HTML for ${url}`);
     return {
       url,
       status: 'error',
@@ -139,7 +135,7 @@ async function compareHtmlContent(url, siteId, context) {
   }
 
   if (!scrapedHtml) {
-    log.error(`[Prerender] No scraped data available for comparison for ${url}`);
+    log.error(`Prerender -  No scraped data available for comparison for ${url}`);
     return {
       url,
       status: 'error',
@@ -152,7 +148,7 @@ async function compareHtmlContent(url, siteId, context) {
   const analysis = analyzeHtmlForPrerender(directHtml, scrapedHtml, CONTENT_INCREASE_THRESHOLD);
 
   if (analysis.error) {
-    log.error(`[Prerender] HTML analysis failed for ${url}: ${analysis.error}`);
+    log.error(`Prerender -  HTML analysis failed for ${url}: ${analysis.error}`);
     return {
       url,
       status: 'error',
