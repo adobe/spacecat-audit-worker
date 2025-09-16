@@ -17,8 +17,6 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-
-// Import HTML comparison utilities
 import { analyzeHtmlForPrerender } from './html-comparator-utils.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
@@ -104,10 +102,10 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
       return scrapeData.scrapeResult.rawBody;
     }
 
-    log.debug(`No scraped content found for URL: ${url} (key: ${key})`);
+    log.error(`[Prerender] No scraped content found for URL: ${url} (key: ${key})`);
     return null;
   } catch (error) {
-    log.debug(`Could not get scraped content for ${url}: ${error.message}`);
+    log.error(`[Prerender] Could not get scraped content for ${url}: ${error.message}`);
     return null;
   }
 }
@@ -122,7 +120,7 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
 async function compareHtmlContent(url, siteId, context) {
   const { log } = context;
 
-  log.debug(`Comparing HTML content for: ${url}`);
+  log.info(`Comparing HTML content for: ${url}`);
 
   // Fetch both versions
   const [directHtml, scrapedHtml] = await Promise.all([
@@ -131,6 +129,7 @@ async function compareHtmlContent(url, siteId, context) {
   ]);
 
   if (!directHtml) {
+    log.error(`[Prerender] Could not fetch direct HTML for ${url}`);
     return {
       url,
       status: 'error',
@@ -140,9 +139,10 @@ async function compareHtmlContent(url, siteId, context) {
   }
 
   if (!scrapedHtml) {
+    log.error(`[Prerender] No scraped data available for comparison for ${url}`);
     return {
       url,
-      status: 'no_scraped_data',
+      status: 'error',
       error: 'No scraped data available for comparison',
       needsPrerender: false,
     };
@@ -152,7 +152,7 @@ async function compareHtmlContent(url, siteId, context) {
   const analysis = analyzeHtmlForPrerender(directHtml, scrapedHtml, CONTENT_INCREASE_THRESHOLD);
 
   if (analysis.error) {
-    log.error(`HTML analysis failed for ${url}: ${analysis.error}`);
+    log.error(`[Prerender] HTML analysis failed for ${url}: ${analysis.error}`);
     return {
       url,
       status: 'error',
@@ -161,21 +161,12 @@ async function compareHtmlContent(url, siteId, context) {
     };
   }
 
-  const { stats } = analysis;
-
-  log.debug(`Content analysis for ${url}: contentGainRatio=${stats.contentGainRatio}, wordDiff=${stats.wordDiff}, initialWords=${stats.initialWords}, finalWords=${stats.finalWords}`);
+  log.info(`Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordDiff=${analysis.wordDiff}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
 
   return {
     url,
     status: 'compared',
-    needsPrerender: analysis.needsPrerender,
-    directHtmlLength: directHtml.length,
-    scrapedHtmlLength: scrapedHtml.length,
-    wordDiff: stats.wordDiff,
-    contentGainRatio: stats.contentGainRatio,
-    initialWords: stats.initialWords,
-    finalWords: stats.finalWords,
-    recommendation: analysis.recommendation,
+    ...analysis,
   };
 }
 
@@ -189,7 +180,7 @@ export async function importTopPages(context) {
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   return {
-    type: 'top-pages',
+    type: 'prerender-get-top-pages',
     siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
@@ -230,14 +221,14 @@ export async function submitForScraping(context) {
     return {
       urls: [{ url: baseURL }],
       siteId,
-      type: AUDIT_TYPE,
+      type: 'prerender-content-scraping',
     };
   }
 
   return {
     urls: finalUrls.map((url) => ({ url })),
     siteId,
-    type: AUDIT_TYPE,
+    type: 'prerender-content-scraping',
   };
 }
 
@@ -267,11 +258,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
   // Generate suggestions with essential analysis data
   const suggestions = urlsNeedingPrerender.map((result) => ({
     url: result.url,
-    wordDiff: result.wordDiff,
-    contentGainRatio: result.contentGainRatio,
-    initialWords: result.initialWords,
-    finalWords: result.finalWords,
-    recommendation: result.recommendation,
+    ...result,
   }));
 
   log.info(`Generated ${suggestions.length} prerender suggestions for ${auditUrl}`);
