@@ -180,7 +180,7 @@ export async function importTopPages(context) {
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   return {
-    type: 'prerender-get-top-pages',
+    type: 'top-pages',
     siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
@@ -221,14 +221,14 @@ export async function submitForScraping(context) {
     return {
       urls: [{ url: baseURL }],
       siteId,
-      type: 'prerender-content-scraping',
+      type: AUDIT_TYPE,
     };
   }
 
   return {
     urls: finalUrls.map((url) => ({ url })),
     siteId,
-    type: 'prerender-content-scraping',
+    type: AUDIT_TYPE,
   };
 }
 
