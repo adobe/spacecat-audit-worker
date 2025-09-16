@@ -1,3 +1,10 @@
+## [1.181.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.181.0...v1.181.1) (2025-09-16)
+
+
+### Bug Fixes
+
+* revert lorem ipsum check for preflight ([#1275](https://github.com/adobe/spacecat-audit-worker/issues/1275)) ([c8e80fc](https://github.com/adobe/spacecat-audit-worker/commit/c8e80fcc9ee5da6fe48ec32268f08319fb5eb85e))
+
 # [1.181.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.12...v1.181.0) (2025-09-16)
 
 
