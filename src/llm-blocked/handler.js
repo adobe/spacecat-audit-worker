@@ -96,7 +96,9 @@ export async function checkLLMBlocked(context) {
     };
 
     topPages.forEach((page) => {
-      if (!robots.isAllowed(page.getUrl(), agent)) {
+      const isAllowedGenerally = robots.isAllowed(page.getUrl());
+      const isAllowedForRobot = robots.isAllowed(page.getUrl(), agent);
+      if (isAllowedGenerally && !isAllowedForRobot) {
         agentResult.affectedUrls.push({
           url: page.getUrl(),
           line: robots.getMatchingLineNumber(page.getUrl(), agent),

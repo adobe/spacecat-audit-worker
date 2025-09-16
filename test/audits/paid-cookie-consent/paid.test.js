@@ -55,7 +55,7 @@ describe('Paid Cookie Consent Audit', () => {
       getAuditResult: sandbox.stub().returns(
         [
           {
-            key: 'url',
+            key: 'urlTrafficSource',
             value:
               [
                 { pageViews: 71000, url: 'https://example.com/page1', topURLs: ['https://example.com/page1'] },
@@ -113,7 +113,7 @@ describe('Paid Cookie Consent Audit', () => {
     sandbox.restore();
   });
 
-  const expectedSegments = ['url', 'urlTrafficSource', 'urlConsent'];
+  const expectedSegments = ['urlTrafficSource', 'urlConsent'];
 
   it('should submit expected segments from Athena query', async () => {
     const result = await paidAuditRunner(auditUrl, context, site);
@@ -186,7 +186,7 @@ describe('Paid Cookie Consent Audit', () => {
       fullAuditRef: 'https://example.com',
       id: 'test-audit-id',
       auditResult: [
-        { key: 'url', value: [] },
+        { key: 'urlTrafficSource', value: [] },
         // No urlConsent segment
       ],
     };
@@ -331,8 +331,8 @@ describe('Paid Cookie Consent Audit', () => {
     const result = await paidAuditRunner(auditUrl, contextWithDefaults, site);
 
     // Should still work with default values
-    expect(result.auditResult).to.have.length(3);
-    expect(context.athenaClient.query).to.have.been.calledThrice;
+    expect(result.auditResult).to.have.length(2);
+    expect(context.athenaClient.query).to.have.been.calledTwice;
   });
 
   it('should handle query results with missing fields', async () => {
@@ -359,17 +359,17 @@ describe('Paid Cookie Consent Audit', () => {
 
     const result = await paidAuditRunner(auditUrl, contextWithIncompleteData, site);
 
-    expect(result.auditResult).to.have.length(3);
-    const urlSegment = result.auditResult.find((s) => s.key === 'url');
+    expect(result.auditResult).to.have.length(2);
+    const urlTrafficSourceSegment = result.auditResult.find((s) => s.key === 'urlTrafficSource');
 
-    // First item should have constructed URL from path
-    expect(urlSegment.value[0].url).to.equal('https://example.com/test-page');
-    expect(urlSegment.value[0].ctr).to.equal(0); // Default fallback
-    expect(urlSegment.value[0].consent).to.equal(''); // Default fallback
+    // First item should have utm_source as URL for urlTrafficSource segment
+    expect(urlTrafficSourceSegment.value[0].url).to.equal('google');
+    expect(urlTrafficSourceSegment.value[0].ctr).to.equal(0); // Default fallback
+    expect(urlTrafficSourceSegment.value[0].consent).to.equal(''); // Default fallback
 
     // Second item should use provided URL directly
-    expect(urlSegment.value[1].bounceRate).to.equal(0.5);
-    expect(urlSegment.value[1].consent).to.equal('show');
+    expect(urlTrafficSourceSegment.value[1].bounceRate).to.equal(0.5);
+    expect(urlTrafficSourceSegment.value[1].consent).to.equal('show');
   });
 
   it('should handle athena query failures and log error', async () => {

@@ -73,45 +73,24 @@ Line3`);
 newlines`);
   });
 
+  it('handles JSON object body directly', async () => {
+    const context = { env: {}, dataAccess: {} };
+    const guidance = {
+      body: {
+        markdown: 'Direct JSON object markdown',
+        issueSeverity: 'high',
+      },
+      metadata: { scrape_job_id: 'test-job' },
+    };
+    const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
+    expect(result.data.suggestionValue).to.include('Direct JSON object markdown');
+  });
+
   // Additional tests for mapToPaidOpportunity edge cases
   describe('Paid Opportunity Mapper edge cases', () => {
     const siteId = 'site';
     const url = 'https://example.com/page';
     const guidance = [{ insight: 'insight', rationale: 'rationale', recommendation: 'rec' }];
-
-    it('returns default stats if urlConsent segment is missing', () => {
-      const audit = {
-        getAuditId: () => 'aid',
-        getAuditResult: () => [
-          // No 'urlConsent' segment
-          { key: 'url', value: [{ url, pageViews: 100, bounceRate: 0.5 }] },
-        ],
-      };
-      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      expect(result.data.pageViews).to.equal(0);
-      expect(result.data.ctr).to.equal(0);
-      expect(result.data.bounceRate).to.equal(0);
-      expect(result.data.projectedTrafficLost).to.equal(0);
-    });
-
-    it('returns default stats if url is not found in urlConsent segment', () => {
-      const audit = {
-        getAuditId: () => 'aid',
-        getAuditResult: () => [
-          {
-            key: 'urlConsent',
-            value: [{
-              url: 'https://other.com/page', pageViews: 99, bounceRate: 0.1, projectedTrafficLost: 9.9, consent: 'show',
-            }],
-          },
-        ],
-      };
-      const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      expect(result.data.pageViews).to.equal(0);
-      expect(result.data.ctr).to.equal(0);
-      expect(result.data.bounceRate).to.equal(0);
-      expect(result.data.projectedTrafficLost).to.equal(0);
-    });
 
     it('formats large numbers with K suffix in description', () => {
       const audit = {
@@ -126,9 +105,10 @@ newlines`);
         ],
       };
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      // projectedTrafficLost 8000 should be formatted as 8.0K
-      expect(result.description).to.include('8.0K');
-      expect(result.description).to.include('80.0% of paid traffic bounces');
+      // Aggregate projectedTrafficLost 8000 should be formatted as 8.0K
+      expect(result.description).to.include('(8.0K)');
+      expect(result.description).to.include('80.0% of total paid traffic (8.0K)');
+      expect(result.description).to.include('Most affected page:');
     });
 
     it('keeps small numbers unformatted in description', () => {
@@ -144,9 +124,10 @@ newlines`);
         ],
       };
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      // projectedTrafficLost 300 should stay as 300
-      expect(result.description).to.include('300)');
-      expect(result.description).to.include('60.0% of paid traffic bounces');
+      // Aggregate projectedTrafficLost 300 should stay as 300
+      expect(result.description).to.include('(300)');
+      expect(result.description).to.include('60.0% of total paid traffic (300)');
+      expect(result.description).to.include('Most affected page:');
     });
 
     it('uses data from urlConsent segment correctly', () => {
@@ -165,27 +146,74 @@ newlines`);
       expect(result.data.pageViews).to.equal(5);
       expect(result.data.ctr).to.equal(0);
       expect(result.data.bounceRate).to.equal(0.3);
-      expect(result.data.projectedTrafficLost).to.equal(1.5);
+      expect(result.data.projectedTrafficLost).to.equal(1.5); // Should use aggregate sum
     });
 
-    it('calculates projectedTrafficLost as fallback when missing', () => {
+    it('aggregates data correctly across multiple pages with consent=show', () => {
+      const targetUrl = 'https://example.com/page1';
       const audit = {
         getAuditId: () => 'aid',
         getAuditResult: () => [
           {
             key: 'urlConsent',
-            value: [{
-              url, pageViews: 100, bounceRate: 0.4, consent: 'show',
-              // projectedTrafficLost missing - should calculate as bounceRate * pageViews
-            }],
+            value: [
+              {
+                url: targetUrl, pageViews: 1000, bounceRate: 0.8, projectedTrafficLost: 800, consent: 'show',
+              },
+              {
+                url: 'https://example.com/page2', pageViews: 500, bounceRate: 0.6, projectedTrafficLost: 300, consent: 'show',
+              },
+              {
+                url: 'https://example.com/page3', pageViews: 200, bounceRate: 0.4, projectedTrafficLost: 80, consent: 'show',
+              },
+              {
+                url: 'https://example.com/page4', pageViews: 300, bounceRate: 0.9, projectedTrafficLost: 270, consent: 'hide', // Should be ignored
+              },
+            ],
+          },
+        ],
+      };
+      const result = mapToPaidOpportunity(siteId, targetUrl, audit, guidance);
+      expect(result.data.pageViews).to.equal(1000);
+      expect(result.data.bounceRate).to.equal(0.8);
+      expect(result.data.projectedTrafficLost).to.equal(1180);
+      expect(result.description).to.include('69.4% of total paid traffic (1.2K)');
+      expect(result.description).to.include('Most affected page: https://example.com/page1');
+      expect(result.description).to.include('(800)'); // individual page traffic lost
+    });
+
+    it('handles urlConsent segment with null value (line 70 fallback)', () => {
+      const audit = {
+        getAuditId: () => 'aid',
+        getAuditResult: () => [
+          {
+            key: 'urlConsent',
+            value: null, // Triggers || [] fallback
           },
         ],
       };
       const result = mapToPaidOpportunity(siteId, url, audit, guidance);
-      expect(result.data.pageViews).to.equal(100);
-      expect(result.data.ctr).to.equal(0);
-      expect(result.data.bounceRate).to.equal(0.4);
-      expect(result.data.projectedTrafficLost).to.equal(40); // 0.4 * 100
+      expect(result.data.pageViews).to.be.undefined;
+      expect(result.data.projectedTrafficLost).to.equal(0);
+    });
+
+    it('handles URL not found in urlConsent segment (line 73 fallback)', () => {
+      const audit = {
+        getAuditId: () => 'aid',
+        getAuditResult: () => [
+          {
+            key: 'urlConsent',
+            value: [
+              {
+                url: 'https://different-url.com', pageViews: 100, bounceRate: 0.5, projectedTrafficLost: 50, consent: 'show',
+              },
+            ],
+          },
+        ],
+      };
+      const result = mapToPaidOpportunity(siteId, url, audit, guidance); // Triggers || {} fallback
+      expect(result.data.pageViews).to.be.undefined;
+      expect(result.data.projectedTrafficLost).to.equal(50);
     });
   });
 });

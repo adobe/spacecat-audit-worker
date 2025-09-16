@@ -36,7 +36,7 @@ export default async function handler(message, context) {
     log.error(`Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
-  const s3Config = getS3Config(site);
+  const s3Config = await getS3Config(site, context);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
@@ -51,7 +51,7 @@ export default async function handler(message, context) {
     const derivedPeriod = `w${week.weekNumber}-${week.year}`;
     const llmoFolder = site.getConfig()?.getLlmoDataFolder?.() || s3Config.customerName;
     const outputDir = `${llmoFolder}/agentic-traffic`;
-    const filename = `agentictraffic-${derivedPeriod}-404-ui.xlsx`;
+    const filename = `agentictraffic-errors-404-${derivedPeriod}.xlsx`;
 
     const workbook = new ExcelJS.Workbook();
     const existingBuffer = await readFromSharePoint(filename, outputDir, sharepointClient, log);

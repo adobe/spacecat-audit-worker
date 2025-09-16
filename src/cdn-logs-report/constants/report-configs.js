@@ -14,11 +14,9 @@ import { weeklyBreakdownQueries } from '../utils/query-builder.js';
 
 export function getConfigs(bucket, customerDomain, imsOrgId) {
   let s3path = `${bucket}`;
-  /* c8 ignore start */
   if (bucket && isStandardAdobeCdnBucket(bucket)) {
     s3path = `${bucket}/${imsOrgId}/`;
   }
-  /* c8 ignore stop */
 
   return [
     {

@@ -75,8 +75,10 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            // keep legacy for code paths that still read it
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -90,7 +92,13 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
-    const context = { log: logMock, dataAccess };
+    const context = {
+      log: logMock,
+      dataAccess,
+      s3Client: {
+        send: sandbox.stub().resolves(),
+      },
+    };
 
     const resp = await guidanceHandler.default(message, context);
 
@@ -119,6 +127,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { error: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -137,8 +146,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -150,6 +160,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { error: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -170,8 +181,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -185,7 +197,13 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
-    const context = { log: logMock, dataAccess };
+    const context = {
+      log: logMock,
+      dataAccess,
+      s3Client: {
+        send: sandbox.stub().resolves(),
+      },
+    };
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(400);
@@ -210,8 +228,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -223,6 +242,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -256,8 +276,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -269,6 +290,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -292,8 +314,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -305,6 +328,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -333,8 +357,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -346,6 +371,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -380,8 +406,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -393,6 +420,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -426,8 +454,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -439,6 +468,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -472,8 +502,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -485,6 +516,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -517,8 +549,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -530,6 +563,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -555,8 +589,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => null, // This will trigger the || s3Config.customerName fallback
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -568,6 +603,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -601,8 +637,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -614,6 +651,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -641,8 +679,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
         findById: sandbox.stub().resolves({
           getBaseURL: () => 'https://example.com',
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -654,6 +693,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);
@@ -692,8 +732,9 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
             return getBaseURLCallCount === 1 ? 'https://example.com' : '';
           },
           getConfig: () => ({
+            getCdnLogsConfig: () => null,
             getLlmoDataFolder: () => 'test-customer',
-            getCdnLogsConfig: () => ({ bucketName: 'test-bucket' }),
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
           }),
         }),
       },
@@ -705,6 +746,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     const context = {
       log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
     };
 
     const resp = await guidanceHandler.default(message, context);

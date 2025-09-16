@@ -110,6 +110,23 @@ describe('LLM Blocked Audit', () => {
     expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 
+  it('should not return blocked URLs when a page is blocked for all agents', async () => {
+    // Mock robots.txt that blocks page1 for ClaudeBot/1.0
+    nock('https://example.com')
+      .get('/robots.txt')
+      .reply(200, 'User-Agent: *\nDisallow: /page1\n');
+
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
+    context.dataAccess.Opportunity.getSuggestions.resolves([]);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+
+    const result = await checkLLMBlocked(context);
+
+    expect(result.auditResult).to.equal('[]');
+    expect(nock.pendingMocks()).to.have.lengthOf(0);
+  });
+
   it('should warn if robots fetching fails', async () => {
     // Mock robots.txt to throw a network error
     nock('https://example.com')
