@@ -15,7 +15,12 @@ import ExcelJS from 'exceljs';
 import {
   createLLMOSharepointClient, publishToAdminHlx, readFromSharePoint, uploadToSharePoint,
 } from '../utils/report-uploader.js';
-import { generateReportingPeriods, getS3Config, toPathOnly } from './utils.js';
+import {
+  generateReportingPeriods,
+  getS3Config,
+  toPathOnly,
+  SPREADSHEET_COLUMNS,
+} from './utils.js';
 
 /**
  * Handles Mystique responses for LLM error pages and updates suggestions with AI data
@@ -59,19 +64,6 @@ export default async function handler(message, context) {
     const sheet = workbook.worksheets[0] || workbook.addWorksheet('data');
 
     const baseUrl = site.getBaseURL?.() || 'https://example.com';
-    const SPREADSHEET_COLUMNS = [
-      'Agent Type',
-      'User Agent',
-      'Number of Hits',
-      'Avg TTFB (ms)',
-      'Country Code',
-      'URL',
-      'Product',
-      'Category',
-      'Suggested URLs',
-      'AI Rationale',
-      'Confidence score',
-    ];
     const col = (name) => SPREADSHEET_COLUMNS.indexOf(name) + 1;
 
     // Create a map of broken URLs for quick lookup
@@ -95,8 +87,6 @@ export default async function handler(message, context) {
       });
     });
 
-    // Process each row in the Excel file and update with broken links data if found
-    log.info(`Processing Excel sheet with ${sheet.rowCount} rows`);
     let updatedRows = 0;
 
     for (let i = 2; i <= sheet.rowCount; i += 1) {
