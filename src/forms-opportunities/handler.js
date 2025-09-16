@@ -76,7 +76,6 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
       if (!formsource) return;
 
       const totalPageview = Object.values(entry.pageview).reduce((sum, val) => sum + val, 0);
-
       if (!formsourceGroups[formsource]) formsourceGroups[formsource] = [];
       formsourceGroups[formsource].push({ entry, totalPageview });
     });
@@ -84,18 +83,14 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     // Helper to get top/bottom N including ties
     function getTopBottomWithTies(pages, n = 2) {
       const sorted = [...pages].sort((a, b) => b.totalPageview - a.totalPageview);
-      // const cutoffTop = sorted[Math.min(n - 1, sorted.length - 1)].totalPageview;
-      // const cutoffBottom = sorted[Math.max(sorted.length - n, 0)].totalPageview;
-      // eslint-disable-next-line max-len
-      // return sorted.filter((p) => p.totalPageview >= cutoffTop || p.totalPageview <= cutoffBottom).map((p) => p.entry);
       return sorted.length < 2 * n
         ? sorted.map((p) => p.entry)
         : [...sorted.slice(0, n), ...sorted.slice(-n)].map((p) => p.entry);
     }
 
     // Collect all entries to keep
-    const entriesToKeep = Object.values(formsourceGroups)
-      .flatMap((group) => getTopBottomWithTies(group, 2));
+    // eslint-disable-next-line max-len
+    const entriesToKeep = Object.values(formsourceGroups).flatMap((group) => getTopBottomWithTies(group, 2));
 
     // Mutate original formVitals in place
     formVitals.length = 0; // Clear the array
