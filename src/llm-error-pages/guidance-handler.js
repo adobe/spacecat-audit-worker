@@ -59,19 +59,30 @@ export default async function handler(message, context) {
     const sheet = workbook.worksheets[0] || workbook.addWorksheet('data');
 
     const baseUrl = site.getBaseURL?.() || 'https://example.com';
+    const SPREADSHEET_COLUMNS = [
+      'Agent Type',
+      'User Agent',
+      'Number of Hits',
+      'Avg TTFB (ms)',
+      'Country Code',
+      'URL',
+      'Product',
+      'Category',
+      'Suggested URLs',
+      'AI Rationale',
+      'Confidence score',
+    ];
+    const col = (name) => SPREADSHEET_COLUMNS.indexOf(name) + 1;
 
     // Create a map of broken URLs for quick lookup
     const brokenUrlsMap = new Map();
     log.info(`Processing ${brokenLinks.length} broken links from Mystique`);
 
-    brokenLinks.forEach((brokenLink, index) => {
+    brokenLinks.forEach((brokenLink) => {
       const {
         suggestedUrls, aiRationale, urlFrom, urlTo,
       } = brokenLink;
       const keyUrl = toPathOnly(urlTo, baseUrl);
-
-      // Debug logging for Mystique response structure
-      log.info(`Broken link ${index + 1}: urlTo="${urlTo}", urlFrom="${urlFrom}", suggestedUrls=${JSON.stringify(suggestedUrls)}, keyUrl="${keyUrl}"`);
 
       if (!suggestedUrls || suggestedUrls.length === 0) {
         log.warn(`No suggested URLs for broken link: ${urlTo}`);
@@ -89,23 +100,16 @@ export default async function handler(message, context) {
     let updatedRows = 0;
 
     for (let i = 2; i <= sheet.rowCount; i += 1) {
-      const urlCell = sheet.getCell(i, 6).value?.toString?.() || ''; // Column 6: URL
-      const userAgentCell = sheet.getCell(i, 2).value?.toString?.() || ''; // Column 2: User Agent
-
+      const urlCell = sheet.getCell(i, col('URL')).value?.toString?.() || '';
       if (urlCell) {
         const pathOnlyUrl = toPathOnly(urlCell, baseUrl);
-        log.info(`Row ${i}: Checking URL="${pathOnlyUrl}", UserAgent="${userAgentCell}"`);
-
         // Look up the URL in brokenUrls and update if found
         const brokenUrlData = brokenUrlsMap.get(pathOnlyUrl);
         if (brokenUrlData) {
-          log.info(`Found match for URL: ${pathOnlyUrl}, Mystique userAgents: "${brokenUrlData.userAgents}", Excel userAgent: "${userAgentCell}"`);
-
           const suggested = brokenUrlData.suggestedUrls.join('\n');
 
-          // Update only the Suggested URLs and AI Rationale columns
-          sheet.getCell(i, 9).value = suggested; // Column 9: Suggested URLs
-          sheet.getCell(i, 10).value = brokenUrlData.aiRationale; // Column 10: AI Rationale
+          sheet.getCell(i, col('Suggested URLs')).value = suggested;
+          sheet.getCell(i, col('AI Rationale')).value = brokenUrlData.aiRationale;
           updatedRows += 1;
 
           log.info(`✅ Updated row ${i} for URL: ${pathOnlyUrl} with ${brokenUrlData.suggestedUrls.length} suggestions`);

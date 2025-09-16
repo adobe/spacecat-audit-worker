@@ -464,8 +464,6 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
 
     // Verify that the Excel was updated despite user agent mismatch
     expect(logMock.info.calledWith('✅ Updated row 2 for URL: /test-page with 1 suggestions')).to.be.true;
-    // Verify debug logging shows both user agents
-    expect(logMock.info.calledWith('Found match for URL: /test-page, Mystique userAgents: "ChatGPT", Excel userAgent: "Claude"')).to.be.true;
   });
 
   it('covers workbook.worksheets[0] || addWorksheet fallback', async () => {
