@@ -19,5 +19,5 @@ const CPC_DEFAULT_VALUE = 1;
  * @param {Object} dataAccess - The data access object for database operations
  * @returns {number} - Cost per click (CPC) Value
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// eslint-disable-next-line no-unused-vars
 export default (auditData, dataAccess) => CPC_DEFAULT_VALUE;

@@ -67,14 +67,14 @@ function formatColumns(worksheet, config) {
   }
 }
 
-export function createSheet(workbook, name, data, type) {
+export function createSheet(workbook, name, data, type, site) {
   const worksheet = workbook.addWorksheet(name);
   const config = getSheetConfig(type);
 
   worksheet.addRow(config.headers);
   styleHeaders(worksheet);
 
-  const processedData = config.processData(data);
+  const processedData = config.processData(data, site);
   processedData.forEach((row) => worksheet.addRow(row));
 
   formatColumns(worksheet, config);
@@ -82,7 +82,7 @@ export function createSheet(workbook, name, data, type) {
   return worksheet;
 }
 
-export async function createExcelReport(reportData, reportConfig) {
+export async function createExcelReport(reportData, reportConfig, site) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = reportConfig.workbookCreator;
   workbook.created = new Date();
@@ -91,7 +91,7 @@ export async function createExcelReport(reportData, reportConfig) {
 
   for (const sheet of sheets) {
     const data = reportData[sheet.dataKey];
-    createSheet(workbook, sheet.name, data, sheet.type);
+    createSheet(workbook, sheet.name, data, sheet.type, site);
   }
 
   return workbook;

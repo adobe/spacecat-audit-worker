@@ -9,13 +9,36 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-
+import { isStandardAdobeCdnBucket } from '../../utils/cdn-utils.js';
 import { weeklyBreakdownQueries } from '../utils/query-builder.js';
 
-export const AGENTIC_REPORT_CONFIG = {
-  filePrefix: 'agentictraffic',
-  folderSuffix: 'agentic-traffic',
-  workbookCreator: 'Spacecat Agentic Flat Report',
-  queryFunction: weeklyBreakdownQueries.createAgenticReportQuery,
-  sheetName: 'shared-all',
-};
+export function getConfigs(bucket, customerDomain, imsOrgId) {
+  let s3path = `${bucket}`;
+  if (bucket && isStandardAdobeCdnBucket(bucket)) {
+    s3path = `${bucket}/${imsOrgId}/`;
+  }
+
+  return [
+    {
+      name: 'agentic',
+      createTableSql: 'create-aggregated-table',
+      aggregatedLocation: `s3://${s3path}/aggregated/`,
+      tableName: `aggregated_logs_${customerDomain}`,
+      filePrefix: 'agentictraffic',
+      folderSuffix: 'agentic-traffic',
+      workbookCreator: 'Spacecat Agentic Flat Report',
+      queryFunction: weeklyBreakdownQueries.createAgenticReportQuery,
+      sheetName: 'shared-all',
+    },
+    {
+      name: 'referral',
+      createTableSql: 'create-aggregated-referral-table',
+      aggregatedLocation: `s3://${s3path}/aggregated-referral/`,
+      tableName: `aggregated_referral_logs_${customerDomain}`,
+      filePrefix: 'referral-traffic',
+      folderSuffix: 'referral-traffic-cdn',
+      workbookCreator: 'Spacecat Referral Flat Report',
+      queryFunction: weeklyBreakdownQueries.createReferralReportQuery,
+      sheetName: 'shared-all',
+    }];
+}

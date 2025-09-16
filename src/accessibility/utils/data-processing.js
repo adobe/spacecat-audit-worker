@@ -514,8 +514,8 @@ export async function getUrlsForAudit(s3Client, bucketName, siteId, log) {
   try {
     finalResultFiles = await getObjectKeysUsingPrefix(s3Client, bucketName, `accessibility/${siteId}/`, log, 10, '-final-result.json');
     if (finalResultFiles.length === 0) {
-      const errorMessage = `[A11yAudit] No final result files found for ${siteId}`;
-      log.error(`[A11yProcessingError] ${errorMessage}`);
+      const warningMessage = `[A11yAudit] No final result files found for ${siteId}`;
+      log.warn(`[A11yProcessingWarning] ${warningMessage}`);
       return urlsToScrape;
     }
   } catch (error) {
@@ -744,4 +744,28 @@ export async function generateReportOpportunities(
     status: true,
     message: 'All report opportunities created successfully',
   };
+}
+
+/**
+ * Sends a message to run an import job to the provided SQS queue.
+ *
+ * @param {Object} sqs
+ * @param {string} queueUrl
+ * @param {string} importType
+ * @param {string} siteId
+ * @param {Object} [data] - Optional data object for import-specific data
+ * @param {Object} context
+ */
+export async function sendRunImportMessage(
+  sqs,
+  queueUrl,
+  importType,
+  siteId,
+  data = undefined,
+) {
+  return sqs.sendMessage(queueUrl, {
+    type: importType,
+    siteId,
+    ...(data && { data }),
+  });
 }

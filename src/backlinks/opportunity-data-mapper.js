@@ -30,7 +30,7 @@ export function createOpportunityData(kpiMetrics) {
     tags: ['Traffic acquisition'],
     data: {
       ...kpiMetrics,
-      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.GSC, DATA_SOURCES.SITE],
+      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
     },
   };
 }
