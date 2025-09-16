@@ -1,3 +1,94 @@
+## [1.180.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.10...v1.180.11) (2025-09-16)
+
+
+### Bug Fixes
+
+* updating response handling from mystique to spacecat ([#1266](https://github.com/adobe/spacecat-audit-worker/issues/1266)) ([b771333](https://github.com/adobe/spacecat-audit-worker/commit/b7713339fce92cb7b1219a462367fc34b6b5199a))
+
+## [1.180.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.9...v1.180.10) (2025-09-16)
+
+
+### Bug Fixes
+
+* downgrade jsdom ([#1270](https://github.com/adobe/spacecat-audit-worker/issues/1270)) ([c066fd8](https://github.com/adobe/spacecat-audit-worker/commit/c066fd82bd9fc3f38b1e6fd0b859400a63f5e294))
+
+## [1.180.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.8...v1.180.9) (2025-09-16)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1269](https://github.com/adobe/spacecat-audit-worker/issues/1269)) ([8bbbc0b](https://github.com/adobe/spacecat-audit-worker/commit/8bbbc0b7c0ee712a93dae2d1119c1162f3f0ffed))
+
+## [1.180.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.7...v1.180.8) (2025-09-16)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1264](https://github.com/adobe/spacecat-audit-worker/issues/1264)) ([e15f6a0](https://github.com/adobe/spacecat-audit-worker/commit/e15f6a046348d5149071761e4c73fc7a520495bc))
+
+## [1.180.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.6...v1.180.7) (2025-09-16)
+
+
+### Bug Fixes
+
+* **deps:** update dependency jsdom to v27 ([#1265](https://github.com/adobe/spacecat-audit-worker/issues/1265)) ([dae25b9](https://github.com/adobe/spacecat-audit-worker/commit/dae25b92f8a47cf68fda2dfd78a9bc4bd65c0e94))
+
+## [1.180.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.5...v1.180.6) (2025-09-14)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-helix-content-sdk to v1.4.22 ([#1263](https://github.com/adobe/spacecat-audit-worker/issues/1263)) ([a8859b3](https://github.com/adobe/spacecat-audit-worker/commit/a8859b3f1d769929c69b2c58a7719d49ba33cdaf))
+
+## [1.180.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.4...v1.180.5) (2025-09-13)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1261](https://github.com/adobe/spacecat-audit-worker/issues/1261)) ([4c59bbd](https://github.com/adobe/spacecat-audit-worker/commit/4c59bbdb009f90d90bda781f4ceee8b854120687))
+
+## [1.180.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.3...v1.180.4) (2025-09-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.37.4 ([#1260](https://github.com/adobe/spacecat-audit-worker/issues/1260)) ([f098746](https://github.com/adobe/spacecat-audit-worker/commit/f098746faf9ae492b31a70f89e4045c3b3c30f06))
+
+## [1.180.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.2...v1.180.3) (2025-09-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.62.1 ([#1258](https://github.com/adobe/spacecat-audit-worker/issues/1258)) ([4bc694d](https://github.com/adobe/spacecat-audit-worker/commit/4bc694d9fd359eaf36547faa782fadccff7dcea0))
+
+## [1.180.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.1...v1.180.2) (2025-09-12)
+
+
+### Bug Fixes
+
+* a11y logging for missing accessibility final result files ([#1255](https://github.com/adobe/spacecat-audit-worker/issues/1255)) ([3c1f2e7](https://github.com/adobe/spacecat-audit-worker/commit/3c1f2e74f678cf3ed872d49662d64a265dbc586a))
+
+## [1.180.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.0...v1.180.1) (2025-09-12)
+
+
+### Bug Fixes
+
+* add-retry-logic-for-oppty-save-on-remediation ([#1232](https://github.com/adobe/spacecat-audit-worker/issues/1232)) ([6d462d4](https://github.com/adobe/spacecat-audit-worker/commit/6d462d4f7ed9b4acff417a7338fbc087910ade69))
+
+# [1.180.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.179.0...v1.180.0) (2025-09-12)
+
+
+### Features
+
+* traffic analysis intg update expected body from mystique ([#1257](https://github.com/adobe/spacecat-audit-worker/issues/1257)) ([83fc4a1](https://github.com/adobe/spacecat-audit-worker/commit/83fc4a1e56934b65656d20809cab50bbb2b75e3d))
+
+# [1.179.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.178.2...v1.179.0) (2025-09-12)
+
+
+### Features
+
+* Introduce multilingual support for Readability audits ([#1244](https://github.com/adobe/spacecat-audit-worker/issues/1244)) ([61c8904](https://github.com/adobe/spacecat-audit-worker/commit/61c89043eae19265ee327088422275488f25476f))
+
 ## [1.178.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.178.1...v1.178.2) (2025-09-11)
 
 

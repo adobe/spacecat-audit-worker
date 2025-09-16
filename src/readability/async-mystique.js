@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { READABILITY_GUIDANCE_TYPE, READABILITY_OBSERVATION, TARGET_FLESCH_SCORE } from './constants.js';
+import { READABILITY_GUIDANCE_TYPE, READABILITY_OBSERVATION, TARGET_READABILITY_SCORE } from './constants.js';
 
 /**
  * Asynchronous Mystique integration for readability audit
@@ -95,7 +95,7 @@ export async function sendReadabilityToMystique(
         data: {
           jobId, // Use jobId instead of opportunityId for preflight audit
           original_paragraph: issue.textContent,
-          target_flesch_score: TARGET_FLESCH_SCORE,
+          target_flesch_score: TARGET_READABILITY_SCORE,
           current_flesch_score: issue.fleschReadingEase,
           pageUrl: issue.pageUrl,
           selector: issue.selector,
