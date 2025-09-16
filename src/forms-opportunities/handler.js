@@ -66,8 +66,8 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
 
   // check audit size as per dynamo
   const { safe, sizeKB } = checkDynamoItem(formVitals);
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] estimated audit item size: ${sizeKB.toFixed(2)} KB`);
   if (!safe) {
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] estimated audit item size: ${sizeKB.toFixed(2)} KB`);
     log.info(`[Form Opportunity] [Site Id: ${site.getId()}] audit item not safe for dynamo, trimming audit data`);
     // Group entries by formsource and calculate main pageview
     const formsourceGroups = {};
@@ -84,10 +84,13 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     // Helper to get top/bottom N including ties
     function getTopBottomWithTies(pages, n = 2) {
       const sorted = [...pages].sort((a, b) => b.totalPageview - a.totalPageview);
-      const cutoffTop = sorted[Math.min(n - 1, sorted.length - 1)].totalPageview;
-      const cutoffBottom = sorted[Math.max(sorted.length - n, 0)].totalPageview;
+      // const cutoffTop = sorted[Math.min(n - 1, sorted.length - 1)].totalPageview;
+      // const cutoffBottom = sorted[Math.max(sorted.length - n, 0)].totalPageview;
       // eslint-disable-next-line max-len
-      return sorted.filter((p) => p.totalPageview >= cutoffTop || p.totalPageview <= cutoffBottom).map((p) => p.entry);
+      // return sorted.filter((p) => p.totalPageview >= cutoffTop || p.totalPageview <= cutoffBottom).map((p) => p.entry);
+      return sorted.length < 2 * n
+        ? sorted.map((p) => p.entry)
+        : [...sorted.slice(0, n), ...sorted.slice(-n)].map((p) => p.entry);
     }
 
     // Collect all entries to keep
