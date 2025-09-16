@@ -1,3 +1,10 @@
+## [1.180.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.9...v1.180.10) (2025-09-16)
+
+
+### Bug Fixes
+
+* downgrade jsdom ([#1270](https://github.com/adobe/spacecat-audit-worker/issues/1270)) ([c066fd8](https://github.com/adobe/spacecat-audit-worker/commit/c066fd82bd9fc3f38b1e6fd0b859400a63f5e294))
+
 ## [1.180.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.8...v1.180.9) (2025-09-16)
 
 
