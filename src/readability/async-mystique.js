@@ -10,8 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { DATA_SOURCES } from '../common/constants.js';
-import { READABILITY_GUIDANCE_TYPE, READABILITY_OBSERVATION, TARGET_FLESCH_SCORE } from './constants.js';
+import { READABILITY_GUIDANCE_TYPE, READABILITY_OBSERVATION, TARGET_READABILITY_SCORE } from './constants.js';
 
 /**
  * Asynchronous Mystique integration for readability audit
@@ -44,86 +43,44 @@ export async function sendReadabilityToMystique(
   } = context;
 
   if (!sqs || !env || !env.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    log.error('[readability-async] Missing required context - sqs or queue configuration');
+    log.error('[readability-suggest async] Missing required context - sqs or queue configuration');
     throw new Error('Missing SQS context or queue configuration');
   }
 
-  log.info(`[readability-async] Sending ${readabilityIssues.length} readability issues to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+  log.info(`[readability-suggest async] Sending ${readabilityIssues.length} readability issues to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
 
   try {
     const site = await dataAccess.Site.findById(siteId);
+    const { AsyncJob: AsyncJobEntity } = dataAccess;
 
-    // Create or update opportunity to track Mystique responses (like alt-text does)
-    const { Opportunity } = dataAccess;
+    // Store original order mapping in job metadata to preserve identify-step order
+    // This is how preflight audits handle async processing data
+    const originalOrderMapping = readabilityIssues.map((issue, index) => ({
+      textContent: issue.textContent,
+      originalIndex: index,
+    }));
 
-    // Check if opportunity already exists
-    // Note: auditId & jobId refer to the same entity
-    // opportunities are linked to jobs via auditId
-    const existingOpportunities = await Opportunity.allBySiteId(siteId);
-    let opportunity = existingOpportunities.find(
-      (oppty) => oppty.getAuditId() === jobId && oppty.getData()?.subType === 'readability',
-    );
+    // Update job with readability metadata for async processing
+    const jobEntity = await AsyncJobEntity.findById(jobId);
+    const currentPayload = jobEntity.getMetadata()?.payload || {};
+    const readabilityMetadata = {
+      mystiqueResponsesReceived: 0,
+      mystiqueResponsesExpected: readabilityIssues.length,
+      totalReadabilityIssues: readabilityIssues.length,
+      lastMystiqueRequest: new Date().toISOString(),
+      originalOrderMapping, // Store original order for reconstruction
+    };
 
-    if (opportunity) {
-      // Update existing opportunity
-      const existingData = opportunity.getData() || {};
-
-      // Store original order mapping to preserve identify-step order
-      const originalOrderMapping = readabilityIssues.map((issue, index) => ({
-        textContent: issue.textContent,
-        originalIndex: index,
-      }));
-
-      const updatedData = {
-        ...existingData,
-        mystiqueResponsesReceived: 0, // Reset for new batch
-        mystiqueResponsesExpected: readabilityIssues.length,
-        totalReadabilityIssues: readabilityIssues.length,
-        processedSuggestionIds: existingData.processedSuggestionIds || [],
-        lastMystiqueRequest: new Date().toISOString(),
-        originalOrderMapping, // Store original order for reconstruction
-      };
-      opportunity.setData(updatedData);
-      await opportunity.save();
-      log.info(`[readability-async] Updated existing opportunity with ID: ${opportunity.getId()}`);
-    } else {
-      // Create new opportunity
-      // Store original order mapping to preserve identify-step order
-      const originalOrderMapping = readabilityIssues.map((issue, index) => ({
-        textContent: issue.textContent,
-        originalIndex: index,
-      }));
-
-      const opportunityData = {
-        siteId,
-        auditId: jobId, // auditId is set to jobId to link this opportunity to the current job
-        type: 'generic-opportunity',
-        origin: 'AUTOMATION',
-        title: 'Readability Improvement Suggestions',
-        description: 'AI-generated suggestions to improve content readability using advanced text analysis',
-        status: 'NEW',
-        runbook: auditUrl,
-        tags: ['Readability', 'Content', 'SEO'],
-        data: {
-          subType: 'readability',
-          mystiqueResponsesReceived: 0,
-          mystiqueResponsesExpected: readabilityIssues.length,
-          totalReadabilityIssues: readabilityIssues.length,
-          processedSuggestionIds: [],
-          dataSources: [DATA_SOURCES.SITE, DATA_SOURCES.PAGE],
-          lastMystiqueRequest: new Date().toISOString(),
-          originalOrderMapping, // Store original order for reconstruction
-        },
-      };
-
-      try {
-        opportunity = await Opportunity.create(opportunityData);
-        log.info(`[readability-async] Created opportunity with ID: ${opportunity.getId()}`);
-      } catch (createError) {
-        log.error(`[readability-async] Failed to create opportunity: ${createError.message}`);
-        throw createError;
-      }
-    }
+    // Store readability metadata in job payload
+    jobEntity.setMetadata({
+      ...jobEntity.getMetadata(),
+      payload: {
+        ...currentPayload,
+        readabilityMetadata,
+      },
+    });
+    await jobEntity.save();
+    log.info(`[readability-suggest async] Stored readability metadata in job ${jobId}`);
 
     // Send each readability issue as a separate message to Mystique
     const messagePromises = readabilityIssues.map((issue, index) => {
@@ -136,9 +93,9 @@ export async function sendReadabilityToMystique(
         url: auditUrl,
         observation: READABILITY_OBSERVATION,
         data: {
-          opportunityId: opportunity.getId(),
+          jobId, // Use jobId instead of opportunityId for preflight audit
           original_paragraph: issue.textContent,
-          target_flesch_score: TARGET_FLESCH_SCORE,
+          target_flesch_score: TARGET_READABILITY_SCORE,
           current_flesch_score: issue.fleschReadingEase,
           pageUrl: issue.pageUrl,
           selector: issue.selector,
@@ -148,7 +105,7 @@ export async function sendReadabilityToMystique(
 
       return sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage)
         .then(() => {
-          log.debug(`[readability-async] Sent message ${index + 1}/${readabilityIssues.length} to Mystique`, {
+          log.debug(`[readability-suggest async] Sent message ${index + 1}/${readabilityIssues.length} to Mystique`, {
             pageUrl: issue.pageUrl,
             textLength: issue.textContent.length,
             fleschScore: issue.fleschReadingEase,
@@ -156,7 +113,7 @@ export async function sendReadabilityToMystique(
           return { success: true, index, pageUrl: issue.pageUrl };
         })
         .catch((sqsError) => {
-          log.error(`[readability-async] Failed to send SQS message ${index + 1}:`, {
+          log.error(`[readability-suggest async] Failed to send SQS message ${index + 1}:`, {
             error: sqsError.message,
             queueUrl: env.QUEUE_SPACECAT_TO_MYSTIQUE,
             pageUrl: issue.pageUrl,
@@ -173,13 +130,13 @@ export async function sendReadabilityToMystique(
     const failedMessages = results.filter((result) => !result.success);
 
     if (failedMessages.length > 0) {
-      log.error(`[readability-async] ${failedMessages.length} messages failed to send to Mystique`);
+      log.error(`[readability-suggest async] ${failedMessages.length} messages failed to send to Mystique`);
       throw new Error(`Failed to send ${failedMessages.length} out of ${readabilityIssues.length} messages to Mystique`);
     }
 
-    log.info(`[readability-async] Successfully sent ${successfulMessages.length} messages to Mystique for processing`);
+    log.info(`[readability-suggest async] Successfully sent ${successfulMessages.length} messages to Mystique for processing`);
   } catch (error) {
-    log.error(`[readability-async] Failed to send readability issues to Mystique: ${error.message}`);
+    log.error(`[readability-suggest async] Failed to send readability issues to Mystique: ${error.message}`);
     throw error;
   }
 }

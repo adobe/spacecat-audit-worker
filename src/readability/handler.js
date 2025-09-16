@@ -16,6 +16,16 @@ import { franc } from 'franc-min';
 import { saveIntermediateResults } from '../preflight/utils.js';
 
 import { sendReadabilityToMystique } from './async-mystique.js';
+import {
+  calculateReadabilityScore,
+  isSupportedLanguage,
+  getLanguageName,
+} from './multilingual-readability.js';
+import {
+  TARGET_READABILITY_SCORE,
+  MIN_TEXT_LENGTH,
+  MAX_CHARACTERS_DISPLAY,
+} from './constants.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 
@@ -31,19 +41,17 @@ async function checkForExistingSuggestions(
   context,
 ) {
   const { log, dataAccess } = context;
-  const { Opportunity } = dataAccess;
+  const { AsyncJob: AsyncJobEntity } = dataAccess;
 
   try {
-    // Find existing readability opportunity for this site/job
-    // Note: auditId and jobId refer to the same entity
-    // opportunities are linked to jobs via auditId
-    const existingOpportunities = await Opportunity.allBySiteId(siteId);
-    const readabilityOpportunity = existingOpportunities.find(
-      (oppty) => oppty.getAuditId() === jobId && oppty.getData()?.subType === 'readability',
-    );
+    // Check for existing readability metadata in job (preflight audit pattern)
+    const jobEntity = await AsyncJobEntity.findById(jobId);
+    const jobMetadata = jobEntity?.getMetadata() || {};
+    const readabilityMetadata = jobMetadata.payload?.readabilityMetadata || {};
+    const suggestions = readabilityMetadata.suggestions || [];
 
-    if (!readabilityOpportunity) {
-      log.debug(`[preflight-audit] readability: No existing opportunity found for jobId: ${jobId}`);
+    if (!readabilityMetadata.originalOrderMapping) {
+      log.debug(`[readability-suggest handler] readability: No existing readability metadata found for jobId: ${jobId}`);
       // Set all to processing status
       for (const pageResult of auditsResult) {
         const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
@@ -62,10 +70,9 @@ async function checkForExistingSuggestions(
       return;
     }
 
-    // Get all suggestions for this opportunity
-    const suggestions = await readabilityOpportunity.getSuggestions();
+    // Get all suggestions from job metadata (preflight audit pattern)
     log.info(
-      `[preflight-audit] readability: Found ${suggestions.length} existing suggestions `
+      `[readability-suggest handler] readability: Found ${suggestions.length} existing suggestions `
       + `for jobId: ${jobId}`,
     );
 
@@ -74,16 +81,14 @@ async function checkForExistingSuggestions(
       const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
       if (audit && audit.opportunities.length > 0) {
         audit.opportunities.forEach((opportunity, index) => {
-          // Find matching suggestion by original text
-          const matchingSuggestion = suggestions.find((suggestion) => {
-            const suggestionData = suggestion.getData();
-            const recommendation = suggestionData.recommendations?.[0];
-            return recommendation?.originalText === opportunity.textContent;
-          });
+          // Find matching suggestion by original text (suggestions stored directly as objects)
+          const matchingSuggestion = suggestions.find(
+            (suggestion) => suggestion?.originalText === opportunity.textContent,
+          );
 
           if (matchingSuggestion) {
-            const suggestionData = matchingSuggestion.getData();
-            const recommendation = suggestionData.recommendations?.[0];
+            // Suggestions are stored directly as objects (not wrapped in .getData())
+            const recommendation = matchingSuggestion;
             const improvedScore = recommendation?.improvedFleschScore;
             const originalScore = recommendation?.originalFleschScore
               || opportunity.fleschReadingEase;
@@ -99,7 +104,7 @@ async function checkForExistingSuggestions(
               readabilityImprovement: Math.round((improvedScore - originalScore) * 100) / 100,
               aiSuggestion: recommendation?.seoRecommendation,
               aiRationale: recommendation?.aiRationale,
-              mystiqueProcessingCompleted: suggestionData.lastMystiqueResponse
+              mystiqueProcessingCompleted: readabilityMetadata.lastMystiqueResponse
                 || new Date().toISOString(),
             };
           } else {
@@ -116,7 +121,7 @@ async function checkForExistingSuggestions(
       }
     }
   } catch (error) {
-    log.error(`[preflight-audit] readability: Error checking for existing suggestions: ${error.message}`);
+    log.error(`[readability-suggest handler] readability: Error checking for existing suggestions: ${error.message}`);
     // Set all to processing status as fallback
     for (const pageResult of auditsResult) {
       const audit = pageResult.audits.find((a) => a.name === PREFLIGHT_READABILITY);
@@ -133,15 +138,6 @@ async function checkForExistingSuggestions(
     }
   }
 }
-
-// Target Flesch Reading Ease score - scores below this will be flagged as poor readability
-const TARGET_READABILITY_SCORE = 30;
-
-// Minimum character length for text chunks to be considered for readability analysis
-const MIN_TEXT_LENGTH = 100;
-
-// Maximum characters to display in the audit report
-const MAX_CHARACTERS_DISPLAY = 200;
 
 export default async function readability(context, auditContext) {
   const {
@@ -169,13 +165,13 @@ export default async function readability(context, auditContext) {
     });
 
     // Process each scraped page
-    scrapedObjects.forEach(({ data }) => {
+    for (const { data } of scrapedObjects) {
       const { finalUrl, scrapeResult: { rawBody } } = data;
       const normalizedFinalUrl = new URL(finalUrl).origin + new URL(finalUrl).pathname.replace(/\/$/, '');
       const pageResult = audits.get(normalizedFinalUrl);
 
       if (!pageResult) {
-        log.warn(`[preflight-audit] readability: No page result found for ${normalizedFinalUrl}`);
+        log.warn(`[readability-suggest handler] readability: No page result found for ${normalizedFinalUrl}`);
         return;
       }
 
@@ -188,22 +184,36 @@ export default async function readability(context, auditContext) {
 
       let processedElements = 0;
       let poorReadabilityCount = 0;
+      const detectedLanguages = new Set(); // Track languages actually detected
 
-      // Helper function to detect if text is in English
-      const isEnglishContent = (text) => {
-        const detectedLanguage = franc(text);
-        return detectedLanguage === 'eng';
+      // Helper function to detect if text is in a supported language
+      const getSupportedLanguage = (text) => {
+        const detectedLanguageCode = franc(text);
+        if (isSupportedLanguage(detectedLanguageCode)) {
+          return getLanguageName(detectedLanguageCode);
+        }
+        return null; // Unsupported language
       };
 
       // Helper function to calculate readability score and create audit opportunity
-      const analyzeReadability = (text, element, elementIndex) => {
+      const analyzeReadability = async (text, element, elementIndex) => {
         try {
-          // Check if text is in English before analyzing readability
-          if (!isEnglishContent(text)) {
-            return; // Skip non-English content
+          // Check if text is in a supported language before analyzing readability
+          const detectedLanguage = getSupportedLanguage(text);
+          if (!detectedLanguage) {
+            return; // Skip unsupported languages
           }
 
-          const readabilityScore = rs.fleschReadingEase(text.trim());
+          // Track detected language
+          detectedLanguages.add(detectedLanguage);
+
+          // Use text-readability library for English, custom function for other languages
+          let readabilityScore;
+          if (detectedLanguage === 'english') {
+            readabilityScore = rs.fleschReadingEase(text.trim());
+          } else {
+            readabilityScore = await calculateReadabilityScore(text.trim(), detectedLanguage);
+          }
 
           if (readabilityScore < TARGET_READABILITY_SCORE) {
             poorReadabilityCount += 1;
@@ -220,6 +230,7 @@ export default async function readability(context, auditContext) {
               issue: issueText,
               seoImpact: 'Moderate',
               fleschReadingEase: readabilityScore,
+              language: detectedLanguage,
               seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
               textContent: text, // Store full text for AI processing
             });
@@ -227,31 +238,40 @@ export default async function readability(context, auditContext) {
         } catch (error) {
           const errorContext = `element with index ${elementIndex}`;
           log.error(
-            `[preflight-audit] readability: Error calculating readability for ${errorContext} `
+            `[readability-suggest handler] readability: Error calculating readability for ${errorContext} `
             + `on ${normalizedFinalUrl}: ${error.message}`,
           );
         }
       };
 
-      textElements.forEach((element, index) => {
-        // Check if element has child elements
-        if (element.children.length > 0) {
-          // If it has children, check if they are only inline formatting elements
-          const hasOnlyInlineChildren = Array.from(element.children).every((child) => {
-            const inlineTags = ['strong', 'b', 'em', 'i', 'span', 'a', 'mark', 'small', 'sub', 'sup', 'u', 'code', 'br'];
-            return inlineTags.includes(child.tagName.toLowerCase());
-          });
+      // Collect all readability analysis promises to run in parallel
+      const readabilityPromises = [];
+
+      // Filter and process elements without using continue statements
+      const elementsToProcess = textElements
+        .map((element, index) => ({ element, index }))
+        .filter(({ element }) => {
+          // Check if element has child elements
+          const hasBlockChildren = element.children.length > 0
+            && !Array.from(element.children).every((child) => {
+              const inlineTags = [
+                'strong', 'b', 'em', 'i', 'span', 'a', 'mark',
+                'small', 'sub', 'sup', 'u', 'code', 'br',
+              ];
+              return inlineTags.includes(child.tagName.toLowerCase());
+            });
 
           // Skip if it has block-level children (to avoid duplicate analysis)
-          if (!hasOnlyInlineChildren) {
-            return;
-          }
-        }
+          return !hasBlockChildren;
+        })
+        .filter(({ element }) => {
+          const textContent = element.textContent?.trim();
+          return textContent && textContent.length >= MIN_TEXT_LENGTH;
+        });
 
+      // Process filtered elements
+      elementsToProcess.forEach(({ element, index }) => {
         const textContent = element.textContent?.trim();
-        if (!textContent || textContent.length < MIN_TEXT_LENGTH) {
-          return;
-        }
 
         // Check if the element contains <br> tags (indicating multiple paragraphs)
         if (element.innerHTML.includes('<br')) {
@@ -274,23 +294,32 @@ export default async function readability(context, auditContext) {
             .map((p) => p.trim())
             .filter((p) => p.length >= MIN_TEXT_LENGTH);
 
+          // Add promises for each paragraph
           paragraphs.forEach((paragraph) => {
-            analyzeReadability(paragraph, element, index);
+            readabilityPromises.push(analyzeReadability(paragraph, element, index));
           });
 
           processedElements += paragraphs.length;
         } else {
-          // Analyze as a single text block
+          // Add promise for single text block
+          readabilityPromises.push(analyzeReadability(textContent, element, index));
           processedElements += 1;
-          analyzeReadability(textContent, element, index);
         }
       });
 
+      // Execute all readability analyses in parallel
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.all(readabilityPromises);
+
+      const detectedLanguagesList = detectedLanguages.size > 0
+        ? Array.from(detectedLanguages).join(', ')
+        : 'none detected';
+
       log.info(
-        `[preflight-audit] readability: Processed ${processedElements} text element(s) on `
-        + `${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability`,
+        `[readability-suggest handler] readability: Processed ${processedElements} text element(s) on `
+        + `${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability (detected languages: ${detectedLanguagesList})`,
       );
-    });
+    }
 
     // Process suggestions if this is the suggest step
     if (step === 'suggest') {
@@ -330,7 +359,7 @@ export default async function readability(context, auditContext) {
 
           if (stillProcessing > 0) {
             log.info(
-              `[preflight-audit] readability: Sending ${stillProcessing} readability issues `
+              `[readability-suggest handler] readability: Sending ${stillProcessing} readability issues `
               + 'to Mystique for async processing...',
             );
 
@@ -343,7 +372,7 @@ export default async function readability(context, auditContext) {
               context,
             );
 
-            log.info(`[preflight-audit] readability: Successfully sent ${allReadabilityIssues.length} `
+            log.info(`[readability-suggest handler] readability: Successfully sent ${allReadabilityIssues.length} `
               + 'readability issues to Mystique for processing');
             // Indicate to preflight runner that we are still processing
             isProcessing = true;
@@ -355,11 +384,11 @@ export default async function readability(context, auditContext) {
               }
             });
           } else {
-            log.info(`[preflight-audit] readability: All ${allReadabilityIssues.length} `
+            log.info(`[readability-suggest handler] readability: All ${allReadabilityIssues.length} `
               + 'readability issues already have suggestions');
           }
         } catch (error) {
-          log.error('[preflight-audit] readability: Error sending issues to Mystique:', {
+          log.error('[readability-suggest handler] readability: Error sending issues to Mystique:', {
             error: error.message,
             stack: error.stack,
             siteId: site.getId(),
@@ -393,7 +422,7 @@ export default async function readability(context, auditContext) {
           }
         }
       } else {
-        log.info('[preflight-audit] readability: No readability issues found to send to Mystique');
+        log.info('[readability-suggest handler] readability: No readability issues found to send to Mystique');
       }
     }
 
@@ -402,7 +431,7 @@ export default async function readability(context, auditContext) {
     const readabilityElapsed = ((readabilityEndTime - readabilityStartTime) / 1000).toFixed(2);
     const auditStepName = step === 'suggest' ? 'readability-suggestions' : 'readability';
     log.info(
-      `[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. `
+      `[readability-suggest handler] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. `
       + `Readability audit completed in ${readabilityElapsed} seconds`,
     );
 
@@ -417,5 +446,6 @@ export default async function readability(context, auditContext) {
   }
 
   // Always return a value to satisfy consistent-return
+  // eslint-disable-next-line consistent-return
   return { processing: isProcessing };
 }

@@ -23,10 +23,12 @@ import {
   consolidateErrorsByUrl,
   sortErrorsByTrafficVolume,
   categorizeErrorsByStatusCode,
-  toPathOnly,
+  downloadExistingCdnSheet,
+  matchErrorsWithCdnData,
+  SPREADSHEET_COLUMNS,
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
+import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
 
 async function runLlmErrorPagesAudit(url, context, site) {
   const {
@@ -83,19 +85,44 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
     const writeCategoryExcel = async (code, errors) => {
       if (!errors || errors.length === 0) return;
-      const consolidated = consolidateErrorsByUrl(errors);
-      const sorted = sortErrorsByTrafficVolume(consolidated);
+
+      const existingCdnData = await downloadExistingCdnSheet(
+        periodIdentifier,
+        outputLocation,
+        sharepointClient,
+        log,
+        readFromSharePoint,
+        ExcelJS,
+      );
+
+      if (!existingCdnData || existingCdnData.length === 0) {
+        log.warn(`No existing CDN data found for ${periodIdentifier}, skipping ${code} error report`);
+        return;
+      }
+
+      log.info(`Found existing CDN data with ${existingCdnData.length} rows, enriching error data`);
+      const enrichedErrors = matchErrorsWithCdnData(errors, existingCdnData, baseUrl);
+
+      const sorted = enrichedErrors.sort((a, b) => b.number_of_hits - a.number_of_hits);
 
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('data');
-      sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+
+      sheet.addRow(SPREADSHEET_COLUMNS);
+
       sorted.forEach((e) => {
         sheet.addRow([
-          e.userAgent,
-          toPathOnly(e.url, baseUrl),
-          '',
-          '',
-          '',
+          e.agent_type,
+          e.user_agent_display,
+          e.number_of_hits,
+          e.avg_ttfb_ms,
+          e.country_code,
+          e.url,
+          e.product,
+          e.category,
+          '', // Suggested URLs
+          '', // AI Rationale
+          '', // Confidence score
         ]);
       });
 
@@ -112,7 +139,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
     // Generate and upload Excel files for each category
     await Promise.all([
-      writeCategoryExcel('404', categorizedResults[404]),
+      writeCategoryExcel('404', categorizedResults[404]?.slice(0, 50)),
       writeCategoryExcel('403', categorizedResults[403]),
       writeCategoryExcel('5xx', categorizedResults['5xx']),
     ]);
@@ -194,7 +221,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
     const messageBaseUrl = site.getBaseURL?.() || '';
     const consolidated404 = consolidateErrorsByUrl(errors404);
-    const sorted404 = sortErrorsByTrafficVolume(consolidated404);
+    const sorted404 = sortErrorsByTrafficVolume(consolidated404).slice(0, 50);
     const { SiteTopPage } = dataAccess;
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
 
