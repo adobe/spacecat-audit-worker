@@ -54,9 +54,10 @@ describe('Prerender Audit', () => {
 
       expect(result).to.be.an('object');
       expect(result.needsPrerender).to.be.a('boolean');
-      expect(result.stats).to.be.an('object');
-      expect(result.stats.contentGainRatio).to.be.a('number');
-      expect(result.recommendation).to.be.a('string');
+      expect(result.contentGainRatio).to.be.a('number');
+      expect(result.wordDiff).to.be.a('number');
+      expect(result.wordCountBefore).to.be.a('number');
+      expect(result.wordCountAfter).to.be.a('number');
     });
 
     it('should not recommend prerender for similar content', () => {
@@ -66,7 +67,7 @@ describe('Prerender Audit', () => {
       const result = analyzeHtmlForPrerender(directHtml, scrapedHtml, 1.2);
 
       expect(result.needsPrerender).to.be.false;
-      expect(result.stats.contentGainRatio).to.be.at.most(1.2);
+      expect(result.contentGainRatio).to.be.at.most(1.2);
     });
 
     it('should handle missing HTML gracefully', () => {
@@ -121,6 +122,99 @@ describe('Prerender Audit', () => {
         expect(result.urls).to.be.an('array');
         expect(result.siteId).to.equal('test-site-id');
         expect(result.type).to.equal(Audit.AUDIT_TYPES.PRERENDER);
+      });
+
+      it('should fallback to base URL when no URLs found', async () => {
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+            getConfig: () => ({ getIncludedURLs: () => [] }),
+          },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: { info: sandbox.stub() },
+        };
+
+        const result = await submitForScraping(context);
+
+        expect(result).to.deep.equal({
+          urls: [{ url: 'https://example.com' }],
+          siteId: 'test-site-id',
+          type: Audit.AUDIT_TYPES.PRERENDER,
+        });
+      });
+    });
+
+    describe('processContentAndGenerateOpportunities', () => {
+      it('should process URLs and generate opportunities when prerender is needed', async () => {
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1' },
+          ]),
+        };
+
+        const mockS3Client = {
+          getObject: sandbox.stub().resolves({
+            Body: {
+              transformToString: () => JSON.stringify({
+                scrapeResult: {
+                  rawBody: '<html><body>Scraped content</body></html>',
+                },
+              }),
+            },
+          }),
+        };
+
+        const mockFetch = sandbox.stub().resolves({
+          ok: true,
+          headers: { get: () => 'text/html' },
+          text: () => '<html><body>Direct content</body></html>',
+        });
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: { info: sandbox.stub(), error: sandbox.stub() },
+          s3Client: mockS3Client,
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          scrapeResultPaths: new Map(),
+        };
+
+        // Mock the fetch function
+        global.fetch = mockFetch;
+
+        const result = await processContentAndGenerateOpportunities(context);
+
+        expect(result).to.be.an('object');
+        expect(result.status).to.equal('complete');
+        expect(result.auditResult).to.be.an('object');
+        expect(result.auditResult.results).to.be.an('array');
+      });
+
+      it('should handle errors gracefully', async () => {
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().rejects(new Error('Database error')) } },
+          log: { info: sandbox.stub(), error: sandbox.stub() },
+        };
+
+        const result = await processContentAndGenerateOpportunities(context);
+
+        expect(result).to.be.an('object');
+        expect(result.status).to.equal('ERROR');
+        expect(result.error).to.be.a('string');
       });
     });
   });
