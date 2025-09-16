@@ -29,6 +29,11 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const PREFLIGHT_STEP_IDENTIFY = 'identify';
 export const PREFLIGHT_STEP_SUGGEST = 'suggest';
 
+/**
+ * List of available checks.
+ * Should not be changed as it would break existing clients.
+ * @type {string}
+ */
 export const AUDIT_BODY_SIZE = 'body-size';
 export const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
 export const AUDIT_H1_COUNT = 'h1-count';
