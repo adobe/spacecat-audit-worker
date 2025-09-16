@@ -222,7 +222,8 @@ export async function submitForScraping(context) {
   }
 
   return {
-    urls: finalUrls.map((url) => ({ url })),
+    // urls: finalUrls.map((url) => ({ url })),
+    urls: [{ url: 'https://www.adobe.com/products/premiere.html' }], // limit to 1 for testing
     siteId,
     type: AUDIT_TYPE,
   };
