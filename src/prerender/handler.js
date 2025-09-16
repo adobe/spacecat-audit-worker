@@ -243,21 +243,15 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     return;
   }
 
-  const urlsNeedingPrerender = auditData.auditResult.results
+  const preRenderSuggestions = auditData.auditResult.results
     .filter((result) => result.needsPrerender);
 
-  if (urlsNeedingPrerender.length === 0) {
+  if (preRenderSuggestions.length === 0) {
     log.info('No URLs needing prerender found, skipping opportunity creation');
     return;
   }
 
-  // Generate suggestions with essential analysis data
-  const suggestions = urlsNeedingPrerender.map((result) => ({
-    url: result.url,
-    ...result,
-  }));
-
-  log.info(`Generated ${suggestions.length} prerender suggestions for ${auditUrl}`);
+  log.info(`Generated ${preRenderSuggestions.length} prerender suggestions for ${auditUrl}`);
 
   // Create opportunity
   const opportunity = await convertToOpportunity(
@@ -273,7 +267,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
 
   await syncSuggestions({
     opportunity,
-    newData: suggestions,
+    newData: preRenderSuggestions,
     context,
     buildKey,
     mapNewSuggestion: (suggestion) => ({
