@@ -1,3 +1,10 @@
+## [1.180.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.10...v1.180.11) (2025-09-16)
+
+
+### Bug Fixes
+
+* updating response handling from mystique to spacecat ([#1266](https://github.com/adobe/spacecat-audit-worker/issues/1266)) ([b771333](https://github.com/adobe/spacecat-audit-worker/commit/b7713339fce92cb7b1219a462367fc34b6b5199a))
+
 ## [1.180.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.9...v1.180.10) (2025-09-16)
 
 
