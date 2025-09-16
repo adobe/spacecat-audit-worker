@@ -1,3 +1,10 @@
+# [1.181.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.12...v1.181.0) (2025-09-16)
+
+
+### Features
+
+* add support for cloudfront logs ([#1241](https://github.com/adobe/spacecat-audit-worker/issues/1241)) ([6a9e52b](https://github.com/adobe/spacecat-audit-worker/commit/6a9e52b64a28cf42eaa6b7d09244fc10e1638a87))
+
 ## [1.180.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.11...v1.180.12) (2025-09-16)
 
 
