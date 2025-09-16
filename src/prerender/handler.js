@@ -222,8 +222,7 @@ export async function submitForScraping(context) {
   }
 
   return {
-    // urls: finalUrls.map((url) => ({ url })),
-    urls: [{ url: 'https://www.adobe.com/products/premiere.html' }], // limit to 1 for testing
+    urls: finalUrls.map((url) => ({ url })),
     siteId,
     type: AUDIT_TYPE,
   };
@@ -288,7 +287,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
  */
 export async function processContentAndGenerateOpportunities(context) {
   const {
-    site, audit, log, dataAccess,
+    site, audit, log, dataAccess, scrapeResultPaths,
   } = context;
 
   const siteId = site.getId();
@@ -301,10 +300,10 @@ export async function processContentAndGenerateOpportunities(context) {
     let urlsToCheck = [];
 
     // Try to get URLs from the audit context first
-    if (context.scrapeResultPaths?.size > 0) {
+    if (scrapeResultPaths?.size > 0) {
       // Extract URLs from scrape result paths
       urlsToCheck = Array.from(context.scrapeResultPaths.keys());
-      log.info(`Found ${urlsToCheck.length} URLs from scrape results`);
+      log.info(`Prerender - Found ${urlsToCheck.length} URLs from scrape results`);
     } else {
       // Fallback: get top pages
       const { SiteTopPage } = dataAccess;
@@ -318,6 +317,9 @@ export async function processContentAndGenerateOpportunities(context) {
       urlsToCheck = [site.getBaseURL()];
       log.info('No URLs found, using base URL for comparison');
     }
+
+    // limit to 1 for testing
+    urlsToCheck = urlsToCheck.slice(0, 1);
 
     // Compare HTML content for each URL
     const comparisonResults = await Promise.all(
