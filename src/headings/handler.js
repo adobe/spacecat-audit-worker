@@ -133,6 +133,33 @@ function getScrapeJsonPath(url, siteId) {
   return `scrapes/${siteId}${pathname}/scrape.json`;
 }
 
+async function getH1HeadingASuggestion(url, log, scrapeJsonObject, context) {
+  log.info(`[Headings AI Suggestions] Getting AI suggestion for empty h1 for ${url}`);
+  const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
+  log.info(`[Headings AI Suggestions] Azure OpenAI client created for ${url}`);
+  const prompt = await getPrompt(
+    {
+      finalUrl: scrapeJsonObject.finalUrl,
+      title: scrapeJsonObject.scrapeResult.tags.title,
+      h1: scrapeJsonObject.scrapeResult.tags.h1,
+      description: scrapeJsonObject.scrapeResult.tags.description,
+      lang: scrapeJsonObject.scrapeResult.tags.lang,
+    },
+    'heading-empty-suggestion',
+    log,
+  );
+  log.info(`[Headings AI Suggestions] Prompt created for ${url} with length: ${prompt.length} chars`);
+  const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
+    responseFormat: 'json_object',
+  });
+  log.info(`[Headings AI Suggestions] AI response received for ${url}`);
+  const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
+  log.info(`[Headings AI Suggestions] AI response content parsed for ${url}`);
+  const { aiSuggestion } = aiResponseContent.h1;
+  log.info(`[Headings AI Suggestions] AI suggestion for empty h1 for ${url}: ${aiSuggestion}`);
+  return aiSuggestion;
+}
+
 /**
  * Validate heading semantics for a single page.
  * - Ensure heading level increases by at most 1 when going deeper (no jumps, e.g., h1 → h3)
@@ -149,6 +176,7 @@ export async function validatePageHeadings(
   allKeys,
   s3Client,
   S3_SCRAPER_BUCKET_NAME,
+  context,
 ) {
   if (!url) {
     log.error('URL is undefined or null, cannot validate headings');
@@ -163,17 +191,23 @@ export async function validatePageHeadings(
     const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
     const s3Key = allKeys.find((key) => key.includes(scrapeJsonPath));
     let document = null;
+    let scrapeJsonObject = null;
     if (!s3Key) {
       log.info(`Scrape JSON path not found for ${url}`);
       document = new JSDOM(await fetch(url).then((response) => response.text())).window;
     } else {
       log.info(`Scrape JSON path found for ${url}`);
-      const scrapeJsonObject = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, s3Key, log);
-      log.info(`Scrape JSON object: ${JSON.stringify(scrapeJsonObject)}`);
-      document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
+      scrapeJsonObject = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, s3Key, log);
+      if (!scrapeJsonObject) {
+        log.info(`Scrape JSON object not found for ${url}`);
+        document = new JSDOM(await fetch(url).then((response) => response.text())).window;
+      } else {
+        log.info(`Scrape JSON object exists for ${url}`);
+        document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
+      }
     }
 
-    log.info(`Document: ${document.documentElement.outerHTML}`);
+    // log.info(`Document: ${document.documentElement.outerHTML}`);
 
     const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
 
@@ -181,15 +215,20 @@ export async function validatePageHeadings(
 
     const h1Elements = headings.filter((h) => h.tagName === 'H1');
 
-    if (h1Elements.length === 0) {
+    if (h1Elements.length === 0
+      || (h1Elements.length === 1 && getTextContent(h1Elements[0]).length === 0)) {
+      log.info(`Missing h1 element detected at ${url}`);
+      const aiSuggestion = scrapeJsonObject
+        ? await getH1HeadingASuggestion(url, log, scrapeJsonObject, context) : null;
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
         suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
+        aiSuggestion,
       });
-      log.info(`Missing h1 element detected at ${url}`);
     } else if (h1Elements.length > 1) {
+      log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
         success: false,
@@ -197,35 +236,47 @@ export async function validatePageHeadings(
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
         count: h1Elements.length,
       });
-      log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
     }
 
     // Check for empty headings and collect text content for duplicate detection
     const headingTexts = new Map();
-    for (const heading of headings) {
-      const text = getTextContent(heading);
-      if (text.length === 0) {
-        checks.push({
-          check: HEADINGS_CHECKS.HEADING_EMPTY.check,
-          success: false,
-          explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
-          suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
-          tagName: heading.tagName,
-        });
-        log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
-      } else {
-        // Track heading text content for duplicate detection
-        const lowerText = text.toLowerCase();
-        if (!headingTexts.has(lowerText)) {
-          headingTexts.set(lowerText, []);
+    const headingChecks = headings.map(async (heading) => {
+      if (heading.tagName !== 'H1') {
+        const text = getTextContent(heading);
+        if (text.length === 0) {
+          log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
+          const aiSuggestion = scrapeJsonObject
+            ? await getH1HeadingASuggestion(url, log, scrapeJsonObject, context)
+            : null;
+          return {
+            check: HEADINGS_CHECKS.HEADING_EMPTY.check,
+            success: false,
+            explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
+            suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
+            tagName: heading.tagName,
+            aiSuggestion,
+          };
+        } else {
+          // For tracking purposes
+          const lowerText = text.toLowerCase();
+          if (!headingTexts.has(lowerText)) {
+            headingTexts.set(lowerText, []);
+          }
+          headingTexts.get(lowerText).push({
+            text,
+            tagName: heading.tagName,
+            element: heading,
+          });
+          return null;
         }
-        headingTexts.get(lowerText).push({
-          text,
-          tagName: heading.tagName,
-          element: heading,
-        });
+      } else {
+        return null;
       }
-    }
+    });
+
+    const headingChecksResults = await Promise.all(headingChecks);
+    // Filter out nulls and add to checks array
+    checks.push(...headingChecksResults.filter(Boolean));
 
     // Check for duplicate heading text content
     // eslint-disable-next-line no-unused-vars
@@ -339,6 +390,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
       allKeys,
       s3Client,
       S3_SCRAPER_BUCKET_NAME,
+      context,
     ));
     const auditResults = await Promise.allSettled(auditPromises);
 
@@ -361,13 +413,19 @@ export async function headingsAuditRunner(baseURL, context, site) {
                 explanation: check.explanation,
                 suggestion: check.suggestion,
                 urls: [],
-                aiSuggestions: [],
               };
             }
 
             // Add URL if not already present
             if (!aggregatedResults[checkType].urls.includes(url)) {
-              aggregatedResults[checkType].urls.push(url);
+              const urlObject = { url };
+              if (check.aiSuggestion) {
+                urlObject.aiSuggestion = check.aiSuggestion;
+              }
+              if (check.tagName) {
+                urlObject.tagName = check.tagName;
+              }
+              aggregatedResults[checkType].urls.push(urlObject);
             }
           }
         });
@@ -425,111 +483,6 @@ export function generateSuggestions(auditUrl, auditData, context) {
 
   log.info(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`);
   return { ...auditData, suggestions };
-}
-
-export async function generateAISuggestions(auditUrl, auditData, context, site) {
-  const { log, s3Client } = context;
-  const { S3_SCRAPER_BUCKET_NAME, AZURE_OPENAI_ENDPOINT } = context.env;
-  const prefix = `scrapes/${site.getId()}/`;
-  if (!s3Client) {
-    log.error('[Headings AI Suggestions] Missing required parameters s3Client, skipping AI suggestions generation');
-    return { ...auditData };
-  }
-  if (!S3_SCRAPER_BUCKET_NAME) {
-    log.error('[Headings AI Suggestions] Missing required parameters S3_SCRAPER_BUCKET_NAME, skipping AI suggestions generation');
-    return { ...auditData };
-  }
-  if (!AZURE_OPENAI_ENDPOINT) {
-    log.error('[Headings AI Suggestions] Missing required parameters AZURE_OPENAI_ENDPOINT, skipping AI suggestions generation');
-    return { ...auditData };
-  }
-  if (!prefix) {
-    log.error('[Headings AI Suggestions] Missing required parameters prefix, skipping AI suggestions generation');
-    return { ...auditData };
-  }
-  const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
-  log.info(`[Headings AI Suggestions] All keys: ${allKeys}`);
-  log.info(`[Headings AI Suggestions] Starting AI suggestions generation for audit: ${auditUrl}`);
-  log.info(`[Headings AI Suggestions] Site ID: ${site.getId()}, Base URL: ${site.getBaseURL()}`);
-  log.info(`[Headings AI Suggestions] Audit data: ${JSON.stringify(auditData)}`);
-  const updatedAuditData = { ...auditData };
-  updatedAuditData.auditResult = { ...auditData.auditResult };
-  const tasks = [];
-
-  for (const [checkType, checkResult] of Object.entries(auditData.auditResult)) {
-    if (checkResult.success === false && Array.isArray(checkResult.urls)) {
-      for (const url of checkResult.urls) {
-        if (checkType === HEADINGS_CHECKS.HEADING_EMPTY.check
-          || checkType === HEADINGS_CHECKS.HEADING_MISSING_H1.check) {
-          tasks.push(
-            (async () => {
-              log.info(`[Headings AI Suggestions] Generating AI suggestions for ${url} with check type: ${checkType}`);
-              const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
-
-              if (allKeys.includes(scrapeJsonPath)) {
-                log.info(`[Headings AI Suggestions] Scrape JSON path: ${scrapeJsonPath} found in allKeys`);
-
-                try {
-                  const scrapeJsonObject = await getObjectFromKey(
-                    s3Client,
-                    S3_SCRAPER_BUCKET_NAME,
-                    scrapeJsonPath,
-                    log,
-                  );
-
-                  log.info(`[Headings AI Suggestions] Scrape JSON object received for ${scrapeJsonObject.finalUrl}`);
-                  log.info(`[Headings AI Suggestions] Scrape JSON object: ${JSON.stringify(scrapeJsonObject.scrapeResult.tags)}`);
-
-                  const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
-                  const prompt = await getPrompt(
-                    {
-                      finalUrl: scrapeJsonObject.finalUrl,
-                      title: scrapeJsonObject.scrapeResult.tags.title,
-                      h1: scrapeJsonObject.scrapeResult.tags.h1,
-                      description: scrapeJsonObject.scrapeResult.tags.description,
-                      lang: scrapeJsonObject.scrapeResult.tags.lang,
-                    },
-                    'heading-empty-suggestion',
-                    log,
-                  );
-                  log.info(`[Headings AI Suggestions] Prompt: ${prompt}`);
-
-                  const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
-                    responseFormat: 'json_object',
-                  });
-
-                  const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
-                  const { aiSuggestion } = aiResponseContent.h1;
-
-                  log.info(`[Headings AI Suggestions] AI suggestion for empty h1 for ${url}: ${aiSuggestion}`);
-
-                  if (!updatedAuditData.auditResult[checkType].aiSuggestions) {
-                    updatedAuditData.auditResult[checkType].aiSuggestions = [];
-                  }
-
-                  updatedAuditData.auditResult[checkType].aiSuggestions.push({
-                    url,
-                    aiSuggestion,
-                  });
-                } catch (error) {
-                  log.error(`[Headings AI Suggestions] Error processing ${url}: ${error.message}`);
-                }
-              } else {
-                log.info(`[Headings AI Suggestions] Scrape JSON path: ${scrapeJsonPath} not found in allKeys`);
-              }
-            })(),
-          );
-        }
-      }
-    }
-  }
-
-  await Promise.all(tasks);
-  // log.info(`[Headings AI Suggestions] Context: ${JSON.stringify(context)}`);
-  // log.info(`[Headings AI Suggestions] Site: ${JSON.stringify(site)}`);
-  // log.info('[Headings AI Suggestions] Ending AI suggestions generation');
-  log.info(`[Headings AI Suggestions] completed Audit data: ${JSON.stringify(updatedAuditData)}`);
-  return { ...updatedAuditData };
 }
 
 function generateRecommendedAction(checkType) {
@@ -592,5 +545,5 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(headingsAuditRunner)
-  .withPostProcessors([generateSuggestions, generateAISuggestions, opportunityAndSuggestions])
+  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();
