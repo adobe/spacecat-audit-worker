@@ -13,6 +13,7 @@
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { defaultUrlResolver } from '../common/index.js';
 
 /**
  * Extracts data from HTML meta tags
@@ -61,18 +62,23 @@ function extractFromMetaTags(html) {
 
 /**
  * Main audit runner function
- * @param {string} baseURL - The URL to audit
+ * @param {string} baseURL - The URL to audit (from URL resolver)
  * @param {Object} context - The context object containing log, dataAccess, etc.
+ * @param {Object} site - The site object (optional)
+ * @param {Object} auditContext - Additional audit context (optional)
  * @returns {Object} - { auditResult, fullAuditRef }
  */
-export async function productMetatagsAuditRunner(baseURL, context) {
+export async function productMetatagsAuditRunner(baseURL, context, site, auditContext = {}) {
   const { log } = context;
 
-  log.info(`Starting product-metatags audit for ${baseURL}`);
+  // Use finalUrl from auditContext if provided, otherwise use baseURL
+  const targetUrl = auditContext.finalUrl || baseURL;
+
+  log.info(`Starting product-metatags audit for ${targetUrl}`);
 
   try {
     // Fetch the page content
-    const response = await fetch(baseURL, {
+    const response = await fetch(targetUrl, {
       method: 'GET',
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; SpaceCat-Audit-Worker/1.0)',
@@ -80,7 +86,7 @@ export async function productMetatagsAuditRunner(baseURL, context) {
     });
 
     if (!response.ok) {
-      log.warn(`Failed to fetch ${baseURL}: ${response.status} ${response.statusText}`);
+      log.warn(`Failed to fetch ${targetUrl}: ${response.status} ${response.statusText}`);
       return {
         auditResult: {
           success: true,
@@ -89,12 +95,12 @@ export async function productMetatagsAuditRunner(baseURL, context) {
           extractionMethod: null,
           error: `HTTP ${response.status}: ${response.statusText}`,
         },
-        fullAuditRef: baseURL,
+        fullAuditRef: targetUrl,
       };
     }
 
     const html = await response.text();
-    log.info(`Successfully fetched content from ${baseURL} (${html.length} characters)`);
+    log.info(`Successfully fetched content from ${targetUrl} (${html.length} characters)`);
 
     // Extract data from meta tags
     const metaTagsResult = extractFromMetaTags(html);
@@ -126,5 +132,6 @@ export async function productMetatagsAuditRunner(baseURL, context) {
 }
 
 export default new AuditBuilder()
+  .withUrlResolver(defaultUrlResolver)
   .withRunner(productMetatagsAuditRunner)
   .build();
