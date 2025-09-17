@@ -113,13 +113,17 @@ describe('Prerender Audit', () => {
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: { info: sandbox.stub() },
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
+          },
         };
 
         const result = await submitForScraping(context);
 
         expect(result).to.be.an('object');
         expect(result.urls).to.be.an('array');
-        expect(result.siteId).to.equal('test-site-id');
+        expect(result.jobId).to.equal('test-site-id');
         expect(result.processingType).to.equal('prerender');
         expect(result.auditResult).to.be.an('object');
         expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
@@ -139,6 +143,10 @@ describe('Prerender Audit', () => {
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: { info: sandbox.stub() },
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
+          },
         };
 
         const result = await submitForScraping(context);
@@ -150,7 +158,23 @@ describe('Prerender Audit', () => {
             status: 'SCRAPING_REQUESTED',
           },
           fullAuditRef: 'https://example.com',
+          processingType: 'prerender',
           jobId: 'test-site-id',
+          s3BucketName: 'test-bucket',
+          completionQueueUrl: 'https://sqs.test.com/test-queue',
+          skipMessage: false,
+          skipStorage: false,
+          allowCache: false,
+          forceRescrape: true,
+          urls: [{
+            url: 'https://example.com',
+            urlId: 'test-site-id-1',
+            status: 'pending',
+            jobMetadata: {
+              urlNumber: 1,
+              totalUrlCount: 1,
+            },
+          }],
           options: {
             enableAuthentication: false,
             enableJavaScript: true,
@@ -160,11 +184,6 @@ describe('Prerender Audit', () => {
             storagePrefix: 'prerender',
             waitForSelector: 'body',
           },
-          processingType: 'prerender',
-          allowCache: false,
-          forceRescrape: true,
-          siteId: 'test-site-id',
-          urls: [{ url: 'https://example.com' }],
         });
       });
     });
