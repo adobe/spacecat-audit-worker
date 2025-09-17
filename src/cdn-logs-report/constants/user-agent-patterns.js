@@ -34,7 +34,7 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
 
   // Google
   { pattern: '%gemini-deep-research%', displayName: 'Gemini-Deep-Research' },
-  { pattern: 'google', displayName: 'Google' },
+  { pattern: 'google', displayName: 'Google-ai-mode' },
 
   // Other providers TODO: add these if needed
   // { pattern: '%googlebot%', displayName: 'Googlebot' },
