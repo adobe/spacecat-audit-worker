@@ -1,3 +1,10 @@
+## [1.181.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.181.2...v1.181.3) (2025-09-17)
+
+
+### Bug Fixes
+
+* trimming forms audit for large results ([#1268](https://github.com/adobe/spacecat-audit-worker/issues/1268)) ([0177758](https://github.com/adobe/spacecat-audit-worker/commit/01777581c1ceec1c43e510cc5f93e16a3f547f73))
+
 ## [1.181.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.181.1...v1.181.2) (2025-09-17)
 
 
