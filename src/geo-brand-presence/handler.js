@@ -41,6 +41,10 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   const baseURL = site.getBaseURL();
 
   const { calendarWeek, parquetFiles, success } = auditContext ?? /* c8 ignore next */ {};
+
+  // Get aiPlatform from the audit result
+  const auditResult = audit?.getAuditResult();
+  const aiPlatform = auditResult?.aiPlatform;
   /* c8 ignore start */
   if (success === false) {
     log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
@@ -86,7 +90,10 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       time: new Date().toISOString(),
       week: calendarWeek.week,
       year: calendarWeek.year,
-      data: { url },
+      data: {
+        web_search_provider: aiPlatform,
+        url
+      },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info('GEO BRAND PRESENCE: %s Message sent to Mystique for site id %s (%s):', opptyType, siteId, baseURL, message);
@@ -142,17 +149,29 @@ export async function keywordPromptsImportStep(context) {
     log,
   } = context;
 
+  let endDate;
+  let aiPlatform;
+
   /* c8 ignore start */
-  const endDate = Date.parse(data) ? data : undefined;
+  try {
+    // Try to parse as JSON first
+    const parsedData = JSON.parse(data);
+    endDate = parsedData.endDate ? (Date.parse(parsedData.endDate) ? parsedData.endDate : undefined) : undefined;
+    aiPlatform = parsedData.aiPlatform;
+  } catch (e) {
+    // If JSON parsing fails, treat as a date string (legacy behavior)
+    endDate = Date.parse(data) ? data : undefined;
+  }
   /* c8 ignore stop */
 
-  log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s', finalUrl, endDate);
+  log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
   return {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,
+    aiPlatform,
     siteId: site.getId(),
-    // auditResult can't be empty, so sending empty array
-    auditResult: { keywordQuestions: [] },
+    // auditResult can't be empty, so sending empty array and include aiPlatform
+    auditResult: { keywordQuestions: [], aiPlatform },
     fullAuditRef: finalUrl,
   };
 }
