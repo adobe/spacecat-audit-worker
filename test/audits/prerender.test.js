@@ -13,7 +13,6 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { Audit } from '@adobe/spacecat-shared-data-access';
 import prerenderHandler, {
   importTopPages,
   submitForScraping,
@@ -121,7 +120,10 @@ describe('Prerender Audit', () => {
         expect(result).to.be.an('object');
         expect(result.urls).to.be.an('array');
         expect(result.siteId).to.equal('test-site-id');
-        expect(result.type).to.equal(Audit.AUDIT_TYPES.PRERENDER);
+        expect(result.processingType).to.equal('prerender');
+        expect(result.auditResult).to.be.an('object');
+        expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
+        expect(result.auditResult.scrapedUrls).to.be.an('array');
       });
 
       it('should fallback to base URL when no URLs found', async () => {
@@ -142,9 +144,27 @@ describe('Prerender Audit', () => {
         const result = await submitForScraping(context);
 
         expect(result).to.deep.equal({
-          urls: [{ url: 'https://example.com' }],
+          auditResult: {
+            message: 'Content scraping for prerender audit initiated.',
+            scrapedUrls: ['https://example.com'],
+            status: 'SCRAPING_REQUESTED',
+          },
+          fullAuditRef: 'https://example.com',
+          jobId: 'test-site-id',
+          options: {
+            enableAuthentication: false,
+            enableJavaScript: true,
+            hideConsentBanners: false,
+            pageLoadTimeout: 15000,
+            screenshotTypes: ['fullpage', 'thumbnail'],
+            storagePrefix: 'tokowaka',
+            waitForSelector: 'body',
+          },
+          processingType: 'prerender',
+          allowCache: false,
+          forceRescrape: true,
           siteId: 'test-site-id',
-          type: Audit.AUDIT_TYPES.PRERENDER,
+          urls: ['https://example.com'],
         });
       });
     });
