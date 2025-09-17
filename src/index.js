@@ -132,7 +132,7 @@ const HANDLERS = {
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
-  'accessibility-code-change': accessibilityCodeChangeHandler,
+  'codefix:accessibility': accessibilityCodeChangeHandler,
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'detect:page-types': pageTypeGuidance,

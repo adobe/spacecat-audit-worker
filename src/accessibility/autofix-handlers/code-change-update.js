@@ -121,7 +121,7 @@ async function updateSuggestionsWithCodeChange(suggestions, url, source, ruleId,
  * Expected message format:
  * {
  *   "siteId": "<site-id>",
- *   "type": "accessibility-code-change",
+ *   "type": "codefix:accessibility",
  *   "data": {
  *     "opportunityId": "<uuid>",
  *     "updates": [

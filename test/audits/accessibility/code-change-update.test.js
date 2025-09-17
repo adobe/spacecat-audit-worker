@@ -77,7 +77,7 @@ describe('AccessibilityCodeChangeHandler', () => {
 
   const validMessage = {
     siteId: 'site-123',
-    type: 'accessibility-code-change',
+    type: 'codefix:accessibility',
     data: {
       opportunityId: 'opportunity-123',
       updates: [
@@ -132,7 +132,7 @@ describe('AccessibilityCodeChangeHandler', () => {
         },
       });
 
-      const message = { siteId: 'site-123', type: 'accessibility-code-change' };
+      const message = { siteId: 'site-123', type: 'codefix:accessibility' };
       const result = await handler.default(message, context);
 
       expect(result.status).to.equal(400);
