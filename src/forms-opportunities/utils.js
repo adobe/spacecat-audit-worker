@@ -588,3 +588,16 @@ export function getFormTitle(formDetails, opportunity) {
   const suffix = suffixMap[opportunity.getType()] || '';
   return suffix ? `${formType.trim()} ${suffix}` : formType.trim();
 }
+
+/**
+ * Check if a JSON object is safe for DynamoDB and return its estimated size
+ * @param {Object} item - JSON object to check
+ * @param {number} safetyMargin - Fraction of max size considered safe (default 0.85)
+ * @returns {{safe: boolean, sizeKB: number}} - Safety status and size in KB
+ */
+export function checkDynamoItem(item, safetyMargin = 0.85) {
+  const MAX_ITEM_SIZE_KB = 400;
+  const safeLimitKB = MAX_ITEM_SIZE_KB * safetyMargin;
+  const sizeKB = Buffer.byteLength(JSON.stringify(item), 'utf8') / 1024;
+  return { safe: sizeKB < safeLimitKB, sizeKB };
+}
