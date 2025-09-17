@@ -34,7 +34,7 @@ const CONTENT_INCREASE_THRESHOLD = 1.2; // Content increase ratio threshold
  */
 function getS3Path(url, siteId, fileName) {
   const importPath = new URL(url).pathname.replace(/\/$/, '');
-  return `tokowaka/scrapes/${siteId}${importPath}/${fileName}`;
+  return `${AUDIT_TYPE}/scrapes/${siteId}${importPath}/${fileName}`;
 }
 
 /**
@@ -192,6 +192,9 @@ export async function submitForScraping(context) {
   // Limit to 1 URL for testing (remove this line for production)
   const urlsToScrape = finalUrls.slice(0, 1);
 
+  // Transform URLs to the format expected by content scraper
+  const urlsForScraper = urlsToScrape.map((url) => ({ url }));
+
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
   return {
@@ -202,7 +205,7 @@ export async function submitForScraping(context) {
     },
     fullAuditRef: site.getBaseURL(),
     // Data for the CONTENT_SCRAPER
-    urls: urlsToScrape,
+    urls: urlsForScraper,
     siteId,
     jobId: siteId,
     processingType: 'prerender',
@@ -215,7 +218,7 @@ export async function submitForScraping(context) {
       screenshotTypes: ['fullpage', 'thumbnail'],
       hideConsentBanners: false,
       waitForSelector: 'body',
-      storagePrefix: 'tokowaka',
+      storagePrefix: AUDIT_TYPE,
     },
   };
 }

@@ -157,14 +157,14 @@ describe('Prerender Audit', () => {
             hideConsentBanners: false,
             pageLoadTimeout: 15000,
             screenshotTypes: ['fullpage', 'thumbnail'],
-            storagePrefix: 'tokowaka',
+            storagePrefix: 'prerender',
             waitForSelector: 'body',
           },
           processingType: 'prerender',
           allowCache: false,
           forceRescrape: true,
           siteId: 'test-site-id',
-          urls: ['https://example.com'],
+          urls: [{ url: 'https://example.com' }],
         });
       });
     });
