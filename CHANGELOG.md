@@ -1,3 +1,10 @@
+# [1.182.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.181.3...v1.182.0) (2025-09-17)
+
+
+### Features
+
+* add support for google ai ([#1267](https://github.com/adobe/spacecat-audit-worker/issues/1267)) ([1baba71](https://github.com/adobe/spacecat-audit-worker/commit/1baba71dde3b76c2becb8949acbc6027c6d965a0))
+
 ## [1.181.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.181.2...v1.181.3) (2025-09-17)
 
 
