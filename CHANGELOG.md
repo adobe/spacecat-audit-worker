@@ -1,3 +1,52 @@
+# [1.182.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.181.3...v1.182.0) (2025-09-17)
+
+
+### Features
+
+* add support for google ai ([#1267](https://github.com/adobe/spacecat-audit-worker/issues/1267)) ([1baba71](https://github.com/adobe/spacecat-audit-worker/commit/1baba71dde3b76c2becb8949acbc6027c6d965a0))
+
+## [1.181.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.181.2...v1.181.3) (2025-09-17)
+
+
+### Bug Fixes
+
+* trimming forms audit for large results ([#1268](https://github.com/adobe/spacecat-audit-worker/issues/1268)) ([0177758](https://github.com/adobe/spacecat-audit-worker/commit/01777581c1ceec1c43e510cc5f93e16a3f547f73))
+
+## [1.181.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.181.1...v1.181.2) (2025-09-17)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1276](https://github.com/adobe/spacecat-audit-worker/issues/1276)) ([766f378](https://github.com/adobe/spacecat-audit-worker/commit/766f3780ad3f237b750c04d8d36405e1e0dffdd8))
+
+## [1.181.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.181.0...v1.181.1) (2025-09-16)
+
+
+### Bug Fixes
+
+* revert lorem ipsum check for preflight ([#1275](https://github.com/adobe/spacecat-audit-worker/issues/1275)) ([c8e80fc](https://github.com/adobe/spacecat-audit-worker/commit/c8e80fcc9ee5da6fe48ec32268f08319fb5eb85e))
+
+# [1.181.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.12...v1.181.0) (2025-09-16)
+
+
+### Features
+
+* add support for cloudfront logs ([#1241](https://github.com/adobe/spacecat-audit-worker/issues/1241)) ([6a9e52b](https://github.com/adobe/spacecat-audit-worker/commit/6a9e52b64a28cf42eaa6b7d09244fc10e1638a87))
+
+## [1.180.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.11...v1.180.12) (2025-09-16)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1272](https://github.com/adobe/spacecat-audit-worker/issues/1272)) ([2ba2d67](https://github.com/adobe/spacecat-audit-worker/commit/2ba2d677dd7b41451c2a8f4f6b8b0b9fbec6c3b1))
+
+## [1.180.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.10...v1.180.11) (2025-09-16)
+
+
+### Bug Fixes
+
+* updating response handling from mystique to spacecat ([#1266](https://github.com/adobe/spacecat-audit-worker/issues/1266)) ([b771333](https://github.com/adobe/spacecat-audit-worker/commit/b7713339fce92cb7b1219a462367fc34b6b5199a))
+
 ## [1.180.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.180.9...v1.180.10) (2025-09-16)
 
 
