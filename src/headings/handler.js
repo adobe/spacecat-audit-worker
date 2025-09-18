@@ -11,7 +11,7 @@
  */
 
 import { JSDOM } from 'jsdom';
-import { tracingFetch as fetch, getPrompt } from '@adobe/spacecat-shared-utils';
+import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -134,9 +134,7 @@ function getScrapeJsonPath(url, siteId) {
 }
 
 async function getH1HeadingASuggestion(url, log, scrapeJsonObject, context) {
-  log.info(`[Headings AI Suggestions] Getting AI suggestion for empty h1 for ${url}`);
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
-  log.info(`[Headings AI Suggestions] Azure OpenAI client created for ${url}`);
   const prompt = await getPrompt(
     {
       finalUrl: scrapeJsonObject.finalUrl,
@@ -148,15 +146,13 @@ async function getH1HeadingASuggestion(url, log, scrapeJsonObject, context) {
     'heading-empty-suggestion',
     log,
   );
-  log.info(`[Headings AI Suggestions] Prompt created for ${url} with length: ${prompt.length} chars`);
   const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
     responseFormat: 'json_object',
   });
-  log.info(`[Headings AI Suggestions] AI response received for ${url}`);
+
   const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
-  log.info(`[Headings AI Suggestions] AI response content parsed for ${url}`);
   const { aiSuggestion } = aiResponseContent.h1;
-  log.info(`[Headings AI Suggestions] AI suggestion for empty h1 for ${url}: ${aiSuggestion}`);
+  log.info(`[Headings AI Suggestions] AI suggestion for empty heading for ${url}: ${aiSuggestion}`);
   return aiSuggestion;
 }
 
@@ -187,27 +183,22 @@ export async function validatePageHeadings(
   }
 
   try {
-    log.info(`Checking headings for URL: ${url}`);
     const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
     const s3Key = allKeys.find((key) => key.includes(scrapeJsonPath));
     let document = null;
     let scrapeJsonObject = null;
     if (!s3Key) {
-      log.info(`Scrape JSON path not found for ${url}`);
-      document = new JSDOM(await fetch(url).then((response) => response.text())).window;
+      log.error(`Scrape JSON path not found for ${url}, skipping headings audit`);
+      return null;
     } else {
-      log.info(`Scrape JSON path found for ${url}`);
       scrapeJsonObject = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, s3Key, log);
       if (!scrapeJsonObject) {
-        log.info(`Scrape JSON object not found for ${url}`);
-        document = new JSDOM(await fetch(url).then((response) => response.text())).window;
+        log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
+        return null;
       } else {
-        log.info(`Scrape JSON object exists for ${url}`);
         document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
       }
     }
-
-    // log.info(`Document: ${document.documentElement.outerHTML}`);
 
     const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
 
@@ -224,8 +215,7 @@ export async function validatePageHeadings(
         check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
-        suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
-        aiSuggestion,
+        suggestion: aiSuggestion || HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
       });
     } else if (h1Elements.length > 1) {
       log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
@@ -252,9 +242,8 @@ export async function validatePageHeadings(
             check: HEADINGS_CHECKS.HEADING_EMPTY.check,
             success: false,
             explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
-            suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
+            suggestion: aiSuggestion || HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
             tagName: heading.tagName,
-            aiSuggestion,
           };
         } else {
           // For tracking purposes
@@ -354,10 +343,6 @@ export async function headingsAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess, s3Client } = context;
   const { S3_SCRAPER_BUCKET_NAME } = context.env;
-  log.info(`[Headings Audit] AZURE_OPENAI_ENDPOINT: ${JSON.stringify(context.env.AZURE_OPENAI_ENDPOINT)}`);
-  log.info(`[Headings Audit] Starting Headings Audit with siteId: ${siteId}`);
-  log.info(`[Headings Audit] Base URL: ${baseURL}`);
-  log.info(`[Headings Audit] Site delivery type: ${site.getDeliveryType() || 'Unknown'}`);
 
   try {
     // Get top 200 pages
@@ -419,8 +404,8 @@ export async function headingsAuditRunner(baseURL, context, site) {
             // Add URL if not already present
             if (!aggregatedResults[checkType].urls.includes(url)) {
               const urlObject = { url };
-              if (check.aiSuggestion) {
-                urlObject.aiSuggestion = check.aiSuggestion;
+              if (check.suggestion) {
+                urlObject.suggestion = check.suggestion;
               }
               if (check.tagName) {
                 urlObject.tagName = check.tagName;
@@ -441,8 +426,6 @@ export async function headingsAuditRunner(baseURL, context, site) {
         auditResult: { status: 'success', message: 'No heading issues detected' },
       };
     }
-
-    log.info(`Aggregated results: ${JSON.stringify(aggregatedResults)}`);
 
     return {
       fullAuditRef: baseURL,
@@ -502,7 +485,6 @@ function generateRecommendedAction(checkType) {
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
-  log.info(`[Headings Opportunity and Suggestions] Audit data: ${JSON.stringify(auditData)}`);
   if (!auditData.suggestions?.length) {
     log.info('Headings audit has no issues, skipping opportunity creation');
     return { ...auditData };
