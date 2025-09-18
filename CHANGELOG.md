@@ -1,3 +1,10 @@
+## [1.183.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.0...v1.183.1) (2025-09-18)
+
+
+### Bug Fixes
+
+* support current weekoffset ([#1283](https://github.com/adobe/spacecat-audit-worker/issues/1283)) ([6741726](https://github.com/adobe/spacecat-audit-worker/commit/6741726536474fcb4f70c27ca688d7f1edb65785))
+
 # [1.183.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.182.1...v1.183.0) (2025-09-18)
 
 
