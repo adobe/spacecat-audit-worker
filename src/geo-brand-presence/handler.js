@@ -146,7 +146,7 @@ export async function keywordPromptsImportStep(context) {
   const endDate = Date.parse(data) ? data : undefined;
   /* c8 ignore stop */
 
-  log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s', finalUrl, endDate);
+  log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s .', finalUrl, endDate);
   return {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,
