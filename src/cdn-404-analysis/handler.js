@@ -46,6 +46,7 @@ export async function cdn404AnalysisRunner(context, site) {
   } = getHourParts();
 
   const database = `cdn_logs_${hostEscaped}`;
+  // TODO: Update this to read from the correct table
   const rawTable = `raw_404_logs_${hostEscaped}_test`;
   const tempLocation = `s3://${rawBucket}/temp/athena-results/`;
   const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
