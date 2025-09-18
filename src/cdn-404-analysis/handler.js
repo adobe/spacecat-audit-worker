@@ -13,6 +13,7 @@
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { wwwUrlResolver } from '../common/base-audit.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -101,4 +102,5 @@ export async function cdn404AnalysisRunner(context, site) {
 
 export default new AuditBuilder()
   .withRunner(cdn404AnalysisRunner)
+  .withUrlResolver(wwwUrlResolver)
   .build();
