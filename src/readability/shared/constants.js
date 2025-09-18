@@ -11,9 +11,12 @@
  */
 
 // Preflight constants
-export const READABILITY_GUIDANCE_TYPE = 'guidance:readability';
+export const READABILITY_GUIDANCE_TYPE = 'guidance:readability'; // for preflight
 export const READABILITY_OBSERVATION = 'Content readability needs improvement';
 export const MYSTIQUE_BATCH_SIZE = 10;
+
+// Opportunity audit constants
+export const READABILITY_OPPORTUNITY_GUIDANCE_TYPE = 'guidance:readability-opportunities'; // for opportunities
 
 // Opportunity audit constants
 export const READABILITY_OPPORTUNITY_TYPE = 'READABILITY_IMPROVEMENT';

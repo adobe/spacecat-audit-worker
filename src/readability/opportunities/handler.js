@@ -19,6 +19,7 @@ import { syncSuggestions } from '../../utils/data-access.js';
 import { analyzePageReadability, sendReadabilityToMystique } from '../shared/analysis-utils.js';
 import {
   READABILITY_OPPORTUNITY_TYPE,
+  READABILITY_OPPORTUNITY_GUIDANCE_TYPE,
 } from '../shared/constants.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -177,6 +178,7 @@ export async function processReadabilityOpportunities(context) {
           siteId,
           audit.getId(),
           context,
+          READABILITY_OPPORTUNITY_GUIDANCE_TYPE,
         );
         log.info(`[ReadabilityAudit] Successfully sent ${readabilityIssues.length} readability issues to Mystique for AI processing`);
       } catch (error) {

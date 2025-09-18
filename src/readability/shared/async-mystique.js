@@ -27,8 +27,9 @@ import { READABILITY_GUIDANCE_TYPE, READABILITY_OBSERVATION, TARGET_READABILITY_
  * @param {string} auditUrl - The base URL being audited
  * @param {Array} readabilityIssues - Array of readability issues to process
  * @param {string} siteId - Site identifier
- * @param {string} jobId - Job identifier
+ * @param {string} jobId - Job identifier (AsyncJob ID for preflight, Audit ID for opportunities)
  * @param {Object} context - The context object containing sqs, env, dataAccess, etc.
+ * @param {string} guidanceType - The guidance handler type to route responses to
  * @returns {Promise<void>}
  */
 export async function sendReadabilityToMystique(
@@ -37,6 +38,7 @@ export async function sendReadabilityToMystique(
   siteId,
   jobId,
   context,
+  guidanceType = READABILITY_GUIDANCE_TYPE,
 ) {
   const {
     sqs, env, log, dataAccess,
@@ -51,41 +53,50 @@ export async function sendReadabilityToMystique(
 
   try {
     const site = await dataAccess.Site.findById(siteId);
-    const { AsyncJob: AsyncJobEntity } = dataAccess;
 
-    // Store original order mapping in job metadata to preserve identify-step order
-    // This is how preflight audits handle async processing data
-    const originalOrderMapping = readabilityIssues.map((issue, index) => ({
-      textContent: issue.textContent,
-      originalIndex: index,
-    }));
+    // Handle metadata storage differently for preflight vs opportunities
+    const isPreflight = guidanceType === READABILITY_GUIDANCE_TYPE;
 
-    // Update job with readability metadata for async processing
-    const jobEntity = await AsyncJobEntity.findById(jobId);
-    const currentPayload = jobEntity.getMetadata()?.payload || {};
-    const readabilityMetadata = {
-      mystiqueResponsesReceived: 0,
-      mystiqueResponsesExpected: readabilityIssues.length,
-      totalReadabilityIssues: readabilityIssues.length,
-      lastMystiqueRequest: new Date().toISOString(),
-      originalOrderMapping, // Store original order for reconstruction
-    };
+    if (isPreflight) {
+      // Preflight: Store metadata in AsyncJob
+      const { AsyncJob: AsyncJobEntity } = dataAccess;
 
-    // Store readability metadata in job payload
-    jobEntity.setMetadata({
-      ...jobEntity.getMetadata(),
-      payload: {
-        ...currentPayload,
-        readabilityMetadata,
-      },
-    });
-    await jobEntity.save();
-    log.info(`[readability-suggest async] Stored readability metadata in job ${jobId}`);
+      // Store original order mapping in job metadata to preserve identify-step order
+      const originalOrderMapping = readabilityIssues.map((issue, index) => ({
+        textContent: issue.textContent,
+        originalIndex: index,
+      }));
+
+      // Update job with readability metadata for async processing
+      const jobEntity = await AsyncJobEntity.findById(jobId);
+      const currentPayload = jobEntity.getMetadata()?.payload || {};
+      const readabilityMetadata = {
+        mystiqueResponsesReceived: 0,
+        mystiqueResponsesExpected: readabilityIssues.length,
+        totalReadabilityIssues: readabilityIssues.length,
+        lastMystiqueRequest: new Date().toISOString(),
+        originalOrderMapping, // Store original order for reconstruction
+      };
+
+      // Store readability metadata in job payload
+      jobEntity.setMetadata({
+        ...jobEntity.getMetadata(),
+        payload: {
+          ...currentPayload,
+          readabilityMetadata,
+        },
+      });
+      await jobEntity.save();
+      log.info(`[readability-suggest async] Stored readability metadata in AsyncJob ${jobId}`);
+    } else {
+      // Opportunities: No need to store metadata in AsyncJob
+      log.info(`[readability-suggest async] Sending ${readabilityIssues.length} readability issues for opportunity audit ${jobId}`);
+    }
 
     // Send each readability issue as a separate message to Mystique
     const messagePromises = readabilityIssues.map((issue, index) => {
       const mystiqueMessage = {
-        type: READABILITY_GUIDANCE_TYPE,
+        type: guidanceType,
         siteId,
         auditId: jobId,
         deliveryType: site.getDeliveryType(),
@@ -93,7 +104,8 @@ export async function sendReadabilityToMystique(
         url: auditUrl,
         observation: READABILITY_OBSERVATION,
         data: {
-          jobId, // Use jobId instead of opportunityId for preflight audit
+          // Use appropriate ID based on audit type
+          ...(isPreflight ? { jobId } : { auditId: jobId }),
           original_paragraph: issue.textContent,
           target_flesch_score: TARGET_READABILITY_SCORE,
           current_flesch_score: issue.fleschReadingEase,

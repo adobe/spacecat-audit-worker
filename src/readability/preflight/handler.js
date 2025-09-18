@@ -25,6 +25,7 @@ import {
   TARGET_READABILITY_SCORE,
   MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
+  READABILITY_GUIDANCE_TYPE,
 } from '../shared/constants.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
@@ -370,6 +371,7 @@ export default async function readability(context, auditContext) {
               site.getId(),
               job.getId(),
               context,
+              READABILITY_GUIDANCE_TYPE,
             );
 
             log.info(`[readability-suggest handler] readability: Successfully sent ${allReadabilityIssues.length} `
