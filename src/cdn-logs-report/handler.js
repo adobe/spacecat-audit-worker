@@ -58,7 +58,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
 
     log.info(`Running weekly report: ${reportConfig.name}...`);
-    const weekOffset = auditContext?.weekOffset || -1;
+    const weekOffset = auditContext?.weekOffset ?? -1;
     await runWeeklyReport({
       athenaClient,
       s3Config,

@@ -21,6 +21,7 @@ import {
   createBaseReportOpportunity,
   createReportOpportunitySuggestionInstance,
   createAccessibilityAssistiveOpportunity,
+  createAccessibilityColorContrastOpportunity,
 } from '../../../src/accessibility/utils/report-oppty.js';
 
 describe('Accessibility Report Opportunity Utils', () => {
@@ -220,6 +221,108 @@ describe('Accessibility Report Opportunity Utils', () => {
     });
   });
 
+  describe('createAccessibilityColorContrastOpportunity', () => {
+    it('should create correct color contrast opportunity structure', () => {
+      const opportunity = createAccessibilityColorContrastOpportunity();
+
+      expect(opportunity).to.deep.equal({
+        runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
+        origin: 'AUTOMATION',
+        type: 'a11y-color-contrast',
+        title: 'Accessibility - Color contrast is insufficient on site',
+        description: 'This report provides a structured overview of all detected accessibility issues across your website, organized by severity and page. Each issue includes WCAG guidelines, impact assessment, and actionable recommendations for improvement.',
+        tags: ['a11y'],
+        status: 'NEW',
+        data: {
+          dataSources: ['axe-core'],
+        },
+      });
+    });
+
+    it('should have consistent structure with other opportunity types', () => {
+      const colorContrast = createAccessibilityColorContrastOpportunity();
+      const assistive = createAccessibilityAssistiveOpportunity();
+
+      // Should have same basic structure
+      expect(colorContrast).to.have.property('runbook');
+      expect(colorContrast).to.have.property('origin', 'AUTOMATION');
+      expect(colorContrast).to.have.property('type');
+      expect(colorContrast).to.have.property('title');
+      expect(colorContrast).to.have.property('description');
+      expect(colorContrast).to.have.property('tags');
+      expect(colorContrast).to.have.property('status');
+
+      // Should have same runbook, tags, origin, and description as assistive opportunity
+      expect(colorContrast.runbook).to.equal(assistive.runbook);
+      expect(colorContrast.tags).to.deep.equal(assistive.tags);
+      expect(colorContrast.origin).to.equal(assistive.origin);
+      expect(colorContrast.description).to.equal(assistive.description);
+    });
+
+    it('should have unique type compared to other opportunities', () => {
+      const colorContrast = createAccessibilityColorContrastOpportunity();
+      const assistive = createAccessibilityAssistiveOpportunity();
+      const base = createBaseReportOpportunity(1, 2024);
+
+      // Should have unique type
+      expect(colorContrast.type).to.equal('a11y-color-contrast');
+      expect(assistive.type).to.equal('a11y-assistive');
+      expect(base.type).to.equal('generic-opportunity');
+    });
+
+    it('should have same status as assistive opportunity', () => {
+      const colorContrast = createAccessibilityColorContrastOpportunity();
+      const assistive = createAccessibilityAssistiveOpportunity();
+
+      expect(colorContrast.status).to.equal('NEW');
+      expect(colorContrast.status).to.equal(assistive.status);
+    });
+
+    it('should have unique title compared to other opportunities', () => {
+      const colorContrast = createAccessibilityColorContrastOpportunity();
+      const assistive = createAccessibilityAssistiveOpportunity();
+      const base = createBaseReportOpportunity(1, 2024);
+
+      expect(colorContrast.title).to.equal('Accessibility - Color contrast is insufficient on site');
+      expect(colorContrast.title).to.not.equal(assistive.title);
+      expect(colorContrast.title).to.not.equal(base.title);
+
+      // Should contain accessibility-specific keywords
+      expect(colorContrast.title).to.include('Accessibility');
+      expect(colorContrast.title).to.include('Color contrast');
+      expect(colorContrast.title).to.include('insufficient');
+    });
+
+    it('should include data sources information', () => {
+      const opportunity = createAccessibilityColorContrastOpportunity();
+
+      expect(opportunity.data).to.be.an('object');
+      expect(opportunity.data.dataSources).to.be.an('array');
+      expect(opportunity.data.dataSources).to.include('axe-core');
+      expect(opportunity.data.dataSources).to.have.length(1);
+    });
+
+    it('should be callable multiple times with consistent results', () => {
+      const opportunity1 = createAccessibilityColorContrastOpportunity();
+      const opportunity2 = createAccessibilityColorContrastOpportunity();
+
+      expect(opportunity1).to.deep.equal(opportunity2);
+    });
+
+    it('should not require parameters', () => {
+      // Should be callable without parameters
+      expect(() => createAccessibilityColorContrastOpportunity()).to.not.throw();
+
+      // Should ignore any parameters passed
+      expect(() => createAccessibilityColorContrastOpportunity('param1', 'param2')).to.not.throw();
+
+      const withoutParams = createAccessibilityColorContrastOpportunity();
+      const withParams = createAccessibilityColorContrastOpportunity('ignored', 123);
+
+      expect(withoutParams).to.deep.equal(withParams);
+    });
+  });
+
   describe('all opportunity types', () => {
     it('should have consistent structure across all opportunity types', () => {
       const week = 20;
@@ -230,9 +333,10 @@ describe('Accessibility Report Opportunity Utils', () => {
       const fixedVsNew = createFixedVsNewReportOpportunity(week, year);
       const base = createBaseReportOpportunity(week, year);
       const assistive = createAccessibilityAssistiveOpportunity();
+      const colorContrast = createAccessibilityColorContrastOpportunity();
 
       // All should have these common properties
-      [inDepth, enhanced, fixedVsNew, base, assistive].forEach((opportunity) => {
+      [inDepth, enhanced, fixedVsNew, base, assistive, colorContrast].forEach((opportunity) => {
         expect(opportunity).to.have.property('runbook');
         expect(opportunity).to.have.property('origin', 'AUTOMATION');
         expect(opportunity).to.have.property('type');
@@ -255,11 +359,19 @@ describe('Accessibility Report Opportunity Utils', () => {
       const fixedVsNew = createFixedVsNewReportOpportunity(week, year);
       const base = createBaseReportOpportunity(week, year);
       const assistive = createAccessibilityAssistiveOpportunity();
+      const colorContrast = createAccessibilityColorContrastOpportunity();
 
-      const titles = [inDepth.title, enhanced.title, fixedVsNew.title, base.title, assistive.title];
+      const titles = [
+        inDepth.title,
+        enhanced.title,
+        fixedVsNew.title,
+        base.title,
+        assistive.title,
+        colorContrast.title,
+      ];
 
       // All titles should be unique
-      expect(new Set(titles).size).to.equal(5);
+      expect(new Set(titles).size).to.equal(6);
 
       // Report opportunities should contain week and year
       [inDepth.title, enhanced.title, fixedVsNew.title, base.title].forEach((title) => {
@@ -268,10 +380,12 @@ describe('Accessibility Report Opportunity Utils', () => {
         expect(title).to.include('Desktop');
       });
 
-      // Assistive opportunity should not contain week/year/desktop
-      expect(assistive.title).to.not.include('Week');
-      expect(assistive.title).to.not.include('2024');
-      expect(assistive.title).to.not.include('Desktop');
+      // Assistive and color contrast opportunities should not contain week/year/desktop
+      [assistive.title, colorContrast.title].forEach((title) => {
+        expect(title).to.not.include('Week');
+        expect(title).to.not.include('2024');
+        expect(title).to.not.include('Desktop');
+      });
     });
 
     it('should have different types and statuses', () => {
@@ -283,6 +397,7 @@ describe('Accessibility Report Opportunity Utils', () => {
       const fixedVsNew = createFixedVsNewReportOpportunity(week, year);
       const base = createBaseReportOpportunity(week, year);
       const assistive = createAccessibilityAssistiveOpportunity();
+      const colorContrast = createAccessibilityColorContrastOpportunity();
 
       // Report opportunities should have same type and status
       [inDepth, enhanced, fixedVsNew, base].forEach((opportunity) => {
@@ -290,9 +405,11 @@ describe('Accessibility Report Opportunity Utils', () => {
         expect(opportunity.status).to.equal('IGNORED');
       });
 
-      // Assistive opportunity should have different type and status
+      // Assistive and color contrast opportunities should have different type and same status
       expect(assistive.type).to.equal('a11y-assistive');
       expect(assistive.status).to.equal('NEW');
+      expect(colorContrast.type).to.equal('a11y-color-contrast');
+      expect(colorContrast.status).to.equal('NEW');
     });
 
     it('should handle edge case week and year values', () => {
@@ -310,8 +427,9 @@ describe('Accessibility Report Opportunity Utils', () => {
         expect(() => createBaseReportOpportunity(week, year)).to.not.throw();
       });
 
-      // Assistive opportunity doesn't take parameters
+      // Assistive and color contrast opportunities don't take parameters
       expect(() => createAccessibilityAssistiveOpportunity()).to.not.throw();
+      expect(() => createAccessibilityColorContrastOpportunity()).to.not.throw();
     });
   });
 });
