@@ -34,7 +34,7 @@ export const OPPTY_TYPES = [
 
 export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   const {
-    auditContext, log, sqs, env, site, audit, s3Client,
+    auditContext, log, site, audit, s3Client,
   } = context;
 
   const siteId = site.getId();
@@ -88,7 +88,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       year: calendarWeek.year,
       data: { url },
     };
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(`Mystique message: ${JSON.stringify(message)}`);
     log.info('GEO BRAND PRESENCE: %s Message sent to Mystique for site id %s (%s):', opptyType, siteId, baseURL, message);
   }));
 }
