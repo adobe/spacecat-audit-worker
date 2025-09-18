@@ -333,9 +333,16 @@ export async function createAccessibilityOpportunity(auditData, context) {
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Opportunity } = dataAccess;
-  const { auditId, siteId, data } = message;
+  const { 
+    auditId, siteId, data, options,
+  } = message;
   const { opportunityId, a11y } = data;
   log.debug(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
+  // if a11y preflight is detected, skip guidance and creation of opportunity
+  if (options && options.a11yPreflight) {
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y preflight detected, skipping guidance`);
+    return ok();
+  }
 
   const site = await Site.findById(siteId);
   if (!site) {
