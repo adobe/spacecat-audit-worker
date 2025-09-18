@@ -538,8 +538,8 @@ describe('Preflight Readability Audit', () => {
     beforeEach(async () => {
       mockSendReadabilityToMystique = sinon.stub().resolves();
 
-      readabilityMocked = await esmock('../../../src/readability/handler.js', {
-        '../../../src/readability/async-mystique.js': {
+      readabilityMocked = await esmock('../../../src/readability/preflight/handler.js', {
+        '../../../src/readability/shared/async-mystique.js': {
           sendReadabilityToMystique: mockSendReadabilityToMystique,
         },
         '../../../src/preflight/utils.js': {

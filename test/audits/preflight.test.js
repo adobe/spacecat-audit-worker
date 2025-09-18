@@ -1438,7 +1438,7 @@ describe('Preflight Audit', () => {
 
       // Mock the preflight audit with readability handler returning processing: true
       const { preflightAudit: testPreflightAudit } = await esmock('../../src/preflight/handler.js', {
-        '../../src/readability/handler.js': {
+        '../../src/readability/preflight/handler.js': {
           default: sinon.stub().resolves({ processing: true }),
         },
         '../../src/preflight/accessibility.js': {
@@ -1507,7 +1507,7 @@ describe('Preflight Audit', () => {
         '../../src/preflight/canonical.js': { default: async () => undefined },
         '../../src/preflight/metatags.js': { default: async () => undefined },
         '../../src/preflight/links.js': { default: async () => undefined },
-        '../../src/readability/handler.js': { default: async () => undefined },
+        '../../src/readability/preflight/handler.js': { default: async () => undefined },
         '../../src/preflight/accessibility.js': { default: async () => undefined },
       });
 
