@@ -1,3 +1,10 @@
+# [1.183.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.182.1...v1.183.0) (2025-09-18)
+
+
+### Features
+
+* added color contrast to be created as a standalone oppty ([#1221](https://github.com/adobe/spacecat-audit-worker/issues/1221)) ([9b9074b](https://github.com/adobe/spacecat-audit-worker/commit/9b9074be2ef381b744ac0818531079fde2005350))
+
 ## [1.182.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.182.0...v1.182.1) (2025-09-18)
 
 
