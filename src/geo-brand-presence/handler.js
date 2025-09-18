@@ -37,6 +37,9 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     auditContext, log, sqs, env, site, audit, s3Client,
   } = context;
 
+  log.error('GEO BRAND PRESENCE: sendToMystique auditContext: %j', auditContext);
+  log.error('GEO BRAND PRESENCE: sendToMystique audit: %j', audit);
+
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
 
