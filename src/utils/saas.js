@@ -53,7 +53,7 @@ export async function request(name, url, req = [], timeout = 60000) {
   } else {
     try {
       responseText = await resp.text();
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // eslint-disable-next-line no-unused-vars
     } catch (e) { /* nothing to be done */ }
   }
 
