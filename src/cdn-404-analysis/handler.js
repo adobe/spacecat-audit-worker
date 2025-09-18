@@ -58,6 +58,9 @@ export async function cdn404AnalysisRunner(context, site) {
 
   // TODO: Get tenant IMS
   const imsOrg = site.getConfig().getImsOrg();
+  if (!imsOrg) {
+    throw new Error('IMS organization is required');
+  }
   // Each tenant has its own folder mapped via IMS org within the raw bucket
   const bucket = `${rawBucket}/${imsOrg}`;
   const rawLocation = `s3://${bucket}/raw/aem-cs-fastly`;
