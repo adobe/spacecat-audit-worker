@@ -10,9 +10,15 @@
  * governing permissions and limitations under the License.
  */
 
+// Preflight constants
 export const READABILITY_GUIDANCE_TYPE = 'guidance:readability';
 export const READABILITY_OBSERVATION = 'Content readability needs improvement';
 export const MYSTIQUE_BATCH_SIZE = 10;
+
+// Opportunity audit constants
+export const READABILITY_OPPORTUNITY_TYPE = 'READABILITY_IMPROVEMENT';
+export const MAX_OPPORTUNITIES_PER_SITE = 50;
+export const TOP_PAGES_LIMIT = 10;
 
 // Target Flesch Reading Ease score - scores below this will be flagged as poor readability
 // Applied to all languages since the custom formulas already account for language differences

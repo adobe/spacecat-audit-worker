@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 import esmock from 'esmock';
-import readability, { PREFLIGHT_READABILITY } from '../../../src/readability/handler.js';
+import readability, { PREFLIGHT_READABILITY } from '../../../src/readability/preflight/handler.js';
 import { PREFLIGHT_STEP_IDENTIFY } from '../../../src/preflight/handler.js';
 
 use(sinonChai);

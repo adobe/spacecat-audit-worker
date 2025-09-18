@@ -13,19 +13,19 @@
 import rs from 'text-readability';
 import { JSDOM } from 'jsdom';
 import { franc } from 'franc-min';
-import { saveIntermediateResults } from '../preflight/utils.js';
+import { saveIntermediateResults } from '../../preflight/utils.js';
 
-import { sendReadabilityToMystique } from './async-mystique.js';
+import { sendReadabilityToMystique } from '../shared/async-mystique.js';
 import {
   calculateReadabilityScore,
   isSupportedLanguage,
   getLanguageName,
-} from './multilingual-readability.js';
+} from '../shared/multilingual-readability.js';
 import {
   TARGET_READABILITY_SCORE,
   MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
-} from './constants.js';
+} from '../shared/constants.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 
