@@ -18,8 +18,10 @@ import { wwwUrlResolver } from '../common/base-audit.js';
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
 function extractCustomerDomain(site) {
-  const { host } = new URL(site.getBaseURL());
-  return { hostEscaped: host.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() };
+  const { hostname } = new URL(site.getBaseURL());
+  return {
+    sanitizedHostname: hostname.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(),
+  };
 }
 
 function getHourParts() {
@@ -40,15 +42,14 @@ async function loadSql(filename, variables) {
 }
 
 export async function cdn404AnalysisRunner(context, site) {
-  const { hostEscaped } = extractCustomerDomain(site);
+  const { sanitizedHostname } = extractCustomerDomain(site);
   const { rawBucket } = site.getConfig().getCdnLogsConfig();
   const {
     year, month, day, hour,
   } = getHourParts();
 
-  const database = `cdn_logs_${hostEscaped}`;
-  // TODO: Update this to read from the correct table
-  const rawTable = `raw_404_logs_${hostEscaped}_test`;
+  const database = `cdn_logs_${sanitizedHostname}`;
+  const rawTable = `raw_logs_status_${sanitizedHostname}`;
   const tempLocation = `s3://${rawBucket}/temp/athena-results/`;
   const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
 
