@@ -19,6 +19,7 @@ import { syncSuggestions } from '../../utils/data-access.js';
 import { analyzePageReadability, sendReadabilityToMystique } from '../shared/analysis-utils.js';
 import {
   READABILITY_OPPORTUNITY_TYPE,
+  TOP_PAGES_LIMIT,
 } from '../shared/constants.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -58,7 +59,7 @@ export async function scrapeReadabilityData(context) {
 
   log.info(`[ReadabilityAudit] Step 1: Preparing content scrape for readability audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
-  // Get top 10 pages for readability analysis
+  // Get top pages for readability analysis
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
@@ -72,13 +73,13 @@ export async function scrapeReadabilityData(context) {
     };
   }
 
-  // Take top 10 pages by traffic, sorted descending
+  // Take top pages by traffic, sorted descending
   const urlsToScrape = topPages
     .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
     .sort((a, b) => b.traffic - a.traffic)
-    .slice(0, 10);
+    .slice(0, TOP_PAGES_LIMIT);
 
-  log.info(`[ReadabilityAudit] Top 10 pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape, null, 2)}`);
+  log.info(`[ReadabilityAudit] Top ${TOP_PAGES_LIMIT} pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape, null, 2)}`);
 
   return {
     auditResult: {
