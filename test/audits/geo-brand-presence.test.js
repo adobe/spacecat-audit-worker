@@ -93,8 +93,8 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: '2025-08-13',
-      aiPlatform: 'chatgpt',
-      auditResult: { keywordQuestions: [], aiPlatform: 'chatgpt' },
+      aiPlatform: undefined,
+      auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
     });
   });
@@ -107,8 +107,8 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: undefined,
-      aiPlatform: 'chatgpt',
-      auditResult: { keywordQuestions: [], aiPlatform: 'chatgpt' },
+      aiPlatform: undefined,
+      auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
     });
   });
