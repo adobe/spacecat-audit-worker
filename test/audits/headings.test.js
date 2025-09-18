@@ -803,4 +803,313 @@ describe('Headings Audit', () => {
       tagName: 'H2',
     });
   });
+
+  it('detects child elements with self-closing tags but no text content', async () => {
+    const url = 'https://example.com/page';
+    
+    s3Client.send.resolves({
+      Body: {
+        transformToString: () => JSON.stringify({
+          finalUrl: url,
+          scrapeResult: {
+            rawBody: '<h1>Title</h1><div><hr></div><h2>Section</h2>',
+            tags: {
+              title: 'Page Title',
+              description: 'Page Description',
+              h1: 'Page H1',
+            },
+          }
+        }),
+      },
+      ContentType: 'application/json',
+    });
+
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
+    // Should pass with no heading issues since HR is considered content even without text
+    expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
+  });
+
+  it('handles validatePageHeadings error gracefully', async () => {
+    const url = 'https://example.com/page';
+    
+    // Mock s3Client to throw an error - this will cause getObjectFromKey to return null
+    s3Client.send.rejects(new Error('S3 connection failed'));
+    
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
+    
+    // When getObjectFromKey returns null due to S3 error, validatePageHeadings returns null
+    expect(result).to.be.null;
+  });
+
+  it('handles headingsAuditRunner with no top pages', async () => {
+    const baseURL = 'https://example.com';
+    const logSpy = { info: sinon.spy(), warn: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+    context.log = logSpy;
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+      },
+    };
+
+    // Mock getTopPagesForSiteId to return empty array
+    const getTopPagesForSiteIdStub = sinon.stub().resolves([]);
+    
+    // Use esmock to replace the import
+    const mockedHandler = await esmock('../../src/headings/handler.js', {
+      '../../src/canonical/handler.js': {
+        getTopPagesForSiteId: getTopPagesForSiteIdStub,
+      },
+    });
+
+    context.s3Client = s3Client;
+    const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+    
+    expect(result.auditResult).to.have.property('check', HEADINGS_CHECKS.TOPPAGES.check);
+    expect(result.auditResult.success).to.be.false;
+    expect(logSpy.warn).to.have.been.calledWith('[Headings Audit] No top pages found, ending audit.');
+  });
+
+  it('handles headingsAuditRunner error gracefully', async () => {
+    const baseURL = 'https://example.com';
+    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+    context.log = logSpy;
+    
+    // Mock getTopPagesForSiteId to throw an error
+    const getTopPagesForSiteIdStub = sinon.stub().rejects(new Error('Database connection failed'));
+    
+    const mockedHandler = await esmock('../../src/headings/handler.js', {
+      '../../src/canonical/handler.js': {
+        getTopPagesForSiteId: getTopPagesForSiteIdStub,
+      },
+    });
+
+    context.s3Client = s3Client;
+    const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+    
+    expect(result.auditResult.error).to.include('Database connection failed');
+    expect(result.auditResult.success).to.be.false;
+    expect(logSpy.error).to.have.been.calledWith(sinon.match(/Headings audit failed/));
+  });
+
+  describe('generateSuggestions', () => {
+    it('skips suggestions for successful audit', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: { status: 'success', message: 'No issues found' }
+      };
+      
+      const result = generateSuggestions(auditUrl, auditData, context);
+      expect(result).to.deep.equal(auditData);
+    });
+
+    it('skips suggestions for failed audit', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: { error: 'Audit failed' }
+      };
+      
+      const result = generateSuggestions(auditUrl, auditData, context);
+      expect(result).to.deep.equal(auditData);
+    });
+
+    it('generates suggestions for audit with issues', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: {
+          'heading-order-invalid': {
+            success: false,
+            explanation: 'Invalid order',
+            urls: [{ url: 'https://example.com/page1' }, { url: 'https://example.com/page2' }]
+          },
+          'heading-empty': {
+            success: false,
+            explanation: 'Empty heading',
+            urls: [{ url: 'https://example.com/page3' }]
+          }
+        }
+      };
+      
+      const result = generateSuggestions(auditUrl, auditData, context);
+      
+      expect(result.suggestions).to.have.lengthOf(3);
+      expect(result.suggestions[0]).to.deep.include({
+        type: 'CODE_CHANGE',
+        checkType: 'heading-order-invalid',
+        explanation: 'Invalid order',
+        recommendedAction: 'Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).',
+      });
+      expect(result.suggestions[0].url).to.deep.equal({ url: 'https://example.com/page1' });
+    });
+
+    it('handles default case in generateRecommendedAction', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: {
+          'unknown-check': {
+            success: false,
+            explanation: 'Unknown issue',
+            urls: [{ url: 'https://example.com/page1' }]
+          }
+        }
+      };
+      
+      const result = generateSuggestions(auditUrl, auditData, context);
+      
+      expect(result.suggestions[0].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
+    });
+
+    it('generates suggestions for duplicate text check', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: {
+          'heading-duplicate-text': {
+            success: false,
+            explanation: 'Duplicate heading text',
+            urls: [{ url: 'https://example.com/page1' }]
+          }
+        }
+      };
+      
+      const result = generateSuggestions(auditUrl, auditData, context);
+      
+      expect(result.suggestions).to.have.lengthOf(1);
+      expect(result.suggestions[0].recommendedAction).to.equal('Ensure each heading has unique, descriptive text content that clearly identifies its section.');
+    });
+
+    it('generates suggestions for no content check', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: {
+          'heading-no-content': {
+            success: false,
+            explanation: 'Heading has no content',
+            urls: [{ url: 'https://example.com/page1' }]
+          }
+        }
+      };
+      
+      const result = generateSuggestions(auditUrl, auditData, context);
+      
+      expect(result.suggestions).to.have.lengthOf(1);
+      expect(result.suggestions[0].recommendedAction).to.equal('Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.');
+    });
+  });
+
+  describe('opportunityAndSuggestions', () => {
+    let convertToOpportunityStub;
+    let syncSuggestionsStub;
+    let mockedOpportunityAndSuggestions;
+
+    beforeEach(async () => {
+      // Create stubs for the imported functions
+      convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+      
+      syncSuggestionsStub = sinon.stub().resolves();
+
+      // Mock the handler with stubbed dependencies
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      mockedOpportunityAndSuggestions = mockedHandler.opportunityAndSuggestions;
+    });
+
+    it('skips opportunity creation when no suggestions', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = { suggestions: [] };
+      
+      const result = await mockedOpportunityAndSuggestions(auditUrl, auditData, context);
+      expect(result).to.deep.equal(auditData);
+      expect(convertToOpportunityStub).not.to.have.been.called;
+    });
+
+    it('creates opportunity and syncs suggestions', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            explanation: 'Empty heading',
+            url: { url: 'https://example.com/page1' },
+            recommendedAction: 'Add content'
+          }
+        ]
+      };
+      
+      const result = await mockedOpportunityAndSuggestions(auditUrl, auditData, context);
+      
+      expect(result).to.deep.equal(auditData);
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      
+      const syncCall = syncSuggestionsStub.getCall(0);
+      expect(syncCall.args[0]).to.have.property('opportunity');
+      expect(syncCall.args[0]).to.have.property('newData', auditData.suggestions);
+      expect(syncCall.args[0]).to.have.property('context', context);
+    });
+
+    it('tests mapNewSuggestion function execution in opportunityAndSuggestions', async () => {
+      // Create real stubs that will be called
+      const convertToOpportunityStub2 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+      
+      const syncSuggestionsStub2 = sinon.stub().resolves();
+      
+      // Mock the dependencies
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub2,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub2,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            explanation: 'Empty heading',
+            url: 'https://example.com/page1',
+            recommendedAction: 'Add content'
+          }
+        ]
+      };
+      
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+      
+      expect(syncSuggestionsStub2).to.have.been.calledOnce;
+      
+      // Check that mapNewSuggestion was called with the right structure
+      const syncCall = syncSuggestionsStub2.getCall(0);
+      const mapNewSuggestionFn = syncCall.args[0].mapNewSuggestion;
+      expect(mapNewSuggestionFn).to.be.a('function');
+      
+      // Test the mapNewSuggestion function directly
+      const mappedSuggestion = mapNewSuggestionFn(auditData.suggestions[0]);
+      expect(mappedSuggestion).to.deep.include({
+        opportunityId: 'test-opportunity-id',
+        type: 'CODE_CHANGE',
+        rank: 0,
+      });
+      expect(mappedSuggestion.data).to.deep.include({
+        type: 'url',
+        url: 'https://example.com/page1',
+        checkType: 'heading-empty',
+        explanation: 'Empty heading',
+        recommendedAction: 'Add content',
+      });
+    });
+  });
 });
