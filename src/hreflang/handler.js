@@ -63,7 +63,7 @@ export async function validatePageHreflang(url, log) {
   }
 
   try {
-    log.info(`Checking hreflang for URL: ${url}`);
+    log.info(`Checking hreflang for URL-${HREFLANG_TIMEOUT_MS}ms: ${url}`);
     const response = await fetch(url, { timeout: HREFLANG_TIMEOUT_MS });
 
     if (!response.ok) {
