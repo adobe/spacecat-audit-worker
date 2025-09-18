@@ -22,7 +22,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 
 // Timeout configuration for hreflang validation
-const HREFLANG_TIMEOUT_MS = 15000;
+const HREFLANG_TIMEOUT_MS = 45000;
 
 const auditType = Audit.AUDIT_TYPES.HREFLANG;
 
