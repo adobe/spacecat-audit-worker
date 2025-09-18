@@ -112,7 +112,9 @@ async function runAgenticTrafficStep(context) {
 
   log.info('Agentic Traffic Step: Upload complete; initiating scrap');
 
-  const urls = paths.slice(0, 20).map((p) => ({ url: `https://${audit.getFullAuditRef()}${p.path}` }));
+  const urls = paths.length > 0
+    ? paths.slice(0, 20).map((p) => ({ url: `https://${audit.getFullAuditRef()}${p.path}` }))
+    : [{ url: `https://${audit.getFullAuditRef()}/` }];
 
   return {
     auditResult: { status: 'Initiating scrape' },
