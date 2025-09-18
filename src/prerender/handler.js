@@ -25,6 +25,19 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const CONTENT_INCREASE_THRESHOLD = 1.2; // Content increase ratio threshold
 
 /**
+ * Sanitizes the import path by replacing special characters with hyphens
+ * @param {string} importPath - The path to sanitize
+ * @returns {string} The sanitized path
+ */
+function sanitizeImportPath(importPath) {
+  return importPath
+    .replace(/^\/+|\/+$/g, '') // Remove leading/trailing slashes
+    .replace(/[/.]/g, '-') // Replace forward slashes and dots with hyphens
+    .replace(/-+/g, '-') // Replace multiple consecutive hyphens with single hyphen
+    .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
+}
+
+/**
  * Transforms a URL into an S3 path for a given site and file type
  * @param {string} url - The URL to transform
  * @param {string} siteId - The site ID (used as jobId)
@@ -33,8 +46,10 @@ const CONTENT_INCREASE_THRESHOLD = 1.2; // Content increase ratio threshold
  * @returns {string} The S3 path to the file
  */
 function getS3Path(url, siteId, fileName) {
-  const importPath = new URL(url).pathname.replace(/\/$/, '');
-  return `${AUDIT_TYPE}/scrapes/${siteId}${importPath}/${fileName}`;
+  const rawImportPath = new URL(url).pathname.replace(/\/$/, '');
+  const sanitizedImportPath = sanitizeImportPath(rawImportPath);
+  const pathSegment = sanitizedImportPath ? `-${sanitizedImportPath}` : '';
+  return `${AUDIT_TYPE}/scrapes/${siteId}${pathSegment}/${fileName}`;
 }
 
 /**
