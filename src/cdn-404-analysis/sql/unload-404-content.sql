@@ -1,6 +1,6 @@
 UNLOAD (
   SELECT
-    url AS url,
+    url,
     COALESCE(REGEXP_EXTRACT(url, '/content/dam/([^/]+)', 1), 'unknown') AS tenant,
     count(*) AS count
   FROM {{database}}.{{rawTable}}
