@@ -49,6 +49,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
   }
   if (!calendarWeek || typeof calendarWeek !== 'object' || !calendarWeek.week || !calendarWeek.year) {
+    log.error('GEO BRAND PRESENCE: calendarWeek', calendarWeek);
     log.error('GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
     return;
   }
@@ -150,6 +151,8 @@ export async function keywordPromptsImportStep(context) {
 
   let endDate;
   let aiPlatform;
+  let calendarWeek;
+  
   /* c8 ignore start */
   try {
     // Try to parse as JSON first
@@ -164,13 +167,39 @@ export async function keywordPromptsImportStep(context) {
     // If JSON parsing fails, treat as a date string (legacy behavior)
     endDate = Date.parse(data) ? data : undefined;
   }
+  
+  // Convert endDate to calendarWeek format required by sendToMystique step
+  if (endDate) {
+    const endDateObj = new Date(endDate);
+    if (!isNaN(endDateObj.getTime())) {
+      // Use ISO 8601 week calculation
+      // Copy date to avoid mutating original
+      const date = new Date(endDateObj.getTime());
+      
+      // Set to nearest Thursday: current date + 4 - current day number
+      // Make Sunday's day number 7
+      date.setDate(date.getDate() + 4 - (date.getDay() || 7));
+      
+      // Get first day of year
+      const yearStart = new Date(date.getFullYear(), 0, 1);
+      
+      // Calculate full weeks to nearest Thursday
+      const weekNumber = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+      
+      calendarWeek = {
+        year: date.getFullYear(),
+        week: weekNumber
+      };
+    }
+  }
   /* c8 ignore stop */
 
-  log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
+  log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s, calendarWeek: %j', finalUrl, endDate, aiPlatform, calendarWeek);
   return {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,
     aiPlatform,
+    calendarWeek,
     siteId: site.getId(),
     // auditResult can't be empty, so sending empty array and include aiPlatform
     auditResult: { keywordQuestions: [], aiPlatform },
