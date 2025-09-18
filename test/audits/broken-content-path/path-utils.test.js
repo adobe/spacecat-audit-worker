@@ -93,4 +93,115 @@ describe('PathUtils', () => {
         .to.equal('/content/dam');
     });
   });
+
+  describe('hasDoubleSlashes', () => {
+    it('should return false for null or empty input', () => {
+      expect(PathUtils.hasDoubleSlashes(null)).to.be.false;
+      expect(PathUtils.hasDoubleSlashes('')).to.be.false;
+      expect(PathUtils.hasDoubleSlashes(undefined)).to.be.false;
+    });
+
+    it('should return true for paths with double slashes', () => {
+      expect(PathUtils.hasDoubleSlashes('/content/dam//images/photo.jpg')).to.be.true;
+      expect(PathUtils.hasDoubleSlashes('/content//dam/images/photo.jpg')).to.be.true;
+      expect(PathUtils.hasDoubleSlashes('/content/dam/images//photo.jpg')).to.be.true;
+    });
+
+    it('should return true for paths with multiple consecutive slashes', () => {
+      expect(PathUtils.hasDoubleSlashes('/content/dam///images/photo.jpg')).to.be.true;
+      expect(PathUtils.hasDoubleSlashes('/content////dam/images/photo.jpg')).to.be.true;
+    });
+
+    it('should return false for paths without double slashes', () => {
+      expect(PathUtils.hasDoubleSlashes('/content/dam/images/photo.jpg')).to.be.false;
+      expect(PathUtils.hasDoubleSlashes('/content/dam/')).to.be.false;
+      expect(PathUtils.hasDoubleSlashes('/')).to.be.false;
+    });
+
+    it('should ignore protocol slashes (http://, https://)', () => {
+      expect(PathUtils.hasDoubleSlashes('http://example.com/path')).to.be.false;
+      expect(PathUtils.hasDoubleSlashes('https://example.com/path')).to.be.false;
+      expect(PathUtils.hasDoubleSlashes('ftp://example.com/path')).to.be.false;
+    });
+
+    it('should detect double slashes after protocol', () => {
+      expect(PathUtils.hasDoubleSlashes('http://example.com//path')).to.be.true;
+      expect(PathUtils.hasDoubleSlashes('https://example.com/path//file')).to.be.true;
+    });
+  });
+
+  describe('removeDoubleSlashes', () => {
+    it('should return original input for null or empty', () => {
+      expect(PathUtils.removeDoubleSlashes(null)).to.equal(null);
+      expect(PathUtils.removeDoubleSlashes('')).to.equal('');
+      expect(PathUtils.removeDoubleSlashes(undefined)).to.equal(undefined);
+    });
+
+    it('should remove double slashes from paths', () => {
+      expect(PathUtils.removeDoubleSlashes('/content/dam//images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeDoubleSlashes('/content//dam/images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeDoubleSlashes('/content/dam/images//photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+    });
+
+    it('should remove multiple consecutive slashes', () => {
+      expect(PathUtils.removeDoubleSlashes('/content/dam///images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeDoubleSlashes('/content////dam/images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeDoubleSlashes('//////content/dam/images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+    });
+
+    it('should preserve protocol slashes', () => {
+      expect(PathUtils.removeDoubleSlashes('http://example.com/path'))
+        .to.equal('http:/example.com/path');
+      expect(PathUtils.removeDoubleSlashes('https://example.com/path'))
+        .to.equal('https:/example.com/path');
+      expect(PathUtils.removeDoubleSlashes('ftp://example.com/path'))
+        .to.equal('ftp:/example.com/path');
+    });
+
+    it('should fix double slashes after protocol while preserving protocol', () => {
+      expect(PathUtils.removeDoubleSlashes('http://example.com//path'))
+        .to.equal('http:/example.com/path');
+      expect(PathUtils.removeDoubleSlashes('https://example.com///path//file'))
+        .to.equal('https:/example.com/path/file');
+    });
+
+    it('should handle paths without double slashes', () => {
+      expect(PathUtils.removeDoubleSlashes('/content/dam/images/photo.jpg'))
+        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeDoubleSlashes('/content/dam/'))
+        .to.equal('/content/dam/');
+      expect(PathUtils.removeDoubleSlashes('/'))
+        .to.equal('/');
+    });
+
+    it('should handle complex mixed scenarios', () => {
+      expect(PathUtils.removeDoubleSlashes('https://example.com///content//dam///images//photo.jpg'))
+        .to.equal('https:/example.com/content/dam/images/photo.jpg');
+    });
+  });
+
+  describe('removeLocaleFromPath edge cases', () => {
+    it('should preserve trailing slash when no locale is found', () => {
+      expect(PathUtils.removeLocaleFromPath('/content/dam/images/'))
+        .to.equal('/content/dam/images/');
+      expect(PathUtils.removeLocaleFromPath('/content/dam/123/'))
+        .to.equal('/content/dam/123/');
+    });
+
+    it('should remove trailing slash when locale is found', () => {
+      expect(PathUtils.removeLocaleFromPath('/content/dam/en-US/'))
+        .to.equal('/content/dam');
+    });
+
+    it('should handle edge case with just /content/dam/', () => {
+      expect(PathUtils.removeLocaleFromPath('/content/dam/'))
+        .to.equal('/content/dam/');
+    });
+  });
 });
