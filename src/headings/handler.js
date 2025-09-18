@@ -14,11 +14,11 @@ import { JSDOM } from 'jsdom';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
+import { wwwUrlResolver } from '../common/base-audit.js';
 
 const auditType = Audit.AUDIT_TYPES.HEADINGS;
 
@@ -277,7 +277,7 @@ export async function validatePageHeadings(url, log) {
 export async function headingsAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess } = context;
-  log.info(`Starting Headings Audit with siteId: ${siteId}`);
+  log.info(`Starting Headings Audit with siteId- ${siteId} and baseURL- ${baseURL}`);
 
   try {
     // Get top 200 pages
@@ -442,7 +442,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 }
 
 export default new AuditBuilder()
-  .withUrlResolver(noopUrlResolver)
+  .withUrlResolver(wwwUrlResolver)
   .withRunner(headingsAuditRunner)
   .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
   .build();
