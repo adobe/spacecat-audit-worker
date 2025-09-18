@@ -97,7 +97,8 @@ export async function ensureTableExists(athenaClient, databaseName, reportConfig
  */
 export function generatePeriodIdentifier(startDate, endDate) {
   if (differenceInDays(endDate, startDate) + 1 === 7) {
-    const weekNum = getWeek(startDate, { weekStartsOn: 1 });
+    // Use ISO week numbering: week starts on Monday and week 1 contains at least 4 days of the year
+    const weekNum = getWeek(startDate, { weekStartsOn: 1, firstWeekContainsDate: 4 });
     const year = getYear(startDate);
     return `w${String(weekNum).padStart(2, '0')}-${year}`;
   }
@@ -129,7 +130,7 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
   weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
   weekEnd.setUTCHours(23, 59, 59, 999);
 
-  const weekNumber = getWeek(weekStart, { weekStartsOn: 1 });
+  const weekNumber = getWeek(weekStart, { weekStartsOn: 1, firstWeekContainsDate: 4 });
   const year = getYear(weekStart);
 
   return {
