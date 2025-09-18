@@ -1,3 +1,10 @@
+## [1.182.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.182.0...v1.182.1) (2025-09-18)
+
+
+### Bug Fixes
+
+* form title from mystique fallback to generic titles ([#1278](https://github.com/adobe/spacecat-audit-worker/issues/1278)) ([52c87db](https://github.com/adobe/spacecat-audit-worker/commit/52c87db3a03187591389d45578ffadba48e60813))
+
 # [1.182.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.181.3...v1.182.0) (2025-09-17)
 
 
