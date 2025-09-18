@@ -14,6 +14,19 @@ export function removeTrailingSlash(url) {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 
+export function getBaseUrl(url, useHostnameOnly = false) {
+  if (useHostnameOnly) {
+    try {
+      const urlObj = new URL(url);
+      return `${urlObj.protocol}//${urlObj.host}`; // includes port if any
+    } catch {
+      // If URL parsing fails, return the original URL with trailing slash removed
+      return removeTrailingSlash(url);
+    }
+  }
+  return removeTrailingSlash(url);
+}
+
 const issueRankings = {
   title: {
     missing: 1,

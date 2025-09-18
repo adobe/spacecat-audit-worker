@@ -1,0 +1,174 @@
+/*
+ * Copyright 2025 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+/* c8 ignore start */
+import {
+  getStaticContent, getLastNumberOfWeeks, getWeekInfo,
+} from '@adobe/spacecat-shared-utils';
+import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+import { AuditBuilder } from '../common/audit-builder.js';
+import { wwwUrlResolver } from '../common/index.js';
+import analyzeDomain from './domain-analysis.js';
+import { analyzeProducts } from './product-analysis.js';
+import { analyzePageTypes } from './page-type-analysis.js';
+import { uploadPatternsWorkbook, uploadUrlsWorkbook, getLastSunday } from './utils.js';
+import { referralTrafficRunner } from '../llmo-referral-traffic/handler.js';
+
+const { AUDIT_STEP_DESTINATIONS } = Audit;
+const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
+const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
+
+async function runReferralTrafficStep(context) {
+  const {
+    dataAccess, finalUrl, site, sqs, log,
+  } = context;
+
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const siteId = site.getSiteId();
+
+  log.info(`Starting llmo-customer-analysis audit for site: ${siteId}}`);
+  log.info('Referral Traffic Step: Initiating OpTel import for the last 4 full calendar weeks');
+
+  const last4Weeks = getLastNumberOfWeeks(4);
+
+  // Last week will be imported via step audit
+  const lastWeek = last4Weeks.shift();
+
+  for (const last4Week of last4Weeks) {
+    const { week, year } = last4Week;
+    const message = {
+      type: REFERRAL_TRAFFIC_IMPORT,
+      siteId,
+      auditContext: {
+        auditType: REFERRAL_TRAFFIC_AUDIT,
+        week,
+        year,
+      },
+    };
+    // eslint-disable-next-line no-await-in-loop
+    sqs.sendMessage(configuration.getQueues().imports, message);
+  }
+
+  // Workaround to ensure we have imported data for the following steps
+  return {
+    auditResult: { status: 'Importing OpTel data' },
+    fullAuditRef: finalUrl,
+    type: 'traffic-analysis',
+    week: lastWeek.week,
+    year: lastWeek.year,
+    siteId,
+  };
+}
+
+async function runAgenticTrafficStep(context) {
+  const {
+    audit, env, site, log,
+  } = context;
+
+  log.info('Agentic Traffic Step: Extracting product and page type information');
+
+  const lastFourWeeks = getLastNumberOfWeeks(4);
+
+  // Make sure to create the referral traffic workbook for the last week
+  const lastWeek = lastFourWeeks[0];
+  referralTrafficRunner(null, context, site, lastWeek);
+
+  const siteId = site.getSiteId();
+  const domain = site.getBaseURL();
+  const { S3_IMPORTER_BUCKET_NAME: importerBucket } = env;
+  const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
+  const databaseName = 'rum_metrics';
+  const tableName = 'compact_metrics';
+  const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
+  const temporalConditions = lastFourWeeks
+    .map(({ year, week }) => getWeekInfo(week, year).temporalCondition);
+
+  const variables = {
+    tableName: `${databaseName}.${tableName}`,
+    siteId,
+    temporalCondition: `(${temporalConditions.join(' OR ')})`,
+  };
+
+  const query = await getStaticContent(variables, './src/llmo-customer-analysis/sql/urls.sql');
+  const description = `[Athena Query] Fetching customer analysis data for ${domain}`;
+  const paths = await athenaClient.query(query, databaseName, description);
+  const productRegexes = await analyzeProducts(domain, paths.map((p) => p.path), context);
+  const pagetypeRegexes = await analyzePageTypes(domain, paths.map((p) => p.path), context);
+
+  log.info('Agentic Traffic Step: Extraction complete; uploading results');
+
+  await uploadPatternsWorkbook(productRegexes, pagetypeRegexes, site, context);
+
+  log.info('Agentic Traffic Step: Upload complete; initiating scrap');
+
+  const urls = paths.slice(0, 20).map((p) => ({ url: `https://${audit.getFullAuditRef()}${p.path}` }));
+
+  return {
+    auditResult: { status: 'Initiating scrape' },
+    siteId,
+    urls,
+    maxScrapeAge: 24 * 7,
+    options: {
+      screenshotTypes: [],
+    },
+  };
+}
+
+async function runBrandPresenceStep(context) {
+  const {
+    dataAccess, log, scrapeResultPaths, site, sqs,
+  } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const domain = site.getBaseURL();
+  const results = [...scrapeResultPaths.values()];
+
+  try {
+    log.info('Brand Presence Step: Scrapes received; starting analysis');
+
+    const domainInsights = await analyzeDomain(domain, results, context);
+
+    log.info('Brand Presence Step: analysis complete; uploading results');
+
+    await uploadUrlsWorkbook(domainInsights, site, context);
+
+    log.info('Brand Presence Step: Upload complete; triggering geo-brand-presence audit');
+
+    const geoBrandPresenceMessage = {
+      type: 'geo-brand-presence',
+      siteId: site.getSiteId(),
+      data: getLastSunday(),
+    };
+
+    await sqs.sendMessage(configuration.getQueues().audits, geoBrandPresenceMessage);
+
+    return {
+      status: 'llmo-customer-analysis audit completed',
+    };
+  } catch (error) {
+    log.error(`Error during brand presence step: ${error.message}`);
+
+    return {
+      status: 'failed to complete brand presence step successfully',
+    };
+  }
+}
+
+export default new AuditBuilder()
+  .withUrlResolver(wwwUrlResolver)
+  .addStep('runReferralTrafficStep', runReferralTrafficStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('runAgenticTrafficStep', runAgenticTrafficStep, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+  .addStep('runBrandPresenceStep', runBrandPresenceStep)
+  .build();
+/* c8 ignore end */

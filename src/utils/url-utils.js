@@ -36,7 +36,7 @@ export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
         }
       }
       return null;
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // eslint-disable-next-line no-unused-vars
     } catch (error) {
       return null;
     }
@@ -62,4 +62,23 @@ export function getCountryCodeFromLang(lang, defaultCountry = 'us') {
   }
   // If only language is present, return default
   return defaultCountry;
+}
+
+/**
+ * Parses comma-separated URLs from Slack command data
+ * @param {string} data - Comma-separated URLs string
+ * @returns {Array|null} Array of unique URLs or null
+ */
+export function parseCustomUrls(data) {
+  if (!data || typeof data !== 'string') {
+    return null;
+  }
+
+  const urls = data
+    .split(',')
+    .map((url) => url.trim())
+    .map((url) => url.replace(/^<|>$/g, '').trim()) // Remove < at start and > at end, then trim again
+    .filter((url) => url.length > 0);
+
+  return urls.length > 0 ? [...new Set(urls)] : null;
 }

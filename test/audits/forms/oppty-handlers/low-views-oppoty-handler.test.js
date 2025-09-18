@@ -69,6 +69,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
       site: {
+        getBaseURL: sinon.stub().returns('test-base-url'),
         getId: sinon.stub().returns('test-site-id'),
         getDeliveryType: sinon.stub().returns('eds'),
       },
@@ -192,6 +193,42 @@ describe('createLowFormViewsOpportunities handler method', () => {
 
   it('should use existing high page views low form view opportunity', async () => {
     dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
+    await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
+    expect(highPageViewsLowFormViewsOptty.setUpdatedBy).to.be.calledWith('system');
+    expect(highPageViewsLowFormViewsOptty.save).to.be.calledOnce;
+    expect(highPageViewsLowFormViewsOptty.setGuidance).to.be.calledWith(
+      {
+        recommendations: [
+          {
+            insight: 'The form in the page: https://www.surest.com/existing-opportunity has low discoverability and only 2.99% visitors landing on the page are viewing the form.',
+            recommendation: 'Position the form higher up on the page so users see it without scrolling. Consider using clear and compelling CTAs, minimizing distractions, and ensuring strong visibility across devices.',
+            type: 'guidance',
+            rationale: 'Forms that are visible above the fold are more likely to be seen and interacted with by users.',
+          },
+        ],
+      },
+    );
+    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
+  });
+
+  it('should use existing high page views low form view opportunity with existing forms details', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
+    highPageViewsLowFormViewsOptty.getData = sinon.stub().returns({
+      form: 'https://www.surest.com/existing-opportunity',
+      screenshot: '',
+      trackedFormKPIName: 'Conversion Rate',
+      trackedFormKPIValue: 0.5,
+      formViews: 1000,
+      pageViews: 5000,
+      samples: 5000,
+      formDetails: {
+        is_lead_gen: true,
+        industry: 'Insurance',
+        form_type: 'Quote Request Form',
+        form_category: 'B2C',
+        cpl: 230.6,
+      },
+    });
     await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
     expect(highPageViewsLowFormViewsOptty.setUpdatedBy).to.be.calledWith('system');
     expect(highPageViewsLowFormViewsOptty.save).to.be.calledOnce;

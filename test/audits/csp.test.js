@@ -17,9 +17,8 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import { load as cheerioLoad } from 'cheerio';
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Opportunity, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { isIsoDate } from '@adobe/spacecat-shared-utils';
 import createLHSAuditRunner from '../../src/lhs/lib.js';
 import { MockContextBuilder } from '../shared.js';
@@ -47,11 +46,6 @@ function assertAuditData(auditData) {
     'best-practices': 0.5,
     seo: 0.5,
   });
-}
-
-function normalizeTag(html) {
-  const $ = cheerioLoad(html);
-  return $.html($('script')[0]);
 }
 
 describe('CSP Post-processor', () => {
@@ -190,6 +184,7 @@ describe('CSP Post-processor', () => {
   let cspSite;
   let auditData;
   let opportunityStub;
+  let suggestionStub;
   let cspOpportunity;
   let configuration;
 
@@ -244,6 +239,11 @@ describe('CSP Post-processor', () => {
     };
     context.dataAccess.Opportunity = opportunityStub;
 
+    suggestionStub = {
+      bulkUpdateStatus: sinon.stub().resolves([]),
+    };
+    context.dataAccess.Suggestion = suggestionStub;
+
     configuration = {
       isHandlerEnabledForSite: sandbox.stub(),
     };
@@ -253,6 +253,7 @@ describe('CSP Post-processor', () => {
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
       setData: sinon.stub(),
+      setStatus: sinon.stub(),
       save: sinon.stub(),
       getSuggestions: sinon.stub().returns([]),
       addSuggestions: sinon
@@ -278,7 +279,103 @@ describe('CSP Post-processor', () => {
     assertAuditData(cspAuditData);
 
     expect(opportunityStub.create).to.not.have.been.called;
+    expect(cspOpportunity.setStatus).to.not.have.been.called;
+    expect(cspOpportunity.save).to.not.have.been.called;
     expect(cspOpportunity.addSuggestions).to.not.have.been.called;
+    expect(suggestionStub.bulkUpdateStatus).to.not.have.been.called;
+  });
+
+  it('should resolve existing opportunity if no CSP findings in lighthouse report', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [];
+
+    sinon.replace(opportunityStub, 'allBySiteIdAndStatus', sinon.stub().resolves([cspOpportunity]));
+    sinon.replace(cspOpportunity, 'getSuggestions', sinon.stub().resolves([
+      {
+        getStatus: () => Suggestion.STATUSES.OUTDATED,
+      },
+    ]));
+
+    const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+    assertAuditData(cspAuditData);
+
+    // Existing opportunity is being updated
+    expect(opportunityStub.create).to.not.have.been.called;
+    expect(cspOpportunity.setStatus).to.have.been.calledWith(Opportunity.STATUSES.RESOLVED);
+    expect(cspOpportunity.save).to.have.been.called;
+    expect(cspOpportunity.addSuggestions).to.not.have.been.called;
+
+    // No suggestions are updated as all already resolved
+    expect(suggestionStub.bulkUpdateStatus).to.not.have.been.called;
+  });
+
+  it('should resolve existing opportunity and all suggestions if no CSP findings in lighthouse report', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [];
+
+    sinon.replace(opportunityStub, 'allBySiteIdAndStatus', sinon.stub().resolves([cspOpportunity]));
+    const activeSuggestion = {
+      getStatus: () => Suggestion.STATUSES.NEW,
+    };
+    const outdatedSuggestion = {
+      getStatus: () => Suggestion.STATUSES.OUTDATED,
+    };
+    sinon.replace(cspOpportunity, 'getSuggestions', sinon.stub().resolves([
+      ...[activeSuggestion],
+      ...[outdatedSuggestion],
+      ...[activeSuggestion],
+    ]));
+
+    const cspAuditData = await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+    assertAuditData(cspAuditData);
+
+    // Existing opportunity is being updated
+    expect(opportunityStub.create).to.not.have.been.called;
+    expect(cspOpportunity.setStatus).to.have.been.calledWith(Opportunity.STATUSES.RESOLVED);
+    expect(cspOpportunity.save).to.have.been.called;
+    expect(cspOpportunity.addSuggestions).to.not.have.been.called;
+
+    // All suggestions are updated
+    expect(suggestionStub.bulkUpdateStatus).to.have.been.calledWith([
+      ...[activeSuggestion],
+      ...[activeSuggestion],
+    ], Suggestion.STATUSES.FIXED);
+  });
+
+  it('should resolve existing opportunity if no CSP findings in lighthouse report - error case 1', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [];
+
+    sinon.replace(opportunityStub, 'allBySiteIdAndStatus', sinon.stub().throws());
+    sinon.replace(cspOpportunity, 'getSuggestions', sinon.stub().resolves([
+      {
+        getStatus: () => Suggestion.STATUSES.OUTDATED,
+      },
+    ]));
+
+    try {
+      await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('Failed to fetch opportunities for siteId test-site-id: Error');
+    }
+  });
+
+  it('should resolve existing opportunity if no CSP findings in lighthouse report - error case 2', async () => {
+    sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp');
+    auditData.auditResult.csp = [];
+
+    sinon.replace(opportunityStub, 'allBySiteIdAndStatus', sinon.stub().resolves([cspOpportunity]));
+    sinon.replace(cspOpportunity, 'getSuggestions', sinon.stub().throws());
+
+    try {
+      await cspOpportunityAndSuggestions(siteUrl, auditData, context, cspSite);
+
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('Failed to resolve suggestions for siteId test-site-id: Error');
+    }
   });
 
   it('should extract CSP opportunity', async () => {
@@ -303,7 +400,7 @@ describe('CSP Post-processor', () => {
       description: 'Content Security Policy can help protect applications from Cross Site Scripting (XSS) attacks, but in order for it to be effective one needs to define a secure policy. The recommended CSP setup is "Strict CSP with (cached) nonce + strict-dynamic".',
       data: {
         securityScoreImpact: 10,
-        howToFix: '**Warning:** This solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.  \nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
+        howToFix: '### ⚠ **Warning**\nThis solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.\nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
         dataSources: [
           'Page',
         ],
@@ -367,7 +464,7 @@ describe('CSP Post-processor', () => {
       description: 'Content Security Policy can help protect applications from Cross Site Scripting (XSS) attacks, but in order for it to be effective one needs to define a secure policy. The recommended CSP setup is "Strict CSP with (cached) nonce + strict-dynamic".',
       data: {
         securityScoreImpact: 10,
-        howToFix: '**Warning:** This solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.  \nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
+        howToFix: '### ⚠ **Warning**\nThis solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.\nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
         dataSources: [
           'Page',
         ],
@@ -464,7 +561,7 @@ describe('CSP Post-processor', () => {
       description: 'Content Security Policy can help protect applications from Cross Site Scripting (XSS) attacks, but in order for it to be effective one needs to define a secure policy. The recommended CSP setup is "Strict CSP with (cached) nonce + strict-dynamic".',
       data: {
         securityScoreImpact: 10,
-        howToFix: '**Warning:** This solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.  \nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
+        howToFix: '### ⚠ **Warning**\nThis solution requires testing before deployment. Customer code and configurations vary, so please validate in a test branch first.\nSee https://www.aem.live/docs/csp-strict-dynamic-cached-nonce for more details.',
         dataSources: [
           'Page',
         ],
@@ -586,11 +683,9 @@ describe('CSP Post-processor', () => {
           ...csp[0],
           findings: [
             {
-              type: 'csp-header',
-            },
-            {
               type: 'static-content',
               url: 'https://adobe.com/head.html',
+              page: '/head.html',
               findings: [
                 {
                   scriptContent: '<script src="/scripts/lib-franklin.js" type="module"></script>',
@@ -613,6 +708,7 @@ describe('CSP Post-processor', () => {
             {
               type: 'static-content',
               url: 'https://adobe.com/404.html',
+              page: '/404.html',
               findings: [
                 {
                   scriptContent: "<script type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>",
@@ -636,7 +732,11 @@ describe('CSP Post-processor', () => {
                 },
               ],
               suggestedBody: "<!DOCTYPE html>\n<html>\n\n<head>\n  \n  <title>Page not found</title>\n  <script nonce=\"aem\" type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <meta property=\"og:title\" content=\"Page not found\">\n  <script nonce=\"aem\" src=\"/scripts/scripts.js\" type=\"module\" crossorigin=\"use-credentials\"></script>\n  <script nonce=\"aem\" type=\"module\">\n    window.addEventListener('load', () => {\n      if (document.referrer) {\n        const { origin, pathname } = new URL(document.referrer);\n        if (origin === window.location.origin) {\n          const backBtn = document.createElement('a');\n          backBtn.classList.add('button', 'error-button-back');\n          backBtn.href = pathname;\n          backBtn.textContent = 'Go back';\n          backBtn.title = 'Go back';\n          const btnContainer = document.querySelector('.button-container');\n          btnContainer.append(backBtn);\n        }\n      }\n    });\n  </script>\n  <script nonce=\"aem\" type=\"module\">\n    import { sampleRUM } from '/scripts/lib-franklin.js';\n    import { applyRedirects } from '/scripts/redirects.js';\n    await applyRedirects();\n    sampleRUM('404', { source: document.referrer });\n  </script>\n  <link rel=\"stylesheet\" href=\"/styles/styles.css\">\n  <style>\n    main.error {\n      min-height: calc(100vh - var(--nav-height));\n      display: flex;\n      align-items: center;\n    }\n\n    main.error .error-number {\n      width: 100%;\n    }\n\n    main.error .error-number text {\n      font-family: monospace;\n    }\n  </style>\n  <link rel=\"stylesheet\" href=\"/styles/lazy-styles.css\">\n</head>\n\n<body>\n  <header></header>\n  <main class=\"error\">\n    <div class=\"section\">\n      <svg viewBox=\"1 0 38 18\" class=\"error-number\">\n        <text x=\"0\" y=\"17\">404</text>\n      </svg>\n      <h2 class=\"error-message\">Page Not Found</h2>\n      <p class=\"button-container\">\n        <a href=\"/\" class=\"button secondary error-button-home\">Go home</a>\n      </p>\n    </div>\n  </main>\n  <footer></footer>\n</body>\n\n</html>",
-            }],
+            },
+            {
+              type: 'csp-header',
+            },
+          ],
         },
       ];
 
@@ -644,7 +744,7 @@ describe('CSP Post-processor', () => {
       nock('https://adobe.com').get('/404.html').reply(200, htmlContent404);
 
       const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
-      expect(normalizeTag(cspResult)).to.deep.equal(normalizeTag(expectedCsp));
+      expect(cspResult).to.deep.equal(expectedCsp);
 
       expect(context.log.error).not.to.have.been.calledWithMatch(sinon.match('Error fetching one or more pages. Skipping CSP auto-suggest.'));
     });
@@ -662,11 +762,9 @@ describe('CSP Post-processor', () => {
           ...csp[0],
           findings: [
             {
-              type: 'csp-header',
-            },
-            {
               type: 'static-content',
               url: 'https://adobe.com/head.html',
+              page: '/head.html',
               findings: [
                 {
                   scriptContent: '<script \n   src="/scripts/lib-franklin.js" \n  type="module">\n</script>',
@@ -685,7 +783,11 @@ describe('CSP Post-processor', () => {
                 },
               ],
               suggestedBody: '<!-- v7 -->\n\n<meta name="viewport" content="width=device-width, initial-scale=1"/>\n<script nonce="aem" \n   src="/scripts/lib-franklin.js" \n  type="module">\n</script>\n<script nonce="aem" src="/scripts/scripts.js" type="module"></script>\n<script nonce="aem" src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>\n<link rel="stylesheet" href="/styles/styles.css"/>\n',
-            }],
+            },
+            {
+              type: 'csp-header',
+            },
+          ],
         },
       ];
 
@@ -693,7 +795,7 @@ describe('CSP Post-processor', () => {
       nock('https://adobe.com').get('/404.html').reply(200, '');
 
       const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
-      expect(normalizeTag(cspResult)).to.deep.equal(normalizeTag(expectedCsp));
+      expect(cspResult).to.deep.equal(expectedCsp);
 
       expect(context.log.error).not.to.have.been.calledWithMatch(sinon.match('Error fetching one or more pages. Skipping CSP auto-suggest.'));
     });

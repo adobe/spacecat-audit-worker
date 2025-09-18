@@ -12,7 +12,6 @@
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getObjectKeysFromSubfolders } from './data-processing.js';
 import { getObjectFromKey } from '../../utils/s3-utils.js';
-import { WCAG_CRITERIA_COUNTS } from './constants.js';
 
 /**
  * Fetches existing URLs from previously failed audits stored in S3.
@@ -43,7 +42,7 @@ export async function getExistingObjectKeysFromFailedAudits(s3Client, bucketName
     log.info(`[A11yAudit] Found ${objectKeys.length} existing URLs from failed audits for site ${siteId}.`);
     return objectKeys;
   } catch (error) {
-    log.error(`[A11yAudit] Error getting existing URLs from failed audits for site ${siteId}: ${error.message}`);
+    log.error(`[A11yAudit][A11yProcessingError] Error getting existing URLs from failed audits for site ${siteId}: ${error.message}`);
     return []; // Return empty array on error to prevent downstream issues
   }
 }
@@ -154,7 +153,7 @@ export async function updateStatusToIgnored(
     const failedUpdates = updateResults.filter((result) => result.status === 'rejected');
 
     if (failedUpdates.length > 0) {
-      log.error(`[A11yAudit] Failed to update ${failedUpdates.length} opportunities for site ${siteId}: ${JSON.stringify(failedUpdates)}`);
+      log.error(`[A11yAudit][A11yProcessingError] Failed to update ${failedUpdates.length} opportunities for site ${siteId}: ${JSON.stringify(failedUpdates)}`);
     }
 
     return {
@@ -163,147 +162,10 @@ export async function updateStatusToIgnored(
       error: failedUpdates.length > 0 ? 'Some updates failed' : undefined,
     };
   } catch (error) {
-    log.error(`[A11yAudit] Error updating opportunities to IGNORED for site ${siteId}: ${error.message}`);
+    log.error(`[A11yAudit][A11yProcessingError] Error updating opportunities to IGNORED for site ${siteId}: ${error.message}`);
     return {
       success: false,
       updatedCount: 0,
-      error: error.message,
-    };
-  }
-}
-
-/**
- * Generic audit metrics calculator that can handle different audit types
- * @param {Object} reportData - The audit report data
- * @param {Object} config - Configuration object containing audit-specific extractors
- * @param {string} config.siteId - The site ID
- * @param {string} config.baseUrl - The base URL of the site
- * @param {string} config.auditType - The type of audit (e.g. 'a11y', 'preflight')
- * @param {string} [config.source='axe-core'] - The source of the audit
- * @param {number} config.totalChecks - Total number of checks performed
- * @param {Function} config.extractComplianceData - Function to extract compliance data
- * @param {Function} config.extractTopOffenders - Function to extract top offenders
- * @returns {Object} Standardized metrics object
- */
-export function calculateAuditMetrics(reportData, config) {
-  const {
-    siteId,
-    baseUrl,
-    auditType,
-    source = 'axe-core',
-    totalChecks,
-    extractComplianceData,
-    extractTopOffenders,
-  } = config;
-
-  // Calculate compliance using audit-specific extractor
-  const compliance = extractComplianceData(reportData, totalChecks);
-
-  // Calculate top offenders using audit-specific extractor
-  const topOffenders = extractTopOffenders(reportData);
-
-  return {
-    siteId,
-    url: baseUrl,
-    source,
-    name: `${auditType}-audit`,
-    time: new Date().toISOString(),
-    compliance,
-    topOffenders,
-  };
-}
-
-/**
- * Calculate accessibility audit metrics from report data
- * @param {Object} reportData - The accessibility audit report data
- * @param {string} siteId - The site ID
- * @param {string} baseUrl - The base URL of the site
- * @returns {Object} Accessibility metrics object
- */
-export function calculateA11yMetrics(reportData, siteId, baseUrl) {
-  return calculateAuditMetrics(reportData, {
-    siteId,
-    baseUrl,
-    auditType: 'a11y',
-    totalChecks: WCAG_CRITERIA_COUNTS.TOTAL,
-    extractComplianceData: (data, total) => {
-      const { overall } = data;
-      const criticalItemsCount = Object.keys(overall?.violations?.critical?.items || {}).length;
-      const seriousItemsCount = Object.keys(overall?.violations?.serious?.items || {}).length;
-      const failed = criticalItemsCount + seriousItemsCount;
-      return {
-        total,
-        failed,
-        passed: total - failed,
-      };
-    },
-    extractTopOffenders: (data) => {
-      const offenders = [];
-      for (const [url, urlData] of Object.entries(data)) {
-        if (url !== 'overall' && urlData.violations) {
-          const count = urlData.violations.total || 0;
-          if (count > 0) offenders.push({ url, count });
-        }
-      }
-      return offenders.sort((a, b) => b.count - a.count).slice(0, 10);
-    },
-  });
-}
-
-export async function saveA11yMetricsToS3(reportData, context) {
-  const {
-    log, env, site, s3Client,
-  } = context;
-  const bucketName = env.S3_IMPORTER_BUCKET_NAME;
-  const siteId = site.getId();
-  const baseUrl = site.getBaseURL();
-
-  // Calculate metrics from report data
-  const newMetricsEntry = calculateA11yMetrics(reportData, siteId, baseUrl);
-
-  // Log the calculated metrics summary
-  const { total, failed, passed } = newMetricsEntry.compliance;
-  const offendersCount = newMetricsEntry.topOffenders.length;
-  log.info(`[A11yAudit] Metrics summary for site ${siteId} (${baseUrl}) - Total: ${total}, Failed: ${failed}, Passed: ${passed}, Top Offenders: ${offendersCount}`);
-
-  // Read existing a11y-audit.json file from s3
-  const s3Key = `metrics/${siteId}/axe-core/a11y-audit.json`;
-  let existingMetrics = [];
-
-  try {
-    const existingData = await getObjectFromKey(s3Client, bucketName, s3Key, log);
-    if (existingData && Array.isArray(existingData)) {
-      existingMetrics = existingData;
-      log.info(`[A11yAudit] Found existing metrics file with ${existingMetrics.length} entries for site ${siteId} (${baseUrl})`);
-    }
-  } catch (error) {
-    log.info(`[A11yAudit] No existing metrics file found for site ${siteId} (${baseUrl}), creating new one: ${error.message}`);
-  }
-
-  // Save new metrics to s3 a11y-audit.json file
-  existingMetrics.push(newMetricsEntry);
-
-  try {
-    await s3Client.send(new PutObjectCommand({
-      Bucket: bucketName,
-      Key: s3Key,
-      Body: JSON.stringify(existingMetrics, null, 2),
-      ContentType: 'application/json',
-    }));
-
-    log.info(`[A11yAudit] Successfully saved a11y metrics to S3: ${s3Key} for site ${siteId} (${baseUrl})`);
-
-    return {
-      success: true,
-      message: 'A11y metrics saved to S3',
-      metricsData: newMetricsEntry,
-      s3Key,
-    };
-  } catch (error) {
-    log.error(`[A11yAudit] Error saving metrics to S3 for site ${siteId} (${baseUrl}): ${error.message}`);
-    return {
-      success: false,
-      message: `Failed to save a11y metrics to S3: ${error.message}`,
       error: error.message,
     };
   }
@@ -394,11 +256,47 @@ export async function saveMystiqueValidationMetricsToS3(
       s3Key,
     };
   } catch (error) {
-    log.error(`[A11yValidation] Error saving mystique validation metrics to S3 for site ${siteId}, opportunity ${opportunityId}: ${error.message}`);
+    log.error(`[A11yValidation][A11yProcessingError] Error saving mystique validation metrics to S3 for site ${siteId}, opportunity ${opportunityId}: ${error.message}`);
     return {
       success: false,
       message: `Failed to save mystique validation metrics to S3: ${error.message}`,
       error: error.message,
     };
   }
+}
+
+export async function saveOpptyWithRetry(opportunity, auditId, Opportunity, log, maxRetries = 3) {
+  async function attemptSave(currentOpportunity, attemptNumber) {
+    try {
+      await currentOpportunity.save();
+      log.info(`[A11yRemediationGuidance] Successfully saved opportunity on attempt ${attemptNumber}`);
+      return currentOpportunity;
+    } catch (error) {
+      // Check if we have retries left
+      if (attemptNumber < maxRetries) {
+        // Calculate delay: 200ms, 400ms, 800ms, etc.
+        const delay = 2 ** attemptNumber * 100;
+
+        log.error(`[A11yRemediationGuidance][A11yProcessingError] Conditional check failed on attempt ${attemptNumber}, retrying in ${delay}ms`);
+
+        // Wait before retrying
+        await new Promise((resolve) => {
+          setTimeout(resolve, delay);
+        });
+
+        // Get fresh data from database and reapply our changes
+        const refreshed = await Opportunity.findById(currentOpportunity.getId());
+        refreshed.setAuditId(auditId);
+        refreshed.setUpdatedBy('system');
+
+        // Recursively try again with the refreshed opportunity
+        return attemptSave(refreshed, attemptNumber + 1);
+      }
+
+      // If it's a different error or we're out of retries, give up
+      throw error;
+    }
+  }
+
+  return attemptSave(opportunity, 1);
 }

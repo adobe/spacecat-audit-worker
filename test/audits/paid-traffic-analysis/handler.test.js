@@ -16,10 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { MockContextBuilder } from '../../shared.js';
-import {
-  prepareTrafficAnalysisRequest,
-  sendRequestToMystique,
-} from '../../../src/paid-traffic-analysis/handler.js';
+import { prepareTrafficAnalysisRequest, sendRequestToMystique } from '../../../src/paid-traffic-analysis/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -35,16 +32,41 @@ describe('Paid Traffic Analysis Handler', () => {
   const siteId = 'site-123';
   const auditId = 'audit-456';
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sandbox = sinon.createSandbox();
 
     site = {
       getSiteId: sandbox.stub().returns(siteId),
       getDeliveryType: sandbox.stub().returns('aem_edge'),
+      getBaseURL: sandbox.stub().returns(auditUrl),
+      getPageTypes: sandbox.stub().returns(null),
     };
 
     mockSqs = {
       sendMessage: sandbox.stub().resolves(),
+    };
+
+    const mockSite = {
+      getBaseURL: sandbox.stub().resolves('https://example.com'),
+      getPageTypes: sandbox.stub().resolves(null),
+    };
+
+    const mockDataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves(mockSite),
+      },
+    };
+
+    const mockAthenaClient = {
+      query: sandbox.stub().resolves([]),
+    };
+
+    const mockS3Client = {
+      send: sandbox.stub().resolves({
+        // Simulate cache files exist, so no warming needed
+        ContentLength: 1024,
+        LastModified: new Date(),
+      }),
     };
 
     context = new MockContextBuilder()
@@ -57,8 +79,16 @@ describe('Paid Traffic Analysis Handler', () => {
           error: sandbox.spy(),
         },
         sqs: mockSqs,
+        dataAccess: mockDataAccess,
+        athenaClient: mockAthenaClient,
+        s3Client: mockS3Client,
         env: {
           QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+          RUM_METRICS_DATABASE: 'rum_db',
+          RUM_METRICS_COMPACT_TABLE: 'compact_table',
+          S3_IMPORTER_BUCKET_NAME: 'test-bucket',
+          PAID_DATA_THRESHOLD: 2000,
+          MAX_CONCURRENT_REQUESTS: 5,
         },
         siteId,
       })
@@ -74,7 +104,7 @@ describe('Paid Traffic Analysis Handler', () => {
   });
 
   describe('prepareTrafficAnalysisRequest', () => {
-    it('should prepare weekly analysis request correctly', async () => {
+    it('should prepare weekly analysis request correctly and warm cache', async () => {
       const result = await prepareTrafficAnalysisRequest(
         auditUrl,
         context,
@@ -95,9 +125,12 @@ describe('Paid Traffic Analysis Handler', () => {
         fullAuditRef: auditUrl,
       });
       expect(result.auditResult.temporalCondition).to.include('week=2');
+
+      // Verify cache warming checked S3 for existing cache files
+      expect(context.s3Client.send).to.have.been.called;
     });
 
-    it('should prepare monthly analysis request correctly', async () => {
+    it('should prepare monthly analysis request correctly and warm cache', async () => {
       const result = await prepareTrafficAnalysisRequest(
         auditUrl,
         context,
@@ -116,6 +149,35 @@ describe('Paid Traffic Analysis Handler', () => {
         auditResult: expectedAuditResult,
         fullAuditRef: auditUrl,
       });
+
+      // Verify cache warming checked S3 for existing cache files
+      expect(context.s3Client.send).to.have.been.called;
+    });
+
+    it('should handle cache warming partial success', async () => {
+      const result = await prepareTrafficAnalysisRequest(
+        auditUrl,
+        context,
+        site,
+        'weekly',
+      );
+
+      expect(result).to.have.property('auditResult');
+      // Verify cache warming checked S3 for existing cache files
+      expect(context.s3Client.send).to.have.been.called;
+    });
+
+    it('should warm cache with temporal parameters', async () => {
+      const result = await prepareTrafficAnalysisRequest(
+        auditUrl,
+        context,
+        site,
+        'weekly',
+      );
+
+      expect(result).to.have.property('auditResult');
+      // Cache warming should check S3 for existing cache files
+      expect(context.s3Client.send).to.have.been.called;
     });
   });
 

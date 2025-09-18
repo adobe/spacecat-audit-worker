@@ -10,10 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { JSDOM } from 'jsdom';
-import { isLangCode } from 'is-language-code';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { isLangCode } from 'is-language-code';
+import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -24,17 +24,13 @@ import { getTopPagesForSiteId } from '../canonical/handler.js';
 const auditType = Audit.AUDIT_TYPES.HREFLANG;
 
 export const HREFLANG_CHECKS = Object.freeze({
-  HREFLANG_MISSING: {
-    check: 'hreflang-missing',
-    explanation: 'No hreflang tags found. Hreflang tags help search engines understand which language versions of pages to serve to users.',
+  HREFLANG_INVALID_LANGUAGE_TAG: {
+    check: 'hreflang-invalid-language-tag',
+    explanation: 'Invalid language tag found in hreflang attribute. Language tags must follow IANA standards.',
   },
-  HREFLANG_INVALID_LANGUAGE_CODE: {
-    check: 'hreflang-invalid-language-code',
-    explanation: 'Invalid language code found in hreflang attribute. Language codes must follow IANA standards.',
-  },
-  HREFLANG_SELF_REFERENCE_MISSING: {
-    check: 'hreflang-self-reference-missing',
-    explanation: 'Missing self-referencing hreflang tag. Each page should include a hreflang tag pointing to itself.',
+  HREFLANG_X_DEFAULT_MISSING: {
+    check: 'hreflang-x-default-missing',
+    explanation: 'Missing x-default hreflang tag for international fallback.',
   },
   HREFLANG_OUTSIDE_HEAD: {
     check: 'hreflang-outside-head',
@@ -44,14 +40,7 @@ export const HREFLANG_CHECKS = Object.freeze({
     check: 'top-pages',
     explanation: 'No top pages found',
   },
-  URL_UNDEFINED: {
-    check: 'url-defined',
-    explanation: 'The URL is undefined or null, which prevents the hreflang validation process.',
-  },
-  FETCH_ERROR: {
-    check: 'hreflang-fetch-error',
-    explanation: 'Error fetching the page content for hreflang validation.',
-  },
+
 });
 
 /**
@@ -62,19 +51,23 @@ export const HREFLANG_CHECKS = Object.freeze({
  */
 export async function validatePageHreflang(url, log) {
   if (!url) {
+    log.error('URL is undefined or null, cannot validate hreflang');
+    // Return empty result - URL validation errors should only be logged
     return {
       url,
-      checks: [{
-        check: HREFLANG_CHECKS.URL_UNDEFINED.check,
-        success: false,
-        explanation: HREFLANG_CHECKS.URL_UNDEFINED.explanation,
-      }],
+      checks: [],
     };
   }
 
   try {
     log.info(`Checking hreflang for URL: ${url}`);
     const response = await fetch(url);
+
+    if (!response.ok) {
+      log.warn(`Failed to fetch ${url}: ${response.status} ${response.statusText}. Skipping hreflang validation.`);
+      return { url, checks: [] }; // Skip validation
+    }
+
     const html = await response.text();
     const dom = new JSDOM(html);
     const { document } = dom.window;
@@ -83,25 +76,17 @@ export async function validatePageHreflang(url, log) {
     const hreflangLinks = Array.from(document.querySelectorAll('link[rel="alternate"][hreflang]'));
     const checks = [];
 
-    // Check if any hreflang tags exist
+    // Skip validation if no hreflang tags exist
     if (hreflangLinks.length === 0) {
-      checks.push({
-        check: HREFLANG_CHECKS.HREFLANG_MISSING.check,
-        success: false,
-        explanation: HREFLANG_CHECKS.HREFLANG_MISSING.explanation,
-      });
-      log.info(`No hreflang tags found for URL: ${url}`);
-    } else {
-      checks.push({
-        check: HREFLANG_CHECKS.HREFLANG_MISSING.check,
-        success: true,
-      });
-      log.info(`Found ${hreflangLinks.length} hreflang tags for URL: ${url}`);
+      log.info(`No hreflang tags found for URL: ${url} - this is valid for single-language sites`);
+      return { url, checks: [] }; // Return empty checks - no issues to report
     }
 
+    log.info(`Found ${hreflangLinks.length} hreflang tags for URL: ${url}, validating implementation quality`);
+
     if (hreflangLinks.length > 0) {
-      let selfReferenceFound = false;
-      const currentUrl = new URL(url);
+      let hasXDefault = false;
+      const languageCodes = new Set();
 
       // Validate each hreflang link
       for (const link of hreflangLinks) {
@@ -119,13 +104,17 @@ export async function validatePageHreflang(url, log) {
           });
         }
 
-        // Validate language code
-        if (hreflang !== 'x-default') {
+        // Check for x-default
+        if (hreflang === 'x-default') {
+          hasXDefault = true;
+        } else {
+          // Validate language code for non-x-default values
+          languageCodes.add(hreflang);
           const validation = isLangCode(hreflang);
           if (!validation.res) {
-            const errorMsg = `${HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_CODE.explanation} Error: ${validation.message}`;
+            const errorMsg = `${HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_TAG.explanation} Error: ${validation.message}`;
             checks.push({
-              check: HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_CODE.check,
+              check: HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_TAG.check,
               success: false,
               explanation: errorMsg,
               hreflang,
@@ -134,38 +123,28 @@ export async function validatePageHreflang(url, log) {
           }
         }
 
-        // Check for self-reference
         try {
-          const linkUrl = new URL(href, url);
-          if (linkUrl.href === currentUrl.href || linkUrl.pathname === currentUrl.pathname) {
-            selfReferenceFound = true;
-          }
+          // eslint-disable-next-line no-new
+          new URL(href, url);
         } catch {
           log.warn(`Invalid hreflang URL: ${href} for page ${url}`);
         }
       }
 
-      // Check self-reference
-      if (!selfReferenceFound) {
+      // Check x-default
+      if (languageCodes.size > 1 && !hasXDefault) {
         checks.push({
-          check: HREFLANG_CHECKS.HREFLANG_SELF_REFERENCE_MISSING.check,
+          check: HREFLANG_CHECKS.HREFLANG_X_DEFAULT_MISSING.check,
           success: false,
-          explanation: HREFLANG_CHECKS.HREFLANG_SELF_REFERENCE_MISSING.explanation,
+          explanation: HREFLANG_CHECKS.HREFLANG_X_DEFAULT_MISSING.explanation,
         });
       }
     }
 
     return { url, checks };
   } catch (error) {
-    log.error(`Error validating hreflang for ${url}: ${error.message}`);
-    return {
-      url,
-      checks: [{
-        check: HREFLANG_CHECKS.FETCH_ERROR.check,
-        success: false,
-        explanation: HREFLANG_CHECKS.FETCH_ERROR.explanation,
-      }],
-    };
+    log.warn(`Unable to validate hreflang for ${url}: ${error.message}. Skipping hreflang validation.`);
+    return { url, checks: [] }; // Skip validation, don't report fetch errors as audit issues
   }
 }
 
@@ -225,8 +204,6 @@ export async function hreflangAuditRunner(baseURL, context, site) {
       }
       return acc;
     }, {});
-
-    delete aggregatedResults[HREFLANG_CHECKS.FETCH_ERROR.check];
 
     log.info(`Successfully completed Hreflang Audit for site: ${baseURL}`);
 
@@ -308,16 +285,13 @@ export function generateSuggestions(auditUrl, auditData, context) {
  */
 function generateRecommendedAction(checkType) {
   switch (checkType) {
-    case HREFLANG_CHECKS.HREFLANG_MISSING.check:
-      return 'Add hreflang tags to the <head> section to specify language and region targeting.';
-    case HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_CODE.check:
-      return 'Update hreflang attribute to use valid ISO 639-1 language codes and ISO 3166-1 Alpha 2 country codes.';
-    case HREFLANG_CHECKS.HREFLANG_SELF_REFERENCE_MISSING.check:
-      return 'Add a self-referencing hreflang tag that points to the current page with its own language/region.';
+    case HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_TAG.check:
+      return 'Update hreflang attribute to use valid language tags (ISO 639-1 language codes and ISO 3166-1 Alpha 2 country codes).';
+    case HREFLANG_CHECKS.HREFLANG_X_DEFAULT_MISSING.check:
+      return 'Add x-default hreflang tag: <link rel="alternate" href="https://example.com/" hreflang="x-default" />';
     case HREFLANG_CHECKS.HREFLANG_OUTSIDE_HEAD.check:
       return 'Move hreflang tags from the body to the <head> section of the HTML document.';
-    case HREFLANG_CHECKS.FETCH_ERROR.check:
-      return 'Ensure the page is accessible and fix any server or network issues preventing content retrieval.';
+
     default:
       return 'Review and fix hreflang implementation according to international SEO best practices.';
   }

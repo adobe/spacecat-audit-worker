@@ -13,38 +13,59 @@
 /* eslint-env mocha */
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
+import { weeklyBreakdownQueries } from '../../../src/cdn-logs-report/utils/query-builder.js';
 
 use(sinonChai);
 
+// Mock data factories
+const createMockSiteConfig = (overrides = {}) => ({
+  getLlmoDataFolder: () => null,
+  getLlmoCdnlogsFilter: () => [{
+    value: ['www.another.com'],
+    key: 'host',
+  }],
+  getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+  ...overrides,
+});
+
+const createMockSite = (overrides = {}) => ({
+  getBaseURL: () => 'https://adobe.com',
+  getConfig: () => createMockSiteConfig(),
+  ...overrides,
+});
+
+const createMockOptions = (overrides = {}) => ({
+  periods: {
+    weeks: [{
+      startDate: new Date('2025-01-06'),
+      endDate: new Date('2025-01-12'),
+      weekLabel: 'Week 2 2025',
+    }],
+  },
+  databaseName: 'test_db',
+  tableName: 'test_table',
+  siteFilters: [],
+  site: createMockSite(),
+  ...overrides,
+});
+
+const createMockPatterns = () => ({
+  pagetype: {
+    data: [{ name: 'Product Page', regex: '.*product.*' }],
+  },
+  products: {
+    data: [
+      { regex: '/products/', name: 'Products' },
+      { regex: '/category/([^/]+)' },
+    ],
+  },
+});
+
 describe('CDN Logs Query Builder', () => {
-  let weeklyBreakdownQueries;
   let mockOptions;
 
-  before(async () => {
-    ({ weeklyBreakdownQueries } = await import('../../../src/cdn-logs-report/utils/query-builder.js'));
-  });
-
   beforeEach(() => {
-    mockOptions = {
-      periods: {
-        weeks: [
-          {
-            startDate: new Date('2025-01-06'),
-            endDate: new Date('2025-01-12'),
-            weekLabel: 'Week 2 2025',
-          },
-        ],
-      },
-      databaseName: 'test_db',
-      tableName: 'test_table',
-      siteFilters: [],
-      site: {
-        getBaseURL: () => 'https://example.com',
-        getConfig: () => ({
-          getGroupedURLs: () => null,
-        }),
-      },
-    };
+    mockOptions = createMockOptions();
   });
 
   it('creates agentic report query with ChatGPT and Perplexity filtering', async () => {
@@ -61,11 +82,31 @@ describe('CDN Logs Query Builder', () => {
   });
 
   it('handles site filters correctly', async () => {
-    mockOptions.siteFilters = "url LIKE '%test%'";
+    const customOptions = createMockOptions({
+      site: createMockSite({
+        getConfig: () => createMockSiteConfig({
+          getLlmoCdnlogsFilter: () => [{ value: ['test'], key: 'url' }],
+        }),
+      }),
+    });
 
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
 
-    expect(query).to.include("url LIKE '%test%'");
+    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
+  });
+
+  it('handles llmo cdn logs site filters correctly', async () => {
+    const customOptions = createMockOptions({
+      site: createMockSite({
+        getConfig: () => createMockSiteConfig({
+          getLlmoCdnlogsFilter: () => [{ value: ['test'], key: 'url' }],
+        }),
+      }),
+    });
+
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+
+    expect(query).to.include("(REGEXP_LIKE(url, '(?i)(test)'))");
   });
 
   it('includes date filtering for the specified week', async () => {
@@ -75,58 +116,82 @@ describe('CDN Logs Query Builder', () => {
     expect(query).to.include("month = '01'");
   });
 
-  it('handles site with extract-only patterns', async () => {
-    mockOptions.site.getConfig = () => ({
-      getGroupedURLs: () => [
-        { regex: '/(products)/' },
-      ],
+  it('handles site with no page patterns', async () => {
+    const customOptions = createMockOptions({
+      site: createMockSite({
+        getBaseURL: () => 'https://unknown.com',
+      }),
     });
 
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
-
-    expect(query).to.include('REGEXP_EXTRACT');
-    expect(query).to.include('NULLIF');
-  });
-
-  it('handles site with mixed named and extract patterns', async () => {
-    mockOptions.site.getConfig = () => ({
-      getGroupedURLs: () => [
-        { regex: '/(products)/', name: 'Products' },
-        { regex: '/(blog)/' },
-      ],
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
-
-    expect(query).to.include('Products');
-    expect(query).to.include('REGEXP_EXTRACT');
-  });
-
-  it('handles site with null URL patterns', async () => {
-    mockOptions.site.getConfig = () => ({
-      getGroupedURLs: () => null,
-    });
-
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
 
     expect(query).to.be.a('string');
+    expect(query).to.include('Uncategorized');
   });
 
   it('handles topic patterns with mixed named and extract patterns', async () => {
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
+    const customOptions = createMockOptions({
+      site: createMockSite({
+        getConfig: () => createMockSiteConfig({
+          getLlmoDataFolder: () => 'test-folder',
+        }),
+      }),
+    });
+
+    const nock = await import('nock');
+    const patternNock = nock.default('https://main--project-elmo-ui-data--adobe.aem.live')
+      .get('/test-folder/agentic-traffic/patterns/patterns.json')
+      .reply(200, createMockPatterns());
+
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
 
     expect(query).to.be.a('string');
     expect(query).to.include('CASE');
+    expect(patternNock.isDone()).to.be.true;
+  });
+
+  it('handles topic patterns with named patterns', async () => {
+    const customOptions = createMockOptions({
+      site: createMockSite({
+        getConfig: () => createMockSiteConfig({
+          getLlmoDataFolder: () => 'test-folder',
+        }),
+      }),
+    });
+
+    const nock = await import('nock');
+    const namedPatternsOnly = {
+      pagetype: { data: [{ name: 'Product Page', regex: '.*product.*' }] },
+      products: {
+        data: [
+          { regex: '/products/', name: 'Products' },
+        ],
+      },
+    };
+
+    const patternNock = nock.default('https://main--project-elmo-ui-data--adobe.aem.live')
+      .get('/test-folder/agentic-traffic/patterns/patterns.json')
+      .reply(200, namedPatternsOnly);
+
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
+
+    expect(query).to.be.a('string');
+    expect(query).to.include('CASE');
+    expect(patternNock.isDone()).to.be.true;
   });
 
   it('handles cross-month date filtering', async () => {
-    mockOptions.periods.weeks[0] = {
-      startDate: new Date('2024-12-30'),
-      endDate: new Date('2025-01-05'),
-      weekLabel: 'Week 1 2025',
-    };
+    const customOptions = createMockOptions({
+      periods: {
+        weeks: [{
+          startDate: new Date('2024-12-30'),
+          endDate: new Date('2025-01-05'),
+          weekLabel: 'Week 1 2025',
+        }],
+      },
+    });
 
-    const query = await weeklyBreakdownQueries.createAgenticReportQuery(mockOptions);
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
 
     expect(query).to.include("year = '2024'");
     expect(query).to.include("month = '12'");
@@ -136,11 +201,15 @@ describe('CDN Logs Query Builder', () => {
   });
 
   it('handles empty conditions in where clause', async () => {
-    const { weeklyBreakdownQueries: localQueries } = await import('../../../src/cdn-logs-report/utils/query-builder.js');
+    const customOptions = createMockOptions({
+      site: createMockSite({
+        getConfig: () => createMockSiteConfig({
+          getLlmoCdnlogsFilter: () => [],
+        }),
+      }),
+    });
 
-    mockOptions.siteFilters = [];
-
-    const query = await localQueries.createAgenticReportQuery(mockOptions);
+    const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
 
     expect(query).to.include('WHERE');
     expect(query).to.include('ChatGPT|GPTBot|OAI-SearchBot');

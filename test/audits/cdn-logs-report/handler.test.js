@@ -16,91 +16,221 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
-import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
+import handler from '../../../src/cdn-logs-report/handler.js';
 
 use(sinonChai);
 
-const sandbox = sinon.createSandbox();
+// Mock data constants
+const MOCK_AGENTIC_DATA = [
+  {
+    agent_type: 'Bot',
+    user_agent_display: 'Googlebot/2.1',
+    status: 200,
+    number_of_hits: 100,
+    avg_ttfb_ms: 250.5,
+    country_code: 'US',
+    url: '/test',
+    product: 'adobe-analytics',
+    category: 'Product Page',
+  },
+  {
+    agent_type: 'LLM',
+    user_agent_display: 'ChatGPT-User/1.0',
+    status: 200,
+    number_of_hits: 50,
+    avg_ttfb_ms: 180.2,
+    country_code: 'GLOBAL',
+    url: '/page',
+    product: 'experience-manager',
+    category: 'Documentation',
+  },
+  {
+    agent_type: 'LLM',
+    user_agent_display: 'ChatGPT-User/1.0',
+    status: 200,
+    number_of_hits: 50,
+    avg_ttfb_ms: 180.2,
+    country_code: 'AA',
+    url: '/page',
+    product: 'experience-manager',
+    category: 'Documentation',
+  },
+  {
+    agent_type: 'LLM',
+    user_agent_display: 'ChatGPT-User/1.0',
+    status: 200,
+    number_of_hits: 50,
+    avg_ttfb_ms: 180.2,
+    country_code: 1,
+    url: '-',
+    product: 'experience-manager',
+    category: 'Documentation',
+  },
+  {
+    agent_type: null,
+    user_agent_display: null,
+    status: null,
+    number_of_hits: null,
+    avg_ttfb_ms: null,
+    country_code: null,
+    url: null,
+    product: null,
+    category: null,
+  },
+  {
+    agent_type: null,
+    user_agent_display: null,
+    status: null,
+    number_of_hits: null,
+    avg_ttfb_ms: null,
+    country_code: 999, // Invalid country code to trigger catch in validateCountryCode
+    url: null,
+    product: null,
+    category: null,
+  },
+  {
+    agent_type: 'Bot',
+    user_agent_display: 'TestBot',
+    status: 200,
+    number_of_hits: 10,
+    avg_ttfb_ms: 150,
+    country_code: null, // null country code
+    url: '/test',
+    product: 'adobe-analytics',
+    category: 'Test',
+  },
+  {
+    agent_type: 'Bot',
+    user_agent_display: 'TestBot',
+    status: 200,
+    number_of_hits: 10,
+    avg_ttfb_ms: 150,
+    country_code: 'INVALID',
+    url: '/test',
+    product: {},
+    category: 'Test',
+  },
+];
 
-let runCdnLogsReport;
+const MOCK_REFERRAL_DATA = [
+  {
+    path: '/products/analytics',
+    referrer: 'https://google.com/search',
+    utm_source: 'google',
+    utm_medium: 'organic',
+    tracking_param: null,
+    device: 'desktop',
+    date: '2025-01-15',
+    region: 'US',
+    pageviews: 1250,
+  },
+  {
+    path: 'documentation',
+    referrer: 'https://ads.google.com',
+    utm_source: 'google',
+    utm_medium: 'cpc',
+    tracking_param: 'google_ads_456',
+    device: 'tablet',
+    date: '2025-01-15',
+    region: 'GB',
+    pageviews: 420,
+  },
+];
 
-describe('CDN Logs Report Audit', () => {
+describe('CDN Logs Report Handler', function test() {
+  let sandbox;
   let context;
-  const site = {
-    getId: () => 'test-site',
-    getBaseURL: () => 'https://example.com',
-  };
+  let site;
 
-  const mockGetS3Config = sandbox.stub().returns({
-    databaseName: 'test_db',
-    tableName: 'test_table',
-    customerName: 'test_customer',
-    bucket: 'test-bucket',
-    getAthenaTempLocation: () => 's3://temp-location',
+  this.timeout(5000);
+
+  const createMockSharepointClient = (stubber) => ({
+    getDocument: stubber.stub().returns({
+      getDocumentContent: stubber.stub().resolves(Buffer.from('test content')),
+      uploadRawDocument: stubber.stub().resolves(),
+    }),
+    uploadFile: stubber.stub().resolves({ success: true }),
   });
 
-  const mockLoadSql = sandbox.stub().resolves('CREATE DATABASE test_db');
-  const mockEnsureTableExists = sandbox.stub().resolves();
-  const mockAthenaExecute = sandbox.stub().resolves();
-  const mockRunWeeklyReport = sandbox.stub().resolves();
-  const mockRunCustomDateRangeReport = sandbox.stub().resolves();
-  const mockHelixWrite = sandbox.stub();
+  const createAuditContext = (stubber, overrides = {}) => ({
+    sharepointOptions: {
+      helixContentSDK: {
+        createFrom: stubber.stub().resolves(createMockSharepointClient(stubber)),
+      },
+    },
+    ...overrides,
+  });
 
-  beforeEach(async () => {
-    sandbox.reset();
+  const createSiteConfig = (overrides = {}) => {
+    const defaultConfig = {
+      getLlmoDataFolder: () => 'test-folder',
+      getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-adobe-dev' }),
+      getLlmoCdnlogsFilter: () => [{
+        value: ['www.example.com'],
+        key: 'host',
+      }],
+    };
+    return { ...defaultConfig, ...overrides };
+  };
+
+  const setupAthenaClientWithData = (
+    stubber,
+    agenticData = MOCK_AGENTIC_DATA,
+    referralData = MOCK_REFERRAL_DATA,
+  ) => ({
+    execute: stubber.stub().resolves(),
+    query: stubber.stub().callsFake((query, database, description) => {
+      if (description.includes('agentic')) {
+        return Promise.resolve(agenticData);
+      } else if (description.includes('referral')) {
+        return Promise.resolve(referralData);
+      }
+      return Promise.resolve([]);
+    }),
+  });
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+    nock.cleanAll();
+
+    site = {
+      getId: () => 'test-site',
+      getBaseURL: () => 'https://example.com',
+      getConfig: () => createSiteConfig(),
+      getOrganizationId: sandbox.stub().returns('test-org-id'),
+    };
 
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
-        runtime: { name: 'aws-lambda', region: 'us-east-1' },
-        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
-        message: {},
-        athenaClient: {
-          execute: mockAthenaExecute,
+        env: {
+          SHAREPOINT_CLIENT_ID: 'test-client-id',
+          SHAREPOINT_CLIENT_SECRET: 'test-client-secret',
+          SHAREPOINT_AUTHORITY: 'https://login.microsoftonline.com/test-tenant-id',
+          SHAREPOINT_DOMAIN_ID: 'test-domain-id',
         },
-        helixContent: {
-          write: mockHelixWrite,
+        log: {
+          info: sandbox.spy(),
+          debug: sandbox.spy(),
+          warn: sandbox.spy(),
+          error: sandbox.spy(),
         },
         s3Client: {
-          send: sandbox.stub().resolves(),
+          send: sandbox.stub().resolves({
+            Contents: [{ Key: 'raw/fastly/2025/01/15/10/file1.log' }],
+          }),
+        },
+        athenaClient: setupAthenaClientWithData(sandbox),
+        dataAccess: {
+          Organization: {
+            findById: sandbox.stub().resolves({
+              getImsOrgId: () => 'test-ims-org-id',
+            }),
+          },
         },
       })
       .build();
-
-    mockGetS3Config.returns({
-      databaseName: 'test_db',
-      tableName: 'test_table',
-      customerName: 'test_customer',
-      bucket: 'test-bucket',
-      getAthenaTempLocation: () => 's3://temp-location',
-    });
-
-    const handlerModule = await esmock('../../../src/cdn-logs-report/handler.js', {
-      '../../../src/cdn-logs-report/utils/report-utils.js': {
-        getS3Config: mockGetS3Config,
-        loadSql: mockLoadSql,
-        ensureTableExists: mockEnsureTableExists,
-      },
-      '@adobe/spacecat-shared-athena-client': {
-        AWSAthenaClient: {
-          fromContext: () => ({
-            execute: mockAthenaExecute,
-          }),
-        },
-      },
-      '../../../src/cdn-logs-report/utils/report-runner.js': {
-        runWeeklyReport: mockRunWeeklyReport,
-        runCustomDateRangeReport: mockRunCustomDateRangeReport,
-      },
-      '@adobe/spacecat-helix-content-sdk': {
-        createFrom: sandbox.stub().resolves({
-          write: mockHelixWrite,
-        }),
-      },
-    });
-
-    runCdnLogsReport = handlerModule.default.runner;
   });
 
   afterEach(() => {
@@ -108,36 +238,208 @@ describe('CDN Logs Report Audit', () => {
     nock.cleanAll();
   });
 
-  it('runs weekly CDN logs report', async () => {
-    const result = await runCdnLogsReport('https://example.com', context, site);
+  describe('Cdn logs report audit handler', () => {
+    it('successfully processes CDN logs report', async () => {
+      const auditContext = createAuditContext(sandbox);
+      const result = await handler.runner('https://example.com', context, site, auditContext);
 
-    expect(context.log.info).to.have.been.calledWith('Running weekly report...');
-    expect(result.auditResult.reportType).to.equal('cdn-report-weekly');
-    expect(result.auditResult.database).to.equal('test_db');
-    expect(result.auditResult.customer).to.equal('test_customer');
-    expect(result.fullAuditRef).to.include('test_customer');
-  });
+      // Verify audit result structure
+      expect(result).to.have.property('auditResult').that.is.an('array');
+      expect(result.auditResult).to.have.length.greaterThan(0);
+      expect(result).to.have.property('fullAuditRef').that.equals('test-folder');
 
-  it('runs weekly CDN logs report with weekOffset', async () => {
-    const result = await runCdnLogsReport('https://example.com', context, site, { weekOffset: '-2' });
+      // Verify each report config result
+      result.auditResult.forEach((reportResult) => {
+        expect(reportResult).to.have.property('name').that.is.a('string');
+        expect(reportResult).to.have.property('table').that.is.a('string');
+        expect(reportResult).to.have.property('database').that.includes('cdn_logs_');
+        expect(reportResult).to.have.property('customer').that.is.a('string');
+      });
 
-    expect(context.log.info).to.have.been.calledWith('Running weekly report...');
-    expect(result.auditResult.reportType).to.equal('cdn-report-weekly');
-    expect(result.auditResult.database).to.equal('test_db');
-    expect(result.auditResult.customer).to.equal('test_customer');
-    expect(result.fullAuditRef).to.include('test_customer');
-  });
+      // Verify logging calls
+      expect(context.log.info).to.have.been.calledWith('Starting CDN logs report audit for https://example.com');
 
-  it('returns error when S3 bucket is not accessible', async () => {
-    context.s3Client.send.rejects(new Error('AccessDenied: Bucket not accessible'));
+      // Verify Athena interactions
+      expect(context.athenaClient.execute).to.have.been.callCount(3);
+      expect(context.athenaClient.query).to.have.been.callCount(2);
 
-    const result = await runCdnLogsReport('https://example.com', context, site);
+      // Verify data access calls
+      expect(context.dataAccess.Organization.findById).to.have.been.calledWith('test-org-id');
+    });
 
-    expect(context.log.error).to.have.been.calledWith('S3 bucket test-bucket is not accessible: AccessDenied: Bucket not accessible');
-    expect(result.auditResult.success).to.be.false;
-    expect(result.auditResult.error).to.include('S3 bucket test-bucket is not accessible');
-    expect(result.auditResult.customer).to.equal('test_customer');
-    expect(result.fullAuditRef).to.equal('https://example.com');
-    expect(context.log.info).to.not.have.been.calledWith('Running weekly report...');
+    it('returns error when no CDN bucket found', async () => {
+      site.getConfig = () => createSiteConfig({
+        getLlmoCdnBucketConfig: () => null,
+        getCdnLogsConfig: () => null,
+      });
+
+      const result = await handler.runner('https://example.com', context, site);
+
+      expect(result.auditResult).to.have.property('success', false);
+      expect(result.auditResult).to.have.property('error', 'No CDN bucket found');
+      expect(result.fullAuditRef).to.equal('https://example.com');
+    });
+
+    it('handles null getLlmoCdnBucketConfig with orgId fallback', async () => {
+      site.getConfig = () => createSiteConfig({
+        getLlmoCdnBucketConfig: () => null,
+      });
+
+      // Override context to include AWS_ENV for standard bucket discovery
+      const contextWithEnv = {
+        ...context,
+        env: {
+          ...context.env,
+          AWS_ENV: 'dev',
+        },
+      };
+
+      const auditContext = createAuditContext(sandbox);
+      const result = await handler.runner('https://example.com', contextWithEnv, site, auditContext);
+
+      expect(result).to.have.property('auditResult').that.is.an('array');
+      expect(result.auditResult).to.have.length.greaterThan(0);
+      expect(result).to.have.property('fullAuditRef').that.equals('test-folder');
+
+      // Verify data access was called to get IMS org ID as fallback
+      expect(contextWithEnv.dataAccess.Organization.findById).to.have.been.calledWith('test-org-id');
+    });
+
+    it('handles different weekOffset values', async () => {
+      const weekOffset = -2;
+      const auditContext = createAuditContext(sandbox, { weekOffset });
+      const result = await handler.runner('https://example.com', context, site, auditContext);
+
+      expect(result).to.have.property('auditResult').that.is.an('array');
+      expect(result.auditResult).to.have.length.greaterThan(0);
+      expect(result).to.have.property('fullAuditRef').that.equals('test-folder');
+
+      expect(context.athenaClient.query).to.have.been.callCount(2);
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(`week offset: ${weekOffset}`),
+      );
+    });
+
+    it('handles table creation errors', async () => {
+      context.athenaClient.execute.onSecondCall().rejects(new Error('Table creation failed'));
+      const auditContext = createAuditContext(sandbox);
+
+      try {
+        await handler.runner('https://example.com', context, site, auditContext);
+        expect.fail('Expected error to be thrown');
+      } catch (error) {
+        expect(error.message).to.equal('Table creation failed');
+        expect(context.log.error).to.have.been.calledWith('Failed to ensure table exists: Table creation failed');
+      }
+    });
+
+    describe('LLMO pattern fetch scenarios', () => {
+      it('handles successful pattern fetch', async () => {
+        const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+          .get('/test-folder/agentic-traffic/patterns/patterns.json')
+          .reply(200, {
+            pagetype: { data: [{ pattern: 'product-page' }] },
+            products: { data: [{ product: 'adobe-analytics' }] },
+          });
+
+        const auditContext = createAuditContext(sandbox);
+        const result = await handler.runner('https://example.com', context, site, auditContext);
+
+        // Verify successful execution
+        expect(result).to.have.property('auditResult').that.is.an('array');
+        expect(result.auditResult).to.have.length.greaterThan(0);
+
+        // Verify pattern fetch was called
+        expect(patternNock.isDone()).to.be.true;
+
+        // Verify queries were executed with pattern data
+        expect(context.athenaClient.query).to.have.been.called;
+      });
+
+      it('handles missing pagetype data', async () => {
+        const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+          .get('/test-folder/agentic-traffic/patterns/patterns.json')
+          .reply(200, {
+            products: { data: [{ product: 'adobe-analytics' }] },
+          });
+
+        const auditContext = createAuditContext(sandbox);
+        const result = await handler.runner('https://example.com', context, site, auditContext);
+
+        expect(result).to.have.property('auditResult').that.is.an('array');
+        expect(result.auditResult).to.have.length.greaterThan(0);
+        expect(patternNock.isDone()).to.be.true;
+      });
+
+      it('handles fetch errors gracefully', async () => {
+        const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+          .get('/test-folder/agentic-traffic/patterns/patterns.json')
+          .reply(500, 'Server Error');
+
+        const auditContext = createAuditContext(sandbox);
+        const result = await handler.runner('https://example.com', context, site, auditContext);
+
+        expect(result).to.have.property('auditResult').that.is.an('array');
+        expect(result.auditResult).to.have.length.greaterThan(0);
+        expect(patternNock.isDone()).to.be.true;
+
+        expect(context.athenaClient.query).to.have.been.called;
+      });
+    });
+
+    describe('data processing edge cases', () => {
+      it('handles null data responses', async () => {
+        context.athenaClient = setupAthenaClientWithData(sandbox, null, null);
+        const auditContext = createAuditContext(sandbox);
+        const result = await handler.runner('https://example.com', context, site, auditContext);
+
+        expect(result).to.have.property('auditResult').that.is.an('array');
+        expect(result.auditResult).to.have.length.greaterThan(0);
+        expect(result).to.have.property('fullAuditRef').that.equals('test-folder');
+
+        expect(context.athenaClient.query).to.have.been.called;
+      });
+    });
+
+    describe('site filter configurations', () => {
+      it('handles exclude filters and no dataFolder scenarios', async () => {
+        site.getConfig = () => createSiteConfig({
+          getLlmoDataFolder: () => null,
+          getLlmoCdnlogsFilter: () => [{
+            value: ['bot', 'crawler'],
+            key: 'user_agent',
+            type: 'exclude',
+          }, {
+            value: ['www.example.com'],
+            key: 'host',
+          }],
+        });
+
+        const auditContext = createAuditContext(sandbox);
+        const result = await handler.runner('https://example.com', context, site, auditContext);
+
+        expect(result).to.have.property('auditResult').that.is.an('array');
+        expect(result.auditResult).to.have.length.greaterThan(0);
+        expect(result).to.have.property('fullAuditRef').that.equals('null');
+
+        expect(context.athenaClient.query).to.have.been.called;
+      });
+
+      it('handles empty filters array', async () => {
+        site.getConfig = () => createSiteConfig({
+          getLlmoCdnlogsFilter: () => [],
+        });
+
+        const auditContext = createAuditContext(sandbox);
+        const result = await handler.runner('https://example.com', context, site, auditContext);
+
+        expect(result).to.have.property('auditResult').that.is.an('array');
+        expect(result.auditResult).to.have.length.greaterThan(0);
+        expect(result).to.have.property('fullAuditRef').that.equals('test-folder');
+
+        expect(context.athenaClient.query).to.have.been.called;
+      });
+    });
   });
 });
