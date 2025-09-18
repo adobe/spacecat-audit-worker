@@ -33,12 +33,6 @@ describe('CDN 404 Analysis Handler', () => {
     sandbox = sinon.createSandbox();
     site = {
       getBaseURL: sandbox.stub().returns('https://example.com'),
-      getConfig: sandbox.stub().returns({
-        getCdnLogsConfig: sandbox.stub().returns({
-          rawBucket: 'test-raw-bucket',
-        }),
-        getImsOrg: sandbox.stub().returns('1234567890'),
-      }),
     };
     context = new MockContextBuilder()
       .withSandbox(sandbox)
@@ -50,6 +44,8 @@ describe('CDN 404 Analysis Handler', () => {
           error: sandbox.spy(),
         },
         s3Client: { send: sandbox.stub() },
+        rawBucket: 'test-raw-bucket',
+        imsOrg: '1234567890',
       })
       .build();
     athenaClientStub = {
@@ -75,7 +71,7 @@ describe('CDN 404 Analysis Handler', () => {
     expect(result).to.have.property('fullAuditRef');
     expect(result.auditResult).to.include.keys('database', 'rawTable', 'output', 'completedAt');
     expect(result.auditResult.database).to.equal('cdn_logs_example_com');
-    expect(result.auditResult.rawTable).to.equal('raw_404_logs_example_com_test');
+    expect(result.auditResult.rawTable).to.equal('raw_logs_status_example_com');
     expect(result.fullAuditRef).to.equal(result.auditResult.output);
   });
 
@@ -85,7 +81,7 @@ describe('CDN 404 Analysis Handler', () => {
     const result = await handlerModule.cdn404AnalysisRunner(context, site);
 
     expect(result.auditResult.database).to.equal('cdn_logs_test_site_com');
-    expect(result.auditResult.rawTable).to.equal('raw_404_logs_test_site_com_test');
+    expect(result.auditResult.rawTable).to.equal('raw_logs_status_test_site_com');
   });
 
   it('generates correct S3 paths with IMS org', async () => {
@@ -155,7 +151,7 @@ describe('CDN 404 Analysis Handler', () => {
     await handlerModule.cdn404AnalysisRunner(context, site);
 
     expect(athenaClientStub.execute.firstCall.args[2]).to.equal('[Athena Query] Create database cdn_logs_example_com');
-    expect(athenaClientStub.execute.secondCall.args[2]).to.equal('[Athena Query] Create raw logs table cdn_logs_example_com.raw_404_logs_example_com_test from s3://test-raw-bucket/1234567890/raw/aem-cs-fastly');
+    expect(athenaClientStub.execute.secondCall.args[2]).to.equal('[Athena Query] Create raw logs table cdn_logs_example_com.raw_logs_status_example_com from s3://test-raw-bucket/1234567890/raw/aem-cs-fastly');
     expect(athenaClientStub.execute.thirdCall.args[2]).to.include('[Athena Query] Unload 404 content data to s3://test-raw-bucket/1234567890/aggregated-404/');
   });
 
@@ -215,25 +211,45 @@ describe('CDN 404 Analysis Handler', () => {
     ).to.be.rejectedWith('Unload operation error');
   });
 
-  it('throws if getCdnLogsConfig returns undefined', async () => {
-    site.getConfig = sandbox.stub().returns({
-      getCdnLogsConfig: sandbox.stub().returns(undefined),
-      getImsOrg: sandbox.stub().returns('test-ims-org'),
-    });
+  it('throws if rawBucket is undefined in context', async () => {
+    const contextWithoutRawBucket = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        log: {
+          info: sandbox.spy(),
+          debug: sandbox.spy(),
+          warn: sandbox.spy(),
+          error: sandbox.spy(),
+        },
+        s3Client: { send: sandbox.stub() },
+        rawBucket: undefined,
+        imsOrg: '1234567890',
+      })
+      .build();
 
     await expect(
-      handlerModule.cdn404AnalysisRunner(context, site),
-    ).to.be.rejectedWith('Cannot destructure property \'rawBucket\' of \'site.getConfig(...).getCdnLogsConfig(...)\'');
+      handlerModule.cdn404AnalysisRunner(contextWithoutRawBucket, site),
+    ).to.be.rejectedWith('Raw bucket is required');
   });
 
-  it('throws if getImsOrg returns undefined', async () => {
-    site.getConfig = sandbox.stub().returns({
-      getCdnLogsConfig: sandbox.stub().returns({ rawBucket: 'test-bucket' }),
-      getImsOrg: sandbox.stub().returns(undefined),
-    });
+  it('throws if imsOrg is undefined in context', async () => {
+    const contextWithoutImsOrg = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        log: {
+          info: sandbox.spy(),
+          debug: sandbox.spy(),
+          warn: sandbox.spy(),
+          error: sandbox.spy(),
+        },
+        s3Client: { send: sandbox.stub() },
+        rawBucket: 'test-raw-bucket',
+        imsOrg: undefined,
+      })
+      .build();
 
     await expect(
-      handlerModule.cdn404AnalysisRunner(context, site),
+      handlerModule.cdn404AnalysisRunner(contextWithoutImsOrg, site),
     ).to.be.rejectedWith('IMS organization is required');
   });
 });

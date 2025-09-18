@@ -43,11 +43,17 @@ async function loadSql(filename, variables) {
 
 export async function cdn404AnalysisRunner(context, site) {
   const { sanitizedHostname } = extractCustomerDomain(site);
-  const { rawBucket } = context;
-  const { imsOrg } = context;
+  const { rawBucket, imsOrg } = context;
   const {
     year, month, day, hour,
   } = getHourParts();
+
+  if (!rawBucket) {
+    throw new Error('Raw bucket is required');
+  }
+  if (!imsOrg) {
+    throw new Error('IMS organization is required');
+  }
 
   const database = `cdn_logs_${sanitizedHostname}`;
   const rawTable = `raw_logs_status_${sanitizedHostname}`;
