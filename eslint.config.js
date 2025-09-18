@@ -20,7 +20,8 @@ export default defineConfig([
     '.idea/*',
     'coverage/*',
     'scripts/*',
-    'test/*/fixtures/*'
+    'test/*/fixtures/*',
+    '.aws-sam/*'
   ]),
   {
     languageOptions: {
