@@ -26,6 +26,7 @@ import links from './links.js';
 import readability from '../readability/preflight/handler.js';
 import accessibility from './accessibility.js';
 import headings from './headings.js';
+import formAccessibility from './form-accessibility.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const PREFLIGHT_STEP_IDENTIFY = 'identify';
@@ -68,6 +69,7 @@ export const PREFLIGHT_HANDLERS = {
   headings,
   readability,
   accessibility,
+  formAccessibility,
 };
 
 export async function scrapePages(context) {
