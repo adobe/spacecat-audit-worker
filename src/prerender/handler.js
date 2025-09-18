@@ -165,7 +165,6 @@ export async function submitForScraping(context) {
     site,
     dataAccess,
     log,
-    env,
   } = context;
 
   const { SiteTopPage } = dataAccess;
@@ -190,45 +189,31 @@ export async function submitForScraping(context) {
     finalUrls.push(baseURL);
   }
 
-  // Limit to 1 URL for testing (remove this line for production)
-  const urlsToScrape = finalUrls.slice(0, 1);
+  // // Limit to 1 URL for testing (remove this line for production)
+  // const urlsToScrape = finalUrls.slice(0, 1);
 
-  // Transform URLs to the format expected by content scraper
-  const urlsForScraper = urlsToScrape.map((url, index) => ({
-    url,
-    urlId: `${siteId}-${index + 1}`,
-    status: 'pending',
-    jobMetadata: {
-      urlNumber: index + 1,
-      totalUrlCount: urlsToScrape.length,
-    },
-  }));
+  // // Transform URLs to the format expected by content scraper
+  // const urlsForScraper = urlsToScrape.map((url, index) => ({
+  //   url,
+  //   urlId: `${siteId}-${index + 1}`,
+  //   status: 'pending',
+  //   jobMetadata: {
+  //     urlNumber: index + 1,
+  //     totalUrlCount: urlsToScrape.length,
+  //   },
+  // }));
 
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
   return {
-    auditResult: {
-      status: 'SCRAPING_REQUESTED',
-      message: 'Content scraping for prerender audit initiated.',
-      scrapedUrls: urlsToScrape,
-    },
-    fullAuditRef: site.getBaseURL(),
-    // Data for the CONTENT_SCRAPER
-    processingType: 'prerender',
-    jobId: siteId,
-    s3BucketName: env.S3_SCRAPER_BUCKET_NAME,
-    completionQueueUrl: env.AUDIT_JOBS_QUEUE_URL,
-    skipMessage: false,
-    skipStorage: false,
-    allowCache: false, // Disable caching to ensure fresh content
-    forceRescrape: true, // Force re-scraping even if content exists
-    urls: urlsForScraper,
+    urls: finalUrls.slice(0, 1).map((url) => ({ url })),
+    siteId: site.getId(),
+    type: AUDIT_TYPE,
+    processingType: AUDIT_TYPE,
+    allowCache: false,
     options: {
+      hideConsentBanners: true,
       pageLoadTimeout: 15000,
-      enableJavaScript: true,
-      enableAuthentication: false,
-      screenshotTypes: ['fullpage', 'thumbnail'],
-      hideConsentBanners: false,
       waitForSelector: 'body',
       storagePrefix: AUDIT_TYPE,
     },
@@ -381,6 +366,6 @@ export async function processContentAndGenerateOpportunities(context) {
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('process-content-and-generate-opportunities', processContentAndGenerateOpportunities)
   .build();

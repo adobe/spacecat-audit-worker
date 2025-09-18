@@ -117,17 +117,21 @@ describe('Prerender Audit', () => {
             S3_SCRAPER_BUCKET_NAME: 'test-bucket',
             AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
           },
+          auditContext: {
+            next: 'process-content-and-generate-opportunities',
+            auditId: 'test-audit-id',
+            auditType: 'prerender',
+          },
         };
 
         const result = await submitForScraping(context);
 
         expect(result).to.be.an('object');
         expect(result.urls).to.be.an('array');
-        expect(result.jobId).to.equal('test-site-id');
+        expect(result.siteId).to.equal('test-site-id');
         expect(result.processingType).to.equal('prerender');
-        expect(result.auditResult).to.be.an('object');
-        expect(result.auditResult.status).to.equal('SCRAPING_REQUESTED');
-        expect(result.auditResult.scrapedUrls).to.be.an('array');
+        expect(result.type).to.equal('prerender');
+        expect(result.allowCache).to.equal(false);
       });
 
       it('should fallback to base URL when no URLs found', async () => {
@@ -147,42 +151,28 @@ describe('Prerender Audit', () => {
             S3_SCRAPER_BUCKET_NAME: 'test-bucket',
             AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
           },
+          auditContext: {
+            next: 'process-content-and-generate-opportunities',
+            auditId: 'test-audit-id',
+            auditType: 'prerender',
+          },
         };
 
         const result = await submitForScraping(context);
 
         expect(result).to.deep.equal({
-          auditResult: {
-            message: 'Content scraping for prerender audit initiated.',
-            scrapedUrls: ['https://example.com'],
-            status: 'SCRAPING_REQUESTED',
-          },
-          fullAuditRef: 'https://example.com',
-          processingType: 'prerender',
-          jobId: 'test-site-id',
-          s3BucketName: 'test-bucket',
-          completionQueueUrl: 'https://sqs.test.com/test-queue',
-          skipMessage: false,
-          skipStorage: false,
-          allowCache: false,
-          forceRescrape: true,
           urls: [{
             url: 'https://example.com',
-            urlId: 'test-site-id-1',
-            status: 'pending',
-            jobMetadata: {
-              urlNumber: 1,
-              totalUrlCount: 1,
-            },
           }],
+          siteId: 'test-site-id',
+          type: 'prerender',
+          processingType: 'prerender',
+          allowCache: false,
           options: {
-            enableAuthentication: false,
-            enableJavaScript: true,
-            hideConsentBanners: false,
+            hideConsentBanners: true,
             pageLoadTimeout: 15000,
-            screenshotTypes: ['fullpage', 'thumbnail'],
-            storagePrefix: 'prerender',
             waitForSelector: 'body',
+            storagePrefix: 'prerender',
           },
         });
       });
