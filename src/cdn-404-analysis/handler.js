@@ -43,7 +43,8 @@ async function loadSql(filename, variables) {
 
 export async function cdn404AnalysisRunner(context, site) {
   const { sanitizedHostname } = extractCustomerDomain(site);
-  const { rawBucket } = site.getConfig().getCdnLogsConfig();
+  const { rawBucket } = context;
+  const { imsOrg } = context;
   const {
     year, month, day, hour,
   } = getHourParts();
@@ -58,13 +59,9 @@ export async function cdn404AnalysisRunner(context, site) {
   const sqlDbDescription = `[Athena Query] Create database ${database}`;
   await athenaClient.execute(sqlDb, database, sqlDbDescription);
 
-  // TODO: Get tenant IMS
-  const imsOrg = site.getConfig().getImsOrg();
-  if (!imsOrg) {
-    throw new Error('IMS organization is required');
-  }
   // Each tenant has its own folder mapped via IMS org within the raw bucket
   const bucket = `${rawBucket}/${imsOrg}`;
+  // Subfolder aem-cs-fastly is used for raw logs currently
   const rawLocation = `s3://${bucket}/raw/aem-cs-fastly`;
 
   // Create table
@@ -76,7 +73,6 @@ export async function cdn404AnalysisRunner(context, site) {
   const sqlTableDescription = `[Athena Query] Create raw logs table ${database}.${rawTable} from ${rawLocation}`;
   await athenaClient.execute(sqlTable, database, sqlTableDescription);
 
-  // Unload 404 content data
   const output = `s3://${bucket}/aggregated-404/${year}/${month}/${day}/${hour}/`;
   const sqlUnload = await loadSql('unload-404-content', {
     database,
