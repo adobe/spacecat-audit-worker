@@ -17,7 +17,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
 function extractCustomerDomain(site) {
-  const host = site.getBaseURL();
+  const { host } = new URL(site.getBaseURL());
   return { hostEscaped: host.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() };
 }
 
