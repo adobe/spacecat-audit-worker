@@ -154,7 +154,6 @@ export async function keywordPromptsImportStep(context) {
 
   log.error('GEO BRAND PRESENCE: keywordPromptsImportStep data: %j', data);
   log.error('GEO BRAND PRESENCE: keywordPromptsImportStep finalUrl: %s', finalUrl);
-  log.error('GEO BRAND PRESENCE: keywordPromptsImportStep aiPlatform: %s', aiPlatform);
 
   /* c8 ignore start */
   try {
@@ -168,9 +167,12 @@ export async function keywordPromptsImportStep(context) {
     aiPlatform = parsedData.aiPlatform;
   } catch (e) {
     // If JSON parsing fails, treat as a date string (legacy behavior)
+    log.error('GEO BRAND PRESENCE:failed to parse data as JSON: %j', e);
     endDate = Date.parse(data) ? data : undefined;
   }
   /* c8 ignore stop */
+
+  log.error('GEO BRAND PRESENCE: keywordPromptsImportStep aiPlatform: %s', aiPlatform);
 
   log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
   return {
