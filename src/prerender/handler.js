@@ -48,7 +48,7 @@ function sanitizeImportPath(importPath) {
 function getS3Path(url, siteId, fileName) {
   const rawImportPath = new URL(url).pathname.replace(/\/$/, '');
   const sanitizedImportPath = sanitizeImportPath(rawImportPath);
-  const pathSegment = sanitizedImportPath ? `-${sanitizedImportPath}` : '';
+  const pathSegment = sanitizedImportPath ? `/${sanitizedImportPath}` : '';
   return `${AUDIT_TYPE}/scrapes/${siteId}${pathSegment}/${fileName}`;
 }
 
@@ -104,7 +104,7 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
 async function compareHtmlContent(url, siteId, context) {
   const { log } = context;
 
-  log.info(`Comparing HTML content for: ${url}`);
+  log.info(`Prerender - Comparing HTML content for: ${url}`);
 
   // Get both server-side and client-side HTML from S3
   const scrapedData = await getScrapedHtmlFromS3(url, siteId, context);
@@ -144,7 +144,7 @@ async function compareHtmlContent(url, siteId, context) {
     };
   }
 
-  log.info(`Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordDiff=${analysis.wordDiff}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
+  log.info(`Prerender - Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordDiff=${analysis.wordDiff}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
 
   return {
     url,
@@ -195,28 +195,14 @@ export async function submitForScraping(context) {
   // Combine and deduplicate URLs
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
 
-  log.info(`Submitting ${finalUrls.length} URLs for scraping (${topPagesUrls.length} top pages + ${includedURLs.length} included URLs)`);
+  log.info(`Prerender - Submitting ${finalUrls.length} URLs for scraping (${topPagesUrls.length} top pages + ${includedURLs.length} included URLs)`);
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
     const baseURL = site.getBaseURL();
-    log.info(`No URLs found, falling back to base URL: ${baseURL}`);
+    log.info(`Prerender - No URLs found, falling back to base URL: ${baseURL}`);
     finalUrls.push(baseURL);
   }
-
-  // // Limit to 1 URL for testing (remove this line for production)
-  // const urlsToScrape = finalUrls.slice(0, 1);
-
-  // // Transform URLs to the format expected by content scraper
-  // const urlsForScraper = urlsToScrape.map((url, index) => ({
-  //   url,
-  //   urlId: `${siteId}-${index + 1}`,
-  //   status: 'pending',
-  //   jobMetadata: {
-  //     urlNumber: index + 1,
-  //     totalUrlCount: urlsToScrape.length,
-  //   },
-  // }));
 
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
@@ -246,7 +232,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
   const { log } = context;
 
   if (auditData.auditResult.status !== 'OPPORTUNITIES_FOUND') {
-    log.info('No prerender opportunities found, skipping opportunity creation');
+    log.info('Prerender - No prerender opportunities found, skipping opportunity creation');
     return;
   }
 
@@ -254,11 +240,11 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     .filter((result) => result.needsPrerender);
 
   if (preRenderSuggestions.length === 0) {
-    log.info('No URLs needing prerender found, skipping opportunity creation');
+    log.info('Prerender - No URLs needing prerender found, skipping opportunity creation');
     return;
   }
 
-  log.info(`Generated ${preRenderSuggestions.length} prerender suggestions for ${auditUrl}`);
+  log.info(`Prerender - Generated ${preRenderSuggestions.length} prerender suggestions for ${auditUrl}`);
 
   // Create opportunity
   const opportunity = await convertToOpportunity(
@@ -284,7 +270,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     }),
   });
 
-  log.info(`Successfully synced opportunity and suggestions for site: ${auditData.siteId} and ${AUDIT_TYPE} audit type.`);
+  log.info(`Prerender - Successfully synced opportunity and suggestions for site: ${auditData.siteId} and ${AUDIT_TYPE} audit type.`);
 }
 
 /**
@@ -300,7 +286,7 @@ export async function processContentAndGenerateOpportunities(context) {
   const siteId = site.getId();
   const startTime = process.hrtime();
 
-  log.info(`Processing prerender audit for site: ${siteId}`);
+  log.info(`Prerender - Generate opportunities for site: ${siteId}`);
 
   try {
     // Get URLs that were scraped from the audit data or fallback to top pages
@@ -316,13 +302,13 @@ export async function processContentAndGenerateOpportunities(context) {
       const { SiteTopPage } = dataAccess;
       const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
       urlsToCheck = topPages.map((page) => page.getUrl());
-      log.info(`Fallback: Using ${urlsToCheck.length} top pages for comparison`);
+      log.info(`Prerender - Fallback: Using ${urlsToCheck.length} top pages for comparison`);
     }
 
     if (urlsToCheck.length === 0) {
       // Final fallback to base URL
       urlsToCheck = [site.getBaseURL()];
-      log.info('No URLs found, using base URL for comparison');
+      log.info('Prerender - No URLs found, using base URL for comparison');
     }
 
     // limit to 1 for testing
@@ -337,10 +323,7 @@ export async function processContentAndGenerateOpportunities(context) {
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
     const successfulComparisons = comparisonResults.filter((result) => result.status === 'compared');
 
-    const endTime = process.hrtime(startTime);
-    const elapsedSeconds = (endTime[0] + endTime[1] / 1e9).toFixed(2);
-
-    log.info(`Prerender audit completed in ${elapsedSeconds}s. Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender`);
+    log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender`);
 
     const auditResult = {
       status: urlsNeedingPrerender.length > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
@@ -348,7 +331,6 @@ export async function processContentAndGenerateOpportunities(context) {
       totalUrlsChecked: comparisonResults.length,
       urlsNeedingPrerender: urlsNeedingPrerender.length,
       results: comparisonResults,
-      elapsedSeconds: parseFloat(elapsedSeconds),
     };
 
     // Generate suggestions and opportunities if needed
@@ -360,12 +342,17 @@ export async function processContentAndGenerateOpportunities(context) {
       }, context);
     }
 
+    const endTime = process.hrtime(startTime);
+    const elapsedSeconds = (endTime[0] + endTime[1] / 1e9).toFixed(2);
+
+    log.info(`Prerender - Audit completed in ${elapsedSeconds}s`);
+
     return {
       status: 'complete',
       auditResult,
     };
   } catch (error) {
-    log.error(`Prerender audit failed for site ${siteId}: ${error.message}`, error);
+    log.error(`Prerender - Audit failed for site ${siteId}: ${error.message}`, error);
 
     return {
       status: 'ERROR',
