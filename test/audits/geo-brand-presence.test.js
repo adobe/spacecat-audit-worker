@@ -137,9 +137,9 @@ describe('Geo Brand Presence Handler', () => {
       auditId: audit.getId(),
       deliveryType: site.getDeliveryType(),
     });
-    expect(brandPresenceMessage.data).deep.equal({ 
+    expect(brandPresenceMessage.data).deep.equal({
       web_search_provider: 'chatgpt',
-      url: 'https://example.com/presigned-url' 
+      url: 'https://example.com/presigned-url',
     });
 
     // TODO(aurelio): check that we write the right file to s3
