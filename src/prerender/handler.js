@@ -95,7 +95,7 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
 }
 
 /**
- * Compares server-side HTML with client-side HTML and detects client-side rendering
+ * Compares server-side HTML with client-side HTML and detects prerendering opportunities
  * @param {string} url - URL being analyzed
  * @param {string} siteId - Site ID
  * @param {Object} context - Audit context
@@ -213,7 +213,7 @@ export async function submitForScraping(context) {
     processingType: AUDIT_TYPE,
     allowCache: false,
     options: {
-      hideConsentBanners: true,
+      hideConsentBanners: false,
       pageLoadTimeout: 15000,
       waitForSelector: 'body',
       storagePrefix: AUDIT_TYPE,

@@ -169,7 +169,7 @@ describe('Prerender Audit', () => {
           processingType: 'prerender',
           allowCache: false,
           options: {
-            hideConsentBanners: true,
+            hideConsentBanners: false,
             pageLoadTimeout: 15000,
             waitForSelector: 'body',
             storagePrefix: 'prerender',
