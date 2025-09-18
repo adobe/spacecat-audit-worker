@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { READABILITY_GUIDANCE_TYPE, READABILITY_OBSERVATION, TARGET_READABILITY_SCORE } from './constants.js';
+import { READABILITY_OBSERVATION, TARGET_READABILITY_SCORE } from './constants.js';
 
 /**
  * Asynchronous Mystique integration for readability audit
@@ -29,7 +29,7 @@ import { READABILITY_GUIDANCE_TYPE, READABILITY_OBSERVATION, TARGET_READABILITY_
  * @param {string} siteId - Site identifier
  * @param {string} jobId - Job identifier (AsyncJob ID for preflight, Audit ID for opportunities)
  * @param {Object} context - The context object containing sqs, env, dataAccess, etc.
- * @param {string} guidanceType - The guidance handler type to route responses to
+ * @param {string} mode - The processing mode: 'preflight' or 'opportunity'
  * @returns {Promise<void>}
  */
 export async function sendReadabilityToMystique(
@@ -38,7 +38,7 @@ export async function sendReadabilityToMystique(
   siteId,
   jobId,
   context,
-  guidanceType = READABILITY_GUIDANCE_TYPE,
+  mode = 'preflight',
 ) {
   const {
     sqs, env, log, dataAccess,
@@ -55,7 +55,7 @@ export async function sendReadabilityToMystique(
     const site = await dataAccess.Site.findById(siteId);
 
     // Handle metadata storage differently for preflight vs opportunities
-    const isPreflight = guidanceType === READABILITY_GUIDANCE_TYPE;
+    const isPreflight = mode === 'preflight';
 
     if (isPreflight) {
       // Preflight: Store metadata in AsyncJob
@@ -96,7 +96,7 @@ export async function sendReadabilityToMystique(
     // Send each readability issue as a separate message to Mystique
     const messagePromises = readabilityIssues.map((issue, index) => {
       const mystiqueMessage = {
-        type: guidanceType,
+        type: 'guidance:readability', // Single unified type
         siteId,
         auditId: jobId,
         deliveryType: site.getDeliveryType(),
@@ -104,6 +104,7 @@ export async function sendReadabilityToMystique(
         url: auditUrl,
         observation: READABILITY_OBSERVATION,
         data: {
+          mode, // Routing mode passed from caller
           // Use appropriate ID based on audit type
           ...(isPreflight ? { jobId } : { auditId: jobId }),
           original_paragraph: issue.textContent,
