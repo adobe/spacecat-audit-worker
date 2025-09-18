@@ -36,7 +36,7 @@ export class BaseRule {
     throw new Error('AemAuthorClient not injected');
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
+  // eslint-disable-next-line no-unused-vars, class-methods-use-this
   async applyRule(brokenPath) {
     throw new Error('Subclasses must implement applyRule()');
   }
