@@ -12,15 +12,13 @@
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
-import { BaseCollector } from './base-collector.js';
 
-export class AthenaCollector extends BaseCollector {
+export class AthenaCollector {
   static DATABASE_NAME = 'broken_content_paths_db';
 
   static TABLE_NAME = 'broken_content_paths_test';
 
   constructor(context) {
-    super();
     this.context = context;
     this.config = this.getAthenaConfig();
     this.athenaClient = AWSAthenaClient.fromContext(context, this.config.tempLocation);

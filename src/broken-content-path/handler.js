@@ -12,7 +12,7 @@
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { CollectorFactory } from './collectors/collector-factory.js';
+import { AthenaCollector } from './collectors/athena-collector.js';
 import { AnalysisStrategy } from './analysis/analysis-strategy.js';
 import { PathIndex } from './domain/index/path-index.js';
 import { AemAuthorClient } from './clients/aem-author-client.js';
@@ -23,7 +23,7 @@ export async function fetchBrokenContentPaths(context) {
   const { log, tenantUrl } = context;
 
   try {
-    const collector = CollectorFactory.create(context);
+    const collector = new AthenaCollector(context);
     const brokenPaths = await collector.fetchBrokenPaths();
 
     log.info(`Found ${brokenPaths.length} broken content paths from ${collector.constructor.name}`);
