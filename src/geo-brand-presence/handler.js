@@ -178,7 +178,6 @@ export async function keywordPromptsImportStep(context) {
   return {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,
-    aiPlatform,
     siteId: site.getId(),
     // auditResult can't be empty, so sending empty array and include aiPlatform
     auditResult: { keywordQuestions: [], aiPlatform },
