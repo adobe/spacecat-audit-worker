@@ -41,7 +41,6 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   const baseURL = site.getBaseURL();
 
   const { calendarWeek, parquetFiles, success } = auditContext ?? /* c8 ignore next */ {};
-  
   // Get aiPlatform from the audit result
   const auditResult = audit?.getAuditResult();
   const aiPlatform = auditResult?.aiPlatform;
@@ -92,7 +91,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       year: calendarWeek.year,
       data: {
         web_search_provider: aiPlatform,
-        url
+        url,
       },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
@@ -151,12 +150,15 @@ export async function keywordPromptsImportStep(context) {
 
   let endDate;
   let aiPlatform;
-  
   /* c8 ignore start */
   try {
     // Try to parse as JSON first
     const parsedData = JSON.parse(data);
-    endDate = parsedData.endDate ? (Date.parse(parsedData.endDate) ? parsedData.endDate : undefined) : undefined;
+    let parsedEndDate;
+    if (parsedData.endDate && Date.parse(parsedData.endDate)) {
+      parsedEndDate = parsedData.endDate;
+    }
+    endDate = parsedEndDate;
     aiPlatform = parsedData.aiPlatform;
   } catch (e) {
     // If JSON parsing fails, treat as a date string (legacy behavior)
