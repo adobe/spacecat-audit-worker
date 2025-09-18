@@ -156,6 +156,11 @@ export async function keywordPromptsImportStep(context) {
   let aiPlatform;
   let calendarWeek;
 
+  log.error('GEO BRAND PRESENCE: keywordPromptsImportStep data: %j', data);
+  log.error('GEO BRAND PRESENCE: keywordPromptsImportStep finalUrl: %s', finalUrl);
+  log.error('GEO BRAND PRESENCE: keywordPromptsImportStep aiPlatform: %s', aiPlatform);
+  log.error('GEO BRAND PRESENCE: keywordPromptsImportStep calendarWeek: %j', calendarWeek);
+
   /* c8 ignore start */
   try {
     // Try to parse as JSON first
