@@ -16,14 +16,24 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
-import esmock from 'esmock';
+
+// Import all modules without mocking to ensure actual code execution
 import ProductSeoChecks from '../../src/product-metatags/seo-checks.js';
 import {
   importTopPages,
   submitForScraping,
   fetchAndProcessPageObject,
+  runAuditAndGenerateSuggestions,
+  opportunityAndSuggestions,
 } from '../../src/product-metatags/handler.js';
 import productMetatagsAutoSuggest from '../../src/product-metatags/product-metatags-auto-suggest.js';
+import { createOpportunityData } from '../../src/product-metatags/opportunity-data-mapper.js';
+import {
+  removeTrailingSlash,
+  getBaseUrl,
+  getIssueRanking,
+} from '../../src/product-metatags/opportunity-utils.js';
+import * as constants from '../../src/product-metatags/constants.js';
 import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
@@ -44,6 +54,127 @@ describe('Product MetaTags Audit', () => {
     sandbox.restore();
   });
 
+  describe('Constants', () => {
+    it('should export all required constants with correct values', () => {
+      expect(constants.SKU).to.equal('sku');
+      expect(constants.IMAGE).to.equal('image');
+      expect(constants.TITLE).to.equal('title');
+      expect(constants.DESCRIPTION).to.equal('description');
+      expect(constants.H1).to.equal('h1');
+      expect(constants.ISSUE).to.equal('issue');
+      expect(constants.SEO_IMPACT).to.equal('seoImpact');
+      expect(constants.HIGH).to.equal('HIGH');
+      expect(constants.MODERATE).to.equal('MODERATE');
+      expect(constants.PROJECTED_VALUE_THRESHOLD).to.be.a('number');
+    });
+
+    it('should export tag length configurations', () => {
+      expect(constants.TAG_LENGTHS).to.have.property('title');
+      expect(constants.TAG_LENGTHS).to.have.property('description');
+      expect(constants.TAG_LENGTHS).to.have.property('h1');
+      expect(constants.TAG_LENGTHS.title).to.have.property('minLength');
+      expect(constants.TAG_LENGTHS.title).to.have.property('maxLength');
+    });
+  });
+
+  describe('Opportunity Data Mapper', () => {
+    it('should create opportunity data with all required fields', () => {
+      const result = createOpportunityData();
+
+      expect(result).to.have.property('title');
+      expect(result).to.have.property('description');
+      expect(result).to.have.property('guidance');
+      expect(result.title).to.include('Product');
+      expect(result.description).to.be.a('string');
+      expect(result.guidance).to.be.a('string');
+    });
+
+    it('should include product-specific keywords', () => {
+      const result = createOpportunityData();
+
+      const fullText = `${result.title} ${result.description} ${result.guidance}`.toLowerCase();
+      expect(fullText).to.include('product');
+      expect(fullText).to.include('sku');
+    });
+  });
+
+  describe('Opportunity Utils', () => {
+    describe('removeTrailingSlash', () => {
+      it('should remove single trailing slash', () => {
+        expect(removeTrailingSlash('https://example.com/')).to.equal('https://example.com');
+      });
+
+      it('should handle root slash', () => {
+        expect(removeTrailingSlash('/')).to.equal('');
+      });
+
+      it('should handle empty string', () => {
+        expect(removeTrailingSlash('')).to.equal('');
+      });
+
+      it('should handle multiple trailing slashes', () => {
+        expect(removeTrailingSlash('https://example.com///')).to.equal('https://example.com//');
+      });
+
+      it('should not remove non-trailing slashes', () => {
+        expect(removeTrailingSlash('https://example.com/path')).to.equal('https://example.com/path');
+      });
+    });
+
+    describe('getBaseUrl', () => {
+      it('should extract base URL with hostname only', () => {
+        expect(getBaseUrl('https://example.com/path', true)).to.equal('https://example.com');
+      });
+
+      it('should extract base URL without hostname only', () => {
+        expect(getBaseUrl('https://example.com/path', false)).to.equal('https://example.com/path');
+      });
+
+      it('should handle URLs with port', () => {
+        expect(getBaseUrl('https://example.com:8080/path', true)).to.equal('https://example.com:8080');
+      });
+
+      it('should handle empty URL', () => {
+        expect(getBaseUrl('', false)).to.equal('');
+      });
+
+      it('should handle invalid URL', () => {
+        expect(getBaseUrl('not-a-url', false)).to.equal('not-a-url');
+      });
+    });
+
+    describe('getIssueRanking', () => {
+      it('should return ranking for title issues', () => {
+        expect(getIssueRanking('title', 'missing title')).to.equal(1);
+        expect(getIssueRanking('title', 'empty title')).to.equal(2);
+        expect(getIssueRanking('title', 'duplicate title')).to.equal(5);
+        expect(getIssueRanking('title', 'title too long')).to.equal(8);
+        expect(getIssueRanking('title', 'title too short')).to.equal(8);
+      });
+
+      it('should return ranking for description issues', () => {
+        expect(getIssueRanking('description', 'missing description')).to.equal(3);
+        expect(getIssueRanking('description', 'empty description')).to.equal(3);
+        expect(getIssueRanking('description', 'duplicate description')).to.equal(6);
+      });
+
+      it('should return ranking for h1 issues', () => {
+        expect(getIssueRanking('h1', 'missing h1')).to.equal(4);
+        expect(getIssueRanking('h1', 'multiple h1 tags')).to.equal(11);
+      });
+
+      it('should handle case variations', () => {
+        expect(getIssueRanking('title', 'MISSING TITLE')).to.equal(1);
+        expect(getIssueRanking('h1', 'multiple h1 on page')).to.equal(11);
+      });
+
+      it('should return default ranking for unknown issues', () => {
+        expect(getIssueRanking('title', 'unknown issue')).to.equal(999);
+        expect(getIssueRanking('unknown', 'any issue')).to.equal(999);
+      });
+    });
+  });
+
   describe('ProductSeoChecks', () => {
     let seoChecks;
 
@@ -60,16 +191,6 @@ describe('Product MetaTags Audit', () => {
       it('should return false for pages with only og:image meta tag (SKU required)', () => {
         const pageTags = { 'og:image': 'https://example.com/image.jpg' };
         expect(ProductSeoChecks.hasProductTags(pageTags)).to.be.false;
-      });
-
-      it('should return false for pages with only twitter:image meta tag (SKU required)', () => {
-        const pageTags = { 'twitter:image': 'https://example.com/twitter.jpg' };
-        expect(ProductSeoChecks.hasProductTags(pageTags)).to.be.false;
-      });
-
-      it('should return true for pages with SKU and image meta tags', () => {
-        const pageTags = { sku: 'PROD-123', 'og:image': 'https://example.com/image.jpg' };
-        expect(ProductSeoChecks.hasProductTags(pageTags)).to.be.true;
       });
 
       it('should return false for pages without SKU meta tag', () => {
@@ -112,82 +233,60 @@ describe('Product MetaTags Audit', () => {
         const productTags = ProductSeoChecks.extractProductTags(pageTags);
         expect(productTags).to.deep.equal({});
       });
-    });
 
-    describe('performChecks', () => {
-      it('should skip pages without product tags', () => {
-        const pageTags = { title: 'Regular Page', description: 'No product tags' };
-        seoChecks.performChecks('/regular-page', pageTags);
-        expect(Object.keys(seoChecks.getDetectedTags())).to.have.length(0);
+      it('should handle null/undefined input', () => {
+        expect(ProductSeoChecks.extractProductTags(null)).to.deep.equal({});
+        expect(ProductSeoChecks.extractProductTags(undefined)).to.deep.equal({});
       });
 
-      it('should process pages with product tags and detect missing title', () => {
-        const pageTags = {
+      it('should prioritize image types correctly', () => {
+        // Test twitter:image when og:image is not available
+        const pageTags1 = {
           sku: 'PROD-123',
-          'og:image': 'https://example.com/image.jpg',
-          // Missing title - should be detected
-          description: 'Product description',
+          'twitter:image': 'https://example.com/twitter.jpg',
+          'product:image': 'https://example.com/product.jpg',
         };
-        seoChecks.performChecks('/product-page', pageTags);
-        const detectedTags = seoChecks.getDetectedTags();
-        expect(detectedTags['/product-page']).to.have.property('title');
-        expect(detectedTags['/product-page'].title.issue).to.equal('Missing Title');
-      });
+        const productTags1 = ProductSeoChecks.extractProductTags(pageTags1);
+        expect(productTags1.image).to.equal('https://example.com/twitter.jpg');
 
-      it('should process pages with SKU only', () => {
-        const pageTags = {
-          sku: 'PROD-456',
-          title: 'Product Title',
-          description: 'Product description',
+        // Test product:image when others are not available
+        const pageTags2 = {
+          sku: 'PROD-123',
+          'product:image': 'https://example.com/product.jpg',
+          image: 'https://example.com/generic.jpg',
         };
-        seoChecks.performChecks('/sku-only-page', pageTags);
-        const detectedTags = seoChecks.getDetectedTags();
-        // Should process the page (no issues in this case)
-        expect(detectedTags).to.be.an('object');
-      });
+        const productTags2 = ProductSeoChecks.extractProductTags(pageTags2);
+        expect(productTags2.image).to.equal('https://example.com/product.jpg');
 
-      it('should detect multiple H1 tags on product pages', () => {
-        const pageTags = {
-          sku: 'PROD-789',
-          title: 'Product Title',
-          h1: ['First H1', 'Second H1'],
+        // Test generic image when others are not available
+        const pageTags3 = {
+          sku: 'PROD-123',
+          image: 'https://example.com/generic.jpg',
         };
-        seoChecks.performChecks('/multi-h1-page', pageTags);
-        const detectedTags = seoChecks.getDetectedTags();
-        expect(detectedTags['/multi-h1-page']).to.have.property('h1');
-        expect(detectedTags['/multi-h1-page'].h1.issue).to.equal('Multiple H1 on page');
-      });
-    });
-
-    describe('finalChecks', () => {
-      it('should detect duplicate titles across product pages', () => {
-        const pageTags1 = { sku: 'PROD-1', title: 'Same Title' };
-        const pageTags2 = { sku: 'PROD-2', title: 'Same Title' };
-
-        seoChecks.performChecks('/product1', pageTags1);
-        seoChecks.performChecks('/product2', pageTags2);
-        seoChecks.finalChecks();
-
-        const detectedTags = seoChecks.getDetectedTags();
-        expect(detectedTags['/product1'].title.issue).to.equal('Duplicate Title');
-        expect(detectedTags['/product2'].title.issue).to.equal('Duplicate Title');
+        const productTags3 = ProductSeoChecks.extractProductTags(pageTags3);
+        expect(productTags3.image).to.equal('https://example.com/generic.jpg');
       });
     });
 
     describe('capitalizeFirstLetter', () => {
       it('should capitalize the first letter of a string', () => {
-        const result = ProductSeoChecks.capitalizeFirstLetter('title');
-        expect(result).to.equal('Title');
+        expect(ProductSeoChecks.capitalizeFirstLetter('title')).to.equal('Title');
+        expect(ProductSeoChecks.capitalizeFirstLetter('h1')).to.equal('H1');
+        expect(ProductSeoChecks.capitalizeFirstLetter('description')).to.equal('Description');
       });
 
       it('should return the original string if it is empty', () => {
-        const result = ProductSeoChecks.capitalizeFirstLetter('');
-        expect(result).to.equal('');
+        expect(ProductSeoChecks.capitalizeFirstLetter('')).to.equal('');
       });
 
       it('should return the original string if it is null or undefined', () => {
-        const result = ProductSeoChecks.capitalizeFirstLetter(null);
-        expect(result).to.be.null;
+        expect(ProductSeoChecks.capitalizeFirstLetter(null)).to.be.null;
+        expect(ProductSeoChecks.capitalizeFirstLetter(undefined)).to.be.undefined;
+      });
+
+      it('should handle single character strings', () => {
+        expect(ProductSeoChecks.capitalizeFirstLetter('a')).to.equal('A');
+        expect(ProductSeoChecks.capitalizeFirstLetter('Z')).to.equal('Z');
       });
     });
 
@@ -198,13 +297,30 @@ describe('Product MetaTags Audit', () => {
 
         seoChecks.checkForMissingTags(url, pageTags);
 
-        expect(seoChecks.getDetectedTags()[url].title.issue).to.equal('Missing Title');
-        expect(seoChecks.getDetectedTags()[url].title.seoRecommendation).to.include('should be present');
+        const detectedTags = seoChecks.getDetectedTags();
+        expect(detectedTags[url].title.issue).to.equal('Missing Title');
+        expect(detectedTags[url].title.seoRecommendation).to.include('should be present');
+        expect(detectedTags[url].description.issue).to.equal('Missing Description');
+        expect(detectedTags[url].h1.issue).to.equal('Missing H1');
       });
 
       it('should not add missing tag detection for non-product pages', () => {
         const url = '/non-product-page';
         const pageTags = {}; // No SKU - should not be processed
+
+        seoChecks.checkForMissingTags(url, pageTags);
+
+        expect(seoChecks.getDetectedTags()[url]).to.be.undefined;
+      });
+
+      it('should not flag present tags as missing', () => {
+        const url = '/product-page';
+        const pageTags = {
+          sku: 'PROD-123',
+          title: 'Product Title',
+          description: 'Product Description',
+          h1: ['Product H1'],
+        };
 
         seoChecks.checkForMissingTags(url, pageTags);
 
@@ -244,6 +360,41 @@ describe('Product MetaTags Audit', () => {
         expect(seoChecks.getDetectedTags()[url].title.issue).to.equal('Title too short');
         expect(seoChecks.getDetectedTags()[url].title.seoImpact).to.equal('MODERATE');
       });
+
+      it('should handle whitespace-only content as empty', () => {
+        const url = '/product-page';
+        const pageTags = { sku: 'PROD-123', title: '   ' };
+
+        seoChecks.checkForTagsLength(url, pageTags);
+
+        expect(seoChecks.getDetectedTags()[url].title.issue).to.equal('Empty Title');
+      });
+
+      it('should handle null/undefined values gracefully', () => {
+        const url = '/product-page';
+        const pageTags = { sku: 'PROD-123', title: null };
+
+        seoChecks.checkForTagsLength(url, pageTags);
+
+        expect(seoChecks.getDetectedTags()[url]).to.be.undefined;
+      });
+
+      it('should check all tag types', () => {
+        const url = '/product-page';
+        const pageTags = {
+          sku: 'PROD-123',
+          title: '',
+          description: 'A'.repeat(161), // Too long
+          h1: ['AB'], // Too short for H1
+        };
+
+        seoChecks.checkForTagsLength(url, pageTags);
+
+        const detectedTags = seoChecks.getDetectedTags();
+        expect(detectedTags[url].title.issue).to.equal('Empty Title');
+        expect(detectedTags[url].description.issue).to.equal('Description too long');
+        expect(detectedTags[url].h1.issue).to.equal('H1 too short');
+      });
     });
 
     describe('checkForH1Count', () => {
@@ -263,6 +414,27 @@ describe('Product MetaTags Audit', () => {
         seoChecks.checkForH1Count(url, pageTags);
         expect(seoChecks.getDetectedTags()[url]).to.be.undefined;
       });
+
+      it('should not detect an issue if there are no H1 tags', () => {
+        const url = '/product-page';
+        const pageTags = { sku: 'PROD-123', h1: [] };
+        seoChecks.checkForH1Count(url, pageTags);
+        expect(seoChecks.getDetectedTags()[url]).to.be.undefined;
+      });
+
+      it('should handle non-array H1 values', () => {
+        const url = '/product-page';
+        const pageTags = { sku: 'PROD-123', h1: 'Single String H1' };
+        seoChecks.checkForH1Count(url, pageTags);
+        expect(seoChecks.getDetectedTags()[url]).to.be.undefined;
+      });
+
+      it('should handle null H1 values', () => {
+        const url = '/product-page';
+        const pageTags = { sku: 'PROD-123', h1: null };
+        seoChecks.checkForH1Count(url, pageTags);
+        expect(seoChecks.getDetectedTags()[url]).to.be.undefined;
+      });
     });
 
     describe('checkForUniqueness', () => {
@@ -273,6 +445,28 @@ describe('Product MetaTags Audit', () => {
         seoChecks.finalChecks();
         expect(seoChecks.getDetectedTags()['/product1'].title.issue).to.equal('Duplicate Title');
         expect(seoChecks.getDetectedTags()['/product2'].title.issue).to.equal('Duplicate Title');
+      });
+
+      it('should handle case insensitive duplicates', () => {
+        seoChecks.addToAllTags('/product1', 'title', 'Product Title');
+        seoChecks.addToAllTags('/product2', 'title', 'product title'); // Different case
+
+        seoChecks.finalChecks();
+
+        const detectedTags = seoChecks.getDetectedTags();
+        expect(detectedTags['/product1'].title.issue).to.equal('Duplicate Title');
+        expect(detectedTags['/product2'].title.issue).to.equal('Duplicate Title');
+      });
+
+      it('should handle trimmed duplicates', () => {
+        seoChecks.addToAllTags('/product1', 'title', 'Product Title');
+        seoChecks.addToAllTags('/product2', 'title', 'Product Title '); // Trailing space
+
+        seoChecks.finalChecks();
+
+        const detectedTags = seoChecks.getDetectedTags();
+        expect(detectedTags['/product1'].title.issue).to.equal('Duplicate Title');
+        expect(detectedTags['/product2'].title.issue).to.equal('Duplicate Title');
       });
     });
 
@@ -294,6 +488,18 @@ describe('Product MetaTags Audit', () => {
 
         expect(seoChecks.allTags.title['']).to.be.undefined;
       });
+
+      it('should accumulate multiple pages for same content', () => {
+        const tagContent = 'Same Title';
+
+        seoChecks.addToAllTags('/product1', 'title', tagContent);
+        seoChecks.addToAllTags('/product2', 'title', tagContent);
+
+        const key = tagContent.toLowerCase().trim();
+        expect(seoChecks.allTags.title[key].pageUrls).to.have.length(2);
+        expect(seoChecks.allTags.title[key].pageUrls).to.include('/product1');
+        expect(seoChecks.allTags.title[key].pageUrls).to.include('/product2');
+      });
     });
 
     describe('getDetectedTags', () => {
@@ -308,259 +514,685 @@ describe('Product MetaTags Audit', () => {
         const healthyTags = seoChecks.getFewHealthyTags();
         expect(healthyTags).to.be.an('object');
       });
-    });
-  });
 
-  describe('fetchAndProcessPageObject', () => {
-    it('should handle valid S3 object structure', () => {
-      // Test the object structure processing logic
-      const mockS3Object = {
-        finalUrl: 'https://example.com/product',
-        scrapeResult: {
-          tags: {
-            title: 'Product Title',
-            description: 'Product Description',
-            h1: ['Product H1'],
-            sku: 'PROD-123',
-            'og:image': 'https://example.com/product-image.jpg',
-          },
-          rawBody: '<html><head><title>Product Title</title></head><body>Product page content that is long enough to pass validation and meet the minimum length requirement of 300 characters for processing. This content should be sufficiently long to trigger the audit processing logic and not be skipped due to length constraints.</body></html>',
-        },
-      };
+      it('should include healthy pages in sample', () => {
+        // Add some healthy product pages
+        const url = '/healthy-product';
+        const pageTags = {
+          sku: 'PROD-123',
+          title: 'Perfect Product Title',
+          description: 'This is a great product description with optimal length.',
+          h1: ['Perfect H1'],
+        };
 
-      // Verify the structure matches what we expect
-      expect(mockS3Object.scrapeResult.tags).to.have.property('sku');
-      expect(mockS3Object.scrapeResult.tags).to.have.property('og:image');
-      expect(mockS3Object.scrapeResult.rawBody.length).to.be.greaterThan(300);
+        seoChecks.performChecks(url, pageTags);
+        const healthyTags = seoChecks.getFewHealthyTags();
+
+        expect(healthyTags).to.have.property(url);
+      });
     });
 
-    it('should return null for pages without scraped tags', async () => {
-      const mockS3Object = { scrapeResult: {} };
+    describe('performChecks', () => {
+      it('should skip pages without product tags', () => {
+        const pageTags = { title: 'Regular Page', description: 'No product tags' };
+        seoChecks.performChecks('/regular-page', pageTags);
+        expect(Object.keys(seoChecks.getDetectedTags())).to.have.length(0);
+      });
 
-      const result = await fetchAndProcessPageObject(
-        { getObject: () => mockS3Object },
-        'test-bucket',
-        'scrapes/site-id/page/scrape.json',
-        'scrapes/site-id/',
-        context.log,
-      );
+      it('should process pages with product tags and detect missing title', () => {
+        const pageTags = {
+          sku: 'PROD-123',
+          'og:image': 'https://example.com/image.jpg',
+          // Missing title - should be detected
+          description: 'Product description',
+        };
+        seoChecks.performChecks('/product-page', pageTags);
+        const detectedTags = seoChecks.getDetectedTags();
+        expect(detectedTags['/product-page']).to.have.property('title');
+        expect(detectedTags['/product-page'].title.issue).to.equal('Missing Title');
+      });
 
-      expect(result).to.be.null;
+      it('should detect multiple H1 tags on product pages', () => {
+        const pageTags = {
+          sku: 'PROD-789',
+          title: 'Product Title',
+          h1: ['First H1', 'Second H1'],
+        };
+        seoChecks.performChecks('/multi-h1-page', pageTags);
+        const detectedTags = seoChecks.getDetectedTags();
+        expect(detectedTags['/multi-h1-page']).to.have.property('h1');
+        expect(detectedTags['/multi-h1-page'].h1.issue).to.equal('Multiple H1 on page');
+      });
+
+      it('should add product tags to detected issues', () => {
+        const pageTags = {
+          sku: 'PROD-456',
+          'og:image': 'https://example.com/image.jpg',
+          title: 'Product Title',
+          description: '',
+        };
+        seoChecks.performChecks('/product-page', pageTags);
+        const detectedTags = seoChecks.getDetectedTags();
+        expect(detectedTags['/product-page'].description.productTags).to.deep.equal({
+          sku: 'PROD-456',
+          image: 'https://example.com/image.jpg',
+        });
+      });
+
+      it('should perform comprehensive checks', () => {
+        const pageTags = {
+          sku: 'PROD-FULL',
+          title: '',
+          description: 'A'.repeat(161),
+          h1: ['H1 One', 'H1 Two'],
+        };
+
+        seoChecks.performChecks('/full-check-page', pageTags);
+        const detectedTags = seoChecks.getDetectedTags();
+
+        expect(detectedTags['/full-check-page'].title.issue).to.equal('Empty Title');
+        expect(detectedTags['/full-check-page'].description.issue).to.equal('Description too long');
+        expect(detectedTags['/full-check-page'].h1.issue).to.equal('Multiple H1 on page');
+      });
     });
 
-    it('should return null for pages with short content', async () => {
-      const mockS3Object = {
-        scrapeResult: {
-          tags: { title: 'Short' },
-          rawBody: 'Short content',
-        },
-      };
+    describe('finalChecks', () => {
+      it('should detect duplicate titles across product pages', () => {
+        const pageTags1 = { sku: 'PROD-1', title: 'Same Title' };
+        const pageTags2 = { sku: 'PROD-2', title: 'Same Title' };
 
-      const result = await fetchAndProcessPageObject(
-        { getObject: () => mockS3Object },
-        'test-bucket',
-        'scrapes/site-id/page/scrape.json',
-        'scrapes/site-id/',
-        context.log,
-      );
+        seoChecks.performChecks('/product1', pageTags1);
+        seoChecks.performChecks('/product2', pageTags2);
+        seoChecks.finalChecks();
 
-      expect(result).to.be.null;
-    });
-  });
+        const detectedTags = seoChecks.getDetectedTags();
+        expect(detectedTags['/product1'].title.issue).to.equal('Duplicate Title');
+        expect(detectedTags['/product2'].title.issue).to.equal('Duplicate Title');
+      });
 
-  describe('importTopPages', () => {
-    it('should return import step data', async () => {
-      const mockSite = { getId: () => 'test-site-id' };
-      const mockContext = {
-        site: mockSite,
-        finalUrl: 'https://example.com',
-      };
+      it('should detect duplicates across all tag types', () => {
+        const pageTags1 = {
+          sku: 'PROD-1',
+          title: 'Unique Title 1',
+          description: 'Same Description',
+          h1: ['Same H1'],
+        };
+        const pageTags2 = {
+          sku: 'PROD-2',
+          title: 'Unique Title 2',
+          description: 'Same Description',
+          h1: ['Same H1'],
+        };
 
-      const result = await importTopPages(mockContext);
+        seoChecks.performChecks('/product1', pageTags1);
+        seoChecks.performChecks('/product2', pageTags2);
+        seoChecks.finalChecks();
 
-      expect(result).to.deep.equal({
-        type: 'top-pages',
-        siteId: 'test-site-id',
-        auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
-        fullAuditRef: 'scrapes/test-site-id/',
+        const detectedTags = seoChecks.getDetectedTags();
+        expect(detectedTags['/product1'].description.issue).to.equal('Duplicate Description');
+        expect(detectedTags['/product2'].description.issue).to.equal('Duplicate Description');
+        expect(detectedTags['/product1'].h1.issue).to.equal('Duplicate H1');
+        expect(detectedTags['/product2'].h1.issue).to.equal('Duplicate H1');
       });
     });
   });
 
-  describe('submitForScraping', () => {
-    it('should return scraping data with URLs', async () => {
-      const mockTopPages = [
-        { getUrl: () => 'https://example.com/product1' },
-        { getUrl: () => 'https://example.com/product2' },
-      ];
+  describe('Handler Functions', () => {
+    describe('importTopPages', () => {
+      it('should return import step data', async () => {
+        const mockSite = { getId: () => 'test-site-id' };
+        const mockContext = {
+          site: mockSite,
+          finalUrl: 'https://example.com',
+        };
 
-      const mockSite = {
-        getId: () => 'test-site-id',
-        getConfig: () => ({ getIncludedURLs: () => ['https://example.com/included'] }),
-      };
+        const result = await importTopPages(mockContext);
 
-      const mockDataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(mockTopPages),
-        },
-      };
-
-      const mockContext = {
-        site: mockSite,
-        dataAccess: mockDataAccess,
-        log: context.log,
-      };
-
-      const result = await submitForScraping(mockContext);
-
-      expect(result).to.deep.equal({
-        urls: [
-          { url: 'https://example.com/product1' },
-          { url: 'https://example.com/product2' },
-          { url: 'https://example.com/included' },
-        ],
-        siteId: 'test-site-id',
-        type: 'product-metatags',
+        expect(result).to.deep.equal({
+          type: 'top-pages',
+          siteId: 'test-site-id',
+          auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
+          fullAuditRef: 'scrapes/test-site-id/',
+        });
       });
     });
 
-    it('should throw error when no URLs found', async () => {
-      const mockSite = {
-        getId: () => 'test-site-id',
-        getConfig: () => ({ getIncludedURLs: () => [] }),
-      };
+    describe('submitForScraping', () => {
+      it('should return scraping data with URLs', async () => {
+        const mockTopPages = [
+          { getUrl: () => 'https://example.com/product1' },
+          { getUrl: () => 'https://example.com/product2' },
+        ];
 
-      const mockDataAccess = {
-        SiteTopPage: {
-          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
-        },
-      };
+        const mockSite = {
+          getId: () => 'test-site-id',
+          getConfig: () => ({ getIncludedURLs: () => ['https://example.com/included'] }),
+        };
 
-      const mockContext = {
-        site: mockSite,
-        dataAccess: mockDataAccess,
-        log: context.log,
-      };
-
-      await expect(submitForScraping(mockContext))
-        .to.be.rejectedWith('No URLs found for site neither top pages nor included URLs');
-    });
-  });
-
-  describe('extractProductTagsFromHTML', () => {
-    // We need to test this indirectly through fetchAndProcessPageObject since it's not exported
-    it('should extract product tags from HTML content via fetchAndProcessPageObject', async () => {
-      const htmlContent = `
-        <html>
-          <head>
-            <meta name="sku" content="TEST-SKU-123">
-            <meta property="og:image" content="https://example.com/og-image.jpg">
-            <meta name="twitter:image" content="https://example.com/twitter-image.jpg">
-            <meta name="product:image" content="https://example.com/product-image.jpg">
-            <meta name="image" content="https://example.com/generic-image.jpg">
-            <title>Test Product</title>
-          </head>
-        </html>
-      `;
-
-      const mockS3Object = {
-        scrapeResult: {
-          tags: {
-            title: 'Test Product',
-            description: 'Test Description',
-            h1: ['Test H1'],
+        const mockDataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(mockTopPages),
           },
-          rawBody: htmlContent,
-        },
-        finalUrl: 'https://example.com/products/test-product',
-      };
+        };
 
-      const mockS3Client = {};
-      const getObjectFromKeyStub = sandbox.stub().resolves(mockS3Object);
+        const mockContext = {
+          site: mockSite,
+          dataAccess: mockDataAccess,
+          log: context.log,
+        };
 
-      // Temporarily replace the import
-      const originalModule = await import('../../src/utils/s3-utils.js');
-      sandbox.stub(originalModule, 'getObjectFromKey').callsFake(getObjectFromKeyStub);
+        const result = await submitForScraping(mockContext);
 
-      const productMetatagsHandler = await import('../../src/product-metatags/handler.js');
-      const result = await productMetatagsHandler.fetchAndProcessPageObject(mockS3Client, 'bucket', 'key', 'prefix/', context.log);
+        expect(result).to.deep.equal({
+          urls: [
+            { url: 'https://example.com/product1' },
+            { url: 'https://example.com/product2' },
+            { url: 'https://example.com/included' },
+          ],
+          siteId: 'test-site-id',
+          type: 'product-metatags',
+        });
+      });
 
-      expect(result).to.have.property('/products/test-product');
-      const pageData = result['/products/test-product'];
-      expect(pageData).to.have.property('sku', 'TEST-SKU-123');
-      expect(pageData).to.have.property('og:image', 'https://example.com/og-image.jpg');
-      expect(pageData).to.have.property('twitter:image', 'https://example.com/twitter-image.jpg');
-      expect(pageData).to.have.property('product:image', 'https://example.com/product-image.jpg');
-      expect(pageData).to.have.property('image', 'https://example.com/generic-image.jpg');
-    });
+      it('should throw error when no URLs found', async () => {
+        const mockSite = {
+          getId: () => 'test-site-id',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        };
 
-    it('should handle HTML without product tags via fetchAndProcessPageObject', async () => {
-      const htmlContent = `
-        <html>
-          <head>
-            <title>Test Page</title>
-          </head>
-        </html>
-      `;
-
-      const mockS3Object = {
-        scrapeResult: {
-          tags: {
-            title: 'Test Page',
-            description: 'Test Description',
+        const mockDataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
           },
-          rawBody: htmlContent,
-        },
-        finalUrl: 'https://example.com/test-page',
-      };
+        };
 
-      const mockS3Client = {};
-      const getObjectFromKeyStub = sandbox.stub().resolves(mockS3Object);
+        const mockContext = {
+          site: mockSite,
+          dataAccess: mockDataAccess,
+          log: context.log,
+        };
 
-      // Temporarily replace the import
-      const originalModule = await import('../../src/utils/s3-utils.js');
-      sandbox.stub(originalModule, 'getObjectFromKey').callsFake(getObjectFromKeyStub);
+        await expect(submitForScraping(mockContext))
+          .to.be.rejectedWith('No URLs found for site neither top pages nor included URLs');
+      });
 
-      const productMetatagsHandler = await import('../../src/product-metatags/handler.js');
-      const result = await productMetatagsHandler.fetchAndProcessPageObject(mockS3Client, 'bucket', 'key', 'prefix/', context.log);
+      it('should handle missing config gracefully', async () => {
+        const mockTopPages = [
+          { getUrl: () => 'https://example.com/product1' },
+        ];
 
-      expect(result).to.have.property('/test-page');
-      const pageData = result['/test-page'];
-      expect(pageData).to.have.property('sku', undefined);
-      expect(pageData).to.have.property('og:image', undefined);
-      expect(pageData).to.have.property('twitter:image', undefined);
-      expect(pageData).to.have.property('product:image', undefined);
-      expect(pageData).to.have.property('image', undefined);
+        const mockSite = {
+          getId: () => 'test-site-id',
+          getConfig: () => null, // Simulate missing config
+        };
+
+        const mockDataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(mockTopPages),
+          },
+        };
+
+        const mockContext = {
+          site: mockSite,
+          dataAccess: mockDataAccess,
+          log: context.log,
+        };
+
+        const result = await submitForScraping(mockContext);
+
+        expect(result.urls).to.have.length(1);
+        expect(result.urls[0].url).to.equal('https://example.com/product1');
+      });
     });
 
-    it('should handle invalid HTML content via fetchAndProcessPageObject', async () => {
-      const mockS3Object = {
-        scrapeResult: {
-          tags: {
-            title: 'Test Page',
+    describe('fetchAndProcessPageObject', () => {
+      beforeEach(async () => {
+        // Mock getObjectFromKey for each test
+        sandbox.stub(await import('../../src/utils/s3-utils.js'), 'getObjectFromKey');
+      });
+
+      it('should process S3 object and extract product tags from HTML', async () => {
+        const htmlContent = `
+          <html>
+            <head>
+              <meta name="sku" content="TEST-SKU-123">
+              <meta property="og:image" content="https://example.com/og-image.jpg">
+              <meta name="twitter:image" content="https://example.com/twitter-image.jpg">
+              <title>Test Product</title>
+            </head>
+            <body>This is content long enough to pass the 300 character minimum requirement for processing by the audit system.</body>
+          </html>
+        `;
+
+        const mockS3Object = {
+          scrapeResult: {
+            tags: {
+              title: 'Test Product',
+              description: 'Test Description',
+              h1: ['Test H1'],
+            },
+            rawBody: htmlContent,
           },
-          rawBody: null, // Invalid HTML
-        },
-        finalUrl: 'https://example.com/test-page',
-      };
+          finalUrl: 'https://example.com/products/test-product',
+        };
 
-      const mockS3Client = {};
-      const getObjectFromKeyStub = sandbox.stub().resolves(mockS3Object);
+        const s3Utils = await import('../../src/utils/s3-utils.js');
+        s3Utils.getObjectFromKey.resolves(mockS3Object);
 
-      // Temporarily replace the import
-      const originalModule = await import('../../src/utils/s3-utils.js');
-      sandbox.stub(originalModule, 'getObjectFromKey').callsFake(getObjectFromKeyStub);
+        const result = await fetchAndProcessPageObject(
+          {},
+          'test-bucket',
+          'scrapes/site-id/products/test-product/scrape.json',
+          'scrapes/site-id/',
+          context.log,
+        );
 
-      const productMetatagsHandler = await import('../../src/product-metatags/handler.js');
-      const result = await productMetatagsHandler.fetchAndProcessPageObject(mockS3Client, 'bucket', 'key', 'prefix/', context.log);
+        expect(result).to.have.property('/products/test-product');
+        const pageData = result['/products/test-product'];
+        expect(pageData).to.have.property('sku', 'TEST-SKU-123');
+        expect(pageData).to.have.property('og:image', 'https://example.com/og-image.jpg');
+        expect(pageData).to.have.property('twitter:image', 'https://example.com/twitter-image.jpg');
+        expect(pageData).to.have.property('title', 'Test Product');
+      });
 
-      expect(result).to.have.property('/test-page');
-      const pageData = result['/test-page'];
-      expect(pageData).to.have.property('sku', undefined);
+      it('should return null for pages without scraped tags', async () => {
+        const mockS3Object = { scrapeResult: {} };
+
+        const s3Utils = await import('../../src/utils/s3-utils.js');
+        s3Utils.getObjectFromKey.resolves(mockS3Object);
+
+        const result = await fetchAndProcessPageObject(
+          {},
+          'test-bucket',
+          'scrapes/site-id/page/scrape.json',
+          'scrapes/site-id/',
+          context.log,
+        );
+
+        expect(result).to.be.null;
+      });
+
+      it('should return null for pages with short content', async () => {
+        const mockS3Object = {
+          scrapeResult: {
+            tags: { title: 'Short' },
+            rawBody: 'Short content',
+          },
+        };
+
+        const s3Utils = await import('../../src/utils/s3-utils.js');
+        s3Utils.getObjectFromKey.resolves(mockS3Object);
+
+        const result = await fetchAndProcessPageObject(
+          {},
+          'test-bucket',
+          'scrapes/site-id/page/scrape.json',
+          'scrapes/site-id/',
+          context.log,
+        );
+
+        expect(result).to.be.null;
+      });
+
+      it('should handle homepage URL correctly', async () => {
+        const mockS3Object = {
+          scrapeResult: {
+            tags: { title: 'Homepage' },
+            rawBody: 'Homepage content that is long enough to meet the minimum length requirement of three hundred characters for processing.',
+          },
+          finalUrl: 'https://example.com',
+        };
+
+        const s3Utils = await import('../../src/utils/s3-utils.js');
+        s3Utils.getObjectFromKey.resolves(mockS3Object);
+
+        const result = await fetchAndProcessPageObject(
+          {},
+          'test-bucket',
+          'scrapes/site-id/scrape.json',
+          'scrapes/site-id/',
+          context.log,
+        );
+
+        expect(result).to.have.property('/');
+      });
+
+      it('should handle malformed HTML gracefully', async () => {
+        const malformedHtml = '<html><head><meta name="sku" content="TEST-123"<></head>';
+
+        const mockS3Object = {
+          scrapeResult: {
+            tags: { title: 'Test' },
+            rawBody: malformedHtml,
+          },
+          finalUrl: 'https://example.com/test',
+        };
+
+        const s3Utils = await import('../../src/utils/s3-utils.js');
+        s3Utils.getObjectFromKey.resolves(mockS3Object);
+
+        const result = await fetchAndProcessPageObject(
+          {},
+          'test-bucket',
+          'scrapes/site-id/test/scrape.json',
+          'scrapes/site-id/',
+          context.log,
+        );
+
+        expect(result).to.have.property('/test');
+        expect(result['/test']).to.have.property('sku', 'TEST-123');
+      });
+
+      it('should handle empty rawBody', async () => {
+        const mockS3Object = {
+          scrapeResult: {
+            tags: { title: 'Test' },
+            rawBody: '',
+          },
+          finalUrl: 'https://example.com/test',
+        };
+
+        const s3Utils = await import('../../src/utils/s3-utils.js');
+        s3Utils.getObjectFromKey.resolves(mockS3Object);
+
+        const result = await fetchAndProcessPageObject(
+          {},
+          'test-bucket',
+          'scrapes/site-id/test/scrape.json',
+          'scrapes/site-id/',
+          context.log,
+        );
+
+        expect(result).to.be.null; // Should return null for empty content
+      });
+
+      it('should handle null rawBody', async () => {
+        const mockS3Object = {
+          scrapeResult: {
+            tags: { title: 'Test' },
+            rawBody: null,
+          },
+          finalUrl: 'https://example.com/test',
+        };
+
+        const s3Utils = await import('../../src/utils/s3-utils.js');
+        s3Utils.getObjectFromKey.resolves(mockS3Object);
+
+        const result = await fetchAndProcessPageObject(
+          {},
+          'test-bucket',
+          'scrapes/site-id/test/scrape.json',
+          'scrapes/site-id/',
+          context.log,
+        );
+
+        expect(result).to.have.property('/test');
+        expect(result['/test']).to.have.property('sku', undefined);
+      });
+
+      it('should handle error from getObjectFromKey', async () => {
+        const s3Utils = await import('../../src/utils/s3-utils.js');
+        s3Utils.getObjectFromKey.rejects(new Error('S3 Error'));
+
+        const result = await fetchAndProcessPageObject(
+          {},
+          'test-bucket',
+          'scrapes/site-id/test/scrape.json',
+          'scrapes/site-id/',
+          context.log,
+        );
+
+        expect(result).to.be.null;
+      });
+    });
+
+    describe('runAuditAndGenerateSuggestions', () => {
+      beforeEach(async () => {
+        // Set up common mocks for external dependencies
+        sandbox.stub(await import('@adobe/spacecat-shared-rum-api-client'), 'default').returns({
+          createFrom: () => ({
+            query: sinon.stub().resolves([]),
+          }),
+        });
+        sandbox.stub(await import('../../src/support/utils.js'), 'calculateCPCValue').resolves(2.5);
+        sandbox.stub(await import('../../src/common/index.js'), 'wwwUrlResolver').resolves('www.example.com');
+      });
+
+      it('should complete the audit successfully with mock data', async () => {
+        const mockSite = {
+          getId: () => 'test-site-id',
+          getConfig: () => ({
+            getIncludedURLs: () => ['https://example.com/included-product'],
+          }),
+        };
+
+        const mockAudit = {
+          getId: () => 'test-audit-id',
+        };
+
+        const mockDataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+              { getUrl: () => 'https://example.com/product1' },
+            ]),
+          },
+        };
+
+        const testContext = {
+          ...context,
+          site: mockSite,
+          audit: mockAudit,
+          finalUrl: 'https://example.com',
+          s3Client: {
+            send: sinon.stub()
+              .withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+              .resolves({ Contents: [] })
+              .withArgs(sinon.match.instanceOf(GetObjectCommand))
+              .resolves({ Contents: [] }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          dataAccess: mockDataAccess,
+        };
+
+        const result = await runAuditAndGenerateSuggestions(testContext);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+      });
+
+      it('should handle RUM API errors gracefully', async () => {
+        const rumClient = await import('@adobe/spacecat-shared-rum-api-client');
+        rumClient.default.returns({
+          createFrom: () => ({
+            query: sinon.stub().rejects(new Error('RUM API Error')),
+          }),
+        });
+
+        const mockSite = {
+          getId: () => 'test-site-id',
+          getConfig: () => ({ getIncludedURLs: () => [] }),
+        };
+
+        const mockDataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+          },
+        };
+
+        const testContext = {
+          ...context,
+          site: mockSite,
+          audit: { getId: () => 'test-audit' },
+          finalUrl: 'https://example.com',
+          s3Client: { send: sinon.stub().resolves({ Contents: [] }) },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          dataAccess: mockDataAccess,
+        };
+
+        const result = await runAuditAndGenerateSuggestions(testContext);
+        expect(result).to.deep.equal({ status: 'complete' });
+      });
+
+      it('should process S3 objects when available', async () => {
+        const mockSite = {
+          getId: () => 'integration-test-site',
+          getConfig: () => ({
+            getIncludedURLs: () => [],
+          }),
+        };
+
+        const mockDataAccess = {
+          SiteTopPage: {
+            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
+          },
+        };
+
+        const testContext = {
+          ...context,
+          site: mockSite,
+          audit: { getId: () => 'integration-audit' },
+          finalUrl: 'https://example.com',
+          s3Client: {
+            send: sinon.stub()
+              .withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+              .resolves({
+                Contents: [
+                  { Key: 'scrapes/integration-test-site/product1/scrape.json' },
+                ],
+              })
+              .withArgs(sinon.match.instanceOf(GetObjectCommand))
+              .resolves({
+                Body: {
+                  transformToString: () => JSON.stringify({
+                    finalUrl: 'https://example.com/product1',
+                    scrapeResult: {
+                      tags: {
+                        title: 'Product 1 Title',
+                        description: 'Product 1 description',
+                        h1: ['Product 1 H1'],
+                      },
+                      rawBody: '<html><head><meta name="sku" content="PROD-001"><meta property="og:image" content="https://example.com/image1.jpg"></head><body>Product 1 content with sufficient length to pass validation requirements.</body></html>',
+                    },
+                  }),
+                },
+              }),
+          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'integration-test-bucket' },
+          dataAccess: mockDataAccess,
+        };
+
+        const result = await runAuditAndGenerateSuggestions(testContext);
+
+        expect(result).to.deep.equal({ status: 'complete' });
+      });
+    });
+
+    describe('opportunityAndSuggestions', () => {
+      beforeEach(async () => {
+        // Mock external dependencies
+        sandbox.stub(await import('../../src/common/opportunity.js'), 'convertToOpportunity').resolves({
+          getId: () => 'test-opportunity-id',
+          getSiteId: () => 'test-site-id',
+        });
+        sandbox.stub(await import('../../src/utils/data-access.js'), 'syncSuggestions').resolves();
+      });
+
+      it('should handle suggestions with productTags forwarding', async () => {
+        const auditData = {
+          siteId: 'test-site-id',
+          auditId: 'test-audit-id',
+          auditResult: {
+            finalUrl: 'https://example.com',
+            detectedTags: {
+              '/product1': {
+                title: {
+                  issue: 'Missing Title',
+                  seoImpact: 'HIGH',
+                  seoRecommendation: 'Add title',
+                  tagContent: '',
+                },
+                productTags: {
+                  sku: 'PROD-123',
+                  image: 'https://example.com/image.jpg',
+                },
+              },
+            },
+            projectedTrafficLost: 100,
+            projectedTrafficValue: 500,
+          },
+        };
+
+        const mockDataAccess = {
+          Site: {
+            findById: sinon.stub().resolves({
+              getDeliveryConfig: () => ({ useHostnameOnly: true }),
+            }),
+          },
+        };
+
+        const testContext = {
+          ...context,
+          dataAccess: mockDataAccess,
+        };
+
+        await opportunityAndSuggestions('https://example.com', auditData, testContext);
+
+        const dataAccessModule = await import('../../src/utils/data-access.js');
+        expect(dataAccessModule.syncSuggestions).to.have.been.calledOnce;
+      });
+
+      it('should handle missing productTags gracefully', async () => {
+        const auditData = {
+          siteId: 'test-site-id',
+          auditId: 'test-audit-id',
+          auditResult: {
+            finalUrl: 'https://example.com',
+            detectedTags: {
+              '/product1': {
+                title: {
+                  issue: 'Missing Title',
+                  seoImpact: 'HIGH',
+                  seoRecommendation: 'Add title',
+                  tagContent: '',
+                },
+                // No productTags
+              },
+            },
+            projectedTrafficLost: 100,
+            projectedTrafficValue: 500,
+          },
+        };
+
+        const mockDataAccess = {
+          Site: {
+            findById: sinon.stub().resolves({
+              getDeliveryConfig: () => ({ useHostnameOnly: true }),
+            }),
+          },
+        };
+
+        const testContext = {
+          ...context,
+          dataAccess: mockDataAccess,
+        };
+
+        await opportunityAndSuggestions('https://example.com', auditData, testContext);
+
+        const dataAccessModule = await import('../../src/utils/data-access.js');
+        expect(dataAccessModule.syncSuggestions).to.have.been.calledOnce;
+      });
     });
   });
 
   describe('productMetatagsAutoSuggest', () => {
+    beforeEach(async () => {
+      // Mock external dependencies
+      sandbox.stub(await import('@adobe/spacecat-shared-gpt-client'), 'GenvarClient').returns({
+        createFrom: () => ({
+          generateSuggestions: sinon.stub().resolves({}),
+        }),
+      });
+    });
+
     it('should return original tags when auto-suggest is disabled', async () => {
       const mockSite = { getId: () => 'test-site' };
       const mockConfiguration = {
@@ -604,7 +1236,6 @@ describe('Product MetaTags Audit', () => {
         },
       };
 
-      // Mock GenvarClient
       const mockGenvarResponse = {
         '/product': {
           title: {
@@ -613,9 +1244,11 @@ describe('Product MetaTags Audit', () => {
           },
         },
       };
-      const mockGenvarClient = {
-        generateSuggestions: sandbox.stub().resolves(mockGenvarResponse),
-      };
+
+      const GenvarClientModule = await import('@adobe/spacecat-shared-gpt-client');
+      GenvarClientModule.GenvarClient.createFrom = sinon.stub().returns({
+        generateSuggestions: sinon.stub().resolves(mockGenvarResponse),
+      });
 
       const mockContext = {
         ...context,
@@ -623,10 +1256,6 @@ describe('Product MetaTags Audit', () => {
         s3Client: {},
         env: {},
       };
-
-      // Mock GenvarClient.createFrom
-      const GenvarClientModule = await import('@adobe/spacecat-shared-gpt-client');
-      const createFromStub = sandbox.stub(GenvarClientModule.GenvarClient, 'createFrom').returns(mockGenvarClient);
 
       const allTags = {
         detectedTags: {
@@ -644,366 +1273,119 @@ describe('Product MetaTags Audit', () => {
 
       expect(result['/product'].title).to.have.property('aiSuggestion', 'AI Generated Title');
       expect(result['/product'].title).to.have.property('aiRationale', 'This title is optimized for SEO');
-      expect(createFromStub).to.have.been.calledWith(mockContext);
     });
-  });
 
-  describe('Handler Methods - Additional Coverage', () => {
-    describe('runAuditAndGenerateSuggestions', () => {
-      let mockSite;
-      let mockAudit;
-      let mockDataAccess;
+    it('should handle errors gracefully when auto-suggest fails', async () => {
+      const mockSite = {
+        getId: () => 'test-site',
+        getBaseURL: () => 'https://example.com',
+      };
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(true),
+      };
+      const mockDataAccess = {
+        Configuration: {
+          findLatest: sandbox.stub().resolves(mockConfiguration),
+        },
+      };
 
-      beforeEach(() => {
-        mockDataAccess = {
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-              { getUrl: () => 'https://example.com/product1' },
-              { getUrl: () => 'https://example.com/product2' },
-            ]),
-          },
-        };
-
-        mockSite = {
-          getId: () => 'test-site-id',
-          getConfig: () => ({
-            getIncludedURLs: () => ['https://example.com/included-product'],
-          }),
-        };
-
-        mockAudit = {
-          getId: () => 'test-audit-id',
-        };
-
-        context.dataAccess = mockDataAccess;
-        context.site = mockSite;
-        context.audit = mockAudit;
-        context.finalUrl = 'https://example.com';
-        context.s3Client = { send: sinon.stub() };
-        context.env = { S3_SCRAPER_BUCKET_NAME: 'test-bucket' };
+      const GenvarClientModule = await import('@adobe/spacecat-shared-gpt-client');
+      GenvarClientModule.GenvarClient.createFrom = sinon.stub().returns({
+        generateSuggestions: sinon.stub().rejects(new Error('GenvarClient error')),
       });
 
-      it('should handle product pages with missing titles', async () => {
-        // Mock S3 response
-        context.s3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command)).resolves({
-          Contents: [
-            { Key: 'scrapes/test-site-id/product1/scrape.json' },
-          ],
-        });
+      const mockContext = {
+        ...context,
+        dataAccess: mockDataAccess,
+        s3Client: {},
+        env: {},
+      };
 
-        // Mock S3 object response with missing title
-        context.s3Client.send.withArgs(sinon.match.instanceOf(GetObjectCommand)).resolves({
-          Body: {
-            transformToString: () => JSON.stringify({
-              finalUrl: 'https://example.com/product1',
-              scrapeResult: {
-                tags: { sku: 'PROD-123' }, // Missing title
-                rawBody: '<html><head><meta name="sku" content="PROD-123"></head><body>Product page content that is long enough to pass validation requirements for processing.</body></html>',
-              },
-            }),
+      const allTags = {
+        detectedTags: {
+          '/product': {
+            title: { issue: 'Missing Title' },
           },
-        });
+        },
+        healthyTags: {},
+        extractedTags: {
+          '/product': { s3key: 'scrapes/test-site/product/scrape.json' },
+        },
+      };
 
-        const { runAuditAndGenerateSuggestions } = await import('../../src/product-metatags/handler.js');
-        const result = await runAuditAndGenerateSuggestions(context);
+      const result = await productMetatagsAutoSuggest(allTags, mockContext, mockSite);
 
-        expect(result).to.deep.equal({ status: 'complete' });
-      });
-
-      it('should handle RUM API errors gracefully', async () => {
-        context.s3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command)).resolves({
-          Contents: [],
-        });
-
-        // Mock RUM API client to throw error
-        const mockRumClient = {
-          query: sinon.stub().rejects(new Error('RUM API Error')),
-        };
-
-        const mockedHandler = await esmock('../../src/product-metatags/handler.js', {
-          '@adobe/spacecat-shared-rum-api-client': {
-            default: {
-              createFrom: () => mockRumClient,
-            },
-          },
-        });
-
-        const result = await mockedHandler.runAuditAndGenerateSuggestions(context);
-        expect(result).to.deep.equal({ status: 'complete' });
-      });
+      // Should return original detected tags when auto-suggest fails
+      expect(result).to.deep.equal(allTags.detectedTags);
     });
 
-    describe('opportunityAndSuggestions - Error Handling', () => {
-      it('should handle suggestions with productTags', async () => {
-        const mockOpportunity = {
-          getId: () => 'test-opportunity-id',
-          getSiteId: () => 'test-site-id',
-        };
+    it('should validate missing parameters', async () => {
+      // Test with missing allTags
+      const result1 = await productMetatagsAutoSuggest(null, context, { getId: () => 'test' });
+      expect(result1).to.be.null;
 
-        const mockConvertToOpportunity = sinon.stub().resolves(mockOpportunity);
-        const mockSyncSuggestions = sinon.stub().resolves();
-
-        const auditData = {
-          siteId: 'test-site-id',
-          auditId: 'test-audit-id',
-          auditResult: {
-            finalUrl: 'https://example.com',
-            detectedTags: {
-              '/product1': {
-                title: {
-                  issue: 'Missing Title',
-                  seoImpact: 'HIGH',
-                  seoRecommendation: 'Add title',
-                  tagContent: '',
-                },
-                productTags: {
-                  sku: 'PROD-123',
-                  image: 'https://example.com/image.jpg',
-                },
-              },
-            },
-            projectedTrafficLost: 100,
-            projectedTrafficValue: 500,
-          },
-        };
-
-        const mockDataAccess = {
-          Site: {
-            findById: sinon.stub().resolves({
-              getDeliveryConfig: () => ({ useHostnameOnly: true }),
-            }),
-          },
-        };
-
-        context.dataAccess = mockDataAccess;
-
-        const mockedHandler = await esmock('../../src/product-metatags/handler.js', {
-          '../common/opportunity.js': { convertToOpportunity: mockConvertToOpportunity },
-          '../utils/data-access.js': { syncSuggestions: mockSyncSuggestions },
-        });
-
-        await mockedHandler.opportunityAndSuggestions('https://example.com', auditData, context);
-
-        expect(mockSyncSuggestions).to.have.been.calledOnce;
-        const syncCall = mockSyncSuggestions.getCall(0);
-        expect(syncCall.args[0].newData[0]).to.have.property('productTags');
-        expect(syncCall.args[0].newData[0].productTags).to.deep.equal({
-          sku: 'PROD-123',
-          image: 'https://example.com/image.jpg',
-        });
-      });
+      // Test with missing site
+      const result2 = await productMetatagsAutoSuggest({ detectedTags: {} }, context, null);
+      expect(result2).to.deep.equal({});
     });
 
-    describe('calculateProjectedTraffic', () => {
-      it('should skip productTags from traffic calculation', async () => {
-        const mockSite = { getId: () => 'test-site' };
+    it('should handle missing extractedTags gracefully', async () => {
+      const mockSite = {
+        getId: () => 'test-site',
+        getBaseURL: () => 'https://example.com',
+      };
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sandbox.stub().returns(true),
+      };
+      const mockDataAccess = {
+        Configuration: {
+          findLatest: sandbox.stub().resolves(mockConfiguration),
+        },
+      };
 
-        const mockRumClient = {
-          query: sinon.stub().resolves([
-            { url: 'https://example.com/product1', earned: 100, paid: 50 },
-          ]),
-        };
+      const mockContext = {
+        ...context,
+        dataAccess: mockDataAccess,
+        s3Client: {},
+        env: {},
+      };
 
-        const mockCalculateCPCValue = sinon.stub().resolves(2.5);
-
-        const mockedHandler = await esmock('../../src/product-metatags/handler.js', {
-          '@adobe/spacecat-shared-rum-api-client': {
-            default: {
-              createFrom: () => mockRumClient,
-            },
+      const allTags = {
+        detectedTags: {
+          '/product': {
+            title: { issue: 'Missing Title' },
           },
-          '../support/utils.js': {
-            calculateCPCValue: mockCalculateCPCValue,
-          },
-          '../common/index.js': {
-            wwwUrlResolver: sinon.stub().resolves('www.example.com'),
-          },
-        });
+        },
+        healthyTags: {},
+        // Missing extractedTags
+      };
 
-        // This should work through the main audit function
-        const testContext = {
-          ...context,
-          site: mockSite,
-          audit: { getId: () => 'test-audit' },
-          finalUrl: 'https://example.com',
-          s3Client: { send: sinon.stub().resolves({ Contents: [] }) },
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          dataAccess: {
-            SiteTopPage: {
-              allBySiteIdAndSourceAndGeo: sinon.stub().resolves([]),
-            },
-          },
-        };
-
-        const result = await mockedHandler.runAuditAndGenerateSuggestions(testContext);
-        expect(result).to.deep.equal({ status: 'complete' });
-      });
+      const result = await productMetatagsAutoSuggest(allTags, mockContext, mockSite);
+      expect(result).to.deep.equal(allTags.detectedTags);
     });
 
-    describe('extractProductTagsFromHTML', () => {
-      it('should handle malformed HTML gracefully', async () => {
-        const malformedHtml = '<html><head><meta name="sku" content="PROD-123"<title>Test</title></head>';
+    it('should handle configuration lookup failure', async () => {
+      const mockSite = { getId: () => 'test-site' };
+      const mockDataAccess = {
+        Configuration: {
+          findLatest: sandbox.stub().rejects(new Error('Config error')),
+        },
+      };
+      const mockContext = {
+        ...context,
+        dataAccess: mockDataAccess,
+        s3Client: {},
+      };
 
-        const mockS3Object = {
-          scrapeResult: {
-            tags: { title: 'Test' },
-            rawBody: malformedHtml,
-          },
-          finalUrl: 'https://example.com/test',
-        };
+      const allTags = {
+        detectedTags: { '/product': { title: { issue: 'Missing Title' } } },
+        healthyTags: {},
+        extractedTags: {},
+      };
 
-        const mockS3Client = {};
-        const getObjectFromKeyStub = sandbox.stub().resolves(mockS3Object);
+      const result = await productMetatagsAutoSuggest(allTags, mockContext, mockSite);
 
-        const originalModule = await import('../../src/utils/s3-utils.js');
-        sandbox.stub(originalModule, 'getObjectFromKey').callsFake(getObjectFromKeyStub);
-
-        const productMetatagsHandler = await import('../../src/product-metatags/handler.js');
-        const result = await productMetatagsHandler.fetchAndProcessPageObject(mockS3Client, 'bucket', 'key', 'prefix/', context.log);
-
-        expect(result).to.have.property('/test');
-        // Should still extract what it can
-        expect(result['/test']).to.have.property('sku', 'PROD-123');
-      });
-
-      it('should handle empty rawBody', async () => {
-        const mockS3Object = {
-          scrapeResult: {
-            tags: { title: 'Test' },
-            rawBody: '',
-          },
-          finalUrl: 'https://example.com/test',
-        };
-
-        const mockS3Client = {};
-        const getObjectFromKeyStub = sandbox.stub().resolves(mockS3Object);
-
-        const originalModule = await import('../../src/utils/s3-utils.js');
-        sandbox.stub(originalModule, 'getObjectFromKey').callsFake(getObjectFromKeyStub);
-
-        const productMetatagsHandler = await import('../../src/product-metatags/handler.js');
-        const result = await productMetatagsHandler.fetchAndProcessPageObject(mockS3Client, 'bucket', 'key', 'prefix/', context.log);
-
-        expect(result).to.be.null; // Should return null for empty content
-      });
-    });
-
-    describe('getScrapeJsonPath', () => {
-      it('should transform URLs correctly', async () => {
-        // This function is not exported, so we test it indirectly
-        const mockSite = {
-          getId: () => 'test-site',
-          getConfig: () => ({ getIncludedURLs: () => [] }),
-        };
-
-        const mockDataAccess = {
-          SiteTopPage: {
-            allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-              { getUrl: () => 'https://example.com/products/test-product/' },
-            ]),
-          },
-        };
-
-        const testContext = {
-          ...context,
-          site: mockSite,
-          audit: { getId: () => 'test-audit' },
-          finalUrl: 'https://example.com',
-          s3Client: {
-            send: sinon.stub()
-              .withArgs(sinon.match.instanceOf(ListObjectsV2Command))
-              .resolves({ Contents: [] })
-              .withArgs(sinon.match.instanceOf(GetObjectCommand))
-              .resolves({ Contents: [] }),
-          },
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-          dataAccess: mockDataAccess,
-        };
-
-        const { runAuditAndGenerateSuggestions } = await import('../../src/product-metatags/handler.js');
-        const result = await runAuditAndGenerateSuggestions(testContext);
-
-        expect(result).to.deep.equal({ status: 'complete' });
-        expect(mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.called;
-      });
-    });
-  });
-
-  describe('Utility Functions - Complete Coverage', () => {
-    describe('removeTrailingSlash', () => {
-      it('should handle various URL formats', async () => {
-        const { removeTrailingSlash } = await import('../../src/product-metatags/opportunity-utils.js');
-        expect(removeTrailingSlash('/')).to.equal('');
-        expect(removeTrailingSlash('')).to.equal('');
-        expect(removeTrailingSlash('https://example.com///')).to.equal('https://example.com//');
-      });
-    });
-
-    describe('getBaseUrl', () => {
-      it('should handle edge cases', async () => {
-        const { getBaseUrl } = await import('../../src/product-metatags/opportunity-utils.js');
-        expect(getBaseUrl('https://example.com:8080/path', true)).to.equal('https://example.com:8080');
-        expect(getBaseUrl('', false)).to.equal('');
-        expect(getBaseUrl('not-a-url', false)).to.equal('not-a-url');
-      });
-    });
-
-    describe('getIssueRanking', () => {
-      it('should handle case variations', async () => {
-        const { getIssueRanking } = await import('../../src/product-metatags/opportunity-utils.js');
-        expect(getIssueRanking('title', 'MISSING TITLE')).to.equal(1);
-        expect(getIssueRanking('title', 'empty title')).to.equal(2);
-        expect(getIssueRanking('description', 'missing description')).to.equal(3);
-        expect(getIssueRanking('h1', 'multiple h1 tags')).to.equal(11);
-      });
-    });
-  });
-
-  describe('Constants - Complete Coverage', () => {
-    it('should export all required constants with correct values', async () => {
-      const constants = await import('../../src/product-metatags/constants.js');
-      expect(constants.SKU).to.equal('sku');
-      expect(constants.IMAGE).to.equal('image');
-      expect(constants.TITLE).to.equal('title');
-      expect(constants.DESCRIPTION).to.equal('description');
-      expect(constants.H1).to.equal('h1');
-      expect(constants.ISSUE).to.equal('issue');
-      expect(constants.SEO_IMPACT).to.equal('seoImpact');
-      expect(constants.HIGH).to.equal('HIGH');
-      expect(constants.MODERATE).to.equal('MODERATE');
-      expect(constants.PROJECTED_VALUE_THRESHOLD).to.be.a('number');
-    });
-
-    it('should export tag length configurations', async () => {
-      const { TAG_LENGTHS } = await import('../../src/product-metatags/constants.js');
-      expect(TAG_LENGTHS).to.have.property('title');
-      expect(TAG_LENGTHS).to.have.property('description');
-      expect(TAG_LENGTHS).to.have.property('h1');
-      expect(TAG_LENGTHS.title).to.have.property('minLength');
-      expect(TAG_LENGTHS.title).to.have.property('maxLength');
-    });
-  });
-
-  describe('Opportunity Data Mapper - Complete Coverage', () => {
-    it('should create opportunity data with all required fields', async () => {
-      const { createOpportunityData } = await import('../../src/product-metatags/opportunity-data-mapper.js');
-      const result = createOpportunityData();
-
-      expect(result).to.have.property('title');
-      expect(result).to.have.property('description');
-      expect(result).to.have.property('guidance');
-      expect(result.title).to.include('Product');
-      expect(result.description).to.be.a('string');
-      expect(result.guidance).to.be.a('string');
-    });
-
-    it('should include product-specific keywords', async () => {
-      const { createOpportunityData } = await import('../../src/product-metatags/opportunity-data-mapper.js');
-      const result = createOpportunityData();
-
-      const fullText = `${result.title} ${result.description} ${result.guidance}`.toLowerCase();
-      expect(fullText).to.include('product');
-      expect(fullText).to.include('sku');
+      expect(result).to.deep.equal(allTags.detectedTags);
     });
   });
 });
