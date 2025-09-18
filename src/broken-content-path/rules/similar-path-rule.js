@@ -95,14 +95,8 @@ export class SimilarPathRule extends BaseRule {
   }
 
   static findSimilarPath(brokenPath, candidatePaths, maxDistance) {
-    const { log } = this.context;
-    log.debug(
-      `Looking for similar path to: ${brokenPath} with max distance: ${maxDistance} among ${candidatePaths.length} candidates`,
-    );
-
     // Extract non-locale parts for comparison
     const brokenPathWithoutLocale = PathUtils.removeLocaleFromPath(brokenPath);
-    log.debug(`Broken path without locale: ${brokenPathWithoutLocale}`);
 
     // Find the best match by comparing non-locale parts
     let closestMatch = null;
@@ -110,7 +104,6 @@ export class SimilarPathRule extends BaseRule {
 
     for (const candidatePath of candidatePaths) {
       const candidateWithoutLocale = PathUtils.removeLocaleFromPath(candidatePath.path);
-      log.debug(`Candidate path without locale: ${candidateWithoutLocale}`);
 
       const distance = LevenshteinDistance.calculate(
         brokenPathWithoutLocale,
@@ -120,7 +113,6 @@ export class SimilarPathRule extends BaseRule {
       if (distance <= maxDistance && distance < bestDistance) {
         bestDistance = distance;
         closestMatch = candidatePath;
-        log.debug(`Found better match: ${candidatePath.path} (distance: ${distance})`);
       }
     }
 
