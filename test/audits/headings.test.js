@@ -829,6 +829,64 @@ describe('Headings Audit', () => {
     expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
   });
 
+  it('iterates through multiple empty siblings before finding content', async () => {
+    const url = 'https://example.com/page';
+    
+    s3Client.send.resolves({
+      Body: {
+        transformToString: () => JSON.stringify({
+          finalUrl: url,
+          scrapeResult: {
+            rawBody: '<h1>Title</h1><div></div><span></span><div></div><p>Finally some content</p><h2>Section</h2>',
+            tags: {
+              title: 'Page Title',
+              description: 'Page Description',
+              h1: 'Page H1',
+            },
+          }
+        }),
+      },
+      ContentType: 'application/json',
+    });
+
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
+    // Should pass with no heading issues since content is eventually found after iterating through empty siblings
+    expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
+  });
+
+  it('iterates through all siblings and finds no content', async () => {
+    const url = 'https://example.com/page';
+    
+    s3Client.send.resolves({
+      Body: {
+        transformToString: () => JSON.stringify({
+          finalUrl: url,
+          scrapeResult: {
+            rawBody: '<h1>Title</h1><div></div><span></span><div></div><h2>Section</h2>',
+            tags: {
+              title: 'Page Title',
+              description: 'Page Description',
+              h1: 'Page H1',
+            },
+          }
+        }),
+      },
+      ContentType: 'application/json',
+    });
+
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
+    
+    // Should detect no content between h1 and h2 after iterating through all empty siblings
+    expect(result.checks).to.deep.include({
+      check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
+      success: false,
+      explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
+      heading: 'H1',
+      nextHeading: 'H2',
+    });
+  });
+
   it('handles validatePageHeadings error gracefully', async () => {
     const url = 'https://example.com/page';
     
@@ -839,6 +897,52 @@ describe('Headings Audit', () => {
     
     // When getObjectFromKey returns null due to S3 error, validatePageHeadings returns null
     expect(result).to.be.null;
+  });
+
+  it('handles DOM processing error in validatePageHeadings catch block', async () => {
+    const url = 'https://example.com/page';
+    
+    // Mock successful S3 response
+    s3Client.send.resolves({
+      Body: {
+        transformToString: () => JSON.stringify({
+          finalUrl: url,
+          scrapeResult: {
+            rawBody: '<h1>Title</h1><h2>Section</h2>',
+            tags: {
+              title: 'Page Title',
+              description: 'Page Description',
+              h1: 'Page H1',
+            },
+          }
+        }),
+      },
+      ContentType: 'application/json',
+    });
+
+    // Use esmock to mock JSDOM to throw an error during processing
+    const mockedHandler = await esmock('../../src/headings/handler.js', {
+      jsdom: {
+        JSDOM: class {
+          constructor() {
+            // Don't throw in constructor, but make window.document.querySelectorAll throw
+            this.window = {
+              document: {
+                querySelectorAll: () => {
+                  throw new Error('DOM processing failed');
+                }
+              }
+            };
+          }
+        }
+      },
+    });
+    
+    const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
+    
+    // This should trigger the catch block and return the error object with url and empty checks
+    expect(result.url).to.equal(url);
+    expect(result.checks).to.deep.equal([]);
   });
 
   it('handles headingsAuditRunner with no top pages', async () => {
