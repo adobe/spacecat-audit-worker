@@ -1,0 +1,541 @@
+#!/usr/bin/env node
+
+/*
+ * Copyright 2025 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+
+/**
+ * Simple Meta Tags Fix Checker
+ * 
+ * Compares existing suggestions with current audit results to identify fixed issues.
+ * Outputs results to CSV for easy analysis.
+ * 
+ * Logic: If existing suggestion issue is NOT in current audit = FIXED
+ * 
+ * Usage:
+ *   node scripts/check-metatags-fixed.mjs --siteId <siteId> [options]
+ */
+
+import { program } from 'commander';
+import { writeFileSync } from 'fs';
+// Simple console logger
+import { createDataAccess } from '@adobe/spacecat-shared-data-access';
+
+// Import metatags utilities
+import { metatagsAutoDetect } from '../src/metatags/handler.js';
+import { getTopPagesForSiteId } from '../src/canonical/handler.js';
+import { S3Client } from '@aws-sdk/client-s3';
+
+// Helper function to transform URL to scrape.json path
+function getScrapeJsonPath(url, siteId) {
+  const pathname = new URL(url).pathname.replace(/\/$/, '');
+  return `scrapes/${siteId}${pathname}/scrape.json`;
+}
+
+class MetaTagsFixChecker {
+  constructor(options) {
+    this.options = options;
+    this.log = this.createSimpleLogger(options.verbose);
+    this.results = [];
+  }
+
+  createSimpleLogger(verbose) {
+    return {
+      info: (msg) => console.log(`[INFO] ${msg}`),
+      debug: verbose ? (msg) => console.log(`[DEBUG] ${msg}`) : () => {},
+      error: (msg) => console.error(`[ERROR] ${msg}`)
+    };
+  }
+
+  /**
+   * Initialize data access connections
+   */
+   async initializeDataAccess() {
+    this.log.debug('Initializing data access for meta-tags audit...');
+    
+    try {
+      // Set up required environment variables for data access
+      if (!process.env.DYNAMO_TABLE_NAME_DATA) {
+        process.env.DYNAMO_TABLE_NAME_DATA = 'spacecat-services-data';
+        this.log.debug('Set default DYNAMO_TABLE_NAME_DATA');
+      }
+      
+      if (!process.env.S3_SCRAPER_BUCKET_NAME) {
+        process.env.S3_SCRAPER_BUCKET_NAME = 'spacecat-prod-scraper';
+        this.log.debug('Set default S3_SCRAPER_BUCKET_NAME');
+      }
+      
+      // Initialize data access with configuration
+      const config = {
+        tableNameData: process.env.DYNAMO_TABLE_NAME_DATA,
+        indexNameAllByStatus: 'gsi1pk-gsi1sk-index',
+        indexNameAllBySiteId: 'gsi2pk-gsi2sk-index'
+      };
+      
+      this.dataAccess = createDataAccess(config);
+      
+      // Load site
+      this.site = await this.dataAccess.Site.findById(this.options.siteId);
+      if (!this.site) {
+        throw new Error(`Site not found: ${this.options.siteId}`);
+      }
+      
+      // Setup S3 client
+      this.s3Client = new S3Client({ 
+        region: process.env.AWS_REGION || 'us-east-1' 
+      });
+      
+      // Setup audit context
+      this.context = {
+        dataAccess: this.dataAccess,
+        site: this.site,
+        log: this.log,
+        env: process.env,
+        s3Client: this.s3Client,
+        // Add other required context properties as needed
+      };
+      
+      this.log.info(`✓ Data access initialized for site ${this.options.siteId} (${this.site.getBaseURL()})`);
+    } catch (error) {
+      this.log.error(`Failed to initialize data access: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async run() {
+    this.log.info('=== META TAGS FIX CHECKER ===');
+    this.log.info(`Site ID: ${this.options.siteId}`);
+    this.log.info('');
+
+    try {
+      // Initialize data access
+      await this.initializeDataAccess();
+
+      // Step 1: Get existing suggestions
+      this.log.info('Step 1: Getting existing meta-tags suggestions...');
+      const existingSuggestions = await this.getExistingSuggestions();
+      this.log.info(`Found ${existingSuggestions.length} existing suggestions`);
+
+      // Step 2: Run current audit
+      this.log.info('Step 2: Running current meta-tags audit...');
+      const auditResults = await this.getCurrentAuditResults();
+      
+      if (!auditResults || !auditResults.detectedTags || !auditResults.extractedTags) {
+        throw new Error('Failed to get audit results - no data returned');
+      }
+      
+      this.log.info(`Found ${Object.keys(auditResults.detectedTags).length} pages with current issues`);
+      this.log.info(`Found ${Object.keys(auditResults.extractedTags).length} pages with current content`);
+
+      // Step 3: Compare and identify fixes
+      this.log.info('Step 3: Comparing existing vs current...');
+      await this.compareAndIdentifyFixes(existingSuggestions, auditResults);
+
+      // Step 4: Generate CSV
+      this.log.info('Step 4: Generating CSV report...');
+      this.generateCSV();
+
+      // Step 5: Mark as fixed if requested (TODO)
+      if (this.options.markFixed) {
+        await this.markFixedSuggestions();
+      }
+
+      this.printSummary();
+
+    } catch (error) {
+      this.log.error('Error:', error.message);
+      if (this.options.verbose) {
+        this.log.error(error.stack);
+      }
+      process.exit(1);
+    }
+  }
+
+  /**
+   * Get existing suggestions from database
+   */
+  async getExistingSuggestions() {
+    this.log.debug('Fetching existing meta-tags suggestions from database...');
+    
+    try {
+      const { Opportunity } = this.dataAccess;
+      
+      // Get all opportunities for this site
+      const allOpportunities = await Opportunity.allBySiteId(this.options.siteId);
+      
+      // Filter for meta-tags opportunities  
+      const metaTagsOpportunities = allOpportunities.filter(
+        (opportunity) => opportunity.getType() === 'meta-tags'
+      );
+      
+      this.log.debug(`Found ${metaTagsOpportunities.length} meta-tags opportunities`);
+      
+      // Get outdated suggestions directly from database
+      const { Suggestion } = this.dataAccess;
+      const suggestions = [];
+      
+      for (const opportunity of metaTagsOpportunities) {
+        const opptyId = opportunity.getId();
+        const outdatedSuggestions = await Suggestion.allByOpportunityIdAndStatus(opptyId, 'outdated');
+        suggestions.push(...outdatedSuggestions);
+      }
+      
+      this.log.debug(`Found ${suggestions.length} outdated suggestions`);
+      return suggestions;
+      
+    } catch (error) {
+      this.log.error(`Failed to fetch suggestions: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Run current meta-tags audit to get current issues
+   */
+  async getCurrentAuditResults() {
+    this.log.debug('Running current meta-tags audit...');
+    
+    try {
+      // Get top pages for the site
+      const topPages = await getTopPagesForSiteId(this.dataAccess, this.options.siteId, this.context, this.log);
+      const includedURLs = await this.site?.getConfig()?.getIncludedURLs('meta-tags') || [];
+
+      // Transform URLs into scrape.json paths and combine them into a Set
+      const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.url, this.options.siteId));
+      const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, this.options.siteId));
+      const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
+
+      this.log.debug(`Processing ${totalPagesSet.size} pages for current audit`);
+      this.log.debug(`S3 Bucket: ${this.context.env.S3_SCRAPER_BUCKET_NAME}`);
+      this.log.debug(`Site ID: ${this.options.siteId}`);
+      this.log.debug(`Sample pages: ${Array.from(totalPagesSet).slice(0, 3).join(', ')}`);
+
+      // Run the actual metatags audit
+      this.log.debug('Calling metatagsAutoDetect...');
+      const auditResults = await metatagsAutoDetect(this.site, totalPagesSet, this.context);
+      this.log.debug('metatagsAutoDetect completed');
+      
+      this.log.debug(`Current audit found issues on ${Object.keys(auditResults.detectedTags).length} pages`);
+      this.log.debug(`Current audit extracted content from ${Object.keys(auditResults.extractedTags).length} pages`);
+      return auditResults;
+
+    } catch (error) {
+      this.log.error('Failed to run current audit:', error.message);
+      return {
+        detectedTags: {},
+        extractedTags: {},
+        seoChecks: null
+      };
+    }
+  }
+
+  /**
+   * Compare existing suggestions with current audit results
+   */
+  async compareAndIdentifyFixes(existingSuggestions, auditResults) {
+    this.log.info('Comparing existing suggestions with current audit results...');
+
+    // Apply limit if specified
+    const suggestionsToCheck = this.options.limit 
+      ? existingSuggestions.slice(0, this.options.limit)
+      : existingSuggestions;
+      
+    this.log.info(`Processing ${suggestionsToCheck.length} suggestions${this.options.limit ? ` (limited from ${existingSuggestions.length})` : ''}`);
+
+    for (const suggestion of suggestionsToCheck) {
+      const suggestionData = suggestion.getData ? suggestion.getData() : suggestion.data;
+      const { url, issue, tagName, tagContent, aiSuggestion } = suggestionData;
+      
+      // Check if AI suggestion was implemented by getting current content
+      const currentTagContent = this.getCurrentTagContentFromExtractedTags(url, tagName, auditResults.extractedTags);
+      
+      // Handle error cases
+      let currentContentDisplay;
+      let aiSuggestionImplemented = false;
+      
+      if (currentTagContent && typeof currentTagContent === 'object' && currentTagContent.error) {
+        currentContentDisplay = currentTagContent.message;
+        aiSuggestionImplemented = false; // Can't compare if there's an error
+      } else {
+        currentContentDisplay = currentTagContent || '(empty)';
+        aiSuggestionImplemented = this.checkIfAISuggestionImplemented(currentTagContent, aiSuggestion);
+      }
+      
+      // Add small delay to avoid overwhelming servers
+      await this.delay(100);
+      
+      // Simple logic: If AI suggestion matches current content = FIXED
+      const isFixed = aiSuggestionImplemented;
+      
+      const fixType = isFixed ? 'AI_SUGGESTION_IMPLEMENTED' : 'NOT_IMPLEMENTED';
+      
+      const result = {
+        suggestionId: suggestion.getId ? suggestion.getId() : suggestion.id,
+        currentStatus: suggestion.getStatus ? suggestion.getStatus() : suggestion.status,
+        url: url,
+        tagName: tagName,
+        issue: issue,
+        originalContent: tagContent || '(empty)',
+        aiSuggestion: aiSuggestion || '(none)',
+        currentContent: currentContentDisplay, 
+        aiSuggestionImplemented: aiSuggestionImplemented,
+        isFixed: isFixed,
+        fixType: fixType,
+        recommendedAction: isFixed ? 'MARK AS FIXED' : 'KEEP CURRENT STATUS'
+      };
+
+      this.results.push(result);
+      
+      if (aiSuggestionImplemented) {
+        this.log.info(`✅ FIXED: ${tagName} on ${url}`);
+        this.log.info(`  AI Suggested: "${aiSuggestion}"`);
+        this.log.info(`  Current: "${currentContentDisplay}"`);
+      } else {
+        this.log.debug(`❌ NOT IMPLEMENTED: ${tagName} on ${url}`);
+        this.log.debug(`  AI Suggested: "${aiSuggestion}"`);
+        this.log.debug(`  Current: "${currentContentDisplay}"`);
+      }
+    }
+  }
+
+
+  /**
+   * Get current tag content directly from extractedTags (SIMPLE!)
+   */
+  getCurrentTagContentFromExtractedTags(url, tagName, extractedTags) {
+    // Normalize URL to match extractedTags format (pathname only)
+    const normalizedUrl = url.replace(/^https?:\/\/[^\/]+/, '').replace(/\/$/, '') || '/';
+    
+    const pageData = extractedTags[normalizedUrl];
+    if (!pageData) {
+      this.log.debug(`No extracted data found for ${normalizedUrl}`);
+      return { error: 'PAGE_NOT_IN_BUCKET', message: `Page not found in S3 bucket: ${normalizedUrl}` };
+    }
+    
+    const tagContent = pageData[tagName];
+    if (!tagContent) {
+      this.log.debug(`No ${tagName} found for ${normalizedUrl}`);
+      return { error: 'TAG_NOT_FOUND', message: `${tagName} tag not found on page` };
+    }
+    
+    // Handle h1 array format
+    if (tagName === 'h1' && Array.isArray(tagContent)) {
+      const h1Content = tagContent[0] || null;
+      if (!h1Content) {
+        return { error: 'TAG_EMPTY', message: `${tagName} tag exists but is empty` };
+      }
+      this.log.debug(`Found ${tagName} for ${normalizedUrl}: "${h1Content}"`);
+      return h1Content;
+    }
+    
+    this.log.debug(`Found ${tagName} for ${normalizedUrl}: "${tagContent}"`);
+    return tagContent;
+  }
+
+  /**
+   * Add delay to avoid overwhelming servers
+   */
+  async delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Check if AI suggestion was implemented (exact or similar match)
+   */
+  checkIfAISuggestionImplemented(currentContent, aiSuggestion) {
+    if (!currentContent || !aiSuggestion) {
+      return false;
+    }
+
+    // Normalize strings for comparison (remove extra spaces, case insensitive)
+    const normalizedCurrent = currentContent.trim().toLowerCase();
+    const normalizedAI = aiSuggestion.trim().toLowerCase();
+    
+    // Exact match
+    if (normalizedCurrent === normalizedAI) {
+      return true;
+    }
+    
+    // High similarity match (90% similar)
+    const similarity = this.calculateStringSimilarity(normalizedCurrent, normalizedAI);
+    return similarity >= 0.9;
+  }
+
+  /**
+   * Calculate string similarity using Levenshtein distance
+   */
+  calculateStringSimilarity(str1, str2) {
+    const matrix = [];
+    const len1 = str1.length;
+    const len2 = str2.length;
+
+    // Initialize matrix
+    for (let i = 0; i <= len1; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= len2; j++) {
+      matrix[0][j] = j;
+    }
+
+    // Fill matrix
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,      // deletion
+          matrix[i][j - 1] + 1,      // insertion
+          matrix[i - 1][j - 1] + cost // substitution
+        );
+      }
+    }
+
+    const maxLen = Math.max(len1, len2);
+    return maxLen === 0 ? 1 : (maxLen - matrix[len1][len2]) / maxLen;
+  }
+
+
+  /**
+   * Generate CSV report
+   */
+  generateCSV() {
+    const csvHeaders = [
+      'Suggestion ID',
+      'Current Status', 
+      'URL',
+      'Tag Name',
+      'Issue',
+      'Original Content',
+      'AI Suggestion',
+      'Current Content',
+      'AI Suggestion Implemented',
+      'Is Fixed',
+      'Fix Type',
+      'Recommended Action'
+    ];
+
+    const csvRows = this.results.map(result => [
+      result.suggestionId,
+      result.currentStatus,
+      result.url,
+      result.tagName,
+      result.issue,
+      `"${result.originalContent}"`,
+      `"${result.aiSuggestion}"`,
+      `"${result.currentContent}"`,
+      result.aiSuggestionImplemented ? 'YES' : 'NO',
+      result.isFixed ? 'YES' : 'NO',
+      result.fixType,
+      `"${result.recommendedAction}"`
+    ]);
+
+    const csvContent = [
+      csvHeaders.join(','),
+      ...csvRows.map(row => row.join(','))
+    ].join('\n');
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T');
+    const filename = `metatags-fix-check-${this.options.siteId}-${timestamp[0]}-${timestamp[1].split('.')[0]}.csv`;
+    writeFileSync(filename, csvContent);
+    
+    this.log.info(`✓ CSV report generated: ${filename}`);
+  }
+
+  /**
+   * Mark fixed suggestions in database
+   * TODO: Implement actual database updates when ready
+   */
+  async markFixedSuggestions() {
+    const fixedResults = this.results.filter(r => r.isFixed);
+    
+    if (fixedResults.length === 0) {
+      this.log.info('No suggestions to mark as fixed');
+      return;
+    }
+
+    this.log.info(`Found ${fixedResults.length} suggestions that should be marked as FIXED`);
+    this.log.info('TODO: Database updates will be implemented in a future iteration');
+
+    for (const result of fixedResults) {
+      if (this.options.dryRun) {
+        this.log.info(`Would mark ${result.suggestionId} as FIXED (dry run)`);
+      } else {
+        this.log.info(`TODO: Mark ${result.suggestionId} as FIXED in database`);
+        // TODO: Implement when ready to update database
+        // const { Suggestion } = this.dataAccess;
+        // const suggestion = await Suggestion.findById(result.suggestionId);
+        // suggestion.setStatus('FIXED');
+        // suggestion.setUpdatedBy('metatags-fix-checker');
+        // await suggestion.save();
+      }
+    }
+  }
+
+  /**
+   * Print summary
+   */
+  printSummary() {
+    const totalChecked = this.results.length;
+    const totalFixed = this.results.filter(r => r.isFixed).length;
+    const totalNotImplemented = this.results.filter(r => !r.isFixed).length;
+
+    this.log.info('');
+    this.log.info('=== SUMMARY ===');
+    this.log.info(`Total suggestions checked: ${totalChecked}`);
+    this.log.info(`Issues that were fixed: ${totalFixed}`);
+    this.log.info(`Suggestions not implemented: ${totalNotImplemented}`);
+    
+    if (totalFixed > 0) {
+      this.log.info('');
+      this.log.info('Fixed issues by type:');
+      const fixedByType = {};
+      this.results.filter(r => r.isFixed).forEach(r => {
+        const key = `${r.tagName}: ${r.issue}`;
+        fixedByType[key] = (fixedByType[key] || 0) + 1;
+      });
+      
+      Object.entries(fixedByType).forEach(([type, count]) => {
+        this.log.info(`  ${type}: ${count}`);
+      });
+    }
+  }
+}
+
+// CLI setup
+program
+  .name('check-metatags-fixed')
+  .description('Check which meta-tags suggestions have been fixed by comparing with current audit')
+  .option('--siteId <id>', 'Site ID to check (defaults to test site)')
+  .option('--markFixed', 'Mark fixed suggestions in database', false)
+  .option('--dryRun', 'Show what would be marked without making changes', false)
+  .option('--verbose', 'Detailed logging', false)
+  .option('--limit <number>', 'Limit number of suggestions to check (for testing)', parseInt)
+  .parse();
+
+const options = program.opts();
+
+// Default site ID for testing
+if (!options.siteId) {
+  options.siteId = '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3';
+  console.log(`[INFO] Using default site ID: ${options.siteId}`);
+}
+
+// Default limit for testing (removed - now processes all suggestions by default)
+// if (!options.limit) {
+//   options.limit = 10;
+//   console.log(`[INFO] Using default limit: ${options.limit} suggestions`);
+// }
+
+// Run the checker
+const checker = new MetaTagsFixChecker(options);
+checker.run().catch(error => {
+  console.error('Fatal error:', error.message);
+  process.exit(1);
+});
