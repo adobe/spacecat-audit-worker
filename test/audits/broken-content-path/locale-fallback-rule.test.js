@@ -173,10 +173,21 @@ describe('LocaleFallbackRule', () => {
 
   describe('applyRule without detected locale', () => {
     it('should return null when no locale detected and no double slashes', async () => {
-      // Locale.fromPath is already mocked in esmock to return null
-      mockPathUtils.hasDoubleSlashes.returns(false);
+      // Create a rule with mocked dependencies that return null for Locale.fromPath
+      const ruleModule = await esmock('../../../src/broken-content-path/rules/locale-fallback-rule.js', {
+        '../../../src/broken-content-path/domain/language/locale.js': {
+          Locale: {
+            fromPath: sandbox.stub().returns(null), // Return null to trigger the uncovered lines
+          },
+        },
+        '../../../src/broken-content-path/utils/path-utils.js': {
+          PathUtils: {
+            hasDoubleSlashes: sandbox.stub().returns(false), // No double slashes
+          },
+        },
+      });
 
-      const rule = new LocaleFallbackRule(context, mockAemAuthorClient);
+      const rule = new ruleModule.LocaleFallbackRule(context, mockAemAuthorClient);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       const result = await rule.applyRule(brokenPath);
