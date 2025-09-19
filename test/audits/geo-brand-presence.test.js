@@ -97,7 +97,6 @@ describe('Geo Brand Presence Handler', () => {
     });
   });
 
-  // TODO: Fix this test - currently failing due to calendarWeek being returned
   it('ignores non-date values in in ctx.data', async () => {
     const finalUrl = 'https://adobe.com';
     const ctx = { ...context, finalUrl, data: 'not a parseable date' };
@@ -147,7 +146,7 @@ describe('Geo Brand Presence Handler', () => {
       fullAuditRef: finalUrl,
     });
     expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE:failed to parse %s as JSON: %j',
+      'GEO BRAND PRESENCE:failed to parse %s as JSON',
       invalidJson,
       sinon.match.instanceOf(Error),
     );
