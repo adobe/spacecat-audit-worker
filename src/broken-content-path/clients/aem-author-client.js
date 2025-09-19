@@ -133,10 +133,6 @@ export class AemAuthorClient {
     do {
       try {
         pageCount += 1;
-        if (pageCount > AemAuthorClient.MAX_PAGES) {
-          log.warn(`Reached maximum page limit (${AemAuthorClient.MAX_PAGES}) for path: ${path}`);
-          break;
-        }
 
         log.debug(`Fetching page ${pageCount} for path: ${path}${cursor ? ` (cursor: ${cursor})` : ''}`);
 
