@@ -684,6 +684,7 @@ export async function postProcessor(auditUrl, auditData, context) {
         }
       }
     }
+    log.info(`Experiment data for site ${auditData.siteId} has been upserted: ${JSON.stringify(experimentData, null, 2)}`);
     // eslint-disable-next-line no-await-in-loop
     await Experiment.create(experimentData);
   }
