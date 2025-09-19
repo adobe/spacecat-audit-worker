@@ -107,7 +107,7 @@ export const preflightAudit = async (context) => {
     return stripTrailingSlash(url);
   });
 
-  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit started.`);
+  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit started.`);
 
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
@@ -213,7 +213,7 @@ export const preflightAudit = async (context) => {
       const domEndTime = Date.now();
       const domEndTimestamp = new Date().toISOString();
       const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
-      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. DOM-based audit completed in ${domElapsed} seconds`);
+      log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. DOM-based audit completed in ${domElapsed} seconds`);
 
       timeExecutionBreakdown.push({
         name: 'dom',
@@ -263,7 +263,7 @@ export const preflightAudit = async (context) => {
       },
     }));
 
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. resultWithProfiling: ${JSON.stringify(resultWithProfiling)}`);
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. resultWithProfiling: ${JSON.stringify(resultWithProfiling)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const anyProcessing = handlerResults.some((r) => r && r.processing === true);
@@ -292,7 +292,7 @@ export const preflightAudit = async (context) => {
     throw error;
   }
 
-  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit completed.`);
+  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit completed.`);
 };
 
 export default new AuditBuilder()

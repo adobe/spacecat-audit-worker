@@ -47,11 +47,11 @@ export default async function handler(message, context) {
   } = message;
   const { suggestions } = data || {};
 
-  log.info(`[readability-suggest guidance]: Received Mystique guidance for readability: ${JSON.stringify(message, null, 2)}`);
+  log.debug(`[readability-suggest guidance]: Received Mystique guidance for readability: ${JSON.stringify(message, null, 2)}`); // remove? ~45k in last 7d
 
   // For preflight audits, auditId is actually a jobId (AsyncJob ID), not an Audit entity ID
   // We'll validate the AsyncJob exists later when we try to update it
-  log.info(`[readability-suggest guidance]: Processing guidance for auditId: ${auditId} (AsyncJob ID), siteId: ${siteId}`);
+  log.debug(`[readability-suggest guidance]: Processing guidance for auditId: ${auditId} (AsyncJob ID), siteId: ${siteId}`); // remove? ~45k in last 7d
 
   const site = await Site.findById(siteId);
   if (!site) {
@@ -60,7 +60,7 @@ export default async function handler(message, context) {
   }
   const auditUrl = site.getBaseURL();
 
-  log.info(`[readability-suggest guidance]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
+  log.debug(`[readability-suggest guidance]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`); // remove? ~45k in last 7d
 
   // Validate that the AsyncJob (preflight job) exists
   const asyncJob = await AsyncJobEntity.findById(auditId);
@@ -68,7 +68,7 @@ export default async function handler(message, context) {
     log.error(`[readability-suggest guidance]: AsyncJob not found for auditId: ${auditId}. This may indicate the preflight job was deleted or expired.`);
     return notFound('AsyncJob not found');
   }
-  log.info(`[readability-suggest guidance]: Found AsyncJob with status: ${asyncJob.getStatus()}`);
+  log.debug(`[readability-suggest guidance]: Found AsyncJob with status: ${asyncJob.getStatus()}`); // remove? ~45k in last 7d
 
   // Get readability metadata from job instead of opportunity (preflight audit pattern)
   const jobMetadata = asyncJob.getMetadata() || {};
@@ -131,7 +131,7 @@ export default async function handler(message, context) {
     suggestions: [...(readabilityMetadata.suggestions || []), ...mappedSuggestions],
   };
 
-  log.info(`[readability-suggest guidance]: Received ${updatedReadabilityMetadata.mystiqueResponsesReceived}/${updatedReadabilityMetadata.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
+  log.debug(`[readability-suggest guidance]: Received ${updatedReadabilityMetadata.mystiqueResponsesReceived}/${updatedReadabilityMetadata.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`); // remove? ~45k in last 7d
 
   // Update job with accumulated data (preflight audit pattern)
   try {
@@ -144,7 +144,7 @@ export default async function handler(message, context) {
     };
     asyncJob.setMetadata(updatedJobMetadata);
     await asyncJob.save();
-    log.info('[readability-suggest guidance]: Updated job with accumulated readability metadata');
+    log.debug('[readability-suggest guidance]: Updated job with accumulated readability metadata'); // remove? ~45k in last 7d
   } catch (e) {
     log.error(`[readability-suggest guidance]: Updating job metadata for job ${auditId} failed with error: ${e.message}`, e);
     throw new Error(`[readability-suggest guidance]: Failed to update job metadata for job ${auditId}: ${e.message}`);
@@ -160,7 +160,7 @@ export default async function handler(message, context) {
     >= updatedReadabilityMetadata.mystiqueResponsesExpected;
   if (allResponsesReceived && updatedReadabilityMetadata.mystiqueResponsesExpected > 0) {
     try {
-      log.info(`[readability-suggest guidance]: All ${updatedReadabilityMetadata.mystiqueResponsesExpected} `
+      log.debug(`[readability-suggest guidance]: All ${updatedReadabilityMetadata.mystiqueResponsesExpected} `
         + `Mystique responses received. Updating AsyncJob ${auditId} to COMPLETED.`);
 
       // Use the AsyncJob we already validated earlier
@@ -178,21 +178,21 @@ export default async function handler(message, context) {
 
                 // The AsyncJob may have 0 opportunities if cleared during async processing
                 // We need to reconstruct them from the stored suggestions
-                log.info(`[readability-suggest guidance]: AsyncJob has ${auditItem.opportunities.length} readability opportunities stored`);
-                log.info(`[readability-suggest guidance]: Found ${allSuggestions.length} stored suggestions to use for reconstruction`);
+                log.debug(`[readability-suggest guidance]: AsyncJob has ${auditItem.opportunities.length} readability opportunities stored`);
+                log.debug(`[readability-suggest guidance]: Found ${allSuggestions.length} stored suggestions to use for reconstruction`);
 
                 let opportunitiesToProcess = auditItem.opportunities;
 
                 // If AsyncJob has no opportunities but we have suggestions,
                 // reconstruct from suggestions (note: original order may be lost in this case)
                 if (auditItem.opportunities.length === 0 && allSuggestions.length > 0) {
-                  log.info(`[readability-suggest guidance]: Reconstructing opportunities from ${allSuggestions.length} stored suggestions`);
+                  log.debug(`[readability-suggest guidance]: Reconstructing opportunities from ${allSuggestions.length} stored suggestions`);
                   opportunitiesToProcess = allSuggestions.map((suggestion, index) => {
-                    log.info(`[readability-suggest guidance]: Examining suggestion ${index}: ${JSON.stringify(suggestion, null, 2)}`);
+                    log.debug(`[readability-suggest guidance]: Examining suggestion ${index}: ${JSON.stringify(suggestion, null, 2)}`); // remove? ~35k in last 7d
 
                     // Suggestions are stored directly as objects (not wrapped in .getData())
                     if (suggestion) {
-                      log.info(`[readability-suggest guidance]: Found suggestion with originalText: "${suggestion.originalText?.substring(0, 50)}..."`);
+                      log.debug(`[readability-suggest guidance]: Found suggestion with originalText: "${suggestion.originalText?.substring(0, 50)}..."`); // remove? ~35k in last 7d
 
                       const reconstructedOpportunity = {
                         check: 'poor-readability',
@@ -205,14 +205,14 @@ export default async function handler(message, context) {
                           + 'simpler words, and clearer structure',
                       };
 
-                      log.info(`[readability-suggest guidance]: Successfully reconstructed opportunity: ${JSON.stringify(reconstructedOpportunity, null, 2)}`);
+                      log.debug(`[readability-suggest guidance]: Successfully reconstructed opportunity: ${JSON.stringify(reconstructedOpportunity, null, 2)}`);
                       return reconstructedOpportunity;
                     } else {
                       log.warn(`[readability-suggest guidance]: No valid suggestion found at index ${index}`);
                     }
                     return null;
                   }).filter(Boolean);
-                  log.info(`[readability-suggest guidance]: Reconstructed ${opportunitiesToProcess.length} `
+                  log.debug(`[readability-suggest guidance]: Reconstructed ${opportunitiesToProcess.length} `
                     + 'opportunities from suggestions');
                 }
 
@@ -223,7 +223,7 @@ export default async function handler(message, context) {
                 let originalOrder;
                 if (storedOrderMapping && Array.isArray(storedOrderMapping)) {
                   // Use stored original order mapping from identify step
-                  log.info(`[readability-suggest guidance]: Using stored original order mapping with ${storedOrderMapping.length} items`);
+                  log.debug(`[readability-suggest guidance]: Using stored original order mapping with ${storedOrderMapping.length} items`);
                   originalOrder = storedOrderMapping;
                 } else {
                   // Fallback: create from current order (may not match original identify order)
@@ -235,17 +235,17 @@ export default async function handler(message, context) {
                 }
 
                 const updatedOpportunities = opportunitiesToProcess.map((opportunity) => {
-                  log.info('[readability-suggest guidance]: Looking for suggestion matching opportunity text: '
+                  log.debug('[readability-suggest guidance]: Looking for suggestion matching opportunity text: ' // remove? ~35k in last 7d
                     + `"${opportunity.textContent?.substring(0, 80)}..."`);
-                  log.info(`[readability-suggest guidance]: Found ${allSuggestions.length} stored suggestions`);
+                  log.debug(`[readability-suggest guidance]: Found ${allSuggestions.length} stored suggestions`); // remove? ~35k in last 7d
 
                   const matchingSuggestion = allSuggestions.find((suggestion) => {
-                    log.info('[readability-suggest guidance]: Checking suggestion with data: '
+                    log.debug('[readability-suggest guidance]: Checking suggestion with data: ' // remove completely? ~365k in last 7d
                       + `${JSON.stringify(suggestion, null, 2)}`);
 
                     // Suggestions are stored directly as objects (not wrapped in .getData())
                     if (suggestion) {
-                      log.info(`[readability-suggest guidance]: Comparing "${suggestion.originalText?.substring(0, 80)}..."`
+                      log.debug(`[readability-suggest guidance]: Comparing "${suggestion.originalText?.substring(0, 80)}..."` // remove? ~365k in last 7d
                           + ` vs "${opportunity.textContent?.substring(0, 80)}..."`);
                       return suggestion.originalText === opportunity.textContent;
                     }
@@ -274,7 +274,7 @@ export default async function handler(message, context) {
                       mystiqueProcessingCompleted: new Date().toISOString(),
                     };
 
-                    log.info(`[readability-suggest guidance]: Updated opportunity with Mystique suggestions: ${JSON.stringify(updatedOpportunity, null, 2)}`);
+                    log.debug(`[readability-suggest guidance]: Updated opportunity with Mystique suggestions: ${JSON.stringify(updatedOpportunity, null, 2)}`); // remove? ~35k in last 7d
 
                     return updatedOpportunity;
                   } else {
@@ -295,7 +295,7 @@ export default async function handler(message, context) {
                   return aOriginalIndex - bOriginalIndex;
                 });
 
-                log.info(`[readability-suggest guidance]: Sorted ${sortedOpportunities.length} opportunities back to original order`);
+                log.debug(`[readability-suggest guidance]: Sorted ${sortedOpportunities.length} opportunities back to original order`);
 
                 return { ...auditItem, opportunities: sortedOpportunities };
               }
@@ -327,7 +327,7 @@ export default async function handler(message, context) {
 
         await freshAsyncJob.save();
 
-        log.info(`[readability-suggest guidance]: Successfully updated AsyncJob ${auditId} `
+        log.debug(`[readability-suggest guidance]: Successfully updated AsyncJob ${auditId} `
           + 'with completed readability suggestions');
       }
     } catch (error) {
@@ -337,6 +337,6 @@ export default async function handler(message, context) {
     }
   }
 
-  log.info(`[readability-suggest guidance]: Successfully processed Mystique guidance for siteId: ${siteId}`);
+  log.debug(`[readability-suggest guidance]: Successfully processed Mystique guidance for siteId: ${siteId}`); // remove? ~45k in last 7d
   return ok();
 }

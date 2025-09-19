@@ -60,7 +60,6 @@ export async function validatePageHreflang(url, log) {
   }
 
   try {
-    log.info(`Checking hreflang for URL: ${url}`);
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -82,7 +81,7 @@ export async function validatePageHreflang(url, log) {
       return { url, checks: [] }; // Return empty checks - no issues to report
     }
 
-    log.info(`Found ${hreflangLinks.length} hreflang tags for URL: ${url}, validating implementation quality`);
+    log.debug(`Found ${hreflangLinks.length} hreflang tags for URL: ${url}, validating implementation quality`);
 
     if (hreflangLinks.length > 0) {
       let hasXDefault = false;
@@ -158,14 +157,14 @@ export async function validatePageHreflang(url, log) {
 export async function hreflangAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess } = context;
-  log.info(`Starting Hreflang Audit with siteId: ${siteId}`);
+  log.debug(`Starting Hreflang Audit with siteId: ${siteId}`);
 
   try {
     // Get top 200 pages
     const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
     const topPages = allTopPages.slice(0, 200);
 
-    log.info(`Processing ${topPages.length} top pages for hreflang audit (limited to 200)`);
+    log.debug(`Processing ${topPages.length} top pages for hreflang audit (limited to 200)`);
 
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
@@ -205,7 +204,7 @@ export async function hreflangAuditRunner(baseURL, context, site) {
       return acc;
     }, {});
 
-    log.info(`Successfully completed Hreflang Audit for site: ${baseURL}`);
+    log.debug(`Successfully completed Hreflang Audit for site: ${baseURL}`);
 
     // All checks passed
     if (Object.keys(aggregatedResults).length === 0) {
@@ -345,7 +344,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     }),
   });
 
-  log.info(`Hreflang opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
+  log.info(`Hreflang opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`); // debug?
   return { ...auditData };
 }
 

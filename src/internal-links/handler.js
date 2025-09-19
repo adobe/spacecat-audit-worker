@@ -75,8 +75,6 @@ export async function internalLinksAuditRunner(auditUrl, context) {
     // 6. Prioritize links
     const prioritizedLinks = calculatePriority(inaccessibleLinks);
 
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] found: ${prioritizedLinks.length} broken internal links`);
-
     // 7. Build and return audit result
     return {
       auditResult: {
@@ -103,7 +101,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
 export async function runAuditAndImportTopPagesStep(context) {
   const { site, log, finalUrl } = context;
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting audit`);
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting audit`); // remove?
   const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
     finalUrl,
     context,
@@ -236,7 +234,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
       },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
+    log.debug(`Message sent to Mystique: ${JSON.stringify(message)}`);
   }
   return {
     status: 'complete',

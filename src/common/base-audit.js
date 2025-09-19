@@ -73,7 +73,7 @@ export async function wwwUrlResolver(site, context) {
   const subdomain = uri.subdomain();
 
   if (hasText(subdomain) && subdomain !== 'www') {
-    log.info(`Resolved URL ${hostname} since ${baseURL} contains subdomain`);
+    log.debug(`Resolved URL ${hostname} since ${baseURL} contains subdomain`); // delete?
     return hostname;
   }
 
@@ -82,22 +82,22 @@ export async function wwwUrlResolver(site, context) {
   try {
     const wwwToggledHostname = toggleWWWHostname(hostname);
     await rumApiClient.retrieveDomainkey(wwwToggledHostname);
-    log.info(`Resolved URL ${wwwToggledHostname} for ${baseURL} using RUM API Client`);
+    log.debug(`Resolved URL ${wwwToggledHostname} for ${baseURL} using RUM API Client`); // delete?
     return wwwToggledHostname;
   } catch (e) {
-    log.info(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
+    log.error(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
   }
 
   try {
     await rumApiClient.retrieveDomainkey(hostname);
-    log.info(`Resolved URL ${hostname} for ${baseURL} using RUM API Client`);
+    log.debug(`Resolved URL ${hostname} for ${baseURL} using RUM API Client`); // delete?
     return hostname;
   } catch (e) {
-    log.info(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
+    log.error(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
   }
 
   const fallback = hostname.startsWith('www.') ? hostname : `www.${hostname}`;
-  log.info(`Fallback to ${fallback} for URL resolution for ${baseURL}`);
+  log.debug(`Fallback to ${fallback} for URL resolution for ${baseURL}`);
   return fallback;
 }
 

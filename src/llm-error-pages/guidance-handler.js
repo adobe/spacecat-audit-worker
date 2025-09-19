@@ -94,7 +94,7 @@ export default async function handler(message, context) {
             '',
           ];
           row.commit();
-          log.info(`Updated row ${i} for URL: ${pathOnlyUrl} with broken URL data`);
+          log.debug(`Updated row ${i} for URL: ${pathOnlyUrl} with broken URL data`);
         }
       }
     }
@@ -103,7 +103,7 @@ export default async function handler(message, context) {
     const buffer = await workbook.xlsx.writeBuffer();
     await uploadToSharePoint(buffer, filename, outputDir, sharepointClient, log);
     await publishToAdminHlx(filename, outputDir, log);
-    log.info(`Updated Excel 404 file with Mystique guidance: ${filename}`);
+    log.debug(`Updated Excel 404 file with Mystique guidance: ${filename}`);
   } catch (e) {
     log.error(`Failed to update 404 Excel on Mystique callback: ${e.message}`);
     return badRequest('Failed to persist guidance');

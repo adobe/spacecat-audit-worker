@@ -173,14 +173,13 @@ PATHS:
 ${JSON.stringify(paths, null, 2)}`;
 
   try {
-    log.info('Extracting products from URL paths');
     const promptResponse = await prompt(systemPrompt, userPrompt, env);
     if (promptResponse && promptResponse.content) {
       const { paths: parsedPaths } = JSON.parse(promptResponse.content);
-      log.info('Successfully extracted products from URL paths');
+      log.debug('Successfully extracted products from URL paths');
       return { paths: parsedPaths, usage: promptResponse.usage };
     } else {
-      log.info('No content received; defaulting to unknown products');
+      log.debug('No content received; defaulting to unknown products');
       return { paths: paths.map((path) => ({ path, product: 'unknown' })), usage: null };
     }
   } catch (error) {
@@ -263,12 +262,11 @@ GROUPED PATHS BY PRODUCT:
 ${JSON.stringify(groupedPaths)}`;
 
   try {
-    log.info('Generating regex patterns for products');
     const promptResponse = await prompt(systemPrompt, userPrompt, env);
     if (promptResponse && promptResponse.content) {
       const parsed = JSON.parse(promptResponse.content);
       if (parsed && typeof parsed === 'object') {
-        log.info('Successfully generated regex patterns for products');
+        log.debug('Successfully generated regex patterns for products');
         return { patterns: parsed, usage: promptResponse.usage };
       }
       log.warn('Unexpected format received; defaulting to fallback regexes');
@@ -309,7 +307,7 @@ export async function analyzeProducts(domain, paths, context) {
     total_tokens: 0,
   };
 
-  log.info(`Starting product analysis for domain: ${domain}`);
+  log.debug(`Starting product analysis for domain: ${domain}`);
 
   try {
     const pathClassifications = await deriveProductsForPaths(domain, paths, context);
@@ -356,8 +354,8 @@ export async function analyzeProducts(domain, paths, context) {
     // Remove "unknown" key if it exists
     delete combinedPatterns.unknown;
 
-    log.info(`Completed product analysis for domain: ${domain}`);
-    log.info(`Total token usage for product analysis: ${JSON.stringify(totalTokenUsage)}`);
+    log.debug(`Completed product analysis for domain: ${domain}`);
+    log.debug(`Total token usage for product analysis: ${JSON.stringify(totalTokenUsage)}`);
     return combinedPatterns;
   } catch (error) {
     log.error(`Product analysis failed: ${error.message}`);

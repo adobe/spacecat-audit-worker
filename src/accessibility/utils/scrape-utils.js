@@ -39,7 +39,6 @@ export async function getExistingObjectKeysFromFailedAudits(s3Client, bucketName
       return [];
     }
 
-    log.info(`[A11yAudit] Found ${objectKeys.length} existing URLs from failed audits for site ${siteId}.`);
     return objectKeys;
   } catch (error) {
     log.error(`[A11yAudit][A11yProcessingError] Error getting existing URLs from failed audits for site ${siteId}: ${error.message}`);
@@ -128,14 +127,13 @@ export async function updateStatusToIgnored(
   try {
     const { Opportunity } = dataAccess;
     const opportunities = await Opportunity.allBySiteIdAndStatus(siteId, 'NEW');
-    log.info(`[A11yAudit] Found ${opportunities.length} opportunities for site ${siteId}`);
 
     if (opportunities.length === 0) {
       return { success: true, updatedCount: 0 };
     }
 
     const accessibilityOppties = filterOpportunities(opportunities);
-    log.info(`[A11yAudit] Found ${accessibilityOppties.length} opportunities to update to IGNORED for site ${siteId}`);
+    log.debug(`[A11yAudit] Found ${accessibilityOppties.length} opportunities to update to IGNORED for site ${siteId}`);
 
     if (accessibilityOppties.length === 0) {
       return { success: true, updatedCount: 0 };
@@ -208,7 +206,7 @@ export async function saveMystiqueValidationMetricsToS3(
     receivedCount: validationData.receivedCount || 0,
   };
 
-  log.info(`[A11yValidation] Mystique validation metrics for site ${siteId}, opportunity ${opportunityId}, page ${validationData.pageUrl} - Sent: ${newValidationEntry.sentCount}, Received: ${newValidationEntry.receivedCount}`);
+  log.debug(`[A11yValidation] Mystique validation metrics for site ${siteId}, opportunity ${opportunityId}, page ${validationData.pageUrl} - Sent: ${newValidationEntry.sentCount}, Received: ${newValidationEntry.receivedCount}`);
 
   // Read existing a11y-suggestions-validation.json file from S3
   const s3Key = `metrics/${siteId}/mystique/a11y-suggestions-validation.json`;
@@ -218,10 +216,10 @@ export async function saveMystiqueValidationMetricsToS3(
     const existingData = await getObjectFromKey(s3Client, bucketName, s3Key, log);
     if (existingData && Array.isArray(existingData)) {
       existingMetrics = existingData;
-      log.info(`[A11yValidation] Found existing mystique validation file with ${existingMetrics.length} entries for site ${siteId}`);
+      log.debug(`[A11yValidation] Found existing mystique validation file with ${existingMetrics.length} entries for site ${siteId}`);
     }
   } catch (error) {
-    log.info(`[A11yValidation] No existing mystique validation file found for site ${siteId}, creating new one: ${error.message}`);
+    log.error(`[A11yValidation] No existing mystique validation file found for site ${siteId}, creating new one: ${error.message}`);
   }
 
   // Check if entry already exists for this audit + opportunity + page combination
@@ -232,11 +230,11 @@ export async function saveMystiqueValidationMetricsToS3(
   if (existingIndex >= 0) {
     // Update existing entry
     existingMetrics[existingIndex] = newValidationEntry;
-    log.info(`[A11yValidation] Updated existing mystique validation entry for page ${validationData.pageUrl}`);
+    log.debug(`[A11yValidation] Updated existing mystique validation entry for page ${validationData.pageUrl}`); // remove instead?
   } else {
     // Add new entry
     existingMetrics.push(newValidationEntry);
-    log.info(`[A11yValidation] Added new mystique validation entry for page ${validationData.pageUrl}`);
+    log.debug(`[A11yValidation] Added new mystique validation entry for page ${validationData.pageUrl}`); // remove instead?
   }
 
   try {
@@ -247,7 +245,7 @@ export async function saveMystiqueValidationMetricsToS3(
       ContentType: 'application/json',
     }));
 
-    log.info(`[A11yValidation] Successfully saved mystique validation metrics to S3: ${s3Key} for site ${siteId}, opportunity ${opportunityId}`);
+    log.debug(`[A11yValidation] Successfully saved mystique validation metrics to S3: ${s3Key} for site ${siteId}, opportunity ${opportunityId}`); // remove instead?
 
     return {
       success: true,

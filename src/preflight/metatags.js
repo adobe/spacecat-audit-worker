@@ -72,7 +72,7 @@ export default async function metatags(context, auditContext) {
     const metatagsEndTime = Date.now();
     const metatagsEndTimestamp = new Date().toISOString();
     const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds`);
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds`);
 
     timeExecutionBreakdown.push({
       name: 'metatags',

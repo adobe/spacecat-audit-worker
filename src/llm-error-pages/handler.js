@@ -34,8 +34,8 @@ async function runLlmErrorPagesAudit(url, context, site) {
   } = context;
   const s3Config = await getS3Config(site, context);
 
-  log.info(`Starting LLM error pages audit for ${url}`);
-  log.info(`Running LLM error pages audit ${audit}`);
+  log.debug(`Starting LLM error pages audit for ${url}`);
+  log.debug(`Running LLM error pages audit ${audit}`);
 
   try {
     const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
@@ -44,7 +44,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
     const { startDate } = week;
     const { endDate } = week;
     const periodIdentifier = `w${week.weekNumber}-${week.year}`;
-    log.info(`Running weekly audit for ${periodIdentifier}`);
+    log.debug(`Running weekly audit for ${periodIdentifier}`);
 
     // Get site configuration
     const filters = site.getConfig()?.getLlmoCdnlogsFilter?.() || [];
@@ -60,7 +60,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
       siteFilters,
     });
 
-    log.info('Executing LLM error pages query...');
+    log.debug('Executing LLM error pages query...');
     const sqlQueryDescription = '[Athena Query] LLM error pages analysis';
     const results = await athenaClient.query(
       query,
@@ -107,7 +107,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
         sharepointClient,
         filename,
       });
-      log.info(`Uploaded Excel for ${code}: ${filename} (${sorted.length} rows)`);
+      log.debug(`Uploaded Excel for ${code}: ${filename} (${sorted.length} rows)`);
     };
 
     // Generate and upload Excel files for each category
@@ -117,7 +117,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
       writeCategoryExcel('5xx', categorizedResults['5xx']),
     ]);
 
-    log.info(`Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
+    log.debug(`Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
 
     const auditResult = {
       success: true,
@@ -228,7 +228,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`Queued ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
+    log.debug(`Queued ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
   } catch (error) {
     log.error(`Failed to send Mystique message: ${error.message}`);
   }

@@ -103,7 +103,7 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
   // Mark suggestions as OUTDATED
   if (suggestionsToRemove.length > 0) {
     await Suggestion.bulkUpdateStatus(suggestionsToRemove, SuggestionModel.STATUSES.OUTDATED);
-    log.info(`[${AUDIT_TYPE}]: Marked ${suggestionsToRemove.length} suggestions as OUTDATED for ${pageUrls.length} pages`);
+    log.info(`[${AUDIT_TYPE}]: Marked ${suggestionsToRemove.length} suggestions as OUTDATED for ${pageUrls.length} pages`); // debug? > 500 logs in 7d
   }
 
   return {
@@ -122,8 +122,6 @@ export default async function handler(message, context) {
   } = message;
   const { suggestions, pageUrls } = data || {};
 
-  log.info(`[${AUDIT_TYPE}]: Received Mystique guidance for alt-text: ${JSON.stringify(message, null, 2)}`);
-
   // Validate audit exists
   const audit = await Audit.findById(auditId);
   if (!audit) {
@@ -132,8 +130,6 @@ export default async function handler(message, context) {
   }
   const site = await Site.findById(siteId);
   const auditUrl = site.getBaseURL();
-
-  log.info(`[${AUDIT_TYPE}]: Processing suggestions for ${siteId} and auditUrl: ${auditUrl}`);
 
   let altTextOppty;
   try {
@@ -204,9 +200,9 @@ export default async function handler(message, context) {
       const newDecorativeCount = suggestions.filter((s) => s.isDecorative === true).length;
       newMetrics.decorativeImagesCount = newDecorativeCount;
 
-      log.info(`[${AUDIT_TYPE}]: Added ${suggestions.length} new suggestions for ${pageUrls.length} processed pages`);
+      log.debug(`[${AUDIT_TYPE}]: Added ${suggestions.length} new suggestions for ${pageUrls.length} processed pages`);
     } else {
-      log.info(`[${AUDIT_TYPE}]: No new suggestions for ${pageUrls.length} processed pages`);
+      log.debug(`[${AUDIT_TYPE}]: No new suggestions for ${pageUrls.length} processed pages`);
     }
 
     // Update opportunity data: subtract removed metrics, add new metrics
@@ -229,14 +225,8 @@ export default async function handler(message, context) {
     altTextOppty.setData(updatedOpportunityData);
     altTextOppty.setUpdatedBy('system');
     await altTextOppty.save();
-
-    log.info(`[${AUDIT_TYPE}]: 
-      Received ${updatedOpportunityData.mystiqueResponsesReceived}/${updatedOpportunityData.mystiqueResponsesExpected} responses from Mystique for siteId: ${siteId}`);
-    log.info(`[${AUDIT_TYPE}]: Successfully processed ${suggestions.length} suggestions from Mystique for siteId: ${siteId}`);
   } else {
     log.info(`[${AUDIT_TYPE}]: No suggestions to process for siteId: ${siteId}`);
   }
-
-  log.info(`[${AUDIT_TYPE}]: Successfully processed Mystique guidance for siteId: ${siteId}`);
   return ok();
 }

@@ -34,7 +34,7 @@ export async function essExperimentationDailyAuditRunner(auditUrl, context, site
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.info(`ESS Experimentation Daily Audit completed in ${formattedElapsed} seconds for ${auditUrl}`);
+  log.debug(`ESS Experimentation Daily Audit completed in ${formattedElapsed} seconds for ${auditUrl}`);
 
   return {
     auditResult: auditData,

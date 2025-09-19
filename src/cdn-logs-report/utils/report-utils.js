@@ -77,11 +77,11 @@ export async function ensureTableExists(athenaClient, databaseName, reportConfig
       aggregatedLocation,
     });
 
-    log.info(`Creating or checking table: ${tableName}`);
+    log.debug(`Creating or checking table: ${tableName}`);
     const sqlCreateTableDescription = `[Athena Query] Create table ${databaseName}.${tableName}`;
     await athenaClient.execute(createTableQuery, databaseName, sqlCreateTableDescription);
 
-    log.info(`Table ${tableName} is ready`);
+    log.debug(`Table ${tableName} is ready`);
   } catch (error) {
     log.error(`Failed to ensure table exists: ${error.message}`);
     throw error;

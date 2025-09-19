@@ -77,9 +77,9 @@ export class StepAudit extends BaseAudit {
     if (step.destination === AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT) {
       const scrapeClient = ScrapeClient.createFrom(context);
       const payload = destination.formatPayload(stepResult, auditContext, context);
-      log.info(`Creating new scrapeJob with the ScrapeClient. Payload: ${JSON.stringify(payload)}`);
+      log.info(`Creating new scrapeJob with the ScrapeClient. Payload: ${JSON.stringify(payload)}`); // remove or set to debug when done
       const scrapeJob = await scrapeClient.createScrapeJob(payload);
-      log.info(`Crated scrapeJob: ${scrapeJob}`);
+      log.info(`Crated scrapeJob: ${scrapeJob}`); // remove or set to debug when done
       return stepResult;
     } else {
       const queueUrl = destination.getQueueUrl(context);
@@ -87,7 +87,7 @@ export class StepAudit extends BaseAudit {
       await sendContinuationMessage({ queueUrl, payload }, context);
     }
 
-    log.info(`Step ${step.name} completed for audit ${audit.getId()} of type ${audit.getAuditType()}, message sent to ${step.destination}`);
+    log.debug(`Step ${step.name} completed for audit ${audit.getId()} of type ${audit.getAuditType()}, message sent to ${step.destination}`);
 
     return stepResult;
   }

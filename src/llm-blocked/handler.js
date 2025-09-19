@@ -23,7 +23,7 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
 
-  log.info(`Importing top pages for ${finalUrl}`);
+  log.debug(`Importing top pages for ${finalUrl}`);
 
   return {
     type: 'top-pages',
@@ -37,7 +37,7 @@ export async function importTopPages(context) {
 export async function getRobotsTxt(context) {
   try {
     const { finalUrl, log } = context;
-    log.info(`Fetching https://${finalUrl}/robots.txt`);
+    log.debug(`Fetching https://${finalUrl}/robots.txt`);
     const robotsTxt = await fetch(`https://${finalUrl}/robots.txt`);
     const robotsTxtContent = await robotsTxt.text();
 
@@ -64,7 +64,7 @@ export async function checkLLMBlocked(context) {
     throw new Error('No top pages found for site');
   }
 
-  log.info(`Checking top URLs for blocked AI bots, finalUrl: ${finalUrl}`);
+  log.debug(`Checking top URLs for blocked AI bots, finalUrl: ${finalUrl}`);
 
   const agentsWithRationale = {
     'ClaudeBot/1.0': 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',

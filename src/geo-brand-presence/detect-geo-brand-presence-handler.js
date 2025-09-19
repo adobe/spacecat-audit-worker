@@ -23,7 +23,7 @@ export default async function handler(message, context) {
     auditId, siteId, type: subType, data,
   } = message;
 
-  log.info('GEO BRAND PRESENCE: Message received:', message);
+  log.debug('GEO BRAND PRESENCE: Message received:', message);
 
   if (!subType || !OPPTY_TYPES.includes(subType)) {
     log.error(`GEO BRAND PRESENCE: Unsupported subtype: ${subType}`);

@@ -126,7 +126,7 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('security-csp', site)) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
     return { ...auditData };
   }
 
