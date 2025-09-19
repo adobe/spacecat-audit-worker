@@ -125,7 +125,7 @@ async function importDataStep(context, period) {
     fullAuditRef: finalUrl,
     type: 'traffic-analysis',
     siteId,
-    allowOverwrite: true,
+    allowOverwrite: false,
   };
 }
 

@@ -272,7 +272,7 @@ describe('Paid Traffic Analysis Handler', () => {
         expect(result).to.have.property('fullAuditRef', auditUrl);
         expect(result).to.have.property('type', 'traffic-analysis');
         expect(result).to.have.property('siteId', siteId);
-        expect(result).to.have.property('allowOverwrite', true);
+        expect(result).to.have.property('allowOverwrite', false);
 
         // Verify the auditResult has the expected temporal structure
         expect(result.auditResult).to.have.property('year');
