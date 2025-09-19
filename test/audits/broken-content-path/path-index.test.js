@@ -137,6 +137,13 @@ describe('PathIndex', () => {
     it('should return null for non-existing path', () => {
       expect(pathIndex.find('/content/dam/de-DE/images/photo.jpg')).to.be.null;
     });
+
+    it('should return null for prefix that exists but is not an end node', () => {
+      pathIndex.insert('/content/dam/test/image.jpg', 'PUBLISHED', 'en-US');
+
+      // Try to find a prefix that exists in the trie but is not marked as an end node
+      expect(pathIndex.find('/content/dam/test')).to.be.null;
+    });
   });
 
   describe('delete', () => {
@@ -160,6 +167,15 @@ describe('PathIndex', () => {
       expect(pathIndex.contains('/content/dam/en-US/images/photo.jpg')).to.be.true;
       expect(pathIndex.delete('/content/dam/en-US/images/photo.jpg')).to.be.true;
       expect(pathIndex.contains('/content/dam/en-US/images/photo.jpg')).to.be.false;
+    });
+
+    it('should return false when trying to delete a prefix that exists but is not an end node', () => {
+      pathIndex.insert('/content/dam/test/image.jpg', 'PUBLISHED', 'en-US');
+
+      // Try to delete a prefix that exists in the trie but is not marked as an end node
+      expect(pathIndex.delete('/content/dam/test')).to.be.false;
+      // The original path should still exist
+      expect(pathIndex.contains('/content/dam/test/image.jpg')).to.be.true;
     });
   });
 
