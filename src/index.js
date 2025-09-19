@@ -72,6 +72,8 @@ import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
+import brokenContentPath from './broken-content-path/handler.js';
+import cdn404Analysis from './cdn-404-analysis/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -129,6 +131,8 @@ const HANDLERS = {
   'llmo-customer-analysis': llmoCustomerAnalysis,
   hreflang,
   headings,
+  'broken-content-path': brokenContentPath,
+  'cdn-404-analysis': cdn404Analysis,
   dummy: (message) => ok(message),
 };
 
