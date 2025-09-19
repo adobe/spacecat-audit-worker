@@ -144,6 +144,7 @@ export class BaseAudit {
 
   async processAuditResult(result, params, context) {
     const { type, site } = params;
+    const { log } = context;
     const { auditResult, fullAuditRef } = result;
 
     const auditData = {
@@ -156,6 +157,8 @@ export class BaseAudit {
     };
 
     const audit = await this.persister(auditData, context);
+    log.info(`Audit data from processAuditResult: ${JSON.stringify(auditData, null, 2)}`);
+    log.info(`Site id [${site.getId()}] audit metadata persisted: ${audit.getId()}`);
     context.audit = audit;
     return this.runPostProcessors(
       audit,
