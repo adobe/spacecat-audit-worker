@@ -12,7 +12,7 @@
 
 import { isNonEmptyArray, isString } from '@adobe/spacecat-shared-utils';
 import { Opportunity as OpportunityDataAccess, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
+import { createAccessibilityAssistiveOpportunity, createAccessibilityColorContrastOpportunity } from './report-oppty.js';
 import {
   syncSuggestions,
   keepSameDataFunction,
@@ -21,7 +21,7 @@ import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants
 import { getAuditData } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
-import { saveMystiqueValidationMetricsToS3 } from './scrape-utils.js';
+import { saveMystiqueValidationMetricsToS3, saveOpptyWithRetry } from './scrape-utils.js';
 
 /**
  * Creates a Mystique message object
@@ -595,6 +595,7 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     // Map opportunity types to their creation functions
     const opportunityCreators = {
       'a11y-assistive': createAccessibilityAssistiveOpportunity,
+      'a11y-color-contrast': createAccessibilityColorContrastOpportunity,
       // Add more opportunity types here as they are created
     };
 
@@ -862,7 +863,8 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
     // Update the opportunity with new audit ID
     opportunity.setAuditId(auditId);
     opportunity.setUpdatedBy('system');
-    await opportunity.save();
+    // await opportunity.save();
+    await saveOpptyWithRetry(opportunity, auditId, Opportunity, log);
 
     if (invalidRemediations.length > 0) {
       log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: ${invalidRemediations.length} remediations missing suggestionId`);

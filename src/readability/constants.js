@@ -13,6 +13,13 @@
 export const READABILITY_GUIDANCE_TYPE = 'guidance:readability';
 export const READABILITY_OBSERVATION = 'Content readability needs improvement';
 export const MYSTIQUE_BATCH_SIZE = 10;
-export const TARGET_FLESCH_SCORE = 30.0; // Target score for readability improvements
-export const MIN_TEXT_LENGTH = 100; // Minimum text length to analyze for readability
-export const MIN_FLESCH_SCORE_FOR_ANALYSIS = 50; // Only analyze text with flesch score below this
+
+// Target Flesch Reading Ease score - scores below this will be flagged as poor readability
+// Applied to all languages since the custom formulas already account for language differences
+export const TARGET_READABILITY_SCORE = 30;
+
+// Minimum character length for text chunks to be considered for readability analysis
+export const MIN_TEXT_LENGTH = 100;
+
+// Maximum characters to display in the audit report
+export const MAX_CHARACTERS_DISPLAY = 200;

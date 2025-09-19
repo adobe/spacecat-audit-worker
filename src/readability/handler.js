@@ -16,6 +16,16 @@ import { franc } from 'franc-min';
 import { saveIntermediateResults } from '../preflight/utils.js';
 
 import { sendReadabilityToMystique } from './async-mystique.js';
+import {
+  calculateReadabilityScore,
+  isSupportedLanguage,
+  getLanguageName,
+} from './multilingual-readability.js';
+import {
+  TARGET_READABILITY_SCORE,
+  MIN_TEXT_LENGTH,
+  MAX_CHARACTERS_DISPLAY,
+} from './constants.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 
@@ -129,15 +139,6 @@ async function checkForExistingSuggestions(
   }
 }
 
-// Target Flesch Reading Ease score - scores below this will be flagged as poor readability
-const TARGET_READABILITY_SCORE = 30;
-
-// Minimum character length for text chunks to be considered for readability analysis
-const MIN_TEXT_LENGTH = 100;
-
-// Maximum characters to display in the audit report
-const MAX_CHARACTERS_DISPLAY = 200;
-
 export default async function readability(context, auditContext) {
   const {
     site, job, log,
@@ -164,7 +165,7 @@ export default async function readability(context, auditContext) {
     });
 
     // Process each scraped page
-    scrapedObjects.forEach(({ data }) => {
+    for (const { data } of scrapedObjects) {
       const { finalUrl, scrapeResult: { rawBody } } = data;
       const normalizedFinalUrl = new URL(finalUrl).origin + new URL(finalUrl).pathname.replace(/\/$/, '');
       const pageResult = audits.get(normalizedFinalUrl);
@@ -183,22 +184,36 @@ export default async function readability(context, auditContext) {
 
       let processedElements = 0;
       let poorReadabilityCount = 0;
+      const detectedLanguages = new Set(); // Track languages actually detected
 
-      // Helper function to detect if text is in English
-      const isEnglishContent = (text) => {
-        const detectedLanguage = franc(text);
-        return detectedLanguage === 'eng';
+      // Helper function to detect if text is in a supported language
+      const getSupportedLanguage = (text) => {
+        const detectedLanguageCode = franc(text);
+        if (isSupportedLanguage(detectedLanguageCode)) {
+          return getLanguageName(detectedLanguageCode);
+        }
+        return null; // Unsupported language
       };
 
       // Helper function to calculate readability score and create audit opportunity
-      const analyzeReadability = (text, element, elementIndex) => {
+      const analyzeReadability = async (text, element, elementIndex) => {
         try {
-          // Check if text is in English before analyzing readability
-          if (!isEnglishContent(text)) {
-            return; // Skip non-English content
+          // Check if text is in a supported language before analyzing readability
+          const detectedLanguage = getSupportedLanguage(text);
+          if (!detectedLanguage) {
+            return; // Skip unsupported languages
           }
 
-          const readabilityScore = rs.fleschReadingEase(text.trim());
+          // Track detected language
+          detectedLanguages.add(detectedLanguage);
+
+          // Use text-readability library for English, custom function for other languages
+          let readabilityScore;
+          if (detectedLanguage === 'english') {
+            readabilityScore = rs.fleschReadingEase(text.trim());
+          } else {
+            readabilityScore = await calculateReadabilityScore(text.trim(), detectedLanguage);
+          }
 
           if (readabilityScore < TARGET_READABILITY_SCORE) {
             poorReadabilityCount += 1;
@@ -215,6 +230,7 @@ export default async function readability(context, auditContext) {
               issue: issueText,
               seoImpact: 'Moderate',
               fleschReadingEase: readabilityScore,
+              language: detectedLanguage,
               seoRecommendation: 'Improve readability by using shorter sentences, simpler words, and clearer structure',
               textContent: text, // Store full text for AI processing
             });
@@ -228,25 +244,34 @@ export default async function readability(context, auditContext) {
         }
       };
 
-      textElements.forEach((element, index) => {
-        // Check if element has child elements
-        if (element.children.length > 0) {
-          // If it has children, check if they are only inline formatting elements
-          const hasOnlyInlineChildren = Array.from(element.children).every((child) => {
-            const inlineTags = ['strong', 'b', 'em', 'i', 'span', 'a', 'mark', 'small', 'sub', 'sup', 'u', 'code', 'br'];
-            return inlineTags.includes(child.tagName.toLowerCase());
-          });
+      // Collect all readability analysis promises to run in parallel
+      const readabilityPromises = [];
+
+      // Filter and process elements without using continue statements
+      const elementsToProcess = textElements
+        .map((element, index) => ({ element, index }))
+        .filter(({ element }) => {
+          // Check if element has child elements
+          const hasBlockChildren = element.children.length > 0
+            && !Array.from(element.children).every((child) => {
+              const inlineTags = [
+                'strong', 'b', 'em', 'i', 'span', 'a', 'mark',
+                'small', 'sub', 'sup', 'u', 'code', 'br',
+              ];
+              return inlineTags.includes(child.tagName.toLowerCase());
+            });
 
           // Skip if it has block-level children (to avoid duplicate analysis)
-          if (!hasOnlyInlineChildren) {
-            return;
-          }
-        }
+          return !hasBlockChildren;
+        })
+        .filter(({ element }) => {
+          const textContent = element.textContent?.trim();
+          return textContent && textContent.length >= MIN_TEXT_LENGTH;
+        });
 
+      // Process filtered elements
+      elementsToProcess.forEach(({ element, index }) => {
         const textContent = element.textContent?.trim();
-        if (!textContent || textContent.length < MIN_TEXT_LENGTH) {
-          return;
-        }
 
         // Check if the element contains <br> tags (indicating multiple paragraphs)
         if (element.innerHTML.includes('<br')) {
@@ -269,23 +294,32 @@ export default async function readability(context, auditContext) {
             .map((p) => p.trim())
             .filter((p) => p.length >= MIN_TEXT_LENGTH);
 
+          // Add promises for each paragraph
           paragraphs.forEach((paragraph) => {
-            analyzeReadability(paragraph, element, index);
+            readabilityPromises.push(analyzeReadability(paragraph, element, index));
           });
 
           processedElements += paragraphs.length;
         } else {
-          // Analyze as a single text block
+          // Add promise for single text block
+          readabilityPromises.push(analyzeReadability(textContent, element, index));
           processedElements += 1;
-          analyzeReadability(textContent, element, index);
         }
       });
 
+      // Execute all readability analyses in parallel
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.all(readabilityPromises);
+
+      const detectedLanguagesList = detectedLanguages.size > 0
+        ? Array.from(detectedLanguages).join(', ')
+        : 'none detected';
+
       log.debug( // remove? ~8k
         `[readability-suggest handler] readability: Processed ${processedElements} text element(s) on `
-        + `${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability`,
+        + `${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability (detected languages: ${detectedLanguagesList})`,
       );
-    });
+    }
 
     // Process suggestions if this is the suggest step
     if (step === 'suggest') {
@@ -413,5 +447,6 @@ export default async function readability(context, auditContext) {
   }
 
   // Always return a value to satisfy consistent-return
+  // eslint-disable-next-line consistent-return
   return { processing: isProcessing };
 }
