@@ -27,7 +27,7 @@ export function createOpportunityData() {
         'Ensure headings follow brand guidelines and maintain consistent tone across the site.',
       ],
     },
-    tags: ['Accessibility', 'SEO', 'AI-Powered'],
+    tags: ['Accessibility', 'SEO'],
     data: {
       dataSources: [DATA_SOURCES.SITE],
     },
