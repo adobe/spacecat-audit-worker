@@ -34,7 +34,7 @@ export default async function handler(message, context) {
   const { siteId, data, auditId } = message;
   const { brokenLinks } = data;
 
-  log.info(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
+  log.debug(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   const site = await Site.findById(siteId);
   if (!site) {
@@ -68,7 +68,7 @@ export default async function handler(message, context) {
 
     // Create a map of broken URLs for quick lookup
     const brokenUrlsMap = new Map();
-    log.info(`Processing ${brokenLinks.length} broken links from Mystique`);
+    log.debug(`Processing ${brokenLinks.length} broken links from Mystique`);
 
     brokenLinks.forEach((brokenLink) => {
       const {

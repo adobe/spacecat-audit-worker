@@ -100,7 +100,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
         return;
       }
 
-      log.info(`Found existing CDN data with ${existingCdnData.length} rows, enriching error data`);
+      log.debug(`Found existing CDN data with ${existingCdnData.length} rows, enriching error data`);
       const enrichedErrors = matchErrorsWithCdnData(errors, existingCdnData, baseUrl);
 
       const sorted = enrichedErrors.sort((a, b) => b.number_of_hits - a.number_of_hits);

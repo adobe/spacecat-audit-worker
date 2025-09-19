@@ -267,7 +267,7 @@ export async function saveOpptyWithRetry(opportunity, auditId, Opportunity, log,
   async function attemptSave(currentOpportunity, attemptNumber) {
     try {
       await currentOpportunity.save();
-      log.info(`[A11yRemediationGuidance] Successfully saved opportunity on attempt ${attemptNumber}`);
+      log.debug(`[A11yRemediationGuidance] Successfully saved opportunity on attempt ${attemptNumber}`);
       return currentOpportunity;
     } catch (error) {
       // Check if we have retries left
