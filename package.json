@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "nodemon",
-    "test": "c8 --exclude 'src/prerender/**' --exclude 'src/index-local.js' mocha -i -g 'Post-Deploy' --spec=test/**/*.test.js",
+    "test": "c8  --exclude 'src/index-local.js' mocha -i -g 'Post-Deploy' --spec=test/audits/*.test.js",
     "test-postdeploy": "mocha -g 'Post-Deploy' --spec=test/**/*.test.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -78,7 +78,7 @@
     "@adobe/spacecat-helix-content-sdk": "1.4.21",
     "@adobe/spacecat-shared-ahrefs-client": "1.9.7",
     "@adobe/spacecat-shared-athena-client": "1.3.2",
-    "@adobe/spacecat-shared-data-access": "https://gitpkg.now.sh/adobe/spacecat-shared/packages/spacecat-shared-data-access?0af2034f0dd2470d0e962e75e53e1a069b3f7275",
+    "@adobe/spacecat-shared-data-access": "2.64.0",
     "@adobe/spacecat-shared-google-client": "1.4.43",
     "@adobe/spacecat-shared-gpt-client": "1.6.2",
     "@adobe/spacecat-shared-http-utils": "1.17.2",

@@ -113,7 +113,6 @@ async function compareHtmlContent(url, siteId, context) {
     log.error(`Prerender - No scraped data available for comparison for ${url}`);
     return {
       url,
-      status: 'error',
       error: 'No scraped data available for comparison',
       needsPrerender: false,
     };
@@ -125,7 +124,6 @@ async function compareHtmlContent(url, siteId, context) {
     log.error(`Prerender - Missing HTML data for ${url} (server-side: ${!!serverSideHtml}, client-side: ${!!clientSideHtml})`);
     return {
       url,
-      status: 'error',
       error: 'Missing HTML data for comparison',
       needsPrerender: false,
     };
@@ -138,17 +136,15 @@ async function compareHtmlContent(url, siteId, context) {
     log.error(`Prerender - HTML analysis failed for ${url}: ${analysis.error}`);
     return {
       url,
-      status: 'error',
       error: analysis.error,
       needsPrerender: false,
     };
   }
 
-  log.info(`Prerender - Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordDiff=${analysis.wordDiff}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
+  log.info(`Prerender - Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
 
   return {
     url,
-    status: 'compared',
     ...analysis,
   };
 }
@@ -231,7 +227,7 @@ export async function submitForScraping(context) {
 export async function processOpportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
-  if (auditData.auditResult.status !== 'OPPORTUNITIES_FOUND') {
+  if (auditData.auditResult.urlsNeedingPrerender === 0) {
     log.info('Prerender - No prerender opportunities found, skipping opportunity creation');
     return;
   }
@@ -291,6 +287,16 @@ export async function processContentAndGenerateOpportunities(context) {
   try {
     // Get URLs that were scraped from the audit data or fallback to top pages
     let urlsToCheck = [];
+    const trafficMap = new Map();
+
+    // Get top pages for traffic data
+    const { SiteTopPage } = dataAccess;
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+
+    // Create traffic map from top pages
+    topPages.forEach((page) => {
+      trafficMap.set(page.getUrl(), page.getTraffic());
+    });
 
     // Try to get URLs from the audit context first
     if (scrapeResultPaths?.size > 0) {
@@ -299,8 +305,6 @@ export async function processContentAndGenerateOpportunities(context) {
       log.info(`Prerender - Found ${urlsToCheck.length} URLs from scrape results`);
     } else {
       // Fallback: get top pages
-      const { SiteTopPage } = dataAccess;
-      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
       urlsToCheck = topPages.map((page) => page.getUrl());
       log.info(`Prerender - Fallback: Using ${urlsToCheck.length} top pages for comparison`);
     }
@@ -316,18 +320,24 @@ export async function processContentAndGenerateOpportunities(context) {
 
     // Compare server-side vs client-side HTML for each URL
     const comparisonResults = await Promise.all(
-      urlsToCheck.map((url) => compareHtmlContent(url, siteId, context)),
+      urlsToCheck.map(async (url) => {
+        const result = await compareHtmlContent(url, siteId, context);
+        // Add organic traffic data if available
+        const organicTraffic = trafficMap.get(url) || 0;
+        return {
+          ...result,
+          organicTraffic,
+        };
+      }),
     );
 
     // Analyze results
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
-    const successfulComparisons = comparisonResults.filter((result) => result.status === 'compared');
+    const successfulComparisons = comparisonResults.filter((result) => !result.error);
 
     log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender`);
 
     const auditResult = {
-      status: urlsNeedingPrerender.length > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
-      summary: `Analyzed ${successfulComparisons.length} URLs, found ${urlsNeedingPrerender.length} with significant client-side rendering`,
       totalUrlsChecked: comparisonResults.length,
       urlsNeedingPrerender: urlsNeedingPrerender.length,
       results: comparisonResults,
@@ -355,9 +365,7 @@ export async function processContentAndGenerateOpportunities(context) {
     log.error(`Prerender - Audit failed for site ${siteId}: ${error.message}`, error);
 
     return {
-      status: 'ERROR',
       error: error.message,
-      summary: 'Audit failed due to internal error',
       totalUrlsChecked: 0,
       urlsNeedingPrerender: 0,
       results: [],

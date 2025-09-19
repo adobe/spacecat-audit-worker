@@ -54,7 +54,6 @@ describe('Prerender Audit', () => {
       expect(result).to.be.an('object');
       expect(result.needsPrerender).to.be.a('boolean');
       expect(result.contentGainRatio).to.be.a('number');
-      expect(result.wordDiff).to.be.a('number');
       expect(result.wordCountBefore).to.be.a('number');
       expect(result.wordCountAfter).to.be.a('number');
     });
@@ -214,7 +213,7 @@ describe('Prerender Audit', () => {
         expect(result).to.be.an('object');
         expect(result.status).to.equal('complete');
         expect(result.auditResult).to.be.an('object');
-        expect(result.auditResult.status).to.equal('NO_OPPORTUNITIES');
+        expect(result.auditResult.urlsNeedingPrerender).to.equal(0);
         // Falls back to base URL when no URLs found
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
       });
@@ -237,8 +236,9 @@ describe('Prerender Audit', () => {
         const result = await processContentAndGenerateOpportunities(context);
 
         expect(result).to.be.an('object');
-        expect(result.status).to.equal('ERROR');
         expect(result.error).to.be.a('string');
+        expect(result.totalUrlsChecked).to.equal(0);
+        expect(result.urlsNeedingPrerender).to.equal(0);
       });
     });
   });

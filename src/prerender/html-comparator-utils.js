@@ -165,7 +165,6 @@ function calculateStats(originalHTML, currentHTML) {
   const currentTokens = tokenize(currentText, 'word');
   const wordCountBefore = originalTokens.length;
   const wordCountAfter = currentTokens.length;
-  const wordDiff = Math.abs(wordCountAfter - wordCountBefore);
 
   let contentGainRatio;
   if (wordCountBefore > 0) {
@@ -177,7 +176,6 @@ function calculateStats(originalHTML, currentHTML) {
   }
 
   return {
-    wordDiff,
     contentGainRatio,
     wordCountBefore,
     wordCountAfter,
