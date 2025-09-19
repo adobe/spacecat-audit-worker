@@ -100,7 +100,6 @@ describe('Headings Audit', () => {
       ContentType: 'application/json',
     });
     const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
-    console.log('And the result is:', result);
     expect(result.url).to.equal(url);
     expect(result.checks).to.deep.include({
       check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
@@ -139,7 +138,6 @@ describe('Headings Audit', () => {
     });  
 
     const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
-    console.log('And the result is:', result);
     expect(result.checks).to.deep.include({
       check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
       success: false,
@@ -194,7 +192,6 @@ describe('Headings Audit', () => {
     });
 
     const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
-    console.log('And the result is:', result);
     expect(result.checks).to.deep.include({
       check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
       success: false,
@@ -226,7 +223,6 @@ describe('Headings Audit', () => {
     });  
 
     const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
-    console.log('And the result is:', result);
     expect(result.checks).to.deep.include({
       check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
       success: false,
@@ -281,7 +277,6 @@ describe('Headings Audit', () => {
     });
     context.s3Client = s3Client;
     const result = await headingsAuditRunner(baseURL, context, site);
-    console.log('And the result is:', JSON.stringify(result, null, 3));
 
     expect(result.auditResult).to.have.property(HEADINGS_CHECKS.HEADING_ORDER_INVALID.check);
     const orderIssue = result.auditResult[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check];
@@ -335,7 +330,6 @@ describe('Headings Audit', () => {
     });
     context.s3Client = s3Client;
     const result = await headingsAuditRunner(baseURL, context, site);
-    console.log('And the result is:', result);
 
     expect(result.auditResult.status).to.equal('success');
     expect(result.auditResult.message).to.equal('No heading issues detected');
@@ -389,7 +383,6 @@ describe('Headings Audit', () => {
     });
     context.s3Client = s3Client;
     const result = await headingsAuditRunner(baseURL, context, site);
-    console.log('And the result is:', result);
     expect(result.auditResult).to.have.property(HEADINGS_CHECKS.HEADING_EMPTY.check);
     expect(result.auditResult).to.not.have.property('status');
 
