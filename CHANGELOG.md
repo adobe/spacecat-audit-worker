@@ -1,3 +1,10 @@
+## [1.183.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.6...v1.183.7) (2025-09-19)
+
+
+### Bug Fixes
+
+* add support for ams cloudfront and frontdoor cdns in const ([#1296](https://github.com/adobe/spacecat-audit-worker/issues/1296)) ([7cd2e4a](https://github.com/adobe/spacecat-audit-worker/commit/7cd2e4ad3869af43090c2bf5226fe4307c41a434))
+
 ## [1.183.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.5...v1.183.6) (2025-09-19)
 
 
