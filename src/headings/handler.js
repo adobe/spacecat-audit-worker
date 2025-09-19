@@ -451,15 +451,30 @@ export function generateSuggestions(auditUrl, auditData, context) {
 
   Object.entries(auditData.auditResult).forEach(([checkType, checkResult]) => {
     if (checkResult.success === false && Array.isArray(checkResult.urls)) {
-      checkResult.urls.forEach((url) => {
-        suggestions.push({
+      checkResult.urls.forEach((urlObj) => {
+        // Handle both old format (string) and new format (object with url property)
+        const urlValue = typeof urlObj === 'string' ? urlObj : urlObj.url;
+
+        const suggestion = {
           type: 'CODE_CHANGE',
           checkType,
           explanation: checkResult.explanation,
-          url,
+          url: urlValue,
           // eslint-disable-next-line no-use-before-define
           recommendedAction: generateRecommendedAction(checkType),
-        });
+        };
+
+        // If urlObj has additional properties, include them
+        if (typeof urlObj === 'object' && urlObj !== null) {
+          if (urlObj.tagName) {
+            suggestion.tagName = urlObj.tagName;
+          }
+          if (urlObj.suggestion) {
+            suggestion.recommendedAction = urlObj.suggestion;
+          }
+        }
+
+        suggestions.push(suggestion);
       });
     }
   });

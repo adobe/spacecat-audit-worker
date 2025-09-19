@@ -650,7 +650,7 @@ describe('Headings Audit', () => {
         explanation: 'Invalid order',
         recommendedAction: 'Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).',
       });
-      expect(result.suggestions[0].url).to.deep.equal({ url: 'https://example.com/page1' });
+      expect(result.suggestions[0].url).to.equal('https://example.com/page1');
     });
 
     it('handles default case in generateRecommendedAction', () => {
@@ -1042,7 +1042,7 @@ describe('Headings Audit', () => {
         explanation: 'Invalid order',
         recommendedAction: 'Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).',
       });
-      expect(result.suggestions[0].url).to.deep.equal({ url: 'https://example.com/page1' });
+      expect(result.suggestions[0].url).to.equal('https://example.com/page1');
     });
 
     it('handles default case in generateRecommendedAction', () => {
@@ -1096,6 +1096,73 @@ describe('Headings Audit', () => {
       
       expect(result.suggestions).to.have.lengthOf(1);
       expect(result.suggestions[0].recommendedAction).to.equal('Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.');
+    });
+
+    it('handles new URL object format with tagName and custom suggestion', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: {
+          'heading-order-invalid': {
+            success: false,
+            explanation: 'Invalid order',
+            urls: [
+              { 
+                url: 'https://example.com/page1', 
+                tagName: 'H3', 
+                suggestion: 'Change this H3 to H2 to maintain proper hierarchy' 
+              }, 
+              { 
+                url: 'https://example.com/page2', 
+                tagName: 'H4'
+                // No custom suggestion, should use default
+              }
+            ]
+          },
+          'heading-empty': {
+            success: false,
+            explanation: 'Empty heading',
+            urls: [{ 
+              url: 'https://example.com/page3', 
+              tagName: 'H2', 
+              suggestion: 'Add meaningful content to this heading'
+            }]
+          }
+        }
+      };
+      
+      const result = generateSuggestions(auditUrl, auditData, context);
+      
+      expect(result.suggestions).to.have.lengthOf(3);
+      
+      // First suggestion with custom suggestion
+      expect(result.suggestions[0]).to.deep.include({
+        type: 'CODE_CHANGE',
+        checkType: 'heading-order-invalid',
+        explanation: 'Invalid order',
+        url: 'https://example.com/page1',
+        tagName: 'H3',
+        recommendedAction: 'Change this H3 to H2 to maintain proper hierarchy', // Uses custom suggestion
+      });
+      
+      // Second suggestion without custom suggestion (uses default)
+      expect(result.suggestions[1]).to.deep.include({
+        type: 'CODE_CHANGE',
+        checkType: 'heading-order-invalid',
+        explanation: 'Invalid order',
+        url: 'https://example.com/page2',
+        tagName: 'H4',
+        recommendedAction: 'Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).', // Uses default
+      });
+      
+      // Third suggestion with custom suggestion for empty heading
+      expect(result.suggestions[2]).to.deep.include({
+        type: 'CODE_CHANGE',
+        checkType: 'heading-empty',
+        explanation: 'Empty heading',
+        url: 'https://example.com/page3',
+        tagName: 'H2',
+        recommendedAction: 'Add meaningful content to this heading', // Uses custom suggestion
+      });
     });
   });
 
