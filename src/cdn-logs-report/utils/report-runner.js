@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { generatePeriodIdentifier, generateReportingPeriods } from './report-utils.js';
+import { generateReportingPeriods } from './report-utils.js';
 import { saveExcelReport } from '../../utils/report-uploader.js';
 import { createExcelReport } from './excel-generator.js';
 
@@ -23,10 +23,7 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
 
   const referenceDate = new Date();
   const periods = generateReportingPeriods(referenceDate, weekOffset);
-  const week = periods.weeks[0];
-  const periodStart = week.startDate;
-  const periodEnd = week.endDate;
-  const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
+  const { periodIdentifier } = periods;
 
   log.info(`Running ${reportConfig.name} report for ${periodIdentifier} (week offset: ${weekOffset})`);
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();
