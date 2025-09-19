@@ -41,6 +41,7 @@ export async function essExperimentationAllAuditRunner(auditUrl, context, site) 
 
   const latestAudit = await LatestAudit.findBySiteIdAndAuditType(siteId, 'experimentation-ess-all');
   const experiments = await Experiment.allBySiteId(siteId);
+  log.info(`ESS Experimentation All Audit experiments: ${JSON.stringify(experiments, null, 2)}`);
   const activeExperiments = experiments.filter((experiment) => (
     experiment.getStatus() && experiment.getStatus().toLowerCase() === 'active' && experiment.getStartDate() !== null));
   let days;
