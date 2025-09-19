@@ -40,9 +40,12 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
 
+  log.info('GEO BRAND PRESENCE: auditContext: %j', auditContext);
+
   const { calendarWeek, parquetFiles, success } = auditContext ?? /* c8 ignore next */ {};
   // Get aiPlatform from the audit result
   const auditResult = audit?.getAuditResult();
+  log.info('GEO BRAND PRESENCE: auditResult: %j', auditResult);
   const aiPlatform = auditResult?.aiPlatform;
   log.info('GEO BRAND PRESENCE: aiPlatform: %s', aiPlatform);
   /* c8 ignore start */
@@ -65,6 +68,8 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   const recordSets = await Promise.all(
     parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
   );
+  log.info('GEO BRAND PRESENCE: recordSets: %j', recordSets);
+  
   const prompts = recordSets.flat();
   for (const x of prompts) {
     log.info('GEO BRAND PRESENCE: prompt: %j', x);
