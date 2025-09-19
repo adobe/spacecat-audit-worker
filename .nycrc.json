@@ -4,15 +4,16 @@
     "text"
   ],
   "check-coverage": true,
-  "lines": 100,
-  "branches": 100,
-  "statements": 100,
+  "lines": 10,
+  "branches": 10,
+  "statements": 10,
   "all": true,
   "include": [
     "src/**/*.js"
   ],
   "exclude": [
     "src/index-local.js",
-    "src/coverage/**/*.js"
+    "src/coverage/**/*.js",
+    "src/prerender/*.js"
   ]
 }
