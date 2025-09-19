@@ -400,6 +400,20 @@ describe('CDN Logs Report Handler', function test() {
 
         expect(context.athenaClient.query).to.have.been.called;
       });
+
+      it('logs skipping message when no S3 data found', async () => {
+        context.s3Client = {
+          send: sandbox.stub().resolves({ Contents: [] }),
+        };
+
+        context.athenaClient = setupAthenaClientWithData(sandbox, null, null);
+        const auditContext = createAuditContext(sandbox);
+
+        await handler.runner('https://example.com', context, site, auditContext);
+
+        expect(context.log.info).to.have.been.calledWith('No data found for agentic report - skipping');
+        expect(context.log.info).to.have.been.calledWith('No data found for referral report - skipping');
+      });
     });
 
     describe('site filter configurations', () => {
