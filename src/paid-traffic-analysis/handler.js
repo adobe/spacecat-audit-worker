@@ -10,9 +10,12 @@
  * governing permissions and limitations under the License.
  */
 import { getWeekInfo, getMonthInfo } from '@adobe/spacecat-shared-utils';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { warmCacheForSite } from './cache-warmer.js';
+
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 function buildMystiqueMessage(site, auditId, baseUrl, auditResult) {
   return {
@@ -101,18 +104,68 @@ export async function sendRequestToMystique(auditUrl, auditData, context, site) 
   log.info(`[traffic-analysis-audit] [siteId: ${auditUrl}] [baseUrl:${auditUrl}] Completed mystique evaluation step`);
 }
 
-const createWeeklyRunner = () => (auditUrl, context, site, auditContext) => prepareTrafficAnalysisRequest(auditUrl, context, site, 'weekly', auditContext);
+async function importDataStep(context, period) {
+  const { site, finalUrl, log } = context;
+  const siteId = site.getId();
+  const allowOverwrite = false;
+  log.info(`[traffic-analysis-import-${period}] Starting import data step for siteId: ${siteId}, url: ${finalUrl}`);
 
-const createMonthlyRunner = () => (auditUrl, context, site, auditContext) => prepareTrafficAnalysisRequest(auditUrl, context, site, 'monthly', auditContext);
+  // First prepare and save the traffic analysis request like we did before
+  const analysisResult = await prepareTrafficAnalysisRequest(
+    finalUrl,
+    context,
+    site,
+    period,
+  );
+
+  log.info(`[traffic-analysis-import-${period}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowOverwrite: ${allowOverwrite}`);
+
+  return {
+    auditResult: analysisResult.auditResult,
+    fullAuditRef: finalUrl,
+    type: 'traffic-analysis',
+    siteId,
+    allowOverwrite,
+  };
+}
+
+async function processAnalysisStep(context, period) {
+  const { site, audit, log } = context;
+  const finalUrl = site.getBaseURL();
+  const siteId = site.getId();
+  const auditId = audit.getId();
+
+  log.info(`[traffic-analysis-process-${period}] Starting process analysis step for siteId: ${siteId}, auditId: ${auditId}, url: ${finalUrl}`);
+
+  // Use the audit result that was already saved in the import step
+  await sendRequestToMystique(
+    finalUrl,
+    { id: auditId, auditResult: audit.getAuditResult() },
+    context,
+    site,
+  );
+
+  log.info(`[traffic-analysis-process-${period}] Completed sending to Mystique for siteId: ${siteId}, auditId: ${auditId}`);
+
+  return {
+    status: 'complete',
+    findings: ['Traffic analysis completed and sent to Mystique'],
+  };
+}
+
+export const weeklyImportDataStep = (context) => importDataStep(context, 'weekly');
+export const monthlyImportDataStep = (context) => importDataStep(context, 'monthly');
+export const weeklyProcessAnalysisStep = (context) => processAnalysisStep(context, 'weekly');
+export const monthlyProcessAnalysisStep = (context) => processAnalysisStep(context, 'monthly');
 
 export const paidTrafficAnalysisWeekly = new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(createWeeklyRunner())
-  .withPostProcessors([sendRequestToMystique])
+  .addStep('import-data', weeklyImportDataStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('process-analysis', weeklyProcessAnalysisStep)
   .build();
 
 export const paidTrafficAnalysisMonthly = new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(createMonthlyRunner())
-  .withPostProcessors([sendRequestToMystique])
+  .addStep('import-data', monthlyImportDataStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('process-analysis', monthlyProcessAnalysisStep)
   .build();
