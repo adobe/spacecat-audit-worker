@@ -15,6 +15,7 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { Audit as AuditModel, Site as SiteModel } from '@adobe/spacecat-shared-data-access';
+import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import sinon from 'sinon';
 import nock from 'nock';
 import { MockContextBuilder } from '../shared.js';
@@ -329,5 +330,96 @@ describe('Job-based Step-Audit Tests', () => {
     };
 
     await runner.run(messageNoToken, context);
+  });
+
+  it('creates scrape job when step destination is SCRAPE_CLIENT', async () => {
+    // Test the SCRAPE_CLIENT destination path in chainStep method (lines 55-60)
+    const mockScrapeJob = 'scrape-job-123';
+    const mockScrapeClient = {
+      createScrapeJob: sandbox.stub().resolves(mockScrapeJob),
+    };
+
+    // Stub ScrapeClient.createFrom to return our mock
+    const scrapeClientStub = sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async () => ({
+        urls: [{ url: baseURL }],
+        siteId: site.getId(),
+        processingType: 'default',
+        completionQueueUrl: 'https://space.cat/audit-jobs',
+      }), AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+      .addStep('second', async () => ({ baz: 'qux' }))
+      .build();
+
+    const step = runner.getStep('first');
+    const stepResult = {
+      urls: [{ url: baseURL }],
+      siteId: site.getId(),
+      processingType: 'default',
+      completionQueueUrl: 'https://space.cat/audit-jobs',
+    };
+    const job = createMockJob({
+      jobId: 'job-123',
+      payload: { siteId: site.getId() },
+    });
+
+    const testContext = {
+      ...context,
+      type: 'content-audit',
+      job,
+      urls: [baseURL],
+      log: context.log,
+      env: {
+        AUDIT_JOBS_QUEUE_URL: 'https://space.cat/audit-jobs',
+      },
+    };
+
+    const result = await runner.chainStep(step, stepResult, testContext);
+
+    expect(scrapeClientStub).to.have.been.calledWith(testContext);
+    expect(mockScrapeClient.createScrapeJob).to.have.been.called;
+    expect(context.log.info).to.have.been.calledWith(sinon.match(/Creating new scrapeJob with the ScrapeClient/));
+    expect(context.log.info).to.have.been.calledWith(`Crated scrapeJob: ${mockScrapeJob}`);
+    expect(result).to.deep.equal(stepResult);
+  });
+
+  it('handles scrapeJobId in auditContext and gets scrape result paths', async () => {
+    // Test lines 117-120: scrapeJobId handling in run method
+    const mockScrapeResultMap = { path1: 'result1', path2: 'result2' };
+    const mockScrapeClient = {
+      getScrapeResultPaths: sandbox.stub().resolves(mockScrapeResultMap),
+    };
+
+    // Stub ScrapeClient.createFrom to return our mock
+    const scrapeClientStub = sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+    const runner = new AuditBuilder()
+      .withAsyncJob()
+      .addStep('first', async (stepContext) => {
+        // Verify scrapeResultMap is added to context
+        expect(stepContext.scrapeResultMap).to.deep.equal(mockScrapeResultMap);
+        return { ok: true };
+      })
+      .build();
+
+    runner.jobProvider = async () => createMockJob({
+      jobId: 'job-123',
+      payload: { siteId: site.getId() },
+    });
+
+    const message = {
+      type: 'content-audit',
+      jobId: 'job-123',
+      auditContext: {
+        scrapeJobId: 'scrape-job-456',
+      },
+    };
+
+    await runner.run(message, context);
+
+    expect(scrapeClientStub).to.have.been.calledWith(context);
+    expect(mockScrapeClient.getScrapeResultPaths).to.have.been.calledWith('scrape-job-456');
   });
 });

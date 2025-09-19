@@ -13,10 +13,11 @@
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { DeleteObjectsCommand } from '@aws-sdk/client-s3';
 
+import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { saveIntermediateResults } from './utils.js';
 import { sleep } from '../support/utils.js';
 import { accessibilityOpportunitiesMap } from '../accessibility/utils/constants.js';
-import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 import { formatWcagRule } from '../accessibility/utils/generate-individual-opportunities.js';
 
 export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
@@ -40,9 +41,9 @@ export function generateAccessibilityFilename(url) {
 /**
  * Step 1: Send URLs to content scraper for accessibility-specific processing
  */
-export async function scrapeAccessibilityData(context, auditContext) {
+export async function scrapeAccessibilityData(context, auditContext, scrapeClient) {
   const {
-    site, job, log, env, sqs,
+    site, job, log,
   } = context;
   const jobMetadata = job.getMetadata();
   const { enableAuthentication = true } = jobMetadata.payload;
@@ -53,19 +54,10 @@ export async function scrapeAccessibilityData(context, auditContext) {
     audits,
   } = auditContext;
 
-  const siteId = site.getId();
-  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-
-  if (!bucketName) {
-    const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
-    log.error(errorMsg);
-    return;
-  }
-
   // Check if we have URLs to scrape
   if (!isNonEmptyArray(previewUrls)) {
     log.warn('[preflight-audit] No URLs to scrape for accessibility audit');
-    return;
+    return null;
   }
 
   log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Step 1: Preparing accessibility scrape`);
@@ -80,61 +72,41 @@ export async function scrapeAccessibilityData(context, auditContext) {
     }
   });
 
-  // Use the URLs from the preflight job request directly
-  const urlsToScrape = previewUrls.map((url) => ({ url }));
-  log.info(`[preflight-audit] Using preview URLs for accessibility audit: ${JSON.stringify(urlsToScrape, null, 2)}`);
+  log.info(`[preflight-audit] Sending ${previewUrls.length} URLs to content scraper for accessibility audit`);
+  let scrapeJob = null;
+  const scrapeJobData = {
+    urls: previewUrls,
+    options: {
+      enableAuthentication,
+      a11yPreflight: true,
+      ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
+    },
+    customHeaders: {},
+    processingType: 'accessibility',
+    maxScrapeAge: 0, // Force fresh scrape
+  };
 
-  // Force re-scrape all URLs regardless of existing data
-  log.info(`[preflight-audit] Force re-scraping all ${urlsToScrape.length} URLs for accessibility audit`);
+  try {
+    log.debug(`[preflight-audit] Creating ScrapeJob for accessibility audit: ${JSON.stringify(scrapeJobData, null, 2)}`);
+    scrapeJob = await scrapeClient.createScrapeJob(scrapeJobData);
 
-  if (urlsToScrape.length > 0) {
-    log.info(`[preflight-audit] Sending ${urlsToScrape.length} URLs to content scraper for accessibility audit`);
+    log.debug(`[preflight-audit] Created ScrapeJob: ${JSON.stringify(scrapeJob, null, 2)}`);
+    log.debug(`[preflight-audit] Processing type: ${scrapeJob.processingType}`);
+    log.debug(`[preflight-audit] ScrapeJobId: ${scrapeJob.id}`);
 
-    try {
-      const scrapeMessage = {
-        urls: urlsToScrape,
-        siteId,
-        jobId: siteId, // Override jobId with siteId for correct storage path
-        processingType: 'accessibility',
-        s3BucketName: bucketName,
-        completionQueueUrl: env.AUDIT_JOBS_QUEUE_URL,
-        skipMessage: true,
-        skipStorage: false,
-        allowCache: false,
-        forceRescrape: true,
-        options: {
-          enableAuthentication,
-          a11yPreflight: true,
-          ...(context.promiseToken ? { promiseToken: context.promiseToken } : {}),
-        },
-      };
-
-      log.debug(`[preflight-audit] Scrape message being sent: ${JSON.stringify(scrapeMessage, null, 2)}`);
-      log.debug(`[preflight-audit] Processing type: ${scrapeMessage.processingType}`);
-      log.debug(`[preflight-audit] S3 bucket: ${scrapeMessage.s3BucketName}`);
-      log.debug(`[preflight-audit] Completion queue: ${scrapeMessage.completionQueueUrl}`);
-
-      // Send to content scraper queue
-      log.info(`[preflight-audit] Sending to queue: ${env.CONTENT_SCRAPER_QUEUE_URL}`);
-      await sqs.sendMessage(env.CONTENT_SCRAPER_QUEUE_URL, scrapeMessage);
-      log.info(
-        `[preflight-audit] Sent accessibility scraping request to content scraper for ${urlsToScrape.length} URLs`,
-      );
-    } catch (error) {
-      log.error(
-        `[preflight-audit] Failed to send accessibility scraping request: ${error.message}`,
-      );
-      throw error;
-    }
-  } else {
-    log.info('[preflight-audit] No URLs to scrape');
+    return scrapeJob.id;
+  } catch (error) {
+    log.error(
+      `[preflight-audit] Failed to create accessibility ScrapeJob: ${error.message}`,
+    );
+    throw error;
   }
 }
 
 /**
  * Step 2: Process scraped accessibility data and create opportunities
  */
-export async function processAccessibilityOpportunities(context, auditContext) {
+export async function processAccessibilityOpportunities(context, auditContext, scrapeResultPaths) {
   const {
     site, job, log, env, s3Client,
   } = context;
@@ -149,7 +121,6 @@ export async function processAccessibilityOpportunities(context, auditContext) {
 
   const accessibilityStartTime = Date.now();
   const accessibilityStartTimestamp = new Date().toISOString();
-  const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
 
   if (!bucketName) {
@@ -164,10 +135,9 @@ export async function processAccessibilityOpportunities(context, auditContext) {
     // Process each preview URL's accessibility result file
     for (const url of previewUrls) {
       try {
-        // Generate the expected filename for this URL
-        const filename = generateAccessibilityFilename(url);
+        // Get the corresponding seKey from scrapeResultPaths
+        const fileKey = scrapeResultPaths.get(url);
 
-        const fileKey = `accessibility-preflight/${siteId}/${filename}`;
         log.info(`[preflight-audit] Processing accessibility file: ${fileKey}`);
 
         // Get the accessibility result file from S3 using existing utility
@@ -281,10 +251,7 @@ Accessibility audit completed in ${accessibilityElapsed} seconds`,
 
     // Clean up individual accessibility files after processing
     try {
-      const filesToDelete = auditContext.previewUrls.map((url) => {
-        const filename = generateAccessibilityFilename(url);
-        return `accessibility-preflight/${siteId}/${filename}`;
-      });
+      const filesToDelete = [...scrapeResultPaths.values()];
 
       log.info(`[preflight-audit] Cleaning up ${filesToDelete.length} individual accessibility files`);
 
@@ -336,24 +303,23 @@ export default async function accessibility(context, auditContext) {
       return;
     }
 
+    const scrapeClient = ScrapeClient.createFrom(context);
+
     // Start timing for the entire accessibility scraping process (sending to scraper + polling)
     const scrapeStartTime = Date.now();
     const scrapeStartTimestamp = new Date().toISOString();
 
     // Step 1: Send URLs to content scraper for accessibility-specific processing
-    await scrapeAccessibilityData(context, auditContext);
+    const scrapeJobId = await scrapeAccessibilityData(context, auditContext, scrapeClient);
 
     // Poll for content scraper to process the URLs
-    const { s3Client, env } = context;
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const siteId = context.site.getId();
     const jobId = context.job?.getId();
 
     log.debug('[preflight-audit] Starting to poll for accessibility data');
-    log.debug(`[preflight-audit] S3 Bucket: ${bucketName}`);
     log.debug(`[preflight-audit] Site ID: ${siteId}`);
     log.debug(`[preflight-audit] Job ID: ${jobId}`);
-    log.debug(`[preflight-audit] Looking for data in path: accessibility-preflight/${siteId}/`);
+    log.debug(`[preflight-audit] Scrape Job ID: ${scrapeJobId}`);
 
     const maxWaitTime = 10 * 60 * 1000;
     // 1 second poll interval
@@ -372,40 +338,17 @@ export default async function accessibility(context, auditContext) {
       }
 
       try {
-        log.info(`[preflight-audit] Polling attempt - checking S3 bucket: ${bucketName}`);
+        log.info(`[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: ${scrapeJobId}`);
 
-        // Check if accessibility data files exist in S3 using helper function
-        const objectKeys = await getObjectKeysUsingPrefix(
-          s3Client,
-          bucketName,
-          `accessibility-preflight/${siteId}/`,
-          log,
-          100,
-          '.json',
-        );
+        const scrapeJob = await scrapeClient.getScrapeJobStatus(scrapeJobId);
 
-        // Check if we have the expected accessibility files
-        const foundFiles = objectKeys.filter((key) => {
-          // Extract filename from the S3 key
-          const pathParts = key.split('/');
-          const filename = pathParts[pathParts.length - 1];
+        log.info(`[preflight-audit] ScrapeJob Status: ${scrapeJob.status}`);
 
-          // Check if this is one of our expected files
-          return expectedFiles.includes(filename);
-        });
-
-        if (foundFiles && foundFiles.length >= expectedFiles.length) {
-          log.info(`[preflight-audit] Found ${foundFiles.length} accessibility files out of ${expectedFiles.length} expected, accessibility processing complete`);
-
-          // Log the found files for debugging
-          foundFiles.forEach((key) => {
-            log.debug(`[preflight-audit] Accessibility file: ${key}`);
-          });
+        if (scrapeJob.status === 'COMPLETE') {
+          log.info('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
           return;
         }
-
-        log.info(`[preflight-audit] Found ${foundFiles.length} out of ${expectedFiles.length} expected accessibility files, continuing to wait...`);
-        log.info('[preflight-audit] No accessibility data yet, waiting...');
+        log.info('[preflight-audit] ScrapeJob not completed yet, waiting...');
         await sleep(pollInterval);
 
         // Recursively call to continue polling
@@ -436,9 +379,11 @@ export default async function accessibility(context, auditContext) {
       endTime: scrapeEndTimestamp,
     });
 
+    const scrapeResultPaths = scrapeClient.getScrapeResultPaths(scrapeJobId);
+
     log.info('[preflight-audit] Polling completed, proceeding to process accessibility data');
 
     // Step 2: Process scraped data and create opportunities
-    await processAccessibilityOpportunities(context, auditContext);
+    await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
   }
 }

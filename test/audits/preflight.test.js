@@ -21,6 +21,7 @@ import esmock from 'esmock';
 import AWSXray from 'aws-xray-sdk';
 import { AzureOpenAIClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import { Site } from '@adobe/spacecat-shared-data-access';
+import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import {
   scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
   AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
@@ -637,6 +638,7 @@ describe('Preflight Audit', () => {
           job,
           site,
           s3Client,
+          scrapeResultMap: new Map(),
           func: {
             version: 'test',
           },
@@ -678,6 +680,7 @@ describe('Preflight Audit', () => {
 
     it('completes successfully on the happy path for the suggest step', async () => {
       context.promiseToken = 'mock-promise-token';
+      context.scrapeResultMap.set('https://main--example--page.aem.page/page1', 'scrapes/site-123/page1/scrape.json');
       const head = '<head><a href="https://example.com/header-url"/></head>';
       const body = '<body><a href="https://example.com/broken"></a><a href="https://example.com/another-broken-url"></a><h1>Page 1 H1</h1><h1>Page 1 H1</h1></h1></body>';
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
@@ -893,6 +896,7 @@ describe('Preflight Audit', () => {
 
     it('completes successfully when finalUrl has trailing slash but input URL gets normalized', async () => {
       context.promiseToken = 'mock-promise-token';
+      context.scrapeResultMap.set('https://main--example--page.aem.page', 'scrapes/site-123/scrape.json');
       const head = '<head><title>Root Page</title></head>';
       const body = '<body><h1>Root H1</h1><p>Root content with lorem ipsum text</p></body>';
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
@@ -968,6 +972,7 @@ describe('Preflight Audit', () => {
     // eslint-disable-next-line func-names
     it('completes successfully on the happy path for the identify step', async function () {
       this.timeout(10000); // Increase timeout to 10 seconds
+      context.scrapeResultMap.set('https://main--example--page.aem.page/page1', 'scrapes/site-123/page1/scrape.json');
       const head = '<head><link rel="canonical" href="https://main--example--page.aem.page/page1"/></head>';
       const body = `<body>${'a'.repeat(10)}lorem ipsum<a href="broken"></a><a href="http://test.com"></a></body>`;
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
@@ -1048,6 +1053,7 @@ describe('Preflight Audit', () => {
     });
 
     it('completes successfully on the happy path for the identify step with readability check', async () => {
+      context.scrapeResultMap.set('https://main--example--page.aem.page/readability-test', 'scrapes/site-123/readability-test/scrape.json');
       const head = '<head><title>Readability Test Page</title></head>';
       const body = '<body><p>The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience.</p></body>';
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
@@ -1142,19 +1148,63 @@ describe('Preflight Audit', () => {
           urls: ['https://main--example--page.aem.page/page1'],
         },
       });
-      s3Client.send.onCall(0).rejects(new Error('S3 error'));
 
-      await expect(preflightAuditFunction(context)).to.be.rejectedWith('S3 error');
+      // Mock one of the PREFLIGHT_HANDLERS to throw an error
+      // This will cause an error during the handler execution phase
+      const canonicalStub = sinon.stub().rejects(new Error('Handler execution failed'));
 
-      // Verify that AsyncJob.findById was called for the error handling
-      expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
+      // Use esmock to replace the canonical handler with our failing stub
+      const { preflightAudit: failingPreflightAudit } = await esmock('../../src/preflight/handler.js', {
+        '../../src/preflight/canonical.js': {
+          default: canonicalStub,
+        },
+        '../../src/preflight/accessibility.js': {
+          default: sinon.stub().resolves(), // Keep accessibility mocked as no-op
+        },
+      });
 
-      // Get the last call to AsyncJob.findById (which is the final save)
-      const jobEntityCalls = context.dataAccess.AsyncJob.findById.returnValues;
-      const finalJobEntity = await jobEntityCalls[jobEntityCalls.length - 1];
+      // Create error handling job entity
+      const errorJobEntity = {
+        getId: () => 'job-123',
+        setResult: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
 
-      expect(finalJobEntity.setStatus).to.have.been.calledWith('FAILED');
-      expect(finalJobEntity.save).to.have.been.called;
+      // Mock AsyncJob.findById to succeed normally, then succeed for error handling
+      context.dataAccess.AsyncJob.findById = sinon.stub()
+        .onCall(0).resolves({
+          getId: () => 'job-123',
+          setResult: sinon.stub(),
+          setStatus: sinon.stub(),
+          setResultType: sinon.stub(),
+          setEndedAt: sinon.stub(),
+          setError: sinon.stub(),
+          save: sinon.stub().resolves(),
+        })
+        .onCall(1)
+        .resolves(errorJobEntity);
+
+      // The function should re-throw the error after handling it
+      await expect(failingPreflightAudit(context)).to.be.rejectedWith('Handler execution failed');
+
+      // Verify that AsyncJob.findById was called twice:
+      // 1. First call during normal execution (succeeds)
+      // 2. Second call in the catch block for error handling
+      expect(context.dataAccess.AsyncJob.findById).to.have.been.calledTwice;
+
+      // Verify error handling behavior
+      expect(errorJobEntity.setStatus).to.have.been.calledWith('FAILED');
+      expect(errorJobEntity.setError).to.have.been.calledWith({
+        code: 'EXCEPTION',
+        message: 'Handler execution failed',
+        details: sinon.match.string, // Stack trace
+      });
+      expect(errorJobEntity.setEndedAt).to.have.been.called;
+      expect(errorJobEntity.save).to.have.been.called;
     });
 
     it('logs timing information for each sub-audit', async () => {
@@ -1235,6 +1285,7 @@ describe('Preflight Audit', () => {
     });
 
     it('handles individual AUDIT_BODY_SIZE check', async () => {
+      context.scrapeResultMap.set('https://main--example--page.aem.page/page1', 'scrapes/site-123/page1/scrape.json');
       job.getMetadata = () => ({
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
@@ -1289,6 +1340,7 @@ describe('Preflight Audit', () => {
     });
 
     it('handles individual AUDIT_LOREM_IPSUM check', async () => {
+      context.scrapeResultMap.set('https://main--example--page.aem.page/page1', 'scrapes/site-123/page1/scrape.json');
       job.getMetadata = () => ({
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
@@ -1343,6 +1395,7 @@ describe('Preflight Audit', () => {
     });
 
     it('handles individual AUDIT_H1_COUNT check', async () => {
+      context.scrapeResultMap.set('https://main--example--page.aem.page/page1', 'scrapes/site-123/page1/scrape.json');
       job.getMetadata = () => ({
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
@@ -1420,6 +1473,7 @@ describe('Preflight Audit', () => {
           },
           site,
           s3Client,
+          scrapeResultMap: new Map([['https://main--example--page.aem.page/page1', 'scrapes/site-123/page1/scrape.json']]),
           func: {
             version: 'test',
           },
@@ -1485,6 +1539,7 @@ describe('Preflight Audit', () => {
           },
           site,
           s3Client,
+          scrapeResultMap: new Map([['https://main--example--page.aem.page/page1', 'scrapes/site-123/page1/scrape.json']]),
           func: {
             version: 'test',
           },
@@ -1653,6 +1708,7 @@ describe('Preflight Audit', () => {
     let s3Client;
     let sqs;
     let log;
+    let mockScrapeClient;
 
     beforeEach(() => {
       s3Client = {
@@ -1666,6 +1722,12 @@ describe('Preflight Audit', () => {
         warn: sinon.stub(),
         error: sinon.stub(),
         debug: sinon.stub(),
+      };
+      mockScrapeClient = {
+        createScrapeJob: sinon.stub().returns({
+          id: 'scrape-job-123',
+          processingType: 'accessibility-preflight',
+        }),
       };
 
       context = {
@@ -1685,6 +1747,17 @@ describe('Preflight Audit', () => {
           S3_SCRAPER_BUCKET_NAME: 'test-bucket',
           CONTENT_SCRAPER_QUEUE_URL: 'https://sqs.test.com/scraper',
           AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/audit',
+          SCRAPE_JOB_CONFIGURATION: JSON.stringify({
+            queues: ['spacecat-scrape-queue-1', 'spacecat-scrape-queue-2', 'spacecat-scrape-queue-3'],
+            scrapeWorkerQueue: 'https://sqs.us-east-1.amazonaws.com/1234567890/scrape-worker-queue',
+            scrapeQueueUrlPrefix: 'https://sqs.us-east-1.amazonaws.com/1234567890/',
+            s3Bucket: 's3-bucket',
+            options: {
+              enableJavascript: true,
+              hideConsentBanners: false,
+            },
+            maxUrlsPerJob: 3,
+          }),
         },
         s3Client,
         sqs,
@@ -1772,48 +1845,30 @@ describe('Preflight Audit', () => {
       it('should send accessibility scraping request successfully', async () => {
         const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
 
-        await scrapeAccessibilityData(context, auditContext);
+        const result = await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
-        expect(sqs.sendMessage).to.have.been.calledOnce;
-        const message = sqs.sendMessage.getCall(0).args[1];
+        expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+        const scrapeJobData = mockScrapeClient.createScrapeJob.getCall(0).args[0];
 
-        expect(message).to.deep.include({
-          siteId: 'site-123',
-          jobId: 'site-123',
+        expect(scrapeJobData).to.deep.include({
+          urls: ['https://example.com/page1', 'https://example.com/page2'],
           processingType: 'accessibility',
-          s3BucketName: 'test-bucket',
-          completionQueueUrl: 'https://sqs.test.com/audit',
-          skipMessage: true,
-          skipStorage: false,
-          allowCache: false,
-          forceRescrape: true,
+          maxScrapeAge: 0,
         });
 
-        expect(message.urls).to.deep.equal([
-          { url: 'https://example.com/page1' },
-          { url: 'https://example.com/page2' },
-        ]);
-
-        expect(message.options).to.deep.include({
+        expect(scrapeJobData.options).to.deep.include({
           enableAuthentication: true,
           a11yPreflight: true,
           promiseToken: 'test-token',
         });
 
+        expect(scrapeJobData.customHeaders).to.deep.equal({});
+
+        expect(result).to.equal('scrape-job-123');
+
         expect(log.info).to.have.been.calledWith(
-          '[preflight-audit] Sent accessibility scraping request to content scraper for 2 URLs',
+          '[preflight-audit] Sending 2 URLs to content scraper for accessibility audit',
         );
-      });
-
-      it('should handle missing S3 bucket configuration', async () => {
-        const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
-
-        context.env.S3_SCRAPER_BUCKET_NAME = null;
-
-        await scrapeAccessibilityData(context, auditContext);
-
-        expect(log.error).to.have.been.calledWith('Missing S3 bucket configuration for accessibility audit');
-        expect(sqs.sendMessage).to.not.have.been.called;
       });
 
       it('should handle empty preview URLs', async () => {
@@ -1821,30 +1876,16 @@ describe('Preflight Audit', () => {
 
         auditContext.previewUrls = [];
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
         expect(log.warn).to.have.been.calledWith('[preflight-audit] No URLs to scrape for accessibility audit');
-        expect(sqs.sendMessage).to.not.have.been.called;
-      });
-
-      it('should handle SQS send error', async () => {
-        const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
-
-        const error = new Error('SQS error');
-        sqs.sendMessage.rejects(error);
-
-        await expect(scrapeAccessibilityData(context, auditContext))
-          .to.be.rejectedWith('SQS error');
-
-        expect(log.error).to.have.been.calledWith(
-          '[preflight-audit] Failed to send accessibility scraping request: SQS error',
-        );
+        expect(mockScrapeClient.createScrapeJob).to.not.have.been.called;
       });
 
       it('should create accessibility audit entries for all pages', async () => {
         const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
         // Verify accessibility audit entries were created
         const page1Audit = auditContext.audits.get('https://example.com/page1');
@@ -1878,12 +1919,12 @@ describe('Preflight Audit', () => {
           previewUrls: ['https://example.com/page1', 'https://example.com/page2'],
         };
 
-        await scrapeAccessibilityData(context, auditContextWithMissingEntry);
+        await scrapeAccessibilityData(context, auditContextWithMissingEntry, mockScrapeClient);
 
         expect(log.warn).to.have.been.calledWith(
           '[preflight-audit] No audit entry found for URL: https://example.com/page2',
         );
-        expect(sqs.sendMessage).to.have.been.calledOnce;
+        expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
       });
 
       it('should include promiseToken in options when available', async () => {
@@ -1891,10 +1932,11 @@ describe('Preflight Audit', () => {
 
         context.promiseToken = 'test-promise-token';
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
-        const message = sqs.sendMessage.getCall(0).args[1];
-        expect(message.options.promiseToken).to.equal('test-promise-token');
+        expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+        const scrapeJobData = mockScrapeClient.createScrapeJob.getCall(0).args[0];
+        expect(scrapeJobData.options.promiseToken).to.equal('test-promise-token');
       });
 
       it('should not include promiseToken in options when not available', async () => {
@@ -1902,31 +1944,29 @@ describe('Preflight Audit', () => {
 
         delete context.promiseToken;
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
-        const message = sqs.sendMessage.getCall(0).args[1];
-        expect(message.options.promiseToken).to.be.undefined;
+        expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+        const scrapeJobData = mockScrapeClient.createScrapeJob.getCall(0).args[0];
+        expect(scrapeJobData.options.promiseToken).to.be.undefined;
       });
 
-      it('should log detailed scrape message information', async () => {
+      it('should log detailed scrape job information', async () => {
         const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
         expect(log.debug).to.have.been.calledWith(
-          sinon.match(/Scrape message being sent:/),
+          sinon.match(/Creating ScrapeJob for accessibility audit:/),
         );
         expect(log.debug).to.have.been.calledWith(
-          '[preflight-audit] Processing type: accessibility',
+          sinon.match(/Created ScrapeJob:/),
         );
         expect(log.debug).to.have.been.calledWith(
-          '[preflight-audit] S3 bucket: test-bucket',
+          '[preflight-audit] Processing type: accessibility-preflight',
         );
         expect(log.debug).to.have.been.calledWith(
-          '[preflight-audit] Completion queue: https://sqs.test.com/audit',
-        );
-        expect(log.info).to.have.been.calledWith(
-          '[preflight-audit] Sending to queue: https://sqs.test.com/scraper',
+          '[preflight-audit] ScrapeJobId: scrape-job-123',
         );
       });
 
@@ -1940,10 +1980,11 @@ describe('Preflight Audit', () => {
           },
         });
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
-        const message = sqs.sendMessage.getCall(0).args[1];
-        expect(message.options.enableAuthentication).to.be.false;
+        expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+        const scrapeJobData = mockScrapeClient.createScrapeJob.getCall(0).args[0];
+        expect(scrapeJobData.options.enableAuthentication).to.be.false;
       });
 
       it('should handle enableAuthentication not specified in job metadata (defaults to true)', async () => {
@@ -1954,10 +1995,11 @@ describe('Preflight Audit', () => {
           payload: {},
         });
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
-        const message = sqs.sendMessage.getCall(0).args[1];
-        expect(message.options.enableAuthentication).to.be.true;
+        expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+        const scrapeJobData = mockScrapeClient.createScrapeJob.getCall(0).args[0];
+        expect(scrapeJobData.options.enableAuthentication).to.be.true;
       });
 
       it('should handle single URL in previewUrls', async () => {
@@ -1965,15 +2007,15 @@ describe('Preflight Audit', () => {
 
         auditContext.previewUrls = ['https://example.com/single-page'];
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
-        expect(sqs.sendMessage).to.have.been.calledOnce;
-        const message = sqs.sendMessage.getCall(0).args[1];
-        expect(message.urls).to.deep.equal([
-          { url: 'https://example.com/single-page' },
+        expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+        const scrapeJobData = mockScrapeClient.createScrapeJob.getCall(0).args[0];
+        expect(scrapeJobData.urls).to.deep.equal([
+          'https://example.com/single-page',
         ]);
         expect(log.info).to.have.been.calledWith(
-          '[preflight-audit] Sent accessibility scraping request to content scraper for 1 URLs',
+          '[preflight-audit] Sending 1 URLs to content scraper for accessibility audit',
         );
       });
 
@@ -1988,13 +2030,13 @@ describe('Preflight Audit', () => {
           manyUrls.map((url) => [url, { audits: [] }]),
         );
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
-        expect(sqs.sendMessage).to.have.been.calledOnce;
-        const message = sqs.sendMessage.getCall(0).args[1];
-        expect(message.urls).to.have.lengthOf(50);
+        expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+        const scrapeJobData = mockScrapeClient.createScrapeJob.getCall(0).args[0];
+        expect(scrapeJobData.urls).to.have.lengthOf(50);
         expect(log.info).to.have.been.calledWith(
-          '[preflight-audit] Sent accessibility scraping request to content scraper for 50 URLs',
+          '[preflight-audit] Sending 50 URLs to content scraper for accessibility audit',
         );
       });
 
@@ -2007,14 +2049,14 @@ describe('Preflight Audit', () => {
           'https://example.com/page#fragment',
         ];
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
-        expect(sqs.sendMessage).to.have.been.calledOnce;
-        const message = sqs.sendMessage.getCall(0).args[1];
-        expect(message.urls).to.deep.equal([
-          { url: 'https://example.com/page with spaces' },
-          { url: 'https://example.com/page-with-query?param=value&other=123' },
-          { url: 'https://example.com/page#fragment' },
+        expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+        const scrapeJobData = mockScrapeClient.createScrapeJob.getCall(0).args[0];
+        expect(scrapeJobData.urls).to.deep.equal([
+          'https://example.com/page with spaces',
+          'https://example.com/page-with-query?param=value&other=123',
+          'https://example.com/page#fragment',
         ]);
       });
 
@@ -2030,7 +2072,7 @@ describe('Preflight Audit', () => {
           ]),
         };
 
-        await scrapeAccessibilityData(context, auditContextWithExisting);
+        await scrapeAccessibilityData(context, auditContextWithExisting, mockScrapeClient);
 
         // Verify that accessibility audit was added to existing audits
         const page1Audit = auditContextWithExisting.audits.get('https://example.com/page1');
@@ -2055,7 +2097,7 @@ describe('Preflight Audit', () => {
 
         auditContext.step = 'custom-step';
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
         expect(log.info).to.have.been.calledWith(
           '[preflight-audit] site: site-123, job: job-123, step: custom-step. Step 1: Preparing accessibility scrape',
@@ -2067,63 +2109,60 @@ describe('Preflight Audit', () => {
 
         delete auditContext.step;
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
         expect(log.info).to.have.been.calledWith(
           '[preflight-audit] site: site-123, job: job-123, step: undefined. Step 1: Preparing accessibility scrape',
         );
       });
 
-      it('should handle empty string S3 bucket name', async () => {
-        const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
-
-        context.env.S3_SCRAPER_BUCKET_NAME = '';
-
-        await scrapeAccessibilityData(context, auditContext);
-
-        expect(log.error).to.have.been.calledWith('Missing S3 bucket configuration for accessibility audit');
-        expect(sqs.sendMessage).to.not.have.been.called;
-      });
-
-      it('should handle undefined S3 bucket name', async () => {
-        const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
-
-        context.env.S3_SCRAPER_BUCKET_NAME = undefined;
-
-        await scrapeAccessibilityData(context, auditContext);
-
-        expect(log.error).to.have.been.calledWith('Missing S3 bucket configuration for accessibility audit');
-        expect(sqs.sendMessage).to.not.have.been.called;
-      });
-
-      it('should log preview URLs being used', async () => {
-        const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
-
-        await scrapeAccessibilityData(context, auditContext);
-
-        expect(log.info).to.have.been.calledWith(
-          '[preflight-audit] Using preview URLs for accessibility audit: [\n  {\n    "url": "https://example.com/page1"\n  },\n  {\n    "url": "https://example.com/page2"\n  }\n]',
-        );
-      });
-
-      it('should log force re-scraping message', async () => {
-        const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
-
-        await scrapeAccessibilityData(context, auditContext);
-
-        expect(log.info).to.have.been.calledWith(
-          '[preflight-audit] Force re-scraping all 2 URLs for accessibility audit',
-        );
-      });
-
       it('should log sending URLs message', async () => {
         const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
         expect(log.info).to.have.been.calledWith(
           '[preflight-audit] Sending 2 URLs to content scraper for accessibility audit',
         );
+      });
+
+      it('should handle createScrapeJob error and throw', async () => {
+        const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
+
+        const error = new Error('Failed to create scrape job');
+        mockScrapeClient.createScrapeJob.throws(error);
+
+        await expect(scrapeAccessibilityData(context, auditContext, mockScrapeClient))
+          .to.be.rejectedWith('Failed to create scrape job');
+
+        expect(log.error).to.have.been.calledWith(
+          '[preflight-audit] Failed to create accessibility ScrapeJob: Failed to create scrape job',
+        );
+      });
+
+      it('should handle empty previewUrls array and log info message', async () => {
+        const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
+
+        auditContext.previewUrls = [];
+
+        const result = await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
+
+        expect(result).to.be.null;
+        expect(log.warn).to.have.been.calledWith('[preflight-audit] No URLs to scrape for accessibility audit');
+        expect(mockScrapeClient.createScrapeJob).to.not.have.been.called;
+      });
+
+      it('should handle case where previewUrls.length is 0 after filtering', async () => {
+        const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
+
+        // Set previewUrls to empty array to trigger the else branch at lines 106-108
+        auditContext.previewUrls = [];
+
+        const result = await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
+
+        expect(result).to.be.null;
+        expect(log.warn).to.have.been.calledWith('[preflight-audit] No URLs to scrape for accessibility audit');
+        expect(mockScrapeClient.createScrapeJob).to.not.have.been.called;
       });
     });
 
@@ -2147,7 +2186,6 @@ describe('Preflight Audit', () => {
 
         await accessibility(context, auditContext);
 
-        expect(sqs.sendMessage).to.not.have.been.called;
         expect(log.warn).to.have.been.calledWith(
           '[preflight-audit] No URLs to process for accessibility audit, skipping',
         );
@@ -2160,7 +2198,6 @@ describe('Preflight Audit', () => {
 
         await accessibility(context, auditContext);
 
-        expect(sqs.sendMessage).to.not.have.been.called;
         expect(log.warn).to.have.been.calledWith(
           '[preflight-audit] No URLs to process for accessibility audit, skipping',
         );
@@ -2172,17 +2209,35 @@ describe('Preflight Audit', () => {
 
         await accessibility(context, auditContext);
 
-        expect(sqs.sendMessage).to.not.have.been.called;
         expect(log.warn).to.have.been.calledWith(
           '[preflight-audit] No URLs to process for accessibility audit, skipping',
         );
       });
 
-      it('should execute accessibility workflow when checks is null', async () => {
+      // eslint-disable-next-line func-names
+      it('should execute accessibility workflow when checks is null', async function () {
+        this.timeout(10000); // Increase timeout for this test
         const accessibility = (await import('../../src/preflight/accessibility.js')).default;
 
         // Set checks to null to trigger the accessibility workflow
         auditContext.checks = null;
+
+        // Mock ScrapeClient to prevent actual message sending
+        const mockScrapeClientInstance = {
+          createScrapeJob: sinon.stub().returns({
+            id: 'scrape-job-123',
+            processingType: 'accessibility-preflight',
+          }),
+          getScrapeJobStatus: sinon.stub().resolves({
+            status: 'COMPLETE',
+          }),
+          getScrapeResultPaths: sinon.stub().returns(new Map([
+            ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+            ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+          ])),
+        };
+
+        const scrapeClientStub = sinon.stub(ScrapeClient, 'createFrom').returns(mockScrapeClientInstance);
 
         // Mock successful S3 operations for the entire workflow
         s3Client.send.callsFake((command) => {
@@ -2206,11 +2261,19 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await accessibility(context, auditContext);
+        try {
+          await accessibility(context, auditContext);
 
-        // Verify that the workflow was executed
-        expect(sqs.sendMessage).to.have.been.called;
-        expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
+          // Verify that the workflow was executed
+          expect(scrapeClientStub).to.have.been.calledWith(context);
+          expect(mockScrapeClientInstance.createScrapeJob).to.have.been.called;
+          expect(mockScrapeClientInstance.getScrapeJobStatus).to.have.been.called;
+          expect(mockScrapeClientInstance.getScrapeResultPaths).to.have.been.called;
+          expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
+        } finally {
+          // Clean up the stub
+          scrapeClientStub.restore();
+        }
       });
 
       it('should execute accessibility workflow when checks is undefined', async () => {
@@ -2219,6 +2282,23 @@ describe('Preflight Audit', () => {
         // Set checks to undefined to trigger the accessibility workflow
         auditContext.checks = undefined;
 
+        // Mock ScrapeClient to prevent actual message sending
+        const mockScrapeClientInstance = {
+          createScrapeJob: sinon.stub().returns({
+            id: 'scrape-job-123',
+            processingType: 'accessibility-preflight',
+          }),
+          getScrapeJobStatus: sinon.stub().resolves({
+            status: 'COMPLETE',
+          }),
+          getScrapeResultPaths: sinon.stub().returns(new Map([
+            ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+            ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+          ])),
+        };
+
+        const scrapeClientStub = sinon.stub(ScrapeClient, 'createFrom').returns(mockScrapeClientInstance);
+
         // Mock successful S3 operations for the entire workflow
         s3Client.send.callsFake((command) => {
           if (command.constructor.name === 'ListObjectsV2Command') {
@@ -2241,11 +2321,19 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await accessibility(context, auditContext);
+        try {
+          await accessibility(context, auditContext);
 
-        // Verify that the workflow was executed
-        expect(sqs.sendMessage).to.have.been.called;
-        expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
+          // Verify that the workflow was executed
+          expect(scrapeClientStub).to.have.been.calledWith(context);
+          expect(mockScrapeClientInstance.createScrapeJob).to.have.been.called;
+          expect(mockScrapeClientInstance.getScrapeJobStatus).to.have.been.called;
+          expect(mockScrapeClientInstance.getScrapeResultPaths).to.have.been.called;
+          expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
+        } finally {
+          // Clean up the stub
+          scrapeClientStub.restore();
+        }
       });
     });
 
@@ -2259,13 +2347,22 @@ describe('Preflight Audit', () => {
 
         context.env.S3_SCRAPER_BUCKET_NAME = null;
 
-        await processAccessibilityOpportunities(context, auditContext);
+        // Create scrapeResultPaths map as expected by the new workflow
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+          ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+        ]);
+
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
         expect(log.error).to.have.been.calledWith('Missing S3 bucket configuration for accessibility audit');
       });
 
       it('should handle missing accessibility data for URL', async () => {
         const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ]);
 
         // Mock S3 to return null for accessibility data
         s3Client.send.callsFake((command) => {
@@ -2279,7 +2376,7 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await processAccessibilityOpportunities(context, auditContext);
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
         expect(log.warn).to.have.been.calledWith(
           '[preflight-audit] No accessibility data found for https://example.com/page1 at key: accessibility-preflight/site-123/example_com_page1.json',
@@ -2303,7 +2400,13 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await processAccessibilityOpportunities(context, auditContext);
+        // Create scrapeResultPaths map as expected by the new workflow
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+          ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+        ]);
+
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
         expect(auditContext.timeExecutionBreakdown).to.have.lengthOf(1);
         expect(auditContext.timeExecutionBreakdown[0]).to.deep.include({
@@ -2316,6 +2419,9 @@ describe('Preflight Audit', () => {
 
       it('should process accessibility violations and create opportunities', async () => {
         const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ]);
 
         // Mock S3 to return accessibility data with violations
         s3Client.send.callsFake((command) => {
@@ -2348,7 +2454,7 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await processAccessibilityOpportunities(context, auditContext);
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
         // Verify that opportunities were created
         const page1Audit = auditContext.audits.get('https://example.com/page1');
@@ -2368,6 +2474,9 @@ describe('Preflight Audit', () => {
 
       it('should handle accessibility violations that do not match opportunity types', async () => {
         const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ]);
 
         // Mock S3 to return accessibility data with violations that don't match opportunity types
         s3Client.send.callsFake((command) => {
@@ -2398,7 +2507,7 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await processAccessibilityOpportunities(context, auditContext);
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
         // Verify that no opportunities were created for unknown violations
         const page1Audit = auditContext.audits.get('https://example.com/page1');
@@ -2409,6 +2518,9 @@ describe('Preflight Audit', () => {
 
       it('should handle accessibility violations with missing or undefined fields', async () => {
         const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ]);
 
         // Mock S3 to return accessibility data with missing/undefined fields to test fallbacks
         s3Client.send.callsFake((command) => {
@@ -2440,7 +2552,7 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await processAccessibilityOpportunities(context, auditContext);
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
         // Verify that opportunity was created with fallback values
         const page1Audit = auditContext.audits.get('https://example.com/page1');
@@ -2463,6 +2575,9 @@ describe('Preflight Audit', () => {
 
       it('should handle accessibility violations with partially missing htmlWithIssues and target arrays', async () => {
         const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ]);
 
         // Mock S3 to return accessibility data with partial arrays to test target fallback
         s3Client.send.callsFake((command) => {
@@ -2494,7 +2609,7 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await processAccessibilityOpportunities(context, auditContext);
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
         // Verify that opportunity was created with target selector fallback
         const page1Audit = auditContext.audits.get('https://example.com/page1');
@@ -2514,6 +2629,9 @@ describe('Preflight Audit', () => {
 
       it('should handle accessibility violations with null/undefined html in htmlWithIssues', async () => {
         const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ]);
 
         s3Client.send.callsFake((command) => {
           if (command.constructor.name === 'GetObjectCommand') {
@@ -2544,7 +2662,7 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await processAccessibilityOpportunities(context, auditContext);
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
         // Verify that opportunity was created with empty string fallbacks for html || ''
         const page1Audit = auditContext.audits.get('https://example.com/page1');
@@ -2569,6 +2687,10 @@ describe('Preflight Audit', () => {
 
       it('should handle missing accessibility audit entry for URL', async () => {
         const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+          ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+        ]);
 
         // Create audit context without accessibility audit entries
         const auditContextWithoutAccessibility = {
@@ -2594,7 +2716,11 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await processAccessibilityOpportunities(context, auditContextWithoutAccessibility);
+        await processAccessibilityOpportunities(
+          context,
+          auditContextWithoutAccessibility,
+          scrapeResultPaths,
+        );
 
         expect(log.warn).to.have.been.calledWith(
           '[preflight-audit] No accessibility audit found for URL: https://example.com/page1',
@@ -2603,6 +2729,9 @@ describe('Preflight Audit', () => {
 
       it('should handle accessibility data with violations but no items', async () => {
         const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ]);
 
         // Mock S3 to return accessibility data with violations but no items
         s3Client.send.callsFake((command) => {
@@ -2623,7 +2752,7 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await processAccessibilityOpportunities(context, auditContext);
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
         // Verify that no opportunities were created
         const page1Audit = auditContext.audits.get('https://example.com/page1');
@@ -2634,6 +2763,9 @@ describe('Preflight Audit', () => {
 
       it('should handle accessibility data with total violations count', async () => {
         const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ]);
 
         // Mock S3 to return accessibility data with total count
         s3Client.send.callsFake((command) => {
@@ -2666,7 +2798,7 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await processAccessibilityOpportunities(context, auditContext);
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
         // Verify that opportunities were created (excluding total count)
         const page1Audit = auditContext.audits.get('https://example.com/page1');
@@ -2684,6 +2816,9 @@ describe('Preflight Audit', () => {
 
       it('should handle accessibility data with missing htmlWithIssues and target arrays', async () => {
         const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ]);
 
         // Mock S3 to return accessibility data with missing arrays
         s3Client.send.callsFake((command) => {
@@ -2714,7 +2849,7 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await processAccessibilityOpportunities(context, auditContext);
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
         // Verify that opportunities were created with empty arrays
         const page1Audit = auditContext.audits.get('https://example.com/page1');
@@ -2726,6 +2861,9 @@ describe('Preflight Audit', () => {
 
       it('should handle accessibility data with mismatched htmlWithIssues and target arrays', async () => {
         const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ]);
 
         // Mock S3 to return accessibility data with mismatched arrays
         s3Client.send.callsFake((command) => {
@@ -2757,7 +2895,7 @@ describe('Preflight Audit', () => {
           return Promise.resolve({});
         });
 
-        await processAccessibilityOpportunities(context, auditContext);
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
         // Verify that opportunities were created with proper mapping
         const page1Audit = auditContext.audits.get('https://example.com/page1');
@@ -2767,6 +2905,67 @@ describe('Preflight Audit', () => {
         expect(accessibilityAudit.opportunities[0].htmlWithIssues).to.have.lengthOf(2);
         expect(accessibilityAudit.opportunities[0].htmlWithIssues[0].target_selector).to.equal('button');
         expect(accessibilityAudit.opportunities[0].htmlWithIssues[1].target_selector).to.equal(''); // Empty for missing target
+      });
+
+      it('should handle general error and add error opportunities to audit results', async () => {
+        const scrapeResultPaths = new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+          ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+        ]);
+
+        // Mock S3 to work for getObjectFromKey but fail for saveIntermediateResults
+        s3Client.send.callsFake((command) => {
+          if (command.constructor.name === 'GetObjectCommand') {
+            return Promise.resolve({
+              Body: {
+                transformToString: sinon.stub().resolves(JSON.stringify({
+                  violations: {},
+                })),
+              },
+            });
+          }
+          return Promise.resolve({});
+        });
+
+        // Mock saveIntermediateResults to throw an error to trigger the outer catch block
+        const saveIntermediateResultsStub = sinon.stub().throws(new Error('Save intermediate results failed'));
+
+        // Use esmock to mock the saveIntermediateResults import
+        const { processAccessibilityOpportunities: mockedProcessAccessibilityOpportunities } = await esmock('../../src/preflight/accessibility.js', {
+          '../../src/preflight/utils.js': {
+            saveIntermediateResults: saveIntermediateResultsStub,
+          },
+        });
+
+        await mockedProcessAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
+
+        // Verify that error opportunities were added to audit results for all URLs
+        const page1Audit = auditContext.audits.get('https://example.com/page1');
+        const page1AccessibilityAudit = page1Audit.audits.find((a) => a.name === 'accessibility');
+
+        const page2Audit = auditContext.audits.get('https://example.com/page2');
+        const page2AccessibilityAudit = page2Audit.audits.find((a) => a.name === 'accessibility');
+
+        expect(page1AccessibilityAudit.opportunities).to.have.lengthOf(1);
+        expect(page1AccessibilityAudit.opportunities[0]).to.deep.include({
+          type: 'accessibility-error',
+          title: 'Accessibility Audit Error',
+          description: 'Failed to complete accessibility audit: Save intermediate results failed',
+          severity: 'error',
+        });
+
+        expect(page2AccessibilityAudit.opportunities).to.have.lengthOf(1);
+        expect(page2AccessibilityAudit.opportunities[0]).to.deep.include({
+          type: 'accessibility-error',
+          title: 'Accessibility Audit Error',
+          description: 'Failed to complete accessibility audit: Save intermediate results failed',
+          severity: 'error',
+        });
+
+        expect(log.error).to.have.been.calledWith(
+          '[preflight-audit] site: site-123, job: job-123, step: identify. Accessibility audit failed: Save intermediate results failed',
+          sinon.match.instanceOf(Error),
+        );
       });
     });
 
@@ -2812,12 +3011,23 @@ describe('Preflight Audit', () => {
           },
           env: {
             S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            SCRAPE_JOB_CONFIGURATION: JSON.stringify({
+              queues: ['spacecat-scrape-queue-1'],
+              scrapeWorkerQueue: 'https://sqs.us-east-1.amazonaws.com/1234567890/scrape-worker-queue',
+              s3Bucket: 's3-bucket',
+              options: {
+                enableJavascript: true,
+                hideConsentBanners: false,
+              },
+              maxUrlsPerJob: 3,
+            }),
           },
           s3Client: pollingS3Client,
           sqs: {
             sendMessage: sinon.stub().resolves(),
           },
           log: pollingLog,
+          dataAccess: sinon.stub(),
         };
 
         pollingAuditContext = {
@@ -2850,16 +3060,27 @@ describe('Preflight Audit', () => {
       });
 
       it('should execute full accessibility workflow when checks include accessibility', async () => {
-        // Mock successful S3 operations for the entire workflow
+        // Mock ScrapeClient for the new polling mechanism
+        // eslint-disable-next-line no-shadow
+        const mockScrapeClient = {
+          createScrapeJob: sinon.stub().returns({
+            id: 'scrape-job-123',
+            processingType: 'accessibility-preflight',
+          }),
+          getScrapeJobStatus: sinon.stub().resolves({
+            status: 'COMPLETE',
+          }),
+          getScrapeResultPaths: sinon.stub().returns(new Map([
+            ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+            ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+          ])),
+        };
+
+        // Mock ScrapeClient.createFrom to return our mock
+        const scrapeClientCreateFromStub = sinon.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+        // Mock successful S3 operations for processing accessibility data
         pollingS3Client.send.callsFake((command) => {
-          if (command.constructor.name === 'ListObjectsV2Command') {
-            return Promise.resolve({
-              Contents: [
-                { Key: 'accessibility-preflight/site-123/example_com_page1.json', LastModified: new Date() },
-                { Key: 'accessibility-preflight/site-123/example_com_page2.json', LastModified: new Date() },
-              ],
-            });
-          }
           if (command.constructor.name === 'GetObjectCommand') {
             return Promise.resolve({
               Body: {
@@ -2869,88 +3090,72 @@ describe('Preflight Audit', () => {
               },
             });
           }
+          if (command.constructor.name === 'DeleteObjectsCommand') {
+            return Promise.resolve({});
+          }
           return Promise.resolve({});
         });
 
         await accessibility(pollingContext, pollingAuditContext);
 
-        // Verify that the workflow was executed
+        // Verify that the workflow was executed with new ScrapeClient polling
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] S3 Bucket: test-bucket');
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Site ID: site-123');
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Job ID: job-123');
-        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Looking for data in path: accessibility-preflight/site-123/');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Scrape Job ID: scrape-job-123');
         expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Expected files: ["example_com_page1.json","example_com_page2.json"]');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
+        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
+        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
         expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
-      });
 
-      it('should handle polling with files that do not match expected pattern', async () => {
-        let pollCount = 0;
-        // Mock the accessibility module with s3-utils mocked
-        const accessibilityModule = await esmock('../../src/preflight/accessibility.js', {
-          '../../src/support/utils.js': {
-            sleep: sandbox.stub().resolves(),
-          },
-          '../../src/utils/s3-utils.js': {
-            getObjectKeysUsingPrefix: sinon.stub().callsFake(() => {
-              pollCount += 1;
-              if (pollCount === 1) {
-                // First call: Return files that don't match expected patterns
-                return Promise.resolve([
-                  'accessibility-preflight/site-123/wrong_file1.json',
-                  'accessibility-preflight/site-123/wrong_file2.json',
-                  'accessibility-preflight/site-123/other_file.json',
-                  'accessibility-preflight/site-123/', // Directory-like key
-                ]);
-              } else {
-                // Second call: Return proper files to exit the polling loop
-                return Promise.resolve([
-                  'accessibility-preflight/site-123/example_com_page1.json',
-                  'accessibility-preflight/site-123/example_com_page2.json',
-                ]);
-              }
-            }),
-            getObjectFromKey: sinon.stub().resolves({
-              violations: {},
-            }),
-          },
-        });
+        // Verify ScrapeClient methods were called
+        expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+        expect(mockScrapeClient.getScrapeJobStatus).to.have.been.calledWith('scrape-job-123');
+        expect(mockScrapeClient.getScrapeResultPaths).to.have.been.calledWith('scrape-job-123');
 
-        const mockedAccessibility = accessibilityModule.default;
-
-        await mockedAccessibility(pollingContext, pollingAuditContext);
-
-        // Verify that it found 0 files due to filtering logic on first attempt
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected accessibility files, continuing to wait...');
-        // Verify that it eventually found the files and proceeded
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+        // Clean up the stub
+        scrapeClientCreateFromStub.restore();
       });
 
       it('should handle polling timeout scenario', async () => {
         let callCount = 0;
 
-        // Stub Date.now to simulate timeout
+        // Stub Date.now to simulate timeout after a few polling attempts
         const dateNowStub = sandbox.stub(Date, 'now').callsFake(() => {
           callCount += 1;
           if (callCount === 1) {
             // First call - start time
             return 1000000;
+          } else if (callCount <= 3) {
+            // Allow a few polling attempts (within timeout)
+            return 1000000 + (1 * 60 * 1000); // 1 minute later
           } else {
             // Subsequent calls - simulate timeout reached (11 minutes later)
             return 1000000 + (11 * 60 * 1000);
           }
         });
 
-        // Mock the accessibility module with s3-utils mocked
+        // Mock ScrapeClient that never completes
+        // eslint-disable-next-line no-shadow
+        const mockScrapeClient = {
+          createScrapeJob: sinon.stub().returns({
+            id: 'scrape-job-123',
+            processingType: 'accessibility-preflight',
+          }),
+          getScrapeJobStatus: sinon.stub().resolves({
+            status: 'IN_PROGRESS', // Always return in progress to simulate timeout
+          }),
+          getScrapeResultPaths: sinon.stub().returns(new Map()),
+        };
+
+        // Mock ScrapeClient.createFrom to return our mock
+        const scrapeClientCreateFromStub = sinon.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+
+        // Mock the accessibility module with sleep mocked
         const accessibilityModule = await esmock('../../src/preflight/accessibility.js', {
           '../../src/support/utils.js': {
             sleep: sandbox.stub().resolves(),
-          },
-          '../../src/utils/s3-utils.js': {
-            getObjectKeysUsingPrefix: sinon.stub().resolves([]), // Always return empty array
-            getObjectFromKey: sinon.stub().resolves(null),
           },
         });
 
@@ -2961,7 +3166,12 @@ describe('Preflight Audit', () => {
         // Verify that timeout message was logged
         expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Maximum wait time reached, stopping polling');
 
-        // Restore the stub
+        // Verify ScrapeClient methods were called
+        expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+        expect(mockScrapeClient.getScrapeJobStatus).to.have.been.calledWith('scrape-job-123');
+
+        // Clean up stubs
+        scrapeClientCreateFromStub.restore();
         dateNowStub.restore();
       });
     });
@@ -2972,10 +3182,10 @@ describe('Preflight Audit', () => {
 
         auditContext.previewUrls = [];
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
         expect(log.warn).to.have.been.calledWith('[preflight-audit] No URLs to scrape for accessibility audit');
-        expect(sqs.sendMessage).to.not.have.been.called;
+        expect(mockScrapeClient.createScrapeJob).to.not.have.been.called;
       });
 
       it('should handle null previewUrls', async () => {
@@ -2983,10 +3193,10 @@ describe('Preflight Audit', () => {
 
         auditContext.previewUrls = null;
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
         expect(log.warn).to.have.been.calledWith('[preflight-audit] No URLs to scrape for accessibility audit');
-        expect(sqs.sendMessage).to.not.have.been.called;
+        expect(mockScrapeClient.createScrapeJob).to.not.have.been.called;
       });
 
       it('should handle undefined previewUrls', async () => {
@@ -2994,10 +3204,10 @@ describe('Preflight Audit', () => {
 
         auditContext.previewUrls = undefined;
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
         expect(log.warn).to.have.been.calledWith('[preflight-audit] No URLs to scrape for accessibility audit');
-        expect(sqs.sendMessage).to.not.have.been.called;
+        expect(mockScrapeClient.createScrapeJob).to.not.have.been.called;
       });
 
       it('should handle non-array previewUrls', async () => {
@@ -3005,10 +3215,10 @@ describe('Preflight Audit', () => {
 
         auditContext.previewUrls = 'not-an-array';
 
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
         expect(log.warn).to.have.been.calledWith('[preflight-audit] No URLs to scrape for accessibility audit');
-        expect(sqs.sendMessage).to.not.have.been.called;
+        expect(mockScrapeClient.createScrapeJob).to.not.have.been.called;
       });
     });
   });
@@ -3020,6 +3230,8 @@ describe('Preflight Audit', () => {
     let log;
     let accessibility;
     let sandbox;
+    let mockScrapeClient;
+    let scrapeClientCreateFromStub;
 
     beforeEach(async () => {
       sandbox = sinon.createSandbox();
@@ -3031,6 +3243,24 @@ describe('Preflight Audit', () => {
         },
       });
       accessibility = accessibilityModule.default;
+
+      // Centralized ScrapeClient mock configuration for all accessibility coverage tests
+      mockScrapeClient = {
+        createScrapeJob: sinon.stub().returns({
+          id: 'scrape-job-123',
+          processingType: 'accessibility-preflight',
+        }),
+        getScrapeJobStatus: sinon.stub().resolves({
+          status: 'COMPLETE',
+        }),
+        getScrapeResultPaths: sinon.stub().returns(new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+          ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+        ])),
+      };
+
+      // Mock ScrapeClient.createFrom to return our mock
+      scrapeClientCreateFromStub = sinon.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
 
       log = {
         info: sinon.stub(),
@@ -3097,6 +3327,7 @@ describe('Preflight Audit', () => {
 
     afterEach(() => {
       sandbox.restore();
+      scrapeClientCreateFromStub.restore();
     });
 
     it('should handle error in processAccessibilityOpportunities when accessibility audit is missing', async () => {
@@ -3132,9 +3363,15 @@ describe('Preflight Audit', () => {
         return Promise.resolve({});
       });
 
+      // Create scrapeResultPaths map as expected by the new workflow
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+      ]);
+
       // The function should throw an error when trying to access undefined.opportunities
       try {
-        await processAccessibilityOpportunities(context, auditContext);
+        await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
         expect.fail('Expected function to throw an error');
       } catch (error) {
         expect(error.message).to.include('Cannot read properties of undefined');
@@ -3144,6 +3381,12 @@ describe('Preflight Audit', () => {
     it('should handle error in processAccessibilityOpportunities and add error opportunity', async () => {
       const { processAccessibilityOpportunities } = await import('../../src/preflight/accessibility.js');
 
+      // Create scrapeResultPaths map as expected by the new workflow
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+      ]);
+
       // Mock S3 to throw an error
       s3Client.send.callsFake((command) => {
         if (command.constructor.name === 'GetObjectCommand') {
@@ -3152,7 +3395,7 @@ describe('Preflight Audit', () => {
         return Promise.resolve({});
       });
 
-      await processAccessibilityOpportunities(context, auditContext);
+      await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
       // Verify that the function handles S3 errors gracefully by logging warnings
       // The getObjectFromKey function returns null when S3 throws an error
@@ -3180,7 +3423,13 @@ describe('Preflight Audit', () => {
         return Promise.resolve({});
       });
 
-      await processAccessibilityOpportunities(context, auditContext);
+      // Create scrapeResultPaths map as expected by the new workflow
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+      ]);
+
+      await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
       // The cleanup error should be logged
       expect(log.warn).to.have.been.calledWith('[preflight-audit] Failed to clean up accessibility files: Cleanup failed');
@@ -3211,8 +3460,14 @@ describe('Preflight Audit', () => {
         return Promise.resolve({});
       });
 
+      // Create scrapeResultPaths map as expected by the new workflow
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+      ]);
+
       // The function should handle missing accessibility audits gracefully
-      await processAccessibilityOpportunities(context, auditContext);
+      await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
       // Verify that the function completed without throwing an error
       // and logged appropriate warnings for missing accessibility audits
@@ -3282,7 +3537,13 @@ describe('Preflight Audit', () => {
         return Promise.resolve({});
       });
 
-      await processAccessibilityOpportunities(context, auditContext);
+      // Create scrapeResultPaths map as expected by the new workflow
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+      ]);
+
+      await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
       // Verify that warnings were logged for missing accessibility data
       expect(log.warn).to.have.been.calledWith(
@@ -3305,16 +3566,10 @@ describe('Preflight Audit', () => {
     });
 
     it('should handle polling loop in accessibility function', async () => {
-      // Mock S3 to return files immediately (simplified test without polling loop)
+      // Use centralized ScrapeClient mock configuration
+
+      // Mock S3 for processing accessibility data
       s3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'ListObjectsV2Command') {
-          return Promise.resolve({
-            Contents: [
-              { Key: 'accessibility-preflight/site-123/example_com_page1.json', LastModified: new Date() },
-              { Key: 'accessibility-preflight/site-123/example_com_page2.json', LastModified: new Date() },
-            ],
-          });
-        }
         if (command.constructor.name === 'GetObjectCommand') {
           return Promise.resolve({
             Body: {
@@ -3324,29 +3579,38 @@ describe('Preflight Audit', () => {
             },
           });
         }
+        if (command.constructor.name === 'DeleteObjectsCommand') {
+          return Promise.resolve({});
+        }
         return Promise.resolve({});
       });
 
       await accessibility(context, auditContext);
 
-      // Verify that polling was attempted and succeeded
+      // Verify that polling was attempted and succeeded with new ScrapeClient workflow
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Site ID: site-123');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Job ID: job-123');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Scrape Job ID: scrape-job-123');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] Expected files: ["example_com_page1.json","example_com_page2.json"]');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
+
+      // Verify ScrapeClient methods were called
+      expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+      expect(mockScrapeClient.getScrapeJobStatus).to.have.been.calledWith('scrape-job-123');
+      expect(mockScrapeClient.getScrapeResultPaths).to.have.been.calledWith('scrape-job-123');
+
+      // ScrapeClient stub cleanup handled in afterEach
     });
 
     it('should call processAccessibilityOpportunities after successful polling', async () => {
-      // Mock S3 to return files immediately
+      // Use centralized ScrapeClient mock configuration
+
+      // Mock S3 for processing accessibility data
       s3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'ListObjectsV2Command') {
-          return Promise.resolve({
-            Contents: [
-              { Key: 'accessibility-preflight/site-123/example_com_page1.json', LastModified: new Date() },
-              { Key: 'accessibility-preflight/site-123/example_com_page2.json', LastModified: new Date() },
-            ],
-          });
-        }
         if (command.constructor.name === 'GetObjectCommand') {
           return Promise.resolve({
             Body: {
@@ -3372,27 +3636,30 @@ describe('Preflight Audit', () => {
 
       await accessibility(context, auditContext);
 
-      // Verify that the function completed successfully
+      // Verify that the function completed successfully with new ScrapeClient workflow
       expect(log.info).to.have.been.calledWith(
         '[preflight-audit] Polling completed, proceeding to process accessibility data',
       );
 
-      // Verify that the function completed without throwing an error
+      // Verify that the ScrapeClient polling workflow was executed
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
+
+      // Verify ScrapeClient methods were called
+      expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+      expect(mockScrapeClient.getScrapeJobStatus).to.have.been.calledWith('scrape-job-123');
+      expect(mockScrapeClient.getScrapeResultPaths).to.have.been.calledWith('scrape-job-123');
+
+      // ScrapeClient stub cleanup handled in afterEach
     });
 
     it('should complete accessibility function with processAccessibilityOpportunities call', async () => {
-      // Mock S3 to return files immediately
+      // Use centralized ScrapeClient mock configuration
+
+      // Mock S3 for processing accessibility data
       s3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'ListObjectsV2Command') {
-          return Promise.resolve({
-            Contents: [
-              { Key: 'accessibility-preflight/site-123/example_com_page1.json', LastModified: new Date() },
-              { Key: 'accessibility-preflight/site-123/example_com_page2.json', LastModified: new Date() },
-            ],
-          });
-        }
         if (command.constructor.name === 'GetObjectCommand') {
           return Promise.resolve({
             Body: {
@@ -3418,27 +3685,30 @@ describe('Preflight Audit', () => {
 
       await accessibility(context, auditContext);
 
-      // Verify that the function completed successfully
+      // Verify that the function completed successfully with new ScrapeClient workflow
       expect(log.info).to.have.been.calledWith(
         '[preflight-audit] Polling completed, proceeding to process accessibility data',
       );
 
-      // Verify that the function completed without throwing an error
+      // Verify that the ScrapeClient polling workflow was executed
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
+
+      // Verify ScrapeClient methods were called
+      expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+      expect(mockScrapeClient.getScrapeJobStatus).to.have.been.calledWith('scrape-job-123');
+      expect(mockScrapeClient.getScrapeResultPaths).to.have.been.calledWith('scrape-job-123');
+
+      // ScrapeClient stub cleanup handled in afterEach
     });
 
     it('should execute complete accessibility workflow', async () => {
-      // Mock S3 to return files immediately on first call
+      // Use centralized ScrapeClient mock configuration
+
+      // Mock S3 for processing accessibility data
       s3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'ListObjectsV2Command') {
-          return Promise.resolve({
-            Contents: [
-              { Key: 'accessibility-preflight/site-123/example_com_page1.json', LastModified: new Date() },
-              { Key: 'accessibility-preflight/site-123/example_com_page2.json', LastModified: new Date() },
-            ],
-          });
-        }
         if (command.constructor.name === 'GetObjectCommand') {
           return Promise.resolve({
             Body: {
@@ -3465,27 +3735,30 @@ describe('Preflight Audit', () => {
       // Execute the accessibility function
       await accessibility(context, auditContext);
 
-      // Verify that the function completed successfully
+      // Verify that the function completed successfully with new ScrapeClient workflow
       expect(log.info).to.have.been.calledWith(
         '[preflight-audit] Polling completed, proceeding to process accessibility data',
       );
 
-      // Verify that the function completed without throwing an error
+      // Verify that the ScrapeClient polling workflow was executed
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
+
+      // Verify ScrapeClient methods were called
+      expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+      expect(mockScrapeClient.getScrapeJobStatus).to.have.been.calledWith('scrape-job-123');
+      expect(mockScrapeClient.getScrapeResultPaths).to.have.been.calledWith('scrape-job-123');
+
+      // ScrapeClient stub cleanup handled in afterEach
     });
 
     it('should ensure processAccessibilityOpportunities is called', async () => {
-      // Mock S3 to return files immediately
+      // Use centralized ScrapeClient mock configuration
+
+      // Mock S3 for processing accessibility data
       s3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'ListObjectsV2Command') {
-          return Promise.resolve({
-            Contents: [
-              { Key: 'accessibility-preflight/site-123/example_com_page1.json', LastModified: new Date() },
-              { Key: 'accessibility-preflight/site-123/example_com_page2.json', LastModified: new Date() },
-            ],
-          });
-        }
         if (command.constructor.name === 'GetObjectCommand') {
           return Promise.resolve({
             Body: {
@@ -3512,35 +3785,40 @@ describe('Preflight Audit', () => {
       // Execute the accessibility function
       await accessibility(context, auditContext);
 
-      // Verify that the function completed successfully
+      // Verify that the function completed successfully with new ScrapeClient workflow
       expect(log.info).to.have.been.calledWith(
         '[preflight-audit] Polling completed, proceeding to process accessibility data',
       );
 
-      // Verify that the function completed without throwing an error
+      // Verify that the ScrapeClient polling workflow was executed
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
+
+      // ScrapeClient methods were called to ensure processAccessibilityOpportunities is called
+      expect(mockScrapeClient.createScrapeJob).to.have.been.calledOnce;
+      expect(mockScrapeClient.getScrapeJobStatus).to.have.been.calledWith('scrape-job-123');
+      expect(mockScrapeClient.getScrapeResultPaths).to.have.been.calledWith('scrape-job-123');
+
+      // ScrapeClient stub cleanup handled in afterEach
     });
 
     it('should have empty urlsToScrape after mapping', async () => {
       const { scrapeAccessibilityData } = await import('../../src/preflight/accessibility.js');
 
-      // Create a scenario where previewUrls exists but map results in empty urlsToScrape
-      // This is a rare edge case but needed for coverage
-      auditContext.previewUrls = [''];
-      // Mock map only on this instance to return an empty array
-      auditContext.previewUrls.map = function mockMap() {
-        return [];
-      };
+      // Create a scenario where previewUrls is empty array to trigger the "No URLs to scrape" path
+      auditContext.previewUrls = [];
 
       try {
-        await scrapeAccessibilityData(context, auditContext);
+        await scrapeAccessibilityData(context, auditContext, mockScrapeClient);
 
-        // Should log the "No URLs to scrape" message from line 126
-        expect(log.info).to.have.been.calledWith('[preflight-audit] No URLs to scrape');
-        expect(context.sqs.sendMessage).to.not.have.been.called;
+        // Should log the "No URLs to scrape for accessibility audit" warning message
+        expect(log.warn).to.have.been.calledWith('[preflight-audit] No URLs to scrape for accessibility audit');
+        // Verify that ScrapeClient.createScrapeJob was not called since there are no URLs
+        expect(mockScrapeClient.createScrapeJob).to.not.have.been.called;
       } finally {
-        // No need to restore map since we only mocked the instance
+        // No cleanup needed
       }
     });
 
@@ -3584,7 +3862,13 @@ describe('Preflight Audit', () => {
         return Promise.resolve({});
       });
 
-      await processAccessibilityOpportunities(context, auditContext);
+      // Create scrapeResultPaths map as expected by the new workflow
+      const scrapeResultPaths = new Map([
+        ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+        ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+      ]);
+
+      await processAccessibilityOpportunities(context, auditContext, scrapeResultPaths);
 
       // Verify that the error was logged for the first URL
       expect(log.error).to.have.been.calledWith(
@@ -3604,22 +3888,36 @@ describe('Preflight Audit', () => {
 
     it('should handle error during polling loop and continue polling', async () => {
       let pollCallCount = 0;
-      // Mock S3 to throw an error on first polling attempt, then succeed
-      s3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'ListObjectsV2Command') {
+
+      // Override the centralized ScrapeClient mock for this specific test
+      const errorHandlingMockScrapeClient = {
+        createScrapeJob: sinon.stub().returns({
+          id: 'scrape-job-123',
+          processingType: 'accessibility-preflight',
+        }),
+        getScrapeJobStatus: sinon.stub().callsFake(() => {
           pollCallCount += 1;
           if (pollCallCount === 1) {
             // First polling attempt - throw an error
-            return Promise.reject(new Error('S3 ListObjectsV2 failed'));
+            return Promise.reject(new Error('ScrapeJob status check failed'));
           }
           // Second polling attempt - return success
           return Promise.resolve({
-            Contents: [
-              { Key: 'accessibility-preflight/site-123/example_com_page1.json', LastModified: new Date() },
-              { Key: 'accessibility-preflight/site-123/example_com_page2.json', LastModified: new Date() },
-            ],
+            status: 'COMPLETE',
           });
-        }
+        }),
+        getScrapeResultPaths: sinon.stub().returns(new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+          ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+        ])),
+      };
+
+      // Override the centralized stub for this test
+      scrapeClientCreateFromStub.restore();
+      const testScrapeClientStub = sinon.stub(ScrapeClient, 'createFrom').returns(errorHandlingMockScrapeClient);
+
+      // Mock S3 for processing accessibility data
+      s3Client.send.callsFake((command) => {
         if (command.constructor.name === 'GetObjectCommand') {
           return Promise.resolve({
             Body: {
@@ -3638,34 +3936,53 @@ describe('Preflight Audit', () => {
       await accessibility(context, auditContext);
 
       // Verify that the polling error was logged
-      expect(log.error).to.have.been.calledWith('[preflight-audit] Error polling for accessibility data: S3 ListObjectsV2 failed');
+      expect(log.error).to.have.been.calledWith('[preflight-audit] Error polling for accessibility data: ScrapeJob status check failed');
       // Verify that polling continued and eventually succeeded
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
       // Verify that both polling attempts were made
       expect(pollCallCount).to.equal(2);
+
+      // Restore the original centralized stub
+      testScrapeClientStub.restore();
+      scrapeClientCreateFromStub = sinon.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
     });
 
     it('should handle foundFiles', async () => {
       let pollCallCount = 0;
-      // Mock S3 to return null foundFiles first, then success
-      s3Client.send.callsFake((command) => {
-        if (command.constructor.name === 'ListObjectsV2Command') {
+
+      // Override the centralized ScrapeClient mock for this specific test
+      const foundFilesMockScrapeClient = {
+        createScrapeJob: sinon.stub().returns({
+          id: 'scrape-job-123',
+          processingType: 'accessibility-preflight',
+        }),
+        getScrapeJobStatus: sinon.stub().callsFake(() => {
           pollCallCount += 1;
           if (pollCallCount === 1) {
-            // First polling attempt - return response with no Contents (foundFiles will be falsy)
+            // First polling attempt - return IN_PROGRESS (not completed yet)
             return Promise.resolve({
-              // No Contents property - this makes foundFiles undefined/falsy
+              status: 'IN_PROGRESS',
             });
           }
           // Second polling attempt - return success
           return Promise.resolve({
-            Contents: [
-              { Key: 'accessibility-preflight/site-123/example_com_page1.json', LastModified: new Date() },
-              { Key: 'accessibility-preflight/site-123/example_com_page2.json', LastModified: new Date() },
-            ],
+            status: 'COMPLETE',
           });
-        }
+        }),
+        getScrapeResultPaths: sinon.stub().returns(new Map([
+          ['https://example.com/page1', 'accessibility-preflight/site-123/example_com_page1.json'],
+          ['https://example.com/page2', 'accessibility-preflight/site-123/example_com_page2.json'],
+        ])),
+      };
+
+      // Override the centralized stub for this test
+      scrapeClientCreateFromStub.restore();
+      const testScrapeClientStub = sinon.stub(ScrapeClient, 'createFrom').returns(foundFilesMockScrapeClient);
+
+      // Mock S3 for processing accessibility data
+      s3Client.send.callsFake((command) => {
         if (command.constructor.name === 'GetObjectCommand') {
           return Promise.resolve({
             Body: {
@@ -3683,14 +4000,182 @@ describe('Preflight Audit', () => {
 
       await accessibility(context, auditContext);
 
-      // Verify that the foundCount = foundFiles ? foundFiles.length : 0 branch was hit
-      // This should log "Found 0 out of 2 expected..." when foundFiles is falsy
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected accessibility files, continuing to wait...');
+      // Verify that the ScrapeClient polling workflow was executed
+      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking ScrapeJob Status for jobId: scrape-job-123');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: IN_PROGRESS');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob not completed yet, waiting...');
       // Verify that polling continued and eventually succeeded
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob Status: COMPLETE');
+      expect(log.info).to.have.been.calledWith('[preflight-audit] ScrapeJob completed, proceeding to process accessibility data');
       expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
       // Verify that both polling attempts were made
       expect(pollCallCount).to.equal(2);
+
+      // Restore the original centralized stub
+      testScrapeClientStub.restore();
+      scrapeClientCreateFromStub = sinon.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
+    });
+  });
+
+  describe('metatags coverage', () => {
+    it('should process tag collection and add opportunities to audits', async () => {
+      // Mock the metatags module to return tag data that will trigger the uncovered code path
+      const mockMetatagsAutoDetect = sinon.stub().resolves({
+        seoChecks: {
+          getFewHealthyTags: sinon.stub().returns([]),
+        },
+        detectedTags: {
+          '/page1': {
+            title: {
+              issue: 'Missing title tag',
+              seoImpact: 'High',
+              seoRecommendation: 'Add a descriptive title tag',
+            },
+            description: {
+              issue: 'Missing meta description',
+              seoImpact: 'Moderate',
+              seoRecommendation: 'Add a meta description',
+            },
+          },
+        },
+        extractedTags: {},
+      });
+
+      const mockMetatagsAutoSuggest = sinon.stub().resolves({
+        '/page1': {
+          title: {
+            issue: 'Missing title tag',
+            seoImpact: 'High',
+            seoRecommendation: 'Add a descriptive title tag',
+            aiSuggestion: 'Suggested Title',
+            aiRationale: 'This title would be better',
+          },
+        },
+      });
+
+      const { default: metatags } = await esmock('../../src/preflight/metatags.js', {
+        '../../src/metatags/handler.js': {
+          metatagsAutoDetect: mockMetatagsAutoDetect,
+        },
+        '../../src/metatags/metatags-auto-suggest.js': {
+          default: mockMetatagsAutoSuggest,
+        },
+        '../../src/preflight/utils.js': {
+          saveIntermediateResults: sinon.stub(),
+        },
+      });
+
+      const context = {
+        site: { getId: () => 'site-123' },
+        job: { getId: () => 'job-123' },
+        log: {
+          info: sinon.stub(),
+          error: sinon.stub(),
+        },
+      };
+
+      const auditContext = {
+        checks: ['metatags'],
+        previewUrls: ['https://main--example--page.aem.page/page1'],
+        step: 'suggest',
+        audits: new Map(),
+        auditsResult: [],
+        timeExecutionBreakdown: [],
+        scrapeResultMap: new Map(),
+      };
+
+      // Initialize the audits map with a page that has a metatags audit
+      const pageResult = {
+        audits: [{ name: 'metatags', type: 'seo', opportunities: [] }],
+      };
+      auditContext.audits.set('https://main--example--page.aem.page/page1', pageResult);
+
+      await metatags(context, auditContext);
+
+      // Verify that opportunities were added to the audit
+      const audit = auditContext.audits.get('https://main--example--page.aem.page/page1')
+        .audits.find((a) => a.name === 'metatags');
+
+      expect(audit.opportunities).to.have.length(1);
+      expect(audit.opportunities[0]).to.deep.include({
+        tagName: 'title',
+        issue: 'Missing title tag',
+        seoImpact: 'High',
+        seoRecommendation: 'Add a descriptive title tag',
+        aiSuggestion: 'Suggested Title',
+        aiRationale: 'This title would be better',
+      });
+
+      // Verify that the execution breakdown was updated
+      expect(auditContext.timeExecutionBreakdown).to.have.length(1);
+      expect(auditContext.timeExecutionBreakdown[0].name).to.equal('metatags');
+    });
+
+    it('should handle path matching with trailing slashes correctly', async () => {
+      const mockMetatagsAutoDetect = sinon.stub().resolves({
+        seoChecks: {
+          getFewHealthyTags: sinon.stub().returns([]),
+        },
+        detectedTags: {
+          '/': {
+            title: {
+              tagName: 'title',
+              issue: 'Missing title tag',
+              seoImpact: 'High',
+              seoRecommendation: 'Add a descriptive title tag',
+            },
+          },
+        },
+        extractedTags: {},
+      });
+
+      const { default: metatags } = await esmock('../../src/preflight/metatags.js', {
+        '../../src/metatags/handler.js': {
+          metatagsAutoDetect: mockMetatagsAutoDetect,
+        },
+        '../../src/preflight/utils.js': {
+          saveIntermediateResults: sinon.stub(),
+        },
+      });
+
+      const context = {
+        site: { getId: () => 'site-123' },
+        job: { getId: () => 'job-123' },
+        log: {
+          info: sinon.stub(),
+          error: sinon.stub(),
+        },
+      };
+
+      const auditContext = {
+        checks: ['metatags'],
+        previewUrls: ['https://main--example--page.aem.page/'],
+        step: 'identify',
+        audits: new Map(),
+        auditsResult: [],
+        timeExecutionBreakdown: [],
+        scrapeResultMap: new Map(),
+      };
+
+      // Initialize the audits map with a page that has a metatags audit
+      const pageResult = {
+        audits: [{ name: 'metatags', type: 'seo', opportunities: [] }],
+      };
+      auditContext.audits.set('https://main--example--page.aem.page/', pageResult);
+
+      await metatags(context, auditContext);
+
+      // Verify that opportunities were added to the audit despite trailing slash differences
+      const audit = auditContext.audits.get('https://main--example--page.aem.page/')
+        .audits.find((a) => a.name === 'metatags');
+
+      expect(audit.opportunities).to.have.length(1);
+      expect(audit.opportunities[0]).to.deep.include({
+        tagName: 'title',
+        issue: 'Missing title tag',
+        seoImpact: 'High',
+        seoRecommendation: 'Add a descriptive title tag',
+      });
     });
   });
 });

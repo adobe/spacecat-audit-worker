@@ -976,6 +976,182 @@ describe('Preflight Readability Audit', () => {
       expect(opportunity.mystiqueProcessingCompleted).to.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     });
 
+    it('should cover lines 357-389: comprehensive error handling with detailed logging and opportunity updates', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
+        + 'words and intricate grammatical constructions, making it extremely difficult for '
+        + `the average reader to comprehend without considerable effort and ${
+          'concentration.'.repeat(3)}`;
+
+      // CRITICAL: Set step to 'suggest' to trigger the error handling path
+      auditContext.step = 'suggest';
+
+      // Set up readability issues to test the error handling
+      auditContext.scrapedObjects = [
+        {
+          data: {
+            finalUrl: 'https://example.com/page1',
+            scrapeResult: {
+              rawBody: `<html><body><p>${poorText}</p></body></html>`,
+            },
+          },
+        },
+      ];
+
+      // Mock AsyncJob.findById to return no existing metadata (trigger new suggestions path)
+      context.dataAccess.AsyncJob.findById.resolves({
+        getMetadata: () => ({}), // No existing readability metadata
+        setResult: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        save: sinon.stub().resolves(),
+      });
+
+      // Mock custom error with specific constructor name to test error.constructor.name
+      class CustomMystiqueError extends Error {
+        constructor(message) {
+          super(message);
+          this.name = 'CustomMystiqueError';
+        }
+      }
+      const customError = new CustomMystiqueError('Custom Mystique integration failure');
+      mockSendReadabilityToMystique.rejects(customError);
+
+      // Add context properties to test all branches in error logging and detailed message
+      context.env = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue-url' };
+      context.sqs = { sendMessage: sinon.stub() };
+      context.auditUrl = 'https://custom-audit-url.com/audit';
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      // Verify comprehensive error logging (lines 357-364)
+      expect(log.error).to.have.been.calledWithMatch(
+        '[readability-suggest handler] readability: Error sending issues to Mystique:',
+        sinon.match({
+          error: 'Custom Mystique integration failure',
+          stack: sinon.match.string,
+          siteId: 'test-site',
+          jobId: 'job-123',
+          issuesCount: 1, // One readability issue (second page has setup issue)
+          auditUrl: 'https://custom-audit-url.com/audit',
+        }),
+      );
+
+      expect(result.processing).to.be.false;
+
+      // Verify detailed error message construction (line 367)
+      const expectedDetailedMessage = 'Mystique integration failed: Custom Mystique integration failure. '
+        + 'Details: siteId=test-site, jobId=job-123, issuesCount=1, hasEnvQueue=true, hasSqs=true';
+
+      // Check that opportunities were updated with error status (lines 370-388)
+      const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      expect(audit).to.exist;
+      expect(audit.opportunities).to.have.lengthOf.at.least(1);
+
+      const opportunity = audit.opportunities[0];
+      expect(opportunity.suggestionStatus).to.equal('error');
+      expect(opportunity.suggestionMessage).to.equal(expectedDetailedMessage);
+      expect(opportunity.debugInfo).to.exist;
+      expect(opportunity.debugInfo.errorType).to.equal('CustomMystiqueError');
+      expect(opportunity.debugInfo.errorMessage).to.equal('Custom Mystique integration failure');
+      expect(opportunity.debugInfo.timestamp).to.be.a('string');
+      expect(opportunity.debugInfo.mystiqueQueueConfigured).to.be.true;
+      expect(opportunity.debugInfo.sqsClientAvailable).to.be.true;
+
+      // Verify timestamp is a valid ISO string
+      expect(() => new Date(opportunity.debugInfo.timestamp)).to.not.throw();
+    });
+
+    it('should cover error handling edge cases: missing env and sqs context', async () => {
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
+         + 'words and intricate grammatical constructions, making it extremely difficult for '
+         + `the average reader to comprehend without considerable effort and ${
+           'concentration.'.repeat(3)}`;
+
+      // CRITICAL: Set step to 'suggest' to trigger the error handling path
+      auditContext.step = 'suggest';
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      // Mock AsyncJob.findById to return no existing metadata (trigger new suggestions path)
+      context.dataAccess.AsyncJob.findById.resolves({
+        getMetadata: () => ({}), // No existing readability metadata
+        setResult: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        save: sinon.stub().resolves(),
+      });
+
+      // Mock Mystique error
+      mockSendReadabilityToMystique.rejects(new Error('Network timeout'));
+
+      // Set env and sqs to undefined/null to test
+      context.env = {}; // Empty env object to test missing QUEUE_SPACECAT_TO_MYSTIQUE
+      context.sqs = null; // Null sqs to test !!context.sqs
+      delete context.auditUrl; // Test site.getBaseURL() fallback
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      expect(result.processing).to.be.false;
+
+      // Verify error logging uses site.getBaseURL() fallback when context.auditUrl is missing
+      expect(log.error).to.have.been.calledWithMatch(
+        '[readability-suggest handler] readability: Error sending issues to Mystique:',
+        sinon.match({
+          auditUrl: 'https://test-site.com', // Fallback to site.getBaseURL()
+        }),
+      );
+
+      // Check detailed error message reflects missing env and sqs
+      const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      const opportunity = audit.opportunities[0];
+      expect(opportunity.suggestionMessage).to.include('hasEnvQueue=false, hasSqs=false');
+      expect(opportunity.debugInfo.mystiqueQueueConfigured).to.be.false;
+      expect(opportunity.debugInfo.sqsClientAvailable).to.be.false;
+    });
+
+    it('should cover error handling when audit has no opportunities', async () => {
+      // CRITICAL: Set step to 'suggest' to trigger the error handling path
+      auditContext.step = 'suggest';
+
+      // Set up scenario where there are no readability issues (empty scrapedObjects)
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: '<html><body><p>This is perfectly readable text.</p></body></html>',
+          },
+        },
+      }];
+
+      // Mock AsyncJob.findById to return no existing metadata (trigger new suggestions path)
+      context.dataAccess.AsyncJob.findById.resolves({
+        getMetadata: () => ({}), // No existing readability metadata
+        setResult: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        save: sinon.stub().resolves(),
+      });
+
+      // Mock Mystique error (though it shouldn't be called since no issues)
+      mockSendReadabilityToMystique.rejects(new Error('Service unavailable'));
+
+      const result = await readabilityMocked.default(context, auditContext);
+
+      // Should not process since no readability issues found
+      expect(result.processing).to.be.false;
+      expect(log.info).to.have.been.calledWithMatch('No readability issues found to send to Mystique');
+
+      // Verify Mystique was not called since there were no issues
+      expect(mockSendReadabilityToMystique).not.to.have.been.called;
+    });
+
     /* it('should cover lines 44-61: no existing readability metadata found', async () => {
       const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
         + 'words and intricate grammatical constructions, making it extremely difficult for '
