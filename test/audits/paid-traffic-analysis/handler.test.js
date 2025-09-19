@@ -19,7 +19,7 @@ import { MockContextBuilder } from '../../shared.js';
 import {
   prepareTrafficAnalysisRequest,
   sendRequestToMystique,
-  weeklyImportDataStep,
+  importDataStep,
   weeklyProcessAnalysisStep,
 } from '../../../src/paid-traffic-analysis/handler.js';
 
@@ -259,26 +259,28 @@ describe('Paid Traffic Analysis Handler', () => {
   });
 
   describe('Step Functions', () => {
-    describe('weeklyImportDataStep', () => {
+    describe('importDataStep', () => {
       it('should return correct import payload for import worker', () => {
         context.site = site;
         context.finalUrl = auditUrl;
 
-        const result = weeklyImportDataStep(context);
+        const result = importDataStep(context);
 
         // Verify the payload structure that will be sent to import worker
         expect(result).to.deep.equal({
+          auditResult: { status: 'preparing', finalUrl: auditUrl },
+          fullAuditRef: auditUrl,
           type: 'traffic-analysis',
           siteId,
           allowOverwrite: true,
-          fullAuditRef: auditUrl,
         });
 
         // Verify all required fields for import worker are present
+        expect(result).to.have.property('auditResult').that.deep.equals({ status: 'preparing', finalUrl: auditUrl });
+        expect(result).to.have.property('fullAuditRef', auditUrl);
         expect(result).to.have.property('type', 'traffic-analysis');
         expect(result).to.have.property('siteId', siteId);
         expect(result).to.have.property('allowOverwrite', true);
-        expect(result).to.have.property('fullAuditRef', auditUrl);
       });
     });
 

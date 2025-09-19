@@ -108,10 +108,11 @@ function importDataStep(context) {
   const { site, finalUrl } = context;
 
   return {
+    auditResult: { status: 'preparing', finalUrl },
+    fullAuditRef: finalUrl,
     type: 'traffic-analysis',
     siteId: site.getId(),
     allowOverwrite: true,
-    fullAuditRef: finalUrl,
   };
 }
 
@@ -137,20 +138,18 @@ async function processAnalysisStep(context, period) {
   };
 }
 
-export const weeklyImportDataStep = (context) => importDataStep(context, 'weekly');
+export { importDataStep };
 export const weeklyProcessAnalysisStep = (context) => processAnalysisStep(context, 'weekly');
-
-export const monthlyImportDataStep = (context) => importDataStep(context, 'monthly');
 export const monthlyProcessAnalysisStep = (context) => processAnalysisStep(context, 'monthly');
 
 export const paidTrafficAnalysisWeekly = new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('import-data', weeklyImportDataStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('import-data', importDataStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('process-analysis', weeklyProcessAnalysisStep)
   .build();
 
 export const paidTrafficAnalysisMonthly = new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('import-data', monthlyImportDataStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('import-data', importDataStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('process-analysis', monthlyProcessAnalysisStep)
   .build();
