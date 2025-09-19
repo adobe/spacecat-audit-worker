@@ -151,7 +151,7 @@
     "yaml": "2.8.1"
   },
   "lint-staged": {
-    "*.js": "echo 'Linting disabled'",
+    "*.js": "eslint",
     "*.ts": "eslint",
     "*.cjs": "eslint"
   },

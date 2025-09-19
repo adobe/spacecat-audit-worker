@@ -91,10 +91,13 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       week: calendarWeek.week,
       year: calendarWeek.year,
       data: {
-        web_search_provider: aiPlatform,
         url,
       },
     };
+
+    if (aiPlatform) {
+      message.data.web_search_provider = aiPlatform;
+    }
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info('GEO BRAND PRESENCE: %s Message sent to Mystique for site id %s (%s):', opptyType, siteId, baseURL, message);
   }));
@@ -156,11 +159,9 @@ export async function keywordPromptsImportStep(context) {
   try {
     // Try to parse as JSON first
     const parsedData = JSON.parse(data);
-    let parsedEndDate;
     if (parsedData.endDate && Date.parse(parsedData.endDate)) {
-      parsedEndDate = parsedData.endDate;
+      endDate = parsedData.endDate;
     }
-    endDate = parsedEndDate;
     aiPlatform = parsedData.aiPlatform;
   } catch (e) {
     // If JSON parsing fails, treat as a date string (legacy behavior)
