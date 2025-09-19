@@ -104,33 +104,48 @@ export async function sendRequestToMystique(auditUrl, auditData, context, site) 
   log.info(`[traffic-analysis-audit] [siteId: ${auditUrl}] [baseUrl:${auditUrl}] Completed mystique evaluation step`);
 }
 
-function importDataStep(context) {
-  const { site, finalUrl } = context;
+async function importDataStep(context, period) {
+  const { site, finalUrl, log } = context;
+  const siteId = site.getId();
 
-  return {
-    auditResult: { status: 'preparing', finalUrl },
-    fullAuditRef: finalUrl,
-    type: 'traffic-analysis',
-    siteId: site.getId(),
-    allowOverwrite: true,
-  };
-}
+  log.info(`[traffic-analysis-import-${period}] Starting import data step for siteId: ${siteId}, url: ${finalUrl}`);
 
-async function processAnalysisStep(context, period) {
-  const { site, audit } = context;
-  const finalUrl = site.getBaseURL();
+  // First prepare and save the traffic analysis request like we did before
   const analysisResult = await prepareTrafficAnalysisRequest(
     finalUrl,
     context,
     site,
     period,
   );
+
+  log.info(`[traffic-analysis-import-${period}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowOverwrite: true`);
+
+  return {
+    auditResult: analysisResult.auditResult,
+    fullAuditRef: finalUrl,
+    type: 'traffic-analysis',
+    siteId,
+    allowOverwrite: true,
+  };
+}
+
+async function processAnalysisStep(context, period) {
+  const { site, audit, log } = context;
+  const finalUrl = site.getBaseURL();
+  const siteId = site.getId();
+  const auditId = audit.getId();
+
+  log.info(`[traffic-analysis-process-${period}] Starting process analysis step for siteId: ${siteId}, auditId: ${auditId}, url: ${finalUrl}`);
+
+  // Use the audit result that was already saved in the import step
   await sendRequestToMystique(
     finalUrl,
-    { id: audit.getId(), auditResult: analysisResult.auditResult },
+    { id: auditId, auditResult: audit.getAuditResult() },
     context,
     site,
   );
+
+  log.info(`[traffic-analysis-process-${period}] Completed sending to Mystique for siteId: ${siteId}, auditId: ${auditId}`);
 
   return {
     status: 'complete',
@@ -138,18 +153,19 @@ async function processAnalysisStep(context, period) {
   };
 }
 
-export { importDataStep };
+export const weeklyImportDataStep = (context) => importDataStep(context, 'weekly');
+export const monthlyImportDataStep = (context) => importDataStep(context, 'monthly');
 export const weeklyProcessAnalysisStep = (context) => processAnalysisStep(context, 'weekly');
 export const monthlyProcessAnalysisStep = (context) => processAnalysisStep(context, 'monthly');
 
 export const paidTrafficAnalysisWeekly = new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('import-data', importDataStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('import-data', weeklyImportDataStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('process-analysis', weeklyProcessAnalysisStep)
   .build();
 
 export const paidTrafficAnalysisMonthly = new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('import-data', importDataStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('import-data', monthlyImportDataStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('process-analysis', monthlyProcessAnalysisStep)
   .build();
