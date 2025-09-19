@@ -19,7 +19,7 @@ import { MockContextBuilder } from '../../shared.js';
 import {
   prepareTrafficAnalysisRequest,
   sendRequestToMystique,
-  importDataStep,
+  weeklyImportDataStep,
   weeklyProcessAnalysisStep,
 } from '../../../src/paid-traffic-analysis/handler.js';
 
@@ -259,50 +259,49 @@ describe('Paid Traffic Analysis Handler', () => {
   });
 
   describe('Step Functions', () => {
-    describe('importDataStep', () => {
-      it('should return correct import payload for import worker', () => {
+    describe('weeklyImportDataStep', () => {
+      it('should return correct import payload for import worker', async () => {
         context.site = site;
         context.finalUrl = auditUrl;
 
-        const result = importDataStep(context);
+        // Let the function call the real prepareTrafficAnalysisRequest
+        const result = await weeklyImportDataStep(context);
 
         // Verify the payload structure that will be sent to import worker
-        expect(result).to.deep.equal({
-          auditResult: { status: 'preparing', finalUrl: auditUrl },
-          fullAuditRef: auditUrl,
-          type: 'traffic-analysis',
-          siteId,
-          allowOverwrite: true,
-        });
-
-        // Verify all required fields for import worker are present
-        expect(result).to.have.property('auditResult').that.deep.equals({ status: 'preparing', finalUrl: auditUrl });
+        expect(result).to.have.property('auditResult');
         expect(result).to.have.property('fullAuditRef', auditUrl);
         expect(result).to.have.property('type', 'traffic-analysis');
         expect(result).to.have.property('siteId', siteId);
         expect(result).to.have.property('allowOverwrite', true);
+
+        // Verify the auditResult has the expected temporal structure
+        expect(result.auditResult).to.have.property('year');
+        expect(result.auditResult).to.have.property('week');
+        expect(result.auditResult).to.have.property('month');
+        expect(result.auditResult).to.have.property('siteId', siteId);
+        expect(result.auditResult).to.have.property('temporalCondition');
       });
     });
 
     describe('weeklyProcessAnalysisStep', () => {
-      it('should process analysis and return completion status', async () => {
+      it('should send audit result to Mystique and return completion status', async () => {
+        const mockAuditResult = {
+          year: 2025,
+          week: 2,
+          month: 1,
+          siteId,
+          temporalCondition: '(year=2025 AND month=1 AND week=2)',
+        };
+
         const mockAudit = {
           getId: sandbox.stub().returns(auditId),
-          getAuditResult: sandbox.stub().returns({
-            year: 2025,
-            week: 2,
-            month: 1,
-            siteId,
-            temporalCondition: '(year=2025 AND month=1 AND week=2)',
-          }),
+          getAuditResult: sandbox.stub().returns(mockAuditResult),
         };
 
         context.site = site;
         context.audit = mockAudit;
-        context.sqs = {
-          sendMessage: sandbox.stub().resolves(),
-        };
 
+        // Let the function call the real sendRequestToMystique
         const result = await weeklyProcessAnalysisStep(context);
 
         expect(result).to.deep.equal({
@@ -310,9 +309,8 @@ describe('Paid Traffic Analysis Handler', () => {
           findings: ['Traffic analysis completed and sent to Mystique'],
         });
 
-        // Verify cache warming and Mystique sending happened
-        expect(context.s3Client.send).to.have.been.called;
-        expect(context.sqs.sendMessage).to.have.been.called;
+        // Verify SQS message was sent (sendRequestToMystique calls context.sqs.sendMessage)
+        expect(mockSqs.sendMessage).to.have.been.called;
       });
     });
   });
