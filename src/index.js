@@ -25,6 +25,7 @@ import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
 import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
+import sitemapProductCoverage from './sitemap-product-coverage/handler.js';
 import redirectChains from './redirect-chains/handler.js';
 import paid from './paid-cookie-consent/handler.js';
 import canonical from './canonical/handler.js';
@@ -81,6 +82,7 @@ const HANDLERS = {
   'lhs-desktop': lhsDesktop,
   404: notfound,
   sitemap,
+  'sitemap-product-coverage': sitemapProductCoverage,
   'redirect-chains': redirectChains,
   paid,
   'paid-traffic-analysis-weekly': paidTrafficAnalysisWeekly,
