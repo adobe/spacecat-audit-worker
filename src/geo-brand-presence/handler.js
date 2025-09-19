@@ -80,8 +80,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
 
   const url = await asPresignedJsonUrl(prompts, bucket, { ...context, getPresignedUrl });
   log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
-  log.info('GEO BRAND PRESENCE: skipping...');
-  /* await Promise.all(OPPTY_TYPES.map(async (opptyType) => {
+  await Promise.all(OPPTY_TYPES.map(async (opptyType) => {
     const message = {
       type: opptyType,
       siteId,
@@ -98,7 +97,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info('GEO BRAND PRESENCE: %s Message sent to Mystique for site id %s (%s):', opptyType, siteId, baseURL, message);
-  })); */
+  }));
 }
 
 /**
