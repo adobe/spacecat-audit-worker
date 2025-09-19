@@ -16,7 +16,12 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { MockContextBuilder } from '../../shared.js';
-import { prepareTrafficAnalysisRequest, sendRequestToMystique } from '../../../src/paid-traffic-analysis/handler.js';
+import {
+  prepareTrafficAnalysisRequest,
+  sendRequestToMystique,
+  weeklyImportDataStep,
+  weeklyProcessAnalysisStep,
+} from '../../../src/paid-traffic-analysis/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -37,6 +42,7 @@ describe('Paid Traffic Analysis Handler', () => {
 
     site = {
       getSiteId: sandbox.stub().returns(siteId),
+      getId: sandbox.stub().returns(siteId),
       getDeliveryType: sandbox.stub().returns('aem_edge'),
       getBaseURL: sandbox.stub().returns(auditUrl),
       getPageTypes: sandbox.stub().returns(null),
@@ -249,6 +255,63 @@ describe('Paid Traffic Analysis Handler', () => {
         'test-queue',
         sinon.match(expectedMessage),
       );
+    });
+  });
+
+  describe('Step Functions', () => {
+    describe('weeklyImportDataStep', () => {
+      it('should return correct import payload for import worker', () => {
+        context.site = site;
+        context.finalUrl = auditUrl;
+
+        const result = weeklyImportDataStep(context);
+
+        // Verify the payload structure that will be sent to import worker
+        expect(result).to.deep.equal({
+          type: 'traffic-analysis',
+          siteId,
+          allowOverwrite: true,
+          fullAuditRef: auditUrl,
+        });
+
+        // Verify all required fields for import worker are present
+        expect(result).to.have.property('type', 'traffic-analysis');
+        expect(result).to.have.property('siteId', siteId);
+        expect(result).to.have.property('allowOverwrite', true);
+        expect(result).to.have.property('fullAuditRef', auditUrl);
+      });
+    });
+
+    describe('weeklyProcessAnalysisStep', () => {
+      it('should process analysis and return completion status', async () => {
+        const mockAudit = {
+          getId: sandbox.stub().returns(auditId),
+          getAuditResult: sandbox.stub().returns({
+            year: 2025,
+            week: 2,
+            month: 1,
+            siteId,
+            temporalCondition: '(year=2025 AND month=1 AND week=2)',
+          }),
+        };
+
+        context.site = site;
+        context.audit = mockAudit;
+        context.sqs = {
+          sendMessage: sandbox.stub().resolves(),
+        };
+
+        const result = await weeklyProcessAnalysisStep(context);
+
+        expect(result).to.deep.equal({
+          status: 'complete',
+          findings: ['Traffic analysis completed and sent to Mystique'],
+        });
+
+        // Verify cache warming and Mystique sending happened
+        expect(context.s3Client.send).to.have.been.called;
+        expect(context.sqs.sendMessage).to.have.been.called;
+      });
     });
   });
 
