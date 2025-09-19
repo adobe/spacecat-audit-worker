@@ -214,13 +214,12 @@ describe('CDN Utils', () => {
       s3Client = { send: sandbox.stub() };
     });
 
-    it('returns fastly as default', async () => {
-      // Mock the S3 call for determineCdnProvider to return no files
+    it('returns empty array as default', async () => {
       s3Client.send.resolves({ Contents: [] });
 
       const providers = await discoverCdnProviders(s3Client, 'test-bucket', timeParts);
 
-      expect(providers).to.deep.equal(['fastly']);
+      expect(providers).to.deep.equal([]);
     });
   });
 });
