@@ -67,6 +67,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   );
   const prompts = recordSets.flat();
   for (const x of prompts) {
+    log.info('GEO BRAND PRESENCE: prompt: %j', x);
     x.market = x.region; // TODO(aurelio): remove when .region is supported by Mystique
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
   }
