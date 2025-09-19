@@ -21,6 +21,9 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 
+// Timeout configuration for hreflang validation
+const HREFLANG_TIMEOUT_MS = 45000;
+
 const auditType = Audit.AUDIT_TYPES.HREFLANG;
 
 export const HREFLANG_CHECKS = Object.freeze({
@@ -60,8 +63,8 @@ export async function validatePageHreflang(url, log) {
   }
 
   try {
-    log.info(`Checking hreflang for URL: ${url}`);
-    const response = await fetch(url);
+    log.info(`Checking hreflang for URL-${HREFLANG_TIMEOUT_MS}ms: ${url}`);
+    const response = await fetch(url, { timeout: HREFLANG_TIMEOUT_MS });
 
     if (!response.ok) {
       log.warn(`Failed to fetch ${url}: ${response.status} ${response.statusText}. Skipping hreflang validation.`);
@@ -143,7 +146,11 @@ export async function validatePageHreflang(url, log) {
 
     return { url, checks };
   } catch (error) {
-    log.warn(`Unable to validate hreflang for ${url}: ${error.message}. Skipping hreflang validation.`);
+    if (error.code === 'ETIMEOUT' || error.message.includes('timeout')) {
+      log.warn(`Request timeout for ${url} after ${HREFLANG_TIMEOUT_MS}ms. Skipping hreflang validation.`);
+    } else {
+      log.warn(`Unable to validate hreflang for ${url}: ${error.message}. Skipping hreflang validation.`);
+    }
     return { url, checks: [] }; // Skip validation, don't report fetch errors as audit issues
   }
 }
