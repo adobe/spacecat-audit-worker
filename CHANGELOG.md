@@ -1,3 +1,10 @@
+## [1.183.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.7...v1.183.8) (2025-09-19)
+
+
+### Bug Fixes
+
+* adding suggestions for headings ([#1214](https://github.com/adobe/spacecat-audit-worker/issues/1214)) ([75e5059](https://github.com/adobe/spacecat-audit-worker/commit/75e5059040f463094ace162c92a36ed79f970bda))
+
 ## [1.183.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.6...v1.183.7) (2025-09-19)
 
 
