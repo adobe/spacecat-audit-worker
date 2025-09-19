@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
-import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { Suggestion as SuggestionDataAccess, Opportunity as OpportunityDataAccess } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Fetches site data based on the given base URL. If no site is found for the given
@@ -89,6 +89,54 @@ export async function getImsOrgId(site, dataAccess, log) {
   } catch (error) {
     log.warn(`Failed to get IMS org ID for site ${site.getBaseURL()}: ${error.message}`);
     return null;
+  }
+}
+
+const isSuggestionInFinalState = (status) => [
+  SuggestionDataAccess.STATUSES.FIXED,
+  SuggestionDataAccess.STATUSES.OUTDATED,
+].includes(status);
+
+const areAllSuggestionsInFinalState = (opportunity) => {
+  const suggestions = opportunity.getSuggestions();
+  return !isNonEmptyArray(suggestions)
+    || suggestions.every((suggestion) => isSuggestionInFinalState(suggestion.getStatus()));
+};
+
+/**
+ * Updates an opportunity's status to RESOLVED if all its suggestions are in a final state.
+ * Refreshes the opportunity from the database to ensure we have the latest suggestion data.
+ *
+ * @param {Object} opportunity - The opportunity object to check and potentially update
+ * @param {Object} context - The context object containing dataAccess and log
+ * @returns {Promise<boolean>} - Returns true if the opportunity status
+ * was updated to RESOLVED, false otherwise
+ */
+export async function updateOpportunityStatusIfAllSuggestionsFinal(opportunity, context) {
+  const { dataAccess, log } = context;
+
+  try {
+    // Refresh opportunity to get the latest suggestions before checking status
+    const { Opportunity } = dataAccess;
+    const refreshedOpportunity = await Opportunity.findById(opportunity.getId());
+
+    if (!refreshedOpportunity) {
+      log.warn(`Opportunity not found for opportunity ${opportunity.getId()}`);
+      return false;
+    }
+
+    if (areAllSuggestionsInFinalState(refreshedOpportunity)) {
+      log.info(`All suggestions for opportunity ${refreshedOpportunity.getId()} are in final state - updating status to RESOLVED`);
+      refreshedOpportunity.setStatus(OpportunityDataAccess.STATUSES.RESOLVED);
+      refreshedOpportunity.setUpdatedBy('system');
+      await refreshedOpportunity.save();
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    log.error(`Failed to update opportunity status for opportunity ${opportunity.getId()}: ${error.message}`);
+    throw error;
   }
 }
 
