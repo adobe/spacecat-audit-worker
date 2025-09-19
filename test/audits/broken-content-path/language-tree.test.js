@@ -144,6 +144,33 @@ describe('LanguageTree', () => {
       expect(result).to.include('XX_XX');
       // Note: xx-XX itself is removed from the result since it's the original
     });
+
+    it('should handle case where no siblings can be found', () => {
+      // Temporarily modify the mappings to create this scenario
+      const originalCountryToRoot = { ...LanguageTree.COUNTRY_TO_ROOT };
+      const originalCountryGroups = { ...LanguageTree.COUNTRY_CODE_GROUPS };
+
+      try {
+        // Make COUNTRY_TO_ROOT return a value that doesn't exist in COUNTRY_CODE_GROUPS
+        LanguageTree.COUNTRY_TO_ROOT.ZZ = 'NONEXISTENT';
+
+        // Ensure NONEXISTENT is not in COUNTRY_CODE_GROUPS
+        delete LanguageTree.COUNTRY_CODE_GROUPS.NONEXISTENT;
+
+        const result = LanguageTree.findSimilarLanguageRoots('ZZ');
+
+        // Should still return case variations and English fallbacks, but no siblings
+        expect(result).to.include('zz'); // Case variation
+        expect(result).to.include('us'); // English fallback
+        expect(result).to.include('en-us'); // English fallback
+        // Should not crash and should handle the empty siblings array (|| [])
+        expect(result).to.be.an('array');
+      } finally {
+        // Restore original mappings
+        LanguageTree.COUNTRY_TO_ROOT = originalCountryToRoot;
+        LanguageTree.COUNTRY_CODE_GROUPS = originalCountryGroups;
+      }
+    });
   });
 
   describe('generateCaseVariations', () => {
@@ -223,6 +250,23 @@ describe('LanguageTree', () => {
     it('should return null for unknown locale', () => {
       const result = LanguageTree.findRootForLocale('xx-XX');
       expect(result).to.be.null;
+    });
+
+    it('should return locale itself when it is a root in groups but not in reverse mappings', () => {
+      // Temporarily modify the reverse mappings to simulate this scenario
+      const originalCountryToRoot = { ...LanguageTree.COUNTRY_TO_ROOT };
+      const originalLocaleToRoot = { ...LanguageTree.LOCALE_TO_ROOT };
+
+      try {
+        // Remove 'FR' from COUNTRY_TO_ROOT but keep it in COUNTRY_CODE_GROUPS
+        delete LanguageTree.COUNTRY_TO_ROOT.FR;
+
+        const result = LanguageTree.findRootForLocale('FR');
+        expect(result).to.equal('FR'); // Should return the locale itself
+      } finally {
+        LanguageTree.COUNTRY_TO_ROOT = originalCountryToRoot;
+        LanguageTree.LOCALE_TO_ROOT = originalLocaleToRoot;
+      }
     });
   });
 
