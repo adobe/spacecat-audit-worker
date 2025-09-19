@@ -107,7 +107,7 @@ export async function sendRequestToMystique(auditUrl, auditData, context, site) 
 async function importDataStep(context, period) {
   const { site, finalUrl, log } = context;
   const siteId = site.getId();
-
+  const allowOverwrite = false;
   log.info(`[traffic-analysis-import-${period}] Starting import data step for siteId: ${siteId}, url: ${finalUrl}`);
 
   // First prepare and save the traffic analysis request like we did before
@@ -118,14 +118,14 @@ async function importDataStep(context, period) {
     period,
   );
 
-  log.info(`[traffic-analysis-import-${period}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowOverwrite: true`);
+  log.info(`[traffic-analysis-import-${period}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowOverwrite: ${allowOverwrite}`);
 
   return {
     auditResult: analysisResult.auditResult,
     fullAuditRef: finalUrl,
     type: 'traffic-analysis',
     siteId,
-    allowOverwrite: false,
+    allowOverwrite,
   };
 }
 
