@@ -100,7 +100,6 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
 
   // eslint-disable-next-line no-param-reassign
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
-  log.info(`Syncing opportunity high form views low conversion for ${auditData.siteId}`);
   let opportunities;
 
   try {
@@ -117,7 +116,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
   log.debug(`forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
-  log.info(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
+  log.debug(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {
     for (const opptyData of filteredOpportunities) {
@@ -145,7 +144,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         guidance: generateDefaultGuidance(scrapedData, opptyData),
       };
 
-      log.info(`Forms Opportunity high form views low conversion ${JSON.stringify(opportunityData, null, 2)}`);
+      log.debug(`Forms Opportunity high form views low conversion ${JSON.stringify(opportunityData, null, 2)}`);
       let formsList = [];
 
       if (!highFormViewsLowConversionsOppty) {
@@ -192,5 +191,5 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
   } catch (e) {
     log.error(`Creating Forms opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
   }
-  log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high-form-views-low-conversions audit type.`);
+  log.debug(`Successfully synced Opportunity for site: ${auditData.siteId} and high-form-views-low-conversions audit type.`);
 }

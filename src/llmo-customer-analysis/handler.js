@@ -37,8 +37,8 @@ async function runReferralTrafficStep(context) {
   const configuration = await Configuration.findLatest();
   const siteId = site.getSiteId();
 
-  log.info(`Starting llmo-customer-analysis audit for site: ${siteId}}`);
-  log.info('Referral Traffic Step: Initiating OpTel import for the last 4 full calendar weeks');
+  log.debug(`Starting llmo-customer-analysis audit for site: ${siteId}}`);
+  log.debug('Referral Traffic Step: Initiating OpTel import for the last 4 full calendar weeks');
 
   const last4Weeks = getLastNumberOfWeeks(4);
 
@@ -76,7 +76,7 @@ async function runAgenticTrafficStep(context) {
     audit, env, site, log,
   } = context;
 
-  log.info('Agentic Traffic Step: Extracting product and page type information');
+  log.debug('Agentic Traffic Step: Extracting product and page type information');
 
   const lastFourWeeks = getLastNumberOfWeeks(4);
 
@@ -106,11 +106,11 @@ async function runAgenticTrafficStep(context) {
   const productRegexes = await analyzeProducts(domain, paths.map((p) => p.path), context);
   const pagetypeRegexes = await analyzePageTypes(domain, paths.map((p) => p.path), context);
 
-  log.info('Agentic Traffic Step: Extraction complete; uploading results');
+  log.debug('Agentic Traffic Step: Extraction complete; uploading results');
 
   await uploadPatternsWorkbook(productRegexes, pagetypeRegexes, site, context);
 
-  log.info('Agentic Traffic Step: Upload complete; initiating scrap');
+  log.debug('Agentic Traffic Step: Upload complete; initiating scrap');
 
   const urls = paths.slice(0, 20).map((p) => ({ url: `https://${audit.getFullAuditRef()}${p.path}` }));
 
@@ -135,15 +135,15 @@ async function runBrandPresenceStep(context) {
   const results = [...scrapeResultPaths.values()];
 
   try {
-    log.info('Brand Presence Step: Scrapes received; starting analysis');
+    log.debug('Brand Presence Step: Scrapes received; starting analysis');
 
     const domainInsights = await analyzeDomain(domain, results, context);
 
-    log.info('Brand Presence Step: analysis complete; uploading results');
+    log.debug('Brand Presence Step: analysis complete; uploading results');
 
     await uploadUrlsWorkbook(domainInsights, site, context);
 
-    log.info('Brand Presence Step: Upload complete; triggering geo-brand-presence audit');
+    log.debug('Brand Presence Step: Upload complete; triggering geo-brand-presence audit');
 
     const geoBrandPresenceMessage = {
       type: 'geo-brand-presence',

@@ -17,7 +17,7 @@ export default async function handler(message, context) {
   const { auditId, siteId, data } = message;
   const { opportunityId, a11y: a11yGuidanceOfIssues } = data;
   const { Opportunity } = dataAccess;
-  log.info(`Message received in accessibility guidance handler: ${JSON.stringify(message, null, 2)}`);
+  log.debug(`Message received in accessibility guidance handler: ${JSON.stringify(message, null, 2)}`);
   const opportunity = await Opportunity.findById(opportunityId);
   if (!opportunity) {
     log.error(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity not found`);
@@ -48,6 +48,6 @@ export default async function handler(message, context) {
     accessibility: a11yData,
   });
   await opportunity.save();
-  log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity updated with guidance`);
+  log.debug(`[Form Opportunity] [Site Id: ${siteId}] A11y opportunity updated with guidance`);
   return ok();
 }

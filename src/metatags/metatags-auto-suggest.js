@@ -54,7 +54,7 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   if (!forceAutoSuggest && !configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
-    log.info('Metatags auto-suggest is disabled for site');
+    log.info('Metatags auto-suggest is disabled for site'); // debug?
     return detectedTags;
   }
   log.debug('Generating suggestions for Meta-tags using Genvar.');
@@ -98,6 +98,6 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
       }
     }
   }
-  log.info('Generated AI suggestions for Meta-tags using Genvar.');
+  log.debug('Generated AI suggestions for Meta-tags using Genvar.');
   return updatedDetectedTags;
 }

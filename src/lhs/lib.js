@@ -279,7 +279,7 @@ async function lhsAuditRunner(baseURL, strategy, context, site) {
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.info(`LHS Audit of type ${strategy} completed in ${formattedElapsed} seconds for ${baseURL}`);
+  log.debug(`LHS Audit of type ${strategy} completed in ${formattedElapsed} seconds for ${baseURL}`); // remove? > 2.5k logs in 7d
 
   return auditData;
 }

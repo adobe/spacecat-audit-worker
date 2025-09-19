@@ -55,7 +55,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   }
   /* c8 ignore stop */
 
-  log.info('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s)', siteId, baseURL);
+  log.debug('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s)', siteId, baseURL);
 
   const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
   const recordSets = await Promise.all(
@@ -67,7 +67,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
   }
 
-  log.info('GEO BRAND PRESENCE: Found %d keyword prompts for site id %s (%s)', prompts.length, siteId, baseURL);
+  log.debug('GEO BRAND PRESENCE: Found %d keyword prompts for site id %s (%s)', prompts.length, siteId, baseURL);
   /* c8 ignore next 4 */
   if (prompts.length === 0) {
     log.warn('GEO BRAND PRESENCE: No keyword prompts found for site id %s (%s), skipping message to mystique', siteId, baseURL);
@@ -75,7 +75,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   }
 
   const url = await asPresignedJsonUrl(prompts, bucket, { ...context, getPresignedUrl });
-  log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
+  log.debug('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
   await Promise.all(OPPTY_TYPES.map(async (opptyType) => {
     const message = {
       type: opptyType,
@@ -89,7 +89,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       data: { url },
     };
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info('GEO BRAND PRESENCE: %s Message sent to Mystique for site id %s (%s):', opptyType, siteId, baseURL, message);
+    log.debug('GEO BRAND PRESENCE: %s Message sent to Mystique for site id %s (%s):', opptyType, siteId, baseURL, message);
   }));
 }
 
@@ -126,7 +126,7 @@ async function asPresignedJsonUrl(data, bucketName, context) {
     ContentType: 'application/json',
   }));
 
-  log.info('GEO BRAND PRESENCE: Data uploaded to S3 at s3://%s/%s', bucketName, key);
+  log.debug('GEO BRAND PRESENCE: Data uploaded to S3 at s3://%s/%s', bucketName, key);
   return getPresignedUrl(
     s3Client,
     new GetObjectCommand({ Bucket: bucketName, Key: key }),
@@ -146,7 +146,7 @@ export async function keywordPromptsImportStep(context) {
   const endDate = Date.parse(data) ? data : undefined;
   /* c8 ignore stop */
 
-  log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s', finalUrl, endDate);
+  log.debug('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s', finalUrl, endDate);
   return {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,

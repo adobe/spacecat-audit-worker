@@ -121,7 +121,7 @@ ${JSON.stringify(products, null, 2)}
           url: product.url,
         }));
 
-      log.info(`Concentrated ${products.length} products into ${validatedProducts.length} products`);
+      log.debug(`Concentrated ${products.length} products into ${validatedProducts.length} products`);
       return { products: validatedProducts, usage: promptResponse.usage };
     }
   } catch (err) {
@@ -180,13 +180,13 @@ Example outputs:
 
 []`;
 
-  log.info(`Starting domain analysis for ${domain}`);
+  log.debug(`Starting domain analysis for ${domain}`);
 
   for (const scrape of scrapes) {
     // eslint-disable-next-line no-await-in-loop
     const data = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, scrape);
     const { scrapeResult } = data;
-    log.info('Scrape retrieved; starting analysis');
+    log.debug('Scrape retrieved; starting analysis');
 
     // Build an object containing only the requested fields from scrapeResult if they exist
     // TODO:: Create a handler in spacecat-content-scraper
@@ -268,7 +268,7 @@ ${stringified}
               log.warn(`Invalid product object structure obtained during extraction: ${JSON.stringify(product)}`);
             }
           });
-          log.info(`Extracted ${productArray.length} products from scrape.`);
+          log.debug(`Extracted ${productArray.length} products from scrape.`);
         } else {
           log.info('No products found in this scrape.');
         }
@@ -288,7 +288,7 @@ ${stringified}
   }
 
   // Log total token usage before returning
-  log.info(`Total token usage for domain analysis: ${JSON.stringify(totalTokenUsage)}`);
+  log.debug(`Total token usage for domain analysis: ${JSON.stringify(totalTokenUsage)}`);
 
   return concentratedInsights.products;
 }

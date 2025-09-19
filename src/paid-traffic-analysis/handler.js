@@ -43,7 +43,7 @@ export async function prepareTrafficAnalysisRequest(auditUrl, context, site, per
   const { log, env } = context;
   const siteId = site.getSiteId();
 
-  log.info(`[traffic-analysis-audit-${period}] Preparing mystique traffic-analysis-audit request parameters for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
+  log.debug(`[traffic-analysis-audit-${period}] Preparing mystique traffic-analysis-audit request parameters for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
 
   let auditResult;
 
@@ -78,10 +78,10 @@ export async function prepareTrafficAnalysisRequest(auditUrl, context, site, per
     monthInt: auditResult.month,
   };
 
-  log.info(`[cache-warming-${period}] Starting cache warming for site: ${siteId}`);
+  log.debug(`[cache-warming-${period}] Starting cache warming for site: ${siteId}`);
   await warmCacheForSite(context, log, env, site, temporalParams);
-  log.info(`[cache-warming-${period}] Completed cache warming for site: ${siteId}`);
-  log.info(`[traffic-analysis-audit-${period}] Request parameters: ${JSON.stringify(auditResult)} set for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
+  log.debug(`[cache-warming-${period}] Completed cache warming for site: ${siteId}`);
+  log.debug(`[traffic-analysis-audit-${period}] Request parameters: ${JSON.stringify(auditResult)} set for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
 
   return {
     auditResult,
@@ -96,9 +96,9 @@ export async function sendRequestToMystique(auditUrl, auditData, context, site) 
   } = context;
   const mystiqueMessage = buildMystiqueMessage(site, id, auditUrl, auditResult);
 
-  log.info(`[traffic-analysis-audit] [siteId:  ${siteId}] and [baseUrl:${auditUrl}] with message ${JSON.stringify(mystiqueMessage, 2)} evaluation to mystique`);
+  log.debug(`[traffic-analysis-audit] [siteId:  ${siteId}] and [baseUrl:${auditUrl}] with message ${JSON.stringify(mystiqueMessage, 2)} evaluation to mystique`);
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-  log.info(`[traffic-analysis-audit] [siteId: ${auditUrl}] [baseUrl:${auditUrl}] Completed mystique evaluation step`);
+  log.debug(`[traffic-analysis-audit] [siteId: ${auditUrl}] [baseUrl:${auditUrl}] Completed mystique evaluation step`);
 }
 
 const createWeeklyRunner = () => (auditUrl, context, site, auditContext) => prepareTrafficAnalysisRequest(auditUrl, context, site, 'weekly', auditContext);

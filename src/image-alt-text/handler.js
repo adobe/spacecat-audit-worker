@@ -36,7 +36,7 @@ export async function processAltTextWithMystique(context) {
     log, site, audit, dataAccess,
   } = context;
 
-  log.info(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for site ${site.getId()}`);
+  log.debug(`[${AUDIT_TYPE}]: Processing alt-text with Mystique for site ${site.getId()}`);
 
   try {
     const { Opportunity } = dataAccess;
@@ -74,9 +74,9 @@ export async function processAltTextWithMystique(context) {
       };
       altTextOppty.setData(resetData);
       await altTextOppty.save();
-      log.info(`[${AUDIT_TYPE}]: Updated opportunity data for new audit run`);
+      log.debug(`[${AUDIT_TYPE}]: Updated opportunity data for new audit run`);
     } else {
-      log.info(`[${AUDIT_TYPE}]: Creating new opportunity for site ${siteId}`);
+      log.debug(`[${AUDIT_TYPE}]: Creating new opportunity for site ${siteId}`);
       const opportunityDTO = {
         siteId,
         auditId: audit.getId(),
@@ -112,7 +112,7 @@ export async function processAltTextWithMystique(context) {
       };
 
       altTextOppty = await Opportunity.create(opportunityDTO);
-      log.info(`[${AUDIT_TYPE}]: Created new opportunity with ID ${altTextOppty.getId()}`);
+      log.debug(`[${AUDIT_TYPE}]: Created new opportunity with ID ${altTextOppty.getId()}`);
     }
 
     await sendAltTextOpportunityToMystique(
@@ -123,7 +123,7 @@ export async function processAltTextWithMystique(context) {
       context,
     );
 
-    log.info(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
+    log.debug(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
 
     // Clean up outdated suggestions
     // Small delay to ensure no concurrent operations

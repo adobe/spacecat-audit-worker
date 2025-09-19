@@ -145,7 +145,6 @@ export async function validatePageHeadings(url, log) {
   }
 
   try {
-    log.info(`Checking headings for URL: ${url}`);
     const response = await fetch(url);
     const html = await response.text();
     const dom = new JSDOM(html);
@@ -163,7 +162,7 @@ export async function validatePageHeadings(url, log) {
         explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
         suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
       });
-      log.info(`Missing h1 element detected at ${url}`);
+      log.info(`Missing h1 element detected at ${url}`); // debug?
     } else if (h1Elements.length > 1) {
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
@@ -172,7 +171,7 @@ export async function validatePageHeadings(url, log) {
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
         count: h1Elements.length,
       });
-      log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
+      log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`); // debug?
     }
 
     // Check for empty headings and collect text content for duplicate detection
@@ -187,7 +186,7 @@ export async function validatePageHeadings(url, log) {
           suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
           tagName: heading.tagName,
         });
-        log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
+        log.info(`Empty heading detected (${heading.tagName}) at ${url}`); // debug?
       } else {
         // Track heading text content for duplicate detection
         const lowerText = text.toLowerCase();
@@ -215,7 +214,7 @@ export async function validatePageHeadings(url, log) {
           duplicates: headingsWithSameText.map((h) => h.tagName),
           count: headingsWithSameText.length,
         });
-        log.info(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`);
+        log.info(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`); // debug? > 1k logs in 7d
       }
     }
 
@@ -233,7 +232,7 @@ export async function validatePageHeadings(url, log) {
           heading: currentHeading.tagName,
           nextHeading: nextHeading.tagName,
         });
-        log.info(`Heading without content detected at ${url}: ${currentHeading.tagName} has no content before ${nextHeading.tagName}`);
+        log.info(`Heading without content detected at ${url}: ${currentHeading.tagName} has no content before ${nextHeading.tagName}`); // debug? > 5.8k logs in 7d
       }
     }
 
@@ -252,7 +251,7 @@ export async function validatePageHeadings(url, log) {
             previous: `h${prevLevel}`,
             current: `h${curLevel}`,
           });
-          log.info(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);
+          log.info(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);// debug? ~500 logs in 7d
         }
       }
     }
@@ -277,14 +276,13 @@ export async function validatePageHeadings(url, log) {
 export async function headingsAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess } = context;
-  log.info(`Starting Headings Audit with siteId: ${siteId}`);
 
   try {
     // Get top 200 pages
     const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
     const topPages = allTopPages.slice(0, 200);
 
-    log.info(`Processing ${topPages.length} top pages for headings audit (limited to 200)`);
+    log.debug(`Processing ${topPages.length} top pages for headings audit (limited to 200)`);
 
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
@@ -334,7 +332,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
       }
     });
 
-    log.info(`Successfully completed Headings Audit for site: ${baseURL}. Found ${totalIssuesFound} issues across ${Object.keys(aggregatedResults).length} check types.`);
+    log.debug(`Successfully completed Headings Audit for site: ${baseURL}. Found ${totalIssuesFound} issues across ${Object.keys(aggregatedResults).length} check types.`);
 
     // Return success if no issues found, otherwise return the aggregated results
     if (totalIssuesFound === 0) {
@@ -381,7 +379,7 @@ export function generateSuggestions(auditUrl, auditData, context) {
     }
   });
 
-  log.info(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`);
+  log.info(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`); // debug?
   return { ...auditData, suggestions };
 }
 
@@ -437,7 +435,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     log,
   });
 
-  log.info(`Headings opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
+  log.info(`Headings opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`); // debug?
   return { ...auditData };
 }
 

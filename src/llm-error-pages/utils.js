@@ -461,7 +461,7 @@ export async function downloadExistingCdnSheet(
 ) {
   try {
     const filename = `agentictraffic-${periodIdentifier}.xlsx`;
-    log.info(`Attempting to download existing CDN sheet: ${filename}`);
+    log.debug(`Attempting to download existing CDN sheet: ${filename}`);
 
     const buffer = await readFromSharePoint(filename, outputLocation, sharepointClient, log);
     const workbook = new ExcelJS.Workbook();
@@ -487,7 +487,7 @@ export async function downloadExistingCdnSheet(
       });
     });
 
-    log.info(`Successfully loaded ${rows.length} rows from existing CDN sheet`);
+    log.debug(`Successfully loaded ${rows.length} rows from existing CDN sheet`);
     return rows;
   } catch (error) {
     log.warn(`Could not download existing CDN sheet: ${error.message}`);

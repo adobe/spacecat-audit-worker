@@ -41,13 +41,13 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
     }
 
     if (a11yData?.length === 0) {
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] No a11y data found to create or update opportunity `);
+      log.debug(`[Form Opportunity] [Site Id: ${siteId}] No a11y data found to create or update opportunity `);
       return opportunity;
     }
 
     const filteredA11yData = a11yData.filter((a11y) => a11y.a11yIssues?.length > 0);
     if (filteredA11yData.length === 0) {
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] No a11y issues found to create or update opportunity`);
+      log.debug(`[Form Opportunity] [Site Id: ${siteId}] No a11y issues found to create or update opportunity`);
       return opportunity;
     }
 
@@ -122,7 +122,7 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
         },
       };
       opportunity = await Opportunity.create(opportunityData);
-      log.info(`[Form Opportunity] [Site Id: ${siteId}] Created new a11y opportunity`);
+      log.debug(`[Form Opportunity] [Site Id: ${siteId}] Created new a11y opportunity`);
     }
   } catch (e) {
     log.error(`[Form Opportunity] [Site Id: ${siteId}] Failed to create/update a11y opportunity with error: ${e.message}`);
@@ -265,7 +265,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] a11y opportunity created (if issues found) and sent to mystique`);
+    log.debug(`[Form Opportunity] [Site Id: ${site.getId()}] a11y opportunity created (if issues found) and sent to mystique`);
   } catch (error) {
     log.error(`[Form Opportunity] [Site Id: ${site.getId()}] Error creating a11y issues: ${error.message}`);
   }
@@ -275,7 +275,7 @@ export default async function handler(message, context) {
   const { log } = context;
   const { auditId, siteId, data } = message;
   const { opportunityId, a11y } = data;
-  log.info(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
+  log.debug(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
   try {
     const opportunity = await createOrUpdateOpportunity(
       auditId,

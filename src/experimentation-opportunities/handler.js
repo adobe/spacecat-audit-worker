@@ -58,7 +58,7 @@ export async function generateOpportunityAndSuggestions(context) {
     log, sqs, env, site, audit,
   } = context;
   const auditResult = audit.getAuditResult();
-  log.info('auditResult in generateOpportunityAndSuggestions: ', JSON.stringify(auditResult, null, 2));
+  log.debug('auditResult in generateOpportunityAndSuggestions: ', JSON.stringify(auditResult, null, 2));
 
   const messages = auditResult?.experimentationOpportunities?.filter(
     (oppty) => oppty.type === HIGH_ORGANIC_LOW_CTR_OPPTY_TYPE,
@@ -83,7 +83,7 @@ export async function generateOpportunityAndSuggestions(context) {
   for (const message of messages) {
     // eslint-disable-next-line no-await-in-loop
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
+    log.debug(`Message sent to Mystique: ${JSON.stringify(message)}`);
   }
 }
 
@@ -160,7 +160,7 @@ export async function experimentOpportunitiesAuditRunner(auditUrl, context) {
   const queryResults = await rumAPIClient.queryMulti(OPPTY_QUERIES, options);
   const experimentationOpportunities = Object.values(queryResults).flatMap((oppty) => oppty);
   processRageClickOpportunities(experimentationOpportunities);
-  log.info(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
+  log.debug(`Found ${experimentationOpportunities.length} experimentation opportunites for ${auditUrl}`);
 
   // Handle custom URLs if provided via audit context
   const { data } = context;
@@ -241,19 +241,19 @@ export async function organicKeywordsStep(context) {
   const {
     site, log, finalUrl, audit, s3Client,
   } = context;
-  log.info(`Organic keywords step started for ${finalUrl}`);
+  log.debug(`Organic keywords step started for ${finalUrl}`);
   let organicKeywordsImportEnabled = false;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const s3BucketPrefix = `scrapes/${site.getId()}`;
   const auditResult = audit.getAuditResult();
   const urls = getHighOrganicLowCtrOpportunity(auditResult.experimentationOpportunities)
     .map((oppty) => oppty.page);
-  log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
+  log.debug(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
   const siteConfig = site.getConfig();
   const imports = siteConfig?.getImports() || [];
-  log.info(`Site config exists: ${!!siteConfig}, imports count: ${imports.length}`);
+  log.debug(`Site config exists: ${!!siteConfig}, imports count: ${imports.length}`);
   if (!isImportEnabled(IMPORT_ORGANIC_KEYWORDS, imports)) {
-    log.info(`Enabling ${IMPORT_ORGANIC_KEYWORDS} for site ${site.getId()}`);
+    log.debug(`Enabling ${IMPORT_ORGANIC_KEYWORDS} for site ${site.getId()}`);
     await toggleImport(site, IMPORT_ORGANIC_KEYWORDS, true, log);
     organicKeywordsImportEnabled = true;
   }
@@ -272,15 +272,15 @@ export async function organicKeywordsStep(context) {
       urlObj.pathname,
       log,
     );
-    log.info(`Lang for ${url} is ${lang}`);
+    log.debug(`Lang for ${url} is ${lang}`);
     const geo = getCountryCodeFromLang(lang);
     return { url, geo };
   }));
   urlConfigs = urlConfigs.filter(Boolean);
-  log.info(`Url configs: ${JSON.stringify(urlConfigs, null, 2)}`);
+  log.debug(`Url configs: ${JSON.stringify(urlConfigs, null, 2)}`);
   if (organicKeywordsImportEnabled) {
     // disable the import after the step is done, if it was enabled in the beginning
-    log.info(`Disabling ${IMPORT_ORGANIC_KEYWORDS} for site ${site.getId()}`);
+    log.debug(`Disabling ${IMPORT_ORGANIC_KEYWORDS} for site ${site.getId()}`);
     await toggleImport(site, IMPORT_ORGANIC_KEYWORDS, false, log);
   }
   return {
@@ -294,7 +294,7 @@ export function importAllTrafficStep(context) {
   const {
     site, log, finalUrl,
   } = context;
-  log.info(`Import all traffic step for ${finalUrl}`);
+  log.debug(`Import all traffic step for ${finalUrl}`);
   return {
     type: 'all-traffic',
     siteId: site.getId(),
