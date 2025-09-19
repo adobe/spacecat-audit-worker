@@ -165,7 +165,7 @@ export async function keywordPromptsImportStep(context) {
     aiPlatform = parsedData.aiPlatform;
   } catch (e) {
     // If JSON parsing fails, treat as a date string (legacy behavior)
-    log.error('GEO BRAND PRESENCE:failed to parse %s as JSON: %j', data, e);
+    log.error('GEO BRAND PRESENCE:failed to parse %s as JSON', data, e);
     endDate = Date.parse(data) ? data : undefined;
   }
   /* c8 ignore stop */

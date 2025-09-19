@@ -71,7 +71,6 @@ describe('Geo Brand Presence Handler', () => {
     sandbox.restore();
   });
 
-  // TODO: Fix this test - currently failing due to calendarWeek being returned
   it('should run the keywordPromptsImport step', async () => {
     const finalUrl = 'https://adobe.com';
     const ctx = { ...context, finalUrl };
@@ -85,7 +84,6 @@ describe('Geo Brand Presence Handler', () => {
     });
   });
 
-  // TODO: Fix this test - currently failing due to calendarWeek being returned
   it('passes on a string date in ctx.data', async () => {
     const finalUrl = 'https://adobe.com';
     const ctx = { ...context, finalUrl, data: '2025-08-13' };
