@@ -1,3 +1,10 @@
+## [1.183.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.4...v1.183.5) (2025-09-19)
+
+
+### Bug Fixes
+
+* increase polling time for cdn report generation ([#1292](https://github.com/adobe/spacecat-audit-worker/issues/1292)) ([77dc0d0](https://github.com/adobe/spacecat-audit-worker/commit/77dc0d03774200f2c9871c805dae2fa3b31841c9))
+
 ## [1.183.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.3...v1.183.4) (2025-09-19)
 
 
