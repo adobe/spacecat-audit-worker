@@ -28,6 +28,7 @@ import {
   generateSuggestions,
   headingsAuditRunner,
 } from '../../src/headings/handler.js';
+import { createOpportunityData } from '../../src/headings/opportunity-data-mapper.js';
 
 chaiUse(sinonChai);
 
@@ -1281,6 +1282,82 @@ describe('Headings Audit', () => {
         explanation: 'Empty heading',
         recommendedAction: 'Add content',
       });
+    });
+  });
+
+  describe('Opportunity Data Mapper', () => {
+    it('creates proper opportunity data structure', () => {
+      const opportunityData = createOpportunityData();
+
+      expect(opportunityData).to.be.an('object');
+      expect(opportunityData).to.have.property('runbook', '');
+      expect(opportunityData).to.have.property('origin', 'AUTOMATION');
+      expect(opportunityData).to.have.property('title', 'Heading structure issues affecting accessibility and SEO');
+      expect(opportunityData).to.have.property('description');
+      expect(opportunityData.description).to.include('heading elements');
+      expect(opportunityData.description).to.include('hierarchical order');
+      expect(opportunityData.description).to.include('AI-powered suggestions');
+    });
+
+    it('includes proper guidance steps', () => {
+      const opportunityData = createOpportunityData();
+
+      expect(opportunityData).to.have.property('guidance');
+      expect(opportunityData.guidance).to.have.property('steps');
+      expect(opportunityData.guidance.steps).to.be.an('array');
+      expect(opportunityData.guidance.steps).to.have.lengthOf(5);
+
+      const steps = opportunityData.guidance.steps;
+      expect(steps[0]).to.include('Review pages flagged for heading order');
+      expect(steps[1]).to.include('AI-generated suggestions');
+      expect(steps[2]).to.include('levels increase by at most one');
+      expect(steps[3]).to.include('Remove or fill any empty heading elements');
+      expect(steps[4]).to.include('brand guidelines');
+    });
+
+    it('has correct tags', () => {
+      const opportunityData = createOpportunityData();
+
+      expect(opportunityData).to.have.property('tags');
+      expect(opportunityData.tags).to.be.an('array');
+      expect(opportunityData.tags).to.have.lengthOf(2);
+      expect(opportunityData.tags).to.deep.equal(['Accessibility', 'SEO']);
+    });
+
+    it('has correct data sources configuration', () => {
+      const opportunityData = createOpportunityData();
+
+      expect(opportunityData).to.have.property('data');
+      expect(opportunityData.data).to.have.property('dataSources');
+      expect(opportunityData.data.dataSources).to.be.an('array');
+      expect(opportunityData.data.dataSources).to.have.lengthOf(1);
+      expect(opportunityData.data.dataSources[0]).to.equal('Site');
+    });
+
+    it('returns consistent data on multiple calls', () => {
+      const data1 = createOpportunityData();
+      const data2 = createOpportunityData();
+
+      expect(data1).to.deep.equal(data2);
+    });
+
+    it('has all required fields for opportunity creation', () => {
+      const opportunityData = createOpportunityData();
+
+      // Check all required fields exist
+      expect(opportunityData).to.have.all.keys([
+        'runbook',
+        'origin', 
+        'title',
+        'description',
+        'guidance',
+        'tags',
+        'data'
+      ]);
+
+      // Check nested structure
+      expect(opportunityData.guidance).to.have.property('steps');
+      expect(opportunityData.data).to.have.property('dataSources');
     });
   });
 });
