@@ -805,6 +805,46 @@ describe('Headings Audit', () => {
     });
   });
 
+  it('uses fallback suggestion when AI returns null for missing H1', async () => {
+    // Mock AI to return null (falsy value to test the OR fallback branch)
+    const mockClient = {
+      fetchChatCompletion: sinon.stub().resolves({
+        choices: [{ message: { content: '{"h1":{"aiSuggestion":null}}' } }],
+      }),
+    };
+    AzureOpenAIClient.createFrom.restore();
+    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+    const url = 'https://example.com/page';
+    
+    s3Client.send.resolves({
+      Body: {
+        transformToString: () => JSON.stringify({
+          finalUrl: url,
+          scrapeResult: {
+            rawBody: '<h2>Section</h2>', // No H1 to trigger missing H1 check
+            tags: {
+              title: 'Page Title',
+              description: 'Page Description',
+              h1: 'Page H1',
+            },
+          }
+        }),
+      },
+      ContentType: 'application/json',
+    });
+
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
+    
+    // This should use the fallback suggestion (right branch of OR operator)
+    expect(result.checks).to.deep.include({
+      check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
+      success: false,
+      explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
+      suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion, // Should use fallback, not AI
+    });
+  });
+
   it('detects child elements with self-closing tags but no text content', async () => {
     const url = 'https://example.com/page';
     
