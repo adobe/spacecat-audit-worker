@@ -43,6 +43,7 @@ describe('CDN Utils', () => {
         FASTLY: 'fastly',
         CLOUDFLARE: 'cloudflare',
         CLOUDFRONT: 'cloudfront',
+        FRONTDOOR: 'frontdoor',
       });
     });
   });
