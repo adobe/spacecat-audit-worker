@@ -63,10 +63,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
 
   const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
   const recordSets = await Promise.all(
-    parquetFiles.map((key) => {
-      log.info('GEO BRAND PRESENCE: loading parquet data from s3 for key: %s and bucket: %s', key, bucket);
-      return loadParquetDataFromS3({ key, bucket, s3Client });
-    }),
+    parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
   );
 
   const prompts = recordSets.flat();
