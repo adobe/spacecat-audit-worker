@@ -44,12 +44,12 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   // Get aiPlatform from the audit result
   const auditResult = audit?.getAuditResult();
   const aiPlatform = auditResult?.aiPlatform;
+  log.info('GEO BRAND PRESENCE: aiPlatform: %s', aiPlatform);
   /* c8 ignore start */
   if (success === false) {
     log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
   }
   if (!calendarWeek || typeof calendarWeek !== 'object' || !calendarWeek.week || !calendarWeek.year) {
-    log.error('GEO BRAND PRESENCE: calendarWeek value: %j', calendarWeek);
     log.error('GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
     return;
   }
@@ -59,7 +59,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   }
   /* c8 ignore stop */
 
-  log.info('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s)', siteId, baseURL);
+  log.info('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s), calendarWeek: %j', siteId, baseURL, calendarWeek);
 
   const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
   const recordSets = await Promise.all(
@@ -152,9 +152,6 @@ export async function keywordPromptsImportStep(context) {
   let endDate;
   let aiPlatform;
 
-  log.error('GEO BRAND PRESENCE: keywordPromptsImportStep data: %j', data);
-  log.error('GEO BRAND PRESENCE: keywordPromptsImportStep finalUrl: %s', finalUrl);
-
   /* c8 ignore start */
   try {
     // Try to parse as JSON first
@@ -167,14 +164,13 @@ export async function keywordPromptsImportStep(context) {
     aiPlatform = parsedData.aiPlatform;
   } catch (e) {
     // If JSON parsing fails, treat as a date string (legacy behavior)
-    log.error('GEO BRAND PRESENCE:failed to parse data as JSON: %j', e);
+    log.error('GEO BRAND PRESENCE:failed to parse %s as JSON: %j', data, e);
     endDate = Date.parse(data) ? data : undefined;
   }
   /* c8 ignore stop */
 
-  log.error('GEO BRAND PRESENCE: keywordPromptsImportStep aiPlatform: %s', aiPlatform);
-
   log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
+
   return {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,

@@ -68,7 +68,7 @@ Output message body format sent to `AUDIT_RESULTS_QUEUE` is:
 
 ### 1. Using `nodemon` and AWS Credentials
 
-Everyone working on Spacecat should have access to the development environments via [KLAM](https://klam.corp.adobe.com/)..
+Everyone working on Spacecat should have access to the development environments via [KLAM](https://klam.corp.adobe.com/).
 If you don’t have access, please refer to the engineering onboarding guide or contact your Spacecat team representative.
 
 After logging into KLAM, you’ll receive the following credentials required to access AWS resources such as DynamoDB and S3 for local development:

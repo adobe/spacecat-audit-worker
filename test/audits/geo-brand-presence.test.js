@@ -72,7 +72,7 @@ describe('Geo Brand Presence Handler', () => {
   });
 
   // TODO: Fix this test - currently failing due to calendarWeek being returned
-  it.skip('should run the keywordPromptsImport step', async () => {
+  it('should run the keywordPromptsImport step', async () => {
     const finalUrl = 'https://adobe.com';
     const ctx = { ...context, finalUrl };
     const result = await keywordPromptsImportStep(ctx);
@@ -80,14 +80,13 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: undefined,
-      aiPlatform: undefined,
       auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
     });
   });
 
   // TODO: Fix this test - currently failing due to calendarWeek being returned
-  it.skip('passes on a string date in ctx.data', async () => {
+  it('passes on a string date in ctx.data', async () => {
     const finalUrl = 'https://adobe.com';
     const ctx = { ...context, finalUrl, data: '2025-08-13' };
     const result = await keywordPromptsImportStep(ctx);
@@ -95,14 +94,13 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: '2025-08-13',
-      aiPlatform: undefined,
       auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
     });
   });
 
   // TODO: Fix this test - currently failing due to calendarWeek being returned
-  it.skip('ignores non-date values in in ctx.data', async () => {
+  it('ignores non-date values in in ctx.data', async () => {
     const finalUrl = 'https://adobe.com';
     const ctx = { ...context, finalUrl, data: 'not a parseable date' };
     const result = await keywordPromptsImportStep(ctx);
@@ -110,10 +108,57 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: undefined,
-      aiPlatform: undefined,
       auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
     });
+  });
+
+  it('parses JSON data with valid endDate and aiPlatform', async () => {
+    const finalUrl = 'https://adobe.com';
+    const jsonData = JSON.stringify({
+      endDate: '2025-09-15',
+      aiPlatform: 'gemini',
+    });
+    const ctx = { ...context, finalUrl, data: jsonData };
+    const result = await keywordPromptsImportStep(ctx);
+    expect(result).to.deep.equal({
+      type: 'llmo-prompts-ahrefs',
+      siteId: site.getId(),
+      endDate: '2025-09-15',
+      auditResult: { keywordQuestions: [], aiPlatform: 'gemini' },
+      fullAuditRef: finalUrl,
+    });
+    expect(log.info).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
+      finalUrl,
+      '2025-09-15',
+      'gemini',
+    );
+  });
+
+  it('handles JSON parsing failure and falls back to legacy date parsing', async () => {
+    const finalUrl = 'https://adobe.com';
+    const invalidJson = '{ invalid json data';
+    const ctx = { ...context, finalUrl, data: invalidJson };
+    const result = await keywordPromptsImportStep(ctx);
+    expect(result).to.deep.equal({
+      type: 'llmo-prompts-ahrefs',
+      siteId: site.getId(),
+      endDate: undefined,
+      auditResult: { keywordQuestions: [], aiPlatform: undefined },
+      fullAuditRef: finalUrl,
+    });
+    expect(log.error).to.have.been.calledWith(
+      'GEO BRAND PRESENCE:failed to parse %s as JSON: %j',
+      invalidJson,
+      sinon.match.instanceOf(Error),
+    );
+    expect(log.info).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
+      finalUrl,
+      undefined,
+      undefined,
+    );
   });
 
   it('should send message to Mystique for all opportunity types when keywordQuestions are found', async () => {
