@@ -27,7 +27,7 @@ export class ContentPath {
   }
 
   isValid() {
-    return this.path && this.path.trim().length > 0;
+    return typeof this.path === 'string' && this.path.trim().length > 0;
   }
 
   isPublished() {
