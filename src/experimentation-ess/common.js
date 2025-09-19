@@ -12,10 +12,8 @@
 
 /* c8 ignore start */
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { tracingFetch as fetch, calculateConfidence } from '@adobe/spacecat-shared-utils';
 import { JSDOM } from 'jsdom';
-import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
-import { defaultProvider } from '@aws-sdk/credential-provider-node';
 
 const DEFAULT_MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD = 500;
 
@@ -29,7 +27,6 @@ const EXPERIMENT_PLUGIN_OPTIONS = {
 const EXCLUDE_UPDATE_PROPERTIES = ['split'];
 
 const METRIC_CHECKPOINTS = ['click', 'convert', 'formsubmit'];
-const SPACECAT_STATISTICS_SERVICE_ARN = 'arn:aws:lambda:us-east-1:282898975672:function:spacecat-services--statistics-service';
 
 let log = console;
 
@@ -355,67 +352,33 @@ function mergeData(experiment, experimentMetadata, url) {
   return experiment;
 }
 
-async function invokeLambdaFunction(payload) {
-  const lambdaClient = new LambdaClient({
-    region: 'us-east-1',
-    credentials: defaultProvider(),
-  });
-  const invokeParams = {
-    FunctionName: SPACECAT_STATISTICS_SERVICE_ARN,
-    InvocationType: 'RequestResponse',
-    Payload: JSON.stringify(payload),
-  };
-  const response = await lambdaClient.send(new InvokeCommand(invokeParams));
-  return JSON.parse(new TextDecoder().decode(response.Payload));
-}
-
-async function addPValues(experimentData) {
-  const lambdaPayload = {
-    type: 'statsig',
-    payload: {
-      rumData: {
-      },
-    },
-  };
+async function addConfidence(experimentData) {
   for (const experiment of experimentData) {
-    const id = `${experiment.id}#${experiment.url}`;
-    lambdaPayload.payload.rumData[id] = {};
     const metric = experiment.conversionEventName || 'click';
-    for (const variant of experiment.variants) {
-      lambdaPayload.payload.rumData[id][variant.name] = {
-        views: variant.samples || 0,
-        metrics: variant.metrics?.find((m) => (m.type === metric && m.selector === '*'))?.samples || 0,
-      };
+    const controlVariant = experiment.variants.find((v) => v.name === 'control');
+    const controlVariantMetrics = controlVariant.metrics?.find((m) => (m.type === metric && m.selector === '*'))?.samples || 0;
+    if (!controlVariantMetrics) {
+      log.error(`Error calculating confidence: No control variant found for experiment ${experiment.id}#${experiment.url}`);
+      // eslint-disable-next-line no-continue
+      continue;
     }
-  }
-  log.info('Lambda Payload: ', JSON.stringify(lambdaPayload, null, 2));
-  let lambdaResult;
-  try {
-    const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
-    log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
-    const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
-    lambdaResult = lambdaResponseBody.result;
-  } catch (error) {
-    log.error('Error invoking lambda function: ', error);
-  }
-  if (!lambdaResult) {
-    log.error('Error calculating p-values: No result from lambda function');
-    return;
-  }
-  for (const experiment of experimentData) {
-    const id = `${experiment.id}#${experiment.url}`;
-    const stats = lambdaResult[id];
-    if (stats && !stats.error) {
-      for (const variant of experiment.variants) {
-        const variantStats = stats[variant.name];
-        if (variantStats && !variantStats.error && !Number.isNaN(variantStats.p_value)) {
-          variant.p_value = variantStats.p_value;
-          variant.power = variantStats.power;
-          variant.statsig = (variantStats.statsig).toLowerCase() === 'true';
-        }
+    for (const variant of experiment.variants) {
+      if (variant.name === 'control') {
+        // eslint-disable-next-line no-continue
+        continue;
       }
-    } else {
-      log.error(`Error calculating p-values: ${stats} for experiment ${experiment.id}`);
+      const variantMetrics = variant.metrics?.find((m) => (m.type === metric && m.selector === '*'))?.samples;
+      if (!variantMetrics) {
+        log.error(`Error calculating confidence: No variant metrics found for experiment ${experiment.id}#${experiment.url}`);
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      variant.confidence = calculateConfidence(
+        controlVariantMetrics,
+        controlVariant.samples || 0,
+        variantMetrics,
+        variant.samples || 0,
+      );
     }
   }
 }
@@ -644,7 +607,7 @@ async function processExperimentRUMData(experimentInsights, context, days) {
     dailyPageViewsThreshold,
   );
   const experimentData = await convertToExperimentsSchema(experimentInsights);
-  await addPValues(experimentData);
+  await addConfidence(experimentData);
   return experimentData;
 }
 
@@ -665,6 +628,7 @@ export async function postProcessor(auditUrl, auditData, context) {
   const { dataAccess } = context;
   const { Experiment } = dataAccess;
   log = context.log;
+  log.info('Post Processor of ESS Experimentation audit: ', JSON.stringify(auditData, null, 2));
   // iterate array auditData.auditResult
   for (const experiment of auditData.auditResult) {
     const experimentData = {
@@ -720,6 +684,7 @@ export async function postProcessor(auditUrl, auditData, context) {
         }
       }
     }
+    log.info(`Experiment data for site ${auditData.siteId} has been upserted: ${JSON.stringify(experimentData, null, 2)}`);
     // eslint-disable-next-line no-await-in-loop
     await Experiment.create(experimentData);
   }

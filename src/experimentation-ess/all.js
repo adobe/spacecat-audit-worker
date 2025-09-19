@@ -24,10 +24,12 @@ async function persistOnlyMetadata(auditData, context) {
   // whole audit result will be bigger than the allowed size in dynamo
   const { dataAccess } = context;
   const { Audit } = dataAccess;
-  await Audit.create({
+  const audit = await Audit.create({
     ...auditData,
     auditResult: [], // deliberately overrides the result
   });
+  log.info(`ESS Experimentation All Audit metadata persisted: ${audit.getId()}`);
+  return audit;
 }
 
 export async function essExperimentationAllAuditRunner(auditUrl, context, site) {
@@ -65,7 +67,7 @@ export async function essExperimentationAllAuditRunner(auditUrl, context, site) 
     days,
   );
 
-  log.info(`ESS Experimentation All Audit data size: ${JSON.stringify(auditData).length}`);
+  log.info(`ESS Experimentation All Audit data : ${JSON.stringify(auditData, null, 2)}`);
 
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
