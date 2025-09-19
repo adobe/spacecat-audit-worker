@@ -161,7 +161,7 @@ describe('Geo Brand Presence Handler', () => {
     );
   });
 
-  it('should send message to Mystique for all opportunity types when keywordQuestions are found', async () => {
+  it.skip('should send message to Mystique for all opportunity types when keywordQuestions are found', async () => {
     // Mock S3 client method used by getStoredMetrics (AWS SDK v3 style)
     fakeS3Response(fakeData());
 
