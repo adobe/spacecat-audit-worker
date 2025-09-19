@@ -209,8 +209,7 @@ export async function validatePageHeadings(
     if (h1Elements.length === 0
       || (h1Elements.length === 1 && getTextContent(h1Elements[0]).length === 0)) {
       log.info(`Missing h1 element detected at ${url}`);
-      const aiSuggestion = scrapeJsonObject
-        ? await getH1HeadingASuggestion(url, log, scrapeJsonObject, context) : null;
+      const aiSuggestion = await getH1HeadingASuggestion(url, log, scrapeJsonObject, context);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
         success: false,
@@ -235,9 +234,7 @@ export async function validatePageHeadings(
         const text = getTextContent(heading);
         if (text.length === 0) {
           log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
-          const aiSuggestion = scrapeJsonObject
-            ? await getH1HeadingASuggestion(url, log, scrapeJsonObject, context)
-            : null;
+          const aiSuggestion = await getH1HeadingASuggestion(url, log, scrapeJsonObject, context);
           return {
             check: HEADINGS_CHECKS.HEADING_EMPTY.check,
             success: false,
@@ -452,26 +449,19 @@ export function generateSuggestions(auditUrl, auditData, context) {
   Object.entries(auditData.auditResult).forEach(([checkType, checkResult]) => {
     if (checkResult.success === false && Array.isArray(checkResult.urls)) {
       checkResult.urls.forEach((urlObj) => {
-        // Handle both old format (string) and new format (object with url property)
-        const urlValue = typeof urlObj === 'string' ? urlObj : urlObj.url;
-
         const suggestion = {
           type: 'CODE_CHANGE',
           checkType,
           explanation: checkResult.explanation,
-          url: urlValue,
+          url: urlObj.url,
           // eslint-disable-next-line no-use-before-define
           recommendedAction: generateRecommendedAction(checkType),
         };
-
-        // If urlObj has additional properties, include them
-        if (typeof urlObj === 'object' && urlObj !== null) {
-          if (urlObj.tagName) {
-            suggestion.tagName = urlObj.tagName;
-          }
-          if (urlObj.suggestion) {
-            suggestion.recommendedAction = urlObj.suggestion;
-          }
+        if (urlObj.tagName) {
+          suggestion.tagName = urlObj.tagName;
+        }
+        if (urlObj.suggestion) {
+          suggestion.recommendedAction = urlObj.suggestion;
         }
 
         suggestions.push(suggestion);
