@@ -168,7 +168,7 @@ function calculateStats(originalHTML, currentHTML) {
 
   let contentGainRatio;
   if (wordCountBefore > 0) {
-    contentGainRatio = wordCountAfter / wordCountBefore;
+    contentGainRatio = Math.round((wordCountAfter / wordCountBefore) * 10) / 10;
   } else if (wordCountAfter > 0) {
     contentGainRatio = wordCountAfter;
   } else {

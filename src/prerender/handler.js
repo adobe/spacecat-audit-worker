@@ -69,8 +69,6 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
     const clientSideKey = getS3Path(url, siteId, 'client-side.html');
 
     log.info(`Prerender - Getting scraped content for URL: ${url}`);
-    log.info(`Prerender - Server-side key: ${serverSideKey}`);
-    log.info(`Prerender - Client-side key: ${clientSideKey}`);
 
     // Fetch both HTML files in parallel
     const [serverSideHtml, clientSideHtml] = await Promise.all([
@@ -200,10 +198,8 @@ export async function submitForScraping(context) {
     finalUrls.push(baseURL);
   }
 
-  // The first step MUST return auditResult and fullAuditRef.
-  // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
   return {
-    urls: finalUrls.slice(0, 1).map((url) => ({ url })),
+    urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: AUDIT_TYPE,
     processingType: AUDIT_TYPE,
@@ -262,6 +258,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
       type: AUDIT_TYPE,
+      rank: suggestion.organicTraffic,
       data: suggestion,
     }),
   });
