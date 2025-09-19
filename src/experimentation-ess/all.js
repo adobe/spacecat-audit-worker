@@ -40,10 +40,12 @@ export async function essExperimentationAllAuditRunner(auditUrl, context, site) 
   const startTime = process.hrtime();
 
   const latestAudit = await LatestAudit.findBySiteIdAndAuditType(siteId, 'experimentation-ess-all');
+  log.info(`ESS Experimentation All Audit latest audit: ${latestAudit ? latestAudit.getId() : 'null'}`);
   const experiments = await Experiment.allBySiteId(siteId);
   log.info(`ESS Experimentation All Audit experiments: ${JSON.stringify(experiments, null, 2)}`);
   const activeExperiments = experiments.filter((experiment) => (
     experiment.getStatus() && experiment.getStatus().toLowerCase() === 'active' && experiment.getStartDate() !== null));
+  log.info(`ESS Experimentation All Audit active experiments: ${JSON.stringify(activeExperiments, null, 2)}`);
   let days;
   if (latestAudit === null) {
     // experiment-ess-all audit has never been run before
