@@ -1,3 +1,10 @@
+## [1.183.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.3...v1.183.4) (2025-09-19)
+
+
+### Bug Fixes
+
+* simplify period identifier and timezone issue ([#1291](https://github.com/adobe/spacecat-audit-worker/issues/1291)) ([f305b76](https://github.com/adobe/spacecat-audit-worker/commit/f305b765ac30bcddcfa8b2c42db5c4d6a1c00e4d))
+
 ## [1.183.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.2...v1.183.3) (2025-09-19)
 
 
