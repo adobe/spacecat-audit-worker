@@ -99,12 +99,12 @@ export async function sendReadabilityToMystique(
         type: 'guidance:readability', // Single unified type
         siteId,
         auditId: jobId,
+        mode, // Routing mode at top level (same as siteId, auditId)
         deliveryType: site.getDeliveryType(),
         time: new Date().toISOString(),
         url: auditUrl,
         observation: READABILITY_OBSERVATION,
         data: {
-          mode, // Routing mode passed from caller
           // Use appropriate ID based on audit type
           ...(isPreflight ? { jobId } : { auditId: jobId }),
           original_paragraph: issue.textContent,

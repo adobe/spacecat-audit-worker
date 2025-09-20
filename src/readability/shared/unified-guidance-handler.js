@@ -15,7 +15,7 @@ import opportunityGuidanceHandler from '../opportunities/guidance-handler.js';
 
 /**
  * Unified guidance handler for readability suggestions from Mystique.
- * Routes to appropriate handler based on the 'mode' parameter in the message data.
+ * Routes to appropriate handler based on the 'mode' parameter at the top level of the message.
  *
  * This handler supports:
  * - mode: 'preflight' → Routes to preflight guidance handler (AsyncJob-based)
@@ -28,10 +28,10 @@ import opportunityGuidanceHandler from '../opportunities/guidance-handler.js';
  */
 export default async function unifiedReadabilityGuidanceHandler(message, context) {
   const { log } = context;
-  const { data } = message;
 
-  // Extract mode from message data, default to 'preflight' for backward compatibility
-  const mode = data?.mode || 'preflight';
+  // Extract mode from top level of message (same level as siteId, auditId)
+  // Default to 'preflight' for backward compatibility
+  const mode = message.mode || 'preflight';
 
   log.info(`[unified-readability-guidance] Processing Mystique response with mode: ${mode}`);
 
