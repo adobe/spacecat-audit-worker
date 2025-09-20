@@ -89,25 +89,6 @@ describe('CDN Logs Report Utils', () => {
       expect(tempLocation).to.equal('s3://test-bucket/temp/athena-results/');
     });
   });
-
-  describe('generatePeriodIdentifier', () => {
-    it('generates week format for 7-day periods', () => {
-      const startDate = new Date('2025-01-06');
-      const endDate = new Date('2025-01-12');
-
-      const identifier = reportUtils.generatePeriodIdentifier(startDate, endDate);
-      expect(identifier).to.equal('w02-2025');
-    });
-
-    it('generates date range format for non-7-day periods', () => {
-      const startDate = new Date('2025-01-06');
-      const endDate = new Date('2025-01-20');
-
-      const identifier = reportUtils.generatePeriodIdentifier(startDate, endDate);
-      expect(identifier).to.equal('2025-01-06_to_2025-01-20');
-    });
-  });
-
   describe('generateReportingPeriods', () => {
     it('generates week periods with offset', () => {
       const refDate = new Date('2025-01-15');
@@ -115,11 +96,12 @@ describe('CDN Logs Report Utils', () => {
       const periods = reportUtils.generateReportingPeriods(refDate, -1);
 
       expect(periods).to.have.property('weeks').that.is.an('array');
-      expect(periods.weeks).to.have.length(1);
-      expect(periods.weeks[0]).to.have.property('startDate');
-      expect(periods.weeks[0]).to.have.property('endDate');
-      expect(periods.weeks[0]).to.have.property('weekLabel');
-      expect(periods).to.have.property('columns').that.is.an('array');
+      expect(periods.weeks[0].startDate.toISOString()).to.equal('2025-01-06T00:00:00.000Z');
+      expect(periods.weeks[0].endDate.toISOString()).to.equal('2025-01-12T23:59:59.999Z');
+      expect(periods.weeks[0].weekLabel).to.equal('Week 2');
+      expect(periods.weeks[0].weekNumber).to.equal(2);
+      expect(periods.weeks[0].year).to.equal(2025);
+      expect(periods.periodIdentifier).to.equal('w02-2025');
     });
 
     it('handles Sunday reference date correctly', () => {
