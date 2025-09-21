@@ -749,6 +749,10 @@ export const accessibilityOpportunitiesMap = {
     'target-size',
     'aria-input-field-name',
   ],
+  'a11y-color-contrast': [
+    'color-contrast',
+    'link-in-text-block',
+  ],
 };
 
 /**

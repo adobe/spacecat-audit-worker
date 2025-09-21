@@ -6,6 +6,12 @@
   ],
   "packageRules": [
     {
+        "matchPackageNames": [
+            "jsdom"
+        ],
+        "allowedVersions": "<27.0.0"
+    },
+    {
       "matchPackageNames": [
         "semantic-release"
       ],

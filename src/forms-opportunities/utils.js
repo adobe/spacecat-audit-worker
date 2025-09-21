@@ -572,11 +572,14 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
  * @param {Object} opportunity - Object with setTitle method.
  */
 export function getFormTitle(formDetails, opportunity) {
-  if (!formDetails || !isNonEmptyObject(formDetails)) return '';
-  if (!opportunity || !opportunity.getType()) return '';
+  let formType = (formDetails && isNonEmptyObject(formDetails) && formDetails.form_type?.trim())
+    ? formDetails.form_type.trim()
+    : 'Form';
 
-  const { form_type: formType } = formDetails;
-  if (!formType || !formType.trim()) return '';
+  const normalizedType = formType.toLowerCase();
+  if (normalizedType === 'na' || normalizedType.includes('other')) {
+    formType = 'Form';
+  }
 
   const suffixMap = {
     [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: 'has low conversions',
@@ -587,4 +590,17 @@ export function getFormTitle(formDetails, opportunity) {
 
   const suffix = suffixMap[opportunity.getType()] || '';
   return suffix ? `${formType.trim()} ${suffix}` : formType.trim();
+}
+
+/**
+ * Check if a JSON object is safe for DynamoDB and return its estimated size
+ * @param {Object} item - JSON object to check
+ * @param {number} safetyMargin - Fraction of max size considered safe (default 0.85)
+ * @returns {{safe: boolean, sizeKB: number}} - Safety status and size in KB
+ */
+export function checkDynamoItem(item, safetyMargin = 0.85) {
+  const MAX_ITEM_SIZE_KB = 400;
+  const safeLimitKB = MAX_ITEM_SIZE_KB * safetyMargin;
+  const sizeKB = Buffer.byteLength(JSON.stringify(item), 'utf8') / 1024;
+  return { safe: sizeKB < safeLimitKB, sizeKB };
 }

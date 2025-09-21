@@ -4,7 +4,6 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
   ClientRequestHost       string,
   ClientRequestURI        string,
   ClientRequestMethod     string,
-  ClientRequestProtocol   string,
   ClientRequestUserAgent  string,
   EdgeResponseStatus      int,
   ClientRequestReferer    string,

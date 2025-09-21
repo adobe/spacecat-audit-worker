@@ -25,6 +25,7 @@ import {
   categorizeErrorsByStatusCode,
   downloadExistingCdnSheet,
   matchErrorsWithCdnData,
+  SPREADSHEET_COLUMNS,
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
@@ -107,7 +108,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('data');
 
-      sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+      sheet.addRow(SPREADSHEET_COLUMNS);
 
       sorted.forEach((e) => {
         sheet.addRow([

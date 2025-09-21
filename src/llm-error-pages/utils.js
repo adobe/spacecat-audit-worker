@@ -427,6 +427,20 @@ export function toPathOnly(maybeUrl, baseUrl) {
   }
 }
 
+export const SPREADSHEET_COLUMNS = [
+  'Agent Type',
+  'User Agent',
+  'Number of Hits',
+  'Avg TTFB (ms)',
+  'Country Code',
+  'URL',
+  'Product',
+  'Category',
+  'Suggested URLs',
+  'AI Rationale',
+  'Confidence score',
+];
+
 /**
  * Downloads and parses existing CDN agentic traffic sheet
  * @param {string} periodIdentifier - The period identifier (e.g., 'w35-2025')

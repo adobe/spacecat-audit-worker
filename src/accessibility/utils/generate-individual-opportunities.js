@@ -12,7 +12,7 @@
 
 import { isNonEmptyArray, isString } from '@adobe/spacecat-shared-utils';
 import { Opportunity as OpportunityDataAccess, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
+import { createAccessibilityAssistiveOpportunity, createAccessibilityColorContrastOpportunity } from './report-oppty.js';
 import {
   syncSuggestions,
   keepSameDataFunction,
@@ -638,6 +638,7 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     // Map opportunity types to their creation functions
     const opportunityCreators = {
       'a11y-assistive': createAccessibilityAssistiveOpportunity,
+      'a11y-color-contrast': createAccessibilityColorContrastOpportunity,
       // Add more opportunity types here as they are created
     };
 

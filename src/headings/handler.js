@@ -11,14 +11,16 @@
  */
 
 import { JSDOM } from 'jsdom';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
+import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 
 const auditType = Audit.AUDIT_TYPES.HEADINGS;
 
@@ -126,6 +128,34 @@ function hasContentBetweenElements(startElement, endElement) {
   return false;
 }
 
+function getScrapeJsonPath(url, siteId) {
+  const pathname = new URL(url).pathname.replace(/\/$/, '');
+  return `scrapes/${siteId}${pathname}/scrape.json`;
+}
+
+async function getH1HeadingASuggestion(url, log, scrapeJsonObject, context) {
+  const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
+  const prompt = await getPrompt(
+    {
+      finalUrl: scrapeJsonObject.finalUrl,
+      title: scrapeJsonObject.scrapeResult.tags.title,
+      h1: scrapeJsonObject.scrapeResult.tags.h1,
+      description: scrapeJsonObject.scrapeResult.tags.description,
+      lang: scrapeJsonObject.scrapeResult.tags.lang,
+    },
+    'heading-empty-suggestion',
+    log,
+  );
+  const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
+    responseFormat: 'json_object',
+  });
+
+  const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
+  const { aiSuggestion } = aiResponseContent.h1;
+  log.info(`[Headings AI Suggestions] AI suggestion for empty heading for ${url}: ${aiSuggestion}`);
+  return aiSuggestion;
+}
+
 /**
  * Validate heading semantics for a single page.
  * - Ensure heading level increases by at most 1 when going deeper (no jumps, e.g., h1 → h3)
@@ -135,7 +165,15 @@ function hasContentBetweenElements(startElement, endElement) {
  * @param {Object} log
  * @returns {Promise<{url: string, checks: Array}>}
  */
-export async function validatePageHeadings(url, log) {
+export async function validatePageHeadings(
+  url,
+  log,
+  site,
+  allKeys,
+  s3Client,
+  S3_SCRAPER_BUCKET_NAME,
+  context,
+) {
   if (!url) {
     log.error('URL is undefined or null, cannot validate headings');
     return {
@@ -145,26 +183,41 @@ export async function validatePageHeadings(url, log) {
   }
 
   try {
-    log.info(`Checking headings for URL: ${url}`);
-    const response = await fetch(url);
-    const html = await response.text();
-    const dom = new JSDOM(html);
-    const { document } = dom.window;
+    const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
+    const s3Key = allKeys.find((key) => key.includes(scrapeJsonPath));
+    let document = null;
+    let scrapeJsonObject = null;
+    if (!s3Key) {
+      log.error(`Scrape JSON path not found for ${url}, skipping headings audit`);
+      return null;
+    } else {
+      scrapeJsonObject = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, s3Key, log);
+      if (!scrapeJsonObject) {
+        log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
+        return null;
+      } else {
+        document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
+      }
+    }
 
     const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+
     const checks = [];
 
     const h1Elements = headings.filter((h) => h.tagName === 'H1');
 
-    if (h1Elements.length === 0) {
+    if (h1Elements.length === 0
+      || (h1Elements.length === 1 && getTextContent(h1Elements[0]).length === 0)) {
+      log.info(`Missing h1 element detected at ${url}`);
+      const aiSuggestion = await getH1HeadingASuggestion(url, log, scrapeJsonObject, context);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
-        suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
+        suggestion: aiSuggestion || HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
       });
-      log.info(`Missing h1 element detected at ${url}`);
     } else if (h1Elements.length > 1) {
+      log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
         success: false,
@@ -172,35 +225,44 @@ export async function validatePageHeadings(url, log) {
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
         count: h1Elements.length,
       });
-      log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
     }
 
     // Check for empty headings and collect text content for duplicate detection
     const headingTexts = new Map();
-    for (const heading of headings) {
-      const text = getTextContent(heading);
-      if (text.length === 0) {
-        checks.push({
-          check: HEADINGS_CHECKS.HEADING_EMPTY.check,
-          success: false,
-          explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
-          suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
-          tagName: heading.tagName,
-        });
-        log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
-      } else {
-        // Track heading text content for duplicate detection
-        const lowerText = text.toLowerCase();
-        if (!headingTexts.has(lowerText)) {
-          headingTexts.set(lowerText, []);
+    const headingChecks = headings.map(async (heading) => {
+      if (heading.tagName !== 'H1') {
+        const text = getTextContent(heading);
+        if (text.length === 0) {
+          log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
+          const aiSuggestion = await getH1HeadingASuggestion(url, log, scrapeJsonObject, context);
+          return {
+            check: HEADINGS_CHECKS.HEADING_EMPTY.check,
+            success: false,
+            explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
+            suggestion: aiSuggestion || HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
+            tagName: heading.tagName,
+          };
+        } else {
+          // For tracking purposes
+          const lowerText = text.toLowerCase();
+          if (!headingTexts.has(lowerText)) {
+            headingTexts.set(lowerText, []);
+          }
+          headingTexts.get(lowerText).push({
+            text,
+            tagName: heading.tagName,
+            element: heading,
+          });
+          return null;
         }
-        headingTexts.get(lowerText).push({
-          text,
-          tagName: heading.tagName,
-          element: heading,
-        });
+      } else {
+        return null;
       }
-    }
+    });
+
+    const headingChecksResults = await Promise.all(headingChecks);
+    // Filter out nulls and add to checks array
+    checks.push(...headingChecksResults.filter(Boolean));
 
     // Check for duplicate heading text content
     // eslint-disable-next-line no-unused-vars
@@ -276,18 +338,20 @@ export async function validatePageHeadings(url, log) {
  */
 export async function headingsAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
-  const { log, dataAccess } = context;
-  log.info(`Starting Headings Audit with siteId: ${siteId}`);
+  const { log, dataAccess, s3Client } = context;
+  const { S3_SCRAPER_BUCKET_NAME } = context.env;
 
   try {
     // Get top 200 pages
+    log.info(`[Headings Audit] Fetching top pages for site: ${siteId}`);
     const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
     const topPages = allTopPages.slice(0, 200);
 
-    log.info(`Processing ${topPages.length} top pages for headings audit (limited to 200)`);
+    log.info(`[Headings Audit] Processing ${topPages.length} top pages for headings audit (limited to 200)`);
+    log.debug(`[Headings Audit] Top pages sample: ${topPages.slice(0, 3).map((p) => p.url).join(', ')}`);
 
     if (topPages.length === 0) {
-      log.info('No top pages found, ending audit.');
+      log.warn('[Headings Audit] No top pages found, ending audit.');
       return {
         fullAuditRef: baseURL,
         auditResult: {
@@ -297,10 +361,19 @@ export async function headingsAuditRunner(baseURL, context, site) {
         },
       };
     }
+    const prefix = `scrapes/${site.getId()}/`;
+    const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
 
     // Validate headings for each page
-    const auditPromises = topPages
-      .map(async (page) => validatePageHeadings(page.url, log));
+    const auditPromises = topPages.map(async (page) => validatePageHeadings(
+      page.url,
+      log,
+      site,
+      allKeys,
+      s3Client,
+      S3_SCRAPER_BUCKET_NAME,
+      context,
+    ));
     const auditResults = await Promise.allSettled(auditPromises);
 
     // Aggregate results by check type
@@ -327,7 +400,14 @@ export async function headingsAuditRunner(baseURL, context, site) {
 
             // Add URL if not already present
             if (!aggregatedResults[checkType].urls.includes(url)) {
-              aggregatedResults[checkType].urls.push(url);
+              const urlObject = { url };
+              if (check.suggestion) {
+                urlObject.suggestion = check.suggestion;
+              }
+              if (check.tagName) {
+                urlObject.tagName = check.tagName;
+              }
+              aggregatedResults[checkType].urls.push(urlObject);
             }
           }
         });
@@ -368,15 +448,23 @@ export function generateSuggestions(auditUrl, auditData, context) {
 
   Object.entries(auditData.auditResult).forEach(([checkType, checkResult]) => {
     if (checkResult.success === false && Array.isArray(checkResult.urls)) {
-      checkResult.urls.forEach((url) => {
-        suggestions.push({
+      checkResult.urls.forEach((urlObj) => {
+        const suggestion = {
           type: 'CODE_CHANGE',
           checkType,
           explanation: checkResult.explanation,
-          url,
+          url: urlObj.url,
           // eslint-disable-next-line no-use-before-define
           recommendedAction: generateRecommendedAction(checkType),
-        });
+        };
+        if (urlObj.tagName) {
+          suggestion.tagName = urlObj.tagName;
+        }
+        if (urlObj.suggestion) {
+          suggestion.recommendedAction = urlObj.suggestion;
+        }
+
+        suggestions.push(suggestion);
       });
     }
   });

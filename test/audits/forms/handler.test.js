@@ -14,6 +14,7 @@
 
 import { expect, use } from 'chai';
 import sinon from 'sinon';
+import esmock from 'esmock';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import {
@@ -28,6 +29,7 @@ import formVitalsData from '../../fixtures/forms/formvitalsdata.json' with { typ
 import expectedFormVitalsData from '../../fixtures/forms/expectedformvitalsdata.json' with { type: 'json' };
 import expectedFormSendToScraperData from '../../fixtures/forms/expectedformsendtoscraperdata.json' with { type: 'json' };
 import expectedFormA11yScraperData from '../../fixtures/forms/expectedforma11ysendtoscraperdata.json' with { type: 'json' };
+import trimmedHeavyFormVitals from '../../fixtures/forms/trimmedheavyformvitals.json' with { type: 'json' };
 
 use(sinonChai);
 
@@ -184,6 +186,141 @@ describe('audit and send scraping step', () => {
     context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
     const result = await runAuditAndSendUrlsForScrapingStep(context);
     expect(result.urls.length).to.equal(10);
+  });
+
+  it('should trim audit data when not safe for dynamo', async () => {
+    const formVitals = {
+      'form-vitals': [
+        {
+          url: 'https://example.com/form1',
+          formsource: 'form.contact',
+          formsubmit: {},
+          formview: { 'desktop:windows': 7898 },
+          formengagement: { 'desktop:windows': 100 },
+          pageview: { desktop: 26002, mobile: 23101 },
+        },
+        {
+          url: 'https://example.com/form2',
+          formsource: 'form.contact',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 18000, mobile: 21000 },
+        },
+        {
+          url: 'https://example.com/form3',
+          formsource: 'form.contact',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 15000, mobile: 19000 },
+        },
+        {
+          url: 'https://example.com/form4',
+          formsource: 'form.feedback',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 22000, mobile: 20000 },
+        },
+        {
+          url: 'https://example.com/form5',
+          formsource: 'form.survey',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 12000, mobile: 14000 },
+        },
+        {
+          url: 'https://example.com/form6',
+          formsource: 'form.contact',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 30000, mobile: 25000 },
+        },
+        {
+          url: 'https://example.com/form7',
+          formsource: 'form.newsletter',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 17000, mobile: 16000 },
+        },
+        {
+          url: 'https://example.com/form8',
+          formsource: 'form.signup',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 26000, mobile: 21000 },
+        },
+        {
+          url: 'https://example.com/form9',
+          formsource: 'form.feedback',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 19000, mobile: 20000 },
+        },
+        {
+          url: 'https://example.com/form10',
+          formsource: 'form.survey',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 14000, mobile: 12000 },
+        },
+        {
+          url: 'https://example.com/form11',
+          formsource: 'form.contact',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 25000, mobile: 23000 },
+        },
+        {
+          url: 'https://example.com/form12',
+          formsource: 'form.newsletter',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 16000, mobile: 18000 },
+        },
+        {
+          url: 'https://example.com/form13',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 21000, mobile: 20000 },
+        },
+        {
+          url: 'https://example.com/form14',
+          formsource: 'form.feedback',
+          formsubmit: {},
+          formview: {},
+          formengagement: {},
+          pageview: { desktop: 23000, mobile: 22000 },
+        },
+      ],
+    };
+
+    context.rumApiClient.queryMulti = sinon.stub().resolves(formVitals);
+    context.dataAccess.SiteTopForm.allBySiteId = sinon.stub().resolves([]);
+
+    // Mock the checkDynamoItem call
+    const checkDynamoItemStub = sinon.stub().returns({ safe: false, sizeKB: 150 });
+
+    // eslint-disable-next-line no-shadow
+    const { runAuditAndSendUrlsForScrapingStep } = await esmock('../../../src/forms-opportunities/handler.js', {
+      '../../../src/forms-opportunities/utils.js': {
+        checkDynamoItem: checkDynamoItemStub,
+      },
+    });
+
+    const result = await runAuditAndSendUrlsForScrapingStep(context);
+    // Verify that formVitals are trimmed
+    expect(result.auditResult.formVitals).to.deep.equal(trimmedHeavyFormVitals);
   });
 
   it('should include top forms without form source and sort by pageviews when less than 10 urls', async () => {

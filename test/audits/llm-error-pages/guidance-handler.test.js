@@ -49,11 +49,11 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
   afterEach(() => sandbox.restore());
 
   it('successfully processes message and updates Excel file', async () => {
-    // Create existing Excel file with data
+    // Create existing Excel file with correct 11-column structure
     const existingWorkbook = new ExcelJS.Workbook();
     const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-    sheet.addRow(['ChatGPT', '/products/item', '', '', '']);
+    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+    sheet.addRow(['Chatbots', 'ChatGPT', 150, 245.5, 'US', '/products/item', 'Adobe Creative', 'Product Page', '', '', '']);
     const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
     readFromSharePointStub.resolves(existingBuffer);
 
@@ -213,7 +213,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
   it('handles empty brokenLinks array', async () => {
     const existingWorkbook = new ExcelJS.Workbook();
     const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
+    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
     const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
     readFromSharePointStub.resolves(existingBuffer);
 
@@ -253,8 +253,8 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     // Create existing Excel file with matching data
     const existingWorkbook = new ExcelJS.Workbook();
     const sheet = existingWorkbook.addWorksheet('data');
-    sheet.addRow(['User Agent', 'URL', 'Suggested URLs', 'AI Rationale', 'Confidence Score']);
-    sheet.addRow(['ChatGPT', '/products/item', '', '', '']);
+    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+    sheet.addRow(['Chatbots', 'ChatGPT', 150, 245.5, 'US', '/products/item', 'Adobe Creative', 'Product Page', '', '', '']);
     const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
     readFromSharePointStub.resolves(existingBuffer);
 
@@ -295,6 +295,175 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
 
     const resp = await guidanceHandler.default(message, context);
     expect(resp.status).to.equal(200);
+  });
+
+  it('handles comma-separated user agents from Mystique', async () => {
+    // Test the new comma-separated user agent matching logic
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+    sheet.addRow(['Chatbots', 'ChatGPT', 150, 245.5, 'US', '/test-page', 'Adobe Creative', 'Product Page', '', '', '']);
+    sheet.addRow(['Web search crawlers', 'Perplexity', 89, 189.2, 'GLOBAL', '/another-page', 'Support', 'Help Page', '', '', '']);
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: {
+        brokenLinks: [{
+          urlFrom: 'ChatGPT, Perplexity', // Comma-separated user agents like Mystique sends
+          urlTo: 'https://example.com/test-page',
+          suggestedUrls: ['/products', '/items'],
+          aiRationale: 'Best match found for multiple agents',
+        }],
+      },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getCdnLogsConfig: () => null,
+            getLlmoDataFolder: () => 'test-customer',
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const logMock = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    const context = {
+      log: logMock,
+      dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+
+    // Verify that the debug logging was called
+    expect(logMock.info.calledWith('Processing 1 broken links from Mystique')).to.be.true;
+  });
+
+  it('handles empty suggestedUrls array from Mystique', async () => {
+    // Test handling of Mystique responses with empty suggestions
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+    sheet.addRow(['Chatbots', 'ChatGPT', 150, 245.5, 'US', '/test-page', 'Adobe Creative', 'Product Page', '', '', '']);
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: {
+        brokenLinks: [{
+          urlFrom: 'ChatGPT',
+          urlTo: 'https://example.com/test-page',
+          suggestedUrls: [], // Empty suggestions like some Mystique responses
+          aiRationale: 'Analysis completed but unexpected output format',
+        }],
+      },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getCdnLogsConfig: () => null,
+            getLlmoDataFolder: () => 'test-customer',
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const logMock = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    const context = {
+      log: logMock,
+      dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+
+    // Verify that the warning about empty suggestions was logged
+    expect(logMock.warn.calledWith('No suggested URLs for broken link: https://example.com/test-page')).to.be.true;
+  });
+
+  it('handles user agent mismatch scenario - now updates regardless', async () => {
+    // Test that URL matches update Excel regardless of user agent differences
+    const existingWorkbook = new ExcelJS.Workbook();
+    const sheet = existingWorkbook.addWorksheet('data');
+    sheet.addRow(['Agent Type', 'User Agent', 'Number of Hits', 'Avg TTFB (ms)', 'Country Code', 'URL', 'Product', 'Category', 'Suggested URLs', 'AI Rationale', 'Confidence score']);
+    sheet.addRow(['Chatbots', 'Claude', 150, 245.5, 'US', '/test-page', 'Adobe Creative', 'Product Page', '', '', '']); // Different user agent
+    const existingBuffer = await existingWorkbook.xlsx.writeBuffer();
+    readFromSharePointStub.resolves(existingBuffer);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-1',
+      data: {
+        brokenLinks: [{
+          urlFrom: 'ChatGPT', // Different from "Claude" in Excel, but should still update
+          urlTo: 'https://example.com/test-page',
+          suggestedUrls: ['/products'],
+          aiRationale: 'Test user agent mismatch - should still update',
+        }],
+      },
+    };
+
+    const dataAccess = {
+      Site: {
+        findById: sandbox.stub().resolves({
+          getBaseURL: () => 'https://example.com',
+          getConfig: () => ({
+            getCdnLogsConfig: () => null,
+            getLlmoDataFolder: () => 'test-customer',
+            getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
+          }),
+        }),
+      },
+      Audit: {
+        findById: sandbox.stub().resolves({ getId: () => 'audit-123' }),
+      },
+    };
+
+    const logMock = {
+      info: sandbox.stub(),
+      error: sandbox.stub(),
+      warn: sandbox.stub(),
+    };
+    const context = {
+      log: logMock,
+      dataAccess,
+      s3Client: { send: sandbox.stub().resolves() },
+    };
+
+    const resp = await guidanceHandler.default(message, context);
+    expect(resp.status).to.equal(200);
+
+    // Verify that the Excel was updated despite user agent mismatch
+    expect(logMock.info.calledWith('✅ Updated row 2 for URL: /test-page with 1 suggestions')).to.be.true;
   });
 
   it('covers workbook.worksheets[0] || addWorksheet fallback', async () => {
