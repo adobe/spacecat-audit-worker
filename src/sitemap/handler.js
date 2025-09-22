@@ -12,7 +12,6 @@
 
 import {
   composeAuditURL,
-  isArray,
   prependSchema,
   tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
@@ -29,6 +28,8 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import { calculateKpis } from './kpi-metrics.js';
+import { getPagesWithIssues } from './utils.js';
 
 const auditType = Audit.AUDIT_TYPES.SITEMAP;
 
@@ -518,33 +519,6 @@ export async function sitemapAuditRunner(baseURL, context) {
   };
 }
 
-export function getSitemapsWithIssues(auditData) {
-  return Object.keys(auditData?.auditResult?.details?.issues ?? {});
-}
-
-/**
- * Extracts pages with issues for suggestion generation
- */
-export function getPagesWithIssues(auditData) {
-  const sitemapsWithPagesWithIssues = getSitemapsWithIssues(auditData);
-
-  return sitemapsWithPagesWithIssues.flatMap((sitemapUrl) => {
-    const issues = auditData.auditResult.details.issues[sitemapUrl];
-
-    if (!isArray(issues)) {
-      return [];
-    }
-
-    return issues.map((page) => ({
-      type: 'url',
-      sitemapUrl,
-      pageUrl: page.url,
-      statusCode: page.statusCode ?? 0,
-      ...(page.urlsSuggested && { urlsSuggested: page.urlsSuggested }),
-    }));
-  });
-}
-
 /**
  * Generates suggestions based on audit results
  */
@@ -571,17 +545,21 @@ export function generateSuggestions(auditUrl, auditData, context) {
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
-  const { log } = context;
+  const { log, site } = context;
 
   if (auditData.auditResult.success === false) {
     log.info('Sitemap audit failed, skipping opportunity and suggestions creation');
     return { ...auditData };
   }
 
-  if (!auditData.suggestions?.length) {
+  const pagesWithIssues = getPagesWithIssues(auditData);
+
+  if (!pagesWithIssues.length) {
     log.info('No sitemap issues found, skipping opportunity creation');
     return { ...auditData };
   }
+
+  const kpis = await calculateKpis(pagesWithIssues, site, context);
 
   const opportunity = await convertToOpportunity(
     auditUrl,
@@ -589,6 +567,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     context,
     createOpportunityData,
     auditType,
+    kpis,
   );
 
   const buildKey = (data) => (data.type === 'url' ? `${data.sitemapUrl}|${data.pageUrl}` : data.error);
