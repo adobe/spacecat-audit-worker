@@ -48,6 +48,11 @@ export default async function handler(message, context) {
     log.info(`No existing Opportunity found for page: ${url}. Creating a new one.`);
     opportunity = await Opportunity.create(entity);
   } else {
+    const updatedBy = opportunity.getUpdatedBy();
+    if (updatedBy && updatedBy !== 'system') {
+      log.info(`Existing Opportunity found for page: ${url} was manually created/modified (updatedBy: ${updatedBy}). Skipping all updates to preserve manual changes.`);
+      return ok();
+    }
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
     opportunity.setData({

@@ -409,6 +409,39 @@ describe('Experimentation Opportunities Tests', () => {
     });
   });
 
+  describe('Manual Opportunity Protection', () => {
+    it('should send all opportunities to Mystique regardless of future manual status', async () => {
+      context.audit.getAuditResult.returns({
+        experimentationOpportunities: [
+          {
+            type: 'high-organic-low-ctr',
+            page: 'https://abc.com/page-that-will-be-manual',
+            trackedPageKPIValue: '0.02',
+            trackedKPISiteAverage: '0.05',
+          },
+          {
+            type: 'high-organic-low-ctr',
+            page: 'https://abc.com/page-that-will-be-system',
+            trackedPageKPIValue: '0.03',
+            trackedKPISiteAverage: '0.05',
+          },
+        ],
+      });
+
+      await generateOpportunityAndSuggestions(context);
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      const sentUrls = [];
+      for (let i = 0; i < context.sqs.sendMessage.callCount; i++) {
+        const [queue, message] = context.sqs.sendMessage.getCall(i).args;
+        expect(queue).to.equal('spacecat-to-mystique');
+        expect(message.type).to.equal('guidance:high-organic-low-ctr');
+        sentUrls.push(message.data.url);
+      }
+      expect(sentUrls).to.include('https://abc.com/page-that-will-be-manual');
+      expect(sentUrls).to.include('https://abc.com/page-that-will-be-system');
+    });
+  });
+
   describe('Additional URLs Processing', () => {
     describe('Successfully process additional URLs', () => {
       it('should use custom URLs when provided and create opportunities for all URLs', async () => {

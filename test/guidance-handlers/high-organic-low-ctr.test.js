@@ -40,6 +40,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     getData: sandbox.stub().returns({
       page: 'https://abc.com/abc-adoption/account',
     }),
+    getUpdatedBy: sandbox.stub().returns('system'),
     setAuditId: sandbox.stub(),
     setData: sandbox.stub(),
     setGuidance: sandbox.stub(),
@@ -229,5 +230,113 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     const createdCallArg = Opportunity.create.getCall(0)?.args[0];
     expect(createdCallArg.data.opportunityImpact).to.equal(0);
+  });
+
+  it('should skip updating manually created opportunities', async () => {
+    const manualOpportunity = {
+      getId: sandbox.stub().returns('manual-oppty-id'),
+      getData: sandbox.stub().returns({
+        page: 'https://abc.com/abc-adoption/account',
+      }),
+      getUpdatedBy: sandbox.stub().returns('8DD61D5966C7AA650A495F8D@7eeb20f8631c0cb7495c06.e'),
+      setAuditId: sandbox.stub(),
+      setData: sandbox.stub(),
+      setGuidance: sandbox.stub(),
+      save: sandbox.stub().resolvesThis(),
+      setUpdatedBy: sandbox.stub(),
+    };
+
+    Opportunity.allBySiteId.resolves([manualOpportunity]);
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://abc.com/abc-adoption/account',
+        guidance: guidanceMsgFromMystique.data.guidance,
+        suggestions: guidanceMsgFromMystique.data.suggestions,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(log.info).to.have.been.calledWithMatch(/was manually created\/modified.*Skipping all updates/);
+    expect(manualOpportunity.setAuditId).not.to.have.been.called;
+    expect(manualOpportunity.setData).not.to.have.been.called;
+    expect(manualOpportunity.setGuidance).not.to.have.been.called;
+    expect(manualOpportunity.save).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+  });
+
+  it('should update system-managed opportunities (updatedBy: system)', async () => {
+    const systemOpportunity = {
+      getId: sandbox.stub().returns('system-oppty-id'),
+      getSuggestions: sandbox.stub().resolves([]),
+      getData: sandbox.stub().returns({
+        page: 'https://abc.com/abc-adoption/account',
+      }),
+      getUpdatedBy: sandbox.stub().returns('system'),
+      setAuditId: sandbox.stub(),
+      setData: sandbox.stub(),
+      setGuidance: sandbox.stub(),
+      save: sandbox.stub().resolvesThis(),
+      setUpdatedBy: sandbox.stub(),
+    };
+
+    Opportunity.allBySiteId.resolves([systemOpportunity]);
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://abc.com/abc-adoption/account',
+        guidance: guidanceMsgFromMystique.data.guidance,
+        suggestions: guidanceMsgFromMystique.data.suggestions,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(systemOpportunity.setAuditId).to.have.been.calledWith('audit-id');
+    expect(systemOpportunity.setData).to.have.been.called;
+    expect(systemOpportunity.setGuidance).to.have.been.called;
+    expect(systemOpportunity.save).to.have.been.called;
+    expect(Suggestion.create).to.have.been.calledOnce;
+  });
+
+  it('should update opportunities with null/undefined updatedBy (legacy opportunities)', async () => {
+    const legacyOpportunity = {
+      getId: sandbox.stub().returns('legacy-oppty-id'),
+      getSuggestions: sandbox.stub().resolves([]),
+      getData: sandbox.stub().returns({
+        page: 'https://abc.com/abc-adoption/account',
+      }),
+      getUpdatedBy: sandbox.stub().returns(null),
+      setAuditId: sandbox.stub(),
+      setData: sandbox.stub(),
+      setGuidance: sandbox.stub(),
+      save: sandbox.stub().resolvesThis(),
+      setUpdatedBy: sandbox.stub(),
+    };
+
+    Opportunity.allBySiteId.resolves([legacyOpportunity]);
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://abc.com/abc-adoption/account',
+        guidance: guidanceMsgFromMystique.data.guidance,
+        suggestions: guidanceMsgFromMystique.data.suggestions,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(legacyOpportunity.setAuditId).to.have.been.calledWith('audit-id');
+    expect(legacyOpportunity.setData).to.have.been.called;
+    expect(legacyOpportunity.setGuidance).to.have.been.called;
+    expect(legacyOpportunity.save).to.have.been.called;
+    expect(Suggestion.create).to.have.been.calledOnce;
   });
 });
