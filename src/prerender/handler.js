@@ -311,9 +311,6 @@ export async function processContentAndGenerateOpportunities(context) {
       log.info('Prerender - No URLs found, using base URL for comparison');
     }
 
-    // limit to 1 for testing
-    urlsToCheck = urlsToCheck.slice(0, 1);
-
     // Compare server-side vs client-side HTML for each URL
     const comparisonResults = await Promise.all(
       urlsToCheck.map(async (url) => {
@@ -331,7 +328,7 @@ export async function processContentAndGenerateOpportunities(context) {
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
     const successfulComparisons = comparisonResults.filter((result) => !result.error);
 
-    log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender`);
+    log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped`);
 
     const auditResult = {
       totalUrlsChecked: comparisonResults.length,
