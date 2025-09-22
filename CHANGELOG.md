@@ -1,3 +1,38 @@
+## [1.184.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.184.0...v1.184.1) (2025-09-22)
+
+
+### Bug Fixes
+
+* only create tables and reports when we have data ([#1297](https://github.com/adobe/spacecat-audit-worker/issues/1297)) ([898d863](https://github.com/adobe/spacecat-audit-worker/commit/898d8634fe4789b6f69b48ec160e7eafe8de1a04))
+
+# [1.184.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.10...v1.184.0) (2025-09-22)
+
+
+### Features
+
+* Add-keyword-support-for-audit-command ([#1281](https://github.com/adobe/spacecat-audit-worker/issues/1281)) ([324f8e8](https://github.com/adobe/spacecat-audit-worker/commit/324f8e8d3c560a46068ec9452bac99bed9294e82))
+
+## [1.183.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.9...v1.183.10) (2025-09-21)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1299](https://github.com/adobe/spacecat-audit-worker/issues/1299)) ([9b0860b](https://github.com/adobe/spacecat-audit-worker/commit/9b0860bd49c37eb5027bbe963264882eec279e4a))
+
+## [1.183.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.8...v1.183.9) (2025-09-20)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1298](https://github.com/adobe/spacecat-audit-worker/issues/1298)) ([6c9aa18](https://github.com/adobe/spacecat-audit-worker/commit/6c9aa180b2fd68425ef58fb403143cdd80f3b5c5))
+
+## [1.183.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.7...v1.183.8) (2025-09-19)
+
+
+### Bug Fixes
+
+* adding suggestions for headings ([#1214](https://github.com/adobe/spacecat-audit-worker/issues/1214)) ([75e5059](https://github.com/adobe/spacecat-audit-worker/commit/75e5059040f463094ace162c92a36ed79f970bda))
+
 ## [1.183.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.6...v1.183.7) (2025-09-19)
 
 

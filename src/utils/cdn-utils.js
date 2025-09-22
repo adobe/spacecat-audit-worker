@@ -228,6 +228,25 @@ export async function getBucketInfo(s3Client, bucketName, imsOrgId = null) {
 }
 
 /**
+ * Checks if data exists for a given path
+ * @param {Object} s3Client - S3 client instance
+ * @param {string} location - The S3 raw location path (s3://bucket/path/)
+ * @returns {Promise<boolean>} True if path has data
+ */
+export async function pathHasData(s3Client, location) {
+  try {
+    const response = await s3Client.send(new ListObjectsV2Command({
+      Bucket: location.replace('s3://', '').split('/')[0],
+      Prefix: location.replace('s3://', '').split('/').slice(1).join('/'),
+      MaxKeys: 1,
+    }));
+    return response.Contents && response.Contents.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Discovers all CDN providers in a bucket's raw folder
  * For legacy buckets, returns single provider detected from content
  */
@@ -239,6 +258,6 @@ export async function discoverCdnProviders(s3Client, bucketName, timeParts) {
     return [cdnProvider];
   }
 
-  return ['fastly'];
+  return [];
 }
 /* c8 ignore end */
