@@ -41,7 +41,10 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     context,
     auditContext?.sharepointOptions,
   );
-  const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+  const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation(), {
+    pollIntervalMs: 2000,
+    maxPollAttempts: 200,
+  });
   /* c8 ignore next */
   const { orgId } = site.getConfig().getLlmoCdnBucketConfig() || {};
   // for non-adobe customers, use the orgId from the config
@@ -58,7 +61,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
 
     log.info(`Running weekly report: ${reportConfig.name}...`);
-    const weekOffset = auditContext?.weekOffset || -1;
+    const weekOffset = auditContext?.weekOffset ?? -1;
     await runWeeklyReport({
       athenaClient,
       s3Config,
