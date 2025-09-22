@@ -1,3 +1,10 @@
+## [1.184.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.184.0...v1.184.1) (2025-09-22)
+
+
+### Bug Fixes
+
+* only create tables and reports when we have data ([#1297](https://github.com/adobe/spacecat-audit-worker/issues/1297)) ([898d863](https://github.com/adobe/spacecat-audit-worker/commit/898d8634fe4789b6f69b48ec160e7eafe8de1a04))
+
 # [1.184.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.10...v1.184.0) (2025-09-22)
 
 
