@@ -414,6 +414,20 @@ describe('CDN Logs Report Handler', function test() {
         expect(context.log.info).to.have.been.calledWith('No data found for agentic report - skipping');
         expect(context.log.info).to.have.been.calledWith('No data found for referral report - skipping');
       });
+
+      it('logs warning when Athena query returns empty data', async () => {
+        context.athenaClient = setupAthenaClientWithData(sandbox, [], []);
+        const auditContext = createAuditContext(sandbox);
+
+        const result = await handler.runner('https://example.com', context, site, auditContext);
+
+        expect(context.log.warn).to.have.been.calledWith(
+          sinon.match(/No data returned from Athena query for .* report \(.*\)\./)
+        );
+        
+        expect(result).to.have.property('auditResult').that.is.an('array');
+        expect(result).to.have.property('fullAuditRef').that.equals('test-folder');
+      });
     });
 
     describe('site filter configurations', () => {
