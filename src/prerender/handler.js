@@ -32,7 +32,7 @@ const CONTENT_INCREASE_THRESHOLD = 1.2; // Content increase ratio threshold
 function sanitizeImportPath(importPath) {
   return importPath
     .replace(/^\/+|\/+$/g, '') // Remove leading/trailing slashes
-    .replace(/[/.]/g, '-') // Replace forward slashes and dots with hyphens
+    .replace(/[/._]/g, '-') // Replace forward slashes, dots, and underscores with hyphens
     .replace(/-+/g, '-') // Replace multiple consecutive hyphens with single hyphen
     .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
 }
@@ -46,7 +46,7 @@ function sanitizeImportPath(importPath) {
  * @returns {string} The S3 path to the file
  */
 function getS3Path(url, siteId, fileName) {
-  const rawImportPath = new URL(url).pathname.replace(/\/$/, '');
+  const rawImportPath = new URL(url).pathname;
   const sanitizedImportPath = sanitizeImportPath(rawImportPath);
   const pathSegment = sanitizedImportPath ? `/${sanitizedImportPath}` : '';
   return `${AUDIT_TYPE}/scrapes/${siteId}${pathSegment}/${fileName}`;
@@ -84,7 +84,7 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
       };
     }
 
-    log.warn(`Prerender - Missing HTML files for URL: ${url} (server-side: ${!!serverSideHtml}, client-side: ${!!clientSideHtml})`);
+    log.warn(`Prerender - Missing HTML files for URL: ${url} (server-side-key: ${serverSideKey}, client-side-key: ${clientSideKey})`);
     return null;
   } catch (error) {
     log.warn(`Prerender - Could not get scraped content for ${url}: ${error.message}`);
