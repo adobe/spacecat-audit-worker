@@ -1,3 +1,10 @@
+## [1.184.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.184.1...v1.184.2) (2025-09-22)
+
+
+### Bug Fixes
+
+* update to research agent type ([#1300](https://github.com/adobe/spacecat-audit-worker/issues/1300)) ([8b8936b](https://github.com/adobe/spacecat-audit-worker/commit/8b8936bf8eebf88c00252f1d3e73602b62de81de))
+
 ## [1.184.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.184.0...v1.184.1) (2025-09-22)
 
 
