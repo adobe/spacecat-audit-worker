@@ -1,3 +1,10 @@
+# [1.184.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.10...v1.184.0) (2025-09-22)
+
+
+### Features
+
+* Add-keyword-support-for-audit-command ([#1281](https://github.com/adobe/spacecat-audit-worker/issues/1281)) ([324f8e8](https://github.com/adobe/spacecat-audit-worker/commit/324f8e8d3c560a46068ec9452bac99bed9294e82))
+
 ## [1.183.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.183.9...v1.183.10) (2025-09-21)
 
 
