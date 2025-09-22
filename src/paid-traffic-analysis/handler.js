@@ -43,7 +43,7 @@ function buildMystiqueMessage(site, auditId, baseUrl, auditResult) {
  * @returns {Object} Audit result and reference
  */
 export async function prepareTrafficAnalysisRequest(auditUrl, context, site, period) {
-  const { log, env } = context;
+  const { log } = context;
   const siteId = site.getSiteId();
 
   log.info(`[traffic-analysis-audit-${period}] Preparing mystique traffic-analysis-audit request parameters for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
@@ -72,8 +72,19 @@ export async function prepareTrafficAnalysisRequest(auditUrl, context, site, per
       temporalCondition,
     };
   }
+  log.info(`[traffic-analysis-audit-${period}] Request parameters: ${JSON.stringify(auditResult)} set for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
+  return {
+    auditResult,
+    fullAuditRef: auditUrl,
+    period,
+  };
+}
 
-  // Warm cache for this site and period
+export async function sendRequestToMystique(auditUrl, auditData, context, site) {
+  const { id, auditResult, period } = auditData;
+  const {
+    log, sqs, env, siteId,
+  } = context;
 
   const temporalParams = {
     yearInt: auditResult.year,
@@ -81,27 +92,15 @@ export async function prepareTrafficAnalysisRequest(auditUrl, context, site, per
     monthInt: auditResult.month,
   };
 
-  log.info(`[cache-warming-${period}] Starting cache warming for site: ${siteId}`);
+  log.info(`[traffic-analysis-audit] cache-warming-${period} Starting cache warming for site: ${siteId}`);
   await warmCacheForSite(context, log, env, site, temporalParams);
-  log.info(`[cache-warming-${period}] Completed cache warming for site: ${siteId}`);
-  log.info(`[traffic-analysis-audit-${period}] Request parameters: ${JSON.stringify(auditResult)} set for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
+  log.info(`[traffic-analysis-audit] cache-warming-${period} Completed cache warming for site: ${siteId}`);
 
-  return {
-    auditResult,
-    fullAuditRef: auditUrl,
-  };
-}
-
-export async function sendRequestToMystique(auditUrl, auditData, context, site) {
-  const { id, auditResult } = auditData;
-  const {
-    log, sqs, env, siteId,
-  } = context;
   const mystiqueMessage = buildMystiqueMessage(site, id, auditUrl, auditResult);
 
   log.info(`[traffic-analysis-audit] [siteId:  ${siteId}] and [baseUrl:${auditUrl}] with message ${JSON.stringify(mystiqueMessage, 2)} evaluation to mystique`);
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-  log.info(`[traffic-analysis-audit] [siteId: ${auditUrl}] [baseUrl:${auditUrl}] Completed mystique evaluation step`);
+  log.info(`[traffic-analysis-audit] [siteId: ${siteId}] [baseUrl:${siteId}] Completed mystique evaluation step`);
 }
 
 async function importDataStep(context, period) {
@@ -110,7 +109,6 @@ async function importDataStep(context, period) {
   const allowOverwrite = false;
   log.info(`[traffic-analysis-import-${period}] Starting import data step for siteId: ${siteId}, url: ${finalUrl}`);
 
-  // First prepare and save the traffic analysis request like we did before
   const analysisResult = await prepareTrafficAnalysisRequest(
     finalUrl,
     context,
