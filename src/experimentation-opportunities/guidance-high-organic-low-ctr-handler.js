@@ -49,15 +49,13 @@ export default async function handler(message, context) {
     opportunity = await Opportunity.create(entity);
   }
 
-  // Check if this is a manually modified opportunity - skip updates to preserve manual changes
   const updatedBy = opportunity.getUpdatedBy();
   if (updatedBy && updatedBy !== 'system') {
     log.info(`Existing Opportunity found for page: ${url} was manually created/modified (updatedBy: ${updatedBy}). Skipping all updates to preserve manual changes.`);
     return ok();
   }
 
-  // Update existing opportunity (only runs for system-managed opportunities)
-  if (opportunity.getId()) { // This means it's an existing opportunity that needs updating
+  if (opportunity.getId()) {
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
     opportunity.setData({
