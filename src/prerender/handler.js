@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -204,10 +204,9 @@ export async function submitForScraping(context) {
     type: AUDIT_TYPE,
     processingType: AUDIT_TYPE,
     allowCache: false,
+    concurrency: 50,
     options: {
-      hideConsentBanners: false,
-      pageLoadTimeout: 15000,
-      waitForSelector: 'body',
+      pageLoadTimeout: 20000,
       storagePrefix: AUDIT_TYPE,
     },
   };
@@ -257,7 +256,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     buildKey,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
-      type: AUDIT_TYPE,
+      type: Suggestion.TYPES.CODE_CHANGE,
       rank: suggestion.organicTraffic,
       data: suggestion,
     }),
