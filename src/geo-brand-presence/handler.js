@@ -99,7 +99,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     if (aiPlatform) {
       message.data.web_search_provider = aiPlatform;
     }
-    // await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info('GEO BRAND PRESENCE: %s Message sent to Mystique for site id %s (%s):', opptyType, siteId, baseURL, message);
   }));
 }
