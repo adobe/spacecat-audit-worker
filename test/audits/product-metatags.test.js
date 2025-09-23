@@ -294,7 +294,39 @@ describe('Product MetaTags', () => {
 
         productSeoChecks.storeAllTags(url, pageTags);
 
-        expect(productSeoChecks.allTags[TITLE][tagContent]).to.include(url);
+        expect(productSeoChecks.allTags[TITLE][tagContent.toLowerCase()].pageUrls).to.include(url);
+      });
+    });
+
+    describe('addToAllTags', () => {
+      it('should add tags to allTags object', () => {
+        const url = 'https://example.com/product';
+        const tagContent = 'Product Title';
+
+        productSeoChecks.addToAllTags(url, TITLE, tagContent);
+
+        expect(productSeoChecks.allTags[TITLE][tagContent.toLowerCase()].pageUrls)
+          .to.include(url);
+        expect(productSeoChecks.allTags[TITLE][tagContent.toLowerCase()].tagContent)
+          .to.equal(tagContent);
+      });
+
+      it('should handle empty tagContent', () => {
+        const url = 'https://example.com/product';
+        const tagContent = '';
+
+        productSeoChecks.addToAllTags(url, TITLE, tagContent);
+
+        expect(Object.keys(productSeoChecks.allTags[TITLE])).to.have.length(0);
+      });
+
+      it('should handle null tagContent', () => {
+        const url = 'https://example.com/product';
+        const tagContent = null;
+
+        productSeoChecks.addToAllTags(url, TITLE, tagContent);
+
+        expect(Object.keys(productSeoChecks.allTags[TITLE])).to.have.length(0);
       });
     });
 

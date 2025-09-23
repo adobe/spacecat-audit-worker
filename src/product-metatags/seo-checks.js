@@ -200,6 +200,24 @@ class ProductSeoChecks {
   }
 
   /**
+   * Adds tag data entry to all Tags Object
+   * @param urlPath
+   * @param tagName
+   * @param tagContent
+   */
+  addToAllTags(urlPath, tagName, tagContent) {
+    if (!tagContent) {
+      return;
+    }
+    const tagContentLowerCase = tagContent.toLowerCase();
+    this.allTags[tagName][tagContentLowerCase] ??= {
+      pageUrls: new Set(),
+      tagContent,
+    };
+    this.allTags[tagName][tagContentLowerCase].pageUrls.add(urlPath);
+  }
+
+  /**
    * Stores all tags for duplicate checking
    * @param {string} urlPath - The URL of the page.
    * @param {object} pageTags - An object containing the tags of the page.
@@ -209,10 +227,7 @@ class ProductSeoChecks {
       if (hasText(pageTags[tagName])) {
         const tagContent = Array.isArray(pageTags[tagName])
           ? pageTags[tagName].join(' ') : pageTags[tagName];
-        if (!this.allTags[tagName][tagContent]) {
-          this.allTags[tagName][tagContent] = [];
-        }
-        this.allTags[tagName][tagContent].push(urlPath);
+        this.addToAllTags(urlPath, tagName, tagContent);
       }
     });
   }
@@ -241,18 +256,20 @@ class ProductSeoChecks {
    * Performs final checks for duplicate tags across all pages
    */
   finalChecks() {
-    Object.entries(this.allTags).forEach(([tagName, tagsObj]) => {
-      Object.entries(tagsObj).forEach(([tagContent, urls]) => {
-        if (urls.length > 1) {
-          urls.forEach((url) => {
+    [TITLE, DESCRIPTION, H1].forEach((tagName) => {
+      Object.values(this.allTags[tagName]).forEach((value) => {
+        if (value?.pageUrls?.size > 1) {
+          const capitalisedTagName = ProductSeoChecks.capitalizeFirstLetter(tagName);
+          const pageUrls = [...value.pageUrls];
+          pageUrls.forEach((url) => {
             this.detectedTags[url] ??= {};
             this.detectedTags[url][tagName] = {
+              tagContent: value.tagContent,
               [SEO_IMPACT]: MODERATE,
-              [ISSUE]: `Duplicate ${ProductSeoChecks.capitalizeFirstLetter(tagName)}`,
-              [ISSUE_DETAILS]: `${tagName} is used on ${urls.length} pages`,
+              [ISSUE]: `Duplicate ${capitalisedTagName}`,
+              [ISSUE_DETAILS]: `${pageUrls.length} pages share same ${tagName}`,
               [SEO_RECOMMENDATION]: UNIQUE_ACROSS_PAGES,
-              tagContent,
-              duplicateUrls: urls.filter((u) => u !== url),
+              duplicateUrls: pageUrls.filter((u) => u !== url),
             };
           });
         }
