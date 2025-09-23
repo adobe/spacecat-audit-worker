@@ -1,3 +1,10 @@
+## [1.186.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.186.0...v1.186.1) (2025-09-23)
+
+
+### Bug Fixes
+
+* **meta-tags:** add workaround for Preflight-Audit ([#1216](https://github.com/adobe/spacecat-audit-worker/issues/1216)) ([8918323](https://github.com/adobe/spacecat-audit-worker/commit/89183236b0aba2ef98f6b7cfb8bfefb1c5fa5d29))
+
 # [1.186.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.185.0...v1.186.0) (2025-09-23)
 
 
