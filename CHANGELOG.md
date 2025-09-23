@@ -1,3 +1,29 @@
+# [1.186.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.185.0...v1.186.0) (2025-09-23)
+
+
+### Features
+
+* add scrape client to backlinks audit ([#1171](https://github.com/adobe/spacecat-audit-worker/issues/1171)) ([e496344](https://github.com/adobe/spacecat-audit-worker/commit/e496344fbba09ba3c134031b9b5162bf851d8c7e))
+
+# [1.185.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.184.2...v1.185.0) (2025-09-22)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1302](https://github.com/adobe/spacecat-audit-worker/issues/1302)) ([58056e7](https://github.com/adobe/spacecat-audit-worker/commit/58056e7e987bf027b2dd1841345f76c70c8438ff))
+
+
+### Features
+
+* Sitemap product coverage ([#1285](https://github.com/adobe/spacecat-audit-worker/issues/1285)) ([6b24f5f](https://github.com/adobe/spacecat-audit-worker/commit/6b24f5f4d18a78f348d46f8f83a28fb0a86737f0))
+
+## [1.184.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.184.1...v1.184.2) (2025-09-22)
+
+
+### Bug Fixes
+
+* update to research agent type ([#1300](https://github.com/adobe/spacecat-audit-worker/issues/1300)) ([8b8936b](https://github.com/adobe/spacecat-audit-worker/commit/8b8936bf8eebf88c00252f1d3e73602b62de81de))
+
 ## [1.184.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.184.0...v1.184.1) (2025-09-22)
 
 
