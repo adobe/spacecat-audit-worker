@@ -572,11 +572,14 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
  * @param {Object} opportunity - Object with setTitle method.
  */
 export function getFormTitle(formDetails, opportunity) {
-  if (!formDetails || !isNonEmptyObject(formDetails)) return '';
-  if (!opportunity || !opportunity.getType()) return '';
+  let formType = (formDetails && isNonEmptyObject(formDetails) && formDetails.form_type?.trim())
+    ? formDetails.form_type.trim()
+    : 'Form';
 
-  const { form_type: formType } = formDetails;
-  if (!formType || !formType.trim()) return '';
+  const normalizedType = formType.toLowerCase();
+  if (normalizedType === 'na' || normalizedType.includes('other')) {
+    formType = 'Form';
+  }
 
   const suffixMap = {
     [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: 'has low conversions',
