@@ -13,10 +13,12 @@
 import { isNonEmptyObject, isValidUUID } from '@adobe/spacecat-shared-utils';
 import { AsyncJob, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ok } from '@adobe/spacecat-shared-http-utils';
+import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { StepAudit } from './step-audit.js';
 import { sendContinuationMessage, isAuditEnabledForSite } from './audit-utils.js';
 
 const { AUDIT_STEP_DESTINATION_CONFIGS } = AuditModel;
+const { AUDIT_STEP_DESTINATIONS } = AuditModel;
 
 export class AsyncJobRunner extends StepAudit {
   constructor(
@@ -49,9 +51,18 @@ export class AsyncJobRunner extends StepAudit {
       ...(promiseToken ? { promiseToken } : {}),
     };
 
-    const queueUrl = destination.getQueueUrl(context);
-    const payload = destination.formatPayload(stepResult, auditContext, context);
-    await sendContinuationMessage({ queueUrl, payload }, context);
+    if (step.destination === AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT) {
+      const scrapeClient = ScrapeClient.createFrom(context);
+      const payload = destination.formatPayload(stepResult, auditContext, context);
+      payload.maxScrapeAge = 0; // force a fresh scrape
+      log.info(`Creating new scrapeJob with the ScrapeClient. Payload: ${JSON.stringify(payload)}`);
+      const scrapeJob = await scrapeClient.createScrapeJob(payload);
+      log.info(`Crated scrapeJob: ${scrapeJob}`);
+    } else {
+      const queueUrl = destination.getQueueUrl(context);
+      const payload = destination.formatPayload(stepResult, auditContext, context);
+      await sendContinuationMessage({ queueUrl, payload }, context);
+    }
 
     log.info(`Step ${step.name} completed for job ${job.getId()} of type ${type}, message sent to ${step.destination}`);
 
@@ -101,6 +112,12 @@ export class AsyncJobRunner extends StepAudit {
       const updatedStepContext = {
         ...context, site, job, type,
       };
+
+      if (auditContext.scrapeJobId) {
+        const scrapeClient = ScrapeClient.createFrom(context);
+        updatedStepContext.scrapeResultMap = await scrapeClient
+          .getScrapeResultPaths(auditContext.scrapeJobId);
+      }
 
       updatedStepContext.finalUrl = await this.urlResolver(site, context);
       const promiseToken = message.promiseToken || message.auditContext?.promiseToken;
