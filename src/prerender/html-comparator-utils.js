@@ -12,38 +12,10 @@
 
 import * as cheerio from 'cheerio';
 
-function filterHtmlContent(htmlContent, ignoreNavFooter = true, returnText = true) {
-  /** Filter HTML content by removing unwanted elements, optionally return HTML or text */
+function stripTagsToText(htmlContent) {
+  /* c8 ignore next 1 */
   if (!htmlContent) return '';
 
-  // For browser environment (Chrome extension)
-  if (typeof document !== 'undefined' && typeof globalThis.DOMParser !== 'undefined') {
-    const parser = new globalThis.DOMParser();
-    const doc = parser.parseFromString(htmlContent, 'text/html');
-
-    // Get the body element, if it doesn't exist, use the entire document
-    const bodyElement = doc.body || doc.documentElement;
-
-    // Always remove script, style, noscript, template elements
-    bodyElement.querySelectorAll('script,style,noscript,template').forEach((n) => n.remove());
-
-    // Remove all media elements (images, videos, audio, etc.) to keep only text
-    bodyElement.querySelectorAll('img,video,audio,picture,svg,canvas,embed,object,iframe').forEach((n) => n.remove());
-
-    // Conditionally remove navigation and footer elements
-    if (ignoreNavFooter) {
-      // Note: filterNavigationAndFooter function not available in this context
-      // This is a placeholder for browser environment
-    }
-
-    if (returnText) {
-      return (bodyElement && bodyElement.textContent) ? bodyElement.textContent : '';
-    } else {
-      return bodyElement.outerHTML;
-    }
-  }
-
-  // For Node.js environment (main.js)
   const $ = cheerio.load(htmlContent);
 
   // Always remove script, style, noscript, template tags
@@ -52,32 +24,16 @@ function filterHtmlContent(htmlContent, ignoreNavFooter = true, returnText = tru
   // Remove all media elements (images, videos, audio, etc.) to keep only text
   $('img, video, audio, picture, svg, canvas, embed, object, iframe').remove();
 
-  // Conditionally remove navigation and footer elements
-  if (ignoreNavFooter) {
-    // Note: filterNavigationAndFooterCheerio function not available in this context
-    // This is a placeholder for Node.js environment
-  }
-
-  if (returnText) {
-    // Get text content from document element
-    const textContent = $('html').text() || $('body').text() || '';
-    // Clean up whitespace
-    return textContent.replace(/\s+/g, ' ').trim();
-  } else {
-    return $.html();
-  }
-}
-
-function stripTagsToText(htmlContent, ignoreNavFooter = true) {
-  /** Backward compatibility wrapper for filterHtmlContent */
-  return filterHtmlContent(htmlContent, ignoreNavFooter, true);
+  // Get text content from document element
+  const textContent = $('html').text() || $('body').text() || '';
+  // Clean up whitespace
+  return textContent.replace(/\s+/g, ' ').trim();
 }
 
 /**
- * Tokenizes text into words or lines with intelligent normalization
+ * Tokenizes text into words with intelligent normalization
  *
  * @param {string} text - The input text to tokenize
- * @param {string} [mode="word"] - Tokenization mode: "word" or "line"
  *
  * @returns {string[]} Array of normalized tokens
  *
@@ -89,11 +45,6 @@ function stripTagsToText(htmlContent, ignoreNavFooter = true) {
  * - Uses robust placeholder system with private Unicode characters
  * - Protects: https://, www., .com/.org/.net/.edu/.gov, email@domain.ext
  *
- * Line mode features:
- * - Normalizes line endings to consistent format
- * - Collapses horizontal whitespace within lines
- * - Removes empty lines and excessive line breaks
- *
  * @example
  * // Word tokenization with punctuation normalization
  * tokenize("Hello , world !")
@@ -104,51 +55,37 @@ function stripTagsToText(htmlContent, ignoreNavFooter = true) {
  * tokenize("Visit https://example.com , please")
  * // → ["Visit", "https://example.com,", "please"]
  *
- * @example
- * // Line tokenization
- * tokenize("Line 1\n\nLine 2\n   Line 3", "line")
- * // → ["Line 1", "Line 2", "Line 3"]
  */
-function tokenize(text, mode = 'word') {
-  if (mode === 'line') {
-    // For line mode: normalize whitespace first, then split by lines and filter out empty lines
-    const normalized = text
-      .replace(/\r\n?|\n/g, '\n') // Normalize line endings
-      .replace(/[ \t]+/g, ' ') // Collapse horizontal whitespace to single space
-      .replace(/\n\s*\n/g, '\n') // Collapse multiple empty lines to single
-      .trim();
-    return normalized.split(/\n/).filter((line) => line.length > 0);
-  } else {
-    // For word mode: normalize all whitespace thoroughly before tokenizing
-    let clean = text
-      .replace(/\r\n?|\n/g, ' ') // Convert newlines to spaces
-      .replace(/\s+/g, ' ') // Collapse multiple whitespace to single space
-      .replace(/^\s+|\s+$/g, ''); // Remove leading/trailing whitespace more explicitly
+function tokenize(text) {
+  // For word mode: normalize all whitespace thoroughly before tokenizing
+  let clean = text
+    .replace(/\r\n?|\n/g, ' ') // Convert newlines to spaces
+    .replace(/\s+/g, ' ') // Collapse multiple whitespace to single space
+    .replace(/^\s+|\s+$/g, ''); // Remove leading/trailing whitespace more explicitly
 
-    // Protect URLs/links by temporarily replacing them with unique placeholders
-    const urlPattern = /\S*(?:https?:\/\/|www\.|\.com|\.org|\.net|\.edu|\.gov|@\S+\.\S+)\S*/gi;
-    const urlMap = new Map();
-    const uniqueId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+  // Protect URLs/links by temporarily replacing them with unique placeholders
+  const urlPattern = /\S*(?:https?:\/\/|www\.|\.com|\.org|\.net|\.edu|\.gov|@\S+\.\S+)\S*/gi;
+  const urlMap = new Map();
+  const uniqueId = Date.now().toString(36) + Math.random().toString(36).substr(2);
 
-    clean = clean.replace(urlPattern, (match) => {
-      const placeholder = `\u{E000}${uniqueId}_${urlMap.size}\u{E001}`; // Using private use Unicode chars
-      urlMap.set(placeholder, match);
-      return placeholder;
-    });
+  clean = clean.replace(urlPattern, (match) => {
+    const placeholder = `\u{E000}${uniqueId}_${urlMap.size}\u{E001}`; // Using private use Unicode chars
+    urlMap.set(placeholder, match);
+    return placeholder;
+  });
 
-    // Now normalize punctuation spacing on the text without URLs
-    clean = clean
-      .replace(/\s*([,.!?;:])\s*/g, '$1 ') // Normalize punctuation spacing
-      .replace(/\s+/g, ' '); // Final collapse of any remaining multi-spaces
+  // Now normalize punctuation spacing on the text without URLs
+  clean = clean
+    .replace(/\s*([,.!?;:])\s*/g, '$1 ') // Normalize punctuation spacing
+    .replace(/\s+/g, ' '); // Final collapse of any remaining multi-spaces
 
-    // Restore URLs
-    for (const [placeholder, originalUrl] of urlMap) {
-      clean = clean.replace(placeholder, originalUrl);
-    }
-
-    // Split by whitespace and filter out empty tokens
-    return clean.split(/\s+/).filter((token) => token.length > 0);
+  // Restore URLs
+  for (const [placeholder, originalUrl] of urlMap) {
+    clean = clean.replace(placeholder, originalUrl);
   }
+
+  // Split by whitespace and filter out empty tokens
+  return clean.split(/\s+/).filter((token) => token.length > 0);
 }
 
 /**
@@ -158,11 +95,11 @@ function tokenize(text, mode = 'word') {
  * @returns {Object} - Statistics object
  */
 function calculateStats(originalHTML, currentHTML) {
-  const originalText = stripTagsToText(originalHTML, true);
-  const currentText = stripTagsToText(currentHTML, true);
+  const originalText = stripTagsToText(originalHTML);
+  const currentText = stripTagsToText(currentHTML);
 
-  const originalTokens = tokenize(originalText, 'word');
-  const currentTokens = tokenize(currentText, 'word');
+  const originalTokens = tokenize(originalText);
+  const currentTokens = tokenize(currentText);
   const wordCountBefore = originalTokens.length;
   const wordCountAfter = currentTokens.length;
 

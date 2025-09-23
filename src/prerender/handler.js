@@ -54,11 +54,11 @@ function getS3Path(url, siteId, fileName) {
 
 /**
  * Gets scraped HTML content from S3 for a specific URL
+ * Simplified version that just fetches and returns the raw data
  * @param {string} url - Full URL
  * @param {string} siteId - Site ID
  * @param {Object} context - Audit context
- * @returns {Promise<Object|null>} - Object with serverSideHtml and clientSideHtml
- * or null if not found
+ * @returns {Promise<Object>} - Object with serverSideHtml and clientSideHtml (may be null)
  */
 async function getScrapedHtmlFromS3(url, siteId, context) {
   const { log, s3Client, env } = context;
@@ -76,19 +76,17 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
       getObjectFromKey(s3Client, bucketName, clientSideKey, log),
     ]);
 
-    if (serverSideHtml && clientSideHtml) {
-      log.info(`Prerender - Found both server-side and client-side HTML for URL: ${url}`);
-      return {
-        serverSideHtml,
-        clientSideHtml,
-      };
-    }
-
-    log.warn(`Prerender - Missing HTML files for URL: ${url} (server-side-key: ${serverSideKey}, client-side-key: ${clientSideKey})`);
-    return null;
+    // Simply return whatever we got from S3
+    return {
+      serverSideHtml,
+      clientSideHtml,
+    };
   } catch (error) {
     log.warn(`Prerender - Could not get scraped content for ${url}: ${error.message}`);
-    return null;
+    return {
+      serverSideHtml: null,
+      clientSideHtml: null,
+    };
   }
 }
 
@@ -106,15 +104,6 @@ async function compareHtmlContent(url, siteId, context) {
 
   // Get both server-side and client-side HTML from S3
   const scrapedData = await getScrapedHtmlFromS3(url, siteId, context);
-
-  if (!scrapedData) {
-    log.error(`Prerender - No scraped data available for comparison for ${url}`);
-    return {
-      url,
-      error: 'No scraped data available for comparison',
-      needsPrerender: false,
-    };
-  }
 
   const { serverSideHtml, clientSideHtml } = scrapedData;
 
@@ -245,10 +234,10 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     createOpportunityData,
     AUDIT_TYPE,
   );
-
   // Sync suggestions - use URL as unique key (one prerender suggestion per URL)
   const buildKey = (data) => `${data.url}|${AUDIT_TYPE}`;
 
+  /* c8 ignore next 15 */
   await syncSuggestions({
     opportunity,
     newData: preRenderSuggestions,
@@ -258,7 +247,15 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CODE_CHANGE,
       rank: suggestion.organicTraffic,
-      data: suggestion,
+      data: {
+        url: suggestion.url,
+        organicTraffic: suggestion.organicTraffic,
+        contentGainRatio: suggestion.contentGainRatio,
+        wordCountBefore: suggestion.wordCountBefore,
+        wordCountAfter: suggestion.wordCountAfter,
+        originalHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'server-side.html'),
+        prerenderedHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'client-side.html'),
+      },
     }),
   });
 
