@@ -220,7 +220,7 @@ export async function processOpportunityStep(context) {
   await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createAccessibilityOpportunity(latestAudit, context);
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity1 identified`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity2 identified`);
   return {
     status: 'complete',
   };
