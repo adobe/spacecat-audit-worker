@@ -86,32 +86,27 @@ export async function checkLLMBlocked(context) {
     };
   }
 
-  const agentResultsArray = [];
+  // line number -> affected URL / user agent
+  const resultsMap = {};
 
   agents.forEach((agent) => {
-    const agentResult = {
-      agent,
-      rationale: agentsWithRationale[agent],
-      affectedUrls: [],
-    };
-
     topPages.forEach((page) => {
       const isAllowedGenerally = robots.isAllowed(page.getUrl());
       const isAllowedForRobot = robots.isAllowed(page.getUrl(), agent);
       if (isAllowedGenerally && !isAllowedForRobot) {
-        agentResult.affectedUrls.push({
-          url: page.getUrl(),
-          line: robots.getMatchingLineNumber(page.getUrl(), agent),
-        });
+        const line = robots.getMatchingLineNumber(page.getUrl(), agent);
+        const url = page.getUrl();
+
+        if (Array.isArray(resultsMap[line])) {
+          resultsMap[line].push({ line, url, agent });
+        } else {
+          resultsMap[line] = [{ line, url, agent }];
+        }
       }
     });
-
-    if (agentResult.affectedUrls.length > 0) {
-      agentResultsArray.push(agentResult);
-    }
   });
 
-  if (agentResultsArray.length <= 0) {
+  if (Object.keys(resultsMap).length <= 0) {
     return {
       auditResult: JSON.stringify([]),
       fullAuditRef: `llm-blocked::${finalUrl}`,
@@ -129,14 +124,14 @@ export async function checkLLMBlocked(context) {
     context,
     createOpportunityData,
     'llm-blocked',
-    { fullRobots: plainRobotsTxt },
+    { fullRobots: plainRobotsTxt, numProcessedUrls: topPages.length },
   );
 
   // Create the suggestions
   await syncSuggestions({
     opportunity,
-    newData: agentResultsArray,
-    buildKey: (data) => data.agent,
+    newData: Object.values(resultsMap),
+    buildKey: (data) => JSON.stringify(data),
     context,
     log,
     mapNewSuggestion: (entry) => ({
@@ -144,13 +139,15 @@ export async function checkLLMBlocked(context) {
       type: 'CODE_CHANGE',
       rank: 10,
       data: {
-        ...entry,
+        lineNumber: entry[0].line,
+        items: entry,
+        affectedUserAgents: [...new Set(entry.map((item) => item.agent))],
       },
     }),
   });
 
   return {
-    auditResult: JSON.stringify(agentResultsArray),
+    auditResult: JSON.stringify(resultsMap),
     fullAuditRef: `llm-blocked::${finalUrl}`,
   };
 }

@@ -9,19 +9,22 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-export function createOpportunityData({ fullRobots }) {
+export function createOpportunityData({ fullRobots, numProcessedUrls }) {
   return {
     origin: 'AUTOMATION',
-    title: 'Blocked AI agent bots',
-    description: 'Several URLs are blocked from being accessed by LLM user agents.',
+    title: 'Robots.txt disallowing AI crawlers from accessing your site',
+    description: 'Several URLs are disallowed from being accessed by LLM user agents.',
     guidance: {
       steps: [
-        'Check each URL in the suggestions and ensure that AI user agents are not blocked in robots.txt',
+        'Check each listed line number of robots.txt whether the URLs blocked by the statement are intentionally blocked.',
+        'If the URLs are not intentionally blocked, update the line of robots txt',
+        'If the URLs are intentionally blocked, ignore the suggestion.',
       ],
     },
     tags: ['llm', 'isElmo'],
     data: {
       fullRobots,
+      numProcessedUrls,
     },
   };
 }
