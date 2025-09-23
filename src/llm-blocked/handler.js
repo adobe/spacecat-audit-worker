@@ -43,10 +43,10 @@ export async function getRobotsTxt(context) {
 
     const robots = robotsParser(`https://${finalUrl}`, robotsTxtContent);
 
-    return robots;
+    return { robots, plainRobotsTxt: robotsTxtContent };
   } catch (error) {
     context.log.error(`Error getting robots.txt: ${error}`);
-    return null;
+    return { robots: null, plainRobotsTxt: null };
   }
 }
 
@@ -77,7 +77,7 @@ export async function checkLLMBlocked(context) {
 
   const agents = [...Object.keys(agentsWithRationale)];
 
-  const robots = await getRobotsTxt(context);
+  const { robots, plainRobotsTxt } = await getRobotsTxt(context);
   if (!robots) {
     log.warn('No robots.txt found. Aborting robots.txt check.');
     return {
@@ -86,7 +86,7 @@ export async function checkLLMBlocked(context) {
     };
   }
 
-  const suggestionsArray = [];
+  const agentResultsArray = [];
 
   agents.forEach((agent) => {
     const agentResult = {
@@ -107,11 +107,11 @@ export async function checkLLMBlocked(context) {
     });
 
     if (agentResult.affectedUrls.length > 0) {
-      suggestionsArray.push(agentResult);
+      agentResultsArray.push(agentResult);
     }
   });
 
-  if (suggestionsArray.length <= 0) {
+  if (agentResultsArray.length <= 0) {
     return {
       auditResult: JSON.stringify([]),
       fullAuditRef: `llm-blocked::${finalUrl}`,
@@ -129,12 +129,13 @@ export async function checkLLMBlocked(context) {
     context,
     createOpportunityData,
     'llm-blocked',
+    { fullRobots: plainRobotsTxt },
   );
 
   // Create the suggestions
   await syncSuggestions({
     opportunity,
-    newData: suggestionsArray,
+    newData: agentResultsArray,
     buildKey: (data) => data.agent,
     context,
     log,
@@ -149,7 +150,7 @@ export async function checkLLMBlocked(context) {
   });
 
   return {
-    auditResult: JSON.stringify(suggestionsArray),
+    auditResult: JSON.stringify(agentResultsArray),
     fullAuditRef: `llm-blocked::${finalUrl}`,
   };
 }
