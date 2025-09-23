@@ -193,7 +193,6 @@ export async function submitForScraping(context) {
     type: AUDIT_TYPE,
     processingType: AUDIT_TYPE,
     allowCache: false,
-    concurrency: 50,
     options: {
       pageLoadTimeout: 20000,
       storagePrefix: AUDIT_TYPE,
@@ -237,7 +236,6 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
   // Sync suggestions - use URL as unique key (one prerender suggestion per URL)
   const buildKey = (data) => `${data.url}|${AUDIT_TYPE}`;
 
-  /* c8 ignore next 15 */
   await syncSuggestions({
     opportunity,
     newData: preRenderSuggestions,

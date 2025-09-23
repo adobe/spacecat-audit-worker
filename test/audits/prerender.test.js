@@ -258,7 +258,6 @@ describe('Prerender Audit', () => {
           type: 'prerender',
           processingType: 'prerender',
           allowCache: false,
-          concurrency: 50,
           options: {
             pageLoadTimeout: 20000,
             storagePrefix: 'prerender',
@@ -420,7 +419,18 @@ describe('Prerender Audit', () => {
       });
 
       it('should trigger opportunity processing path when prerender is detected', async () => {
-        // This test is focused on covering lines 341-346 where processOpportunityAndSuggestions is called
+        // This test covers line 341 by ensuring the full opportunity processing flow executes
+        const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
+          },
+          '../../src/utils/data-access.js': {
+            syncSuggestions: sinon.stub().resolves(),
+          },
+        });
+
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
             { getUrl: () => 'https://example.com/page1', getTraffic: () => 500 },
@@ -460,14 +470,14 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        // This should trigger the opportunity processing path but will fail on the actual processing
-        // The important thing is we test the branch where urlsNeedingPrerender.length > 0 (lines 340-346)
-        try {
-          await processContentAndGenerateOpportunities(context);
-        } catch (error) {
-          // Expected to fail due to missing convertToOpportunity mock, but the path was executed
-          expect(error.message).to.include('convertToOpportunity');
-        }
+        // This should fully execute the opportunity processing path including line 341
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        
+        expect(result.status).to.equal('complete');
+        expect(result.auditResult.urlsNeedingPrerender).to.be.greaterThan(0);
+        expect(context.log.info).to.have.been.called;
+        // Verify that the opportunity processing was logged
+        expect(context.log.info.args.some(call => call[0].includes('Successfully synced opportunity and suggestions'))).to.be.true;
       });
     });
 
@@ -1396,51 +1406,61 @@ describe('Prerender Audit', () => {
       });
 
       it('should trigger opportunity and suggestion creation flow', async () => {
-        // Test the full opportunity creation and suggestion sync flow
+        // Test the full opportunity creation and suggestion sync flow including S3 key generation
         const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        const syncSuggestionsStub = sinon.stub().resolves();
         
         const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': {
-            getObjectFromKey: sinon.stub()
-              .onFirstCall().resolves('<html><body><h1>Simple</h1></body></html>')
-              .onSecondCall().resolves('<html><body><h1>Simple</h1><div>Much more content that triggers prerender detection</div></body></html>'),
-          },
           '../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
           },
           '../../src/utils/data-access.js': {
-            syncSuggestions: sinon.stub().resolves(),
+            syncSuggestions: syncSuggestionsStub,
           },
         });
 
-        const mockSiteTopPage = {
-          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
-          ]),
+        const auditData = {
+          siteId: 'test-site-id',
+          auditResult: {
+            urlsNeedingPrerender: 1,
+            results: [
+              {
+                url: 'https://example.com/page1',
+                needsPrerender: true,
+                organicTraffic: 500,
+                contentGainRatio: 2.1,
+                wordCountBefore: 100,
+                wordCountAfter: 210,
+              },
+            ],
+          },
         };
 
         const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://example.com',
-          },
-          audit: { getId: () => 'audit-id' },
-          dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
-          s3Client: {},
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
 
-        expect(result.status).to.equal('complete');
         expect(context.log.info).to.have.been.called;
+        // Verify that syncSuggestions was called
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
         // Verify that suggestion syncing was logged
         expect(context.log.info.args.some(call => call[0].includes('Successfully synced opportunity and suggestions'))).to.be.true;
+        
+        // Verify the syncSuggestions was called with the correct structure including S3 keys
+        const syncCall = syncSuggestionsStub.getCall(0);
+        expect(syncCall.args[0]).to.have.property('mapNewSuggestion');
+        const mappedSuggestion = syncCall.args[0].mapNewSuggestion(auditData.auditResult.results[0]);
+        expect(mappedSuggestion.data).to.have.property('originalHtmlKey');
+        expect(mappedSuggestion.data).to.have.property('prerenderedHtmlKey');
+        expect(mappedSuggestion.data.originalHtmlKey).to.include('server-side.html');
+        expect(mappedSuggestion.data.prerenderedHtmlKey).to.include('client-side.html');
+        expect(mappedSuggestion.data).to.not.have.property('needsPrerender');
       });
 
         it('should test simplified text extraction', () => {
