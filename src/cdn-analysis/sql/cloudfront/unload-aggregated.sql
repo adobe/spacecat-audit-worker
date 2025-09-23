@@ -4,7 +4,7 @@ UNLOAD (
     `cs(user-agent)` AS user_agent,
     CAST(`sc-status` AS INT) AS status,
     try(url_extract_host(`cs(referer)`)) AS referer,
-    `cs(host)` AS host,
+    `x-host-header` AS host,
     CAST(`time-to-first-byte` AS DOUBLE) * 1000 AS time_to_first_byte,
     COUNT(*) AS count,
     '{{serviceProvider}}' AS cdn_provider
