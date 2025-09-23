@@ -86,8 +86,8 @@ export class AemAuthorClient {
       }
 
       const data = await response.json();
-      // If != 1, it is either not existing or a folder access
-      const isAvailable = data?.items && data.items.length === 1;
+      // Sites API returns 200 with empty items array when path doesn't exist
+      const isAvailable = data?.items && data.items.length !== 0;
 
       // If there is content, cache it
       if (data?.items && this.pathIndex) {
