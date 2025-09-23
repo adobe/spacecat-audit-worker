@@ -21,8 +21,7 @@ import { analyzeHtmlForPrerender } from './html-comparator-utils.js';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-// Configuration constants
-const CONTENT_INCREASE_THRESHOLD = 1.2; // Content increase ratio threshold
+const CONTENT_GAIN_THRESHOLD = 1.2;
 
 /**
  * Sanitizes the import path by replacing special characters with hyphens
@@ -31,10 +30,10 @@ const CONTENT_INCREASE_THRESHOLD = 1.2; // Content increase ratio threshold
  */
 function sanitizeImportPath(importPath) {
   return importPath
-    .replace(/^\/+|\/+$/g, '') // Remove leading/trailing slashes
-    .replace(/[/._]/g, '-') // Replace forward slashes, dots, and underscores with hyphens
-    .replace(/-+/g, '-') // Replace multiple consecutive hyphens with single hyphen
-    .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/[/._]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
 /**
@@ -54,7 +53,6 @@ function getS3Path(url, siteId, fileName) {
 
 /**
  * Gets scraped HTML content from S3 for a specific URL
- * Simplified version that just fetches and returns the raw data
  * @param {string} url - Full URL
  * @param {string} siteId - Site ID
  * @param {Object} context - Audit context
@@ -70,13 +68,11 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
 
     log.info(`Prerender - Getting scraped content for URL: ${url}`);
 
-    // Fetch both HTML files in parallel
     const [serverSideHtml, clientSideHtml] = await Promise.all([
       getObjectFromKey(s3Client, bucketName, serverSideKey, log),
       getObjectFromKey(s3Client, bucketName, clientSideKey, log),
     ]);
 
-    // Simply return whatever we got from S3
     return {
       serverSideHtml,
       clientSideHtml,
@@ -102,7 +98,6 @@ async function compareHtmlContent(url, siteId, context) {
 
   log.info(`Prerender - Comparing HTML content for: ${url}`);
 
-  // Get both server-side and client-side HTML from S3
   const scrapedData = await getScrapedHtmlFromS3(url, siteId, context);
 
   const { serverSideHtml, clientSideHtml } = scrapedData;
@@ -117,7 +112,7 @@ async function compareHtmlContent(url, siteId, context) {
   }
 
   // eslint-disable-next-line
-  const analysis = analyzeHtmlForPrerender(serverSideHtml, clientSideHtml, CONTENT_INCREASE_THRESHOLD);
+  const analysis = analyzeHtmlForPrerender(serverSideHtml, clientSideHtml, CONTENT_GAIN_THRESHOLD);
 
   if (analysis.error) {
     log.error(`Prerender - HTML analysis failed for ${url}: ${analysis.error}`);
@@ -168,14 +163,11 @@ export async function submitForScraping(context) {
   const { SiteTopPage } = dataAccess;
   const siteId = site.getId();
 
-  // Get top pages for the site
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
   const topPagesUrls = topPages.map((page) => page.getUrl());
 
-  // Get any included URLs for prerender audit from site config
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
-  // Combine and deduplicate URLs
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
 
   log.info(`Prerender - Submitting ${finalUrls.length} URLs for scraping (${topPagesUrls.length} top pages + ${includedURLs.length} included URLs)`);
@@ -225,7 +217,6 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
 
   log.info(`Prerender - Generated ${preRenderSuggestions.length} prerender suggestions for ${auditUrl}`);
 
-  // Create opportunity
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
@@ -233,7 +224,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     createOpportunityData,
     AUDIT_TYPE,
   );
-  // Sync suggestions - use URL as unique key (one prerender suggestion per URL)
+
   const buildKey = (data) => `${data.url}|${AUDIT_TYPE}`;
 
   await syncSuggestions({
@@ -251,6 +242,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
         contentGainRatio: suggestion.contentGainRatio,
         wordCountBefore: suggestion.wordCountBefore,
         wordCountAfter: suggestion.wordCountAfter,
+        // S3 references to stored HTML content for comparison
         originalHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'server-side.html'),
         prerenderedHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'client-side.html'),
       },
@@ -276,22 +268,18 @@ export async function processContentAndGenerateOpportunities(context) {
   log.info(`Prerender - Generate opportunities for site: ${siteId}`);
 
   try {
-    // Get URLs that were scraped from the audit data or fallback to top pages
     let urlsToCheck = [];
     const trafficMap = new Map();
 
-    // Get top pages for traffic data
     const { SiteTopPage } = dataAccess;
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
 
-    // Create traffic map from top pages
     topPages.forEach((page) => {
       trafficMap.set(page.getUrl(), page.getTraffic());
     });
 
     // Try to get URLs from the audit context first
     if (scrapeResultPaths?.size > 0) {
-      // Extract URLs from scrape result paths
       urlsToCheck = Array.from(context.scrapeResultPaths.keys());
       log.info(`Prerender - Found ${urlsToCheck.length} URLs from scrape results`);
     } else {
@@ -306,11 +294,9 @@ export async function processContentAndGenerateOpportunities(context) {
       log.info('Prerender - No URLs found, using base URL for comparison');
     }
 
-    // Compare server-side vs client-side HTML for each URL
     const comparisonResults = await Promise.all(
       urlsToCheck.map(async (url) => {
         const result = await compareHtmlContent(url, siteId, context);
-        // Add organic traffic data if available
         const organicTraffic = trafficMap.get(url) || 0;
         return {
           ...result,
@@ -319,7 +305,6 @@ export async function processContentAndGenerateOpportunities(context) {
       }),
     );
 
-    // Analyze results
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
     const successfulComparisons = comparisonResults.filter((result) => !result.error);
 
@@ -331,7 +316,6 @@ export async function processContentAndGenerateOpportunities(context) {
       results: comparisonResults,
     };
 
-    // Generate suggestions and opportunities if needed
     if (urlsNeedingPrerender.length > 0) {
       await processOpportunityAndSuggestions(site.getBaseURL(), {
         siteId,
