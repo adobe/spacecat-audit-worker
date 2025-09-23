@@ -161,6 +161,9 @@ class ProductSeoChecks {
       };
     };
 
+    // Store checkTag as instance method for testing
+    this.checkTag = (tagName, tagContent) => checkTag(tagName, tagContent);
+
     // Check standard tags
     [TITLE, DESCRIPTION].forEach((tagName) => {
       if (hasText(pageTags[tagName])) {
