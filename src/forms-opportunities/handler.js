@@ -15,7 +15,9 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORMS_AUDIT_INTERVAL } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { generateOpptyData, getUrlsDataForAccessibilityAudit } from './utils.js';
+import {
+  checkDynamoItem, generateOpptyData, getUrlsDataForAccessibilityAudit,
+} from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
 import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
 import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
@@ -61,6 +63,40 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting audit`);
   const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
   const { formVitals } = formsAuditRunnerResult.auditResult;
+
+  // check audit size as per dynamo
+  const { safe, sizeKB } = checkDynamoItem(formVitals);
+  if (!safe) {
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] estimated audit item size: ${sizeKB.toFixed(2)} KB`);
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] audit item not safe for dynamo, trimming audit data`);
+    // Group entries by formsource and calculate main pageview
+    const formsourceGroups = {};
+    formVitals.forEach((entry) => {
+      const { formsource } = entry;
+      if (!formsource) return;
+
+      const totalPageview = Object.values(entry.pageview).reduce((sum, val) => sum + val, 0);
+      if (!formsourceGroups[formsource]) formsourceGroups[formsource] = [];
+      formsourceGroups[formsource].push({ entry, totalPageview });
+    });
+
+    // Helper to get top/bottom N including ties
+    function getTopBottomWithTies(pages, n = 2) {
+      const sorted = [...pages].sort((a, b) => b.totalPageview - a.totalPageview);
+      return sorted.length < 2 * n
+        ? sorted.map((p) => p.entry)
+        : [...sorted.slice(0, n), ...sorted.slice(-n)].map((p) => p.entry);
+    }
+
+    // Collect all entries to keep
+    // eslint-disable-next-line max-len
+    const entriesToKeep = Object.values(formsourceGroups).flatMap((group) => getTopBottomWithTies(group, 2));
+
+    // Mutate original formVitals in place
+    formVitals.length = 0; // Clear the array
+    formVitals.push(...entriesToKeep); // Push only top/bottom entries
+    log.info(`[Form Opportunity] [Site Id: ${site.getId()}] trimmed form vitals ${JSON.stringify(formVitals)}`);
+  }
 
   // generating opportunity data from audit to be send to scraper
   const formOpportunities = await generateOpptyData(formVitals, context);
