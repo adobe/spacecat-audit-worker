@@ -1,3 +1,10 @@
+# [1.186.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.185.0...v1.186.0) (2025-09-23)
+
+
+### Features
+
+* add scrape client to backlinks audit ([#1171](https://github.com/adobe/spacecat-audit-worker/issues/1171)) ([e496344](https://github.com/adobe/spacecat-audit-worker/commit/e496344fbba09ba3c134031b9b5162bf851d8c7e))
+
 # [1.185.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.184.2...v1.185.0) (2025-09-22)
 
 
