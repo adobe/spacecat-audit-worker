@@ -85,28 +85,71 @@ describe('LLM Blocked Audit', () => {
       .get('/robots.txt')
       .reply(200, 'User-Agent: ClaudeBot/1.0\nDisallow: /page1\n\nUser-Agent: *\nAllow: /');
 
-    const expectedSuggestionsData = [
-      {
-        agent: 'ClaudeBot/1.0',
-        rationale: 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',
-        affectedUrls: [
-          {
-            url: 'https://example.com/page1',
-            line: 2,
-          },
-        ],
-      },
-    ];
+    const expectedResultsMap = {
+      '2': [
+        {
+          line: 2,
+          url: 'https://example.com/page1',
+          agent: 'ClaudeBot/1.0',
+        },
+      ],
+    };
 
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
     context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
     context.dataAccess.Opportunity.getSuggestions.resolves([]);
     context.dataAccess.Opportunity.getId.returns('opportunity-id');
-    context.dataAccess.Opportunity.addSuggestions.resolves(expectedSuggestionsData);
+    context.dataAccess.Opportunity.addSuggestions.resolves([]);
 
     const result = await checkLLMBlocked(context);
 
-    expect(result.auditResult).to.equal(JSON.stringify(expectedSuggestionsData));
+    expect(result.auditResult).to.equal(JSON.stringify(expectedResultsMap));
+    expect(nock.pendingMocks()).to.have.lengthOf(0);
+  });
+
+  it('should handle many blocked URLs', async () => {
+    context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo = sinon.stub().resolves([
+      { getUrl: () => 'https://example.com/page1/foo' },
+      { getUrl: () => 'https://example.com/page1/bar' },
+      { getUrl: () => 'https://example.com/page2' },
+    ]);
+
+    // Mock robots.txt that blocks page1 for ClaudeBot/1.0
+    nock('https://example.com')
+      .get('/robots.txt')
+      .reply(200, 'User-Agent: ClaudeBot/1.0\nDisallow: /page1/*\nDisallow: /page2\n\nUser-Agent: *\nAllow: /');
+
+    const expectedResultsMap = {
+      '2': [
+        {
+          line: 2,
+          url: 'https://example.com/page1/foo',
+          agent: 'ClaudeBot/1.0',
+        },
+        {
+          line: 2,
+          url: 'https://example.com/page1/bar',
+          agent: 'ClaudeBot/1.0',
+        },
+      ],
+      '3': [
+        {
+          line: 3,
+          url: 'https://example.com/page2',
+          agent: 'ClaudeBot/1.0',
+        },
+      ],
+    };
+
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
+    context.dataAccess.Opportunity.getSuggestions.resolves([]);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+    context.dataAccess.Opportunity.addSuggestions.resolves([]);
+
+    const result = await checkLLMBlocked(context);
+
+    expect(result.auditResult).to.equal(JSON.stringify(expectedResultsMap));
     expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 
@@ -188,20 +231,32 @@ describe('LLM Blocked Audit', () => {
   });
 
   it('should return expected opportunity data from createOpportunityData', () => {
+    // Arrange
+    const mockData = {
+      fullRobots: 'User-Agent: *\nDisallow: /',
+      numProcessedUrls: 10,
+    };
+
     // Act
-    const result = createOpportunityData();
+    const result = createOpportunityData(mockData);
 
     // Assert
     expect(result).to.deep.equal({
       origin: 'AUTOMATION',
-      title: 'Blocked AI agent bots',
-      description: 'Several URLs are blocked from being accessed by LLM user agents.',
+      title: 'Robots.txt disallowing AI crawlers from accessing your site',
+      description: 'Several URLs are disallowed from being accessed by LLM user agents.',
       guidance: {
         steps: [
-          'Check each URL in the suggestions and ensure that AI user agents are not blocked in robots.txt',
+          'Check each listed line number of robots.txt whether the URLs blocked by the statement are intentionally blocked.',
+          'If the URLs are not intentionally blocked, update the line of robots txt',
+          'If the URLs are intentionally blocked, ignore the suggestion.',
         ],
       },
       tags: ['llm', 'isElmo'],
+      data: {
+        fullRobots: 'User-Agent: *\nDisallow: /',
+        numProcessedUrls: 10,
+      },
     });
   });
 });
