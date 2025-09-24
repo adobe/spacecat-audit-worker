@@ -145,6 +145,7 @@ export async function importTopPages(context) {
     siteId: site.getId(),
     auditResult: { status: 'preparing', finalUrl },
     fullAuditRef: s3BucketPath,
+    allowCache: false,
   };
 }
 
@@ -234,7 +235,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     buildKey,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: opportunity.getId(),
-      type: Suggestion.TYPES.CODE_CHANGE,
+      type: Suggestion.TYPES.CONFIG_UPDATE,
       rank: suggestion.organicTraffic,
       data: {
         url: suggestion.url,
@@ -283,8 +284,12 @@ export async function processContentAndGenerateOpportunities(context) {
       urlsToCheck = Array.from(context.scrapeResultPaths.keys());
       log.info(`Prerender - Found ${urlsToCheck.length} URLs from scrape results`);
     } else {
-      // Fallback: get top pages
+      // Fallback: get top pages and included URLs
       urlsToCheck = topPages.map((page) => page.getUrl());
+      /* c8 ignore start */
+      const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
+      urlsToCheck = [...new Set([...urlsToCheck, ...includedURLs])];
+      /* c8 ignore stop */
       log.info(`Prerender - Fallback: Using ${urlsToCheck.length} top pages for comparison`);
     }
 
