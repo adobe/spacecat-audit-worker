@@ -182,7 +182,6 @@ describe('Prerender Audit', () => {
           siteId: 'test-site-id',
           auditResult: { status: 'preparing', finalUrl: 'https://example.com' },
           fullAuditRef: 'scrapes/test-site-id/',
-          allowCache: false,
         });
       });
     });
