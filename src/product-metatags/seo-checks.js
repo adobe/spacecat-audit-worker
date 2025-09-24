@@ -224,7 +224,11 @@ class ProductSeoChecks {
    */
   storeAllTags(urlPath, pageTags) {
     [TITLE, DESCRIPTION, H1].forEach((tagName) => {
-      if (hasText(pageTags[tagName])) {
+      // Handle both string and array cases
+      if (
+        hasText(pageTags[tagName])
+        || (Array.isArray(pageTags[tagName]) && pageTags[tagName].length > 0)
+      ) {
         const tagContent = Array.isArray(pageTags[tagName])
           ? pageTags[tagName].join(' ') : pageTags[tagName];
         this.addToAllTags(urlPath, tagName, tagContent);
