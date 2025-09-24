@@ -17,7 +17,7 @@ export function createOpportunityData() {
     runbook: '',
     origin: 'AUTOMATION',
     title: 'Content readability issues affecting user experience and SEO',
-    description: 'Poor readability makes content difficult for users to understand and can negatively impact search engine rankings. Content with low readability scores may drive away visitors and reduce engagement metrics.',
+    description: 'Poor readability makes content difficult for users to understand. Content with low readability scores may drive away visitors and reduce engagement metrics.',
     guidance: {
       steps: [
         'Review content identified with poor readability scores on high-traffic pages.',
@@ -28,7 +28,7 @@ export function createOpportunityData() {
         'Use AI-generated suggestions as a starting point for improvements.',
       ],
     },
-    tags: ['Content Quality', 'User Experience', 'SEO', 'Traffic Acquisition'],
+    tags: ['Engagement', 'Accessibility'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
     },
