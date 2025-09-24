@@ -69,9 +69,12 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
       return opportunity;
     } else {
       opportunity.setAuditId(auditData.id);
-      if (auditType === Audit.AUDIT_TYPES.CWV
-          || auditType === Audit.AUDIT_TYPES.META_TAGS
-          || auditType === Audit.AUDIT_TYPES.SECURITY_CSP) {
+      if (
+        auditType === Audit.AUDIT_TYPES.CWV
+        || auditType === Audit.AUDIT_TYPES.META_TAGS
+        || auditType === Audit.AUDIT_TYPES.SECURITY_CSP
+        || auditType === 'product-metatags' // temporary until we have the enum updated in shared-data-access
+      ) {
         opportunity.setData({
           ...opportunity.getData(),
           ...props, // kpiDeltas
