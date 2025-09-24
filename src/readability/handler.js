@@ -171,7 +171,7 @@ export default async function readability(context, auditContext) {
       const pageResult = audits.get(normalizedFinalUrl);
 
       if (!pageResult) {
-        log.warn(`[readability-suggest handler] readability: No page result found for ${normalizedFinalUrl}`);
+        log.debug(`[readability-suggest handler] readability: No page result found for ${normalizedFinalUrl}`);
         return;
       }
 
