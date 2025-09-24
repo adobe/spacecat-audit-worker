@@ -20,6 +20,17 @@ import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
+// DJB2 hash
+function hash(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i += 1) {
+    // eslint-disable-next-line no-bitwise
+    h = ((h << 5) + h) ^ str.charCodeAt(i); // h * 33 ^ c
+  }
+  // eslint-disable-next-line no-bitwise
+  return (`00000000${(h >>> 0).toString(16)}`).slice(-8);
+}
+
 export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
 
@@ -66,16 +77,14 @@ export async function checkLLMBlocked(context) {
 
   log.info(`Checking top URLs for blocked AI bots, finalUrl: ${finalUrl}`);
 
-  const agentsWithRationale = {
-    'ClaudeBot/1.0': 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',
-    'Perplexity-User/1.0': 'Unblock Perplexity-User/1.0 to let Perplexity AI directly browse and reference your website in users\' queries.',
-    'PerplexityBot/1.0': 'Unblock PerplexityBot/1.0 to enable Perplexity AI to index your content.',
-    'ChatGPT-User/1.0': 'Unblock ChatGPT-User/1.0 to allow ChatGPT to visit your website while answering a user’s question in browsing-enabled mode.',
-    'GPTBot/1.0': 'Unblock GPTBot/1.0 to permit OpenAI’s GPT models to access and learn from your content for improved future responses.',
-    'OAI-SearchBot/1.0': 'Unblock OAI-SearchBot/1.0 to let OpenAI’s search infrastructure retrieve your website content for ChatGPT search results.',
-  };
-
-  const agents = [...Object.keys(agentsWithRationale)];
+  const agents = [
+    'ClaudeBot/1.0',
+    'Perplexity-User/1.0',
+    'PerplexityBot/1.0',
+    'ChatGPT-User/1.0',
+    'GPTBot/1.0',
+    'OAI-SearchBot/1.0',
+  ];
 
   const { robots, plainRobotsTxt } = await getRobotsTxt(context);
   if (!robots) {
@@ -89,6 +98,8 @@ export async function checkLLMBlocked(context) {
   // line number -> affected URL / user agent
   const resultsMap = {};
 
+  const robotsTxtHash = hash(plainRobotsTxt);
+
   agents.forEach((agent) => {
     topPages.forEach((page) => {
       const isAllowedGenerally = robots.isAllowed(page.getUrl());
@@ -97,10 +108,10 @@ export async function checkLLMBlocked(context) {
         const line = robots.getMatchingLineNumber(page.getUrl(), agent);
         const url = page.getUrl();
 
-        if (Array.isArray(resultsMap[line])) {
-          resultsMap[line].push({ line, url, agent });
+        if (resultsMap[line]) {
+          resultsMap[line].items.push({ url, agent });
         } else {
-          resultsMap[line] = [{ line, url, agent }];
+          resultsMap[line] = { lineNumber: line, robotsTxtHash, items: [{ url, agent }] };
         }
       }
     });
@@ -131,7 +142,7 @@ export async function checkLLMBlocked(context) {
   await syncSuggestions({
     opportunity,
     newData: Object.values(resultsMap),
-    buildKey: (data) => JSON.stringify(data),
+    buildKey: (data) => `${data.lineNumber}-${data.robotsTxtHash}`,
     context,
     log,
     mapNewSuggestion: (entry) => ({
@@ -139,9 +150,10 @@ export async function checkLLMBlocked(context) {
       type: 'CODE_CHANGE',
       rank: 10,
       data: {
-        lineNumber: entry[0].line,
-        items: entry,
-        affectedUserAgents: [...new Set(entry.map((item) => item.agent))],
+        lineNumber: entry.lineNumber,
+        items: entry.items,
+        affectedUserAgents: [...new Set(entry.items.map((item) => item.agent))],
+        robotsTxtHash,
       },
     }),
   });
