@@ -115,7 +115,7 @@ const HANDLERS = {
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
   'guidance:readability': unifiedReadabilityGuidance, // unified for both preflight and opportunities
-  'readability-opportunities': readabilityOpportunities, // for opportunities
+  readability: readabilityOpportunities, // for opportunities
   'guidance:structured-data-remediation': structuredDataGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
