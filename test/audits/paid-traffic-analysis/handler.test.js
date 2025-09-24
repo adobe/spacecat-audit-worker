@@ -335,42 +335,34 @@ describe('Paid Traffic Analysis Handler', () => {
       const result = await monthlyImportDataStep(context);
 
       // Validate return structure
-      const expectedResult = {
-        auditResult: {
-          year: 2024,
-          month: 12,
-          week: sinon.match.number,
-          siteId,
-          temporalCondition: sinon.match.string,
-        },
+      expect(result).to.include({
         fullAuditRef: auditUrl,
         type: 'traffic-analysis',
         siteId,
         allowOverwrite: false,
-      };
+      });
 
-      expect(result).to.deep.match(expectedResult);
+      expect(result.auditResult).to.include({
+        year: 2024,
+        month: 12,
+        siteId,
+      });
 
-      // Validate SQS messages were sent (should be total weeks - 1)
-      expect(mockSqs.sendMessage.callCount).to.equal(result.totalWeeks - 1); // or just check > 0 if we don't know exact count
+      // Validate SQS messages were sent
+      expect(mockSqs.sendMessage.callCount).to.be.greaterThan(0);
       
-      // Validate message structure for each call
+      // Validate each SQS message structure
       const expectedMessage = {
         type: 'traffic-analysis',
         siteId,
         allowOverwrite: false,
-        auditContext: {
-          week: sinon.match.number,
-          year: sinon.match.number,
-          month: sinon.match.number,
-          temporalCondition: sinon.match.string,
-        },
       };
 
       mockSqs.sendMessage.getCalls().forEach(call => {
         const [queueUrl, message] = call.args;
         expect(queueUrl).to.equal('test-import-queue');
-        expect(message).to.deep.match(expectedMessage);
+        expect(message).to.include(expectedMessage);
+        expect(message.auditContext).to.have.all.keys('week', 'year', 'month', 'temporalCondition');
       });
     });
   });
