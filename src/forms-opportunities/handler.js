@@ -229,6 +229,7 @@ export async function processOpportunityStep(context) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .addStep('runAuditAndSendUrlsForScraping', runAuditAndSendUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
-  .addStep('sendA11yUrlsForScrapingStep', sendA11yUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  // eslint-disable-next-line max-len
+  // .addStep('sendA11yUrlsForScrapingStep', sendA11yUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processOpportunity', processOpportunityStep)
   .build();
