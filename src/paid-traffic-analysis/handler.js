@@ -132,10 +132,16 @@ async function importDataStep(context, period) {
     // Get all weeks that overlap with this month
     const weeksInMonth = getWeeksForMonth(month, year);
 
-    log.info(`[traffic-analysis-import-monthly] Found ${weeksInMonth.length} weeks for month ${month}/${year}`);
+    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Found ${weeksInMonth.length} weeks for month ${month}/${year}: weeks [${weeksInMonth.map((w) => `${w.week}/${w.year}`).join(', ')}]`);
 
-    // Send import requests for each week in the month
-    for (const weekInfo of weeksInMonth) {
+    // Send import requests for all weeks except the last one
+    const weeksToImport = weeksInMonth.slice(0, -1);
+    const lastWeek = weeksInMonth[weeksInMonth.length - 1];
+
+    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Sending import messages for ${weeksToImport.length} weeks: [${weeksToImport.map((w) => `${w.week}/${w.year}`).join(', ')}], allowOverwrite: ${allowOverwrite}`);
+    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Reserving last week ${lastWeek.week}/${lastWeek.year} for main audit flow`);
+
+    for (const weekInfo of weeksToImport) {
       const { temporalCondition } = getWeekInfo(weekInfo.week, weekInfo.year);
 
       const message = {
@@ -150,14 +156,15 @@ async function importDataStep(context, period) {
         allowOverwrite,
       };
 
-      log.info(`[traffic-analysis-import-monthly] Sending import request for week ${weekInfo.week}/${weekInfo.year}`);
+      log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Sending import message for week ${weekInfo.week}/${weekInfo.year} with allowOverwrite: ${allowOverwrite}, temporalCondition: ${temporalCondition}`);
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(configuration.getQueues().imports, message);
     }
 
     // Return the last week for the main audit flow
-    const lastWeek = weeksInMonth[weeksInMonth.length - 1];
     const { temporalCondition } = getWeekInfo(lastWeek.week, lastWeek.year);
+
+    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Returning main audit flow data for week ${lastWeek.week}/${lastWeek.year} with allowOverwrite: ${allowOverwrite}, temporalCondition: ${temporalCondition}`);
 
     return {
       auditResult: {
@@ -180,7 +187,7 @@ async function importDataStep(context, period) {
       period,
     );
 
-    log.info(`[traffic-analysis-import-${period}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowOverwrite: ${allowOverwrite}`);
+    log.info(`[traffic-analysis-import-${period}] [siteId: ${siteId}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowOverwrite: ${allowOverwrite}`);
 
     return {
       auditResult: analysisResult.auditResult,
