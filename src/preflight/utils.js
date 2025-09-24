@@ -22,7 +22,7 @@ export async function saveIntermediateResults(context, result, auditName) {
     const jobEntity = await AsyncJob.findById(job.getId());
     jobEntity.setResult(result);
     await jobEntity.save();
-    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. ${auditName}: Intermediate results saved successfully`); // remove? ~60k in last 7d
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. ${auditName}: Intermediate results saved successfully`);
   } catch (error) {
     log.warn(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. ${auditName}: Failed to save intermediate results: ${error.message}`);
   }

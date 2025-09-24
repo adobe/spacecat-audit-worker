@@ -278,9 +278,9 @@ export async function cleanupOutdatedSuggestions(opportunity, log) {
 
     if (outdatedSuggestions.length > 0) {
       await Promise.all(outdatedSuggestions.map((suggestion) => suggestion.remove()));
-      log.info(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions`); // debug?
+      log.debug(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions`);
     } else {
-      log.info(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up`); // debug?
+      log.debug(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up`);
     }
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions: ${error.message}`);

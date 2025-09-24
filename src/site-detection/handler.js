@@ -192,7 +192,7 @@ export async function siteDetectionRunner(_, context) {
   // TODO: replace the HOOK call with a proper post-processing step
   for (const candidate of candidates) {
     try {
-      log.info(`Re-feeding ${candidate.domain}; x-fw: ${candidate.xFwHost}, v: ${candidate.hlxVersion}`); // debug? ~80k last 7d
+      log.debug(`Re-feeding ${candidate.domain}; x-fw: ${candidate.xFwHost}, v: ${candidate.hlxVersion}`);
       // eslint-disable-next-line no-await-in-loop
       await refeed(candidate.xFwHost, candidate.hlxVersion, siteDetectionWebHook);
     } catch (e) {

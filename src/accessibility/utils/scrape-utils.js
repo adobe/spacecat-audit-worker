@@ -230,11 +230,11 @@ export async function saveMystiqueValidationMetricsToS3(
   if (existingIndex >= 0) {
     // Update existing entry
     existingMetrics[existingIndex] = newValidationEntry;
-    log.debug(`[A11yValidation] Updated existing mystique validation entry for page ${validationData.pageUrl}`); // remove instead?
+    log.debug(`[A11yValidation] Updated existing mystique validation entry for page ${validationData.pageUrl}`);
   } else {
     // Add new entry
     existingMetrics.push(newValidationEntry);
-    log.debug(`[A11yValidation] Added new mystique validation entry for page ${validationData.pageUrl}`); // remove instead?
+    log.debug(`[A11yValidation] Added new mystique validation entry for page ${validationData.pageUrl}`);
   }
 
   try {
@@ -245,7 +245,7 @@ export async function saveMystiqueValidationMetricsToS3(
       ContentType: 'application/json',
     }));
 
-    log.debug(`[A11yValidation] Successfully saved mystique validation metrics to S3: ${s3Key} for site ${siteId}, opportunity ${opportunityId}`); // remove instead?
+    log.debug(`[A11yValidation] Successfully saved mystique validation metrics to S3: ${s3Key} for site ${siteId}, opportunity ${opportunityId}`);
 
     return {
       success: true,

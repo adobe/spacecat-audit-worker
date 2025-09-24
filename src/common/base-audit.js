@@ -73,7 +73,7 @@ export async function wwwUrlResolver(site, context) {
   const subdomain = uri.subdomain();
 
   if (hasText(subdomain) && subdomain !== 'www') {
-    log.debug(`Resolved URL ${hostname} since ${baseURL} contains subdomain`); // delete?
+    log.debug(`Resolved URL ${hostname} since ${baseURL} contains subdomain`);
     return hostname;
   }
 
@@ -82,7 +82,7 @@ export async function wwwUrlResolver(site, context) {
   try {
     const wwwToggledHostname = toggleWWWHostname(hostname);
     await rumApiClient.retrieveDomainkey(wwwToggledHostname);
-    log.debug(`Resolved URL ${wwwToggledHostname} for ${baseURL} using RUM API Client`); // delete?
+    log.debug(`Resolved URL ${wwwToggledHostname} for ${baseURL} using RUM API Client`);
     return wwwToggledHostname;
   } catch (e) {
     log.error(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);
@@ -90,7 +90,7 @@ export async function wwwUrlResolver(site, context) {
 
   try {
     await rumApiClient.retrieveDomainkey(hostname);
-    log.debug(`Resolved URL ${hostname} for ${baseURL} using RUM API Client`); // delete?
+    log.debug(`Resolved URL ${hostname} for ${baseURL} using RUM API Client`);
     return hostname;
   } catch (e) {
     log.error(`Could not retrieved RUM domainkey for ${hostname}: ${e.message}`);

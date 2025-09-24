@@ -37,7 +37,7 @@ class SQS {
 
     try {
       const data = await this.sqsClient.send(msgCommand);
-      this.log.debug(`Success, message sent. MessageID:  ${data.MessageId}`); // remove? ~212k in last 7d
+      this.log.debug(`Success, message sent. MessageID:  ${data.MessageId}`);
     } catch (e) {
       const { type, code, message: msg } = e;
       this.log.error(`Message send failed. Type: ${type}, Code: ${code}, Message: ${msg}`, { length: asJSON.length }, e);

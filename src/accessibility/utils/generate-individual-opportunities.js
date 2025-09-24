@@ -398,7 +398,7 @@ export async function createIndividualOpportunitySuggestions(
     // Check if mystique suggestions are enabled for this site
     const isMystiqueEnabled = await isAuditEnabledForSite('a11y-mystique-auto-suggest', context.site, context);
     if (!isMystiqueEnabled) {
-      log.info('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending'); // debug?
+      log.info('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
       return { success: true };
     }
 
@@ -434,7 +434,7 @@ export async function createIndividualOpportunitySuggestions(
     log.debug(`[A11yIndividual] Mystique data processed: ${mystiqueData.length} messages to send`);
 
     if (mystiqueData.length === 0) {
-      log.info('[A11yIndividual] No messages to send to Mystique - no matching issue types found'); // debug?
+      log.info('[A11yIndividual] No messages to send to Mystique - no matching issue types found');
       return { success: true };
     }
 

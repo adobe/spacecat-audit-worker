@@ -101,7 +101,7 @@ export async function internalLinksAuditRunner(auditUrl, context) {
 
 export async function runAuditAndImportTopPagesStep(context) {
   const { site, log, finalUrl } = context;
-  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting audit`); // remove?
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] starting audit`);
   const internalLinksAuditRunnerResult = await internalLinksAuditRunner(
     finalUrl,
     context,

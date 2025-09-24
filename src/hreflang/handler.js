@@ -344,7 +344,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     }),
   });
 
-  log.info(`Hreflang opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`); // debug?
+  log.info(`Hreflang opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
   return { ...auditData };
 }
 

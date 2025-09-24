@@ -162,7 +162,7 @@ export async function validatePageHeadings(url, log) {
         explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
         suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
       });
-      log.info(`Missing h1 element detected at ${url}`); // debug?
+      log.debug(`Missing h1 element detected at ${url}`);
     } else if (h1Elements.length > 1) {
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
@@ -171,7 +171,7 @@ export async function validatePageHeadings(url, log) {
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
         count: h1Elements.length,
       });
-      log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`); // debug?
+      log.debug(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
     }
 
     // Check for empty headings and collect text content for duplicate detection
@@ -186,7 +186,7 @@ export async function validatePageHeadings(url, log) {
           suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
           tagName: heading.tagName,
         });
-        log.info(`Empty heading detected (${heading.tagName}) at ${url}`); // debug?
+        log.debug(`Empty heading detected (${heading.tagName}) at ${url}`);
       } else {
         // Track heading text content for duplicate detection
         const lowerText = text.toLowerCase();
@@ -214,7 +214,7 @@ export async function validatePageHeadings(url, log) {
           duplicates: headingsWithSameText.map((h) => h.tagName),
           count: headingsWithSameText.length,
         });
-        log.info(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`); // debug? > 1k logs in 7d
+        log.debug(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`);
       }
     }
 
@@ -232,7 +232,7 @@ export async function validatePageHeadings(url, log) {
           heading: currentHeading.tagName,
           nextHeading: nextHeading.tagName,
         });
-        log.info(`Heading without content detected at ${url}: ${currentHeading.tagName} has no content before ${nextHeading.tagName}`); // debug? > 5.8k logs in 7d
+        log.debug(`Heading without content detected at ${url}: ${currentHeading.tagName} has no content before ${nextHeading.tagName}`);
       }
     }
 
@@ -251,7 +251,7 @@ export async function validatePageHeadings(url, log) {
             previous: `h${prevLevel}`,
             current: `h${curLevel}`,
           });
-          log.info(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);// debug? ~500 logs in 7d
+          log.debug(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);
         }
       }
     }
@@ -379,7 +379,7 @@ export function generateSuggestions(auditUrl, auditData, context) {
     }
   });
 
-  log.info(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`); // debug?
+  log.debug(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`);
   return { ...auditData, suggestions };
 }
 
@@ -435,7 +435,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     log,
   });
 
-  log.info(`Headings opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`); // debug?
+  log.debug(`Headings opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
   return { ...auditData };
 }
 

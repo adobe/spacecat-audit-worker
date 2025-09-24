@@ -372,7 +372,7 @@ export default async function accessibility(context, auditContext) {
       }
 
       try {
-        log.debug(`[preflight-audit] Polling attempt - checking S3 bucket: ${bucketName}`); // remove completely? > 60k in 7d
+        log.debug(`[preflight-audit] Polling attempt - checking S3 bucket: ${bucketName}`);
 
         // Check if accessibility data files exist in S3 using helper function
         const objectKeys = await getObjectKeysUsingPrefix(
@@ -404,8 +404,8 @@ export default async function accessibility(context, auditContext) {
           return;
         }
 
-        log.debug(`[preflight-audit] Found ${foundFiles.length} out of ${expectedFiles.length} expected accessibility files, continuing to wait...`); // delete? > 50k in 7d
-        log.debug('[preflight-audit] No accessibility data yet, waiting...'); // delete? > 50k in 7d
+        log.debug(`[preflight-audit] Found ${foundFiles.length} out of ${expectedFiles.length} expected accessibility files, continuing to wait...`);
+        log.debug('[preflight-audit] No accessibility data yet, waiting...');
         await sleep(pollInterval);
 
         // Recursively call to continue polling

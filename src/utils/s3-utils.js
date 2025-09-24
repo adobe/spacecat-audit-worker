@@ -48,7 +48,7 @@ export async function getObjectKeysUsingPrefix(
       });
       continuationToken = data?.NextContinuationToken;
     } while (continuationToken);
-    log.debug( // remove? ~85k in last 7d
+    log.debug(
       `Fetched ${objectKeys.length} keys from S3 for bucket ${bucketName} and prefix ${prefix}`,
     );
   } catch (err) {

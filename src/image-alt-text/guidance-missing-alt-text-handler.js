@@ -103,7 +103,7 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
   // Mark suggestions as OUTDATED
   if (suggestionsToRemove.length > 0) {
     await Suggestion.bulkUpdateStatus(suggestionsToRemove, SuggestionModel.STATUSES.OUTDATED);
-    log.info(`[${AUDIT_TYPE}]: Marked ${suggestionsToRemove.length} suggestions as OUTDATED for ${pageUrls.length} pages`); // debug? > 500 logs in 7d
+    log.debug(`[${AUDIT_TYPE}]: Marked ${suggestionsToRemove.length} suggestions as OUTDATED for ${pageUrls.length} pages`);
   }
 
   return {

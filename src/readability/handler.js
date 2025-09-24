@@ -315,7 +315,7 @@ export default async function readability(context, auditContext) {
         ? Array.from(detectedLanguages).join(', ')
         : 'none detected';
 
-      log.debug( // remove? ~8k
+      log.debug(
         `[readability-suggest handler] readability: Processed ${processedElements} text element(s) on `
         + `${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability (detected languages: ${detectedLanguagesList})`,
       );
@@ -431,7 +431,7 @@ export default async function readability(context, auditContext) {
     const readabilityElapsed = ((readabilityEndTime - readabilityStartTime) / 1000).toFixed(2);
     const auditStepName = step === 'suggest' ? 'readability-suggestions' : 'readability';
 
-    log.debug( // remove? ~8k
+    log.debug(
       `[readability-suggest handler] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. `
       + `Readability audit completed in ${readabilityElapsed} seconds`,
     );

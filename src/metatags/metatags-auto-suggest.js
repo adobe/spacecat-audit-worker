@@ -54,7 +54,7 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   if (!forceAutoSuggest && !configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
-    log.info('Metatags auto-suggest is disabled for site'); // debug?
+    log.info('Metatags auto-suggest is disabled for site');
     return detectedTags;
   }
   log.debug('Generating suggestions for Meta-tags using Genvar.');
