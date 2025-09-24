@@ -16,9 +16,10 @@ import {
 } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import analyzeDomain from './domain-analysis.js';
+import analyzeDomain, { analyzeDomainFromUrls } from './domain-analysis.js';
 import { analyzeProducts } from './product-analysis.js';
 import { analyzePageTypes } from './page-type-analysis.js';
 import { uploadPatternsWorkbook, uploadUrlsWorkbook, getLastSunday } from './utils.js';
@@ -27,6 +28,25 @@ import { referralTrafficRunner } from '../llmo-referral-traffic/handler.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
+const TOP_PAGES_IMPORT = 'top-pages';
+const OPTEL_SOURCE_TYPE = 'optel';
+const AHREFS_SOURCE_TYPE = 'ahrefs';
+
+async function checkOptelData(domain, context) {
+  const { log } = context;
+  const rumAPIClient = RUMAPIClient.createFrom(context);
+
+  try {
+    const result = await rumAPIClient.query('pageviews', {
+      domain,
+    });
+
+    return !!(result?.pageviews || 0);
+  } catch (error) {
+    log.info(`Failed to check OpTel data for domain ${domain}: ${error.message}`);
+    return false;
+  }
+}
 
 async function runReferralTrafficStep(context) {
   const {
@@ -36,73 +56,103 @@ async function runReferralTrafficStep(context) {
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   const siteId = site.getSiteId();
+  const domain = site.getBaseURL();
 
-  log.info(`Starting llmo-customer-analysis audit for site: ${siteId}}`);
-  log.info('Referral Traffic Step: Initiating OpTel import for the last 4 full calendar weeks');
+  log.info(`Checking domain and triggering appropriate import for site: ${siteId}, domain: ${domain}`);
 
-  const last4Weeks = getLastNumberOfWeeks(4);
+  const hasOptelData = await checkOptelData(domain, context);
 
-  // Last week will be imported via step audit
-  const lastWeek = last4Weeks.shift();
+  if (hasOptelData) {
+    log.info('Domain has OpTel data; initiating referral traffic import for the last 4 full calendar weeks');
 
-  for (const last4Week of last4Weeks) {
-    const { week, year } = last4Week;
-    const message = {
+    const last4Weeks = getLastNumberOfWeeks(4);
+
+    // Last week will be imported via step audit
+    const lastWeek = last4Weeks.shift();
+
+    for (const last4Week of last4Weeks) {
+      const { week, year } = last4Week;
+      const message = {
+        type: REFERRAL_TRAFFIC_IMPORT,
+        siteId,
+        auditContext: {
+          auditType: REFERRAL_TRAFFIC_AUDIT,
+          week,
+          year,
+        },
+      };
+      // eslint-disable-next-line no-await-in-loop
+      sqs.sendMessage(configuration.getQueues().imports, message);
+    }
+
+    return {
+      auditResult: { source: OPTEL_SOURCE_TYPE },
+      fullAuditRef: finalUrl,
       type: REFERRAL_TRAFFIC_IMPORT,
+      week: lastWeek.week,
+      year: lastWeek.year,
       siteId,
-      auditContext: {
-        auditType: REFERRAL_TRAFFIC_AUDIT,
-        week,
-        year,
-      },
     };
-    // eslint-disable-next-line no-await-in-loop
-    sqs.sendMessage(configuration.getQueues().imports, message);
-  }
+  } else {
+    log.info('Domain has no OpTel data, skipping referral traffic import; triggering Ahrefs top pages import');
 
-  // Workaround to ensure we have imported data for the following steps
-  return {
-    auditResult: { status: 'Importing OpTel data' },
-    fullAuditRef: finalUrl,
-    type: 'traffic-analysis',
-    week: lastWeek.week,
-    year: lastWeek.year,
-    siteId,
-  };
+    return {
+      type: TOP_PAGES_IMPORT,
+      allowCache: false,
+      siteId,
+      auditResult: { source: AHREFS_SOURCE_TYPE },
+      fullAuditRef: finalUrl,
+    };
+  }
 }
 
 async function runAgenticTrafficStep(context) {
   const {
-    audit, env, site, log,
+    audit, dataAccess, env, site, log,
   } = context;
-
-  log.info('Agentic Traffic Step: Extracting product and page type information');
-
-  const lastFourWeeks = getLastNumberOfWeeks(4);
-
-  // Make sure to create the referral traffic workbook for the last week
-  const lastWeek = lastFourWeeks[0];
-  referralTrafficRunner(null, context, site, lastWeek);
 
   const siteId = site.getSiteId();
   const domain = site.getBaseURL();
-  const { S3_IMPORTER_BUCKET_NAME: importerBucket } = env;
-  const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
-  const databaseName = 'rum_metrics';
-  const tableName = 'compact_metrics';
-  const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
-  const temporalConditions = lastFourWeeks
-    .map(({ year, week }) => getWeekInfo(week, year).temporalCondition);
+  const { SiteTopPage } = dataAccess;
+  const auditResult = audit.getAuditResult();
+  const lastFourWeeks = getLastNumberOfWeeks(4);
+  let urls = [];
+  let paths = [];
+  let source;
 
-  const variables = {
-    tableName: `${databaseName}.${tableName}`,
-    siteId,
-    temporalCondition: `(${temporalConditions.join(' OR ')})`,
-  };
+  if (auditResult.source === OPTEL_SOURCE_TYPE) {
+    log.info('Agentic Traffic Step: Fetching top URLs from OpTel data');
+    // Make sure to create the referral traffic workbook for the last week
+    const lastWeek = lastFourWeeks[0];
+    referralTrafficRunner(null, context, site, lastWeek);
+    const { S3_IMPORTER_BUCKET_NAME: importerBucket } = env;
+    const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
+    const databaseName = 'rum_metrics';
+    const tableName = 'compact_metrics';
+    const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
+    const temporalConditions = lastFourWeeks
+      .map(({ year, week }) => getWeekInfo(week, year).temporalCondition);
 
-  const query = await getStaticContent(variables, './src/llmo-customer-analysis/sql/urls.sql');
-  const description = `[Athena Query] Fetching customer analysis data for ${domain}`;
-  const paths = await athenaClient.query(query, databaseName, description);
+    const variables = {
+      tableName: `${databaseName}.${tableName}`,
+      siteId,
+      temporalCondition: `(${temporalConditions.join(' OR ')})`,
+    };
+
+    const query = await getStaticContent(variables, './src/llmo-customer-analysis/sql/urls.sql');
+    const description = `[Athena Query] Fetching customer analysis data for ${domain}`;
+    paths = await athenaClient.query(query, databaseName, description);
+    urls = paths.slice(0, 20).map((p) => ({ url: `https://${audit.getFullAuditRef()}${p.path}` }));
+    source = OPTEL_SOURCE_TYPE;
+  } else if (auditResult.source === AHREFS_SOURCE_TYPE) {
+    log.info('Agentic Traffic Step: No OpTel data found; fetching Ahrefs top pages');
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
+    paths = topPages.slice(0, 100).map((topPage) => ({ path: topPage.getUrl() }));
+    source = AHREFS_SOURCE_TYPE;
+  }
+
+  log.info('Agentic Traffic Step: Extracting product and page type information');
+
   const productRegexes = await analyzeProducts(domain, paths.map((p) => p.path), context);
   const pagetypeRegexes = await analyzePageTypes(domain, paths.map((p) => p.path), context);
 
@@ -112,12 +162,10 @@ async function runAgenticTrafficStep(context) {
 
   log.info('Agentic Traffic Step: Upload complete; initiating scrap');
 
-  const urls = paths.slice(0, 20).map((p) => ({ url: `https://${audit.getFullAuditRef()}${p.path}` }));
-
   return {
-    auditResult: { status: 'Initiating scrape' },
+    auditResult: { source },
     siteId,
-    urls,
+    urls: urls.length > 0 ? urls : [{ url: `https://${domain}` }],
     maxScrapeAge: 24 * 7,
     options: {
       screenshotTypes: [],
@@ -127,17 +175,26 @@ async function runAgenticTrafficStep(context) {
 
 async function runBrandPresenceStep(context) {
   const {
-    dataAccess, log, scrapeResultPaths, site, sqs,
+    audit, dataAccess, log, scrapeResultPaths, site, sqs,
   } = context;
-  const { Configuration } = dataAccess;
+  const { Configuration, SiteTopPage } = dataAccess;
+  const auditResult = audit.getAuditResult();
   const configuration = await Configuration.findLatest();
   const domain = site.getBaseURL();
   const results = [...scrapeResultPaths.values()];
 
   try {
-    log.info('Brand Presence Step: Scrapes received; starting analysis');
+    let domainInsights;
 
-    const domainInsights = await analyzeDomain(domain, results, context);
+    if (auditResult.source === AHREFS_SOURCE_TYPE) {
+      log.info('Brand Presence Step: Starting domain analysis with URLs');
+      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getSiteId(), 'ahrefs', 'global');
+      const urls = topPages.map((topPage) => (topPage.getUrl()));
+      domainInsights = await analyzeDomainFromUrls(domain, urls, context);
+    } else if (auditResult.source === OPTEL_SOURCE_TYPE) {
+      log.info('Brand Presence Step: Starting domain analysis with scrapes');
+      domainInsights = await analyzeDomain(domain, results, context);
+    }
 
     log.info('Brand Presence Step: analysis complete; uploading results');
 

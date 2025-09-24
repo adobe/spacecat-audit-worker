@@ -63,7 +63,7 @@ INSTRUCTIONS:
    - Use descriptive but broad category names
    - Keep "unknown" as standalone if present
 
-RESPONSE FORMAT: Return only a valid JSON object mapping original names to high-level category names.
+RESPONSE FORMAT: Return only a valid JSON object mapping original names to high-level category names. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only.
 
 Example input products: ["tennis-racket-wilson", "tennis-balls", "basketball-shoes-nike", "iphone-14", "macbook-pro", "unknown"]
 
@@ -151,26 +151,26 @@ EXAMPLES:
 - "/category/electronics/phones" → "phones"
 
 OUTPUT FORMAT:
-Return ONLY a valid JSON object with this exact structure:
-{
-  "paths": [
-    { "path": "/original/path", "product": "extracted-content" },
-    { "path": "/another/path", "product": "another-content" }
-  ]
-}
+Return ONLY a valid JSON object with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only:
+      {
+        "paths": [
+          { "path": "/original/path", "product": "extracted-content" },
+          { "path": "/another/path", "product": "another-content" }
+        ]
+      }
 
 CRITICAL REQUIREMENTS:
-- Include every input path exactly once in the "paths" array
-- No additional text, explanations, or formatting
-- Valid JSON syntax only
-- Content names should be lowercase and hyphenated when multi-word`;
+  - Include every input path exactly once in the "paths" array
+    - No additional text, explanations, or formatting
+      - Valid JSON syntax only
+        - Content names should be lowercase and hyphenated when multi - word`;
 
   const userPrompt = `Extract the primary content identifier from each URL path.
 
-DOMAIN: ${domain}
+    DOMAIN: ${domain}
 
-PATHS:
-${JSON.stringify(paths, null, 2)}`;
+  PATHS:
+${JSON.stringify(paths, null, 2)} `;
 
   try {
     log.info('Extracting products from URL paths');
@@ -184,7 +184,7 @@ ${JSON.stringify(paths, null, 2)}`;
       return { paths: paths.map((path) => ({ path, product: 'unknown' })), usage: null };
     }
   } catch (error) {
-    log.error(`Failed to extract products from paths: ${error.message}`);
+    log.error(`Failed to extract products from paths: ${error.message} `);
     return { paths: paths.map((path) => ({ path, product: 'unknown' })), usage: null };
   }
 }
@@ -202,65 +202,65 @@ async function deriveRegexesForProducts(domain, groupedPaths, context) {
 
   const systemPrompt = `You are a regex pattern generation specialist for URL path analysis in Amazon Athena SQL environments.
 
-TASK: Analyze the actual input data provided and generate simple, practical regex patterns for each product/category that will match URL paths containing references to that specific product/category.
+    TASK: Analyze the actual input data provided and generate simple, practical regex patterns for each product / category that will match URL paths containing references to that specific product / category.
 
 INPUT STRUCTURE:
-You will receive a map/object where:
-- Each KEY is a product or category name
-- Each VALUE is an array of URL paths that have been assigned to that product/category
+You will receive a map / object where:
+  - Each KEY is a product or category name
+    - Each VALUE is an array of URL paths that have been assigned to that product / category
 
-Your goal is to analyze the ACTUAL provided URL paths for each product/category and create a regex pattern that will match each of the following in order of priority:
-1. The given example paths in the input data
-2. Variations in naming, formatting, and structure
-3. Similar paths that would logically belong to the same product/category
+Your goal is to analyze the ACTUAL provided URL paths for each product / category and create a regex pattern that will match each of the following in order of priority:
+  1. The given example paths in the input data
+  2. Variations in naming, formatting, and structure
+  3. Similar paths that would logically belong to the same product / category
 
 AMAZON ATHENA SQL REGEX REQUIREMENTS:
-- Use POSIX Extended Regular Expression (ERE) syntax only
-- NO lookahead (?=) or lookbehind (?<=) assertions
-- NO non-capturing groups (?:)
-- Use case-insensitive matching with (?i) flag at the start
-- Escape special characters: \\., \\-, \\+, \\?, \\*, \\(, \\), \\[, \\], \\{, \\}, \\^, \\$
+  - Use POSIX Extended Regular Expression(ERE) syntax only
+    - NO lookahead(?=) or lookbehind(?<=) assertions
+      - NO non - capturing groups(?: )
+        - Use case -insensitive matching with (? i) flag at the start
+          - Escape special characters: \\., \\-, \\+, \\?, \\*, \\(, \\), \\[, \\], \\{, \\ }, \\^, \\$
 
 PATTERN DESIGN PRINCIPLES:
-1. Use (?i) flag for case-insensitive matching - much simpler than character classes
-2. Focus on key product identifiers, not exact word boundaries
-3. Use simple word matching with optional separators [._-]
-4. Make patterns readable and maintainable
-5. Avoid overly specific patterns that might miss variations
-6. Consider common URL variations (plurals, abbreviations, alternative naming)
-7. IMPORTANT: Base patterns on the ACTUAL input data provided, not generic examples
+  1. Use(?i) flag for case -insensitive matching - much simpler than character classes
+  2. Focus on key product identifiers, not exact word boundaries
+  3. Use simple word matching with optional separators[._ -]
+  4. Make patterns readable and maintainable
+  5. Avoid overly specific patterns that might miss variations
+  6. Consider common URL variations(plurals, abbreviations, alternative naming)
+  7. IMPORTANT: Base patterns on the ACTUAL input data provided, not generic examples
 
 ANALYSIS METHODOLOGY:
-1. Look at each product's actual URL paths in the input data
-2. Identify common patterns, keywords, and path segments
-3. Extract the core product identifier from the actual paths
-4. Create patterns that capture variations seen in the real data
-5. Make patterns flexible enough to match similar future paths
+  1. Look at each product's actual URL paths in the input data
+  2. Identify common patterns, keywords, and path segments
+  3. Extract the core product identifier from the actual paths
+  4. Create patterns that capture variations seen in the real data
+  5. Make patterns flexible enough to match similar future paths
 
 OUTPUT FORMAT:
-Return ONLY a valid JSON object with this exact structure:
-{
-  "product-name": "(?i)regex-pattern",
-  "another-product": "(?i)another-pattern"
-}
+Return ONLY a valid JSON object with this exact structure.Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only:
+      {
+        "product-name": "(?i)regex-pattern",
+        "another-product": "(?i)another-pattern"
+      }
 
 CRITICAL REQUIREMENTS:
-- Generate patterns for all product/category identifiers
-- Only skip entries that clearly do not relate to any product or category
-- Focus on creating meaningful patterns even for broad categories
-- Each regex must be a valid POSIX ERE pattern with (?i) flag
-- Patterns must be based on the ACTUAL input data provided
-- Patterns should match the provided paths AND similar variations
-- For broad categories like "unknown", create patterns that match unclassified content paths
-- No additional text, explanations, or markdown formatting
-- Valid JSON syntax only`;
+  - Generate patterns for all product / category identifiers
+    - Only skip entries that clearly do not relate to any product or category
+      - Focus on creating meaningful patterns even for broad categories
+        - Each regex must be a valid POSIX ERE pattern with (? i) flag
+          - Patterns must be based on the ACTUAL input data provided
+            - Patterns should match the provided paths AND similar variations
+              - For broad categories like "unknown", create patterns that match unclassified content paths
+                - No additional text, explanations, or markdown formatting
+                  - Valid JSON syntax only`;
 
   const userPrompt = `Generate regex patterns for the following domain, with the products and their URL paths:
 
-DOMAIN: ${domain}
+  DOMAIN: ${domain}
 
 GROUPED PATHS BY PRODUCT:
-${JSON.stringify(groupedPaths)}`;
+${JSON.stringify(groupedPaths)} `;
 
   try {
     log.info('Generating regex patterns for products');
@@ -290,7 +290,7 @@ ${JSON.stringify(groupedPaths)}`;
       };
     }
   } catch (error) {
-    log.error(`Failed to get regexes for products: ${error.message}`);
+    log.error(`Failed to get regexes for products: ${error.message} `);
     return {
       patterns: Object.keys(groupedPaths).reduce((acc, product) => {
         acc[product] = '.*';
@@ -309,7 +309,7 @@ export async function analyzeProducts(domain, paths, context) {
     total_tokens: 0,
   };
 
-  log.info(`Starting product analysis for domain: ${domain}`);
+  log.info(`Starting product analysis for domain: ${domain} `);
 
   try {
     const pathClassifications = await deriveProductsForPaths(domain, paths, context);
@@ -356,13 +356,13 @@ export async function analyzeProducts(domain, paths, context) {
     // Remove "unknown" key if it exists
     delete combinedPatterns.unknown;
 
-    log.info(`Completed product analysis for domain: ${domain}`);
-    log.info(`Total token usage for product analysis: ${JSON.stringify(totalTokenUsage)}`);
+    log.info(`Completed product analysis for domain: ${domain} `);
+    log.info(`Total token usage for product analysis: ${JSON.stringify(totalTokenUsage)} `);
     return combinedPatterns;
   } catch (error) {
-    log.error(`Product analysis failed: ${error.message}`);
+    log.error(`Product analysis failed: ${error.message} `);
     if (totalTokenUsage.total_tokens > 0) {
-      log.info(`Total token usage before error: ${JSON.stringify(totalTokenUsage)}`);
+      log.info(`Total token usage before error: ${JSON.stringify(totalTokenUsage)} `);
     }
     throw error;
   }

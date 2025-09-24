@@ -38,7 +38,7 @@ INSTRUCTIONS:
 
 3. URL Selection for Groupings:
    - Choose the most generic URL that still represents the product group distinctly
-   - Prefer broader paths over specific ones (e.g., "/products/*" over "/products/specific-item/*")
+   - Prefer broader paths over specific ones (e.g., "/products*" over "/products/specific-item*")
    - If URLs are very specific, generalize to the common parent path
    - Ensure the selected URL can logically encompass all products in the group
 
@@ -54,30 +54,30 @@ INSTRUCTIONS:
    - Maintain regional accuracy
    - Make sure to not exceed 10 consolidated products unless absolutely necessary
 
-RESPONSE FORMAT: Return only a valid JSON array with no additional text or formatting.
+RESPONSE FORMAT: Return only a valid JSON array with no additional text or formatting. Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only.
 
-Example input:
-[
-  {"category": "Cloud Storage", "topic": "cloud storage", "region": "", "url": "https://example.com/storage/*"},
-  {"category": "File Storage Service", "topic": "file storage cloud", "region": "us", "url": "https://example.com/files/*"},
-  {"category": "Enterprise CRM", "topic": "crm enterprise", "region": "us", "url": "https://example.com/crm/*"},
-  {"category": "CRM Software", "topic": "customer management", "region": "us", "url": "https://example.com/crm-pro/*"},
-  {"category": "AI Assistant", "topic": "artificial intelligence", "region": "us", "url": "https://example.com/ai/*"},
-  {"category": "Business Analytics", "topic": "data analytics", "region": "us", "url": "https://example.com/analytics/business/*"},
-  {"category": "Marketing Analytics", "topic": "marketing data", "region": "us", "url": "https://example.com/analytics/marketing/*"}
-]
+    Example input:
+      [
+        { "category": "Cloud Storage", "topic": "cloud storage", "region": "", "url": "https://example.com/storage*" },
+        { "category": "File Storage Service", "topic": "file storage cloud", "region": "us", "url": "https://example.com/files*" },
+        { "category": "Enterprise CRM", "topic": "crm enterprise", "region": "us", "url": "https://example.com/crm*" },
+        { "category": "CRM Software", "topic": "customer management", "region": "us", "url": "https://example.com/crm-pro*" },
+        { "category": "AI Assistant", "topic": "artificial intelligence", "region": "us", "url": "https://example.com/ai*" },
+        { "category": "Business Analytics", "topic": "data analytics", "region": "us", "url": "https://example.com/analytics/business*" },
+        { "category": "Marketing Analytics", "topic": "marketing data", "region": "us", "url": "https://example.com/analytics/marketing*" }
+      ]
 
 Example output:
-[
-  {"category": "Cloud Storage Solutions", "topic": "cloud storage file management", "region": "us", "url": "https://example.com/storage/*"},
-  {"category": "Customer Management Platform", "topic": "crm enterprise customer management", "region": "us", "url": "https://example.com/crm/*"},
-  {"category": "Analytics Suite", "topic": "data analytics marketing business intelligence", "region": "us", "url": "https://example.com/analytics/*"},
-  {"category": "AI Assistant", "topic": "artificial intelligence", "region": "us", "url": "https://example.com/ai/*"}
-]`;
+  [
+    { "category": "Cloud Storage Solutions", "topic": "cloud storage file management", "region": "us", "url": "https://example.com/storage*" },
+    { "category": "Customer Management Platform", "topic": "crm enterprise customer management", "region": "us", "url": "https://example.com/crm*" },
+    { "category": "Analytics Suite", "topic": "data analytics marketing business intelligence", "region": "us", "url": "https://example.com/analytics*" },
+    { "category": "AI Assistant", "topic": "artificial intelligence", "region": "us", "url": "https://example.com/ai*" }
+  ]`;
 
   const userPrompt = `Products to concentrate:
 
-\`\`\`json
+  \`\`\`json
 ${JSON.stringify(products, null, 2)}
 \`\`\``;
 
@@ -132,6 +132,129 @@ ${JSON.stringify(products, null, 2)}
   return { products, usage: null };
 }
 
+export async function analyzeDomainFromUrls(domain, urls, context = {}) {
+  const { log } = context;
+  const insights = [];
+  const totalTokenUsage = {
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    total_tokens: 0,
+  };
+
+  const systemPrompt = `You are an expert product analyst specializing in identifying core business offerings from URL patterns.
+
+TASK: Analyze the provided domain and URL list to identify distinct PRODUCTS and SERVICES that this business offers to customers.
+
+FOCUS CRITERIA - ONLY INCLUDE:
+- Actual products or services that customers can purchase, use, or engage with
+- Revenue-generating offerings or core business solutions
+- Distinct product lines or service categories
+
+EXCLUDE:
+- Support content (help pages, documentation, FAQs, contact pages)
+- Marketing content (about pages, company info, careers, press releases)
+- Administrative content (login, account settings, terms of service)
+- Generic website functionality (search, navigation, error pages)
+
+INSTRUCTIONS:
+
+1. Business Model Analysis:
+   - Determine if this is a SaaS company, e-commerce site, service provider, etc.
+   - Identify the primary value proposition and customer offerings
+   - Focus on revenue-generating products and services
+
+2. Product/Service Identification:
+   - Look for URL patterns that indicate actual products or services
+   - Examples: /products/, /services/, /solutions/, /plans/, /pricing/
+   - Identify distinct product lines or service categories
+   - Group related offerings under meaningful business categories
+
+3. Category Definition:
+   - Use the exact product or service name as the company calls it
+   - Include version numbers, model names, or specific variants if mentioned
+   - Capitalize the first character
+   - Categories do NOT need to be unique - repeat the same category if it has different topics or regional variations
+   - Examples: "iPhone 15 Pro", "Salesforce Sales Cloud", "Adobe Photoshop", "Tesla Model S"
+
+4. Topic Description:
+   - Write a concise, generic description of the product/service category
+   - Focus on the general type or function, not specific features
+   - Keep it brief and capitalize the first letter of each word (Title Case)
+   - Different topics can be used for the same category if it serves multiple purposes
+   - Examples: "Smartphone", "CRM Software", "Photo Editing Software", "Electric Vehicle"
+
+Required Fields for Each Product/Service:
+   - category: Exact product or service name as used by the company (capitalize first character)
+   - topic: Concise, generic description of the product/service category (Title Case - capitalize first letter of each word)
+   - region: ISO country code if regionally targeted, or "global" if no clear regional targeting
+   - url: Representative URL with * wildcard for the product category
+RESPONSE FORMAT: Return only a valid JSON array with this structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only:
+[
+  {
+    "category": "Exact product or service name",
+    "topic": "Concise description of what it is",
+    "region": "ISO country code or 'global'",
+    "url": "Representative URL with * wildcard"
+  }
+]
+
+EXAMPLE OUTPUT:
+[
+  {"category": "iPhone 15 Pro Max", "topic": "Smartphone", "region": "global", "url": "https://apple.com/iphone-15-pro/*"},
+  {"category": "iPhone 15 Pro Max", "topic": "Camera Device", "region": "global", "url": "https://apple.com/iphone-15-pro/*"},
+  {"category": "Salesforce Sales Cloud", "topic": "CRM Software", "region": "global", "url": "https://salesforce.com/products/sales-cloud/*"},
+  {"category": "Adobe Creative Suite", "topic": "Photo Editing Software", "region": "global", "url": "https://adobe.com/products/photoshop/*"},
+  {"category": "Adobe Creative Suite", "topic": "Video Editing Software", "region": "global", "url": "https://adobe.com/products/premiere/*"}
+]`;
+
+  const userPrompt = `Domain: ${domain}
+
+URL List:
+${JSON.stringify(urls, null, 2)}
+
+Please analyze this domain and URL list to extract distinct product/service categories.`;
+
+  try {
+    log.info(`Starting URL-based domain analysis for domain: ${domain} with ${urls.length} URLs`);
+    const promptResponse = await prompt(systemPrompt, userPrompt, context, 'gpt-4o-mini');
+
+    if (promptResponse && promptResponse.content) {
+      // Track token usage
+      if (promptResponse.usage) {
+        totalTokenUsage.prompt_tokens += promptResponse.usage.prompt_tokens || 0;
+        totalTokenUsage.completion_tokens += promptResponse.usage.completion_tokens || 0;
+        totalTokenUsage.total_tokens += promptResponse.usage.total_tokens || 0;
+      }
+
+      let parsedContent;
+      try {
+        parsedContent = JSON.parse(promptResponse.content);
+      } catch (parseError) {
+        log.error(`Failed to parse URL-based domain analysis response as JSON: ${parseError.message}`);
+        return { insights: [], usage: totalTokenUsage };
+      }
+
+      if (Array.isArray(parsedContent)) {
+        insights.push(...parsedContent);
+        log.info(`Successfully extracted ${parsedContent.length} product categories from URL analysis`);
+      } else {
+        log.warn('URL-based domain analysis response was not an array, skipping');
+      }
+    } else {
+      log.warn('No content received from URL-based domain analysis');
+    }
+
+    // Log total token usage
+    log.info(`Total token usage for URL-based domain analysis: ${JSON.stringify(totalTokenUsage)}`);
+
+    log.info(`URL-based domain analysis complete for domain: ${domain}`);
+    return { insights, usage: totalTokenUsage };
+  } catch (error) {
+    log.error(`Failed to complete URL-based domain analysis: ${error.message}`);
+    throw error;
+  }
+}
+
 export default async function analyzeDomain(domain, scrapes, context = {}) {
   const { log, env, s3Client } = context;
   const { S3_SCRAPER_BUCKET_NAME } = env;
@@ -142,41 +265,61 @@ export default async function analyzeDomain(domain, scrapes, context = {}) {
     total_tokens: 0,
   };
 
-  const systemPrompt = `You are an expert product analyst specializing in extracting structured product information from web page data.
+  const systemPrompt = `You are an expert product analyst specializing in identifying core business offerings from web page content.
 
-TASK: Analyze the provided page scrape data and identify the most prominent products actively marketed on the page.
+TASK: Analyze the provided page scrape data to identify distinct PRODUCTS and SERVICES that this business offers to customers.
+
+FOCUS CRITERIA - ONLY INCLUDE:
+- Actual products or services that customers can purchase, use, or engage with
+- Revenue-generating offerings prominently featured on the page
+- Core business solutions that are actively marketed
+
+EXCLUDE:
+- Support content (help sections, documentation, FAQs)
+- Marketing content (about us, company info, careers)
+- Administrative content (login, account management, legal pages)
+- Generic website functionality (search, navigation)
 
 INSTRUCTIONS:
-1. Product Identification:
-   - Look for products that are prominently featured, actively promoted, or central to the page content
-   - If multiple products are equally prominent, create separate entries for each
-   - Ignore minor mentions, accessories, or secondary offerings
-   - Focus on what the business is actively trying to sell or promote
 
-2. Required Fields for Each Product:
-   - category: The main product name or category (be specific and descriptive)
-   - topic: 2-4 relevant keywords that describe the product's domain/industry
-   - region: lower case ISO 3166-1 alpha-2 country code based on content language, currency, or explicit regional indicators
-   - url: The canonical URL if available in the scrape data, otherwise null; these should not contain query parameters of any kind; always add /* at the end of the URL to indicate all subpaths
+1. Product/Service Identification:
+   - Look for products or services that are prominently featured and actively promoted
+   - Focus on what the business is trying to sell or have customers engage with
+   - If multiple distinct offerings are equally prominent, create separate entries
+   - Ignore minor mentions, accessories, or secondary content
 
-3. Regional Detection Guidelines:
-   - Use language indicators (e.g., German content = "de")
-   - Look for currency symbols (€ with German = "de", $ with English = "us")
-   - Check for explicit country/region mentions
-   - Default to "US" if no clear regional indicators exist
+2. Category Definition:
+   - Use the exact product or service name as the company calls it
+   - Include version numbers, model names, or specific variants if mentioned
+   - Capitalize the first character
+   - Categories do NOT need to be unique - repeat the same category if it has different topics or regional variations
+   - Examples: "iPhone 15 Pro", "Salesforce Sales Cloud", "Adobe Photoshop", "Tesla Model S"
 
-4. Data Quality:
-   - If no clear products are found, return an empty array: []
-   - If scrape data is too minimal or unclear, return an empty array: []
-   - Do not consider scrapes that were denied access
-   - Ensure each product entry has all required fields
+3. Topic Description:
+   - Write a concise, generic description of the product/service category
+   - Focus on the general type or function, not specific features
+   - Keep it brief and capitalize the first letter of each word (Title Case)
+   - Different topics can be used for the same category if it serves multiple purposes
+   - Examples: "Smartphone", "CRM Software", "Photo Editing Software", "Electric Vehicle"
 
-RESPONSE FORMAT: Return only a valid JSON array with no additional text or formatting:
+4. Regional Detection:
+   - Use language indicators (German content = "de", French = "fr")
+   - Look for currency symbols and regional pricing
+   - Check for explicit country/region targeting
+   - Default to "global" if no clear regional targeting is detected
 
-Example outputs:
-[{"category": "Cloud Storage Service", "topic": "cloud storage enterprise", "region": "us", "url": "https://example.com/storage"}]
+5. Data Quality Standards:
+   - If no clear products/services are found, return empty array
+   - Ignore pages with access denied or minimal content
+   - Focus on pages that showcase actual business offerings
+   - Ensure each product/service entry has all required fields
 
-[{"category": "CRM Software", "topic": "customer relationship management", "region": "de", "url": null}, {"category": "Email Marketing Platform", "topic": "email automation marketing", "region": "de", "url": null}]
+RESPONSE FORMAT: Return only a valid JSON array with no additional text or formatting. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only:
+
+EXAMPLE OUTPUTS:
+[{"category": "iPhone 15 Pro Max", "topic": "Smartphone", "region": "global", "url": "https://apple.com/iphone-15-pro/*"}, {"category": "iPhone 15 Pro Max", "topic": "Camera Device", "region": "global", "url": "https://apple.com/iphone-15-pro/*"}]
+
+[{"category": "Microsoft Office 365", "topic": "Productivity Software", "region": "de", "url": null}, {"category": "Microsoft Office 365", "topic": "Email Platform", "region": "de", "url": null}]
 
 []`;
 
@@ -208,13 +351,13 @@ Example outputs:
     const userPrompt = `Domain: ${domain}
 
 Scrape Data:
-\`\`\`json
+  \`\`\`json
 ${stringified}
 \`\`\``;
 
     try {
       // eslint-disable-next-line no-await-in-loop
-      const promptResponse = await prompt(systemPrompt, userPrompt, context);
+      const promptResponse = await prompt(systemPrompt, userPrompt, context, 'gpt-4o-mini');
       if (promptResponse && promptResponse.content) {
         // Track token usage
         if (promptResponse.usage) {
