@@ -20,6 +20,7 @@ import {
   prepareTrafficAnalysisRequest,
   sendRequestToMystique,
   weeklyImportDataStep,
+  monthlyImportDataStep,
   weeklyProcessAnalysisStep,
 } from '../../../src/paid-traffic-analysis/handler.js';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
@@ -316,6 +317,61 @@ describe('Paid Traffic Analysis Handler', () => {
       await expect(
         sendRequestToMystique(auditUrl, auditData, context, site),
       ).to.be.rejectedWith('SQS Error');
+    });
+  });
+
+  describe('monthlyImportDataStep', () => {
+    it('should send multiple weekly import messages and return correct structure', async () => {
+      const mockConfiguration = {
+        getQueues: sandbox.stub().returns({ imports: 'test-import-queue' }),
+      };
+
+      context.dataAccess = {
+        Configuration: { findLatest: sandbox.stub().resolves(mockConfiguration) },
+      };
+      context.site = site;
+      context.finalUrl = auditUrl;
+
+      const result = await monthlyImportDataStep(context);
+
+      // Validate return structure
+      const expectedResult = {
+        auditResult: {
+          year: 2024,
+          month: 12,
+          week: sinon.match.number,
+          siteId,
+          temporalCondition: sinon.match.string,
+        },
+        fullAuditRef: auditUrl,
+        type: 'traffic-analysis',
+        siteId,
+        allowOverwrite: false,
+      };
+
+      expect(result).to.deep.match(expectedResult);
+
+      // Validate SQS messages were sent (should be total weeks - 1)
+      expect(mockSqs.sendMessage.callCount).to.equal(result.totalWeeks - 1); // or just check > 0 if we don't know exact count
+      
+      // Validate message structure for each call
+      const expectedMessage = {
+        type: 'traffic-analysis',
+        siteId,
+        allowOverwrite: false,
+        auditContext: {
+          week: sinon.match.number,
+          year: sinon.match.number,
+          month: sinon.match.number,
+          temporalCondition: sinon.match.string,
+        },
+      };
+
+      mockSqs.sendMessage.getCalls().forEach(call => {
+        const [queueUrl, message] = call.args;
+        expect(queueUrl).to.equal('test-import-queue');
+        expect(message).to.deep.match(expectedMessage);
+      });
     });
   });
 });

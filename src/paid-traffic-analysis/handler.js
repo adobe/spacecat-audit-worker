@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { getWeekInfo, getMonthInfo } from '@adobe/spacecat-shared-utils';
+import { getWeekInfo, getMonthInfo, getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -103,28 +103,93 @@ export async function sendRequestToMystique(auditUrl, auditData, context, site) 
   log.info(`[traffic-analysis-audit] [siteId: ${siteId}] [baseUrl:${siteId}] Completed mystique evaluation step`);
 }
 
+function getWeeksForMonth(targetMonth, targetYear) {
+  // Get the last 6 weeks to ensure we cover the entire target month
+  const weeks = getLastNumberOfWeeks(6);
+
+  // Filter weeks that belong to the target month
+  return weeks.filter(({ week, year }) => {
+    // Get week info to determine which months this week spans
+    const { month: weekMonth } = getWeekInfo(week, year);
+    // Include weeks that overlap with the target month
+    return year === targetYear && weekMonth === targetMonth;
+  });
+}
+
 async function importDataStep(context, period) {
-  const { site, finalUrl, log } = context;
+  const {
+    site, finalUrl, log, sqs, dataAccess,
+  } = context;
   const siteId = site.getId();
   const allowOverwrite = false;
   log.info(`[traffic-analysis-import-${period}] Starting import data step for siteId: ${siteId}, url: ${finalUrl}`);
 
-  const analysisResult = await prepareTrafficAnalysisRequest(
-    finalUrl,
-    context,
-    site,
-    period,
-  );
+  if (period === 'monthly') {
+    const { month, year } = getMonthInfo();
+    const { Configuration } = dataAccess;
+    const configuration = await Configuration.findLatest();
 
-  log.info(`[traffic-analysis-import-${period}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowOverwrite: ${allowOverwrite}`);
+    // Get all weeks that overlap with this month
+    const weeksInMonth = getWeeksForMonth(month, year);
 
-  return {
-    auditResult: analysisResult.auditResult,
-    fullAuditRef: finalUrl,
-    type: 'traffic-analysis',
-    siteId,
-    allowOverwrite,
-  };
+    log.info(`[traffic-analysis-import-monthly] Found ${weeksInMonth.length} weeks for month ${month}/${year}`);
+
+    // Send import requests for each week in the month
+    for (const weekInfo of weeksInMonth) {
+      const { temporalCondition } = getWeekInfo(weekInfo.week, weekInfo.year);
+
+      const message = {
+        type: 'traffic-analysis',
+        siteId,
+        auditContext: {
+          week: weekInfo.week,
+          year: weekInfo.year,
+          month: weekInfo.month,
+          temporalCondition,
+        },
+        allowOverwrite,
+      };
+
+      log.info(`[traffic-analysis-import-monthly] Sending import request for week ${weekInfo.week}/${weekInfo.year}`);
+      // eslint-disable-next-line no-await-in-loop
+      await sqs.sendMessage(configuration.getQueues().imports, message);
+    }
+
+    // Return the last week for the main audit flow
+    const lastWeek = weeksInMonth[weeksInMonth.length - 1];
+    const { temporalCondition } = getWeekInfo(lastWeek.week, lastWeek.year);
+
+    return {
+      auditResult: {
+        year,
+        month,
+        week: lastWeek.week,
+        siteId,
+        temporalCondition,
+      },
+      fullAuditRef: finalUrl,
+      type: 'traffic-analysis',
+      siteId,
+      allowOverwrite,
+    };
+  } else {
+    const analysisResult = await prepareTrafficAnalysisRequest(
+      finalUrl,
+      context,
+      site,
+      period,
+    );
+
+    log.info(`[traffic-analysis-import-${period}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowOverwrite: ${allowOverwrite}`);
+
+    return {
+      auditResult: analysisResult.auditResult,
+      fullAuditRef: finalUrl,
+      type: 'traffic-analysis',
+      siteId,
+      allowOverwrite,
+    };
+  }
 }
 
 async function processAnalysisStep(context, period) {
