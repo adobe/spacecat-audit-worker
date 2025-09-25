@@ -29,12 +29,13 @@ async function concentrateProducts(pathProductArray, context) {
     }; // No need to concentrate if only one or no products
   }
 
-  const systemPrompt = `You are an expert content categorization specialist focused on grouping products into high-level categories.
+  const systemPrompt = `You are an expert content categorization specialist focused on grouping products into categories; these should as a low-level as possible.
 
 TASK: Analyze the provided product list and create a concentrated version by:
-1. Grouping products into broad, high-level categories
-2. Preferring general categories over specific product names
-3. Creating representative category names that encompass multiple products
+1. Grouping products into specific categories
+2. Preferring product series over higher level categories
+3. Fallback to high-level categories if no series can be identified
+4. Creating representative category names that encompass multiple products
 
 INSTRUCTIONS:
 
@@ -59,6 +60,7 @@ INSTRUCTIONS:
    - When in doubt, group related products into series rather than individual categories
 
 4. Category Guidelines (when no series applies):
+   - Prioritize grouping brands, series or product lines
    - Sports products should group by sport type: "tennis", "basketball", "golf", etc.
    - Technology products should group by broad categories: "smartphones", "computers", "software"
    - Clothing/fashion should group by type: "clothing", "footwear", "accessories"
@@ -75,7 +77,9 @@ INSTRUCTIONS:
 4. Data Quality Rules:
    - If input is empty or invalid, return empty object: {}
    - Ensure all original product names are included in the mapping
-   - Use descriptive but broad category names
+   - Target 5-15 distinct categories representing the most prominent product offerings
+   - Focus on the most important products that drive business value
+   - Use descriptive but appropriately broad category names
    - Keep "unknown" as standalone if present
 
 RESPONSE FORMAT: Return only a valid JSON object mapping original names to high-level category names. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only.
