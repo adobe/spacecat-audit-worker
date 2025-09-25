@@ -10,19 +10,27 @@
  * governing permissions and limitations under the License.
  */
 
-import { Opportunity as Oppty, Suggestion as SuggestionDataAccess }
-  from '@adobe/spacecat-shared-data-access';
+import { Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData, createOpportunityProps } from './opportunity-data-mapper.js';
+import {
+  createTooStrongOpportunityData,
+  createTooStrongMetrics, createAdminOpportunityData, createAdminMetrics,
+} from './opportunity-data-mapper.js';
 import { getImsOrgId, syncSuggestions } from '../utils/data-access.js';
-import { mapVulnerabilityToSuggestion } from './suggestion-data-mapper.js';
+import { mapAdminSuggestion, mapTooStrongSuggestion } from './suggestion-data-mapper.js';
 
 const INTERVAL = 7; // days
 const AUDIT_TYPE = 'security-permissions'; // Audit.AUDIT_TYPES.SECURITY_PERMISSIONS;
+const OPT_TOO_STRONG_SUFFIX = '-ACL-ALL';
+const OPT_ADMIN_SUFFIX = '-ACL-ADMIN';
+
+/**
+ * @typedef {import('./permissions-report.d.ts').PermissionsReport} PermissionsReport
+ */
 
 /**
  * Fetches permissions report for a given AEM Cloud Service site from the starfish API.
@@ -30,12 +38,12 @@ const AUDIT_TYPE = 'security-permissions'; // Audit.AUDIT_TYPES.SECURITY_PERMISS
  * @param {string} baseURL - The base URL of the site
  * @param {object} context - The context object of the audit
  * @param {object} site - The site object containing delivery configuration and details.
- * @return {Promise<Object>} A promise that resolves to the permissions report data.
+ * @return {Promise<PermissionsReport>} A promise that resolves to the permissions report data.
  */
 export async function fetchPermissionsReport(baseURL, context, site) {
   const { log, env, dataAccess } = context;
 
-  // Retrieve site details
+  // Retrieve site detailsd
   const imsOrg = await getImsOrgId(site, dataAccess, log);
   const { programId, environmentId } = site.getDeliveryConfig();
   if (!programId || !environmentId) {
@@ -49,24 +57,21 @@ export async function fetchPermissionsReport(baseURL, context, site) {
   const imsClient = ImsClient.createFrom(imsContext);
   const token = await imsClient.getServiceAccessToken();
 
-  // Fetch vulnerability report
+  // Fetch permissions report
   try {
     const headers = {
-      Authorization: `Bearer ${token.access_token}`,
-      'x-api-key': env.IMS_CLIENT_ID,
-      'x-gw-ims-org-id': imsOrg,
+      Authorization: `Bearer ${token.access_token}`, 'x-api-key': env.IMS_CLIENT_ID, 'x-gw-ims-org-id': imsOrg,
     };
-    const resp = await fetch(
-      `https://aem-trustcenter-dev.adobe.io/api/reports/${programId}/${environmentId}/permissions`,
-      { headers },
-    );
+    const resp = await fetch(`https://aem-trustcenter-dev.adobe.io/api/reports/${programId}/${environmentId}/permissions`, { headers });
+    if (!resp.ok) {
+      throw new Error(`Failed to fetch permissions report: HTTP ${resp.status}`);
+    }
     const json = await resp.json();
-
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] successfully fetched permissions report`);
 
     return json.data;
   } catch (error) {
-    throw new Error('Failed to fetch permissions report');
+    throw new Error(`Failed to fetch permissions report ${error.message}`);
   }
 }
 
@@ -84,17 +89,17 @@ export async function permissionsAuditRunner(baseURL, context, site) {
   const { log } = context;
 
   try {
-    const vulnerabilityReport = await fetchPermissionsReport(baseURL, context, site);
-    const compCount = vulnerabilityReport.summary.totalComponents;
-    const vulnCount = vulnerabilityReport.summary.totalVulnerabilities;
+    const permissionsReport = await fetchPermissionsReport(baseURL, context, site);
+    const allPermissionsCnt = permissionsReport?.allPermissions?.length || 0;
+    const adminChecksCnt = permissionsReport?.adminChecks?.length || 0;
 
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] identified: ${vulnCount} vulnerabilities in ${compCount} components`);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] identified: ${allPermissionsCnt} jcr:all permissions, ${adminChecksCnt} admin checks`);
 
     // Build and return audit result
     return {
       auditResult: {
         finalUrl: baseURL,
-        vulnerabilityReport,
+        permissionsReport,
         fullAuditRef: baseURL,
         auditContext: { interval: INTERVAL },
         success: true,
@@ -106,13 +111,30 @@ export async function permissionsAuditRunner(baseURL, context, site) {
     log.error(errorMessage);
     return {
       auditResult: {
-        finalUrl: baseURL,
-        error: errorMessage,
-        success: false,
+        finalUrl: baseURL, error: errorMessage, success: false,
       },
       fullAuditRef: baseURL,
     };
   }
+}
+
+async function resolveOpportunity(opportunity, site, context) {
+  const { log, dataContext } = context;
+  const { Suggestion } = dataContext;
+
+  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no permissions issues found, but found opportunity, updating status to RESOLVED`);
+  opportunity.setStatus(Oppty.STATUSES.RESOLVED);
+
+  // We also need to update all suggestions inside this opportunity
+  // Get all suggestions for this opportunity
+  const suggestions = await opportunity.getSuggestions();
+
+  // If there are suggestions, update their status to outdated
+  if (isNonEmptyArray(suggestions)) {
+    await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.FIXED);
+  }
+  opportunity.setUpdatedBy('system');
+  await opportunity.save();
 }
 
 /**
@@ -126,7 +148,7 @@ export async function permissionsAuditRunner(baseURL, context, site) {
  */
 export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context, site) => {
   const { log, dataAccess } = context;
-  const { Configuration, Suggestion } = dataAccess;
+  const { Configuration } = dataAccess;
 
   // Check whether the audit is enabled for the site
   const configuration = await Configuration.findLatest();
@@ -137,91 +159,115 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
 
   // This opportunity is only relevant for aem_cs delivery-type at the moment
   if (site.getDeliveryType() !== 'aem_cs') {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping vulnerability opportunity as it is of delivery type ${site.getDeliveryType()}`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping opportunity as it is of delivery type ${site.getDeliveryType()}`);
     return { status: 'complete' };
   }
 
-  const { vulnerabilityReport, success } = auditData.auditResult;
+  const { permissionReport, success } = auditData.auditResult;
 
   if (!success) {
     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
     return { status: 'complete' };
   }
 
-  if (!isNonEmptyArray(vulnerabilityReport.vulnerableComponents)) {
-    // No vulnerabilities found
-    // Fetch opportunity
-    const { Opportunity } = dataAccess;
-    let opportunity;
-    try {
-      const opportunities = await Opportunity.allBySiteIdAndStatus(
-        site.getId(),
-        Oppty.STATUSES.NEW,
-      );
-      opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
-    } catch (e) {
-      log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
-      throw new Error(`Failed to fetch opportunities for siteId ${site.getId()}: ${e.message}`);
-    }
+  const { Opportunity } = dataAccess;
+  const opportunities = (await Opportunity.allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW))
+    .filter((o) => o.getType() === AUDIT_TYPE);
 
-    if (opportunity) {
-      // No vulnerabilities found, update opportunity status to RESOLVED
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no vulnerabilities found, but found opportunity, updating status to RESOLVED`);
-      await opportunity.setStatus(Oppty.STATUSES.RESOLVED);
+  // Process too strong opportunities
+  const isTooStrongOppty = (o) => o.getData().securityType?.endsWith(OPT_TOO_STRONG_SUFFIX);
+  const strongOpportunities = opportunities.filter(isTooStrongOppty);
 
-      // We also need to update all suggestions inside this opportunity
-      // Get all suggestions for this opportunity
-      const suggestions = await opportunity.getSuggestions();
+  // If no too strong permissions issues found, resolve existing opportunities
+  if (!isNonEmptyArray(permissionReport?.allPermissions)) {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no jcr:all permissions found, resolving existing opportunities (${strongOpportunities.length})`);
+    await Promise.all(opportunities.map((o) => resolveOpportunity(o, site, context)));
+  } else {
+    const tooStrongOpt = await convertToOpportunity(
+      auditUrl,
+      { siteId: auditData.siteId, id: auditData.auditId },
+      context,
+      createTooStrongOpportunityData,
+      AUDIT_TYPE,
+      createTooStrongMetrics(permissionReport.allPermissions),
+    );
 
-      // If there are suggestions, update their status to outdated
-      if (isNonEmptyArray(suggestions)) {
-        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.FIXED);
+    // Flatten allPermission arrays by path and principal
+    const flattenedPermissions = permissionReport.allPermissions
+      .flatMap(({ path, details }) => details.map(({ principal }) => ({ path, principal })));
+
+    const buildTooStrongSuggestionKey = (data) => {
+      const s = JSON.stringify(data);
+      let hash = 0;
+      for (let i = 0; i < s.length; i += 1) {
+        const code = s.charCodeAt(i);
+        // eslint-disable-next-line no-bitwise
+        hash = ((hash << 5) - hash) + code;
+        // eslint-disable-next-line no-bitwise
+        hash &= hash; // Convert to 32bit integer
       }
-      opportunity.setUpdatedBy('system');
-      await opportunity.save();
-    }
+      return `${data.path}@${data.principal}#${hash}`;
+    };
 
-    return { status: 'complete' };
+    await syncSuggestions({
+      context,
+      opportunity: tooStrongOpt,
+      newData: flattenedPermissions,
+      buildKey: buildTooStrongSuggestionKey,
+      mapNewSuggestion: (entry) => mapTooStrongSuggestion(tooStrongOpt, entry),
+    });
+
+    tooStrongOpt.setUpdatedBy('system');
+    await tooStrongOpt.save();
   }
 
-  // Update opportunity
-  const opportunity = await convertToOpportunity(
-    auditUrl,
-    { siteId: auditData.siteId, id: auditData.auditId },
-    context,
-    createOpportunityData,
-    AUDIT_TYPE,
-    createOpportunityProps(auditData.auditResult.vulnerabilityReport),
-  );
+  // Process admin opportunities
+  const isAdminOppty = (o) => o.getData().securityType?.endsWith(OPT_ADMIN_SUFFIX);
+  const adminOpportunities = opportunities.filter(isAdminOppty);
 
-  if (!configuration.isHandlerEnabledForSite('security-permissions-auto-suggest', site)) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-permissions-auto-suggest not configured, skipping suggestion creation`);
-    return { status: 'complete' };
+  // If no admin issues found, resolve existing admin opportunities
+  if (!isNonEmptyArray(permissionReport?.adminChecks)) {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no admin checks found, resolving existing admin opportunities (${adminOpportunities.length})`);
+    await Promise.all(adminOpportunities.map((o) => resolveOpportunity(o, site, context)));
+  } else {
+    const adminOpt = await convertToOpportunity(
+      auditUrl,
+      { siteId: auditData.siteId, id: auditData.auditId },
+      context,
+      createAdminOpportunityData,
+      AUDIT_TYPE,
+      createAdminMetrics(permissionReport.adminChecks),
+    );
+
+    // Flatten adminChecks arrays by principal and path and privileges
+    const flattenedPermissions = permissionReport.adminChecks
+      // eslint-disable-next-line max-len
+      .flatMap(({ principal, details }) => details.map((d) => ({ principal, path: d.path, privileges: d.privileges })));
+
+    const buildAdminSuggestionKey = (data) => {
+      const s = JSON.stringify(data);
+      let hash = 0;
+      for (let i = 0; i < s.length; i += 1) {
+        const code = s.charCodeAt(i);
+        // eslint-disable-next-line no-bitwise
+        hash = ((hash << 5) - hash) + code;
+        // eslint-disable-next-line no-bitwise
+        hash &= hash; // Convert to 32bit integer
+      }
+      return `${data.principal}@${data.path}#${hash}`;
+    };
+
+    await syncSuggestions({
+      context,
+      opportunity: adminOpt,
+      newData: flattenedPermissions,
+      buildKey: buildAdminSuggestionKey,
+      mapNewSuggestion: (entry) => mapAdminSuggestion(adminOpt, entry),
+    });
+
+    adminOpt.setUpdatedBy('system');
+    await adminOpt.save();
   }
-
-  // As a buildKey we hash all the component details and add name and version for readability
-  const buildKey = (data) => {
-    const s = JSON.stringify(data);
-    let hash = 0;
-    for (let i = 0; i < s.length; i += 1) {
-      const code = s.charCodeAt(i);
-      // eslint-disable-next-line no-bitwise
-      hash = ((hash << 5) - hash) + code;
-      // eslint-disable-next-line no-bitwise
-      hash &= hash; // Convert to 32bit integer
-    }
-    return `${data.name}@${data.version}#${hash}`;
-  };
-
-  // Populate suggestions
-  await syncSuggestions({
-    opportunity,
-    newData: vulnerabilityReport.vulnerableComponents,
-    context,
-    buildKey,
-    mapNewSuggestion: (entry) => mapVulnerabilityToSuggestion(opportunity, entry),
-    log,
-  });
 
   return { status: 'complete' };
 };

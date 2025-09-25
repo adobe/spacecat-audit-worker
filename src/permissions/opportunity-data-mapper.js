@@ -13,53 +13,89 @@
 import { DATA_SOURCES } from '../common/constants.js';
 
 /**
- * @typedef {import('./vulnerability-report.d.ts').VulnerabilityReport} VulnerabilityReport
+ * @typedef {import('./permissions-report.d.ts').TooStrongPermission} TooStrongPermission
  */
 
 /**
  * Creates an object representing opportunity properties based on the vulnerability report.
  *
- * @param {VulnerabilityReport} vulnReport - The vulnerability report containing summary data.
+ * @param {TooStrongPermission[]} permissions - The vulnerability report containing summary data.
  *
  * @return {Object} An object containing main metrics and categorized vulnerability counts.
  */
-export function createOpportunityProps(vulnReport) {
-  const total = vulnReport.summary.totalComponents;
-  const high = vulnReport.summary.highVulnerabilities + vulnReport.summary.criticalVulnerabilities;
-  const medium = vulnReport.summary.mediumVulnerabilities;
-  const low = vulnReport.summary.lowVulnerabilities;
+export function createTooStrongMetrics(permissions) {
+  const total = permissions.length;
 
   return {
     mainMetric: {
-      name: 'Vulnerabilities',
+      name: 'Issues',
       value: total,
     },
     metrics: {
-      high_risk_vulnerabilities: high,
-      medium_risk_vulnerabilities: medium,
-      low_risk_vulnerabilities: low,
+      insecure_permissions: total,
+      redundant_permissions: 0,
     },
   };
 }
 
 /**
- * Creates an opportunity data object containing details about 3rd-party library vulnerabilities.
- *
- * @param {Object} props - An object containing main metrics and categorized vulnerability counts.
- * @return {Object} An object containing details about the vulnerabilities, how to fix them, and
- *                  other metadata.
+ * Creates an object representing opportunity data for too-strong permissions.
+ * @param props
+ * @returns {Object} An object containing opportunity details and remediation steps.
  */
-export function createOpportunityData(props) {
+export function createTooStrongOpportunityData(props) {
   return {
     runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
     origin: 'AUTOMATION',
-    title: '3rd-party libraries in application code have known vulnerabilities',
-    description: 'The application code is using 3rd party libraries which have known vulnerabilities.\n\nThese vulnerabilities could be exploited by a malicious attacker, increasing the risk and decreasing the security posture of your website.\n\nIt is highly recommended to always upgrade them to the latest compatible versions, as new vulnerabilities are discovered.',
-    tags: ['Vulnerabilities'],
+    title: 'Your website\'s user and group permissions are insecure or incorrect',
+    tags: ['Security', 'Permissions'],
+    description: 'Your website has insecure user permissions: users hold jcr:all on generic paths like / or /content, which violates the principle of least privilege. According to the OWASP Top 10 (A05:2021 – Security Misconfiguration), excessive privileges increase the likelihood of unauthorized access and system compromise. \n'
+      + 'Review and optimize permissions for website\'s users and group permissions.',
     data: {
-      howToFix: 'Apply a code patch which upgrades the versions of the 3rd-party libraries in the application code.\n\nReview all suggested fixes below before applying. Entries can be dismissed or edited as needed.',
+      howToFix: 'Edit your user or group permissions in the AEM Security Permissions console, or in your code repository if applicable.\n'
+        + 'For service users, evaluate their usage in your application code and evaluate what access they actually need and to what paths in the repository. Consider creating multiple service users with restricted permissions on child paths, if the service user is used in multiple places. Delete any unused service user or remove their permissions.',
       dataSources: [DATA_SOURCES.SITE],
-      securityType: 'CS-VULN-SBOM',
+      securityType: 'CS-ACL-ALL',
+      ...props,
+    },
+  };
+}
+
+export function createAdminMetrics(permissions) {
+  const total = permissions.length;
+
+  return {
+    mainMetric: {
+      name: 'Issues',
+      value: total,
+    },
+    metrics: {
+      insecure_permissions: 0,
+      redundant_permissions: total,
+    },
+  };
+}
+
+/**
+ * Creates an object representing opportunity data for redundant admin permissions.
+ * @param props
+ * @return {Object} An object containing opportunity details and remediation steps.
+ */
+export function createAdminOpportunityData(props) {
+  return {
+    runbook: 'https://wiki.corp.adobe.com/display/WEM/Security+Success',
+    origin: 'AUTOMATION',
+    title: 'Your website defines unnecessary permissions for admin / administrators',
+    tags: ['Security', 'Permissions', 'Administrators'],
+    description: 'Your configuration defines unnecessary rules for the admin user or administrators related groups. These permissions are not taken into consideration for those principals, It creates a false sense of security.\n'
+      + 'According to the OWASP Top 10 (A05:2021 – Security Misconfiguration), redundant or excessive privileges increase the risk of misconfiguration.\n'
+      + 'Review and optimize permissions to maintain clarity and least privilege.',
+    data: {
+      howToFix: 'Edit your user or group permissions in the AEM Security Permissions console, or in your code repository if applicable.\n'
+        + 'Delete any permissions defined for the admin user or the administrators group or any other principle defined as Administrative Principals  under `org.apache.jackrabbit.oak.security.authorization.AuthorizationConfigurationImpl`\n'
+        + 'Review all suggested fixes below before applying.',
+      dataSources: [DATA_SOURCES.SITE],
+      securityType: 'CS-ACL-ADMIN',
       ...props,
     },
   };

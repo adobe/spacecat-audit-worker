@@ -37,7 +37,7 @@ function highestScore(vulnerabilities) {
  * @param {VulnerableComponent} vulnerability - The vulnerability object
  * @return {Object} A suggestion object providing a structured representation of the vulnerability
  */
-export function mapVulnerabilityToSuggestion(opportunity, vulnerability) {
+export function mapTooStrongSuggestion(opportunity, vulnerability) {
   const {
     name, version, recommendedVersion, vulnerabilities,
   } = vulnerability;
@@ -60,6 +60,31 @@ export function mapVulnerabilityToSuggestion(opportunity, vulnerability) {
         summary: vuln.description,
         url: vuln.url || '',
       })),
+    },
+  };
+}
+
+/**
+ * Maps a given vulnerability to a suggestion object that provides details
+ * @param opportunity
+ * @param adminScanResult
+ * @returns {Suggestion} A suggestion object based on the admin scan result
+ */
+export function mapAdminSuggestion(opportunity, adminScanResult) {
+  const {
+    principal, path, privileges,
+  } = adminScanResult;
+
+  return {
+    opportunityId: opportunity.getId(),
+    type: 'CONTENT_UPDATE',
+    data: {
+      issue: 'Redundant',
+      path: principal,
+      principal: path,
+      permissions: privileges,
+      recommended_permissions: ['Remove'],
+      rationale: 'Defining access control policies for the administrators group in AEM is redundant, as members inherently possess full privileges, rendering explicit permissions unnecessary and adding avoidable complexity to the authorization configuration.',
     },
   };
 }
