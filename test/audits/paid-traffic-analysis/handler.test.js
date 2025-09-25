@@ -339,7 +339,7 @@ describe('Paid Traffic Analysis Handler', () => {
         fullAuditRef: auditUrl,
         type: 'traffic-analysis',
         siteId,
-        allowOverwrite: false,
+        allowCache: true,
       });
 
       expect(result.auditResult).to.include({
@@ -355,14 +355,14 @@ describe('Paid Traffic Analysis Handler', () => {
       const expectedMessage = {
         type: 'traffic-analysis',
         siteId,
-        allowOverwrite: false,
+        allowCache: true,
       };
 
       mockSqs.sendMessage.getCalls().forEach(call => {
         const [queueUrl, message] = call.args;
         expect(queueUrl).to.equal('test-import-queue');
         expect(message).to.include(expectedMessage);
-        expect(message.auditContext).to.have.all.keys('week', 'year', 'month', 'temporalCondition');
+        expect(message.auditContext).to.have.all.keys('week', 'year');
       });
     });
   });

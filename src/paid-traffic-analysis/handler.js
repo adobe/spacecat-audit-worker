@@ -121,7 +121,7 @@ async function importDataStep(context, period) {
     site, finalUrl, log, sqs, dataAccess,
   } = context;
   const siteId = site.getId();
-  const allowOverwrite = false;
+  const allowCache = true;
   log.info(`[traffic-analysis-import-${period}] Starting import data step for siteId: ${siteId}, url: ${finalUrl}`);
 
   if (period === 'monthly') {
@@ -138,7 +138,7 @@ async function importDataStep(context, period) {
     const weeksToImport = weeksInMonth.slice(0, -1);
     const lastWeek = weeksInMonth[weeksInMonth.length - 1];
 
-    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Sending import messages for ${weeksToImport.length} weeks: [${weeksToImport.map((w) => `${w.week}/${w.year}`).join(', ')}], allowOverwrite: ${allowOverwrite}`);
+    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Sending import messages for ${weeksToImport.length} weeks: [${weeksToImport.map((w) => `${w.week}/${w.year}`).join(', ')}],  allowCache: ${allowCache}`);
     log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Reserving last week ${lastWeek.week}/${lastWeek.year} for main audit flow`);
 
     for (const weekInfo of weeksToImport) {
@@ -150,13 +150,11 @@ async function importDataStep(context, period) {
         auditContext: {
           week: weekInfo.week,
           year: weekInfo.year,
-          month: weekInfo.month,
-          temporalCondition,
         },
-        allowOverwrite,
+        allowCache,
       };
 
-      log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Sending import message for week ${weekInfo.week}/${weekInfo.year} with allowOverwrite: ${allowOverwrite}, temporalCondition: ${temporalCondition}`);
+      log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Sending import message for week ${weekInfo.week}/${weekInfo.year} with allowCache: ${allowCache}, temporalCondition: ${temporalCondition}`);
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(configuration.getQueues().imports, message);
     }
@@ -164,7 +162,7 @@ async function importDataStep(context, period) {
     // Return the last week for the main audit flow
     const { temporalCondition } = getWeekInfo(lastWeek.week, lastWeek.year);
 
-    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Returning main audit flow data for week ${lastWeek.week}/${lastWeek.year} with allowOverwrite: ${allowOverwrite}, temporalCondition: ${temporalCondition}`);
+    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Returning main audit flow data for week ${lastWeek.week}/${lastWeek.year} with allowOverwrite: ${allowCache}, temporalCondition: ${temporalCondition}`);
 
     return {
       auditResult: {
@@ -177,7 +175,7 @@ async function importDataStep(context, period) {
       fullAuditRef: finalUrl,
       type: 'traffic-analysis',
       siteId,
-      allowOverwrite,
+      allowCache,
     };
   } else {
     const analysisResult = await prepareTrafficAnalysisRequest(
@@ -187,14 +185,14 @@ async function importDataStep(context, period) {
       period,
     );
 
-    log.info(`[traffic-analysis-import-${period}] [siteId: ${siteId}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowOverwrite: ${allowOverwrite}`);
+    log.info(`[traffic-analysis-import-${period}] [siteId: ${siteId}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowCache: ${allowCache}`);
 
     return {
       auditResult: analysisResult.auditResult,
       fullAuditRef: finalUrl,
       type: 'traffic-analysis',
       siteId,
-      allowOverwrite,
+      allowCache,
     };
   }
 }
