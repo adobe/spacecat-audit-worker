@@ -46,7 +46,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   }
 
   // TODO: bump up to 100 when about to merge
-  const topPagesPayload = topPages.slice(0, 10).map((page) => ({ pageUrl: page }));
+  const topPagesPayload = topPages.slice(0, 10).map((page) => ({ page_url: page, keyword: '', questions: [] }));
 
   const message = {
     type: 'guidance:summarization',
@@ -54,6 +54,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     url: site.getBaseURL(),
     auditId: audit.getId(),
     deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
     data: { pages: topPagesPayload },
   };
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
