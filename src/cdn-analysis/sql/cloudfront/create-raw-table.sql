@@ -3,11 +3,11 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
   `time`                    string,
   `x-edge-location`         string,
   `cs-method`               string,
-  `cs(host)`                string,
+  `x-host-header`           string,
   `cs-uri-stem`             string,
   `sc-status`               string,
-  `cs(referer)`             string,
-  `cs(user-agent)`          string,
+  `cs(Referer)`             string,
+  `cs(User-Agent)`          string,
   `time-to-first-byte`      string,
   `sc-content-type`         string
 )
@@ -19,7 +19,7 @@ PARTITIONED BY (
 )
 ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
 WITH SERDEPROPERTIES (
-  'paths'='date,time,x-edge-location,cs-method,cs(Host),cs-uri-stem,sc-status,cs(Referer),cs(User-Agent),time-to-first-byte,sc-content-type'
+  'paths'='date,time,x-edge-location,cs-method,cs(Host),cs-uri-stem,sc-status,cs(Referer),cs(User-Agent),time-to-first-byte,sc-content-type,x-host-header'
 )
 LOCATION '{{rawLocation}}'
 TBLPROPERTIES (

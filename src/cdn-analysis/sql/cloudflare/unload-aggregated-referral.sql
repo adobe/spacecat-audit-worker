@@ -3,9 +3,7 @@ UNLOAD (
     -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
     SELECT DISTINCT ClientRequestHost AS host
     FROM {{database}}.{{rawTable}}
-    WHERE year  = '{{year}}'
-      AND month = '{{month}}'
-      AND day   = '{{day}}'
+    WHERE date = '{{year}}{{month}}{{day}}'
   ),
 
   base AS (
@@ -16,9 +14,7 @@ UNLOAD (
       ClientRequestUserAgent      AS user_agent,
       EdgeResponseContentType     AS content_type
     FROM {{database}}.{{rawTable}}
-    WHERE year  = '{{year}}'
-      AND month = '{{month}}'
-      AND day   = '{{day}}'
+    WHERE date = '{{year}}{{month}}{{day}}'
   ),
 
   referrals_raw AS (

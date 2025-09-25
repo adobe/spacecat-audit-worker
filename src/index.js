@@ -73,6 +73,7 @@ import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
+import prerender from './prerender/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -131,6 +132,7 @@ const HANDLERS = {
   'llmo-customer-analysis': llmoCustomerAnalysis,
   hreflang,
   headings,
+  prerender,
   dummy: (message) => ok(message),
 };
 

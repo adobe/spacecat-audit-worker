@@ -14,7 +14,7 @@
 import { prompt } from './utils.js';
 
 async function derivePageTypesForPaths(domain, paths, context) {
-  const { env, log } = context;
+  const { log } = context;
   const systemPrompt = `You are an expert web page classifier. Your task is to analyze URL paths and categorize them into standardized page types based on web conventions and URL patterns.
 
 ## OBJECTIVE
@@ -145,7 +145,7 @@ ${JSON.stringify(paths, null, 2)}`;
 
   try {
     log.info('Extracting page types from URL paths');
-    const promptResponse = await prompt(systemPrompt, userPrompt, env);
+    const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       const { paths: parsedPaths } = JSON.parse(promptResponse.content);
       log.info('Successfully extracted page types from URL paths');
@@ -169,7 +169,7 @@ function groupPathsByPageType(pathTypeArray) {
 }
 
 async function deriveRegexesForPageTypes(domain, groupedPaths, context) {
-  const { env, log } = context;
+  const { log } = context;
 
   const systemPrompt = `You are an expert regex pattern generator specialized in creating URL path matching expressions for web analytics.
 
@@ -223,7 +223,7 @@ ${JSON.stringify(groupedPaths, null, 2)}`;
 
   try {
     log.info('Generating regex patterns for page types');
-    const promptResponse = await prompt(systemPrompt, userPrompt, env);
+    const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       const parsed = JSON.parse(promptResponse.content);
       if (parsed && typeof parsed === 'object') {
