@@ -13,52 +13,46 @@
 import ExcelJS from 'exceljs';
 import { getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { startOfISOWeek, addDays, format } from 'date-fns';
+import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
 
-export async function prompt(systemPrompt, userPrompt, env) {
-  const {
-    AZURE_OPENAI_ENDPOINT: endpoint,
-    AZURE_OPENAI_KEY: apiKey,
-    AZURE_API_VERSION: apiVersion,
-    AZURE_COMPLETION_DEPLOYMENT: deployment,
-  } = env;
-
-  if (!endpoint || !apiKey || !deployment) {
-    throw new Error(
-      'Set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY, and AZURE_COMPLETION_DEPLOYMENT in your environment.',
-    );
+function getAzureOpenAIClient(context) {
+  if (context.azureOpenAIClient) {
+    return context.azureOpenAIClient;
   }
 
-  const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
-  const headers = {
-    'api-key': apiKey,
-    'Content-Type': 'application/json',
-  };
-  const data = {
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0,
-    top_p: 1,
-    response_format: { type: 'json_object' },
+  const { env, log = console } = context;
+
+  const {
+    AZURE_OPENAI_ENDPOINT: apiEndpoint,
+    AZURE_OPENAI_KEY: apiKey,
+    AZURE_API_VERSION: apiVersion,
+  } = env;
+
+  const config = {
+    apiEndpoint,
+    apiKey,
+    apiVersion,
+    deploymentName: 'gpt-4o-mini',
   };
 
+  // Create and cache the client
+  context.azureOpenAIClient = new AzureOpenAIClient(config, log);
+
+  return context.azureOpenAIClient;
+}
+
+export async function prompt(systemPrompt, userPrompt, context = {}) {
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data),
+    const azureClient = getAzureOpenAIClient(context);
+
+    const response = await azureClient.fetchChatCompletion(userPrompt, {
+      systemPrompt,
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
     return {
-      content: result.choices[0].message.content,
-      usage: result.usage || null,
+      content: response.choices[0].message.content,
+      usage: response.usage || null,
     };
   } catch (error) {
     throw new Error(`Failed to trigger Azure LLM: ${error.message}`);

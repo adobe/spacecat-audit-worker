@@ -11,9 +11,7 @@ UNLOAD (
 
   FROM {{database}}.{{rawTable}}
 
-  WHERE year  = '{{year}}'
-    AND month = '{{month}}'
-    AND day   = '{{day}}'
+  WHERE date = '{{year}}{{month}}{{day}}'
     
     -- CloudFlare daily analysis: Process entire day but output to hour 08 directory
     -- This avoids scanning daily files 24 times while maintaining downstream compatibility

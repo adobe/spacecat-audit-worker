@@ -14,6 +14,7 @@
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
+import { pathHasData } from '../utils/cdn-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { createLLMOSharepointClient } from '../utils/report-uploader.js';
@@ -41,24 +42,37 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     context,
     auditContext?.sharepointOptions,
   );
-  const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
+  const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation(), {
+    pollIntervalMs: 2000,
+    maxPollAttempts: 200,
+  });
   /* c8 ignore next */
   const { orgId } = site.getConfig().getLlmoCdnBucketConfig() || {};
   // for non-adobe customers, use the orgId from the config
   const imsOrgId = orgId || await getImsOrgId(site, dataAccess, log);
-  // create db if not exists
-  const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
-  const sqlDbDescription = `[Athena Query] Create database ${s3Config.databaseName}`;
-  await athenaClient.execute(sqlDb, s3Config.databaseName, sqlDbDescription);
 
   const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, imsOrgId);
 
   const results = [];
   for (const reportConfig of reportConfigs) {
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await pathHasData(context.s3Client, reportConfig.aggregatedLocation))) {
+      log.info(`No data found for ${reportConfig.name} report - skipping`);
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+
+    if (results.length === 0) {
+      // eslint-disable-next-line no-await-in-loop
+      const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
+      // eslint-disable-next-line no-await-in-loop
+      await athenaClient.execute(sqlDb, s3Config.databaseName, `[Athena Query] Create database ${s3Config.databaseName}`);
+    }
+
     await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
 
     log.info(`Running weekly report: ${reportConfig.name}...`);
-    const weekOffset = auditContext?.weekOffset || -1;
+    const weekOffset = auditContext?.weekOffset ?? -1;
     await runWeeklyReport({
       athenaClient,
       s3Config,
