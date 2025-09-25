@@ -11,7 +11,11 @@
  */
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { sendAltTextOpportunityToMystique, chunkArray, cleanupOutdatedSuggestions } from './opportunityHandler.js';
+import {
+  sendAltTextOpportunityToMystique,
+  chunkArray,
+  cleanupOutdatedSuggestions, saveAltTextMetrics,
+} from './opportunityHandler.js';
 import { DATA_SOURCES } from '../common/constants.js';
 import { MYSTIQUE_BATCH_SIZE } from './constants.js';
 
@@ -124,6 +128,9 @@ export async function processAltTextWithMystique(context) {
     );
 
     log.info(`[${AUDIT_TYPE}]: Sent ${pageUrls.length} pages to Mystique for generating alt-text suggestions`);
+
+    // Save initial metrics (will be updated by guidance handler)
+    await saveAltTextMetrics(altTextOppty, context);
 
     // Clean up outdated suggestions
     // Small delay to ensure no concurrent operations
