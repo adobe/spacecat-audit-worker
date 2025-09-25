@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
+import nock from 'nock';
 import { Site } from '@adobe/spacecat-shared-data-access';
 import {
   sitemapProductCoverageAuditRunner,
@@ -848,9 +849,12 @@ describe('Sitemap Product Coverage Audit', () => {
       expect(generateOpportunity).to.be.a('function');
     });
 
-    it('should handle configuration edge cases', async function () {
-      // korablov need to look at this test
-      this.timeout(5000);
+    it('should handle configuration edge cases', async function () {      
+      // Mock HTTP requests that getSitemapUrls makes to return error
+      nock(baseURL)
+        .get('/robots.txt')
+        .replyWithError('Network error');
+      
       const siteWithMinimalConfig = {
         getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
         getConfig: () => ({
@@ -871,6 +875,9 @@ describe('Sitemap Product Coverage Audit', () => {
 
       expect(result).to.have.property('auditResult');
       expect(result.auditResult).to.have.property('success');
+      
+      // Clean up nock after test
+      nock.cleanAll();
     });
 
     it('should handle getSitemapUrls success with missing details properties (lines 137-138)', async () => {
