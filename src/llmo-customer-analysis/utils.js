@@ -70,7 +70,7 @@ async function createAndSaveWorkbook(config, site, context) {
     filePrefix, successMessage, worksheets, folderName,
   } = config;
   const { log } = context;
-
+  const isDev = context.env.ENV === 'dev';
   const workbook = new ExcelJS.Workbook();
 
   for (const worksheetConfig of worksheets) {
@@ -95,7 +95,7 @@ async function createAndSaveWorkbook(config, site, context) {
   try {
     const sharepointClient = await createLLMOSharepointClient(context);
     const llmoFolder = site.getConfig()?.getLlmoDataFolder();
-    const outputLocation = `${llmoFolder}/${folderName}`;
+    const outputLocation = `${isDev ? 'dev/' : ''}/${llmoFolder}/${folderName}`;
 
     try {
       await readFromSharePoint(filename, outputLocation, sharepointClient, log);
