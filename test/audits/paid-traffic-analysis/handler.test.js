@@ -257,7 +257,7 @@ describe('Paid Traffic Analysis Handler', () => {
         expect(result).to.have.property('fullAuditRef', auditUrl);
         expect(result).to.have.property('type', 'traffic-analysis');
         expect(result).to.have.property('siteId', siteId);
-        expect(result).to.have.property('allowCache', false);
+        expect(result).to.have.property('allowCache', true);
 
         expect(result.auditResult).to.have.property('year');
         expect(result.auditResult).to.have.property('week');
