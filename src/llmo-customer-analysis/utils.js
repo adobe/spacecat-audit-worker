@@ -95,7 +95,7 @@ async function createAndSaveWorkbook(config, site, context) {
   try {
     const sharepointClient = await createLLMOSharepointClient(context);
     const llmoFolder = site.getConfig()?.getLlmoDataFolder();
-    const outputLocation = `${isDev ? 'dev/' : ''}/${llmoFolder}/${folderName}`;
+    const outputLocation = `${isDev ? 'dev/' : ''}${llmoFolder}/${folderName}`;
 
     try {
       await readFromSharePoint(filename, outputLocation, sharepointClient, log);
