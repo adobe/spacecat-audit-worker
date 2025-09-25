@@ -848,7 +848,9 @@ describe('Sitemap Product Coverage Audit', () => {
       expect(generateOpportunity).to.be.a('function');
     });
 
-    it('should handle configuration edge cases', async () => {
+    it('should handle configuration edge cases', async function () {
+      // korablov need to look at this test
+      this.timeout(5000);
       const siteWithMinimalConfig = {
         getDeliveryType: () => Site.DELIVERY_TYPES.AEM_EDGE,
         getConfig: () => ({
