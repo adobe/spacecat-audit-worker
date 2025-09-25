@@ -243,8 +243,8 @@ describe('Summarization Handler', () => {
       expect(result).to.equal(auditData);
     });
 
-    it('should limit pages to 10 when more than 10 pages are available', async () => {
-      auditData.auditResult.topPages = Array.from({ length: 25 }, (_, i) => `https://adobe.com/page${i + 1}`);
+    it('should limit pages to 100 when more than 100 pages are available', async () => {
+      auditData.auditResult.topPages = Array.from({ length: 150 }, (_, i) => `https://adobe.com/page${i + 1}`);
 
       await sendMystiqueMessagePostProcessor(
         'https://adobe.com',
@@ -254,13 +254,13 @@ describe('Summarization Handler', () => {
 
       expect(sqs.sendMessage).to.have.been.calledOnce;
       const [, message] = sqs.sendMessage.firstCall.args;
-      expect(message.data.pages).to.have.length(10);
+      expect(message.data.pages).to.have.length(100);
       expect(message.data.pages[0]).to.deep.equal({ page_url: 'https://adobe.com/page1', keyword: '', questions: [] });
-      expect(message.data.pages[9]).to.deep.equal({ page_url: 'https://adobe.com/page10', keyword: '', questions: [] });
+      expect(message.data.pages[99]).to.deep.equal({ page_url: 'https://adobe.com/page100', keyword: '', questions: [] });
     });
 
-    it('should handle exactly 10 pages', async () => {
-      auditData.auditResult.topPages = Array.from({ length: 10 }, (_, i) => `https://adobe.com/page${i + 1}`);
+    it('should handle exactly 100 pages', async () => {
+      auditData.auditResult.topPages = Array.from({ length: 100 }, (_, i) => `https://adobe.com/page${i + 1}`);
 
       await sendMystiqueMessagePostProcessor(
         'https://adobe.com',
@@ -270,10 +270,10 @@ describe('Summarization Handler', () => {
 
       expect(sqs.sendMessage).to.have.been.calledOnce;
       const [, message] = sqs.sendMessage.firstCall.args;
-      expect(message.data.pages).to.have.length(10);
+      expect(message.data.pages).to.have.length(100);
     });
 
-    it('should handle fewer than 10 pages', async () => {
+    it('should handle fewer than 100 pages', async () => {
       auditData.auditResult.topPages = [
         'https://adobe.com/page1',
         'https://adobe.com/page2',
