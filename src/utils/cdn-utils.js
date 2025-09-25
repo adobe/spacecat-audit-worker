@@ -20,6 +20,7 @@ export const CDN_TYPES = {
   FASTLY: 'fastly',
   CLOUDFLARE: 'cloudflare',
   CLOUDFRONT: 'cloudfront',
+  FRONTDOOR: 'frontdoor',
 };
 
 export const SERVICE_PROVIDER_TYPES = {
@@ -29,6 +30,9 @@ export const SERVICE_PROVIDER_TYPES = {
   BYOCDN_AKAMAI: 'byocdn-akamai',
   BYOCDN_CLOUDFLARE: 'byocdn-cloudflare',
   BYOCDN_CLOUDFRONT: 'byocdn-cloudfront',
+  BYOCDN_FRONTDOOR: 'byocdn-azure-frontdoor',
+  AMS_CLOUDFRONT: 'ams-cloudfront',
+  AMS_AZURE_FRONTDOOR: 'ams-azure-frontdoor',
 };
 
 // Maps service providers to underlying CDN providers
@@ -39,6 +43,9 @@ export const SERVICE_TO_CDN_MAPPING = {
   [SERVICE_PROVIDER_TYPES.BYOCDN_AKAMAI]: CDN_TYPES.AKAMAI,
   [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFLARE]: CDN_TYPES.CLOUDFLARE,
   [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
+  [SERVICE_PROVIDER_TYPES.BYOCDN_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
+  [SERVICE_PROVIDER_TYPES.AMS_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
+  [SERVICE_PROVIDER_TYPES.AMS_AZURE_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
 };
 
 /**
@@ -221,6 +228,25 @@ export async function getBucketInfo(s3Client, bucketName, imsOrgId = null) {
 }
 
 /**
+ * Checks if data exists for a given path
+ * @param {Object} s3Client - S3 client instance
+ * @param {string} location - The S3 raw location path (s3://bucket/path/)
+ * @returns {Promise<boolean>} True if path has data
+ */
+export async function pathHasData(s3Client, location) {
+  try {
+    const response = await s3Client.send(new ListObjectsV2Command({
+      Bucket: location.replace('s3://', '').split('/')[0],
+      Prefix: location.replace('s3://', '').split('/').slice(1).join('/'),
+      MaxKeys: 1,
+    }));
+    return response.Contents && response.Contents.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Discovers all CDN providers in a bucket's raw folder
  * For legacy buckets, returns single provider detected from content
  */
@@ -232,6 +258,6 @@ export async function discoverCdnProviders(s3Client, bucketName, timeParts) {
     return [cdnProvider];
   }
 
-  return ['fastly'];
+  return [];
 }
 /* c8 ignore end */

@@ -41,6 +41,10 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   const baseURL = site.getBaseURL();
 
   const { calendarWeek, parquetFiles, success } = auditContext ?? /* c8 ignore next */ {};
+  // Get aiPlatform from the audit result
+  const auditResult = audit?.getAuditResult();
+  const aiPlatform = auditResult?.aiPlatform;
+  log.info('GEO BRAND PRESENCE: aiPlatform: %s', aiPlatform);
   /* c8 ignore start */
   if (success === false) {
     log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
@@ -55,12 +59,13 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   }
   /* c8 ignore stop */
 
-  log.debug('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s)', siteId, baseURL);
+  log.debug('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s), calendarWeek: %j', siteId, baseURL, calendarWeek);
 
   const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
   const recordSets = await Promise.all(
     parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
   );
+
   const prompts = recordSets.flat();
   for (const x of prompts) {
     x.market = x.region; // TODO(aurelio): remove when .region is supported by Mystique
@@ -86,8 +91,14 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       time: new Date().toISOString(),
       week: calendarWeek.week,
       year: calendarWeek.year,
-      data: { url },
+      data: {
+        url,
+      },
     };
+
+    if (aiPlatform) {
+      message.data.web_search_provider = aiPlatform;
+    }
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.debug('GEO BRAND PRESENCE: %s Message sent to Mystique for site id %s (%s):', opptyType, siteId, baseURL, message);
   }));
@@ -142,17 +153,31 @@ export async function keywordPromptsImportStep(context) {
     log,
   } = context;
 
+  let endDate;
+  let aiPlatform;
+
   /* c8 ignore start */
-  const endDate = Date.parse(data) ? data : undefined;
+  try {
+    // Try to parse as JSON first
+    const parsedData = JSON.parse(data);
+    if (parsedData.endDate && Date.parse(parsedData.endDate)) {
+      endDate = parsedData.endDate;
+    }
+    aiPlatform = parsedData.aiPlatform;
+  } catch (e) {
+    // If JSON parsing fails, treat as a date string (legacy behavior)
+    log.error('GEO BRAND PRESENCE:failed to parse %s as JSON', data, e);
+    endDate = Date.parse(data) ? data : undefined;
+  }
   /* c8 ignore stop */
 
-  log.debug('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s', finalUrl, endDate);
+  log.debug('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
   return {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,
     siteId: site.getId(),
-    // auditResult can't be empty, so sending empty array
-    auditResult: { keywordQuestions: [] },
+    // auditResult can't be empty, so sending empty array and include aiPlatform
+    auditResult: { keywordQuestions: [], aiPlatform },
     fullAuditRef: finalUrl,
   };
 }

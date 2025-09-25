@@ -26,6 +26,7 @@ import {
   downloadExistingCdnSheet,
   matchErrorsWithCdnData,
   SPREADSHEET_COLUMNS,
+  toPathOnly,
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
@@ -228,7 +229,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     // Consolidate by URL and combine user agents
     const urlToUserAgentsMap = new Map();
     sorted404.forEach((errorPage) => {
-      const fullUrl = messageBaseUrl ? `${messageBaseUrl}${errorPage.url}` : errorPage.url;
+      const path = toPathOnly(errorPage.url, messageBaseUrl);
+      const fullUrl = messageBaseUrl ? new URL(path, messageBaseUrl).toString() : path;
       if (!urlToUserAgentsMap.has(fullUrl)) {
         urlToUserAgentsMap.set(fullUrl, new Set());
       }

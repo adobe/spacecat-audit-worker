@@ -47,6 +47,12 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
       `[Athena Query] ${reportConfig.name}_flat_data`,
     );
 
+    // Check if results are empty
+    if (!results || results.length === 0) {
+      log.warn(`No data returned from Athena query for ${reportConfig.name} report (${periodIdentifier}).`);
+      return;
+    }
+
     const reportData = { [reportConfig.sheetName]: results };
     const excelConfig = {
       workbookCreator: reportConfig.workbookCreator,
