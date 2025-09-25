@@ -18,7 +18,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
+import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 
@@ -525,12 +525,57 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     log,
   });
 
-  log.info(`Headings opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
+  log.info(`Headings opportunity created for Site Optimizer and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
+  return { ...auditData };
+}
+
+export async function opportunityAndSuggestionsForElmo(auditUrl, auditData, context) {
+  const { log } = context;
+  if (!auditData.suggestions?.length) {
+    log.info('Headings audit has no issues, skipping opportunity creation');
+    return { ...auditData };
+  }
+
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityDataForElmo,
+    'generic-opportunity',
+  );
+
+  const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
+
+  await syncSuggestions({
+    opportunity,
+    newData: auditData.suggestions,
+    context,
+    buildKey,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: suggestion.type,
+      rank: 0,
+      data: {
+        type: 'url',
+        url: suggestion.url,
+        checkType: suggestion.checkType,
+        explanation: suggestion.explanation,
+        recommendedAction: suggestion.recommendedAction,
+      },
+    }),
+    log,
+  });
+
+  log.info(`Headings opportunity created for Elmo and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
   return { ...auditData };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(headingsAuditRunner)
-  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
+  .withPostProcessors([
+    generateSuggestions,
+    opportunityAndSuggestions,
+    opportunityAndSuggestionsForElmo,
+  ])
   .build();
