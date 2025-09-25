@@ -1,3 +1,10 @@
+# [1.188.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.187.4...v1.188.0) (2025-09-25)
+
+
+### Features
+
+* trigger import on traffic analysis ([#1293](https://github.com/adobe/spacecat-audit-worker/issues/1293)) ([1d8eef9](https://github.com/adobe/spacecat-audit-worker/commit/1d8eef9321380de0e54e2d589b0a7766fb5d506f))
+
 ## [1.187.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.187.3...v1.187.4) (2025-09-25)
 
 
