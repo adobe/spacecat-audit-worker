@@ -11,55 +11,58 @@
  */
 
 /**
- * @typedef {import('./vulnerability-report.d.ts').VulnerableComponent} VulnerableComponent
- * @typedef {import('./vulnerability-report.d.ts').Vulnerability} Vulnerability
+ * @typedef {import('./permission-report.js').TooStrongPermission} TooStrongPermission
+ * @typedef {import('./permission-report.js').PermissionsReport} PermissionsReport
  */
-
-/**
- * Calculates and returns the highest score from a list of vulnerabilities.
- *
- * @param {Array<Vulnerability>} vulnerabilities - An array of vulnerability objects.
- * @return {number} The highest score found among the vulnerabilities.
- */
-function highestScore(vulnerabilities) {
-  if (!vulnerabilities || vulnerabilities.length === 0) {
-    return 0;
-  }
-
-  return Math.max(...vulnerabilities.map((vuln) => vuln.score));
-}
 
 /**
  * Maps a given vulnerability to a suggestion object that provides details
  * on updating vulnerable libraries to recommended versions and includes CVE information.
  *
  * @param {Object} opportunity - The opportunity object
- * @param {VulnerableComponent} vulnerability - The vulnerability object
+ * @param {TooStrongPermission} tooStrongPermission - The vulnerability object
  * @return {Object} A suggestion object providing a structured representation of the vulnerability
  */
-export function mapVulnerabilityToSuggestion(opportunity, vulnerability) {
+export function mapTooStrongSuggestion(opportunity, tooStrongPermission) {
   const {
-    name, version, recommendedVersion, vulnerabilities,
-  } = vulnerability;
-
-  // Handle null/undefined vulnerabilities
-  const safeVulnerabilities = vulnerabilities || [];
+    principal, path, acl,
+  } = tooStrongPermission;
 
   return {
     opportunityId: opportunity.getId(),
     type: 'CONTENT_UPDATE',
-    rank: highestScore(safeVulnerabilities), // Used for sorting
     data: {
-      library: name,
-      current_version: version,
-      recommended_version: recommendedVersion,
-      cves: safeVulnerabilities.sort((a, b) => b.score - a.score).map((vuln) => ({
-        cve_id: vuln.id,
-        score: vuln.score,
-        score_text: `${vuln.score === 0 ? '0' : vuln.score.toFixed(1)} ${vuln.severity}`,
-        summary: vuln.description,
-        url: vuln.url || '',
-      })),
+      issue: 'Insecure',
+      path,
+      principal,
+      permissions: acl,
+      recommended_permissions: ['jcr:read', 'jcr:write '],
+      rationale: 'Granting jcr:all permissions to a user in AEM is ill-advised, as it provides unrestricted access, thereby increasing the risk of accidental or malicious modifications that could jeopardize the system’s security, stability, and performance.',
+    },
+  };
+}
+
+/**
+ * Maps a given vulnerability to a suggestion object that provides details
+ * @param opportunity
+ * @param {AdminPermission} adminPermission
+ * @returns {Suggestion} A suggestion object based on the admin scan result
+ */
+export function mapAdminSuggestion(opportunity, adminPermission) {
+  const {
+    principal, path, privileges,
+  } = adminPermission;
+
+  return {
+    opportunityId: opportunity.getId(),
+    type: 'CONTENT_UPDATE',
+    data: {
+      issue: 'Redundant',
+      path,
+      principal,
+      permissions: privileges,
+      recommended_permissions: ['Remove'],
+      rationale: 'Defining access control policies for the administrators group in AEM is redundant, as members inherently possess full privileges, rendering explicit permissions unnecessary and adding avoidable complexity to the authorization configuration.',
     },
   };
 }

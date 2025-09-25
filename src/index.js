@@ -77,6 +77,7 @@ import vulnerabilities from './vulnerabilities/handler.js';
 import prerender from './prerender/handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
+import permissions from './permissions/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -139,6 +140,7 @@ const HANDLERS = {
   headings,
   prerender,
   'security-vulnerabilities': vulnerabilities,
+  'security-permissions': permissions,
   dummy: (message) => ok(message),
 };
 
