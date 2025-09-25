@@ -92,7 +92,7 @@ export async function scrapeReadabilityData(context) {
     urls: urlsToScrape,
     siteId,
     jobId: siteId,
-    processingType: AUDIT_TYPE_READABILITY,
+    processingType: 'default',
   };
 }
 
