@@ -45,8 +45,7 @@ export async function sendMystiqueMessagePostProcessor(auditUrl, auditData, cont
     return auditData;
   }
 
-  // TODO: bump up to 100 when about to merge
-  const topPagesPayload = topPages.slice(0, 10).map((page) => ({ page_url: page, keyword: '', questions: [] }));
+  const topPagesPayload = topPages.slice(0, 100).map((page) => ({ page_url: page, keyword: '', questions: [] }));
 
   const message = {
     type: 'guidance:summarization',
