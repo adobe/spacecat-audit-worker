@@ -86,13 +86,16 @@ describe('LLM Blocked Audit', () => {
       .reply(200, 'User-Agent: ClaudeBot/1.0\nDisallow: /page1\n\nUser-Agent: *\nAllow: /');
 
     const expectedResultsMap = {
-      '2': [
-        {
-          line: 2,
-          url: 'https://example.com/page1',
-          agent: 'ClaudeBot/1.0',
-        },
-      ],
+      '2': {
+        lineNumber: 2,
+        robotsTxtHash: '2f293650',
+        items: [
+          {
+            url: 'https://example.com/page1',
+            agent: 'ClaudeBot/1.0',
+          },
+        ],
+      },
     };
 
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
@@ -120,25 +123,30 @@ describe('LLM Blocked Audit', () => {
       .reply(200, 'User-Agent: ClaudeBot/1.0\nDisallow: /page1/*\nDisallow: /page2\n\nUser-Agent: *\nAllow: /');
 
     const expectedResultsMap = {
-      '2': [
-        {
-          line: 2,
-          url: 'https://example.com/page1/foo',
-          agent: 'ClaudeBot/1.0',
-        },
-        {
-          line: 2,
-          url: 'https://example.com/page1/bar',
-          agent: 'ClaudeBot/1.0',
-        },
-      ],
-      '3': [
-        {
-          line: 3,
-          url: 'https://example.com/page2',
-          agent: 'ClaudeBot/1.0',
-        },
-      ],
+      '2': {
+        lineNumber: 2,
+        robotsTxtHash: '97def5ec',
+        items: [
+          {
+            url: 'https://example.com/page1/foo',
+            agent: 'ClaudeBot/1.0',
+          },
+          {
+            url: 'https://example.com/page1/bar',
+            agent: 'ClaudeBot/1.0',
+          },
+        ],
+      },
+      '3': {
+        lineNumber: 3,
+        robotsTxtHash: '97def5ec',
+        items: [
+          {
+            url: 'https://example.com/page2',
+            agent: 'ClaudeBot/1.0',
+          },
+        ],
+      },
     };
 
     context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
@@ -256,6 +264,175 @@ describe('LLM Blocked Audit', () => {
       data: {
         fullRobots: 'User-Agent: *\nDisallow: /',
         numProcessedUrls: 10,
+      },
+    });
+  });
+
+  it('should not add new suggestions when existing suggestions have same robots.txt hash', async () => {
+    // Mock robots.txt that blocks page1 for ClaudeBot/1.0
+    nock('https://example.com')
+      .get('/robots.txt')
+      .reply(200, 'User-Agent: ClaudeBot/1.0\nDisallow: /page1\n\nUser-Agent: *\nAllow: /');
+
+    const expectedResultsMap = {
+      '2': {
+        lineNumber: 2,
+        robotsTxtHash: '2f293650',
+        items: [
+          {
+            url: 'https://example.com/page1',
+            agent: 'ClaudeBot/1.0',
+          },
+        ],
+      },
+    };
+
+    // Mock existing suggestions with the same robots.txt hash
+    const existingSuggestions = [
+      {
+        getData: () => ({
+          lineNumber: 2,
+          items: [
+            {
+              url: 'https://example.com/page1',
+              agent: 'ClaudeBot/1.0',
+            },
+          ],
+          affectedUserAgents: ['ClaudeBot/1.0'],
+          robotsTxtHash: '2f293650',
+        }),
+        // The user decided to skip the suggestion. 
+        // We don't want to suggest this again while the robots.txt file is the same.
+        getStatus: () => 'SKIPPED',
+        setData: sandbox.stub(),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+    ];
+
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
+    context.dataAccess.Opportunity.getSuggestions.resolves(existingSuggestions);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+    context.dataAccess.Opportunity.addSuggestions.resolves([]);
+
+    const result = await checkLLMBlocked(context);
+
+    // Verify the audit result is correct
+    expect(result.auditResult).to.equal(JSON.stringify(expectedResultsMap));
+    expect(nock.pendingMocks()).to.have.lengthOf(0);
+
+    // Verify that existing suggestions were updated (not new ones added)
+    expect(context.dataAccess.Opportunity.getSuggestions).to.have.been.calledOnce;
+    expect(existingSuggestions[0].setData).to.have.been.calledOnce;
+    expect(existingSuggestions[0].setUpdatedBy).to.have.been.calledWith('system');
+    expect(existingSuggestions[0].save).to.have.been.calledOnce;
+
+    // Verify that no new suggestions were added
+    expect(context.dataAccess.Opportunity.addSuggestions).to.not.have.been.called;
+  });
+
+  it('should create new suggestions when robots.txt hash is different', async () => {
+    // Mock robots.txt that blocks page1 for ClaudeBot/1.0
+    nock('https://example.com')
+      .get('/robots.txt')
+      .reply(200, 'User-Agent: ClaudeBot/1.0\nDisallow: /page1\n\nUser-Agent: *\nAllow: /');
+
+    const expectedResultsMap = {
+      '2': {
+        lineNumber: 2,
+        robotsTxtHash: '2f293650',
+        items: [
+          {
+            url: 'https://example.com/page1',
+            agent: 'ClaudeBot/1.0',
+          },
+        ],
+      },
+    };
+
+    // Mock existing suggestions with a DIFFERENT robots.txt hash
+    const existingSuggestions = [
+      {
+        getData: () => ({
+          lineNumber: 2,
+          items: [
+            {
+              url: 'https://example.com/page1',
+              agent: 'ClaudeBot/1.0',
+            },
+          ],
+          affectedUserAgents: ['ClaudeBot/1.0'],
+          robotsTxtHash: 'old-hash-123', // Different hash
+        }),
+        getStatus: () => 'NEW',
+        setData: sandbox.stub(),
+        setStatus: sandbox.stub(),
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      },
+    ];
+
+    // Mock the addSuggestions method to return the created suggestions
+    const mockNewSuggestions = [
+      {
+        getId: () => 'new-suggestion-id',
+        getData: () => ({
+          lineNumber: 2,
+          items: [
+            {
+              url: 'https://example.com/page1',
+              agent: 'ClaudeBot/1.0',
+            },
+          ],
+          affectedUserAgents: ['ClaudeBot/1.0'],
+          robotsTxtHash: '2f293650',
+        }),
+      },
+    ];
+
+    context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+    context.dataAccess.Opportunity.create.resolves(context.dataAccess.Opportunity);
+    context.dataAccess.Opportunity.getSuggestions.resolves(existingSuggestions);
+    context.dataAccess.Opportunity.getId.returns('opportunity-id');
+    context.dataAccess.Opportunity.addSuggestions.resolves({
+      createdItems: mockNewSuggestions,
+      errorItems: [],
+    });
+
+    const result = await checkLLMBlocked(context);
+
+    // Verify the audit result is correct
+    expect(result.auditResult).to.equal(JSON.stringify(expectedResultsMap));
+    expect(nock.pendingMocks()).to.have.lengthOf(0);
+
+    // Verify that existing suggestions were NOT updated (different hash means different key)
+    expect(context.dataAccess.Opportunity.getSuggestions).to.have.been.calledOnce;
+    expect(existingSuggestions[0].setData).to.not.have.been.called;
+    expect(existingSuggestions[0].setUpdatedBy).to.not.have.been.called;
+    expect(existingSuggestions[0].save).to.not.have.been.called;
+
+    // Verify that new suggestions were added
+    expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnce;
+    
+    // Verify the new suggestion data structure
+    const addSuggestionsCall = context.dataAccess.Opportunity.addSuggestions.getCall(0);
+    const newSuggestionData = addSuggestionsCall.args[0][0];
+    expect(newSuggestionData).to.deep.include({
+      opportunityId: 'opportunity-id',
+      type: 'CODE_CHANGE',
+      rank: 10,
+      data: {
+        lineNumber: 2,
+        items: [
+          {
+            url: 'https://example.com/page1',
+            agent: 'ClaudeBot/1.0',
+          },
+        ],
+        affectedUserAgents: ['ClaudeBot/1.0'],
+        robotsTxtHash: '2f293650',
       },
     });
   });
