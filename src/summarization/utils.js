@@ -17,13 +17,13 @@
  */
 export function formatMetrics(metrics) {
   const metricStrings = [];
-  if (metrics.readability_score !== undefined) {
+  if (metrics.readability_score !== undefined && metrics.readability_score !== null) {
     metricStrings.push(`*Readability:* ${metrics.readability_score}`);
   }
-  if (metrics.word_count !== undefined) {
+  if (metrics.word_count !== undefined && metrics.word_count !== null) {
     metricStrings.push(`*Word Count:* ${metrics.word_count}`);
   }
-  if (metrics.brand_consistency_score !== undefined) {
+  if (metrics.brand_consistency_score !== undefined && metrics.brand_consistency_score !== null) {
     metricStrings.push(`*Brand Consistency:* ${metrics.brand_consistency_score}/100`);
   }
   return metricStrings.length > 0 ? metricStrings.join(' | ') : '';
@@ -107,7 +107,7 @@ export function getSuggestionValue(suggestions, log) {
     if (suggestion.sectionSummaries && suggestion.sectionSummaries.length > 0) {
       suggestionValue += '### Section Summaries (AI generated)\n\n';
       suggestion.sectionSummaries.forEach((section) => {
-        if (section.title && section.summary) {
+        if (section.title && section.title.trim() && section.summary && section.summary.trim()) {
           suggestionValue += `#### ${section.title}\n\n> ${section.summary}\n\n`;
 
           // Add section metrics

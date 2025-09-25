@@ -14,7 +14,7 @@
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
-async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
+export async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
   const {
     log, sqs, env, audit, dataAccess,
   } = context;
