@@ -24,6 +24,7 @@ import { analyzeProducts } from './product-analysis.js';
 import { analyzePageTypes } from './page-type-analysis.js';
 import { uploadPatternsWorkbook, uploadUrlsWorkbook, getLastSunday } from './utils.js';
 import { referralTrafficRunner } from '../llmo-referral-traffic/handler.js';
+import { getRUMUrl } from '../support/utils.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
@@ -37,11 +38,12 @@ async function checkOptelData(domain, context) {
   const rumAPIClient = RUMAPIClient.createFrom(context);
 
   try {
-    const result = await rumAPIClient.query('pageviews', {
-      domain,
-    });
-
-    return !!(result?.pageviews || 0);
+    const url = await getRUMUrl(domain);
+    const options = {
+      domain: url,
+    };
+    const { pageviews } = await rumAPIClient.query('pageviews', options);
+    return pageviews > 0;
   } catch (error) {
     log.info(`Failed to check OpTel data for domain ${domain}: ${error.message}`);
     return false;
@@ -56,7 +58,7 @@ async function runReferralTrafficStep(context) {
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   const siteId = site.getSiteId();
-  const domain = site.getBaseURL();
+  const domain = finalUrl;
 
   log.info(`Checking domain and triggering appropriate import for site: ${siteId}, domain: ${domain}`);
 
@@ -112,7 +114,7 @@ async function runAgenticTrafficStep(context) {
   } = context;
 
   const siteId = site.getSiteId();
-  const domain = site.getBaseURL();
+  const domain = audit.getFullAuditRef();
   const { SiteTopPage } = dataAccess;
   const auditResult = audit.getAuditResult();
   const lastFourWeeks = getLastNumberOfWeeks(4);
@@ -145,7 +147,7 @@ async function runAgenticTrafficStep(context) {
     urls = paths.slice(0, 20).map((p) => ({ url: `https://${audit.getFullAuditRef()}${p.path}` }));
     source = OPTEL_SOURCE_TYPE;
   } else if (auditResult.source === AHREFS_SOURCE_TYPE) {
-    log.info('Agentic Traffic Step: No OpTel data found; fetching Ahrefs top pages');
+    log.info('Agentic Traffic Step: fetching top URLs Ahrefs data');
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
     paths = topPages.slice(0, 100).map((topPage) => ({ path: topPage.getUrl() }));
     source = AHREFS_SOURCE_TYPE;
@@ -180,7 +182,7 @@ async function runBrandPresenceStep(context) {
   const { Configuration, SiteTopPage } = dataAccess;
   const auditResult = audit.getAuditResult();
   const configuration = await Configuration.findLatest();
-  const domain = site.getBaseURL();
+  const domain = audit.getFullAuditRef();
   const results = [...scrapeResultPaths.values()];
 
   try {
@@ -189,7 +191,7 @@ async function runBrandPresenceStep(context) {
     if (auditResult.source === AHREFS_SOURCE_TYPE) {
       log.info('Brand Presence Step: Starting domain analysis with URLs');
       const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getSiteId(), 'ahrefs', 'global');
-      const urls = topPages.map((topPage) => (topPage.getUrl()));
+      const urls = topPages.slice(0, 100).map((topPage) => (topPage.getUrl()));
       domainInsights = await analyzeDomainFromUrls(domain, urls, context);
     } else if (auditResult.source === OPTEL_SOURCE_TYPE) {
       log.info('Brand Presence Step: Starting domain analysis with scrapes');
