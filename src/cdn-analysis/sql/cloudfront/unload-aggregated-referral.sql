@@ -1,7 +1,7 @@
 UNLOAD (
   WITH hosts AS (
     -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
-    SELECT DISTINCT `cs(host)` AS host
+    SELECT DISTINCT "x-host-header" AS host
     FROM {{database}}.{{rawTable}}
     WHERE year  = '{{year}}'
       AND month = '{{month}}'
@@ -11,11 +11,11 @@ UNLOAD (
 
   base AS (
     SELECT
-      `cs-uri-stem`             AS url,
-      `cs(host)`                AS host,
-      `cs(referer)`             AS referer_raw,
-      `cs(user-agent)`          AS user_agent,
-      `sc-content-type`         AS content_type
+      "cs-uri-stem"             AS url,
+      "x-host-header"           AS host,
+      "cs(referer)"             AS referer_raw,
+      "cs(user-agent)"          AS user_agent,
+      "sc-content-type"         AS content_type
     FROM {{database}}.{{rawTable}}
     WHERE year  = '{{year}}'
       AND month = '{{month}}'

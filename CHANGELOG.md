@@ -1,3 +1,38 @@
+## [1.187.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.187.0...v1.187.1) (2025-09-25)
+
+
+### Bug Fixes
+
+* fields for cloudfront logging ([#1312](https://github.com/adobe/spacecat-audit-worker/issues/1312)) ([6e218e2](https://github.com/adobe/spacecat-audit-worker/commit/6e218e2a2028412758349268852738c5817ec253))
+
+# [1.187.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.186.4...v1.187.0) (2025-09-24)
+
+
+### Features
+
+* new audit type - prerender ([#1280](https://github.com/adobe/spacecat-audit-worker/issues/1280)) ([fc19107](https://github.com/adobe/spacecat-audit-worker/commit/fc19107aa9e4dcf91d9df71c8989aaafcdc83c54))
+
+## [1.186.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.186.3...v1.186.4) (2025-09-24)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.64.4 ([#1309](https://github.com/adobe/spacecat-audit-worker/issues/1309)) ([10973db](https://github.com/adobe/spacecat-audit-worker/commit/10973db30c85fc034daa50b5f4ab9fe9726eec1e))
+
+## [1.186.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.186.2...v1.186.3) (2025-09-24)
+
+
+### Bug Fixes
+
+* prevent glued hosts while resolving paths ([#1301](https://github.com/adobe/spacecat-audit-worker/issues/1301)) ([83c0e44](https://github.com/adobe/spacecat-audit-worker/commit/83c0e44cd2bd2494bb64589064a077504ecc56f3))
+
+## [1.186.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.186.1...v1.186.2) (2025-09-24)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1306](https://github.com/adobe/spacecat-audit-worker/issues/1306)) ([29565fe](https://github.com/adobe/spacecat-audit-worker/commit/29565fe6699bd8cb8bea0e3e1cfb2e788a368117))
+
 ## [1.186.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.186.0...v1.186.1) (2025-09-23)
 
 
