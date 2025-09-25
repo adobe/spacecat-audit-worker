@@ -86,7 +86,7 @@
     "@adobe/spacecat-shared-http-utils": "1.17.5",
     "@adobe/spacecat-shared-rum-api-client": "2.37.6",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
-    "@adobe/spacecat-shared-utils": "1.50.8",
+    "@adobe/spacecat-shared-utils": "1.51.0",
     "@adobe/spacecat-shared-scrape-client": "2.1.4",
     "@adobe/structured-data-validator": "1.5.0",
     "@aws-sdk/client-athena": "3.893.0",
