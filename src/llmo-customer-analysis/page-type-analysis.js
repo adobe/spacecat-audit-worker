@@ -201,21 +201,21 @@ You will receive:
 
 ## OUTPUT FORMAT
 Return ONLY valid JSON with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only:
-      {
-        "pageType1": "^/pattern1$",
-        "pageType2": "^/pattern2$"
-      }
+{
+  "pageType1": "^/pattern1$",
+  "pageType2": "^/pattern2$"
+}
 
 ## CRITICAL REQUIREMENTS
-    - Include ONLY page types that exist in the provided grouped paths
-      - Return valid JSON with NO additional text or explanations
-        - Ensure proper JSON syntax and escaping
-          - Each regex must be a string value`;
+- Include ONLY page types that exist in the provided grouped paths
+- Return valid JSON with NO additional text or explanations
+- Ensure proper JSON syntax and escaping
+- Each regex must be a string value`;
 
   const userPrompt = `Domain: ${domain}
 
 Grouped Paths:
-${JSON.stringify(groupedPaths, null, 2)} `;
+${JSON.stringify(groupedPaths, null, 2)}`;
 
   try {
     log.info('Generating regex patterns for page types');
@@ -246,7 +246,7 @@ ${JSON.stringify(groupedPaths, null, 2)} `;
       };
     }
   } catch (error) {
-    log.error(`Failed to generate regexes for page types: ${error.message} `);
+    log.error(`Failed to generate regexes for page types: ${error.message}`);
     return {
       regexes: Object.keys(groupedPaths).reduce((acc, type) => {
         acc[type] = '.*';
@@ -260,7 +260,7 @@ ${JSON.stringify(groupedPaths, null, 2)} `;
 export async function analyzePageTypes(domain, paths, context) {
   const { log } = context;
 
-  log.info(`Starting page type analysis for domain: ${domain} `);
+  log.info(`Starting page type analysis for domain: ${domain}`);
 
   const totalTokenUsage = {
     prompt_tokens: 0,
@@ -289,12 +289,12 @@ export async function analyzePageTypes(domain, paths, context) {
     }
 
     // Log total token usage
-    log.info(`Total token usage for page type analysis: ${JSON.stringify(totalTokenUsage)} `);
+    log.info(`Total token usage for page type analysis: ${JSON.stringify(totalTokenUsage)}`);
 
-    log.info(`Page type analysis complete for domain: ${domain} `);
+    log.info(`Page type analysis complete for domain: ${domain}`);
     return regexPatterns.regexes;
   } catch (error) {
-    log.error(`Failed to complete page type analysis: ${error.message} `);
+    log.error(`Failed to complete page type analysis: ${error.message}`);
     throw error;
   }
 }

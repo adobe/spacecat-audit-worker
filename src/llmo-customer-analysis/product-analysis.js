@@ -38,23 +38,38 @@ TASK: Analyze the provided product list and create a concentrated version by:
 
 INSTRUCTIONS:
 
-1. High-Level Category Grouping (PRIORITY):
-   - Prefer broad categories over specific products (e.g., "tennis-racket-wilson" → "tennis", not "tennis-racket")
+1. Series and Product Line Grouping (HIGHEST PRIORITY):
+   - When multiple products belong to the same series or product line, group them under the series name
+   - Examples: "iphone-15", "iphone-15-pro", "iphone-15-pro-max" → "iphone-15-series"
+   - Examples: "galaxy-s24", "galaxy-s24-plus", "galaxy-s24-ultra" → "galaxy-s24-series"
+   - Examples: "macbook-air-13", "macbook-air-15" → "macbook-air-series"
+   - Use "-series" suffix for product families with multiple variants
+
+2. High-Level Category Grouping (SECONDARY PRIORITY):
+   - If no series grouping applies, prefer broad categories over specific products
    - Group by activity, industry, or general purpose rather than brand or model
-   - Examples: "smartphones", "sports", "clothing", "electronics", "automotive", "food", "travel"
+   - Examples: "tennis-racket-wilson" → "tennis", "running-shoes-nike" → "running"
    - Use the most general meaningful category that still provides useful distinction
 
-2. Category Guidelines:
+3. Series Detection Guidelines:
+   - Look for common patterns: base model + variants (Pro, Plus, Max, Ultra, Mini)
+   - Version numbers: v1, v2, v3 or generational naming (2023, 2024, etc.)
+   - Size variants: 13-inch, 15-inch, or Small, Medium, Large
+   - Performance tiers: Basic, Standard, Premium, Enterprise
+   - When in doubt, group related products into series rather than individual categories
+
+4. Category Guidelines (when no series applies):
    - Sports products should group by sport type: "tennis", "basketball", "golf", etc.
    - Technology products should group by broad categories: "smartphones", "computers", "software"
    - Clothing/fashion should group by type: "clothing", "footwear", "accessories"
    - Food/beverage should group by specific types: "coffee", "wine", "pizza", "bakery", "dairy", "snacks"
    - Services should group by specific service type: "consulting", "support", "training", "hosting", "analytics", "marketing", "design", "development"
 
-3. Mapping Rules:
-   - Multiple specific products should map to the same high-level category
-   - Category names should be lowercase and hyphenated
-   - Avoid brand names and model numbers in category names
+5. Mapping Rules:
+   - PRIORITIZE series grouping over individual product mapping
+   - Multiple specific products should map to the same series or high-level category
+   - Series names should be lowercase and hyphenated with "-series" suffix
+   - For non-series products, avoid brand names and model numbers in category names
    - Focus on what the product IS rather than who makes it or specific variants
 
 4. Data Quality Rules:
@@ -65,15 +80,18 @@ INSTRUCTIONS:
 
 RESPONSE FORMAT: Return only a valid JSON object mapping original names to high-level category names. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only.
 
-Example input products: ["tennis-racket-wilson", "tennis-balls", "basketball-shoes-nike", "iphone-14", "macbook-pro", "unknown"]
+Example input products: ["iphone-15", "iphone-15-pro", "iphone-15-pro-max", "galaxy-s24", "galaxy-s24-plus", "macbook-air-13", "macbook-air-15", "tennis-racket-wilson", "unknown"]
 
 Example output:
 {
+  "iphone-15": "iphone-15-series",
+  "iphone-15-pro": "iphone-15-series",
+  "iphone-15-pro-max": "iphone-15-series",
+  "galaxy-s24": "galaxy-s24-series",
+  "galaxy-s24-plus": "galaxy-s24-series",
+  "macbook-air-13": "macbook-air-series",
+  "macbook-air-15": "macbook-air-series",
   "tennis-racket-wilson": "tennis",
-  "tennis-balls": "tennis",
-  "basketball-shoes-nike": "basketball",
-  "iphone-14": "smartphones",
-  "macbook-pro": "computers",
   "unknown": "unknown"
 }`;
 
@@ -152,25 +170,25 @@ EXAMPLES:
 
 OUTPUT FORMAT:
 Return ONLY a valid JSON object with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only:
-      {
-        "paths": [
-          { "path": "/original/path", "product": "extracted-content" },
-          { "path": "/another/path", "product": "another-content" }
-        ]
-      }
+{
+  "paths": [
+    { "path": "/original/path", "product": "extracted-content" },
+    { "path": "/another/path", "product": "another-content" }
+  ]
+}
 
 CRITICAL REQUIREMENTS:
-  - Include every input path exactly once in the "paths" array
-    - No additional text, explanations, or formatting
-      - Valid JSON syntax only
-        - Content names should be lowercase and hyphenated when multi - word`;
+- Include every input path exactly once in the "paths" array
+- No additional text, explanations, or formatting
+- Valid JSON syntax only
+- Content names should be lowercase and hyphenated when multi-word`;
 
   const userPrompt = `Extract the primary content identifier from each URL path.
 
-    DOMAIN: ${domain}
+DOMAIN: ${domain}
 
-  PATHS:
-${JSON.stringify(paths, null, 2)} `;
+PATHS:
+${JSON.stringify(paths, null, 2)}`;
 
   try {
     log.info('Extracting products from URL paths');
@@ -184,7 +202,7 @@ ${JSON.stringify(paths, null, 2)} `;
       return { paths: paths.map((path) => ({ path, product: 'unknown' })), usage: null };
     }
   } catch (error) {
-    log.error(`Failed to extract products from paths: ${error.message} `);
+    log.error(`Failed to extract products from paths: ${error.message}`);
     return { paths: paths.map((path) => ({ path, product: 'unknown' })), usage: null };
   }
 }
@@ -202,65 +220,65 @@ async function deriveRegexesForProducts(domain, groupedPaths, context) {
 
   const systemPrompt = `You are a regex pattern generation specialist for URL path analysis in Amazon Athena SQL environments.
 
-    TASK: Analyze the actual input data provided and generate simple, practical regex patterns for each product / category that will match URL paths containing references to that specific product / category.
+TASK: Analyze the actual input data provided and generate simple, practical regex patterns for each product/category that will match URL paths containing references to that specific product/category.
 
 INPUT STRUCTURE:
-You will receive a map / object where:
-  - Each KEY is a product or category name
-    - Each VALUE is an array of URL paths that have been assigned to that product / category
+You will receive a map/object where:
+- Each KEY is a product or category name
+- Each VALUE is an array of URL paths that have been assigned to that product/category
 
-Your goal is to analyze the ACTUAL provided URL paths for each product / category and create a regex pattern that will match each of the following in order of priority:
-  1. The given example paths in the input data
-  2. Variations in naming, formatting, and structure
-  3. Similar paths that would logically belong to the same product / category
+Your goal is to analyze the ACTUAL provided URL paths for each product/category and create a regex pattern that will match each of the following in order of priority:
+1. The given example paths in the input data
+2. Variations in naming, formatting, and structure
+3. Similar paths that would logically belong to the same product/category
 
 AMAZON ATHENA SQL REGEX REQUIREMENTS:
-  - Use POSIX Extended Regular Expression(ERE) syntax only
-    - NO lookahead(?=) or lookbehind(?<=) assertions
-      - NO non - capturing groups(?: )
-        - Use case -insensitive matching with (? i) flag at the start
-          - Escape special characters: \\., \\-, \\+, \\?, \\*, \\(, \\), \\[, \\], \\{, \\ }, \\^, \\$
+- Use POSIX Extended Regular Expression (ERE) syntax only
+- NO lookahead (?=) or lookbehind (?<=) assertions
+- NO non-capturing groups (?:)
+- Use case-insensitive matching with (?i) flag at the start
+- Escape special characters: \\., \\-, \\+, \\?, \\*, \\(, \\), \\[, \\], \\{, \\}, \\^, \\$
 
 PATTERN DESIGN PRINCIPLES:
-  1. Use(?i) flag for case -insensitive matching - much simpler than character classes
-  2. Focus on key product identifiers, not exact word boundaries
-  3. Use simple word matching with optional separators[._ -]
-  4. Make patterns readable and maintainable
-  5. Avoid overly specific patterns that might miss variations
-  6. Consider common URL variations(plurals, abbreviations, alternative naming)
-  7. IMPORTANT: Base patterns on the ACTUAL input data provided, not generic examples
+1. Use (?i) flag for case-insensitive matching - much simpler than character classes
+2. Focus on key product identifiers, not exact word boundaries
+3. Use simple word matching with optional separators [._-]
+4. Make patterns readable and maintainable
+5. Avoid overly specific patterns that might miss variations
+6. Consider common URL variations (plurals, abbreviations, alternative naming)
+7. IMPORTANT: Base patterns on the ACTUAL input data provided, not generic examples
 
 ANALYSIS METHODOLOGY:
-  1. Look at each product's actual URL paths in the input data
-  2. Identify common patterns, keywords, and path segments
-  3. Extract the core product identifier from the actual paths
-  4. Create patterns that capture variations seen in the real data
-  5. Make patterns flexible enough to match similar future paths
+1. Look at each product's actual URL paths in the input data
+2. Identify common patterns, keywords, and path segments
+3. Extract the core product identifier from the actual paths
+4. Create patterns that capture variations seen in the real data
+5. Make patterns flexible enough to match similar future paths
 
 OUTPUT FORMAT:
 Return ONLY a valid JSON object with this exact structure.Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only:
-      {
-        "product-name": "(?i)regex-pattern",
-        "another-product": "(?i)another-pattern"
-      }
+{
+  "product-name": "(?i)regex-pattern",
+  "another-product": "(?i)another-pattern"
+}
 
 CRITICAL REQUIREMENTS:
-  - Generate patterns for all product / category identifiers
-    - Only skip entries that clearly do not relate to any product or category
-      - Focus on creating meaningful patterns even for broad categories
-        - Each regex must be a valid POSIX ERE pattern with (? i) flag
-          - Patterns must be based on the ACTUAL input data provided
-            - Patterns should match the provided paths AND similar variations
-              - For broad categories like "unknown", create patterns that match unclassified content paths
-                - No additional text, explanations, or markdown formatting
-                  - Valid JSON syntax only`;
+- Generate patterns for all product/category identifiers
+- Only skip entries that clearly do not relate to any product or category
+- Focus on creating meaningful patterns even for broad categories
+- Each regex must be a valid POSIX ERE pattern with (?i) flag
+- Patterns must be based on the ACTUAL input data provided
+- Patterns should match the provided paths AND similar variations
+- For broad categories like "unknown", create patterns that match unclassified content paths
+- No additional text, explanations, or markdown formatting
+- Valid JSON syntax only`;
 
   const userPrompt = `Generate regex patterns for the following domain, with the products and their URL paths:
 
-  DOMAIN: ${domain}
+DOMAIN: ${domain}
 
 GROUPED PATHS BY PRODUCT:
-${JSON.stringify(groupedPaths)} `;
+${JSON.stringify(groupedPaths)}`;
 
   try {
     log.info('Generating regex patterns for products');
@@ -290,7 +308,7 @@ ${JSON.stringify(groupedPaths)} `;
       };
     }
   } catch (error) {
-    log.error(`Failed to get regexes for products: ${error.message} `);
+    log.error(`Failed to get regexes for products: ${error.message}`);
     return {
       patterns: Object.keys(groupedPaths).reduce((acc, product) => {
         acc[product] = '.*';
@@ -309,7 +327,7 @@ export async function analyzeProducts(domain, paths, context) {
     total_tokens: 0,
   };
 
-  log.info(`Starting product analysis for domain: ${domain} `);
+  log.info(`Starting product analysis for domain: ${domain}`);
 
   try {
     const pathClassifications = await deriveProductsForPaths(domain, paths, context);
@@ -356,13 +374,13 @@ export async function analyzeProducts(domain, paths, context) {
     // Remove "unknown" key if it exists
     delete combinedPatterns.unknown;
 
-    log.info(`Completed product analysis for domain: ${domain} `);
-    log.info(`Total token usage for product analysis: ${JSON.stringify(totalTokenUsage)} `);
+    log.info(`Completed product analysis for domain: ${domain}`);
+    log.info(`Total token usage for product analysis: ${JSON.stringify(totalTokenUsage)}`);
     return combinedPatterns;
   } catch (error) {
-    log.error(`Product analysis failed: ${error.message} `);
+    log.error(`Product analysis failed: ${error.message}`);
     if (totalTokenUsage.total_tokens > 0) {
-      log.info(`Total token usage before error: ${JSON.stringify(totalTokenUsage)} `);
+      log.info(`Total token usage before error: ${JSON.stringify(totalTokenUsage)}`);
     }
     throw error;
   }
