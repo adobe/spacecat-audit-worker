@@ -338,15 +338,15 @@ describe('summarization guidance handler', () => {
     expect(suggestionData.data.suggestionValue).to.include('Page Title 1');
     expect(suggestionData.data.suggestionValue).to.include('### Page Summary (AI generated)');
     expect(suggestionData.data.suggestionValue).to.include('> This is a page summary');
-    expect(suggestionData.data.suggestionValue).to.include('*Readability:* 70.5 | *Word Count:* 25 | *Brand Consistency:* 85/100');
+    expect(suggestionData.data.suggestionValue).to.include('Word count: 25 | Readability: 70.5 => very easy to read');
     expect(suggestionData.data.suggestionValue).to.include('### Key Points (AI generated)');
     expect(suggestionData.data.suggestionValue).to.include('> - Key point 1');
     expect(suggestionData.data.suggestionValue).to.include('> - Key point 2');
-    expect(suggestionData.data.suggestionValue).to.include('*Brand Consistency:* 90/100');
+    expect(suggestionData.data.suggestionValue).to.include('Word count: 15 | Readability: 65.2 => easy to read');
     expect(suggestionData.data.suggestionValue).to.include('### Section Summaries (AI generated)');
     expect(suggestionData.data.suggestionValue).to.include('#### Section 1');
     expect(suggestionData.data.suggestionValue).to.include('> Section summary 1');
-    expect(suggestionData.data.suggestionValue).to.include('*Readability:* 65.2 | *Word Count:* 15 | *Brand Consistency:* 88/100');
+    expect(suggestionData.data.suggestionValue).to.include('Word count: 15 | Readability: 65.2 => easy to read');
     expect(suggestionData.kpiDeltas.estimatedKPILift).to.equal(0);
   });
 

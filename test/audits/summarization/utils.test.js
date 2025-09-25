@@ -41,26 +41,26 @@ describe('Summarization Utils', () => {
       };
 
       const result = formatMetrics(metrics);
-      expect(result).to.equal('*Readability:* 75.5 | *Word Count:* 150 | *Brand Consistency:* 85/100');
+      expect(result).to.equal('Word count: 150 | Readability: 75.5 => very easy to read');
     });
 
     it('should format partial metrics when only some are present', () => {
       const metrics = {
         readability_score: 60.2,
-        word_count: 100,
+        brand_consistency_score: 60,
       };
 
       const result = formatMetrics(metrics);
-      expect(result).to.equal('*Readability:* 60.2 | *Word Count:* 100');
+      expect(result).to.equal('Readability: 60.2 => easy to read');
     });
 
-    it('should format single metric when only one is present', () => {
+    it('should not show brand consistency score', () => {
       const metrics = {
         brand_consistency_score: 90,
       };
 
       const result = formatMetrics(metrics);
-      expect(result).to.equal('*Brand Consistency:* 90/100');
+      expect(result).to.equal('');
     });
 
     it('should return empty string when no metrics are present', () => {
@@ -78,7 +78,7 @@ describe('Summarization Utils', () => {
       };
 
       const result = formatMetrics(metrics);
-      expect(result).to.equal('*Word Count:* 50');
+      expect(result).to.equal('Word count: 50');
     });
 
     it('should handle null values gracefully', () => {
@@ -89,7 +89,17 @@ describe('Summarization Utils', () => {
       };
 
       const result = formatMetrics(metrics);
-      expect(result).to.equal('*Word Count:* 75');
+      expect(result).to.equal('Word count: 75');
+    });
+
+    it('should format readability score in difficult to read range', () => {
+      const metrics = {
+        readability_score: 25,
+        word_count: 100,
+      };
+
+      const result = formatMetrics(metrics);
+      expect(result).to.equal('Word count: 100 | Readability: 25 => difficult to read');
     });
   });
 
@@ -128,15 +138,15 @@ describe('Summarization Utils', () => {
       expect(result).to.include('Page Title 1');
       expect(result).to.include('### Page Summary (AI generated)');
       expect(result).to.include('> This is a page summary');
-      expect(result).to.include('*Readability:* 70.5 | *Word Count:* 25 | *Brand Consistency:* 85/100');
+      expect(result).to.include('Word count: 25 | Readability: 70.5 => very easy to read');
       expect(result).to.include('### Key Points (AI generated)');
       expect(result).to.include('> - Key point 1');
       expect(result).to.include('> - Key point 2');
-      expect(result).to.include('*Brand Consistency:* 90/100');
+      expect(result).to.include('Word count: 15 | Readability: 65.2 => easy to read');
       expect(result).to.include('### Section Summaries (AI generated)');
       expect(result).to.include('#### Section 1');
       expect(result).to.include('> Section summary 1');
-      expect(result).to.include('*Readability:* 65.2 | *Word Count:* 15 | *Brand Consistency:* 88/100');
+      expect(result).to.include('Word count: 15 | Readability: 65.2 => easy to read');
     });
 
     it('should skip suggestions with no meaningful content', () => {
@@ -180,7 +190,7 @@ describe('Summarization Utils', () => {
       expect(result).to.include('## 1. https://example.com/summary-only');
       expect(result).to.include('### Page Summary (AI generated)');
       expect(result).to.include('> This page has only a summary');
-      expect(result).to.include('*Readability:* 80');
+      expect(result).to.include('Readability: 80 => very easy to read');
       expect(result).to.not.include('### Key Points');
       expect(result).to.not.include('### Section Summaries');
     });
@@ -191,7 +201,8 @@ describe('Summarization Utils', () => {
           pageUrl: 'https://example.com/keypoints-only',
           keyPoints: {
             items: ['Point 1', 'Point 2', 'Point 3'],
-            brand_consistency_score: 75,
+            word_count: 20,
+            readability_score: 60,
           },
         },
       ];
@@ -203,7 +214,7 @@ describe('Summarization Utils', () => {
       expect(result).to.include('> - Point 1');
       expect(result).to.include('> - Point 2');
       expect(result).to.include('> - Point 3');
-      expect(result).to.include('*Brand Consistency:* 75/100');
+      expect(result).to.include('Word count: 20 | Readability: 60 => easy to read');
       expect(result).to.not.include('### Page Summary');
       expect(result).to.not.include('### Section Summaries');
     });
@@ -233,10 +244,10 @@ describe('Summarization Utils', () => {
       expect(result).to.include('### Section Summaries (AI generated)');
       expect(result).to.include('#### Section A');
       expect(result).to.include('> Summary A');
-      expect(result).to.include('*Readability:* 60');
+      expect(result).to.include('Readability: 60 => easy to read');
       expect(result).to.include('#### Section B');
       expect(result).to.include('> Summary B');
-      expect(result).to.include('*Word Count:* 20');
+      expect(result).to.include('Word count: 20');
       expect(result).to.not.include('### Page Summary');
       expect(result).to.not.include('### Key Points');
     });

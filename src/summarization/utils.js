@@ -17,14 +17,20 @@
  */
 export function formatMetrics(metrics) {
   const metricStrings = [];
-  if (metrics.readability_score !== undefined && metrics.readability_score !== null) {
-    metricStrings.push(`*Readability:* ${metrics.readability_score}`);
-  }
   if (metrics.word_count !== undefined && metrics.word_count !== null) {
-    metricStrings.push(`*Word Count:* ${metrics.word_count}`);
+    metricStrings.push(`Word count: ${metrics.word_count}`);
   }
-  if (metrics.brand_consistency_score !== undefined && metrics.brand_consistency_score !== null) {
-    metricStrings.push(`*Brand Consistency:* ${metrics.brand_consistency_score}/100`);
+  if (metrics.readability_score !== undefined && metrics.readability_score !== null) {
+    const score = metrics.readability_score;
+    let readabilityText = `${score}`;
+    if (score >= 0 && score < 30) {
+      readabilityText += ' => difficult to read';
+    } else if (score >= 30 && score < 70) {
+      readabilityText += ' => easy to read';
+    } else if (score >= 70 && score <= 100) {
+      readabilityText += ' => very easy to read';
+    }
+    metricStrings.push(`Readability: ${readabilityText}`);
   }
   return metricStrings.length > 0 ? metricStrings.join(' | ') : '';
 }
