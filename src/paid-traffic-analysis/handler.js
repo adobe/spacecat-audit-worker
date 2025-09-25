@@ -162,7 +162,7 @@ async function importDataStep(context, period) {
     // Return the last week for the main audit flow
     const { temporalCondition } = getWeekInfo(lastWeek.week, lastWeek.year);
 
-    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Returning main audit flow data for week ${lastWeek.week}/${lastWeek.year} with allowOverwrite: ${allowCache}, temporalCondition: ${temporalCondition}`);
+    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Returning main audit flow data for week ${lastWeek.week}/${lastWeek.year} with allowCache: ${allowCache}, temporalCondition: ${temporalCondition}`);
 
     return {
       auditResult: {
