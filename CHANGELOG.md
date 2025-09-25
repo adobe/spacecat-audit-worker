@@ -1,3 +1,10 @@
+## [1.187.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.187.1...v1.187.2) (2025-09-25)
+
+
+### Bug Fixes
+
+* Cloudflare date support ([#1308](https://github.com/adobe/spacecat-audit-worker/issues/1308)) ([9243706](https://github.com/adobe/spacecat-audit-worker/commit/9243706bd9ceb8c3d0b048fe5410ed3ba1ab3eeb))
+
 ## [1.187.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.187.0...v1.187.1) (2025-09-25)
 
 
