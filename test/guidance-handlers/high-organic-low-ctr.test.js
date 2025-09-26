@@ -40,6 +40,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     getData: sandbox.stub().returns({
       page: 'https://abc.com/abc-adoption/account',
     }),
+    getUpdatedBy: sandbox.stub().returns('system'),
     setAuditId: sandbox.stub(),
     setData: sandbox.stub(),
     setGuidance: sandbox.stub(),
@@ -170,7 +171,10 @@ describe('high-organic-low-ctr guidance handler tests', () => {
   });
 
   it('removes previous suggestions if any', async () => {
-    const oldSuggestion = { remove: sandbox.stub().resolves() };
+    const oldSuggestion = {
+      remove: sandbox.stub().resolves(),
+      getUpdatedBy: sandbox.stub().returns('system'),
+    };
     dummyOpportunity.getSuggestions.resolves([oldSuggestion, oldSuggestion]);
 
     Opportunity.allBySiteId.resolves([dummyOpportunity]);
@@ -229,5 +233,127 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     const createdCallArg = Opportunity.create.getCall(0)?.args[0];
     expect(createdCallArg.data.opportunityImpact).to.equal(0);
+  });
+
+  it('should skip updating suggestions when they were manually modified', async () => {
+    const manualSuggestion = {
+      getUpdatedBy: sandbox.stub().returns('8DD61D5966C7AA650A495F8D@7eeb20f8631c0cb7495c06.e'),
+      remove: sandbox.stub().resolves(),
+    };
+
+    const opportunityWithManualSuggestions = {
+      getId: sandbox.stub().returns('oppty-with-manual-suggestions'),
+      getSuggestions: sandbox.stub().resolves([manualSuggestion]),
+      getData: sandbox.stub().returns({
+        page: 'https://abc.com/abc-adoption/account',
+      }),
+      setAuditId: sandbox.stub(),
+      setData: sandbox.stub(),
+      setGuidance: sandbox.stub(),
+      save: sandbox.stub().resolvesThis(),
+      setUpdatedBy: sandbox.stub(),
+    };
+
+    Opportunity.allBySiteId.resolves([opportunityWithManualSuggestions]);
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://abc.com/abc-adoption/account',
+        guidance: guidanceMsgFromMystique.data.guidance,
+        suggestions: guidanceMsgFromMystique.data.suggestions,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(log.info).to.have.been.calledWithMatch(/were manually modified.*Skipping all updates to preserve data consistency/);
+    expect(opportunityWithManualSuggestions.setAuditId).not.to.have.been.called;
+    expect(opportunityWithManualSuggestions.setData).not.to.have.been.called;
+    expect(opportunityWithManualSuggestions.setGuidance).not.to.have.been.called;
+    expect(opportunityWithManualSuggestions.save).not.to.have.been.called;
+    expect(manualSuggestion.remove).not.to.have.been.called;
+    expect(Suggestion.create).not.to.have.been.called;
+  });
+
+  it('should update system-managed opportunities (updatedBy: system)', async () => {
+    const systemSuggestion = {
+      getUpdatedBy: sandbox.stub().returns('system'),
+      remove: sandbox.stub().resolves(),
+    };
+
+    const systemOpportunity = {
+      getId: sandbox.stub().returns('system-oppty-id'),
+      getSuggestions: sandbox.stub().resolves([systemSuggestion]),
+      getData: sandbox.stub().returns({
+        page: 'https://abc.com/abc-adoption/account',
+      }),
+      setAuditId: sandbox.stub(),
+      setData: sandbox.stub(),
+      setGuidance: sandbox.stub(),
+      save: sandbox.stub().resolvesThis(),
+      setUpdatedBy: sandbox.stub(),
+    };
+
+    Opportunity.allBySiteId.resolves([systemOpportunity]);
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://abc.com/abc-adoption/account',
+        guidance: guidanceMsgFromMystique.data.guidance,
+        suggestions: guidanceMsgFromMystique.data.suggestions,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(systemOpportunity.setAuditId).to.have.been.calledWith('audit-id');
+    expect(systemOpportunity.setData).to.have.been.called;
+    expect(systemOpportunity.setGuidance).to.have.been.called;
+    expect(systemOpportunity.save).to.have.been.called;
+    expect(Suggestion.create).to.have.been.calledOnce;
+  });
+
+  it('should update opportunities with null/undefined updatedBy (legacy suggestions)', async () => {
+    const legacySuggestion = {
+      getUpdatedBy: sandbox.stub().returns(null),
+      remove: sandbox.stub().resolves(),
+    };
+
+    const legacyOpportunity = {
+      getId: sandbox.stub().returns('legacy-oppty-id'),
+      getSuggestions: sandbox.stub().resolves([legacySuggestion]),
+      getData: sandbox.stub().returns({
+        page: 'https://abc.com/abc-adoption/account',
+      }),
+      setAuditId: sandbox.stub(),
+      setData: sandbox.stub(),
+      setGuidance: sandbox.stub(),
+      save: sandbox.stub().resolvesThis(),
+      setUpdatedBy: sandbox.stub(),
+    };
+
+    Opportunity.allBySiteId.resolves([legacyOpportunity]);
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://abc.com/abc-adoption/account',
+        guidance: guidanceMsgFromMystique.data.guidance,
+        suggestions: guidanceMsgFromMystique.data.suggestions,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(legacyOpportunity.setAuditId).to.have.been.calledWith('audit-id');
+    expect(legacyOpportunity.setData).to.have.been.called;
+    expect(legacyOpportunity.setGuidance).to.have.been.called;
+    expect(legacyOpportunity.save).to.have.been.called;
+    expect(Suggestion.create).to.have.been.calledOnce;
   });
 });
