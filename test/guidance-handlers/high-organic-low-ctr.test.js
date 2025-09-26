@@ -171,7 +171,10 @@ describe('high-organic-low-ctr guidance handler tests', () => {
   });
 
   it('removes previous suggestions if any', async () => {
-    const oldSuggestion = { remove: sandbox.stub().resolves() };
+    const oldSuggestion = {
+      remove: sandbox.stub().resolves(),
+      getUpdatedBy: sandbox.stub().returns('system'),
+    };
     dummyOpportunity.getSuggestions.resolves([oldSuggestion, oldSuggestion]);
 
     Opportunity.allBySiteId.resolves([dummyOpportunity]);
@@ -232,13 +235,18 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     expect(createdCallArg.data.opportunityImpact).to.equal(0);
   });
 
-  it('should skip updating manually created opportunities', async () => {
-    const manualOpportunity = {
-      getId: sandbox.stub().returns('manual-oppty-id'),
+  it('should skip updating suggestions when they were manually modified', async () => {
+    const manualSuggestion = {
+      getUpdatedBy: sandbox.stub().returns('8DD61D5966C7AA650A495F8D@7eeb20f8631c0cb7495c06.e'),
+      remove: sandbox.stub().resolves(),
+    };
+
+    const opportunityWithManualSuggestions = {
+      getId: sandbox.stub().returns('oppty-with-manual-suggestions'),
+      getSuggestions: sandbox.stub().resolves([manualSuggestion]),
       getData: sandbox.stub().returns({
         page: 'https://abc.com/abc-adoption/account',
       }),
-      getUpdatedBy: sandbox.stub().returns('8DD61D5966C7AA650A495F8D@7eeb20f8631c0cb7495c06.e'),
       setAuditId: sandbox.stub(),
       setData: sandbox.stub(),
       setGuidance: sandbox.stub(),
@@ -246,7 +254,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
       setUpdatedBy: sandbox.stub(),
     };
 
-    Opportunity.allBySiteId.resolves([manualOpportunity]);
+    Opportunity.allBySiteId.resolves([opportunityWithManualSuggestions]);
 
     const message = {
       auditId: 'audit-id',
@@ -260,22 +268,27 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     await handler(message, context);
 
-    expect(log.info).to.have.been.calledWithMatch(/was manually created\/modified.*Skipping all updates/);
-    expect(manualOpportunity.setAuditId).not.to.have.been.called;
-    expect(manualOpportunity.setData).not.to.have.been.called;
-    expect(manualOpportunity.setGuidance).not.to.have.been.called;
-    expect(manualOpportunity.save).not.to.have.been.called;
+    expect(log.info).to.have.been.calledWithMatch(/were manually modified.*Skipping all updates to preserve data consistency/);
+    expect(opportunityWithManualSuggestions.setAuditId).not.to.have.been.called;
+    expect(opportunityWithManualSuggestions.setData).not.to.have.been.called;
+    expect(opportunityWithManualSuggestions.setGuidance).not.to.have.been.called;
+    expect(opportunityWithManualSuggestions.save).not.to.have.been.called;
+    expect(manualSuggestion.remove).not.to.have.been.called;
     expect(Suggestion.create).not.to.have.been.called;
   });
 
   it('should update system-managed opportunities (updatedBy: system)', async () => {
+    const systemSuggestion = {
+      getUpdatedBy: sandbox.stub().returns('system'),
+      remove: sandbox.stub().resolves(),
+    };
+
     const systemOpportunity = {
       getId: sandbox.stub().returns('system-oppty-id'),
-      getSuggestions: sandbox.stub().resolves([]),
+      getSuggestions: sandbox.stub().resolves([systemSuggestion]),
       getData: sandbox.stub().returns({
         page: 'https://abc.com/abc-adoption/account',
       }),
-      getUpdatedBy: sandbox.stub().returns('system'),
       setAuditId: sandbox.stub(),
       setData: sandbox.stub(),
       setGuidance: sandbox.stub(),
@@ -304,14 +317,18 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     expect(Suggestion.create).to.have.been.calledOnce;
   });
 
-  it('should update opportunities with null/undefined updatedBy (legacy opportunities)', async () => {
+  it('should update opportunities with null/undefined updatedBy (legacy suggestions)', async () => {
+    const legacySuggestion = {
+      getUpdatedBy: sandbox.stub().returns(null),
+      remove: sandbox.stub().resolves(),
+    };
+
     const legacyOpportunity = {
       getId: sandbox.stub().returns('legacy-oppty-id'),
-      getSuggestions: sandbox.stub().resolves([]),
+      getSuggestions: sandbox.stub().resolves([legacySuggestion]),
       getData: sandbox.stub().returns({
         page: 'https://abc.com/abc-adoption/account',
       }),
-      getUpdatedBy: sandbox.stub().returns(null),
       setAuditId: sandbox.stub(),
       setData: sandbox.stub(),
       setGuidance: sandbox.stub(),

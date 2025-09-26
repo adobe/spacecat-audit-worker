@@ -44,18 +44,32 @@ export default async function handler(message, context) {
     (oppty) => oppty.getData()?.page === url,
   );
 
+  let existingSuggestions = [];
+  let isExistingOpportunity = false;
+
   if (!opportunity) {
     log.info(`No existing Opportunity found for page: ${url}. Creating a new one.`);
     opportunity = await Opportunity.create(entity);
+  } else {
+    isExistingOpportunity = true;
+    existingSuggestions = await opportunity.getSuggestions();
   }
 
-  const updatedBy = opportunity.getUpdatedBy();
-  if (updatedBy && updatedBy !== 'system') {
-    log.info(`Existing Opportunity found for page: ${url} was manually created/modified (updatedBy: ${updatedBy}). Skipping all updates to preserve manual changes.`);
-    return ok();
+  // Manual protection check: any manual suggestions found, skip all updates
+  if (existingSuggestions.length > 0) {
+    const hasManualSuggestions = existingSuggestions.some((suggestion) => {
+      const suggestionUpdatedBy = suggestion.getUpdatedBy();
+      return suggestionUpdatedBy && suggestionUpdatedBy !== 'system';
+    });
+
+    if (hasManualSuggestions) {
+      log.info(`Existing suggestions for page: ${url} were manually modified. Skipping all updates to preserve data consistency.`);
+      return ok();
+    }
   }
 
-  if (opportunity.getId()) {
+  // Update existing opportunity with new audit data
+  if (isExistingOpportunity) {
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
     opportunity.setData({
@@ -67,10 +81,10 @@ export default async function handler(message, context) {
     opportunity = await opportunity.save();
   }
 
-  const existingSuggestions = await opportunity.getSuggestions();
-
-  // delete previous suggestions if any
-  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+  // Delete previous suggestions if any exist
+  if (existingSuggestions.length > 0) {
+    await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
+  }
 
   // map the suggestions received from M to PSS
   const suggestionData = {
