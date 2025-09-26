@@ -52,14 +52,19 @@ export function getSuggestionValue(suggestions, log) {
     }
 
     // Skip suggestions that don't have any meaningful content
-    const hasPageSummary = suggestion.pageSummary?.summary
-      && suggestion.pageSummary.summary.trim();
-    const hasKeyPoints = suggestion.keyPoints?.items
-      && suggestion.keyPoints.items.some((item) => item.trim());
+    const hasPageSummary = (suggestion.pageSummary?.formatted_summary
+      && suggestion.pageSummary.formatted_summary.trim())
+      || (suggestion.pageSummary?.summary && suggestion.pageSummary.summary.trim());
+    const hasKeyPoints = (suggestion.keyPoints?.formatted_items
+      && suggestion.keyPoints.formatted_items.some((item) => item.trim()))
+      || (suggestion.keyPoints?.items && suggestion.keyPoints.items.some((item) => item.trim()));
     const hasSectionSummaries = suggestion.sectionSummaries
       && suggestion.sectionSummaries.length > 0
       && suggestion.sectionSummaries.some(
-        (section) => section.title && section.summary && section.summary.trim(),
+        (section) => section.title && (
+          (section.formatted_summary && section.formatted_summary.trim())
+          || (section.summary && section.summary.trim())
+        ),
       );
 
     if (!hasPageSummary && !hasKeyPoints && !hasSectionSummaries) {
@@ -81,8 +86,10 @@ export function getSuggestionValue(suggestions, log) {
     }
 
     // Page Summary subsection
-    if (suggestion.pageSummary?.summary) {
-      suggestionValue += `### Page Summary (AI generated)\n\n> ${suggestion.pageSummary.summary}\n\n`;
+    const pageSummaryContent = suggestion.pageSummary?.formatted_summary
+      || suggestion.pageSummary?.summary;
+    if (pageSummaryContent) {
+      suggestionValue += `### Page Summary (AI generated)\n\n> ${pageSummaryContent}\n\n`;
 
       // Add page summary metrics
       const pageSummaryMetrics = formatMetrics(suggestion.pageSummary);
@@ -92,9 +99,10 @@ export function getSuggestionValue(suggestions, log) {
     }
 
     // Key Points subsection
-    if (suggestion.keyPoints?.items && Array.isArray(suggestion.keyPoints.items)) {
+    const keyPointsItems = suggestion.keyPoints?.formatted_items || suggestion.keyPoints?.items;
+    if (keyPointsItems && Array.isArray(keyPointsItems)) {
       suggestionValue += '### Key Points (AI generated)\n\n';
-      suggestion.keyPoints.items.forEach((point) => {
+      keyPointsItems.forEach((point) => {
         if (point.trim()) {
           suggestionValue += `> - ${point}\n`;
         }
@@ -113,8 +121,9 @@ export function getSuggestionValue(suggestions, log) {
     if (suggestion.sectionSummaries && suggestion.sectionSummaries.length > 0) {
       suggestionValue += '### Section Summaries (AI generated)\n\n';
       suggestion.sectionSummaries.forEach((section) => {
-        if (section.title && section.title.trim() && section.summary && section.summary.trim()) {
-          suggestionValue += `#### ${section.title}\n\n> ${section.summary}\n\n`;
+        const sectionContent = section.formatted_summary || section.summary;
+        if (section.title && section.title.trim() && sectionContent && sectionContent.trim()) {
+          suggestionValue += `#### ${section.title}\n\n> ${sectionContent}\n\n`;
 
           // Add section metrics
           const sectionMetrics = formatMetrics(section);

@@ -347,5 +347,49 @@ describe('Summarization Utils', () => {
       expect(result).to.equal('');
       expect(mockLog.info).to.have.been.calledWith('Skipping suggestion with no meaningful content for URL: https://example.com/whitespace');
     });
+
+    it('should use formatted content when available', () => {
+      const suggestions = [
+        {
+          pageUrl: 'https://example.com/formatted',
+          pageSummary: {
+            title: 'Formatted Test',
+            summary: 'Plain text summary',
+            formatted_summary: '**Bold** text summary with *emphasis*',
+            readability_score: 70,
+            word_count: 6,
+          },
+          keyPoints: {
+            items: ['Plain key point'],
+            formatted_items: ['**Bold** key point with *emphasis*'],
+            readability_score: 65,
+            word_count: 4,
+          },
+          sectionSummaries: [
+            {
+              title: 'Formatted Section',
+              summary: 'Plain section summary',
+              formatted_summary: '**Bold** section summary with *emphasis*',
+              readability_score: 60,
+              word_count: 5,
+            },
+          ],
+        },
+      ];
+
+      const result = getSuggestionValue(suggestions, mockLog);
+
+      expect(result).to.include('## 1. https://example.com/formatted');
+      expect(result).to.include('### Page Summary (AI generated)');
+      expect(result).to.include('> **Bold** text summary with *emphasis*');
+      expect(result).to.not.include('> Plain text summary');
+      expect(result).to.include('### Key Points (AI generated)');
+      expect(result).to.include('> - **Bold** key point with *emphasis*');
+      expect(result).to.not.include('> - Plain key point');
+      expect(result).to.include('### Section Summaries (AI generated)');
+      expect(result).to.include('#### Formatted Section');
+      expect(result).to.include('> **Bold** section summary with *emphasis*');
+      expect(result).to.not.include('> Plain section summary');
+    });
   });
 });
