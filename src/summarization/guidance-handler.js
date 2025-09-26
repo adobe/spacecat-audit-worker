@@ -15,7 +15,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getSuggestionValue } from './utils.js';
 
 /**
- * Handles Mystique responses for summarization and updates pages with AI suggestions
+ * Handles Mystique response for summarization and updates pages with AI suggestions
  * @param {Object} message - Message from Mystique with AI suggestions
  * @param {Object} context - Context object with data access and logger
  * @returns {Promise<Object>} - HTTP response
