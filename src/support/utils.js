@@ -39,17 +39,35 @@ export function isLoginPage(url) {
 
 export async function getRUMUrl(url) {
   const urlWithScheme = prependSchema(url);
-  const resp = await fetch(urlWithScheme, {
-    method: 'GET',
-    headers: {
-      'User-Agent': 'curl/7.88.1', // Set the same User-Agent
-    },
-  });
-  const finalUrl = resp.url.split('://')[1];
-  /* Return just the domain part by splitting on '/' and taking first segment.
-   * This is to avoid returning the full URL with path. It will also remove any trailing /.
-   */
-  return finalUrl.split('/')[0];
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const resp = await fetch(urlWithScheme, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'curl/7.88.1', // Set the same User-Agent
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    const finalUrl = resp.url.split('://')[1];
+    /* Return just the domain part by splitting on '/' and taking first segment.
+     * This is to avoid returning the full URL with path. It will also remove any trailing /.
+     */
+    return finalUrl.split('/')[0];
+    /* c8 ignore start */
+  } catch (fetchError) {
+    clearTimeout(timeoutId);
+
+    /* Default to provided URL if fetch fails for any reason (network error, timeout, etc.)
+     * Validation of URL is additionally handled by RUMAPIClient
+     */
+    return url;
+    /* c8 ignore end */
+  }
 }
 
 /**
