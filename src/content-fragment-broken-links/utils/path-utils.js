@@ -82,12 +82,19 @@ export class PathUtils {
   static removeDoubleSlashes(path) {
     if (!path) return path;
 
-    // Replace multiple consecutive slashes with single slash
-    let fixed = path.replace(/\/+/g, '/');
+    // Check if path starts with a protocol
+    const protocolMatch = path.match(/^([^:]+:\/\/)/);
 
-    // Ensure we don't have leading double slashes after protocols (http://, https://)
-    fixed = fixed.replace(/^([^:]+:\/)\/+/g, '$1');
+    if (protocolMatch) {
+      // Split into protocol and rest
+      const protocol = protocolMatch[1];
+      const rest = path.substring(protocol.length);
+      // Remove double slashes from the rest of the path only
+      const fixedPath = rest.replace(/\/+/g, '/');
+      return protocol + fixedPath;
+    }
 
-    return fixed;
+    // No protocol, just remove double slashes normally
+    return path.replace(/\/+/g, '/');
   }
 }

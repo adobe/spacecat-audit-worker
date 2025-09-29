@@ -157,18 +157,18 @@ describe('PathUtils', () => {
 
     it('should preserve protocol slashes', () => {
       expect(PathUtils.removeDoubleSlashes('http://example.com/path'))
-        .to.equal('http:/example.com/path');
+        .to.equal('http://example.com/path');
       expect(PathUtils.removeDoubleSlashes('https://example.com/path'))
-        .to.equal('https:/example.com/path');
+        .to.equal('https://example.com/path');
       expect(PathUtils.removeDoubleSlashes('ftp://example.com/path'))
-        .to.equal('ftp:/example.com/path');
+        .to.equal('ftp://example.com/path');
     });
 
     it('should fix double slashes after protocol while preserving protocol', () => {
       expect(PathUtils.removeDoubleSlashes('http://example.com//path'))
-        .to.equal('http:/example.com/path');
+        .to.equal('http://example.com/path');
       expect(PathUtils.removeDoubleSlashes('https://example.com///path//file'))
-        .to.equal('https:/example.com/path/file');
+        .to.equal('https://example.com/path/file');
     });
 
     it('should handle paths without double slashes', () => {
@@ -182,7 +182,7 @@ describe('PathUtils', () => {
 
     it('should handle complex mixed scenarios', () => {
       expect(PathUtils.removeDoubleSlashes('https://example.com///content//dam///images//photo.jpg'))
-        .to.equal('https:/example.com/content/dam/images/photo.jpg');
+        .to.equal('https://example.com/content/dam/images/photo.jpg');
     });
   });
 
