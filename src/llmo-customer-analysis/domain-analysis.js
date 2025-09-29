@@ -15,7 +15,7 @@ import { getObjectFromKey } from '../utils/s3-utils.js';
 import { prompt } from './utils.js';
 
 async function concentrateProducts(products, context = {}) {
-  const { log, env } = context;
+  const { log } = context;
 
   if (!products || products.length === 0) {
     return [];
@@ -82,7 +82,7 @@ ${JSON.stringify(products, null, 2)}
 \`\`\``;
 
   try {
-    const promptResponse = await prompt(systemPrompt, userPrompt, env);
+    const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       let parsedContent;
       try {
@@ -214,7 +214,7 @@ ${stringified}
 
     try {
       // eslint-disable-next-line no-await-in-loop
-      const promptResponse = await prompt(systemPrompt, userPrompt, env);
+      const promptResponse = await prompt(systemPrompt, userPrompt, context);
       if (promptResponse && promptResponse.content) {
         // Track token usage
         if (promptResponse.usage) {

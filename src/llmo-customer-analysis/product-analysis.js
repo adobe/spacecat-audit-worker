@@ -13,7 +13,7 @@
 import { prompt } from './utils.js';
 
 async function concentrateProducts(pathProductArray, context) {
-  const { log, env } = context;
+  const { log } = context;
 
   if (!pathProductArray || pathProductArray.length === 0) {
     return { paths: [], usage: null };
@@ -82,7 +82,7 @@ Example output:
 ${JSON.stringify(uniqueProducts, null, 2)}`;
 
   try {
-    const promptResponse = await prompt(systemPrompt, userPrompt, env);
+    const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       let mapping;
       try {
@@ -121,7 +121,7 @@ ${JSON.stringify(uniqueProducts, null, 2)}`;
 }
 
 async function deriveProductsForPaths(domain, paths, context) {
-  const { log, env } = context;
+  const { log } = context;
   const systemPrompt = `You are a content extraction specialist. Analyze URL paths from websites to identify the most specific content, product, or resource being referenced.
 
 TASK: Extract the primary content identifier from each URL path.
@@ -173,7 +173,7 @@ PATHS:
 ${JSON.stringify(paths, null, 2)}`;
 
   try {
-    const promptResponse = await prompt(systemPrompt, userPrompt, env);
+    const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       const { paths: parsedPaths } = JSON.parse(promptResponse.content);
       log.debug('Successfully extracted products from URL paths');
@@ -197,7 +197,7 @@ function groupPathsByProduct(pathProductArray) {
 }
 
 async function deriveRegexesForProducts(domain, groupedPaths, context) {
-  const { env, log } = context;
+  const { log } = context;
 
   const systemPrompt = `You are a regex pattern generation specialist for URL path analysis in Amazon Athena SQL environments.
 
@@ -262,7 +262,7 @@ GROUPED PATHS BY PRODUCT:
 ${JSON.stringify(groupedPaths)}`;
 
   try {
-    const promptResponse = await prompt(systemPrompt, userPrompt, env);
+    const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       const parsed = JSON.parse(promptResponse.content);
       if (parsed && typeof parsed === 'object') {
