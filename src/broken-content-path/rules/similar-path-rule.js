@@ -48,7 +48,6 @@ export class SimilarPathRule extends BaseRule {
     // We are traversing up the hierarchy until we find a path that is available on Author
     const childrenPaths = await this.getAemAuthorClient().getChildrenFromPath(
       parentPath,
-      this.context,
     );
     if (childrenPaths.length === 0) {
       log.debug(`No children paths found for parent: ${path}`);

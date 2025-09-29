@@ -128,7 +128,7 @@ describe('SimilarPathRule', () => {
 
       const result = await rule.applyRule(brokenPath);
 
-      expect(mockAemAuthorClient.getChildrenFromPath).to.have.been.calledWith(brokenPath, context);
+      expect(mockAemAuthorClient.getChildrenFromPath).to.have.been.calledWith('/content/dam/test');
       expect(result).to.equal(mockSuggestion);
     });
 
