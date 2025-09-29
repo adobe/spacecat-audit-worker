@@ -106,7 +106,7 @@ export class AnalysisStrategy {
         const item = content[0];
         contentPath = new ContentPath(
           item.path,
-          PathIndex.parseContentStatus(item.status),
+          this.aemAuthorClient.parseContentStatus(item.status),
           Locale.fromPath(item.path),
         );
         // Does not hurt to insert here
