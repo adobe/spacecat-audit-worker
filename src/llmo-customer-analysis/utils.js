@@ -16,9 +16,11 @@ import { startOfISOWeek, addDays, format } from 'date-fns';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
 
-function getAzureOpenAIClient(context) {
-  if (context.azureOpenAIClient) {
-    return context.azureOpenAIClient;
+function getAzureOpenAIClient(context, deploymentName) {
+  const cacheKey = `azureOpenAIClient_${deploymentName}`;
+
+  if (context[cacheKey]) {
+    return context[cacheKey];
   }
 
   const { env, log = console } = context;
@@ -33,21 +35,21 @@ function getAzureOpenAIClient(context) {
     apiEndpoint,
     apiKey,
     apiVersion,
-    deploymentName: 'gpt-4o-mini',
+    deploymentName,
   };
 
-  // Create and cache the client
-  context.azureOpenAIClient = new AzureOpenAIClient(config, log);
-
-  return context.azureOpenAIClient;
+  context[cacheKey] = new AzureOpenAIClient(config, log);
+  return context[cacheKey];
 }
 
-export async function prompt(systemPrompt, userPrompt, context = {}) {
+export async function prompt(systemPrompt, userPrompt, context = {}, deploymentName = null) {
   try {
-    const azureClient = getAzureOpenAIClient(context);
+    const deployment = deploymentName || context.env?.AZURE_COMPLETION_DEPLOYMENT || 'gpt-4o-mini';
+    const azureClient = getAzureOpenAIClient(context, deployment);
 
     const response = await azureClient.fetchChatCompletion(userPrompt, {
       systemPrompt,
+      responseFormat: 'json_object',
     });
 
     return {
