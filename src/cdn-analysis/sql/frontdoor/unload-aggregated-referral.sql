@@ -13,7 +13,7 @@ UNLOAD (
     SELECT
       url_extract_path(properties.requestUri) AS url,
       url_extract_host(properties.requestUri) AS host,
-      NULL AS referrer,
+      properties.referrer AS referrer,
       url_extract_parameter(properties.requestUri, 'utm_source') AS utm_source,
       url_extract_parameter(properties.requestUri, 'utm_medium') AS utm_medium,
   
@@ -65,15 +65,15 @@ UNLOAD (
           '(?i)(gclid|gclsrc|wbraid|gbraid|dclid|msclkid|fbclid|fbad_id|fbpxl_id|twclid|twsrc|twterm|li_fat_id|epik|ttclid)'
         )
 
-        -- case 3: IF cdn log contains external referrer (not available in Azure Front Door logs)
-        -- This case is skipped for Azure Front Door as referrer information is not available
+        -- case 3: IF cdn log contains external referrer (not one of first party hosts)
+        OR (
+          properties.referrer IS NOT NULL AND try(url_extract_host(properties.referrer)) NOT IN (SELECT host FROM hosts)
+        )
       )
 
       -- only count HTML page views
-      AND CAST(properties.httpStatusCode AS INT) = 200
       AND (
-        url_extract_path(properties.requestUri) LIKE '%.html'
-        OR url_extract_path(properties.requestUri) LIKE '%.htm'
+        url_extract_path(properties.requestUri) LIKE '%.htm%'
       )
   
       -- basic filtering on user_agent for bots, crawlers, programmatic clients
