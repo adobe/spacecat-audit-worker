@@ -186,8 +186,8 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      // Verify only one page was processed (now logs total links, internal and external links)
-      expect(context.log.debug.callCount).to.equal(5)
+      // Verify only one page was processed (now logs total links, internal and external links, and broken links)
+      expect(context.log.debug.callCount).to.equal(5);
     });
 
     it('returns empty array when no scrapedObjects match urls', async () => {
@@ -237,7 +237,7 @@ describe('Preflight Audit', () => {
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
       // Verify only two pages were processed
-      // (now logs total links, internal and external links for each page)
+      // (now logs total links, internal and external links for each page, plus broken links summary)
       expect(context.log.debug.callCount).to.equal(8);
     });
 

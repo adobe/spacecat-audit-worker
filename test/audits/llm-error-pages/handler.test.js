@@ -953,7 +953,7 @@ describe('LLM Error Pages Handler', () => {
       };
 
       const context = {
-        log: { warn: sandbox.stub(), info: sandbox.stub(), error: sandbox.stub() },
+        log: { warn: sandbox.stub(), info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
         env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
         sqs,
         dataAccess,
@@ -994,7 +994,7 @@ describe('LLM Error Pages Handler', () => {
       };
 
       const context = {
-        log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+        log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
         env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
         sqs,
         dataAccess,
@@ -1018,7 +1018,7 @@ describe('LLM Error Pages Handler', () => {
 
       const sqs = { sendMessage: sandbox.stub().resolves() };
       const context = {
-        log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+        log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
         env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
         sqs,
         dataAccess: {},
