@@ -226,6 +226,7 @@ export async function cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekO
       [objectKeyToDelete],
       log,
     );
+    log.debug(`Deleted oldest final result file: ${objectKeyToDelete}`);
   }
 }
 

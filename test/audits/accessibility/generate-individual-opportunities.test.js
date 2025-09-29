@@ -1712,7 +1712,7 @@ describe('createIndividualOpportunitySuggestions', () => {
     );
 
     // Should log the completion summary with failed messages
-    expect(mockLog.info).to.have.been.calledWithMatch(
+    expect(mockLog.debug).to.have.been.calledWithMatch(
       /Message sending completed: 0 successful, 1 failed, 0 rejected/,
     );
   });
@@ -3060,10 +3060,10 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
     );
 
     // Should send messages to Mystique
-    expect(mockLog.info).to.have.been.calledWithMatch(
+    expect(mockLog.debug).to.have.been.calledWithMatch(
       '[A11yIndividual] Sending 1 messages to Mystique queue: test-queue',
     );
-    expect(mockLog.info).to.have.been.calledWithMatch(
+    expect(mockLog.debug).to.have.been.calledWithMatch(
       '[A11yIndividual] Message sending completed: 1 successful, 0 failed, 0 rejected',
     );
   });
@@ -3242,10 +3242,10 @@ describe('handleAccessibilityRemediationGuidance', () => {
       failedSuggestionIds: [],
     });
 
-    expect(mockLog.info).to.have.been.calledWith(
+    expect(mockLog.debug).to.have.been.calledWith(
       '[A11yRemediationGuidance] site site-456, audit audit-new-123, page https://example.com/page1, opportunity oppty-123: Received accessibility remediation guidance with 1 remediations and 1 total issues',
     );
-    expect(mockLog.info).to.have.been.calledWith(
+    expect(mockLog.debug).to.have.been.calledWith(
       '[A11yRemediationGuidance] site site-456, audit audit-new-123, page https://example.com/page1, opportunity oppty-123: Successfully processed 1 remediations',
     );
 
@@ -3914,7 +3914,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     expect(mockLog.warn).to.have.been.calledWith(
       '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 1 suggestions failed to save: sugg-789',
     );
-    expect(mockLog.info).to.have.been.calledWith(
+    expect(mockLog.debug).to.have.been.calledWith(
       '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Successfully processed 1 remediations',
     );
   });
@@ -4015,7 +4015,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     // Verify that the success log message for metrics saving was called (line 889)
-    expect(mockLog.info).to.have.been.calledWith(
+    expect(mockLog.debug).to.have.been.calledWith(
       '[A11yRemediationGuidance] Saved complete Mystique validation metrics for opportunity oppty-123, page https://example.com/page1: sent=1, received=1',
     );
   });

@@ -1035,7 +1035,7 @@ describe('Sitemap Audit', () => {
         context,
       );
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         'Sitemap audit failed, skipping opportunity and suggestions creation',
       );
       // Check that the existing stubs weren't called

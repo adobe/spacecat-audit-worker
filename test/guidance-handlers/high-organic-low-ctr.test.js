@@ -62,6 +62,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
       info: sandbox.stub(),
       warn: sandbox.stub(),
       error: sandbox.stub(),
+      debug: sandbox.stub(),
     };
     context = {
       log,

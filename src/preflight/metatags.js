@@ -44,7 +44,7 @@ export default async function metatags(context, auditContext) {
       const s3Key = `scrapes/${site.getId()}${new URL(url).pathname.replace(/\/$/, '')}/scrape.json`;
       return [url, s3Key];
     }));
-    log.info('[preflight-audit] Starting meta tags audit with new scraper data format');
+    log.debug('[preflight-audit] Starting meta tags audit with new scraper data format');
 
     const {
       seoChecks,

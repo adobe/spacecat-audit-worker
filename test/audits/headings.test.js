@@ -334,7 +334,7 @@ describe('Headings Audit', () => {
     expect(result.auditResult.status).to.equal('success');
     expect(result.auditResult.message).to.equal('No heading issues detected');
 
-    expect(logSpy.info).to.have.been.calledWith(
+    expect(logSpy.debug).to.have.been.calledWith(
       sinon.match(/Found 0 issues across 0 check types/),
     );
   });
@@ -389,7 +389,7 @@ describe('Headings Audit', () => {
     // The HTML '<h1>Title</h1><h2></h2>' triggers 2 issues:
     // 1. Empty heading (h2)
     // 2. No content between h1 and h2
-    expect(logSpy.info).to.have.been.calledWith(
+    expect(logSpy.debug).to.have.been.calledWith(
       sinon.match(/Found 2 issues across 2 check types/),
     );
   });
