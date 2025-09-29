@@ -44,32 +44,23 @@ export default async function handler(message, context) {
     (oppty) => oppty.getData()?.page === url,
   );
 
-  let existingSuggestions = [];
-  let isExistingOpportunity = false;
-
   if (!opportunity) {
     log.info(`No existing Opportunity found for page: ${url}. Creating a new one.`);
     opportunity = await Opportunity.create(entity);
   } else {
-    isExistingOpportunity = true;
-    existingSuggestions = await opportunity.getSuggestions();
-  }
+    const existingSuggestions = await opportunity.getSuggestions();
+    // Manual protection check: any manual suggestions found, skip all updates
+    if (existingSuggestions.length > 0) {
+      const hasManualSuggestions = existingSuggestions.some((suggestion) => {
+        const suggestionUpdatedBy = suggestion.getUpdatedBy();
+        return suggestionUpdatedBy && suggestionUpdatedBy !== 'system';
+      });
 
-  // Manual protection check: any manual suggestions found, skip all updates
-  if (existingSuggestions.length > 0) {
-    const hasManualSuggestions = existingSuggestions.some((suggestion) => {
-      const suggestionUpdatedBy = suggestion.getUpdatedBy();
-      return suggestionUpdatedBy && suggestionUpdatedBy !== 'system';
-    });
-
-    if (hasManualSuggestions) {
-      log.info(`Existing suggestions for page: ${url} were manually modified. Skipping all updates to preserve data consistency.`);
-      return ok();
+      if (hasManualSuggestions) {
+        log.info(`Existing suggestions for page: ${url} were manually modified. Skipping all updates to preserve data consistency.`);
+        return ok();
+      }
     }
-  }
-
-  // Update existing opportunity with new audit data
-  if (isExistingOpportunity) {
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
     opportunity.setData({
@@ -79,10 +70,7 @@ export default async function handler(message, context) {
     opportunity.setGuidance(entity.guidance);
     opportunity.setUpdatedBy('system');
     opportunity = await opportunity.save();
-  }
-
-  // Delete previous suggestions if any exist
-  if (existingSuggestions.length > 0) {
+    // Delete previous suggestions if any exist
     await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
   }
 
