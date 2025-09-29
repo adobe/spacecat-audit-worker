@@ -31,6 +31,8 @@ describe('CDN 404 Analysis Handler', () => {
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
+    const fixedDate = new Date('2025-09-18T14:00:00.000Z');
+    sandbox.stub(Date, 'now').returns(fixedDate.getTime());
     site = {
       getBaseURL: sandbox.stub().returns('https://example.com'),
     };
@@ -69,10 +71,10 @@ describe('CDN 404 Analysis Handler', () => {
     expect(athenaClientStub.execute).to.have.been.calledThrice;
     expect(result).to.have.property('auditResult');
     expect(result).to.have.property('fullAuditRef');
-    expect(result.auditResult).to.include.keys('database', 'rawTable', 'output', 'completedAt');
+    expect(result.auditResult).to.include.keys('database', 'rawTable', 'completedAt');
     expect(result.auditResult.database).to.equal('cdn_logs_example_com');
     expect(result.auditResult.rawTable).to.equal('raw_logs_status_example_com');
-    expect(result.fullAuditRef).to.equal(result.auditResult.output);
+    expect(result.fullAuditRef).to.equal('s3://test-raw-bucket/1234567890/aggregated-404/2025/09/18/13/');
   });
 
   it('correctly extracts and escapes customer domain', async () => {
@@ -88,7 +90,7 @@ describe('CDN 404 Analysis Handler', () => {
     const result = await handlerModule.cdnContentFragment404Runner(context, site);
 
     // Verify the output path includes the IMS org
-    expect(result.auditResult.output).to.include('test-raw-bucket/1234567890/aggregated-404/');
+    expect(result.fullAuditRef).to.include('test-raw-bucket/1234567890/aggregated-404/');
 
     // Verify SQL calls were made with correct parameters
     expect(getStaticContentStub.firstCall.args[0]).to.have.property('database', 'cdn_logs_example_com');
