@@ -1,12 +1,11 @@
 CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
-  Time                  string,
-  RequestHost           string,
-  RequestUri            string,
-  HttpMethod            string,
-  UserAgent             string,
-  HttpStatusCode        int,
-  Referrer              string,
-  TimeToFirstByte       double
+  time                  string,
+  properties            struct<
+    requestUri:           string,
+    userAgent:            string,
+    httpStatusCode:       string,
+    timeToFirstByte:      string
+  >
 )
 PARTITIONED BY (
   year  string,
