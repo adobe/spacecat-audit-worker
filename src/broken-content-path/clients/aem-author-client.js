@@ -26,7 +26,8 @@ export class AemAuthorClient {
   // Delay between pagination requests for rate limiting
   static PAGINATION_DELAY_MS = 100;
 
-  constructor(authorUrl, authToken, pathIndex = null) {
+  constructor(context, authorUrl, authToken, pathIndex = null) {
+    this.context = context;
     this.authorUrl = authorUrl;
     this.authToken = authToken;
     this.pathIndex = pathIndex;
@@ -41,7 +42,7 @@ export class AemAuthorClient {
       throw new Error('AEM Author configuration missing: AEM_AUTHOR_URL and AEM_AUTHOR_TOKEN required');
     }
 
-    return new AemAuthorClient(authorUrl, authToken, pathIndex);
+    return new AemAuthorClient(context, authorUrl, authToken, pathIndex);
   }
 
   static isBreakingPoint(path) {
@@ -76,12 +77,15 @@ export class AemAuthorClient {
   }
 
   async isAvailable(path) {
+    const { log } = this.context;
+
     try {
       const response = await fetch(this.createUrl(path).toString(), {
         headers: this.createAuthHeaders(),
       });
 
       if (!response.ok) {
+        log.error(`AEM Author returned ${response.status} for ${path}: ${response.statusText}`);
         return false;
       }
 
@@ -107,9 +111,9 @@ export class AemAuthorClient {
     }
   }
 
-  async fetchContent(path, context = null) {
+  async fetchContent(path) {
     try {
-      return await this.fetchContentWithPagination(path, context);
+      return await this.fetchContentWithPagination(path);
     } catch (error) {
       throw new Error(`Failed to fetch AEM Author content for ${path}: ${error.message}`);
     }
@@ -118,11 +122,10 @@ export class AemAuthorClient {
   /**
    * Crawl all content from a path using cursor-based pagination
    * @param {string} path - The path to crawl
-   * @param {Object} context - Optional context for logging
    * @returns {Promise<Array>} - All content items found
    */
-  async fetchContentWithPagination(path, context = null) {
-    const { log } = context;
+  async fetchContentWithPagination(path) {
+    const { log } = this.context;
 
     const allItems = [];
     let cursor = null;
@@ -198,8 +201,9 @@ export class AemAuthorClient {
     };
   }
 
-  async getChildrenFromPath(parentPath, context) {
-    const { log } = context;
+  async getChildrenFromPath(parentPath) {
+    const { log } = this.context;
+
     log.debug(`Getting children paths from parent: ${parentPath}`);
 
     if (!this.pathIndex) {
@@ -233,7 +237,7 @@ export class AemAuthorClient {
 
       // Cache content here since it is available
       try {
-        await this.fetchContent(parentPath, context);
+        await this.fetchContent(parentPath);
         log.debug(`Fetched all content for parent path: ${parentPath}`);
       } catch (error) {
         log.warn(`Failed to fetch complete content for ${parentPath}: ${error.message}`);
@@ -251,7 +255,7 @@ export class AemAuthorClient {
 
     // Try the next parent up the hierarchy
     log.debug(`Parent path not available, trying next parent up: ${nextParent}`);
-    return this.getChildrenFromPath(nextParent, context);
+    return this.getChildrenFromPath(nextParent);
   }
 
   /**
