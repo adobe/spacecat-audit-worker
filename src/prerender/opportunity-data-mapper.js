@@ -20,15 +20,20 @@ export function createOpportunityData() {
   return {
     runbook: '',
     origin: 'AUTOMATION',
-    title: 'Prerender Optimization Opportunity',
-    description: 'Prerendering the page would help index significant content in the LLM that is currently not visible to the LLM agents.',
+    title: 'Content Gain Opportunity',
+    description: 'Pre-rendering HTML for JavaScript-heavy pages ensures that all your important content is immediately visible to search engines and AI crawlers, significantly improving your content\'s discoverability and indexing.',
     guidance: {
       steps: [
         'Review URLs identified with high client-side rendering differences',
         'Implement server-side rendering for critical pages',
       ],
+      recommendations: [
+        {
+          recommendation: 'This page highlights that your content is currently hidden behind JavaScript, which limits what LLM bots can index. The suggested optimization is to pre-render HTML so that essential text, links, and metadata are immediately visible to the LLM bots. By doing this, you ensure LLM bots see the same meaningful content as users without relying on JavaScript execution.',
+        },
+      ],
     },
-    tags: ['Prerendering', 'LLM Optimisation'],
+    tags: ['isElmo', 'Content Gain', 'Pre-rendering'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
       thresholds: {
