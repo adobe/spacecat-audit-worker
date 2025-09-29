@@ -1,3 +1,10 @@
+## [1.189.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.189.0...v1.189.1) (2025-09-29)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** return array of insights when analyzing domain via URLs ([#1323](https://github.com/adobe/spacecat-audit-worker/issues/1323)) ([04c7dfc](https://github.com/adobe/spacecat-audit-worker/commit/04c7dfc429e5cde1cd16016eaa40788cf57fc813))
+
 # [1.189.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.188.4...v1.189.0) (2025-09-29)
 
 
