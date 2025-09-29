@@ -43,6 +43,7 @@ describe('Geo Brand Presence Handler', () => {
       getId: () => 'audit-id-456',
       getAuditType: () => 'geo-brand-presence',
       getFullAuditRef: () => 'https://adobe.com',
+      getAuditResult: () => ({ aiPlatform: 'chatgpt' }),
     };
     log = sinon.stub({ ...console });
     sqs = {
@@ -78,7 +79,7 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: undefined,
-      auditResult: { keywordQuestions: [] },
+      auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
     });
   });
@@ -91,7 +92,7 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: '2025-08-13',
-      auditResult: { keywordQuestions: [] },
+      auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
     });
   });
@@ -104,9 +105,57 @@ describe('Geo Brand Presence Handler', () => {
       type: 'llmo-prompts-ahrefs',
       siteId: site.getId(),
       endDate: undefined,
-      auditResult: { keywordQuestions: [] },
+      auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
     });
+  });
+
+  it('parses JSON data with valid endDate and aiPlatform', async () => {
+    const finalUrl = 'https://adobe.com';
+    const jsonData = JSON.stringify({
+      endDate: '2025-09-15',
+      aiPlatform: 'gemini',
+    });
+    const ctx = { ...context, finalUrl, data: jsonData };
+    const result = await keywordPromptsImportStep(ctx);
+    expect(result).to.deep.equal({
+      type: 'llmo-prompts-ahrefs',
+      siteId: site.getId(),
+      endDate: '2025-09-15',
+      auditResult: { keywordQuestions: [], aiPlatform: 'gemini' },
+      fullAuditRef: finalUrl,
+    });
+    expect(log.info).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
+      finalUrl,
+      '2025-09-15',
+      'gemini',
+    );
+  });
+
+  it('handles JSON parsing failure and falls back to legacy date parsing', async () => {
+    const finalUrl = 'https://adobe.com';
+    const invalidJson = '{ invalid json data';
+    const ctx = { ...context, finalUrl, data: invalidJson };
+    const result = await keywordPromptsImportStep(ctx);
+    expect(result).to.deep.equal({
+      type: 'llmo-prompts-ahrefs',
+      siteId: site.getId(),
+      endDate: undefined,
+      auditResult: { keywordQuestions: [], aiPlatform: undefined },
+      fullAuditRef: finalUrl,
+    });
+    expect(log.error).to.have.been.calledWith(
+      'GEO BRAND PRESENCE:failed to parse %s as JSON',
+      invalidJson,
+      sinon.match.instanceOf(Error),
+    );
+    expect(log.info).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
+      finalUrl,
+      undefined,
+      undefined,
+    );
   });
 
   it('should send message to Mystique for all opportunity types when keywordQuestions are found', async () => {
@@ -133,7 +182,10 @@ describe('Geo Brand Presence Handler', () => {
       auditId: audit.getId(),
       deliveryType: site.getDeliveryType(),
     });
-    expect(brandPresenceMessage.data).deep.equal({ url: 'https://example.com/presigned-url' });
+    expect(brandPresenceMessage.data).deep.equal({
+      web_search_provider: 'chatgpt',
+      url: 'https://example.com/presigned-url',
+    });
 
     // TODO(aurelio): check that we write the right file to s3
     // const expectedPrompts = fakeData((x) => ({ ...x, market: x.region, origin: x.source }));
@@ -154,7 +206,10 @@ describe('Geo Brand Presence Handler', () => {
     fakeS3Response([]);
     await sendToMystique({
       ...context,
-      auditContext: { parquetFiles: ['some/parquet/file/data.parquet'] },
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
     }, getPresignedUrl);
     expect(sqs.sendMessage).to.not.have.been.called;
   });

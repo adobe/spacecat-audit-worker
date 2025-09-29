@@ -15,7 +15,12 @@ import ExcelJS from 'exceljs';
 import {
   createLLMOSharepointClient, publishToAdminHlx, readFromSharePoint, uploadToSharePoint,
 } from '../utils/report-uploader.js';
-import { generateReportingPeriods, getS3Config, toPathOnly } from './utils.js';
+import {
+  generateReportingPeriods,
+  getS3Config,
+  toPathOnly,
+  SPREADSHEET_COLUMNS,
+} from './utils.js';
 
 /**
  * Handles Mystique responses for LLM error pages and updates suggestions with AI data
@@ -59,14 +64,22 @@ export default async function handler(message, context) {
     const sheet = workbook.worksheets[0] || workbook.addWorksheet('data');
 
     const baseUrl = site.getBaseURL?.() || 'https://example.com';
+    const col = (name) => SPREADSHEET_COLUMNS.indexOf(name) + 1;
 
     // Create a map of broken URLs for quick lookup
     const brokenUrlsMap = new Map();
+    log.info(`Processing ${brokenLinks.length} broken links from Mystique`);
+
     brokenLinks.forEach((brokenLink) => {
       const {
         suggestedUrls, aiRationale, urlFrom, urlTo,
       } = brokenLink;
       const keyUrl = toPathOnly(urlTo, baseUrl);
+
+      if (!suggestedUrls || suggestedUrls.length === 0) {
+        log.warn(`No suggested URLs for broken link: ${urlTo}`);
+      }
+
       brokenUrlsMap.set(keyUrl, {
         userAgents: urlFrom,
         suggestedUrls: suggestedUrls || [],
@@ -74,30 +87,29 @@ export default async function handler(message, context) {
       });
     });
 
-    // Process each row in the Excel file and update with broken links data if found
+    let updatedRows = 0;
+
     for (let i = 2; i <= sheet.rowCount; i += 1) {
-      const urlCell = sheet.getCell(i, 2).value?.toString?.() || '';
-      const userAgentCell = sheet.getCell(i, 1).value?.toString?.() || '';
+      const urlCell = sheet.getCell(i, col('URL')).value?.toString?.() || '';
       if (urlCell) {
         const pathOnlyUrl = toPathOnly(urlCell, baseUrl);
-
         // Look up the URL in brokenUrls and update if found
         const brokenUrlData = brokenUrlsMap.get(pathOnlyUrl);
-        if (brokenUrlData && brokenUrlData.userAgents.includes(userAgentCell)) {
+        if (brokenUrlData) {
           const suggested = brokenUrlData.suggestedUrls.join('\n');
-          const row = sheet.getRow(i);
-          row.values = [
-            userAgentCell,
-            pathOnlyUrl,
-            suggested,
-            brokenUrlData.aiRationale,
-            '',
-          ];
-          row.commit();
-          log.info(`Updated row ${i} for URL: ${pathOnlyUrl} with broken URL data`);
+
+          sheet.getCell(i, col('Suggested URLs')).value = suggested;
+          sheet.getCell(i, col('AI Rationale')).value = brokenUrlData.aiRationale;
+          updatedRows += 1;
+
+          log.info(`✅ Updated row ${i} for URL: ${pathOnlyUrl} with ${brokenUrlData.suggestedUrls.length} suggestions`);
+        } else {
+          log.info(`No Mystique data found for URL: ${pathOnlyUrl}`);
         }
       }
     }
+
+    log.info(`Updated ${updatedRows} rows with Mystique suggestions`);
 
     // Overwrite the file
     const buffer = await workbook.xlsx.writeBuffer();

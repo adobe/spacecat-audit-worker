@@ -389,16 +389,47 @@ describe('CDN Logs Report Handler', function test() {
     });
 
     describe('data processing edge cases', () => {
-      it('handles null data responses', async () => {
+      it('logs skipping message when no S3 data found', async () => {
+        context.s3Client = {
+          send: sandbox.stub().resolves({ Contents: [] }),
+        };
+
         context.athenaClient = setupAthenaClientWithData(sandbox, null, null);
         const auditContext = createAuditContext(sandbox);
+
+        await handler.runner('https://example.com', context, site, auditContext);
+
+        expect(context.log.info).to.have.been.calledWith('No data found for agentic report - skipping');
+        expect(context.log.info).to.have.been.calledWith('No data found for referral report - skipping');
+      });
+
+      it('logs warning when Athena query returns empty data', async () => {
+        context.athenaClient = setupAthenaClientWithData(sandbox, [], null);
+        const auditContext = createAuditContext(sandbox);
+
         const result = await handler.runner('https://example.com', context, site, auditContext);
 
-        expect(result).to.have.property('auditResult').that.is.an('array');
-        expect(result.auditResult).to.have.length.greaterThan(0);
-        expect(result).to.have.property('fullAuditRef').that.equals('test-folder');
+        expect(context.log.warn).to.have.been.calledWith(
+          sinon.match(/No data returned from Athena query for .* report \(.*\)\./)
+        );
+      });
 
-        expect(context.athenaClient.query).to.have.been.called;
+      it('handles Athena query errors gracefully', async () => {
+        const queryError = new Error('Athena query failed: Table not found');
+        context.athenaClient = {
+          execute: sandbox.stub().resolves(),
+          query: sandbox.stub().rejects(queryError),
+        };
+        const auditContext = createAuditContext(sandbox);
+
+        await handler.runner('https://example.com', context, site, auditContext);
+
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/report generation failed: Athena query failed/)
+        );
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/Failed to generate .* report: Athena query failed/)
+        );
       });
     });
 
