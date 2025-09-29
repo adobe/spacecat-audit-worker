@@ -70,21 +70,21 @@ describe('LocaleFallbackRule', () => {
       findEnglishFallbacks: sandbox.stub().returns(['en-us', 'en-gb', 'en']),
     };
 
-    const module = await esmock('../../../src/broken-content-path/rules/locale-fallback-rule.js', {
-      '../../../src/broken-content-path/domain/suggestion/suggestion.js': {
+    const module = await esmock('../../../src/content-fragment-broken-links/rules/locale-fallback-rule.js', {
+      '../../../src/content-fragment-broken-links/domain/suggestion/suggestion.js': {
         Suggestion: {
           locale: sandbox.stub().returns(mockSuggestion),
         },
       },
-      '../../../src/broken-content-path/domain/language/locale.js': {
+      '../../../src/content-fragment-broken-links/domain/language/locale.js': {
         Locale: {
           fromPath: sandbox.stub().returns(mockLocale),
         },
       },
-      '../../../src/broken-content-path/domain/language/language-tree.js': {
+      '../../../src/content-fragment-broken-links/domain/language/language-tree.js': {
         LanguageTree: mockLanguageTree,
       },
-      '../../../src/broken-content-path/utils/path-utils.js': {
+      '../../../src/content-fragment-broken-links/utils/path-utils.js': {
         PathUtils: mockPathUtils,
       },
     });
@@ -174,13 +174,13 @@ describe('LocaleFallbackRule', () => {
   describe('applyRule without detected locale', () => {
     it('should return null when no locale detected and no double slashes', async () => {
       // Create a rule with mocked dependencies that return null for Locale.fromPath
-      const ruleModule = await esmock('../../../src/broken-content-path/rules/locale-fallback-rule.js', {
-        '../../../src/broken-content-path/domain/language/locale.js': {
+      const ruleModule = await esmock('../../../src/content-fragment-broken-links/rules/locale-fallback-rule.js', {
+        '../../../src/content-fragment-broken-links/domain/language/locale.js': {
           Locale: {
             fromPath: sandbox.stub().returns(null), // Return null to trigger the uncovered lines
           },
         },
-        '../../../src/broken-content-path/utils/path-utils.js': {
+        '../../../src/content-fragment-broken-links/utils/path-utils.js': {
           PathUtils: {
             hasDoubleSlashes: sandbox.stub().returns(false), // No double slashes
           },
@@ -197,23 +197,23 @@ describe('LocaleFallbackRule', () => {
 
     it('should try locale insertion when double slashes detected', async () => {
       // Create a rule with mocked dependencies that return null for Locale.fromPath
-      const ruleModule = await esmock('../../../src/broken-content-path/rules/locale-fallback-rule.js', {
-        '../../../src/broken-content-path/domain/suggestion/suggestion.js': {
+      const ruleModule = await esmock('../../../src/content-fragment-broken-links/rules/locale-fallback-rule.js', {
+        '../../../src/content-fragment-broken-links/domain/suggestion/suggestion.js': {
           Suggestion: {
             locale: sandbox.stub().returns(mockSuggestion),
           },
         },
-        '../../../src/broken-content-path/domain/language/locale.js': {
+        '../../../src/content-fragment-broken-links/domain/language/locale.js': {
           Locale: {
             fromPath: sandbox.stub().returns(null), // Return null for this test
           },
         },
-        '../../../src/broken-content-path/domain/language/language-tree.js': {
+        '../../../src/content-fragment-broken-links/domain/language/language-tree.js': {
           LanguageTree: {
             findEnglishFallbacks: sandbox.stub().returns(['en-us', 'en-gb']),
           },
         },
-        '../../../src/broken-content-path/utils/path-utils.js': {
+        '../../../src/content-fragment-broken-links/utils/path-utils.js': {
           PathUtils: {
             hasDoubleSlashes: sandbox.stub().returns(true),
           },
@@ -232,23 +232,23 @@ describe('LocaleFallbackRule', () => {
 
     it('should try multiple English fallbacks for locale insertion', async () => {
       // Create a rule with mocked dependencies that return null for Locale.fromPath
-      const ruleModule = await esmock('../../../src/broken-content-path/rules/locale-fallback-rule.js', {
-        '../../../src/broken-content-path/domain/suggestion/suggestion.js': {
+      const ruleModule = await esmock('../../../src/content-fragment-broken-links/rules/locale-fallback-rule.js', {
+        '../../../src/content-fragment-broken-links/domain/suggestion/suggestion.js': {
           Suggestion: {
             locale: sandbox.stub().returns(mockSuggestion),
           },
         },
-        '../../../src/broken-content-path/domain/language/locale.js': {
+        '../../../src/content-fragment-broken-links/domain/language/locale.js': {
           Locale: {
             fromPath: sandbox.stub().returns(null), // Return null for this test
           },
         },
-        '../../../src/broken-content-path/domain/language/language-tree.js': {
+        '../../../src/content-fragment-broken-links/domain/language/language-tree.js': {
           LanguageTree: {
             findEnglishFallbacks: sandbox.stub().returns(['en-us', 'en-gb', 'en']),
           },
         },
-        '../../../src/broken-content-path/utils/path-utils.js': {
+        '../../../src/content-fragment-broken-links/utils/path-utils.js': {
           PathUtils: {
             hasDoubleSlashes: sandbox.stub().returns(true),
           },

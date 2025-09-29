@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { LanguageTree } from '../../../src/broken-content-path/domain/language/language-tree.js';
+import { LanguageTree } from '../../../src/content-fragment-broken-links/domain/language/language-tree.js';
 
 describe('LanguageTree', () => {
   describe('COUNTRY_CODE_GROUPS', () => {

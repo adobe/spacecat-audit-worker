@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { LevenshteinDistance } from '../../../src/broken-content-path/utils/levenshtein-distance.js';
+import { LevenshteinDistance } from '../../../src/content-fragment-broken-links/utils/levenshtein-distance.js';
 
 describe('LevenshteinDistance', () => {
   describe('calculate', () => {

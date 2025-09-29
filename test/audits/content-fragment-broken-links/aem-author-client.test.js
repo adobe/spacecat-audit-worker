@@ -66,17 +66,17 @@ describe('AemAuthorClient', () => {
       getParentPath: sandbox.stub().returns('/content/dam/parent'),
     };
 
-    const module = await esmock('../../../src/broken-content-path/clients/aem-author-client.js', {
+    const module = await esmock('../../../src/content-fragment-broken-links/clients/aem-author-client.js', {
       '@adobe/spacecat-shared-utils': {
         tracingFetch: mockFetch,
       },
-      '../../../src/broken-content-path/domain/content/content-path.js': {
+      '../../../src/content-fragment-broken-links/domain/content/content-path.js': {
         ContentPath: mockContentPath,
       },
-      '../../../src/broken-content-path/domain/language/locale.js': {
+      '../../../src/content-fragment-broken-links/domain/language/locale.js': {
         Locale: mockLocale,
       },
-      '../../../src/broken-content-path/utils/path-utils.js': {
+      '../../../src/content-fragment-broken-links/utils/path-utils.js': {
         PathUtils: mockPathUtils,
       },
     });

@@ -19,7 +19,7 @@ import { AemAuthorClient } from './clients/aem-author-client.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-export async function fetchBrokenContentPaths(context) {
+export async function fetchBrokenContentFragmentPaths(context) {
   const { log, tenantUrl } = context;
 
   try {
@@ -47,7 +47,7 @@ export async function fetchBrokenContentPaths(context) {
   }
 }
 
-export async function analyzeBrokenContentPaths(context) {
+export async function analyzeBrokenContentFragmentPaths(context) {
   const { log, audit } = context;
 
   const result = audit.getAuditResult();
@@ -92,7 +92,7 @@ export function provideSuggestions(context) {
 }
 
 export default new AuditBuilder()
-  .addStep('fetch-broken-content-paths', fetchBrokenContentPaths, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('analyze-broken-content-paths', analyzeBrokenContentPaths, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('fetch-broken-content-fragment-links', fetchBrokenContentFragmentPaths, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('analyze-broken-content-fragment-links', analyzeBrokenContentFragmentPaths, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('provide-suggestions', provideSuggestions)
   .build();

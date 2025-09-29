@@ -53,8 +53,8 @@ describe('PublishRule', () => {
       publish: sandbox.stub().returns({ type: 'publish', path: '/content/dam/test/broken.jpg' }),
     };
 
-    const module = await esmock('../../../src/broken-content-path/rules/publish-rule.js', {
-      '../../../src/broken-content-path/domain/suggestion/suggestion.js': {
+    const module = await esmock('../../../src/content-fragment-broken-links/rules/publish-rule.js', {
+      '../../../src/content-fragment-broken-links/domain/suggestion/suggestion.js': {
         Suggestion: {
           publish: sandbox.stub().returns(mockSuggestion),
         },

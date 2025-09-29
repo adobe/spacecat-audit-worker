@@ -15,7 +15,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
-import { BaseRule } from '../../../src/broken-content-path/rules/base-rule.js';
+import { BaseRule } from '../../../src/content-fragment-broken-links/rules/base-rule.js';
 import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);

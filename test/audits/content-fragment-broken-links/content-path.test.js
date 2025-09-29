@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { ContentPath, ContentStatus } from '../../../src/broken-content-path/domain/content/content-path.js';
+import { ContentPath, ContentStatus } from '../../../src/content-fragment-broken-links/domain/content/content-path.js';
 
 describe('ContentPath', () => {
   describe('ContentStatus enum', () => {

@@ -15,8 +15,8 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { MockContextBuilder } from '../../shared.js';
-import { PathIndex } from '../../../src/broken-content-path/domain/index/path-index.js';
-import { ContentPath } from '../../../src/broken-content-path/domain/content/content-path.js';
+import { PathIndex } from '../../../src/content-fragment-broken-links/domain/index/path-index.js';
+import { ContentPath } from '../../../src/content-fragment-broken-links/domain/content/content-path.js';
 
 use(sinonChai);
 

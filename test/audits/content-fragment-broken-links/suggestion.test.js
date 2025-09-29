@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { Suggestion, SuggestionType } from '../../../src/broken-content-path/domain/suggestion/suggestion.js';
+import { Suggestion, SuggestionType } from '../../../src/content-fragment-broken-links/domain/suggestion/suggestion.js';
 
 describe('Suggestion', () => {
   describe('SuggestionType enum', () => {

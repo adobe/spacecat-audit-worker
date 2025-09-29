@@ -70,23 +70,23 @@ describe('Broken Content Path Handler', () => {
       })
       .build();
 
-    handlerModule = await esmock('../../../src/broken-content-path/handler.js', {
-      '../../../src/broken-content-path/collectors/athena-collector.js': {
+    handlerModule = await esmock('../../../src/content-fragment-broken-links/handler.js', {
+      '../../../src/content-fragment-broken-links/collectors/athena-collector.js': {
         AthenaCollector: function MockAthenaCollector() {
           return athenaCollectorStub;
         },
       },
-      '../../../src/broken-content-path/domain/index/path-index.js': {
+      '../../../src/content-fragment-broken-links/domain/index/path-index.js': {
         PathIndex: function MockPathIndex() {
           return pathIndexStub;
         },
       },
-      '../../../src/broken-content-path/clients/aem-author-client.js': {
+      '../../../src/content-fragment-broken-links/clients/aem-author-client.js': {
         AemAuthorClient: {
           createFrom: sandbox.stub().returns(aemAuthorClientStub),
         },
       },
-      '../../../src/broken-content-path/analysis/analysis-strategy.js': {
+      '../../../src/content-fragment-broken-links/analysis/analysis-strategy.js': {
         AnalysisStrategy: function MockAnalysisStrategy() {
           return analysisStrategyStub;
         },
@@ -98,9 +98,9 @@ describe('Broken Content Path Handler', () => {
     sandbox.restore();
   });
 
-  describe('fetchBrokenContentPaths', () => {
+  describe('fetchBrokenContentFragmentPaths', () => {
     it('should successfully fetch broken content paths', async () => {
-      const result = await handlerModule.fetchBrokenContentPaths(context);
+      const result = await handlerModule.fetchBrokenContentFragmentPaths(context);
 
       expect(athenaCollectorStub.fetchBrokenPaths).to.have.been.calledOnce;
       expect(context.log.info).to.have.been.calledWith('Found 2 broken content paths from AthenaCollector');
@@ -118,7 +118,7 @@ describe('Broken Content Path Handler', () => {
       const error = new Error('Athena connection failed');
       athenaCollectorStub.fetchBrokenPaths.rejects(error);
 
-      const result = await handlerModule.fetchBrokenContentPaths(context);
+      const result = await handlerModule.fetchBrokenContentFragmentPaths(context);
 
       expect(context.log.error).to.have.been.calledWith('Failed to fetch broken content paths: Athena connection failed');
       expect(result).to.deep.equal({
@@ -133,7 +133,7 @@ describe('Broken Content Path Handler', () => {
     it('should handle empty results from collector', async () => {
       athenaCollectorStub.fetchBrokenPaths.resolves([]);
 
-      const result = await handlerModule.fetchBrokenContentPaths(context);
+      const result = await handlerModule.fetchBrokenContentFragmentPaths(context);
 
       expect(context.log.info).to.have.been.calledWith('Found 0 broken content paths from AthenaCollector');
       expect(result.auditResult.brokenPaths).to.deep.equal([]);
@@ -147,15 +147,15 @@ describe('Broken Content Path Handler', () => {
         log: context.log,
       };
 
-      const result = await handlerModule.fetchBrokenContentPaths(customContext);
+      const result = await handlerModule.fetchBrokenContentFragmentPaths(customContext);
 
       expect(result.fullAuditRef).to.equal('https://custom-tenant.adobe.com');
     });
   });
 
-  describe('analyzeBrokenContentPaths', () => {
+  describe('analyzeBrokenContentFragmentPaths', () => {
     it('should successfully analyze broken content paths', async () => {
-      const result = await handlerModule.analyzeBrokenContentPaths(context);
+      const result = await handlerModule.analyzeBrokenContentFragmentPaths(context);
 
       expect(analysisStrategyStub.analyze).to.have.been.calledWith(['/content/dam/test/broken1.jpg', '/content/dam/test/broken2.pdf']);
       expect(context.log.info).to.have.been.calledWith('Found 2 suggestions for broken content paths');
@@ -172,7 +172,7 @@ describe('Broken Content Path Handler', () => {
     it('should throw error when audit result is unsuccessful', async () => {
       context.audit.getAuditResult.returns({ success: false, error: 'Previous step failed' });
 
-      await expect(handlerModule.analyzeBrokenContentPaths(context))
+      await expect(handlerModule.analyzeBrokenContentFragmentPaths(context))
         .to.be.rejectedWith('Audit failed, skipping analysis');
     });
 
@@ -180,7 +180,7 @@ describe('Broken Content Path Handler', () => {
       const error = new Error('Analysis strategy failed');
       analysisStrategyStub.analyze.rejects(error);
 
-      const result = await handlerModule.analyzeBrokenContentPaths(context);
+      const result = await handlerModule.analyzeBrokenContentFragmentPaths(context);
 
       expect(context.log.error).to.have.been.calledWith('Failed to analyze broken content paths: Analysis strategy failed');
       expect(result).to.deep.equal({
@@ -196,7 +196,7 @@ describe('Broken Content Path Handler', () => {
       });
       analysisStrategyStub.analyze.resolves([]);
 
-      const result = await handlerModule.analyzeBrokenContentPaths(context);
+      const result = await handlerModule.analyzeBrokenContentFragmentPaths(context);
 
       expect(analysisStrategyStub.analyze).to.have.been.calledWith([]);
       expect(context.log.info).to.have.been.calledWith('Found 0 suggestions for broken content paths');
@@ -205,7 +205,7 @@ describe('Broken Content Path Handler', () => {
     });
 
     it('should create PathIndex and AemAuthorClient correctly', async () => {
-      await handlerModule.analyzeBrokenContentPaths(context);
+      await handlerModule.analyzeBrokenContentFragmentPaths(context);
 
       expect(pathIndexStub).to.exist;
       expect(handlerModule.AemAuthorClient?.createFrom || (() => {})).to.exist;
@@ -214,30 +214,30 @@ describe('Broken Content Path Handler', () => {
     it('should handle AemAuthorClient creation errors', async () => {
       const aemError = new Error('AEM client initialization failed');
 
-      const errorHandlerModule = await esmock('../../../src/broken-content-path/handler.js', {
-        '../../../src/broken-content-path/collectors/athena-collector.js': {
+      const errorHandlerModule = await esmock('../../../src/content-fragment-broken-links/handler.js', {
+        '../../../src/content-fragment-broken-links/collectors/athena-collector.js': {
           AthenaCollector: function MockAthenaCollector() {
             return athenaCollectorStub;
           },
         },
-        '../../../src/broken-content-path/domain/index/path-index.js': {
+        '../../../src/content-fragment-broken-links/domain/index/path-index.js': {
           PathIndex: function MockPathIndex() {
             return pathIndexStub;
           },
         },
-        '../../../src/broken-content-path/clients/aem-author-client.js': {
+        '../../../src/content-fragment-broken-links/clients/aem-author-client.js': {
           AemAuthorClient: {
             createFrom: sandbox.stub().throws(aemError),
           },
         },
-        '../../../src/broken-content-path/analysis/analysis-strategy.js': {
+        '../../../src/content-fragment-broken-links/analysis/analysis-strategy.js': {
           AnalysisStrategy: function MockAnalysisStrategy() {
             return analysisStrategyStub;
           },
         },
       });
 
-      const result = await errorHandlerModule.analyzeBrokenContentPaths(context);
+      const result = await errorHandlerModule.analyzeBrokenContentFragmentPaths(context);
 
       expect(context.log.error).to.have.been.calledWith('Failed to analyze broken content paths: AEM client initialization failed');
       expect(result.success).to.be.false;

@@ -73,7 +73,7 @@ import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
-import brokenContentPath from './broken-content-path/handler.js';
+import contentFragmentBrokenLinks from './content-fragment-broken-links/handler.js';
 import cdnContentFragment404 from './cdn-content-fragment-404/handler.js';
 import prerender from './prerender/handler.js';
 
@@ -134,7 +134,7 @@ const HANDLERS = {
   'llmo-customer-analysis': llmoCustomerAnalysis,
   hreflang,
   headings,
-  'broken-content-path': brokenContentPath,
+  'content-fragment-broken-links': contentFragmentBrokenLinks,
   'cdn-content-fragment-404': cdnContentFragment404,
   prerender,
   dummy: (message) => ok(message),

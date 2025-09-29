@@ -73,16 +73,16 @@ describe('SimilarPathRule', () => {
       calculate: sandbox.stub().returns(1),
     };
 
-    const module = await esmock('../../../src/broken-content-path/rules/similar-path-rule.js', {
-      '../../../src/broken-content-path/domain/suggestion/suggestion.js': {
+    const module = await esmock('../../../src/content-fragment-broken-links/rules/similar-path-rule.js', {
+      '../../../src/content-fragment-broken-links/domain/suggestion/suggestion.js': {
         Suggestion: {
           similar: sandbox.stub().returns(mockSuggestion),
         },
       },
-      '../../../src/broken-content-path/utils/levenshtein-distance.js': {
+      '../../../src/content-fragment-broken-links/utils/levenshtein-distance.js': {
         LevenshteinDistance: mockLevenshteinDistance,
       },
-      '../../../src/broken-content-path/utils/path-utils.js': {
+      '../../../src/content-fragment-broken-links/utils/path-utils.js': {
         PathUtils: mockPathUtils,
       },
     });

@@ -12,8 +12,8 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { Locale } from '../../../src/broken-content-path/domain/language/locale.js';
-import { LocaleType } from '../../../src/broken-content-path/domain/language/locale-type.js';
+import { Locale } from '../../../src/content-fragment-broken-links/domain/language/locale.js';
+import { LocaleType } from '../../../src/content-fragment-broken-links/domain/language/locale-type.js';
 
 describe('Locale', () => {
   describe('FIVE_LETTER_PATTERN', () => {

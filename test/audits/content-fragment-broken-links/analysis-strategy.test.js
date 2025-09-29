@@ -92,17 +92,17 @@ describe('AnalysisStrategy', () => {
       fromPath: sandbox.stub().returns({ code: 'en-us' }),
     };
 
-    const module = await esmock('../../../src/broken-content-path/analysis/analysis-strategy.js', {
-      '../../../src/broken-content-path/rules/publish-rule.js': {
+    const module = await esmock('../../../src/content-fragment-broken-links/analysis/analysis-strategy.js', {
+      '../../../src/content-fragment-broken-links/rules/publish-rule.js': {
         PublishRule: function PublishRule() { return mockPublishRule; },
       },
-      '../../../src/broken-content-path/rules/locale-fallback-rule.js': {
+      '../../../src/content-fragment-broken-links/rules/locale-fallback-rule.js': {
         LocaleFallbackRule: function LocaleFallbackRule() { return mockLocaleFallbackRule; },
       },
-      '../../../src/broken-content-path/rules/similar-path-rule.js': {
+      '../../../src/content-fragment-broken-links/rules/similar-path-rule.js': {
         SimilarPathRule: function SimilarPathRule() { return mockSimilarPathRule; },
       },
-      '../../../src/broken-content-path/domain/suggestion/suggestion.js': {
+      '../../../src/content-fragment-broken-links/domain/suggestion/suggestion.js': {
         Suggestion: mockSuggestion,
         SuggestionType: {
           PUBLISH: 'PUBLISH',
@@ -111,13 +111,13 @@ describe('AnalysisStrategy', () => {
           NOT_FOUND: 'NOT_FOUND',
         },
       },
-      '../../../src/broken-content-path/domain/content/content-path.js': {
+      '../../../src/content-fragment-broken-links/domain/content/content-path.js': {
         ContentPath: mockContentPath,
       },
-      '../../../src/broken-content-path/domain/language/locale.js': {
+      '../../../src/content-fragment-broken-links/domain/language/locale.js': {
         Locale: mockLocale,
       },
-      '../../../src/broken-content-path/domain/index/path-index.js': {
+      '../../../src/content-fragment-broken-links/domain/index/path-index.js': {
         PathIndex: mockPathIndex,
       },
     });
