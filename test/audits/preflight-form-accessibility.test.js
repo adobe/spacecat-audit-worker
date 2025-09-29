@@ -127,6 +127,8 @@ describe('Preflight Form Accessibility Audit', () => {
           deliveryType: 'aem_cs',
         });
 
+        expect(message.data.url).to.equal('https://example.com/page1');
+
         expect(message.data.a11y).to.deep.equal([
           { form: 'https://example.com/page1', formSource: 'form' },
           { form: 'https://example.com/page2', formSource: 'form' },
