@@ -62,6 +62,13 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
 
   const { detectedTags } = auditData.auditResult;
   log.info(`[PRODUCT-METATAGS] Started to audit product-metatags for site url: ${auditData.auditResult.finalUrl}`);
+
+  // Add null check for detectedTags
+  if (!detectedTags || typeof detectedTags !== 'object') {
+    log.warn('[PRODUCT-METATAGS] No detected tags found or invalid detectedTags format, skipping suggestions generation');
+    log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
+    return;
+  }
   let useHostnameOnly = false;
   try {
     const siteId = opportunity.getSiteId();
@@ -425,8 +432,8 @@ export async function runAuditAndGenerateSuggestions(context) {
   } = await productMetatagsAutoDetect(site, totalPagesSet, context);
 
   log.info('[PRODUCT-METATAGS] Auto-detection completed:', {
-    detectedTagsCount: detectedTags.length,
-    extractedTagsCount: extractedTags.length,
+    detectedTagsCount: Object.keys(detectedTags).length,
+    extractedTagsCount: Object.keys(extractedTags).length,
     hasSeoChecks: !!seoChecks,
   });
 
@@ -455,10 +462,10 @@ export async function runAuditAndGenerateSuggestions(context) {
     extractedTags,
   };
   const updatedDetectedTags = await productMetatagsAutoSuggest(allTags, context, site);
-  log.info(`[PRODUCT-METATAGS] AI auto-suggest completed, updated detected tags count: ${updatedDetectedTags.length}`);
+  log.info(`[PRODUCT-METATAGS] AI auto-suggest completed, updated detected tags count: ${Object.keys(updatedDetectedTags || {}).length}`);
 
   const auditResult = {
-    detectedTags: updatedDetectedTags,
+    detectedTags: updatedDetectedTags || {},
     sourceS3Folder: `${context.env.S3_SCRAPER_BUCKET_NAME}/scrapes/${site.getId()}/`,
     fullAuditRef: '',
     finalUrl,
@@ -467,7 +474,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   };
 
   log.info('[PRODUCT-METATAGS] Audit result prepared:', {
-    detectedTagsCount: auditResult.detectedTags.length,
+    detectedTagsCount: Object.keys(auditResult.detectedTags).length,
     hasProjectedTrafficLost: !!auditResult.projectedTrafficLost,
     hasProjectedTrafficValue: !!auditResult.projectedTrafficValue,
     finalUrl: auditResult.finalUrl,
