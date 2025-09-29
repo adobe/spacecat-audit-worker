@@ -49,13 +49,6 @@ describe('AnalysisStrategy', () => {
       })
       .build();
 
-    mockAemAuthorClient = {
-      fetchContent: sandbox.stub().resolves([{
-        path: '/content/dam/test/suggested.jpg',
-        status: 'PUBLISHED',
-      }]),
-    };
-
     mockPathIndex = {
       find: sandbox.stub().returns(null),
       insertContentPath: sandbox.stub(),
@@ -376,7 +369,6 @@ describe('AnalysisStrategy', () => {
 
       expect(result).to.deep.equal(suggestions);
       expect(mockPathIndex.find).to.not.have.been.called;
-      expect(mockAemAuthorClient.fetchContent).to.not.have.been.called;
     });
 
     it('should process LOCALE suggestions with published content', async () => {
@@ -431,62 +423,6 @@ describe('AnalysisStrategy', () => {
 
       expect(result).to.have.lengthOf(1);
       expect(result[0].reason).to.equal('Content is in DRAFT state. Suggest publishing.');
-    });
-
-    it('should fetch content when not found in path index', async () => {
-      const suggestions = [
-        { type: 'SIMILAR', requestedPath: '/content/dam/test/broken.jpg', suggestedPath: '/content/dam/test/suggested.jpg' },
-      ];
-
-      mockPathIndex.find.returns(null);
-      mockPathIndex.parseContentStatus.returns('PUBLISHED');
-      mockAemAuthorClient.fetchContent.resolves([{
-        path: '/content/dam/test/suggested.jpg',
-        status: 'PUBLISHED',
-      }]);
-
-      const contentPath = {
-        isPublished: sandbox.stub().returns(true),
-        status: 'PUBLISHED',
-      };
-      mockContentPath.returns(contentPath);
-
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
-      const result = await strategy.processSuggestions(suggestions);
-
-      expect(mockAemAuthorClient.fetchContent).to.have.been.calledWith('/content/dam/test/suggested.jpg');
-      expect(mockContentPath).to.have.been.calledWith(
-        '/content/dam/test/suggested.jpg',
-        'PUBLISHED',
-        { code: 'en-us' },
-      );
-      expect(mockPathIndex.insertContentPath).to.have.been.calledWith(contentPath);
-      expect(result).to.deep.equal(suggestions);
-    });
-
-    it('should handle fetched content that is not published', async () => {
-      const suggestions = [
-        { type: 'LOCALE', requestedPath: '/content/dam/test/broken.jpg', suggestedPath: '/content/dam/test/suggested.jpg' },
-      ];
-
-      mockPathIndex.find.returns(null);
-      mockPathIndex.parseContentStatus.returns('MODIFIED');
-      mockAemAuthorClient.fetchContent.resolves([{
-        path: '/content/dam/test/suggested.jpg',
-        status: 'MODIFIED',
-      }]);
-
-      const contentPath = {
-        isPublished: sandbox.stub().returns(false),
-        status: 'MODIFIED',
-      };
-      mockContentPath.returns(contentPath);
-
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
-      const result = await strategy.processSuggestions(suggestions);
-
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].reason).to.equal('Content is in MODIFIED state. Suggest publishing.');
     });
 
     it('should handle empty suggestions array', async () => {
@@ -544,36 +480,6 @@ describe('AnalysisStrategy', () => {
       expect(result[0]).to.equal(suggestion);
       expect(context.log.info).to.have.been.calledWith('Analyzing broken path: /content/dam/test/broken');
       expect(context.log.info).to.have.been.calledWith('Rule LocaleFallbackRule applied to /content/dam/test/broken');
-    });
-
-    it('should handle complete workflow with content fetching', async () => {
-      const brokenPaths = ['/content/dam/test/broken.jpg'];
-      const suggestion = {
-        type: 'SIMILAR',
-        requestedPath: '/content/dam/test/broken.jpg',
-        suggestedPath: '/content/dam/test/suggested.jpg',
-      };
-
-      mockSimilarPathRule.apply.resolves(suggestion);
-      mockPathIndex.find.returns(null);
-      mockPathIndex.parseContentStatus.returns('DRAFT');
-      mockAemAuthorClient.fetchContent.resolves([{
-        path: '/content/dam/test/suggested.jpg',
-        status: 'DRAFT',
-      }]);
-
-      const contentPath = {
-        isPublished: sandbox.stub().returns(false),
-        status: 'DRAFT',
-      };
-      mockContentPath.returns(contentPath);
-
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
-      const result = await strategy.analyze(brokenPaths);
-
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].reason).to.equal('Content is in DRAFT state. Suggest publishing.');
-      expect(mockAemAuthorClient.fetchContent).to.have.been.calledWith('/content/dam/test/suggested.jpg');
     });
 
     it('should handle no successful rules scenario', async () => {

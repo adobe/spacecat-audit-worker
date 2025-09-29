@@ -14,8 +14,6 @@ import { PublishRule } from '../rules/publish-rule.js';
 import { LocaleFallbackRule } from '../rules/locale-fallback-rule.js';
 import { SimilarPathRule } from '../rules/similar-path-rule.js';
 import { Suggestion, SuggestionType } from '../domain/suggestion/suggestion.js';
-import { ContentPath } from '../domain/content/content-path.js';
-import { Locale } from '../domain/language/locale.js';
 
 export class AnalysisStrategy {
   static GRAPHQL_SUFFIX = /\.cfm.*\.json$/;
@@ -93,25 +91,7 @@ export class AnalysisStrategy {
       log.debug(`Checking content status for suggestion: ${suggestedPath} with type: ${suggestion.type}`);
 
       // Path must be available as it was suggested
-      let contentPath = this.pathIndex.find(suggestedPath);
-      if (!contentPath) {
-        // eslint-disable-next-line no-await-in-loop
-        const content = await this.aemAuthorClient.fetchContent(suggestedPath);
-        if (!content || content.length === 0) {
-          log.warn(`No content found for suggested path: ${suggestedPath}`);
-          // eslint-disable-next-line no-continue
-          continue;
-        }
-
-        const item = content[0];
-        contentPath = new ContentPath(
-          item.path,
-          this.aemAuthorClient.parseContentStatus(item.status),
-          Locale.fromPath(item.path),
-        );
-        // Does not hurt to insert here
-        this.pathIndex.insertContentPath(contentPath);
-      }
+      const contentPath = this.pathIndex.find(suggestedPath);
       const { status } = contentPath;
 
       if (contentPath.isPublished()) {
