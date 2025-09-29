@@ -16,7 +16,6 @@ import { SimilarPathRule } from '../rules/similar-path-rule.js';
 import { Suggestion, SuggestionType } from '../domain/suggestion/suggestion.js';
 import { ContentPath } from '../domain/content/content-path.js';
 import { Locale } from '../domain/language/locale.js';
-import { PathIndex } from '../domain/index/path-index.js';
 
 export class AnalysisStrategy {
   static GRAPHQL_SUFFIX = /\.cfm.*\.json$/;
@@ -96,13 +95,14 @@ export class AnalysisStrategy {
       // Path must be available as it was suggested
       let contentPath = this.pathIndex.find(suggestedPath);
       if (!contentPath) {
-        // Only in similar path rule, we start adding to the trie, hence we need to fetch here
         // eslint-disable-next-line no-await-in-loop
         const content = await this.aemAuthorClient.fetchContent(suggestedPath);
         if (!content || content.length === 0) {
           log.warn(`No content found for suggested path: ${suggestedPath}`);
+          // eslint-disable-next-line no-continue
           continue;
         }
+
         const item = content[0];
         contentPath = new ContentPath(
           item.path,
