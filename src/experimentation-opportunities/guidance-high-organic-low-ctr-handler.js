@@ -13,6 +13,18 @@
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
 
+/**
+ * Checks if any suggestions in the array were manually modified (updatedBy !== 'system')
+ * @param {Array} suggestions - Array of suggestion objects
+ * @returns {boolean} - True if any suggestion was manually modified
+ */
+function hasManuallyModifiedSuggestions(suggestions) {
+  return suggestions.some((suggestion) => {
+    const suggestionUpdatedBy = suggestion.getUpdatedBy();
+    return suggestionUpdatedBy && suggestionUpdatedBy !== 'system';
+  });
+}
+
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Opportunity, Suggestion } = dataAccess;
@@ -50,16 +62,9 @@ export default async function handler(message, context) {
   } else {
     const existingSuggestions = await opportunity.getSuggestions();
     // Manual protection check: any manual suggestions found, skip all updates
-    if (existingSuggestions.length > 0) {
-      const hasManualSuggestions = existingSuggestions.some((suggestion) => {
-        const suggestionUpdatedBy = suggestion.getUpdatedBy();
-        return suggestionUpdatedBy && suggestionUpdatedBy !== 'system';
-      });
-
-      if (hasManualSuggestions) {
-        log.info(`Existing suggestions for page: ${url} were manually modified. Skipping all updates to preserve data consistency.`);
-        return ok();
-      }
+    if (existingSuggestions.length > 0 && hasManuallyModifiedSuggestions(existingSuggestions)) {
+      log.info(`Existing suggestions for page: ${url} were manually modified. Skipping all updates to preserve data consistency.`);
+      return ok();
     }
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
