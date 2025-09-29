@@ -99,6 +99,10 @@ export class AnalysisStrategy {
         // Only in similar path rule, we start adding to the trie, hence we need to fetch here
         // eslint-disable-next-line no-await-in-loop
         const content = await this.aemAuthorClient.fetchContent(suggestedPath);
+        if (!content || content.length === 0) {
+          log.warn(`No content found for suggested path: ${suggestedPath}`);
+          continue;
+        }
         const item = content[0];
         contentPath = new ContentPath(
           item.path,
