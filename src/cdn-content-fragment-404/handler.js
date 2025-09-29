@@ -38,10 +38,10 @@ function getHourParts() {
 }
 
 async function loadSql(filename, variables) {
-  return getStaticContent(variables, `./src/cdn-404-analysis/sql/${filename}.sql`);
+  return getStaticContent(variables, `./src/cdn-content-fragment-404/sql/${filename}.sql`);
 }
 
-export async function cdn404AnalysisRunner(context, site) {
+export async function cdnContentFragment404Runner(context, site) {
   const { sanitizedHostname } = extractCustomerDomain(site);
   const { rawBucket, imsOrg } = context;
   const {
@@ -96,7 +96,6 @@ export async function cdn404AnalysisRunner(context, site) {
     auditResult: {
       database,
       rawTable,
-      output,
       completedAt: new Date().toISOString(),
     },
     fullAuditRef: output,
@@ -104,6 +103,6 @@ export async function cdn404AnalysisRunner(context, site) {
 }
 
 export default new AuditBuilder()
-  .withRunner(cdn404AnalysisRunner)
+  .withRunner(cdnContentFragment404Runner)
   .withUrlResolver(wwwUrlResolver)
   .build();
