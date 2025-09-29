@@ -82,6 +82,7 @@ export async function detectFormAccessibility(context, auditContext) {
         deliveryType: site.getDeliveryType(),
         time: new Date().toISOString(),
         data: {
+          url: urlsToDetect[0].form, // M expects url in the data object for forms opportunity
           opportunityId: siteId,
           a11y: urlsToDetect,
         },
