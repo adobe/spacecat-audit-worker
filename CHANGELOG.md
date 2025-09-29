@@ -1,3 +1,10 @@
+# [1.189.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.188.4...v1.189.0) (2025-09-29)
+
+
+### Features
+
+* **llmo-customer-analysis:** retrieve URLs from Ahref if no OpTel data is present ([#1310](https://github.com/adobe/spacecat-audit-worker/issues/1310)) ([b65be71](https://github.com/adobe/spacecat-audit-worker/commit/b65be71026ed57c5e082456c3b27ed7ee43ba0f4))
+
 ## [1.188.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.188.3...v1.188.4) (2025-09-29)
 
 
