@@ -3,7 +3,7 @@ UNLOAD (
     url_extract_path(properties.requestUri) AS url,
     properties.userAgent AS user_agent,
     CAST(properties.httpStatusCode AS INT) AS status,
-    NULL AS referer,
+    try(url_extract_host(properties.referrer)) AS referer,
     url_extract_host(properties.requestUri) AS host,
     CAST(properties.timeToFirstByte AS DOUBLE) AS time_to_first_byte,
     COUNT(*) AS count,

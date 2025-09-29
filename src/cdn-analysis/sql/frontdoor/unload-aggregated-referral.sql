@@ -11,9 +11,9 @@ UNLOAD (
   
   referrals_raw AS (
     SELECT
-      url_extract_path(properties.requestUri) AS url,
-      url_extract_host(properties.requestUri) AS host,
-      properties.referrer AS referrer,
+      try(url_extract_path(properties.requestUri)) AS url,
+      try(url_extract_host(properties.requestUri)) AS host,
+      try(url_extract_host(properties.referrer)) AS referrer,
       url_extract_parameter(properties.requestUri, 'utm_source') AS utm_source,
       url_extract_parameter(properties.requestUri, 'utm_medium') AS utm_medium,
   
