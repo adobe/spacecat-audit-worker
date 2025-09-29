@@ -73,7 +73,7 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
         auditType === Audit.AUDIT_TYPES.CWV
         || auditType === Audit.AUDIT_TYPES.META_TAGS
         || auditType === Audit.AUDIT_TYPES.SECURITY_CSP
-        || auditType === 'product-metatags' // temporary until we have the enum updated in shared-data-access
+        || auditType === Audit.AUDIT_TYPES.PRODUCT_METATAGS
       ) {
         opportunity.setData({
           ...opportunity.getData(),
