@@ -675,7 +675,7 @@ export async function redirectsAuditRunner(baseUrl, context) {
  *    finalUrl: string, // (in the style of the source URL)
  *    fixType: string,  // kabob-case tokens ...
  *       // {'duplicate-src', 'too-qualified', 'same-src-dest', 'manual-check', 'final-mismatch',
- *       //   'max-redirects-exceeded', 'high-redirect-count', '404-page', 'unknown'}
+ *       //  'max-redirects-exceeded', 'high-redirect-count', '404-page', 'src-is-final', 'unknown'}
  *    canApplyFixAutomatically: boolean, // true if the fix could be applied automatically
  *  }
  */
@@ -703,6 +703,7 @@ export function getSuggestedFix(result) {
   const fixForHasSameSrcDest = 'Remove this entry since the Source URL is the same as the Destination URL.';
   const fixForManualCheck = `Check the URL: ${finalUrl} since it resulted in an error code. Maybe remove the entry from the redirects file. Error message: ${errorMsg}`;
   const fixFor404page = 'Update, or remove, this entry since the Source URL redirects to a 404 page.';
+  const fixForSrcRedirectsToSelf = 'Remove this entry since the Source URL redirects to itself.';
   const fixForFinalMismatch = 'Replace the Destination URL with the Final URL, since the Source URL actually redirects to the Final URL.';
   const fixForMaxRedirectsExceeded = `Redesign the redirects that start from the Source URL. An excessive number of redirects were encountered. Partial redirect chain is: ${redirectChain}`;
   const fixForHighRedirectCount = `Reduce the redirects that start from the Source URL. There are too many redirects to get to the Destination URL. Redirect chain is: ${redirectChain}`;
@@ -731,6 +732,10 @@ export function getSuggestedFix(result) {
     if (is404page(result.fullFinal)) {
       fix = fixFor404page;
       fixType = '404-page';
+    } else if (result.fullFinal === result.fullSrc) {
+      fix = fixForSrcRedirectsToSelf;
+      fixType = 'src-is-final';
+      canApplyFixAutomatically = true;
     } else {
       fix = fixForFinalMismatch;
       fixType = 'final-mismatch';
@@ -797,7 +802,7 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
         key: buildUniqueKey(row), // string
 
         // {'duplicate-src', 'too-qualified', 'same-src-dest', 'manual-check', 'final-mismatch',
-        //   'max-redirects-exceeded', 'high-redirect-count', '404-page', 'unknown'}
+        //  'max-redirects-exceeded', 'high-redirect-count', '404-page', 'src-is-final', 'unknown'}
         fixType: suggestedFixResult.fixType, // string: kabob-case tokens ... (see comments above)
 
         fix: suggestedFixResult.fix, // string: en_US locale. Used as a human-readable example.
