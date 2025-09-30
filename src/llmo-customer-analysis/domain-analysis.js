@@ -224,7 +224,7 @@ Please analyze this domain and URL list to extract distinct product/service cate
         parsedContent = JSON.parse(promptResponse.content);
       } catch (parseError) {
         log.error(`Failed to parse URL-based domain analysis response as JSON: ${parseError.message}`);
-        return { insights: [], usage: totalTokenUsage };
+        return insights;
       }
 
       if (Array.isArray(parsedContent)) {
@@ -241,7 +241,7 @@ Please analyze this domain and URL list to extract distinct product/service cate
     log.info(`Total token usage for URL-based domain analysis: ${JSON.stringify(totalTokenUsage)}`);
 
     log.info(`URL-based domain analysis complete for domain: ${domain}`);
-    return { insights, usage: totalTokenUsage };
+    return insights;
   } catch (error) {
     log.error(`Failed to complete URL-based domain analysis: ${error.message}`);
     throw error;
