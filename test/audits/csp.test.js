@@ -869,7 +869,7 @@ describe('CSP Post-processor', () => {
       const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
       expect(cspResult).to.deep.equal(expectedCsp);
 
-      expect(context.log.info).not.to.have.been.calledWithMatch(sinon.match('Skipping CSP auto-suggest.'));
+      expect(context.log.debug).not.to.have.been.calledWithMatch(sinon.match('Skipping CSP auto-suggest.'));
     });
 
     it('auto-identify info is returned for unexpected CSP findings', async () => {
@@ -896,7 +896,7 @@ describe('CSP Post-processor', () => {
       expect(scopeHead.isDone()).to.equal(false);
       expect(scope404.isDone()).to.equal(false);
 
-      expect(context.log.info).to.have.been.calledWithMatch(sinon.match('Skipping CSP auto-suggest.'));
+      expect(context.log.debug).to.have.been.calledWithMatch(sinon.match('Skipping CSP auto-suggest.'));
     });
 
     it('auto-identify info is returned if auto-suggestion fails', async () => {
