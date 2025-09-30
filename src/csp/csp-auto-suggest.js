@@ -87,8 +87,20 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
   }
 
   // For now, auto-suggest works only for pages without any CSP
-  if (csp.length !== 1 || csp[0].description !== 'No CSP found in enforcement mode') {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Complex CSP finding. Skipping CSP auto-suggest.`);
+  const result = [...csp];
+  let missingNonce = null;
+
+  result.some((item) => {
+    if (item.description && (item.description.includes('nonces') || item.description === 'No CSP found in enforcement mode')) {
+      missingNonce = item;
+      return true;
+    }
+
+    return false;
+  });
+
+  if (!missingNonce) {
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: No nonce-related finding. Skipping CSP auto-suggest.`);
     return csp;
   }
 
@@ -123,8 +135,6 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
     type: 'csp-header',
   });
 
-  const result = [...csp];
-  result[0].findings = findings;
-
+  missingNonce.findings = findings;
   return result;
 }

@@ -186,6 +186,63 @@ describe('CSP Post-processor', () => {
       + '  type="module"></script>\n'
       + '<link rel="stylesheet" href="/styles/styles.css"/>\n';
 
+  const findingDetails = [
+    {
+      type: 'static-content',
+      url: 'https://adobe.com/head.html',
+      page: '/head.html',
+      findings: [
+        {
+          scriptContent: '<script src="/scripts/lib-franklin.js" type="module"></script>',
+          suggestedContent: '<script nonce="aem" src="/scripts/lib-franklin.js" type="module"></script>',
+          lineNumber: 4,
+        },
+        {
+          scriptContent: '<script src="/scripts/scripts.js" type="module"></script>',
+          suggestedContent: '<script nonce="aem" src="/scripts/scripts.js" type="module"></script>',
+          lineNumber: 5,
+        },
+        {
+          scriptContent: '<script src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>',
+          suggestedContent: '<script nonce="aem" src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>',
+          lineNumber: 6,
+        },
+      ],
+      suggestedBody: '<!-- v7 -->\n\n<meta name="viewport" content="width=device-width, initial-scale=1"/>\n<script nonce="aem" src="/scripts/lib-franklin.js" type="module"></script>\n<script nonce="aem" src="/scripts/scripts.js" type="module"></script>\n<script nonce="aem" src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>\n<link rel="stylesheet" href="/styles/styles.css"/>\n',
+    },
+    {
+      type: 'static-content',
+      url: 'https://adobe.com/404.html',
+      page: '/404.html',
+      findings: [
+        {
+          scriptContent: "<script type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>",
+          suggestedContent: "<script nonce=\"aem\" type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>",
+          lineNumber: 7,
+        },
+        {
+          scriptContent: '<script src="/scripts/scripts.js" type="module" crossorigin="use-credentials"></script>',
+          suggestedContent: '<script nonce="aem" src="/scripts/scripts.js" type="module" crossorigin="use-credentials"></script>',
+          lineNumber: 13,
+        },
+        {
+          scriptContent: "<script type=\"module\">\n    window.addEventListener('load', () => {\n      if (document.referrer) {\n        const { origin, pathname } = new URL(document.referrer);\n        if (origin === window.location.origin) {\n          const backBtn = document.createElement('a');\n          backBtn.classList.add('button', 'error-button-back');\n          backBtn.href = pathname;\n          backBtn.textContent = 'Go back';\n          backBtn.title = 'Go back';\n          const btnContainer = document.querySelector('.button-container');\n          btnContainer.append(backBtn);\n        }\n      }\n    });\n  </script>",
+          suggestedContent: "<script nonce=\"aem\" type=\"module\">\n    window.addEventListener('load', () => {\n      if (document.referrer) {\n        const { origin, pathname } = new URL(document.referrer);\n        if (origin === window.location.origin) {\n          const backBtn = document.createElement('a');\n          backBtn.classList.add('button', 'error-button-back');\n          backBtn.href = pathname;\n          backBtn.textContent = 'Go back';\n          backBtn.title = 'Go back';\n          const btnContainer = document.querySelector('.button-container');\n          btnContainer.append(backBtn);\n        }\n      }\n    });\n  </script>",
+          lineNumber: 14,
+        },
+        {
+          scriptContent: "<script type=\"module\">\n    import { sampleRUM } from '/scripts/lib-franklin.js';\n    import { applyRedirects } from '/scripts/redirects.js';\n    await applyRedirects();\n    sampleRUM('404', { source: document.referrer });\n  </script>",
+          suggestedContent: "<script nonce=\"aem\" type=\"module\">\n    import { sampleRUM } from '/scripts/lib-franklin.js';\n    import { applyRedirects } from '/scripts/redirects.js';\n    await applyRedirects();\n    sampleRUM('404', { source: document.referrer });\n  </script>",
+          lineNumber: 30,
+        },
+      ],
+      suggestedBody: "<!DOCTYPE html>\n<html>\n\n<head>\n  \n  <title>Page not found</title>\n  <script nonce=\"aem\" type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <meta property=\"og:title\" content=\"Page not found\">\n  <script nonce=\"aem\" src=\"/scripts/scripts.js\" type=\"module\" crossorigin=\"use-credentials\"></script>\n  <script nonce=\"aem\" type=\"module\">\n    window.addEventListener('load', () => {\n      if (document.referrer) {\n        const { origin, pathname } = new URL(document.referrer);\n        if (origin === window.location.origin) {\n          const backBtn = document.createElement('a');\n          backBtn.classList.add('button', 'error-button-back');\n          backBtn.href = pathname;\n          backBtn.textContent = 'Go back';\n          backBtn.title = 'Go back';\n          const btnContainer = document.querySelector('.button-container');\n          btnContainer.append(backBtn);\n        }\n      }\n    });\n  </script>\n  <script nonce=\"aem\" type=\"module\">\n    import { sampleRUM } from '/scripts/lib-franklin.js';\n    import { applyRedirects } from '/scripts/redirects.js';\n    await applyRedirects();\n    sampleRUM('404', { source: document.referrer });\n  </script>\n  <link rel=\"stylesheet\" href=\"/styles/styles.css\">\n  <style>\n    main.error {\n      min-height: calc(100vh - var(--nav-height));\n      display: flex;\n      align-items: center;\n    }\n\n    main.error .error-number {\n      width: 100%;\n    }\n\n    main.error .error-number text {\n      font-family: monospace;\n    }\n  </style>\n  <link rel=\"stylesheet\" href=\"/styles/lazy-styles.css\">\n</head>\n\n<body>\n  <header></header>\n  <main class=\"error\">\n    <div class=\"section\">\n      <svg viewBox=\"1 0 38 18\" class=\"error-number\">\n        <text x=\"0\" y=\"17\">404</text>\n      </svg>\n      <h2 class=\"error-message\">Page Not Found</h2>\n      <p class=\"button-container\">\n        <a href=\"/\" class=\"button secondary error-button-home\">Go home</a>\n      </p>\n    </div>\n  </main>\n  <footer></footer>\n</body>\n\n</html>",
+    },
+    {
+      type: 'csp-header',
+    },
+  ];
+
   let cspSite;
   let auditData;
   let opportunityStub;
@@ -686,62 +743,7 @@ describe('CSP Post-processor', () => {
       const expectedCsp = [
         {
           ...csp[0],
-          findings: [
-            {
-              type: 'static-content',
-              url: 'https://adobe.com/head.html',
-              page: '/head.html',
-              findings: [
-                {
-                  scriptContent: '<script src="/scripts/lib-franklin.js" type="module"></script>',
-                  suggestedContent: '<script nonce="aem" src="/scripts/lib-franklin.js" type="module"></script>',
-                  lineNumber: 4,
-                },
-                {
-                  scriptContent: '<script src="/scripts/scripts.js" type="module"></script>',
-                  suggestedContent: '<script nonce="aem" src="/scripts/scripts.js" type="module"></script>',
-                  lineNumber: 5,
-                },
-                {
-                  scriptContent: '<script src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>',
-                  suggestedContent: '<script nonce="aem" src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>',
-                  lineNumber: 6,
-                },
-              ],
-              suggestedBody: '<!-- v7 -->\n\n<meta name="viewport" content="width=device-width, initial-scale=1"/>\n<script nonce="aem" src="/scripts/lib-franklin.js" type="module"></script>\n<script nonce="aem" src="/scripts/scripts.js" type="module"></script>\n<script nonce="aem" src="/scripts/indexing-test.js?date=2024-08-16" type="module"></script>\n<link rel="stylesheet" href="/styles/styles.css"/>\n',
-            },
-            {
-              type: 'static-content',
-              url: 'https://adobe.com/404.html',
-              page: '/404.html',
-              findings: [
-                {
-                  scriptContent: "<script type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>",
-                  suggestedContent: "<script nonce=\"aem\" type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>",
-                  lineNumber: 7,
-                },
-                {
-                  scriptContent: '<script src="/scripts/scripts.js" type="module" crossorigin="use-credentials"></script>',
-                  suggestedContent: '<script nonce="aem" src="/scripts/scripts.js" type="module" crossorigin="use-credentials"></script>',
-                  lineNumber: 13,
-                },
-                {
-                  scriptContent: "<script type=\"module\">\n    window.addEventListener('load', () => {\n      if (document.referrer) {\n        const { origin, pathname } = new URL(document.referrer);\n        if (origin === window.location.origin) {\n          const backBtn = document.createElement('a');\n          backBtn.classList.add('button', 'error-button-back');\n          backBtn.href = pathname;\n          backBtn.textContent = 'Go back';\n          backBtn.title = 'Go back';\n          const btnContainer = document.querySelector('.button-container');\n          btnContainer.append(backBtn);\n        }\n      }\n    });\n  </script>",
-                  suggestedContent: "<script nonce=\"aem\" type=\"module\">\n    window.addEventListener('load', () => {\n      if (document.referrer) {\n        const { origin, pathname } = new URL(document.referrer);\n        if (origin === window.location.origin) {\n          const backBtn = document.createElement('a');\n          backBtn.classList.add('button', 'error-button-back');\n          backBtn.href = pathname;\n          backBtn.textContent = 'Go back';\n          backBtn.title = 'Go back';\n          const btnContainer = document.querySelector('.button-container');\n          btnContainer.append(backBtn);\n        }\n      }\n    });\n  </script>",
-                  lineNumber: 14,
-                },
-                {
-                  scriptContent: "<script type=\"module\">\n    import { sampleRUM } from '/scripts/lib-franklin.js';\n    import { applyRedirects } from '/scripts/redirects.js';\n    await applyRedirects();\n    sampleRUM('404', { source: document.referrer });\n  </script>",
-                  suggestedContent: "<script nonce=\"aem\" type=\"module\">\n    import { sampleRUM } from '/scripts/lib-franklin.js';\n    import { applyRedirects } from '/scripts/redirects.js';\n    await applyRedirects();\n    sampleRUM('404', { source: document.referrer });\n  </script>",
-                  lineNumber: 30,
-                },
-              ],
-              suggestedBody: "<!DOCTYPE html>\n<html>\n\n<head>\n  \n  <title>Page not found</title>\n  <script nonce=\"aem\" type=\"text/javascript\">\n    window.isErrorPage = true;\n    window.errorCode = '404';\n  </script>\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <meta property=\"og:title\" content=\"Page not found\">\n  <script nonce=\"aem\" src=\"/scripts/scripts.js\" type=\"module\" crossorigin=\"use-credentials\"></script>\n  <script nonce=\"aem\" type=\"module\">\n    window.addEventListener('load', () => {\n      if (document.referrer) {\n        const { origin, pathname } = new URL(document.referrer);\n        if (origin === window.location.origin) {\n          const backBtn = document.createElement('a');\n          backBtn.classList.add('button', 'error-button-back');\n          backBtn.href = pathname;\n          backBtn.textContent = 'Go back';\n          backBtn.title = 'Go back';\n          const btnContainer = document.querySelector('.button-container');\n          btnContainer.append(backBtn);\n        }\n      }\n    });\n  </script>\n  <script nonce=\"aem\" type=\"module\">\n    import { sampleRUM } from '/scripts/lib-franklin.js';\n    import { applyRedirects } from '/scripts/redirects.js';\n    await applyRedirects();\n    sampleRUM('404', { source: document.referrer });\n  </script>\n  <link rel=\"stylesheet\" href=\"/styles/styles.css\">\n  <style>\n    main.error {\n      min-height: calc(100vh - var(--nav-height));\n      display: flex;\n      align-items: center;\n    }\n\n    main.error .error-number {\n      width: 100%;\n    }\n\n    main.error .error-number text {\n      font-family: monospace;\n    }\n  </style>\n  <link rel=\"stylesheet\" href=\"/styles/lazy-styles.css\">\n</head>\n\n<body>\n  <header></header>\n  <main class=\"error\">\n    <div class=\"section\">\n      <svg viewBox=\"1 0 38 18\" class=\"error-number\">\n        <text x=\"0\" y=\"17\">404</text>\n      </svg>\n      <h2 class=\"error-message\">Page Not Found</h2>\n      <p class=\"button-container\">\n        <a href=\"/\" class=\"button secondary error-button-home\">Go home</a>\n      </p>\n    </div>\n  </main>\n  <footer></footer>\n</body>\n\n</html>",
-            },
-            {
-              type: 'csp-header',
-            },
-          ],
+          findings: findingDetails,
         },
       ];
 
@@ -829,7 +831,7 @@ describe('CSP Post-processor', () => {
       expect(context.log.error).not.to.have.been.calledWithMatch(sinon.match('Error fetching one or more pages. Skipping CSP auto-suggest.'));
     });
 
-    it('auto-identify info is returned for complex CSP findings', async () => {
+    it('auto-suggest info is returned for nonce CSP findings', async () => {
       sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp-auto-suggest');
       const csp = [
         {
@@ -848,7 +850,42 @@ describe('CSP Post-processor', () => {
           severity: 'High',
         },
       ];
-      const expectedCsp = csp;
+      const expectedCsp = [
+        {
+          ...csp[0],
+          findings: findingDetails
+        },
+        {
+          ...csp[1]
+        },
+        {
+          ...csp[2]
+        },
+      ];
+
+      nock('https://adobe.com').get('/head.html').reply(200, htmlContentHead);
+      nock('https://adobe.com').get('/404.html').reply(200, htmlContent404);
+
+      const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
+      expect(cspResult).to.deep.equal(expectedCsp);
+
+      expect(context.log.info).not.to.have.been.calledWithMatch(sinon.match('Skipping CSP auto-suggest.'));
+    });
+
+    it('auto-identify info is returned for unexpected CSP findings', async () => {
+      sinon.replace(configuration, 'isHandlerEnabledForSite', (toggle) => toggle === 'security-csp-auto-suggest');
+      const csp = [
+        {
+          directive: 'script-src',
+          description: '`\'unsafe-inline\'` allows the execution of unsafe in-page scripts and event handlers.',
+          severity: 'High',
+        },
+      ];
+      const expectedCsp = [
+          {
+            ...csp[0]
+          }
+      ];
 
       const scopeHead = nock('https://adobe.com').get('/head.html').reply(200);
       const scope404 = nock('https://adobe.com').get('/404.html').reply(200);
@@ -859,7 +896,7 @@ describe('CSP Post-processor', () => {
       expect(scopeHead.isDone()).to.equal(false);
       expect(scope404.isDone()).to.equal(false);
 
-      expect(context.log.info).to.have.been.calledWithMatch(sinon.match('Complex CSP finding. Skipping CSP auto-suggest.'));
+      expect(context.log.info).to.have.been.calledWithMatch(sinon.match('Skipping CSP auto-suggest.'));
     });
 
     it('auto-identify info is returned if auto-suggestion fails', async () => {
@@ -870,12 +907,17 @@ describe('CSP Post-processor', () => {
           description: 'No CSP found in enforcement mode',
         },
       ];
+      const expectedCsp = [
+        {
+          ...csp[0]
+        }
+      ];
 
       const scopeHead = nock('https://adobe.com').get('/head.html').reply(404);
       const scope404 = nock('https://adobe.com').get('/404.html').reply(404);
 
       const cspResult = await cspAutoSuggest(siteUrl, csp, context, cspSite);
-      expect(cspResult).to.deep.equal(csp);
+      expect(cspResult).to.deep.equal(expectedCsp);
 
       expect(scopeHead.isDone()).to.equal(true);
       expect(scope404.isDone()).to.equal(true);
