@@ -66,7 +66,7 @@ export default async function handler(message, context) {
       log.debug(`Existing suggestions for page: ${url} were manually modified. Skipping all updates to preserve data consistency.`);
       return ok();
     }
-    log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
+    log.debug(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
     opportunity.setData({
       ...opportunity.getData(),
