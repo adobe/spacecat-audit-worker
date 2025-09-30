@@ -5,7 +5,8 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
     userAgent:            string,
     httpStatusCode:       string,
     timeToFirstByte:      string,
-    referrer:             string
+    referer:              string,
+    hostName:             string
   >
 )
 PARTITIONED BY (

@@ -3,8 +3,8 @@ UNLOAD (
     url_extract_path(properties.requestUri) AS url,
     properties.userAgent AS user_agent,
     CAST(properties.httpStatusCode AS INT) AS status,
-    try(url_extract_host(properties.referrer)) AS referer,
-    url_extract_host(properties.requestUri) AS host,
+    try(url_extract_host(properties.referer)) AS referer,
+    COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)) AS host,
     CAST(properties.timeToFirstByte AS DOUBLE) AS time_to_first_byte,
     COUNT(*) AS count,
     '{{serviceProvider}}' AS cdn_provider
@@ -24,13 +24,13 @@ UNLOAD (
     )
 
     -- agentic and LLM-attributed traffic never has self-referer 
-    AND NOT REGEXP_LIKE(COALESCE(properties.referrer, ''), '{{host}}')
+    AND NOT REGEXP_LIKE(COALESCE(properties.referer, ''), '{{host}}')
 
   GROUP BY
     url_extract_path(properties.requestUri),
     properties.userAgent,
     CAST(properties.httpStatusCode AS INT),
-    url_extract_host(properties.requestUri),
+    COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)),
     CAST(properties.timeToFirstByte AS DOUBLE),
     '{{serviceProvider}}'
 

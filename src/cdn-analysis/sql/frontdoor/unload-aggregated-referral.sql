@@ -1,7 +1,7 @@
 UNLOAD (
   -- first, identify the hosts from the cdn logs so that self-referrals can be filtered out later on
   WITH hosts AS (
-    SELECT DISTINCT url_extract_host(properties.requestUri) AS host
+    SELECT DISTINCT COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)) AS host
     FROM {{database}}.{{rawTable}}
     WHERE year  = '{{year}}'
       AND month = '{{month}}'
@@ -12,8 +12,8 @@ UNLOAD (
   referrals_raw AS (
     SELECT
       try(url_extract_path(properties.requestUri)) AS url,
-      try(url_extract_host(properties.requestUri)) AS host,
-      try(url_extract_host(properties.referrer)) AS referrer,
+      try(COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri))) AS host,
+      try(url_extract_host(properties.referer)) AS referrer,
       url_extract_parameter(properties.requestUri, 'utm_source') AS utm_source,
       url_extract_parameter(properties.requestUri, 'utm_medium') AS utm_medium,
   
@@ -67,7 +67,7 @@ UNLOAD (
 
         -- case 3: IF cdn log contains external referrer (not one of first party hosts)
         OR (
-          properties.referrer IS NOT NULL AND try(url_extract_host(properties.referrer)) NOT IN (SELECT host FROM hosts)
+          properties.referer IS NOT NULL AND try(url_extract_host(properties.referer)) NOT IN (SELECT host FROM hosts)
         )
       )
 
