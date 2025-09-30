@@ -109,6 +109,16 @@ describe('Sitemap Audit', () => {
           details: {
             issues: {},
           },
+          extractedPaths: {
+            [`${url}/sitemap_bar.xml`]: [
+              `${url}/baz`,
+              `${url}/cux`,
+            ],
+            [`${url}/sitemap_foo.xml`]: [
+              `${url}/foo`,
+              `${url}/bar`,
+            ],
+          },
           success: true,
           reasons: [
             {
@@ -140,6 +150,16 @@ describe('Sitemap Audit', () => {
         auditResult: {
           details: {
             issues: {},
+          },
+          extractedPaths: {
+            [`${url}/sitemap_bar.xml`]: [
+              `${url}/baz`,
+              `${url}/cux`,
+            ],
+            [`${url}/sitemap_foo.xml`]: [
+              `${url}/foo`,
+              `${url}/bar`,
+            ],
           },
           success: true,
           reasons: [
@@ -180,6 +200,16 @@ describe('Sitemap Audit', () => {
         auditResult: {
           details: {
             issues: {},
+          },
+          extractedPaths: {
+            [`${url}/sitemap_bar.txt`]: [
+              `${url}/baz`,
+              `${url}/cux`,
+            ],
+            [`${url}/sitemap_foo.txt`]: [
+              `${url}/foo`,
+              `${url}/bar`,
+            ],
           },
           success: true,
           reasons: [
