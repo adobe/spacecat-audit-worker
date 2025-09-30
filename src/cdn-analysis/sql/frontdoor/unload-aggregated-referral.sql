@@ -71,9 +71,10 @@ UNLOAD (
         )
       )
 
-      -- only count HTML page views
+      -- exclude static assets, but always include HTML
       AND (
-        url_extract_path(properties.requestUri) LIKE '%.htm%'
+        NOT REGEXP_LIKE(url_extract_path(properties.requestUri), '(?i)\.(css|js|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|eot|mp4|mp3|avi|mov|zip|tar|gz|json|xml|pdf|txt)(\?.*)?$')
+        OR url_extract_path(properties.requestUri) LIKE '%.htm%'
       )
   
       -- basic filtering on user_agent for bots, crawlers, programmatic clients

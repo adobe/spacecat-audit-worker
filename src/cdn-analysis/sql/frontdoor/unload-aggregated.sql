@@ -17,11 +17,10 @@ UNLOAD (
      -- match known LLM-related user-agents
     AND REGEXP_LIKE(properties.userAgent, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot|^Google$)')
 
+    -- exclude static assets, but always include HTML, PDF, robots.txt, and sitemaps
     AND (
-        url_extract_path(properties.requestUri) LIKE '%.htm%'
-        OR url_extract_path(properties.requestUri)  LIKE '%.pdf%'
-        OR url_extract_path(properties.requestUri) LIKE '%robots.txt%' 
-        OR url_extract_path(properties.requestUri) LIKE '%sitemap%'
+        NOT REGEXP_LIKE(url_extract_path(properties.requestUri), '(?i)\.(css|js|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|eot|mp4|mp3|avi|mov|zip|tar|gz|json|xml|txt)(\?.*)?$')
+        OR REGEXP_LIKE(url_extract_path(properties.requestUri), '(?i)(\.htm|\.pdf|robots\.txt|sitemap)')
     )
 
     -- agentic and LLM-attributed traffic never has self-referer 
