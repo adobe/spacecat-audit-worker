@@ -1,3 +1,31 @@
+## [1.190.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.190.0...v1.190.1) (2025-09-30)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1324](https://github.com/adobe/spacecat-audit-worker/issues/1324)) ([c1c11f9](https://github.com/adobe/spacecat-audit-worker/commit/c1c11f987cbcba815c5e92770bc67ef89069dfc7))
+
+# [1.190.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.189.1...v1.190.0) (2025-09-29)
+
+
+### Features
+
+* manual opportunity protection for experimentation opportunities ([#1303](https://github.com/adobe/spacecat-audit-worker/issues/1303)) ([741ad91](https://github.com/adobe/spacecat-audit-worker/commit/741ad914c929df3c54a607b291c62fa3caeabadd))
+
+## [1.189.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.189.0...v1.189.1) (2025-09-29)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** return array of insights when analyzing domain via URLs ([#1323](https://github.com/adobe/spacecat-audit-worker/issues/1323)) ([04c7dfc](https://github.com/adobe/spacecat-audit-worker/commit/04c7dfc429e5cde1cd16016eaa40788cf57fc813))
+
+# [1.189.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.188.4...v1.189.0) (2025-09-29)
+
+
+### Features
+
+* **llmo-customer-analysis:** retrieve URLs from Ahref if no OpTel data is present ([#1310](https://github.com/adobe/spacecat-audit-worker/issues/1310)) ([b65be71](https://github.com/adobe/spacecat-audit-worker/commit/b65be71026ed57c5e082456c3b27ed7ee43ba0f4))
+
 ## [1.188.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.188.3...v1.188.4) (2025-09-29)
 
 
