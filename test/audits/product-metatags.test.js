@@ -1622,6 +1622,63 @@ describe('Product MetaTags', () => {
           'og:image': 'https://example.com/image.jpg',
         });
       });
+
+      it('should handle undefined detectedTags gracefully', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+        const auditDataWithUndefinedTags = {
+          siteId: 'site-id',
+          auditId: 'audit-id',
+          auditResult: {
+            finalUrl: 'https://example.com',
+            detectedTags: undefined,
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithUndefinedTags, context);
+
+        expect(logStub.warn).to.be.calledWith('[PRODUCT-METATAGS] No detected tags found or invalid detectedTags format, skipping suggestions generation');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(opportunity.addSuggestions).to.not.be.called;
+      });
+
+      it('should handle null detectedTags gracefully', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+        const auditDataWithNullTags = {
+          siteId: 'site-id',
+          auditId: 'audit-id',
+          auditResult: {
+            finalUrl: 'https://example.com',
+            detectedTags: null,
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithNullTags, context);
+
+        expect(logStub.warn).to.be.calledWith('[PRODUCT-METATAGS] No detected tags found or invalid detectedTags format, skipping suggestions generation');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(opportunity.addSuggestions).to.not.be.called;
+      });
+
+      it('should handle non-object detectedTags gracefully', async () => {
+        dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+
+        const auditDataWithInvalidTags = {
+          siteId: 'site-id',
+          auditId: 'audit-id',
+          auditResult: {
+            finalUrl: 'https://example.com',
+            detectedTags: 'invalid-string',
+          },
+        };
+
+        await opportunityAndSuggestions(auditUrl, auditDataWithInvalidTags, context);
+
+        expect(logStub.warn).to.be.calledWith('[PRODUCT-METATAGS] No detected tags found or invalid detectedTags format, skipping suggestions generation');
+        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(opportunity.addSuggestions).to.not.be.called;
+      });
     });
   });
 
