@@ -5,7 +5,7 @@ UNLOAD (
     CAST(properties.httpStatusCode AS INT) AS status,
     try(url_extract_host(properties.referer)) AS referer,
     COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)) AS host,
-    CAST(properties.timeToFirstByte AS DOUBLE) AS time_to_first_byte,
+    CAST(properties.timeToFirstByte AS DOUBLE) * 1000 AS time_to_first_byte,
     COUNT(*) AS count,
     '{{serviceProvider}}' AS cdn_provider
   FROM {{database}}.{{rawTable}}
@@ -30,8 +30,9 @@ UNLOAD (
     url_extract_path(properties.requestUri),
     properties.userAgent,
     CAST(properties.httpStatusCode AS INT),
+    properties.referer,
     COALESCE(NULLIF(properties.hostname, ''), url_extract_host(properties.requestUri)),
-    CAST(properties.timeToFirstByte AS DOUBLE),
+    CAST(properties.timeToFirstByte AS DOUBLE) * 1000,
     '{{serviceProvider}}'
 
 ) TO '{{aggregatedOutput}}'
