@@ -75,7 +75,7 @@ export async function generateOpportunityAndSuggestions(context) {
     },
   }));
 
-  if (!messages) {
+  if (!isNonEmptyArray(messages)) {
     log.info(`No experimentation opportunities found or audit result is undefined. Site ID: ${site.getId()}, Audit ID: ${audit.getId()}`);
     return;
   }

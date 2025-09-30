@@ -121,8 +121,7 @@ Classify each provided URL path into one of the predefined page types and return
    - Administrative paths → other
 
 ## RESPONSE FORMAT
-Return ONLY valid JSON with this exact structure:
-\`\`\`json
+Return ONLY valid JSON with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only:
 {
   "paths": [
     { "path": "/", "pageType": "homepage" },
@@ -130,7 +129,6 @@ Return ONLY valid JSON with this exact structure:
     { "path": "/products/123", "pageType": "product" }
   ]
 }
-\`\`\`
 
 ## CRITICAL REQUIREMENTS
 - Include ALL provided paths in your response
@@ -202,13 +200,11 @@ You will receive:
 - Consider common URL patterns and conventions
 
 ## OUTPUT FORMAT
-Return ONLY valid JSON with this exact structure:
-\`\`\`json
+Return ONLY valid JSON with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only:
 {
   "pageType1": "^/pattern1$",
   "pageType2": "^/pattern2$"
 }
-\`\`\`
 
 ## CRITICAL REQUIREMENTS
 - Include ONLY page types that exist in the provided grouped paths
