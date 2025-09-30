@@ -1,3 +1,10 @@
+## [1.190.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.190.1...v1.190.2) (2025-09-30)
+
+
+### Bug Fixes
+
+* CSP suggestions were not raised for all expected cases ([#1252](https://github.com/adobe/spacecat-audit-worker/issues/1252)) ([7812266](https://github.com/adobe/spacecat-audit-worker/commit/78122666f86ab2ccad1e94865755b55ebe67b6b8))
+
 ## [1.190.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.190.0...v1.190.1) (2025-09-30)
 
 
