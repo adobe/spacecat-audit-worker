@@ -376,7 +376,7 @@ describe('Product MetaTags', () => {
         expect(detectedTags[url][TITLE][ISSUE]).to.equal('Missing Title');
         expect(detectedTags[url]).to.have.property(DESCRIPTION);
         expect(detectedTags[url][DESCRIPTION][ISSUE]).to.equal('Description too short');
-        expect(logStub.info).to.have.been.calledWith(`Processing product page ${url} - has product tags`);
+        expect(logStub.info).to.have.been.calledWith(`[PRODUCT-METATAGS] Processing product page ${url} - has product tags`);
       });
 
       it('should skip pages without product tags', () => {
@@ -392,7 +392,7 @@ describe('Product MetaTags', () => {
 
         const detectedTags = productSeoChecks.getDetectedTags();
         expect(detectedTags).to.deep.equal({});
-        expect(logStub.info).to.have.been.calledWith(`Skipping page ${url} - no product tags found`);
+        expect(logStub.info).to.have.been.calledWith(`[PRODUCT-METATAGS] Skipping page ${url} - no product tags found`);
       });
 
       it('should process null url as a valid path', () => {
@@ -807,7 +807,7 @@ describe('Product MetaTags', () => {
 
         expect(result).to.be.null;
         expect(logStub.error).to.have.been.calledWith(
-          'No Scraped tags found in S3 scrapes/site-id/product1/scrape.json object',
+          '[PRODUCT-METATAGS] No Scraped tags found in S3 scrapes/site-id/product1/scrape.json object',
         );
       });
 
@@ -841,7 +841,7 @@ describe('Product MetaTags', () => {
 
         expect(result).to.be.null;
         expect(logStub.error).to.have.been.calledWith(
-          'Scrape result is empty for scrapes/site-id/404/scrape.json',
+          '[PRODUCT-METATAGS] Scrape result is empty for scrapes/site-id/404/scrape.json',
         );
       });
 
@@ -989,7 +989,7 @@ describe('Product MetaTags', () => {
 
         // Verify that the debug log was called with the tags keys
         expect(logStub.debug).to.have.been.calledWith(
-          'Available tags in scrapes/site-id/product-no-tags/scrape.json:',
+          '[PRODUCT-METATAGS] Available tags in scrapes/site-id/product-no-tags/scrape.json:',
           ['title', 'description'],
         );
       });
@@ -1022,7 +1022,7 @@ describe('Product MetaTags', () => {
         expect(result).to.be.null;
         // Verify that the error log was called
         expect(logStub.error).to.have.been.calledWith(
-          'No Scraped tags found in S3 scrapes/site-id/product-no-tags/scrape.json object',
+          '[PRODUCT-METATAGS] No Scraped tags found in S3 scrapes/site-id/product-no-tags/scrape.json object',
         );
       });
 
@@ -1057,7 +1057,7 @@ describe('Product MetaTags', () => {
 
         // Verify that the debug log was called with empty array (line 181)
         expect(logStub.debug).to.have.been.calledWith(
-          'Available tags in scrapes/site-id/product-debug/scrape.json:',
+          '[PRODUCT-METATAGS] Available tags in scrapes/site-id/product-debug/scrape.json:',
           [],
         );
       });
@@ -1113,7 +1113,7 @@ describe('Product MetaTags', () => {
 
           // Verify that the warning was logged (lines 155-156)
           expect(logStub.warn).to.have.been.calledWith(
-            'Error extracting product tags from HTML: HTML parsing error',
+            '[PRODUCT-METATAGS] Error extracting product tags from HTML: HTML parsing error',
           );
         } finally {
           // Restore the original method
@@ -1181,7 +1181,7 @@ describe('Product MetaTags', () => {
         // And the debug log at line 181 should have been called with an empty array
         // of keys (fallback {})
         expect(log.debug).to.have.been.calledWith(
-          'Available tags in scrapes/site-id/product-fallback/scrape.json:',
+          '[PRODUCT-METATAGS] Available tags in scrapes/site-id/product-fallback/scrape.json:',
           [],
         );
       });
@@ -1243,14 +1243,14 @@ describe('Product MetaTags', () => {
         dataAccessStub.Opportunity.create = sinon.stub().returns(opportunity);
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(dataAccessStub.Opportunity.create).to.be.calledWith(productTestData.OpportunityData);
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should use existing opportunity and add suggestions', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should throw error if fetching opportunity fails', async () => {
@@ -1279,7 +1279,7 @@ describe('Product MetaTags', () => {
         opportunity.getSuggestions.returns(productTestData.existingSuggestions);
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should mark existing suggestions OUTDATED if not present in audit data', async () => {
@@ -1332,7 +1332,7 @@ describe('Product MetaTags', () => {
         await opportunityAndSuggestions(auditUrl, auditDataModified, context);
         expect(dataAccessStub.Suggestion.bulkUpdateStatus).to.be.calledWith(productTestData.existingSuggestions.splice(0, 2), 'OUTDATED');
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should preserve existing AI suggestions and overrides when syncing', async () => {
@@ -1426,7 +1426,7 @@ describe('Product MetaTags', () => {
         expectedSuggestionModified[0].rank = -1;
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should handle malformed URLs in audit data', async () => {
@@ -1446,7 +1446,7 @@ describe('Product MetaTags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('malformed-url.com/path/product1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should handle URLs with port numbers', async () => {
@@ -1470,7 +1470,7 @@ describe('Product MetaTags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('https://example.com:8080/product1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should handle URLs with query parameters', async () => {
@@ -1494,7 +1494,7 @@ describe('Product MetaTags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('https://example.com/product1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should handle case when config.useHostnameOnly is undefined', async () => {
@@ -1518,7 +1518,7 @@ describe('Product MetaTags', () => {
         const suggestions = addSuggestionsCall.args[0];
         // Should preserve full URL path since useHostnameOnly is undefined
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/product1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should handle case when getSite method returns undefined', async () => {
@@ -1539,7 +1539,7 @@ describe('Product MetaTags', () => {
         const suggestions = addSuggestionsCall.args[0];
         // Should preserve full URL path since getSite returns undefined
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/product1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should handle case when getSite method returns null', async () => {
@@ -1560,7 +1560,7 @@ describe('Product MetaTags', () => {
         const suggestions = addSuggestionsCall.args[0];
         // Should preserve full URL path since getSite returns null
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/product1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should handle error in site configuration', async () => {
@@ -1577,7 +1577,7 @@ describe('Product MetaTags', () => {
 
         await opportunityAndSuggestions(auditUrl, auditDataWithPort, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.error).to.be.calledWith('Error in product-metatags configuration:', testError);
+        expect(logStub.error).to.be.calledWith('[PRODUCT-METATAGS] Error in product-metatags configuration:', testError);
 
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
@@ -1638,7 +1638,7 @@ describe('Product MetaTags', () => {
         await opportunityAndSuggestions(auditUrl, auditDataWithUndefinedTags, context);
 
         expect(logStub.warn).to.be.calledWith('[PRODUCT-METATAGS] No detected tags found or invalid detectedTags format, skipping suggestions generation');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
         expect(opportunity.addSuggestions).to.not.be.called;
       });
 
@@ -1657,7 +1657,7 @@ describe('Product MetaTags', () => {
         await opportunityAndSuggestions(auditUrl, auditDataWithNullTags, context);
 
         expect(logStub.warn).to.be.calledWith('[PRODUCT-METATAGS] No detected tags found or invalid detectedTags format, skipping suggestions generation');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
         expect(opportunity.addSuggestions).to.not.be.called;
       });
 
@@ -1676,7 +1676,7 @@ describe('Product MetaTags', () => {
         await opportunityAndSuggestions(auditUrl, auditDataWithInvalidTags, context);
 
         expect(logStub.warn).to.be.calledWith('[PRODUCT-METATAGS] No detected tags found or invalid detectedTags format, skipping suggestions generation');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
         expect(opportunity.addSuggestions).to.not.be.called;
       });
     });
@@ -1856,7 +1856,7 @@ describe('Product MetaTags', () => {
         },
       });
       expect(genvarClientStub.generateSuggestions).to.have.been.calledOnce;
-      expect(log.info).to.have.been.calledWith('Generated AI suggestions for Product-metatags using Genvar.');
+      expect(log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Generated AI suggestions for Product-metatags using Genvar.');
     });
 
     it('should return original detected tags when auto-suggest is disabled', async () => {
@@ -1867,7 +1867,7 @@ describe('Product MetaTags', () => {
       const result = await localProductMetatagsAutoSuggest(allTags, context, siteStub);
 
       expect(result).to.deep.equal(allTags.detectedTags);
-      expect(log.info).to.have.been.calledWith('Product metatags auto-suggest is disabled for site');
+      expect(log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Product metatags auto-suggest is disabled for site');
       expect(genvarClientStub.generateSuggestions).to.not.have.been.called;
     });
 
@@ -1910,7 +1910,7 @@ describe('Product MetaTags', () => {
       await expect(localProductMetatagsAutoSuggest(allTags, context, siteStub))
         .to.be.rejectedWith('Genvar API Error');
 
-      expect(log.error).to.have.been.calledWith('Error while generating AI suggestions using Genvar for product metatags', sinon.match.instanceOf(Error));
+      expect(log.error).to.have.been.calledWith('[PRODUCT-METATAGS] Error while generating AI suggestions using Genvar for product metatags', sinon.match.instanceOf(Error));
     });
 
     it('should handle invalid response from Genvar API', async () => {
@@ -1919,7 +1919,7 @@ describe('Product MetaTags', () => {
       await expect(localProductMetatagsAutoSuggest(allTags, context, siteStub))
         .to.be.rejectedWith('Invalid response received from Genvar API: "invalid response"');
 
-      expect(log.error).to.have.been.calledWith('Error while generating AI suggestions using Genvar for product metatags', sinon.match.instanceOf(Error));
+      expect(log.error).to.have.been.calledWith('[PRODUCT-METATAGS] Error while generating AI suggestions using Genvar for product metatags', sinon.match.instanceOf(Error));
     });
 
     it('should handle error generating presigned URL and return empty string', async () => {
@@ -1948,7 +1948,7 @@ describe('Product MetaTags', () => {
 
       const result = await productMetatagsAutoSuggestMocked.default(allTags, context, siteStub);
 
-      expect(log.error).to.have.been.calledWith('Error generating presigned URL for product1-key:', sinon.match.instanceOf(Error));
+      expect(log.error).to.have.been.calledWith('[PRODUCT-METATAGS] Error generating presigned URL for product1-key:', sinon.match.instanceOf(Error));
       // Should still return the suggestions even if presigned URL generation fails
       expect(result).to.have.property('/product1');
     });
@@ -2027,7 +2027,7 @@ describe('Product MetaTags', () => {
       try {
         const result = extractProductTagsFromHTML(html, errorLogStub);
         expect(result).to.deep.equal({});
-        expect(errorLogStub.warn).to.have.been.calledWith('Error extracting product tags from HTML: Regex processing failed');
+        expect(errorLogStub.warn).to.have.been.calledWith('[PRODUCT-METATAGS] Error extracting product tags from HTML: Regex processing failed');
       } finally {
         // eslint-disable-next-line no-extend-native
         // Restore the original method
@@ -2105,13 +2105,13 @@ describe('Product MetaTags', () => {
     it('should return traffic sum from monthly data', () => {
       const result = getOrganicTrafficForEndpoint('/page1', rumDataMapMonthly, rumDataMapBiMonthly, logStub);
       expect(result).to.equal(150); // 100 + 50
-      expect(logStub.info).to.have.been.calledWith('Found 150 page views for /page1.');
+      expect(logStub.info).to.have.been.calledWith('[PRODUCT-METATAGS] Found 150 page views for /page1.');
     });
 
     it('should return traffic sum from bi-monthly data when not in monthly', () => {
       const result = getOrganicTrafficForEndpoint('/page3', rumDataMapMonthly, rumDataMapBiMonthly, logStub);
       expect(result).to.equal(400); // 300 + 100
-      expect(logStub.info).to.have.been.calledWith('Found 400 page views for /page3.');
+      expect(logStub.info).to.have.been.calledWith('[PRODUCT-METATAGS] Found 400 page views for /page3.');
     });
 
     it('should handle trailing slash in endpoint', () => {
@@ -2122,7 +2122,7 @@ describe('Product MetaTags', () => {
     it('should return 0 and warn when endpoint not found', () => {
       const result = getOrganicTrafficForEndpoint('/nonexistent', rumDataMapMonthly, rumDataMapBiMonthly, logStub);
       expect(result).to.equal(0);
-      expect(logStub.warn).to.have.been.calledWith('No rum data found for /nonexistent.');
+      expect(logStub.warn).to.have.been.calledWith('[PRODUCT-METATAGS] No rum data found for /nonexistent.');
     });
   });
 
@@ -2266,7 +2266,7 @@ describe('Product MetaTags', () => {
       );
 
       expect(result).to.deep.equal({});
-      expect(logStub.warn).to.have.been.calledWith(`Error while calculating projected traffic for ${mockSite.getId()}`);
+      expect(logStub.warn).to.have.been.calledWith(`[PRODUCT-METATAGS] Error while calculating projected traffic for ${mockSite.getId()}`);
     });
 
     it('should skip productTags from traffic calculation', async () => {
@@ -3153,7 +3153,7 @@ describe('Product MetaTags', () => {
 
       // Verify that the debug log was called with empty array (line 181)
       expect(logStub.debug).to.have.been.calledWith(
-        'Available tags in scrapes/site-id/product-debug/scrape.json:',
+        '[PRODUCT-METATAGS] Available tags in scrapes/site-id/product-debug/scrape.json:',
         [],
       );
     });
@@ -3502,7 +3502,7 @@ describe('Product MetaTags', () => {
       // Should return the page object
       expect(result).to.be.null;
       expect(logStub.error).to.have.been.calledWith(
-        'No Scraped tags found in S3 scrapes/site-id/no-tags/scrape.json object',
+        '[PRODUCT-METATAGS] No Scraped tags found in S3 scrapes/site-id/no-tags/scrape.json object',
       );
     });
 
@@ -3623,7 +3623,7 @@ describe('Product MetaTags', () => {
         // Should return empty object on error
         expect(result).to.deep.equal({});
         // Verify warning was logged (lines 155-156)
-        expect(logStub.warn).to.have.been.calledWith(sinon.match(/Error extracting product tags from HTML/));
+        expect(logStub.warn).to.have.been.calledWith(sinon.match(/\[PRODUCT-METATAGS\] Error extracting product tags from HTML/));
       } finally {
         // eslint-disable-next-line no-extend-native
         String.prototype.match = originalMatch2;
@@ -3695,7 +3695,7 @@ describe('Product MetaTags', () => {
       // Verify the result was processed
       expect(result).to.be.null;
       expect(logStub.error).to.have.been.calledWith(
-        sinon.match('No Scraped tags found in S3'),
+        sinon.match('[PRODUCT-METATAGS] No Scraped tags found in S3'),
       );
     });
 
