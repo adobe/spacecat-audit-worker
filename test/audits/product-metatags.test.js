@@ -3394,6 +3394,82 @@ describe('Product MetaTags', () => {
       expect(result).to.deep.equal({ status: 'complete' });
     });
 
+    it('should handle auto-suggest returning undefined and use empty detectedTags (lines 465-468)', async () => {
+      const stubOpportunityAndSuggestions = sinon.stub().resolves();
+
+      const mockAutoDetectResult = {
+        seoChecks: { getFewHealthyTags: sinon.stub().returns({}) },
+        detectedTags: { '/page1': { title: { issue: 'Title too short' } } },
+        extractedTags: {},
+      };
+
+      const mockRunAudit = await esmock('../../src/product-metatags/handler.js', {
+        '../../src/canonical/handler.js': {
+          getTopPagesForSiteId: sinon.stub().resolves([{ url: 'https://example.com/' }]),
+        },
+        '../../src/product-metatags/handler.js': {
+          productMetatagsAutoDetect: sinon.stub().resolves(mockAutoDetectResult),
+          opportunityAndSuggestions: stubOpportunityAndSuggestions,
+        },
+        '../../src/product-metatags/product-metatags-auto-suggest.js': {
+          default: sinon.stub().resolves(undefined), // simulate undefined updatedDetectedTags
+        },
+        '../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sinon.stub().resolves([]),
+          getObjectFromKey: sinon.stub().resolves(null),
+        },
+        '../../src/common/index.js': {
+          wwwUrlResolver: sinon.stub().resolves('example.com'),
+        },
+        '../../src/support/utils.js': {
+          calculateCPCValue: sinon.stub().resolves(1),
+        },
+        '@adobe/spacecat-shared-rum-api-client': {
+          default: { createFrom: () => ({ query: sinon.stub().resolves([]) }) },
+        },
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().returns({ getId: () => 'op-1', getSiteId: () => 'site-id' }),
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      const { runAuditAndGenerateSuggestions: mockedRunAudit } = await mockRunAudit;
+
+      const site = {
+        getId: () => 'site-id',
+        getBaseURL: () => 'https://example.com',
+        getConfig: () => ({ getIncludedURLs: () => [] }),
+      };
+      const audit = { getId: () => 'audit-id' };
+
+      await mockedRunAudit({
+        site,
+        audit,
+        finalUrl: 'https://example.com',
+        log: logStub,
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        s3Client: {},
+        dataAccess: {
+          Configuration: {
+            findLatest: sinon.stub().resolves({ isHandlerEnabledForSite: () => true }),
+          },
+          Site: {
+            findById: sinon.stub().resolves({ getDeliveryConfig: () => ({}) }),
+          },
+        },
+      });
+
+      // When auto-suggest returns undefined, we log count 0 and pass empty detectedTags
+      expect(logStub.info).to.have.been.calledWith(
+        '[PRODUCT-METATAGS] AI auto-suggest completed, updated detected tags count: 0',
+      );
+
+
+    });
+
+
     it('should cover line 181 debug log when tags is undefined', async () => {
       // Create a mock scrape result where tags is undefined to trigger line 181 debug log
       const mockScrapeResult = {
