@@ -367,9 +367,33 @@ describe('Preflight Readability Audit', () => {
       textReadability.default.fleschReadingEase = originalFleschReadingEase;
     });
 
-    it('should skip non-English content (e.g. German)', async () => {
-      // Create German text that is long enough to be processed
-      const germanText = 'Dies ist ein sehr komplexer deutscher Text, der zahlreiche mehrsilbige Wörter und komplizierte grammatikalische Konstruktionen verwendet, was es für den durchschnittlichen Leser äußerst schwierig macht, ohne beträchtliche Anstrengung und Konzentration zu verstehen.'.repeat(3);
+    it('should skip unsupported language content (e.g. Chinese)', async () => {
+      // Create Chinese text that is long enough to be processed but in unsupported language
+      const chineseText = '这是一个非常复杂的中文文本，它使用许多多音节词汇和复杂的语法结构，这使得普通读者很难在没有相当努力和专注的情况下理解它。这个文本被重复多次以确保它足够长来进行处理。'.repeat(3);
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${chineseText}</p></body></html>`,
+          },
+        },
+      }];
+
+      await readability(context, auditContext);
+
+      // Should not create any opportunities since Chinese content is skipped (unsupported language)
+      const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
+      expect(audit.opportunities).to.have.lengthOf(0);
+
+      // Should log that content was processed but no poor readability found
+      expect(log.info).to.have.been.calledWithMatch('Processed 1 text element(s)');
+      expect(log.info).to.have.been.calledWithMatch('found 0 with poor readability');
+    });
+
+    it('should process supported multilingual content (e.g. German)', async () => {
+      // Create German text that should be processed (but has good readability)
+      const germanText = 'Dies ist ein außergewöhnlich komplexer deutscher Text, der zahlreiche mehrsilbige Wörter und komplizierte grammatikalische Konstruktionen verwendet, was es für den durchschnittlichen Leser äußerst schwierig macht, ohne beträchtliche Anstrengung und Konzentration zu verstehen.'.repeat(2);
 
       auditContext.scrapedObjects = [{
         data: {
@@ -382,13 +406,16 @@ describe('Preflight Readability Audit', () => {
 
       await readability(context, auditContext);
 
-      // Should not create any opportunities since German content is skipped
+      // German content is now supported and should be processed
+      // With our FIXED syllable counting, this text now correctly identifies as poor readability
       const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
-      expect(audit.opportunities).to.have.lengthOf(0);
+      expect(audit.opportunities).to.have.lengthOf(1);
+      expect(audit.opportunities[0].language).to.equal('german');
+      expect(audit.opportunities[0].fleschReadingEase).to.be.below(30);
 
-      // Should log that content was processed but no poor readability found
-      expect(log.info).to.have.been.calledWithMatch('Processed 1 text element(s)');
-      expect(log.info).to.have.been.calledWithMatch('found 0 with poor readability');
+      // Should log that German content was detected and processed
+      expect(log.info).to.have.been.calledWithMatch('detected languages: german');
+      expect(log.info).to.have.been.calledWithMatch('found 1 with poor readability');
     });
 
     it('should skip elements with block-level children to avoid duplicate analysis', async () => {

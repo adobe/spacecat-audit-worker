@@ -213,7 +213,11 @@ export async function warmCacheForSite(context, log, env, site, temporalParams) 
     } catch (error) {
       log.error(`Failed to warm cache for query: ${queryConfig.dimensions.join(', ')}`, error);
       return {
-        dimensions: queryConfig.dimensions, success: false, error: error.message, cached: false,
+        dimensions: queryConfig.dimensions,
+        success: false,
+        error: error.message,
+        cached: false,
+        isNoDataError: error.message.startsWith('NO_DATA:'),
       };
     }
   })());
@@ -222,6 +226,19 @@ export async function warmCacheForSite(context, log, env, site, temporalParams) 
   results.push(...warmingResults);
 
   const successCount = results.filter((r) => r.success).length;
+  const failedResults = results.filter((r) => !r.success);
+
+  // Check if all failed queries are due to no data (successful query but empty results)
+  const noDataErrors = failedResults.filter((r) => r.isNoDataError);
+
+  // If all failures are due to no data and we have no successful cache warming, throw error
+  if (queriesToWarm.length > 0
+    && successCount === cachedQueries.length
+    && noDataErrors.length === failedResults.length
+    && failedResults.length > 0) {
+    throw new Error(`No paid traffic data found for site ${siteId}. Please ensure data is imported first before running paid traffic analysis.`);
+  }
+
   log.info(`Cache warming completed for site ${siteId}. Success: ${successCount}/${results.length}`);
 
   return {
@@ -262,12 +279,19 @@ export async function warmCacheForQuery(
 
   log.info(`Warming cache for dimensions [${dimensions.join(', ')}]: ${cacheKey}`);
 
+  log.info(`query: ${query}`);
+
   const resultLocation = `${config.athenaTemp}/${outPrefix}`;
   const athenaClient = AWSAthenaClient.fromContext(context, resultLocation);
 
   const description = `Cache warming for siteId: ${siteId} | dimensions: [${dimensions.join(', ')}] | temporal: ${queryParams.temporalCondition}`;
 
   const results = await athenaClient.query(query, config.rumMetricsDatabase, description);
+
+  // Check if query returned successfully but with no data
+  if (!results || results.length === 0) {
+    throw new Error(`NO_DATA: No paid traffic data found for site ${siteId} with dimensions [${dimensions.join(', ')}]. Please ensure data is imported first before running paid traffic analysis.`);
+  }
 
   let thresholdConfig = {};
   if (config.cwvThresholds) {
@@ -277,6 +301,11 @@ export async function warmCacheForQuery(
   }
 
   const response = results.map((row) => mapper.toJSON(row, thresholdConfig, baseURL));
+
+  // Additional validation after mapping
+  if (!response || response.length === 0) {
+    throw new Error(`NO_DATA: No valid paid traffic data found after processing for site ${siteId} with dimensions [${dimensions.join(', ')}]. Please ensure data is imported first before running paid traffic analysis.`);
+  }
 
   await addResultJsonToCache(s3Client, cacheKey, response, log);
 }

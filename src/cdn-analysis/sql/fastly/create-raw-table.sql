@@ -1,10 +1,9 @@
 CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
   timestamp             string,
-  geo_country           string,
+  client_country_code   string,
   host                  string,
   url                   string,
   request_method        string,
-  request_protocol      string,
   request_user_agent    string,
   response_state        string,
   response_status       int,
