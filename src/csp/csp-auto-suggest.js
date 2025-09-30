@@ -100,7 +100,7 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
   });
 
   if (!missingNonce) {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: No nonce-related finding. Skipping CSP auto-suggest.`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: No nonce-related finding. Skipping CSP auto-suggest.`);
     return csp;
   }
 
