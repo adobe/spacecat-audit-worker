@@ -269,7 +269,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     await handler(message, context);
 
-    expect(log.info).to.have.been.calledWithMatch(/were manually modified.*Skipping all updates to preserve data consistency/);
+    expect(log.debug).to.have.been.calledWithMatch(/were manually modified.*Skipping all updates to preserve data consistency/);
     expect(opportunityWithManualSuggestions.setAuditId).not.to.have.been.called;
     expect(opportunityWithManualSuggestions.setData).not.to.have.been.called;
     expect(opportunityWithManualSuggestions.setGuidance).not.to.have.been.called;
