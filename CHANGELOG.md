@@ -1,3 +1,10 @@
+# [1.191.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.190.2...v1.191.0) (2025-09-30)
+
+
+### Features
+
+* redirect-chains audit ([#1325](https://github.com/adobe/spacecat-audit-worker/issues/1325)) ([cb733c2](https://github.com/adobe/spacecat-audit-worker/commit/cb733c29e7455a5ee1babad89b4de92d82278108))
+
 ## [1.190.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.190.1...v1.190.2) (2025-09-30)
 
 
