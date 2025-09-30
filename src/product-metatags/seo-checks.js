@@ -244,11 +244,11 @@ class ProductSeoChecks {
   performChecks(urlPath, pageTags) {
     // Skip pages that don't have product tags (SKU or image)
     if (!ProductSeoChecks.hasProductTags(pageTags)) {
-      this.log.info(`Skipping page ${urlPath} - no product tags found`);
+      this.log.info(`[PRODUCT-METATAGS] Skipping page ${urlPath} - no product tags found`);
       return;
     }
 
-    this.log.info(`Processing product page ${urlPath} - has product tags`);
+    this.log.info(`[PRODUCT-METATAGS] Processing product page ${urlPath} - has product tags`);
 
     this.checkForMissingTags(urlPath, pageTags);
     this.checkForTagsLength(urlPath, pageTags);

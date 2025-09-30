@@ -36,7 +36,7 @@ async function getPresignedUrl(s3Client, log, scrapedData) {
       expiresIn: EXPIRY_IN_SECONDS,
     });
   } catch (error) {
-    log.error(`Error generating presigned URL for ${scrapedData.s3key}:`, error);
+    log.error(`[PRODUCT-METATAGS] Error generating presigned URL for ${scrapedData.s3key}:`, error);
     return '';
   }
 }
@@ -54,16 +54,16 @@ export default async function productMetatagsAutoSuggest(allTags, context, site,
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   if (!forceAutoSuggest && !configuration.isHandlerEnabledForSite('product-metatags-auto-suggest', site)) {
-    log.info('Product metatags auto-suggest is disabled for site');
+    log.info('[PRODUCT-METATAGS] Product metatags auto-suggest is disabled for site');
     return detectedTags;
   }
-  log.debug('Generating suggestions for Product-metatags using Genvar.');
+  log.debug('[PRODUCT-METATAGS] Generating suggestions for Product-metatags using Genvar.');
   const tagsData = {};
   for (const endpoint of Object.keys(detectedTags)) {
     // eslint-disable-next-line no-await-in-loop
     tagsData[endpoint] = await getPresignedUrl(s3Client, log, extractedTags[endpoint]);
   }
-  log.debug('Generated presigned URLs');
+  log.debug('[PRODUCT-METATAGS] Generated presigned URLs');
   const requestBody = {
     healthyTags,
     detectedTags: tagsData,
@@ -85,7 +85,7 @@ export default async function productMetatagsAutoSuggest(allTags, context, site,
       throw new Error(`Invalid response received from Genvar API: ${JSON.stringify(responseWithSuggestions)}`);
     }
   } catch (err) {
-    log.error('Error while generating AI suggestions using Genvar for product metatags', err);
+    log.error('[PRODUCT-METATAGS] Error while generating AI suggestions using Genvar for product metatags', err);
     throw err;
   }
   const updatedDetectedTags = {
@@ -101,6 +101,6 @@ export default async function productMetatagsAutoSuggest(allTags, context, site,
       }
     }
   }
-  log.info('Generated AI suggestions for Product-metatags using Genvar.');
+  log.info('[PRODUCT-METATAGS] Generated AI suggestions for Product-metatags using Genvar.');
   return updatedDetectedTags;
 }

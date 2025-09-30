@@ -66,7 +66,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   // Add null check for detectedTags
   if (!detectedTags || typeof detectedTags !== 'object') {
     log.warn('[PRODUCT-METATAGS] No detected tags found or invalid detectedTags format, skipping suggestions generation');
-    log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
+    log.info(`[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
     return;
   }
   let useHostnameOnly = false;
@@ -75,7 +75,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
     const site = await context.dataAccess.Site.findById(siteId);
     useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
   } catch (error) {
-    log.error('Error in product-metatags configuration:', error);
+    log.error('[PRODUCT-METATAGS] Error in product-metatags configuration:', error);
   }
   const suggestions = [];
   // Generate suggestions data to be inserted in product-metatags opportunity suggestions
@@ -115,7 +115,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
       data: { ...suggestion },
     }),
   });
-  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
+  log.info(`[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
 }
 
 // Extract product-specific meta tags from raw HTML
@@ -157,9 +157,9 @@ export function extractProductTagsFromHTML(rawBody, log) {
       [, productTags.image] = imageMatch;
     }
 
-    log.debug('Extracted product tags from HTML:', Object.keys(productTags));
+    log.debug('[PRODUCT-METATAGS] Extracted product tags from HTML:', Object.keys(productTags));
   } catch (error) {
-    log.warn(`Error extracting product tags from HTML: ${error.message}`);
+    log.warn(`[PRODUCT-METATAGS] Error extracting product tags from HTML: ${error.message}`);
   }
 
   return productTags;
@@ -168,12 +168,12 @@ export function extractProductTagsFromHTML(rawBody, log) {
 export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
-    log.error(`No Scraped tags found in S3 ${key} object`);
+    log.error(`[PRODUCT-METATAGS] No Scraped tags found in S3 ${key} object`);
     return null;
   }
   // if the scrape result is empty, skip the page for product-metatags audit
   if (object?.scrapeResult?.rawBody?.length < 300) {
-    log.error(`Scrape result is empty for ${key}`);
+    log.error(`[PRODUCT-METATAGS] Scrape result is empty for ${key}`);
     return null;
   }
 
@@ -185,7 +185,7 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefi
   }
 
   // Debug: Log available tags to understand what scraper extracted
-  log.debug(`Available tags in ${key}:`, Object.keys(object.scrapeResult.tags || {}));
+  log.debug(`[PRODUCT-METATAGS] Available tags in ${key}:`, Object.keys(object.scrapeResult.tags || {}));
 
   // Extract product-specific meta tags
   // from raw HTML since scraper doesn't support custom extraction
@@ -242,11 +242,11 @@ export function getOrganicTrafficForEndpoint(
   const target = rumDataMapMonthly.get(endpoint.replace(/\/$/, ''))
     || rumDataMapBiMonthly.get(endpoint.replace(/\/$/, ''));
   if (!target) {
-    log.warn(`No rum data found for ${endpoint}.`);
+    log.warn(`[PRODUCT-METATAGS] No rum data found for ${endpoint}.`);
     return 0;
   }
   const trafficSum = target.earned + target.paid;
-  log.info(`Found ${trafficSum} page views for ${endpoint}.`);
+  log.info(`[PRODUCT-METATAGS] Found ${trafficSum} page views for ${endpoint}.`);
   return trafficSum;
 }
 
@@ -291,14 +291,14 @@ export async function calculateProjectedTraffic(context, site, detectedTags, log
     });
 
     const cpcValue = await calculateCPCValue(context, site.getId());
-    log.info(`Calculated cpc value: ${cpcValue} for site: ${site.getId()}`);
+    log.info(`[PRODUCT-METATAGS] Calculated cpc value: ${cpcValue} for site: ${site.getId()}`);
     const projectedTrafficValue = projectedTrafficLost * cpcValue;
 
     // Skip updating projected traffic data if lost traffic value is insignificant
     return projectedTrafficValue > PROJECTED_VALUE_THRESHOLD
       ? { projectedTrafficLost, projectedTrafficValue } : {};
   } catch (err) {
-    log.warn(`Error while calculating projected traffic for ${site.getId()}`, err);
+    log.warn(`[PRODUCT-METATAGS] Error while calculating projected traffic for ${site.getId()}`, err);
     return {};
   }
 }
