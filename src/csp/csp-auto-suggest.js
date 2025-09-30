@@ -118,7 +118,7 @@ export async function cspAutoSuggest(auditUrl, csp, context, site) {
         findings.push(finding);
       }
     } catch (error) {
-      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Error downloading page ${pageUrl}:`, error);
+      log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}]: Error downloading page ${pageUrl}`, error);
       autoSuggestError = true;
     }
   });
