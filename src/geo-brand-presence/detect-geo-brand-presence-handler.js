@@ -49,11 +49,10 @@ export default async function handler(message, context) {
 
   // upload to sharepoint & publish via hlx admin api
   const sharepointClient = await createLLMOSharepointClient(context);
-  let outputBase = site.getConfig().getLlmoDataFolder();
+  let outputLocation = `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
   if (configVersion != null && configVersion !== '') {
-    outputBase = `${outputBase}/config_${configVersion}`;
+    outputLocation = `${outputLocation}/config_${configVersion}`;
   }
-  const outputLocation = `${outputBase}/brand-presence`;
   const xlsxName = (
     /;\s*content=(brandpresence-.*$)/.exec(sheetUrl.searchParams.get('response-content-disposition') ?? '')?.[1]
     ?? sheetUrl.pathname.replace(/.*[/]/, '')
