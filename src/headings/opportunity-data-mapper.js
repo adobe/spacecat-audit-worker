@@ -40,5 +40,15 @@ export function createOpportunityDataForElmo() {
   return {
     ...OpptyData,
     tags: [...OpptyData.tags, 'llm', 'isElmo'],
+    data: {
+      ...OpptyData.data,
+      dataSources: [DATA_SOURCES.SITE],
+      additionalMetrics: [
+        {
+          value: 'headings',
+          key: 'subtype',
+        },
+      ],
+    },
   };
 }
