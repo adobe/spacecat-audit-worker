@@ -1,3 +1,10 @@
+# [1.192.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.191.1...v1.192.0) (2025-10-01)
+
+
+### Features
+
+* add support for azure frontdoor CDN provider ([#1322](https://github.com/adobe/spacecat-audit-worker/issues/1322)) ([c12b2c5](https://github.com/adobe/spacecat-audit-worker/commit/c12b2c5f4ca5950d55edd29b261fbe9841bd8944))
+
 ## [1.191.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.191.0...v1.191.1) (2025-10-01)
 
 
