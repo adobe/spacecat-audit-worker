@@ -1,3 +1,10 @@
+## [1.192.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.0...v1.192.1) (2025-10-01)
+
+
+### Bug Fixes
+
+* adding headings for elmo ([#1311](https://github.com/adobe/spacecat-audit-worker/issues/1311)) ([e077da8](https://github.com/adobe/spacecat-audit-worker/commit/e077da80ba75d10650e97eea37fa2692c4c6b6c3))
+
 # [1.192.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.191.1...v1.192.0) (2025-10-01)
 
 
