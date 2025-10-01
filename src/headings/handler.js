@@ -16,47 +16,54 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
+import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 
 const auditType = Audit.AUDIT_TYPES.HEADINGS;
 
 export const HEADINGS_CHECKS = Object.freeze({
-  HEADING_ORDER_INVALID: {
-    check: 'heading-order-invalid',
-    explanation: 'Heading levels should increase by one (h1→h2), not jump levels (h1→h3).',
-    suggestion: 'Adjust heading levels to maintain proper hierarchy.',
-  },
   HEADING_EMPTY: {
     check: 'heading-empty',
+    title: 'Empty Heading',
     explanation: 'Heading elements should not be empty.',
     suggestion: 'Add descriptive text or remove the empty heading.',
   },
   HEADING_MISSING_H1: {
     check: 'heading-missing-h1',
+    title: 'Missing H1 Heading',
     explanation: 'Pages should have exactly one h1 element for SEO and accessibility.',
     suggestion: 'Add an h1 element describing the main content.',
   },
   HEADING_MULTIPLE_H1: {
     check: 'heading-multiple-h1',
+    title: 'Multiple H1 Headings',
     explanation: 'Pages should have only one h1 element.',
     suggestion: 'Change additional h1 elements to h2 or appropriate levels.',
   },
   HEADING_DUPLICATE_TEXT: {
     check: 'heading-duplicate-text',
+    title: 'Duplicate Heading Text',
     explanation: 'Headings should have unique text content (WCAG 2.2 2.4.6).',
     suggestion: 'Ensure each heading has unique, descriptive text.',
   },
+  HEADING_ORDER_INVALID: {
+    check: 'heading-order-invalid',
+    title: 'Invalid Heading Order',
+    explanation: 'Heading levels should increase by one (h1→h2), not jump levels (h1→h3).',
+    suggestion: 'Adjust heading levels to maintain proper hierarchy.',
+  },
   HEADING_NO_CONTENT: {
     check: 'heading-no-content',
+    title: 'Heading Without Content',
     explanation: 'Headings should be followed by content before the next heading.',
     suggestion: 'Add meaningful content after each heading.',
   },
   TOPPAGES: {
     check: 'top-pages',
+    title: 'Top Pages',
     explanation: 'No top pages found',
   },
 });
@@ -444,10 +451,21 @@ export function generateSuggestions(auditUrl, auditData, context) {
     return { ...auditData };
   }
 
-  const suggestions = [];
+  // Get the order from HEADINGS_CHECKS object
+  const auditTypeOrder = [
+    ...Object.keys(HEADINGS_CHECKS),
+  ];
 
+  // Group suggestions by audit type
+  const suggestionsByType = {};
+  const allSuggestions = [];
+
+  // Process all audit results and group by type
   Object.entries(auditData.auditResult).forEach(([checkType, checkResult]) => {
     if (checkResult.success === false && Array.isArray(checkResult.urls)) {
+      if (!suggestionsByType[checkType]) {
+        suggestionsByType[checkType] = [];
+      }
       checkResult.urls.forEach((urlObj) => {
         const suggestion = {
           type: 'CODE_CHANGE',
@@ -463,14 +481,40 @@ export function generateSuggestions(auditUrl, auditData, context) {
         if (urlObj.suggestion) {
           suggestion.recommendedAction = urlObj.suggestion;
         }
-
-        suggestions.push(suggestion);
+        suggestionsByType[checkType].push(suggestion);
+        allSuggestions.push(suggestion);
       });
     }
   });
 
+  let mdTable = '';
+  auditTypeOrder.forEach((currentAuditType) => {
+    const checkType = HEADINGS_CHECKS[currentAuditType].check;
+    if (suggestionsByType[checkType] && suggestionsByType[checkType].length > 0) {
+      mdTable += `## ${HEADINGS_CHECKS[currentAuditType].title}\n\n`;
+      mdTable += '| Page Url | Explanation | Suggestion |\n';
+      mdTable += '|-------|-------|-------|\n';
+      suggestionsByType[checkType].forEach((suggestion) => {
+        let suggestionExplanation = suggestion.explanation;
+        if (suggestion.tagName) {
+          suggestionExplanation += `for tag name: ${suggestion.tagName}`;
+        }
+        mdTable += `| ${suggestion.url} | ${suggestionExplanation} | ${suggestion.recommendedAction} |\n`;
+      });
+      mdTable += '\n';
+    }
+  });
+
+  const elmoSuggestions = [];
+  elmoSuggestions.push({
+    type: 'CODE_CHANGE',
+    recommendedAction: mdTable,
+  });
+
+  const suggestions = [...allSuggestions];
+
   log.info(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`);
-  return { ...auditData, suggestions };
+  return { ...auditData, suggestions, elmoSuggestions };
 }
 
 function generateRecommendedAction(checkType) {
@@ -525,12 +569,69 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     log,
   });
 
-  log.info(`Headings opportunity created and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
+  log.info(`Headings opportunity created for Site Optimizer and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
+  return { ...auditData };
+}
+
+export async function opportunityAndSuggestionsForElmo(auditUrl, auditData, context) {
+  const { log } = context;
+  if (!auditData.elmoSuggestions?.length) {
+    log.info('Headings audit has no issues, skipping opportunity creation');
+    return { ...auditData };
+  }
+  const elmoOpportunityType = 'generic-opportunity';
+  const comparisonFn = (oppty) => {
+    const opptyData = oppty.getData();
+    const opptyAdditionalMetrics = opptyData?.additionalMetrics;
+    if (!opptyAdditionalMetrics || !Array.isArray(opptyAdditionalMetrics)) {
+      return false;
+    }
+    const hasHeadingsSubtype = opptyAdditionalMetrics.some(
+      (metric) => metric.key === 'subtype' && metric.value === 'headings',
+    );
+    return hasHeadingsSubtype;
+  };
+
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityDataForElmo,
+    elmoOpportunityType,
+    {},
+    comparisonFn,
+  );
+
+  log.info(`Headings opportunity created for Elmo with oppty id ${opportunity.getId()}`);
+
+  const buildKey = (suggestion) => `${suggestion.type}`;
+  await syncSuggestions({
+    opportunity,
+    newData: auditData.elmoSuggestions,
+    context,
+    buildKey,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: suggestion.type,
+      rank: 0,
+      data: {
+        suggestionValue: suggestion.recommendedAction,
+      },
+    }),
+    keepLatestMergeDataFunction,
+    log,
+  });
+
+  log.info(`Headings opportunity created for Elmo and ${auditData.elmoSuggestions.length} suggestions synced for ${auditUrl}`);
   return { ...auditData };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(headingsAuditRunner)
-  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
+  .withPostProcessors([
+    generateSuggestions,
+    opportunityAndSuggestions,
+    opportunityAndSuggestionsForElmo,
+  ])
   .build();
