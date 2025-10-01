@@ -334,8 +334,8 @@ export function aggregateAccessibilityIssues(
   // Convert to final format (unchanged)
   const formattedData = Object.entries(groupedData)
     .filter(([, urls]) => urls.length > 0)
-    .map(([oppType, urls]) => ({
-      [oppType]: urls,
+    .map(([opportunityType, urls]) => ({
+      [opportunityType]: urls,
     }));
 
   return { data: formattedData };
