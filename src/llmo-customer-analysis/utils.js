@@ -13,52 +13,48 @@
 import ExcelJS from 'exceljs';
 import { getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { startOfISOWeek, addDays, format } from 'date-fns';
+import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
 
-export async function prompt(systemPrompt, userPrompt, env) {
-  const {
-    AZURE_OPENAI_ENDPOINT: endpoint,
-    AZURE_OPENAI_KEY: apiKey,
-    AZURE_API_VERSION: apiVersion,
-    AZURE_COMPLETION_DEPLOYMENT: deployment,
-  } = env;
+function getAzureOpenAIClient(context, deploymentName) {
+  const cacheKey = `azureOpenAIClient_${deploymentName}`;
 
-  if (!endpoint || !apiKey || !deployment) {
-    throw new Error(
-      'Set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY, and AZURE_COMPLETION_DEPLOYMENT in your environment.',
-    );
+  if (context[cacheKey]) {
+    return context[cacheKey];
   }
 
-  const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
-  const headers = {
-    'api-key': apiKey,
-    'Content-Type': 'application/json',
-  };
-  const data = {
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0,
-    top_p: 1,
-    response_format: { type: 'json_object' },
+  const { env, log = console } = context;
+
+  const {
+    AZURE_OPENAI_ENDPOINT: apiEndpoint,
+    AZURE_OPENAI_KEY: apiKey,
+    AZURE_API_VERSION: apiVersion,
+  } = env;
+
+  const config = {
+    apiEndpoint,
+    apiKey,
+    apiVersion,
+    deploymentName,
   };
 
+  context[cacheKey] = new AzureOpenAIClient(config, log);
+  return context[cacheKey];
+}
+
+export async function prompt(systemPrompt, userPrompt, context = {}, deploymentName = null) {
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data),
+    const deployment = deploymentName || context.env?.AZURE_COMPLETION_DEPLOYMENT || 'gpt-4o-mini';
+    const azureClient = getAzureOpenAIClient(context, deployment);
+
+    const response = await azureClient.fetchChatCompletion(userPrompt, {
+      systemPrompt,
+      responseFormat: 'json_object',
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
     return {
-      content: result.choices[0].message.content,
-      usage: result.usage || null,
+      content: response.choices[0].message.content,
+      usage: response.usage || null,
     };
   } catch (error) {
     throw new Error(`Failed to trigger Azure LLM: ${error.message}`);

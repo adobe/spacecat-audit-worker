@@ -13,7 +13,7 @@
 import { prompt } from './utils.js';
 
 async function concentrateProducts(pathProductArray, context) {
-  const { log, env } = context;
+  const { log } = context;
 
   if (!pathProductArray || pathProductArray.length === 0) {
     return { paths: [], usage: null };
@@ -29,51 +29,75 @@ async function concentrateProducts(pathProductArray, context) {
     }; // No need to concentrate if only one or no products
   }
 
-  const systemPrompt = `You are an expert content categorization specialist focused on grouping products into high-level categories.
+  const systemPrompt = `You are an expert content categorization specialist focused on grouping products into categories; these should as a low-level as possible.
 
 TASK: Analyze the provided product list and create a concentrated version by:
-1. Grouping products into broad, high-level categories
-2. Preferring general categories over specific product names
-3. Creating representative category names that encompass multiple products
+1. Grouping products into specific categories
+2. Preferring product series over higher level categories
+3. Fallback to high-level categories if no series can be identified
+4. Creating representative category names that encompass multiple products
 
 INSTRUCTIONS:
 
-1. High-Level Category Grouping (PRIORITY):
-   - Prefer broad categories over specific products (e.g., "tennis-racket-wilson" → "tennis", not "tennis-racket")
-   - Group by activity, industry, or general purpose rather than brand or model
-   - Examples: "smartphones", "sports", "clothing", "electronics", "automotive", "food", "travel"
-   - Use the most general meaningful category that still provides useful distinction
+1. Series and Product Line Grouping (HIGHEST PRIORITY):
+   - When multiple products belong to the same series or product line, group them under the series name
+   - Examples: "iphone-15", "iphone-15-pro", "iphone-15-pro-max" → "iphone-15-series"
+   - Examples: "galaxy-s24", "galaxy-s24-plus", "galaxy-s24-ultra" → "galaxy-s24-series"
+   - Examples: "macbook-air-13", "macbook-air-15" → "macbook-air-series"
+   - Use "-series" suffix for product families with multiple variants
 
-2. Category Guidelines:
+2. High-Level Category Grouping (SECONDARY PRIORITY):
+   - If no series grouping applies, prefer broad categories over specific products
+   - Group by activity, industry, or general purpose rather than brand or model
+   - Examples: "tennis-racket-wilson" → "tennis", "running-shoes-nike" → "running"
+   - Use the most general meaningful category that still provides useful distinction
+   - Do not add/create categories that are not core to the domain's offering (e.g., news category makes sense for a broadcasting domain, but not for a commercial domain)
+   - If a domain has a very high number of individual products (e.g., ecommerce websites), create higher level categories rather than individual product categories
+
+3. Series Detection Guidelines:
+   - Look for common patterns: base model + variants (Pro, Plus, Max, Ultra, Mini)
+   - Version numbers: v1, v2, v3 or generational naming (2023, 2024, etc.)
+   - Size variants: 13-inch, 15-inch, or Small, Medium, Large
+   - Performance tiers: Basic, Standard, Premium, Enterprise
+   - When in doubt, group related products into series rather than individual categories
+
+4. Category Guidelines (when no series applies):
+   - Prioritize grouping brands, series or product lines
    - Sports products should group by sport type: "tennis", "basketball", "golf", etc.
    - Technology products should group by broad categories: "smartphones", "computers", "software"
    - Clothing/fashion should group by type: "clothing", "footwear", "accessories"
    - Food/beverage should group by specific types: "coffee", "wine", "pizza", "bakery", "dairy", "snacks"
    - Services should group by specific service type: "consulting", "support", "training", "hosting", "analytics", "marketing", "design", "development"
 
-3. Mapping Rules:
-   - Multiple specific products should map to the same high-level category
-   - Category names should be lowercase and hyphenated
-   - Avoid brand names and model numbers in category names
+5. Mapping Rules:
+   - PRIORITIZE series grouping over individual product mapping
+   - Multiple specific products should map to the same series or high-level category
+   - Series names should be lowercase and hyphenated with "-series" suffix
+   - For non-series products, avoid brand names and model numbers in category names
    - Focus on what the product IS rather than who makes it or specific variants
 
 4. Data Quality Rules:
    - If input is empty or invalid, return empty object: {}
    - Ensure all original product names are included in the mapping
-   - Use descriptive but broad category names
+   - Target 5-15 distinct categories representing the most prominent product offerings
+   - Focus on the most important products that drive business value
+   - Use descriptive but appropriately broad category names
    - Keep "unknown" as standalone if present
 
-RESPONSE FORMAT: Return only a valid JSON object mapping original names to high-level category names.
+RESPONSE FORMAT: Return only a valid JSON object mapping original names to high-level category names. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only.
 
-Example input products: ["tennis-racket-wilson", "tennis-balls", "basketball-shoes-nike", "iphone-14", "macbook-pro", "unknown"]
+Example input products: ["iphone-15", "iphone-15-pro", "iphone-15-pro-max", "galaxy-s24", "galaxy-s24-plus", "macbook-air-13", "macbook-air-15", "tennis-racket-wilson", "unknown"]
 
 Example output:
 {
+  "iphone-15": "iphone-15-series",
+  "iphone-15-pro": "iphone-15-series",
+  "iphone-15-pro-max": "iphone-15-series",
+  "galaxy-s24": "galaxy-s24-series",
+  "galaxy-s24-plus": "galaxy-s24-series",
+  "macbook-air-13": "macbook-air-series",
+  "macbook-air-15": "macbook-air-series",
   "tennis-racket-wilson": "tennis",
-  "tennis-balls": "tennis",
-  "basketball-shoes-nike": "basketball",
-  "iphone-14": "smartphones",
-  "macbook-pro": "computers",
   "unknown": "unknown"
 }`;
 
@@ -82,7 +106,7 @@ Example output:
 ${JSON.stringify(uniqueProducts, null, 2)}`;
 
   try {
-    const promptResponse = await prompt(systemPrompt, userPrompt, env);
+    const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       let mapping;
       try {
@@ -121,7 +145,7 @@ ${JSON.stringify(uniqueProducts, null, 2)}`;
 }
 
 async function deriveProductsForPaths(domain, paths, context) {
-  const { log, env } = context;
+  const { log } = context;
   const systemPrompt = `You are a content extraction specialist. Analyze URL paths from websites to identify the most specific content, product, or resource being referenced.
 
 TASK: Extract the primary content identifier from each URL path.
@@ -151,7 +175,7 @@ EXAMPLES:
 - "/category/electronics/phones" → "phones"
 
 OUTPUT FORMAT:
-Return ONLY a valid JSON object with this exact structure:
+Return ONLY a valid JSON object with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only:
 {
   "paths": [
     { "path": "/original/path", "product": "extracted-content" },
@@ -174,7 +198,7 @@ ${JSON.stringify(paths, null, 2)}`;
 
   try {
     log.info('Extracting products from URL paths');
-    const promptResponse = await prompt(systemPrompt, userPrompt, env);
+    const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       const { paths: parsedPaths } = JSON.parse(promptResponse.content);
       log.info('Successfully extracted products from URL paths');
@@ -198,7 +222,7 @@ function groupPathsByProduct(pathProductArray) {
 }
 
 async function deriveRegexesForProducts(domain, groupedPaths, context) {
-  const { env, log } = context;
+  const { log } = context;
 
   const systemPrompt = `You are a regex pattern generation specialist for URL path analysis in Amazon Athena SQL environments.
 
@@ -238,7 +262,7 @@ ANALYSIS METHODOLOGY:
 5. Make patterns flexible enough to match similar future paths
 
 OUTPUT FORMAT:
-Return ONLY a valid JSON object with this exact structure:
+Return ONLY a valid JSON object with this exact structure.Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only:
 {
   "product-name": "(?i)regex-pattern",
   "another-product": "(?i)another-pattern"
@@ -264,7 +288,7 @@ ${JSON.stringify(groupedPaths)}`;
 
   try {
     log.info('Generating regex patterns for products');
-    const promptResponse = await prompt(systemPrompt, userPrompt, env);
+    const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       const parsed = JSON.parse(promptResponse.content);
       if (parsed && typeof parsed === 'object') {

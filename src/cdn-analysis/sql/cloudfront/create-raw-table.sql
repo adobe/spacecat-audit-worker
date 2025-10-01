@@ -1,0 +1,40 @@
+CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
+  `date`                    string,
+  `time`                    string,
+  `x-edge-location`         string,
+  `cs-method`               string,
+  `x-host-header`           string,
+  `cs-uri-stem`             string,
+  `sc-status`               string,
+  `cs(Referer)`             string,
+  `cs(User-Agent)`          string,
+  `time-to-first-byte`      string,
+  `sc-content-type`         string
+)
+PARTITIONED BY (
+  year  string,
+  month string,
+  day   string,
+  hour  string
+)
+ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
+WITH SERDEPROPERTIES (
+  'paths'='date,time,x-edge-location,cs-method,cs(Host),cs-uri-stem,sc-status,cs(Referer),cs(User-Agent),time-to-first-byte,sc-content-type,x-host-header'
+)
+LOCATION '{{rawLocation}}'
+TBLPROPERTIES (
+  'projection.enabled'        = 'true',
+  'storage.location.template' = '{{rawLocation}}${year}/${month}/${day}/${hour}/',
+  'projection.year.type'      = 'integer',
+  'projection.year.range'     = '2024,2030',
+  'projection.month.type'     = 'integer',
+  'projection.month.range'    = '1,12',
+  'projection.month.digits'   = '2',
+  'projection.day.type'       = 'integer',
+  'projection.day.range'      = '1,31',
+  'projection.day.digits'     = '2',
+  'projection.hour.type'      = 'integer',
+  'projection.hour.range'     = '0,23',
+  'projection.hour.digits'    = '2',
+  'has_encrypted_data'        = 'false'
+);
