@@ -412,6 +412,21 @@ describe('Headings Audit', () => {
     expect(result.checks).to.deep.equal([]);
   });
 
+  it('handles empty string URL in validatePageHeadings', async () => {
+    const result = await validatePageHeadings(
+      '',
+      log,
+      site,
+      allKeys,
+      s3Client,
+      context.env.S3_SCRAPER_BUCKET_NAME,
+      context,
+    );
+    
+    expect(result.url).to.equal('');
+    expect(result.checks).to.deep.equal([]);
+  });
+
   it('handles missing scrape JSON file gracefully', async () => {
     const url = 'https://example.com/missing-page';
     // Mock empty allKeys to simulate missing scrape file
@@ -663,6 +678,48 @@ describe('Headings Audit', () => {
       const result = generateSuggestions(auditUrl, auditData, context);
       
       expect(result.suggestions[0].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
+    });
+
+    it('handles generateRecommendedAction with all check types', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: {
+          'heading-order-invalid': {
+            success: false,
+            explanation: 'Invalid order',
+            urls: [{ url: 'https://example.com/page1' }]
+          },
+          'heading-empty': {
+            success: false,
+            explanation: 'Empty heading',
+            urls: [{ url: 'https://example.com/page2' }]
+          },
+          'heading-duplicate-text': {
+            success: false,
+            explanation: 'Duplicate text',
+            urls: [{ url: 'https://example.com/page3' }]
+          },
+          'heading-no-content': {
+            success: false,
+            explanation: 'No content',
+            urls: [{ url: 'https://example.com/page4' }]
+          },
+          'unknown-check-type': {
+            success: false,
+            explanation: 'Unknown issue',
+            urls: [{ url: 'https://example.com/page5' }]
+          }
+        }
+      };
+      
+      const result = generateSuggestions(auditUrl, auditData, context);
+      
+      expect(result.suggestions).to.have.lengthOf(5);
+      expect(result.suggestions[0].recommendedAction).to.equal('Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).');
+      expect(result.suggestions[1].recommendedAction).to.equal('Provide meaningful text content for the empty heading or remove the element.');
+      expect(result.suggestions[2].recommendedAction).to.equal('Ensure each heading has unique, descriptive text content that clearly identifies its section.');
+      expect(result.suggestions[3].recommendedAction).to.equal('Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.');
+      expect(result.suggestions[4].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
     });
   });
 
@@ -976,6 +1033,78 @@ describe('Headings Audit', () => {
     const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
     
     // This should trigger the catch block and return the error object with url and empty checks
+    expect(result.url).to.equal(url);
+    expect(result.checks).to.deep.equal([]);
+  });
+
+  it('handles getH1HeadingASuggestion AI errors gracefully', async () => {
+    const url = 'https://example.com/page';
+    
+    // Mock AI client to throw an error
+    const mockClient = {
+      fetchChatCompletion: sinon.stub().rejects(new Error('AI service unavailable')),
+    };
+    AzureOpenAIClient.createFrom.restore();
+    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+    s3Client.send.resolves({
+      Body: {
+        transformToString: () => JSON.stringify({
+          finalUrl: url,
+          scrapeResult: {
+            rawBody: '<h1></h1>',
+            tags: {
+              title: 'Page Title',
+              description: 'Page Description',
+              h1: 'Page H1',
+            },
+          }
+        }),
+      },
+      ContentType: 'application/json',
+    });
+
+    // When AI fails, validatePageHeadings catches the error and returns empty checks
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
+    
+    // Should return empty checks when AI fails due to error handling in validatePageHeadings
+    expect(result.url).to.equal(url);
+    expect(result.checks).to.deep.equal([]);
+  });
+
+  it('handles getH1HeadingASuggestion JSON parsing errors', async () => {
+    const url = 'https://example.com/page';
+    
+    // Mock AI client to return invalid JSON
+    const mockClient = {
+      fetchChatCompletion: sinon.stub().resolves({
+        choices: [{ message: { content: 'invalid json' } }],
+      }),
+    };
+    AzureOpenAIClient.createFrom.restore();
+    sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
+
+    s3Client.send.resolves({
+      Body: {
+        transformToString: () => JSON.stringify({
+          finalUrl: url,
+          scrapeResult: {
+            rawBody: '<h1></h1>',
+            tags: {
+              title: 'Page Title',
+              description: 'Page Description',
+              h1: 'Page H1',
+            },
+          }
+        }),
+      },
+      ContentType: 'application/json',
+    });
+
+    // When JSON parsing fails, validatePageHeadings catches the error and returns empty checks
+    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context);
+    
+    // Should return empty checks when JSON parsing fails due to error handling in validatePageHeadings
     expect(result.url).to.equal(url);
     expect(result.checks).to.deep.equal([]);
   });
@@ -1316,6 +1445,63 @@ describe('Headings Audit', () => {
         explanation: 'Empty heading',
         recommendedAction: 'Add content',
       });
+    });
+
+    it('tests buildKey function execution in opportunityAndSuggestions', async () => {
+      // Create real stubs that will be called
+      const convertToOpportunityStub3 = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+      
+      const syncSuggestionsStub3 = sinon.stub().resolves();
+      
+      // Mock the dependencies
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub3,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub3,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-empty',
+            explanation: 'Empty heading',
+            url: 'https://example.com/page1',
+            recommendedAction: 'Add content'
+          },
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-order-invalid',
+            explanation: 'Invalid order',
+            url: 'https://example.com/page2',
+            recommendedAction: 'Fix order'
+          }
+        ]
+      };
+      
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+      
+      expect(syncSuggestionsStub3).to.have.been.calledOnce;
+      
+      // Check that buildKey was called with the right structure
+      const syncCall = syncSuggestionsStub3.getCall(0);
+      const buildKeyFn = syncCall.args[0].buildKey;
+      expect(buildKeyFn).to.be.a('function');
+      
+      // Test the buildKey function directly
+      const suggestion1 = auditData.suggestions[0];
+      const key1 = buildKeyFn(suggestion1);
+      expect(key1).to.equal('heading-empty|https://example.com/page1');
+      
+      const suggestion2 = auditData.suggestions[1];
+      const key2 = buildKeyFn(suggestion2);
+      expect(key2).to.equal('heading-order-invalid|https://example.com/page2');
     });
   });
 
