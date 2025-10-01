@@ -54,6 +54,7 @@ export async function audit404Runner(baseURL, context) {
   };
 
   const data = await rumAPIClient.get404Sources(params);
+  log.info(`404 Audit: ${JSON.stringify(data)}`);
   const auditResult = process404Response(data);
   const fullAuditRef = create404URL(params);
 
