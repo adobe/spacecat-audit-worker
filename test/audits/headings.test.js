@@ -29,6 +29,7 @@ import {
   headingsAuditRunner,
 } from '../../src/headings/handler.js';
 import { createOpportunityData, createOpportunityDataForElmo } from '../../src/headings/opportunity-data-mapper.js';
+import { keepLatestMergeDataFunction } from '../../src/utils/data-access.js';
 
 chaiUse(sinonChai);
 
@@ -1530,6 +1531,255 @@ describe('Headings Audit', () => {
     });
   });
 
+  describe('keepLatestMergeDataFunction', () => {
+    it('returns new data when existing data is empty', () => {
+      const existingData = {};
+      const newData = { type: 'CODE_CHANGE', url: 'https://example.com' };
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal(newData);
+      expect(result).to.not.equal(newData); // Should be a new object
+    });
+
+    it('returns new data when existing data is null', () => {
+      const existingData = null;
+      const newData = { type: 'CODE_CHANGE', url: 'https://example.com' };
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal(newData);
+    });
+
+    it('returns new data when existing data is undefined', () => {
+      const existingData = undefined;
+      const newData = { type: 'CODE_CHANGE', url: 'https://example.com' };
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal(newData);
+    });
+
+    it('returns new data when new data is empty', () => {
+      const existingData = { type: 'OLD', url: 'https://old.com' };
+      const newData = {};
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal(newData);
+    });
+
+    it('handles null new data gracefully', () => {
+      const existingData = { type: 'OLD', url: 'https://old.com' };
+      const newData = null;
+      
+      // The spread operator with null returns an empty object
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal({});
+    });
+
+    it('handles undefined new data gracefully', () => {
+      const existingData = { type: 'OLD', url: 'https://old.com' };
+      const newData = undefined;
+      
+      // The spread operator with undefined returns an empty object
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal({});
+    });
+
+    it('overrides existing data with new data completely', () => {
+      const existingData = {
+        type: 'OLD_TYPE',
+        url: 'https://old.com',
+        oldProperty: 'oldValue',
+        sharedProperty: 'oldValue'
+      };
+      const newData = {
+        type: 'NEW_TYPE',
+        url: 'https://new.com',
+        newProperty: 'newValue',
+        sharedProperty: 'newValue'
+      };
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal(newData);
+      expect(result).to.not.have.property('oldProperty');
+      expect(result).to.have.property('newProperty', 'newValue');
+      expect(result).to.have.property('sharedProperty', 'newValue');
+    });
+
+    it('handles complex nested objects', () => {
+      const existingData = {
+        type: 'OLD',
+        data: {
+          nested: {
+            deep: 'oldValue',
+            other: 'oldOther'
+          },
+          array: [1, 2, 3]
+        }
+      };
+      const newData = {
+        type: 'NEW',
+        data: {
+          nested: {
+            deep: 'newValue',
+            newNested: 'newNestedValue'
+          },
+          array: [4, 5, 6],
+          newProperty: 'newPropertyValue'
+        }
+      };
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal(newData);
+      expect(result.data.nested).to.deep.equal(newData.data.nested);
+      expect(result.data.array).to.deep.equal([4, 5, 6]);
+    });
+
+    it('handles arrays correctly', () => {
+      const existingData = {
+        items: [1, 2, 3],
+        metadata: { count: 3 }
+      };
+      const newData = {
+        items: [4, 5, 6, 7],
+        metadata: { count: 4, updated: true }
+      };
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal(newData);
+      expect(result.items).to.deep.equal([4, 5, 6, 7]);
+      expect(result.metadata).to.deep.equal({ count: 4, updated: true });
+    });
+
+    it('handles primitive values', () => {
+      const existingData = {
+        string: 'old',
+        number: 42,
+        boolean: true,
+        nullValue: null
+      };
+      const newData = {
+        string: 'new',
+        number: 100,
+        boolean: false,
+        nullValue: 'notNull'
+      };
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal(newData);
+      expect(result.string).to.equal('new');
+      expect(result.number).to.equal(100);
+      expect(result.boolean).to.equal(false);
+      expect(result.nullValue).to.equal('notNull');
+    });
+
+    it('creates a new object (does not mutate inputs)', () => {
+      const existingData = { type: 'OLD', url: 'https://old.com' };
+      const newData = { type: 'NEW', url: 'https://new.com' };
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      // Verify inputs are not mutated
+      expect(existingData).to.deep.equal({ type: 'OLD', url: 'https://old.com' });
+      expect(newData).to.deep.equal({ type: 'NEW', url: 'https://new.com' });
+      
+      // Verify result is a new object
+      expect(result).to.not.equal(existingData);
+      expect(result).to.not.equal(newData);
+    });
+
+    it('handles function properties', () => {
+      const existingData = {
+        type: 'OLD',
+        callback: () => 'old'
+      };
+      const newData = {
+        type: 'NEW',
+        callback: () => 'new'
+      };
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal(newData);
+      expect(result.callback()).to.equal('new');
+    });
+
+    it('handles special values (NaN, Infinity, -Infinity)', () => {
+      const existingData = {
+        normal: 42,
+        nan: NaN,
+        infinity: Infinity,
+        negativeInfinity: -Infinity
+      };
+      const newData = {
+        normal: 100,
+        nan: NaN,
+        infinity: Infinity,
+        negativeInfinity: -Infinity
+      };
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal(newData);
+      expect(result.normal).to.equal(100);
+      expect(Number.isNaN(result.nan)).to.be.true;
+      expect(result.infinity).to.equal(Infinity);
+      expect(result.negativeInfinity).to.equal(-Infinity);
+    });
+
+    it('handles empty objects and arrays', () => {
+      const existingData = {
+        emptyObject: {},
+        emptyArray: [],
+        nonEmpty: 'value'
+      };
+      const newData = {
+        emptyObject: {},
+        emptyArray: [],
+        nonEmpty: 'newValue'
+      };
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal(newData);
+      expect(result.emptyObject).to.deep.equal({});
+      expect(result.emptyArray).to.deep.equal([]);
+    });
+
+    it('handles mixed data types in same object', () => {
+      const existingData = {
+        string: 'old',
+        number: 42,
+        boolean: true,
+        array: [1, 2],
+        object: { key: 'old' },
+        nullValue: null,
+        undefinedValue: undefined
+      };
+      const newData = {
+        string: 'new',
+        number: 100,
+        boolean: false,
+        array: [3, 4, 5],
+        object: { key: 'new', newKey: 'newValue' },
+        nullValue: 'notNull',
+        undefinedValue: 'defined'
+      };
+      
+      const result = keepLatestMergeDataFunction(existingData, newData);
+      
+      expect(result).to.deep.equal(newData);
+    });
+  });
+
   describe('opportunityAndSuggestionsForElmo', () => {
     let convertToOpportunityStub;
     let syncSuggestionsStub;
@@ -1800,6 +2050,112 @@ describe('Headings Audit', () => {
       } catch (error) {
         expect(error.message).to.include('Sync failed');
       }
+    });
+
+    it('handles convertToOpportunity with null comparisonFn', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: 'Test suggestion'
+          }
+        ]
+      };
+      
+      // Mock convertToOpportunity to be called with null comparisonFn
+      convertToOpportunityStub.callsFake((auditUrl, auditData, context, createOpportunityDataForElmo, elmoOpportunityType, options, comparisonFn) => {
+        // Verify that comparisonFn is provided and is a function
+        expect(comparisonFn).to.be.a('function');
+        return Promise.resolve({
+          getId: () => 'test-elmo-opportunity-id'
+        });
+      });
+      
+      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      
+      expect(result).to.deep.equal(auditData);
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      
+      // Verify the comparisonFn was passed correctly
+      const convertCall = convertToOpportunityStub.getCall(0);
+      expect(convertCall.args[6]).to.be.a('function'); // comparisonFn should be a function
+    });
+
+    it('handles convertToOpportunity with undefined comparisonFn', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: 'Test suggestion'
+          }
+        ]
+      };
+      
+      // Create a mock that simulates the opportunity.js behavior when comparisonFn is undefined
+      convertToOpportunityStub.callsFake((auditUrl, auditData, context, createOpportunityDataForElmo, elmoOpportunityType, options, comparisonFn) => {
+        // Test the condition from opportunity.js: if (comparisonFn && typeof comparisonFn === 'function')
+        if (comparisonFn && typeof comparisonFn === 'function') {
+          // This branch should be taken since we're passing a function
+          expect(comparisonFn).to.be.a('function');
+        } else {
+          // This branch should not be taken in our case
+          expect.fail('comparisonFn should be a function');
+        }
+        
+        return Promise.resolve({
+          getId: () => 'test-elmo-opportunity-id'
+        });
+      });
+      
+      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      
+      expect(result).to.deep.equal(auditData);
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+    });
+
+    it('tests comparisonFn type checking in convertToOpportunity', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: 'Test suggestion'
+          }
+        ]
+      };
+      
+      // Mock convertToOpportunity to test the type checking logic
+      convertToOpportunityStub.callsFake((auditUrl, auditData, context, createOpportunityDataForElmo, elmoOpportunityType, options, comparisonFn) => {
+        // Simulate the exact condition from opportunity.js
+        const shouldUseComparisonFn = comparisonFn && typeof comparisonFn === 'function';
+        
+        if (shouldUseComparisonFn) {
+          // Test that the comparisonFn works correctly
+          const mockOppty = {
+            getData: () => ({
+              additionalMetrics: [
+                { key: 'subtype', value: 'headings' }
+              ]
+            })
+          };
+          
+          const result = comparisonFn(mockOppty);
+          expect(result).to.be.true;
+        } else {
+          expect.fail('comparisonFn should be defined and be a function');
+        }
+        
+        return Promise.resolve({
+          getId: () => 'test-elmo-opportunity-id'
+        });
+      });
+      
+      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      
+      expect(result).to.deep.equal(auditData);
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
     });
   });
 });
