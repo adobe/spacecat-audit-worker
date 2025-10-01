@@ -30,7 +30,7 @@ import {
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
-const auditType = 'product-metatags'; // New opportunity type
+const auditType = Audit.AUDIT_TYPES.PRODUCT_METATAGS;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 export async function opportunityAndSuggestions(finalUrl, auditData, context) {
@@ -414,7 +414,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
   log.info(`[PRODUCT-METATAGS] Retrieved ${topPages.length} top pages`);
 
-  const includedURLs = await site?.getConfig()?.getIncludedURLs('product-metatags') || [];
+  const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
   log.info(`[PRODUCT-METATAGS] Retrieved ${includedURLs.length} included URLs from site config`);
 
   // Transform URLs into scrape.json paths and combine them into a Set
@@ -526,7 +526,7 @@ export async function submitForScraping(context) {
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
   // Combine includedURLs and topPages URLs to scrape
-  const includedURLs = await site?.getConfig()?.getIncludedURLs('product-metatags') || [];
+  const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
   log.info(`[PRODUCT-METATAGS] Retrieved ${includedURLs.length} included URLs from site config`);
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];

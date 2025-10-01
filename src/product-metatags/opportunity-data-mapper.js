@@ -26,7 +26,7 @@ export function createOpportunityData(props = {}) {
         'Publish the changes to apply the updates to your live product pages.',
       ],
     },
-    tags: ['E-commerce', 'Product SEO', 'Traffic acquisition'],
+    tags: ['Commerce', 'Product SEO', 'Traffic acquisition', 'isAco'],
     data: {
       ...props,
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.RUM, DATA_SOURCES.SITE],
