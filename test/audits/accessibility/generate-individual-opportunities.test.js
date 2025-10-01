@@ -2500,8 +2500,11 @@ describe('createAccessibilityIndividualOpportunities', () => {
       mockContext,
     );
 
-    expect(result.status).to.equal('NO_OPPORTUNITIES');
-    expect(result.message).to.include('No accessibility issues found in tracked categories');
+    expect(result.status).to.equal('OPPORTUNITIES_FAILED');
+    expect(result.error).to.include('No opportunity creator found for type: a11y-unknown');
+    expect(mockContext.log.error).to.have.been.calledWith(
+      sinon.match.string,
+    );
   });
 
   it('should update existing opportunity with IN_PROGRESS status', async () => {

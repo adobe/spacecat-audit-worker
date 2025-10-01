@@ -12,7 +12,7 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
+import { FORM_OPPORTUNITY_TYPES, formOpportunitiesMap } from '../constants.js';
 import { getSuccessCriteriaDetails, sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance } from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import {
@@ -305,8 +305,10 @@ async function createFormAccessibilityIndividualSuggestions(aggregatedData, oppo
       }
     });
 
-    // Use aggregateAccessibilityIssues with 'form-accessibility' opportunity type
-    const aggregatedIssues = aggregateAccessibilityIssues(transformedAccessibilityData, 'form-accessibility');
+    const aggregatedIssues = aggregateAccessibilityIssues(
+      transformedAccessibilityData,
+      formOpportunitiesMap,
+    );
 
     // Early return if no actionable issues found
     if (!aggregatedIssues || !aggregatedIssues.data || aggregatedIssues.data.length === 0) {

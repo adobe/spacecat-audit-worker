@@ -874,7 +874,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(aggregateAccessibilityIssuesStub).to.have.been.calledOnce;
       expect(aggregateAccessibilityIssuesStub).to.have.been.calledWith(
         sinon.match.object,
-        'form-accessibility',
+        sinon.match.object,
       );
       expect(createIndividualOpportunitySuggestionsStub).to.have.been.calledOnce;
     });

@@ -266,31 +266,33 @@ export function formatIssue(type, issueData, severity) {
  * @param {Object} accessibilityData[url] - Per-URL accessibility data
  * @returns {Object} Object with data array containing URLs and their issues
  */
-export function aggregateAccessibilityIssues(accessibilityData, opportunityType = 'a11y-assistive') {
+export function aggregateAccessibilityIssues(
+  accessibilityData,
+  opportunitiesMap = accessibilityOpportunitiesMap,
+) {
   if (!accessibilityData) {
     return { data: [] };
   }
 
-  // Create reverse mapping - only for the specified opportunityType
+  // Create reverse mapping (unchanged)
   const issueTypeToOpportunityMap = {};
-  const issueList = accessibilityOpportunitiesMap[opportunityType];
-  if (!issueList) {
-    return { data: [] };
+  for (const [opportunityType, issuesList] of Object.entries(opportunitiesMap)) {
+    for (const issueType of issuesList) {
+      issueTypeToOpportunityMap[issueType] = opportunityType;
+    }
   }
 
-  for (const issueType of issueList) {
-    issueTypeToOpportunityMap[issueType] = opportunityType;
-  }
-
-  // Initialize grouped data structure - only for the specified opportunityType
+  // Initialize grouped data structure (unchanged)
   const groupedData = {};
-  groupedData[opportunityType] = [];
+  for (const [opportunityType] of Object.entries(opportunitiesMap)) {
+    groupedData[opportunityType] = [];
+  }
 
   // NEW: Process individual HTML elements directly
   const processIssuesForSeverity = (items, severity, url, data) => {
     for (const [issueType, issueData] of Object.entries(items)) {
-      const oppType = issueTypeToOpportunityMap[issueType];
-      if (oppType && issueData.htmlWithIssues) {
+      const opportunityType = issueTypeToOpportunityMap[issueType];
+      if (opportunityType && issueData.htmlWithIssues) {
         issueData.htmlWithIssues.forEach((htmlElement, index) => {
           const singleElementIssueData = {
             ...issueData,
@@ -653,6 +655,13 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
 
           // Get the appropriate opportunity creator function
           const creatorFunc = opportunityCreators[opportunityType];
+          if (!creatorFunc) {
+            const availableCreators = Object.keys(opportunityCreators).join(', ');
+            log.error(
+              `[A11yIndividual][A11yProcessingError] No opportunity creator found for type: ${opportunityType}. Available creators: ${availableCreators}`,
+            );
+            throw new Error(`No opportunity creator found for type: ${opportunityType}`);
+          }
 
           const opportunityInstance = creatorFunc();
 
