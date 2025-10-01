@@ -622,7 +622,7 @@ export async function opportunityAndSuggestionsForElmo(auditUrl, auditData, cont
     log,
   });
 
-  log.info(`Headings opportunity created for Elmo and ${auditData.suggestions.length} suggestions synced for ${auditUrl}`);
+  log.info(`Headings opportunity created for Elmo and ${auditData.elmoSuggestions.length} suggestions synced for ${auditUrl}`);
   return { ...auditData };
 }
 

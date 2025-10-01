@@ -28,7 +28,7 @@ import {
   generateSuggestions,
   headingsAuditRunner,
 } from '../../src/headings/handler.js';
-import { createOpportunityData } from '../../src/headings/opportunity-data-mapper.js';
+import { createOpportunityData, createOpportunityDataForElmo } from '../../src/headings/opportunity-data-mapper.js';
 
 chaiUse(sinonChai);
 
@@ -1391,6 +1391,415 @@ describe('Headings Audit', () => {
       // Check nested structure
       expect(opportunityData.guidance).to.have.property('steps');
       expect(opportunityData.data).to.have.property('dataSources');
+    });
+  });
+
+  describe('Opportunity Data Mapper for Elmo', () => {
+    it('creates proper opportunity data structure for Elmo', () => {
+      const opportunityData = createOpportunityDataForElmo();
+
+      expect(opportunityData).to.be.an('object');
+      expect(opportunityData).to.have.property('runbook', '');
+      expect(opportunityData).to.have.property('origin', 'AUTOMATION');
+      expect(opportunityData).to.have.property('title', 'Heading structure issues affecting accessibility and SEO');
+      expect(opportunityData).to.have.property('description');
+      expect(opportunityData.description).to.include('heading elements');
+      expect(opportunityData.description).to.include('hierarchical order');
+      expect(opportunityData.description).to.include('AI-powered suggestions');
+    });
+
+    it('includes Elmo-specific tags', () => {
+      const opportunityData = createOpportunityDataForElmo();
+
+      expect(opportunityData).to.have.property('tags');
+      expect(opportunityData.tags).to.be.an('array');
+      expect(opportunityData.tags).to.have.lengthOf(4);
+      expect(opportunityData.tags).to.deep.equal(['Accessibility', 'SEO', 'llm', 'isElmo']);
+    });
+
+    it('includes proper guidance steps for Elmo', () => {
+      const opportunityData = createOpportunityDataForElmo();
+
+      expect(opportunityData).to.have.property('guidance');
+      expect(opportunityData.guidance).to.have.property('steps');
+      expect(opportunityData.guidance.steps).to.be.an('array');
+      expect(opportunityData.guidance.steps).to.have.lengthOf(5);
+
+      const steps = opportunityData.guidance.steps;
+      expect(steps[0]).to.include('Review pages flagged for heading order');
+      expect(steps[1]).to.include('AI-generated suggestions');
+      expect(steps[2]).to.include('levels increase by at most one');
+      expect(steps[3]).to.include('Remove or fill any empty heading elements');
+      expect(steps[4]).to.include('brand guidelines');
+    });
+
+    it('has correct data sources configuration for Elmo', () => {
+      const opportunityData = createOpportunityDataForElmo();
+
+      expect(opportunityData).to.have.property('data');
+      expect(opportunityData.data).to.have.property('dataSources');
+      expect(opportunityData.data.dataSources).to.be.an('array');
+      expect(opportunityData.data.dataSources).to.have.lengthOf(1);
+      expect(opportunityData.data.dataSources[0]).to.equal('Site');
+    });
+
+    it('includes additional metrics for Elmo with headings subtype', () => {
+      const opportunityData = createOpportunityDataForElmo();
+
+      expect(opportunityData.data).to.have.property('additionalMetrics');
+      expect(opportunityData.data.additionalMetrics).to.be.an('array');
+      expect(opportunityData.data.additionalMetrics).to.have.lengthOf(1);
+      expect(opportunityData.data.additionalMetrics[0]).to.deep.equal({
+        value: 'headings',
+        key: 'subtype',
+      });
+    });
+
+    it('returns consistent data on multiple calls', () => {
+      const data1 = createOpportunityDataForElmo();
+      const data2 = createOpportunityDataForElmo();
+
+      expect(data1).to.deep.equal(data2);
+    });
+
+    it('has all required fields for Elmo opportunity creation', () => {
+      const opportunityData = createOpportunityDataForElmo();
+
+      // Check all required fields exist
+      expect(opportunityData).to.have.all.keys([
+        'runbook',
+        'origin', 
+        'title',
+        'description',
+        'guidance',
+        'tags',
+        'data'
+      ]);
+
+      // Check nested structure
+      expect(opportunityData.guidance).to.have.property('steps');
+      expect(opportunityData.data).to.have.property('dataSources');
+      expect(opportunityData.data).to.have.property('additionalMetrics');
+    });
+
+    it('extends base opportunity data with Elmo-specific properties', () => {
+      const baseData = createOpportunityData();
+      const elmoData = createOpportunityDataForElmo();
+
+      // Should have all base properties
+      expect(elmoData.runbook).to.equal(baseData.runbook);
+      expect(elmoData.origin).to.equal(baseData.origin);
+      expect(elmoData.title).to.equal(baseData.title);
+      expect(elmoData.description).to.equal(baseData.description);
+      expect(elmoData.guidance).to.deep.equal(baseData.guidance);
+
+      // Should have extended tags
+      expect(elmoData.tags).to.include.members(baseData.tags);
+      expect(elmoData.tags).to.include('llm');
+      expect(elmoData.tags).to.include('isElmo');
+
+      // Should have extended data structure
+      expect(elmoData.data.dataSources).to.deep.equal(baseData.data.dataSources);
+      expect(elmoData.data).to.have.property('additionalMetrics');
+      expect(baseData.data).to.not.have.property('additionalMetrics');
+    });
+
+    it('maintains immutability of base data', () => {
+      const baseData = createOpportunityData();
+      const elmoData = createOpportunityDataForElmo();
+
+      // Base data should not be modified
+      expect(baseData.tags).to.deep.equal(['Accessibility', 'SEO']);
+      expect(baseData.data).to.not.have.property('additionalMetrics');
+
+      // Elmo data should have extended properties
+      expect(elmoData.tags).to.have.lengthOf(4);
+      expect(elmoData.data).to.have.property('additionalMetrics');
+    });
+
+    it('has correct structure for Elmo opportunity comparison', () => {
+      const opportunityData = createOpportunityDataForElmo();
+
+      // This data structure should match what the comparisonFn in opportunityAndSuggestionsForElmo expects
+      const additionalMetrics = opportunityData.data.additionalMetrics;
+      expect(additionalMetrics).to.be.an('array');
+      
+      const subtypeMetric = additionalMetrics.find(metric => metric.key === 'subtype');
+      expect(subtypeMetric).to.exist;
+      expect(subtypeMetric.value).to.equal('headings');
+    });
+  });
+
+  describe('opportunityAndSuggestionsForElmo', () => {
+    let convertToOpportunityStub;
+    let syncSuggestionsStub;
+    let mockedOpportunityAndSuggestionsForElmo;
+
+    beforeEach(async () => {
+      // Create stubs for the imported functions
+      convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-elmo-opportunity-id'
+      });
+      
+      syncSuggestionsStub = sinon.stub().resolves();
+
+      // Mock the handler with stubbed dependencies
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      mockedOpportunityAndSuggestionsForElmo = mockedHandler.opportunityAndSuggestionsForElmo;
+    });
+
+    it('skips opportunity creation when no elmo suggestions', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = { elmoSuggestions: [] };
+      
+      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      expect(result).to.deep.equal(auditData);
+      expect(convertToOpportunityStub).not.to.have.been.called;
+    });
+
+    it('skips opportunity creation when elmo suggestions is undefined', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {};
+      
+      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      expect(result).to.deep.equal(auditData);
+      expect(convertToOpportunityStub).not.to.have.been.called;
+    });
+
+    it('creates opportunity and syncs elmo suggestions', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: '## Heading Issues\n\n| Page Url | Explanation | Suggestion |\n|-------|-------|-------|\n| https://example.com/page1 | Empty heading | Add content |\n'
+          }
+        ]
+      };
+      
+      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      
+      expect(result).to.deep.equal(auditData);
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      
+      const convertCall = convertToOpportunityStub.getCall(0);
+      expect(convertCall.args[0]).to.equal(auditUrl);
+      expect(convertCall.args[1]).to.deep.equal(auditData);
+      expect(convertCall.args[2]).to.equal(context);
+      expect(convertCall.args[3]).to.be.a('function'); // createOpportunityDataForElmo
+      expect(convertCall.args[4]).to.equal('generic-opportunity');
+      expect(convertCall.args[5]).to.deep.equal({});
+      expect(convertCall.args[6]).to.be.a('function'); // comparisonFn
+      
+      const syncCall = syncSuggestionsStub.getCall(0);
+      expect(syncCall.args[0]).to.have.property('opportunity');
+      expect(syncCall.args[0]).to.have.property('newData', auditData.elmoSuggestions);
+      expect(syncCall.args[0]).to.have.property('context', context);
+      expect(syncCall.args[0]).to.have.property('buildKey');
+      expect(syncCall.args[0]).to.have.property('mapNewSuggestion');
+      expect(syncCall.args[0]).to.have.property('keepLatestMergeDataFunction');
+    });
+
+    it('uses correct buildKey function for elmo suggestions', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: 'Test suggestion'
+          }
+        ]
+      };
+      
+      await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      
+      const syncCall = syncSuggestionsStub.getCall(0);
+      const buildKeyFn = syncCall.args[0].buildKey;
+      
+      // Test the buildKey function
+      const suggestion = { type: 'CODE_CHANGE' };
+      const key = buildKeyFn(suggestion);
+      expect(key).to.equal('CODE_CHANGE');
+    });
+
+    it('uses correct mapNewSuggestion function for elmo suggestions', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: 'Test suggestion'
+          }
+        ]
+      };
+      
+      await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      
+      const syncCall = syncSuggestionsStub.getCall(0);
+      const mapNewSuggestionFn = syncCall.args[0].mapNewSuggestion;
+      
+      // Test the mapNewSuggestion function
+      const suggestion = {
+        type: 'CODE_CHANGE',
+        recommendedAction: 'Test suggestion'
+      };
+      const mappedSuggestion = mapNewSuggestionFn(suggestion);
+      
+      expect(mappedSuggestion).to.deep.include({
+        opportunityId: 'test-elmo-opportunity-id',
+        type: 'CODE_CHANGE',
+        rank: 0,
+      });
+      expect(mappedSuggestion.data).to.deep.include({
+        suggestionValue: 'Test suggestion',
+      });
+    });
+
+    it('uses comparisonFn to find existing headings opportunities', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: 'Test suggestion'
+          }
+        ]
+      };
+      
+      await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      
+      const convertCall = convertToOpportunityStub.getCall(0);
+      const comparisonFn = convertCall.args[6];
+      
+      // Test comparisonFn with opportunity that has headings subtype
+      const opptyWithHeadings = {
+        getData: () => ({
+          additionalMetrics: [
+            { key: 'subtype', value: 'headings' }
+          ]
+        })
+      };
+      expect(comparisonFn(opptyWithHeadings)).to.be.true;
+      
+      // Test comparisonFn with opportunity that doesn't have headings subtype
+      const opptyWithoutHeadings = {
+        getData: () => ({
+          additionalMetrics: [
+            { key: 'subtype', value: 'other' }
+          ]
+        })
+      };
+      expect(comparisonFn(opptyWithoutHeadings)).to.be.false;
+      
+      // Test comparisonFn with opportunity that has no additionalMetrics
+      const opptyNoMetrics = {
+        getData: () => ({})
+      };
+      expect(comparisonFn(opptyNoMetrics)).to.be.false;
+      
+      // Test comparisonFn with opportunity that has null additionalMetrics
+      const opptyNullMetrics = {
+        getData: () => ({ additionalMetrics: null })
+      };
+      expect(comparisonFn(opptyNullMetrics)).to.be.false;
+    });
+
+    it('handles multiple elmo suggestions', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: 'First suggestion'
+          },
+          {
+            type: 'CONTENT_CHANGE',
+            recommendedAction: 'Second suggestion'
+          }
+        ]
+      };
+      
+      const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+      
+      expect(result).to.deep.equal(auditData);
+      expect(convertToOpportunityStub).to.have.been.calledOnce;
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+      
+      const syncCall = syncSuggestionsStub.getCall(0);
+      expect(syncCall.args[0].newData).to.deep.equal(auditData.elmoSuggestions);
+    });
+
+    it('logs success message after creating opportunity', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: 'Test suggestion'
+          }
+        ]
+      };
+      
+      const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+      const contextWithLogSpy = { ...context, log: logSpy };
+      
+      await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, contextWithLogSpy);
+      
+      expect(logSpy.info).to.have.been.calledWith('Headings opportunity created for Elmo with oppty id test-elmo-opportunity-id');
+      expect(logSpy.info).to.have.been.calledWith('Headings opportunity created for Elmo and 1 suggestions synced for https://example.com');
+    });
+
+    it('handles convertToOpportunity errors gracefully', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: 'Test suggestion'
+          }
+        ]
+      };
+      
+      // Make convertToOpportunity throw an error
+      convertToOpportunityStub.rejects(new Error('Database connection failed'));
+      
+      try {
+        await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+        expect.fail('Expected function to throw an error');
+      } catch (error) {
+        expect(error.message).to.include('Database connection failed');
+      }
+    });
+
+    it('handles syncSuggestions errors gracefully', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: 'Test suggestion'
+          }
+        ]
+      };
+      
+      // Make syncSuggestions throw an error
+      syncSuggestionsStub.rejects(new Error('Sync failed'));
+      
+      try {
+        await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
+        expect.fail('Expected function to throw an error');
+      } catch (error) {
+        expect(error.message).to.include('Sync failed');
+      }
     });
   });
 });
