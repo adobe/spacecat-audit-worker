@@ -82,14 +82,14 @@ export async function detectFormAccessibility(context, auditContext) {
         deliveryType: site.getDeliveryType(),
         time: new Date().toISOString(),
         data: {
-          url: urlsToDetect[0].form, // M expects url in the data object for forms opportunity
+          url: previewUrls[0], // M expects url in the data object for forms opportunity
           opportunityId: siteId,
           a11y: urlsToDetect,
         },
         options: {
           enableAuthentication,
           a11yPreflight: true,
-          bucketName: 'test-bucket',
+          bucketName,
         },
       };
 
