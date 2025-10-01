@@ -126,8 +126,14 @@ describe('formatIssue', () => {
     sandbox = sinon.createSandbox();
     originalSuccessCriteriaLinks = JSON.parse(JSON.stringify(constants.successCriteriaLinks));
     // Add some test WCAG rules
-    // constants.successCriteriaLinks['412'] = { name: 'Name, Role, Value' };
-    // constants.successCriteriaLinks['111'] = { name: 'Non-text Content' };
+    constants.successCriteriaLinks['412'] = {
+      name: 'Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
+    };
+    constants.successCriteriaLinks['111'] = {
+      name: 'Non-text Content',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html',
+    };
   });
 
   afterEach(() => {
