@@ -32,6 +32,7 @@ describe('Guidance High Page Views Low Form Navigation Handler', () => {
   beforeEach(() => {
     logStub = {
       info: sinon.stub(),
+      debug: sinon.stub(),
       error: sinon.stub(),
     };
     dataAccessStub = {

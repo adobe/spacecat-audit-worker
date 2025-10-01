@@ -45,7 +45,7 @@ async function checkOptelData(domain, context) {
     const { pageviews } = await rumAPIClient.query('pageviews', options);
     return pageviews > 0;
   } catch (error) {
-    log.info(`Failed to check OpTel data for domain ${domain}: ${error.message}`);
+    log.error(`Failed to check OpTel data for domain ${domain}: ${error.message}`);
     return false;
   }
 }
@@ -60,12 +60,12 @@ async function runReferralTrafficStep(context) {
   const siteId = site.getSiteId();
   const domain = finalUrl;
 
-  log.info(`Checking domain and triggering appropriate import for site: ${siteId}, domain: ${domain}`);
+  log.debug(`Checking domain and triggering appropriate import for site: ${siteId}, domain: ${domain}`);
 
   const hasOptelData = await checkOptelData(domain, context);
 
   if (hasOptelData) {
-    log.info('Domain has OpTel data; initiating referral traffic import for the last 4 full calendar weeks');
+    log.debug('Domain has OpTel data; initiating referral traffic import for the last 4 full calendar weeks');
 
     const last4Weeks = getLastNumberOfWeeks(4);
 
@@ -96,7 +96,7 @@ async function runReferralTrafficStep(context) {
       siteId,
     };
   } else {
-    log.info('Domain has no OpTel data, skipping referral traffic import; triggering Ahrefs top pages import');
+    log.debug('Domain has no OpTel data, skipping referral traffic import; triggering Ahrefs top pages import');
 
     return {
       type: TOP_PAGES_IMPORT,
@@ -123,7 +123,7 @@ async function runAgenticTrafficStep(context) {
   let source;
 
   if (auditResult.source === OPTEL_SOURCE_TYPE) {
-    log.info('Agentic Traffic Step: Fetching top URLs from OpTel data');
+    log.debug('Agentic Traffic Step: Fetching top URLs from OpTel data');
     // Make sure to create the referral traffic workbook for the last week
     const lastWeek = lastFourWeeks[0];
     referralTrafficRunner(null, context, site, lastWeek);
@@ -147,7 +147,7 @@ async function runAgenticTrafficStep(context) {
     urls = paths.slice(0, 20).map((p) => ({ url: `https://${audit.getFullAuditRef()}${p.path}` }));
     source = OPTEL_SOURCE_TYPE;
   } else if (auditResult.source === AHREFS_SOURCE_TYPE) {
-    log.info('Agentic Traffic Step: fetching top URLs Ahrefs data');
+    log.debug('Agentic Traffic Step: fetching top URLs Ahrefs data');
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
     paths = topPages.slice(0, 100).map((topPage) => ({ path: topPage.getUrl() }));
     source = AHREFS_SOURCE_TYPE;
@@ -158,11 +158,11 @@ async function runAgenticTrafficStep(context) {
   const productRegexes = await analyzeProducts(domain, paths.map((p) => p.path), context);
   const pagetypeRegexes = await analyzePageTypes(domain, paths.map((p) => p.path), context);
 
-  log.info('Agentic Traffic Step: Extraction complete; uploading results');
+  log.debug('Agentic Traffic Step: Extraction complete; uploading results');
 
   await uploadPatternsWorkbook(productRegexes, pagetypeRegexes, site, context);
 
-  log.info('Agentic Traffic Step: Upload complete; initiating scrap');
+  log.debug('Agentic Traffic Step: Upload complete; initiating scrap');
 
   return {
     auditResult: { source },
@@ -189,7 +189,7 @@ async function runBrandPresenceStep(context) {
     let domainInsights;
 
     if (auditResult.source === AHREFS_SOURCE_TYPE) {
-      log.info('Brand Presence Step: Starting domain analysis with URLs');
+      log.debug('Brand Presence Step: Starting domain analysis with URLs');
       const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getSiteId(), 'ahrefs', 'global');
       const urls = topPages.slice(0, 100).map((topPage) => (topPage.getUrl()));
       domainInsights = await analyzeDomainFromUrls(domain, urls, context);
@@ -198,11 +198,11 @@ async function runBrandPresenceStep(context) {
       domainInsights = await analyzeDomain(domain, results, context);
     }
 
-    log.info('Brand Presence Step: analysis complete; uploading results');
+    log.debug('Brand Presence Step: analysis complete; uploading results');
 
     await uploadUrlsWorkbook(domainInsights, site, context);
 
-    log.info('Brand Presence Step: Upload complete; triggering geo-brand-presence audit');
+    log.debug('Brand Presence Step: Upload complete; triggering geo-brand-presence audit');
 
     const geoBrandPresenceMessage = {
       type: 'geo-brand-presence',

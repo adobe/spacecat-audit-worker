@@ -19,7 +19,7 @@ export default async function handler(message, context) {
   const {
     suggestionId, opportunityId, remediations,
   } = data;
-  log.info(`Message received in broken-links suggestion handler: ${JSON.stringify(message, null, 2)}`);
+  log.debug(`Message received in broken-links suggestion handler: ${JSON.stringify(message, null, 2)}`);
 
   const site = await Site.findById(siteId);
   if (!site) {

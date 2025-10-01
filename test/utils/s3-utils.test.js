@@ -23,6 +23,7 @@ describe('S3 Utility Functions', () => {
   const logMock = {
     info: () => {},
     error: () => {},
+    debug: () => {},
   };
 
   describe('getObjectKeysUsingPrefix', () => {

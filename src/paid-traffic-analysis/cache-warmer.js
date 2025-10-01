@@ -146,11 +146,11 @@ export async function warmCacheForSite(context, log, env, site, temporalParams) 
 
   const { yearInt, weekInt, monthInt } = temporalParams;
 
-  log.info(`Starting cache warming for site ${siteId} - Year: ${yearInt}, Week: ${weekInt}, Month: ${monthInt}`);
-  log.info(`Using max concurrent requests: ${config.maxConcurrentRequests}`);
+  log.debug(`Starting cache warming for site ${siteId} - Year: ${yearInt}, Week: ${weekInt}, Month: ${monthInt}`);
+  log.debug(`Using max concurrent requests: ${config.maxConcurrentRequests}`);
 
   // Check which queries need cache warming
-  log.info(`Checking cache existence for ${QUERIES.length} queries...`);
+  log.debug(`Checking cache existence for ${QUERIES.length} queries...`);
   const checkTasks = QUERIES.map(
     (queryConfig) => () => checkCacheExists(
       context,
@@ -168,10 +168,10 @@ export async function warmCacheForSite(context, log, env, site, temporalParams) 
   const queriesToWarm = cacheChecks.filter((check) => !check.exists);
   const cachedQueries = cacheChecks.filter((check) => check.exists);
 
-  log.info(`Found ${cachedQueries.length} cached queries, ${queriesToWarm.length} queries need warming`);
+  log.debug(`Found ${cachedQueries.length} cached queries, ${queriesToWarm.length} queries need warming`);
 
   if (queriesToWarm.length === 0) {
-    log.info(`All caches already exist for site ${siteId}. No warming needed.`);
+    log.debug(`All caches already exist for site ${siteId}. No warming needed.`);
     return {
       success: true,
       results: cachedQueries.map(
@@ -193,7 +193,7 @@ export async function warmCacheForSite(context, log, env, site, temporalParams) 
     cacheKey: check.cacheKey,
   })));
 
-  log.info(`Processing ${queriesToWarm.length} queries with max ${config.maxConcurrentRequests} concurrent...`);
+  log.debug(`Processing ${queriesToWarm.length} queries with max ${config.maxConcurrentRequests} concurrent...`);
 
   const warmingTasks = queriesToWarm.map(({ queryConfig }) => () => (async () => {
     try {
@@ -239,7 +239,7 @@ export async function warmCacheForSite(context, log, env, site, temporalParams) 
     throw new Error(`No paid traffic data found for site ${siteId}. Please ensure data is imported first before running paid traffic analysis.`);
   }
 
-  log.info(`Cache warming completed for site ${siteId}. Success: ${successCount}/${results.length}`);
+  log.debug(`Cache warming completed for site ${siteId}. Success: ${successCount}/${results.length}`);
 
   return {
     success: true, results, successCount, totalCount: results.length,
@@ -277,9 +277,9 @@ export async function warmCacheForQuery(
   const query = getTrafficAnalysisQuery(queryParams);
   const { cacheKey, outPrefix } = getCacheKey(siteId, query, config.cacheLocation);
 
-  log.info(`Warming cache for dimensions [${dimensions.join(', ')}]: ${cacheKey}`);
+  log.debug(`Warming cache for dimensions [${dimensions.join(', ')}]: ${cacheKey}`);
 
-  log.info(`query: ${query}`);
+  log.debug(`query: ${query}`);
 
   const resultLocation = `${config.athenaTemp}/${outPrefix}`;
   const athenaClient = AWSAthenaClient.fromContext(context, resultLocation);

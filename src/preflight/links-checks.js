@@ -107,7 +107,7 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         const internalSet = new Set();
         const externalSet = new Set();
 
-        log.info(`[preflight-audit] Total links found (${anchors.length}):`, anchors.map((a) => a.href));
+        log.debug(`[preflight-audit] Total links found (${anchors.length}):`, anchors.map((a) => a.href));
 
         anchors.forEach((a) => {
           // Skip links that are inside header or footer elements
@@ -127,8 +127,8 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
           }
         });
 
-        log.info('[preflight-audit] Found internal links:', internalSet);
-        log.info('[preflight-audit] Found external links:', externalSet);
+        log.debug('[preflight-audit] Found internal links:', internalSet);
+        log.debug('[preflight-audit] Found external links:', externalSet);
 
         // Check internal links
         const internalResults = await Promise.all(

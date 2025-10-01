@@ -32,6 +32,7 @@ describe('Guidance High Form Views Low Conversions Handler', () => {
   beforeEach(() => {
     logStub = {
       info: sinon.stub(),
+      debug: sinon.stub(),
       error: sinon.stub(),
     };
     dataAccessStub = {

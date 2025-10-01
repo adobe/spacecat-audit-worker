@@ -252,7 +252,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] No a11y data found to create or update opportunity ',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -301,7 +301,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] No a11y issues found to create or update opportunity',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -782,7 +782,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       );
 
       // Verify success was logged (not error)
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         sinon.match(/a11y opportunity created.*and sent to mystique/),
       );
 
@@ -960,7 +960,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] No a11y data found to create or update opportunity ',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -1015,7 +1015,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] No a11y issues found to create or update opportunity',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -1060,7 +1060,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] No a11y issues found to create or update opportunity',
       );
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -1363,7 +1363,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
 
       // Assert - Verify success log message
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] a11y opportunity created (if issues found) and sent to mystique',
       );
     });
@@ -1741,6 +1741,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
           log: {
             info: sinon.stub(),
+            debug: sinon.stub(),
             error: sinon.stub(),
           },
           dataAccess: {

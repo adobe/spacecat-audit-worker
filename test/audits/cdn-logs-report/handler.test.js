@@ -257,7 +257,7 @@ describe('CDN Logs Report Handler', function test() {
       });
 
       // Verify logging calls
-      expect(context.log.info).to.have.been.calledWith('Starting CDN logs report audit for https://example.com');
+      expect(context.log.debug).to.have.been.calledWith('Starting CDN logs report audit for https://example.com');
 
       // Verify Athena interactions
       expect(context.athenaClient.execute).to.have.been.callCount(3);
@@ -316,7 +316,7 @@ describe('CDN Logs Report Handler', function test() {
 
       expect(context.athenaClient.query).to.have.been.callCount(2);
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         sinon.match(`week offset: ${weekOffset}`),
       );
     });

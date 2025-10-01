@@ -183,7 +183,7 @@ describe('LLM Blocked Audit', () => {
     });
 
     // Verify that log.info was called
-    expect(context.log.info).to.have.been.calledWith('Importing top pages for example.com');
+    expect(context.log.debug).to.have.been.calledWith('Importing top pages for example.com');
     expect(nock.pendingMocks()).to.have.lengthOf(0);
   });
 

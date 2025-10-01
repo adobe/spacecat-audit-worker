@@ -30,7 +30,7 @@ export default async function handler(message, context) {
   const { Audit, Opportunity, Suggestion } = dataAccess;
   const { auditId, siteId, data } = message;
   const { url, guidance, suggestions } = data;
-  log.info(`Message received in high-organic-low-ctr handler: ${JSON.stringify(message, null, 2)}`);
+  log.debug(`Message received in high-organic-low-ctr handler: ${JSON.stringify(message, null, 2)}`);
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
@@ -57,16 +57,16 @@ export default async function handler(message, context) {
   );
 
   if (!opportunity) {
-    log.info(`No existing Opportunity found for page: ${url}. Creating a new one.`);
+    log.debug(`No existing Opportunity found for page: ${url}. Creating a new one.`);
     opportunity = await Opportunity.create(entity);
   } else {
     const existingSuggestions = await opportunity.getSuggestions();
     // Manual protection check: any manual suggestions found, skip all updates
     if (existingSuggestions.length > 0 && hasManuallyModifiedSuggestions(existingSuggestions)) {
-      log.info(`Existing suggestions for page: ${url} were manually modified. Skipping all updates to preserve data consistency.`);
+      log.debug(`Existing suggestions for page: ${url} were manually modified. Skipping all updates to preserve data consistency.`);
       return ok();
     }
-    log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
+    log.debug(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
     opportunity.setData({
       ...opportunity.getData(),

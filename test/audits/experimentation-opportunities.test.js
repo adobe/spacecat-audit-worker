@@ -198,7 +198,7 @@ describe('Experimentation Opportunities Tests', () => {
 
       await organicKeywordsStep(context);
 
-      expect(context.log.info).to.have.been.calledWith('Site config exists: true, imports count: 0');
+      expect(context.log.debug).to.have.been.calledWith('Site config exists: true, imports count: 0');
     });
 
     it('should handle null site config gracefully', async () => {
@@ -213,7 +213,7 @@ describe('Experimentation Opportunities Tests', () => {
 
       const result = await organicKeywordsStep(context);
 
-      expect(context.log.info).to.have.been.calledWith('Site config exists: false, imports count: 0');
+      expect(context.log.debug).to.have.been.calledWith('Site config exists: false, imports count: 0');
       expect(context.log.error).to.have.been.calledWith('Cannot toggle import organic-keywords for site 056f9dbe-e9e1-4d80-8bfb-c9785a873b6a: site config is null');
       expect(result).to.have.property('urlConfigs');
       expect(result.urlConfigs[0]).to.deep.include({ url: 'https://abc.com/page1', geo: 'us' });

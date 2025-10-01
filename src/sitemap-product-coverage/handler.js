@@ -239,12 +239,12 @@ async function sitemapProductCoverageAudit(inputUrl, context, site) {
 export async function sitemapProductCoverageAuditRunner(baseURL, context, site) {
   const { log } = context;
   const startTime = process.hrtime();
-  log.info(`Starting sitemap products coverage audit for ${baseURL}`);
+  log.debug(`Starting sitemap products coverage audit for ${baseURL}`);
   const auditResult = await sitemapProductCoverageAudit(baseURL, context, site);
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
-  log.info(`Sitemap products coverage audit for ${baseURL} completed in ${formattedElapsed} seconds`);
+  log.debug(`Sitemap products coverage audit for ${baseURL} completed in ${formattedElapsed} seconds`);
 
   return {
     fullAuditRef: baseURL,
@@ -259,10 +259,10 @@ export function generateSuggestions(auditUrl, auditData, context) {
   const success = auditData?.auditResult?.success;
   const issues = auditData?.auditResult?.details?.issues || {};
 
-  log.info(`Generating suggestions for audit URL: ${auditUrl}`);
+  log.debug(`Generating suggestions for audit URL: ${auditUrl}`);
 
   if (success && Object.keys(issues).length > 0) {
-    log.info(`Found ${Object.keys(issues).length} locale(s) with missing products in sitemap`);
+    log.debug(`Found ${Object.keys(issues).length} locale(s) with missing products in sitemap`);
 
     const suggestions = [];
     Object.entries(issues).forEach(([locale, urls]) => {
@@ -305,7 +305,7 @@ export async function generateOpportunity(auditUrl, auditData, context) {
     }
 
     if (existingOpportunity) {
-      log.info(`${auditType} issues have been resolved, updating opportunity status to RESOLVED`);
+      log.debug(`${auditType} issues have been resolved, updating opportunity status to RESOLVED`);
 
       try {
         await existingOpportunity.setStatus(Oppty.STATUSES.RESOLVED);
@@ -313,18 +313,18 @@ export async function generateOpportunity(auditUrl, auditData, context) {
         if (suggestions && suggestions.length > 0) {
           const { Suggestion } = dataAccess;
           await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
-          log.info(`Updated ${suggestions.length} suggestions to OUTDATED status`);
+          log.debug(`Updated ${suggestions.length} suggestions to OUTDATED status`);
         }
 
         existingOpportunity.setUpdatedBy('system');
         await existingOpportunity.save();
 
-        log.info(`Successfully resolved opportunity ${existingOpportunity.getId()}`);
+        log.debug(`Successfully resolved opportunity ${existingOpportunity.getId()}`);
       } catch (error) {
         log.error(`Failed to resolve opportunity: ${error.message}`);
       }
     } else {
-      log.info('No existing opportunity found - nothing to resolve');
+      log.debug('No existing opportunity found - nothing to resolve');
     }
 
     return { ...auditData };

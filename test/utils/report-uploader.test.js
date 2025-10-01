@@ -46,7 +46,7 @@ describe('Utils Report Uploader', () => {
 
     mockContext = {
       workbook: { xlsx: { writeBuffer: sandbox.stub().resolves(Buffer.from('excel data')) } },
-      log: { info: sandbox.stub(), error: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
       sharepointDoc: {
         uploadRawDocument: sandbox.stub().resolves(),
         getDocumentContent: sandbox.stub().resolves(Buffer.from('test content')),
@@ -81,7 +81,7 @@ describe('Utils Report Uploader', () => {
       expect(mockContext.sharepointClient.getDocument).to.have.been.calledWith('/sites/elmo-ui-data/reports/test.xlsx');
       expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledOnce;
       expect(result).to.deep.equal(expectedBuffer);
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         'Document successfully downloaded from SharePoint: /sites/elmo-ui-data/reports/test.xlsx',
       );
     });
@@ -139,7 +139,7 @@ describe('Utils Report Uploader', () => {
 
       expect(mockContext.sharepointClient.getDocument).to.have.been.calledWith('/sites/elmo-ui-data/reports/test.xlsx');
       expect(mockContext.sharepointDoc.uploadRawDocument).to.have.been.calledWith(buffer);
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         'Excel report successfully uploaded to SharePoint: /sites/elmo-ui-data/reports/test.xlsx',
       );
     });
@@ -187,7 +187,7 @@ describe('Utils Report Uploader', () => {
       expect(fetchStub).to.have.been.calledTwice;
       expect(fetchStub.firstCall.args[0]).to.include('/preview/');
       expect(fetchStub.secondCall.args[0]).to.include('/live/');
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         'Excel report successfully uploaded to SharePoint: /sites/elmo-ui-data/reports/test.xlsx',
       );
     });

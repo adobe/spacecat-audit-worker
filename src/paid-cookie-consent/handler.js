@@ -160,7 +160,7 @@ export async function paidAuditRunner(auditUrl, context, site) {
   const siteId = site.getId();
   const baseURL = await site.getBaseURL();
 
-  log.info(
+  log.debug(
     `[paid-audit] [Site: ${auditUrl}] Querying paid Athena metrics with consent and referrer data (siteId: ${siteId})`,
   );
 
@@ -170,7 +170,7 @@ export async function paidAuditRunner(auditUrl, context, site) {
   const athenaClient = AWSAthenaClient.fromContext(context, `${config.athenaTemp}/paid-audit-cookie-consent/${siteId}-${Date.now()}`);
 
   try {
-    log.info(`[paid-audit] [Site: ${auditUrl}] Executing three separate Athena queries for paid traffic segments`);
+    log.debug(`[paid-audit] [Site: ${auditUrl}] Executing three separate Athena queries for paid traffic segments`);
 
     // Execute all three segment queries
     const urlTrafficSourceResults = await executeSegmentQuery(athenaClient, ['path', 'utm_source'], 'URL Traffic Source', siteId, temporalCondition, config.pageViewThreshold, config, log);
@@ -183,18 +183,18 @@ export async function paidAuditRunner(auditUrl, context, site) {
       ...urlConsentResults.filter((row) => row.consent === 'show').map((row) => ({ ...row, segment_type: 'urlConsent' })),
     ];
 
-    log.info(`[paid-audit] [Site: ${auditUrl}] Filtered urlConsent from ${urlConsentResults.length} to ${urlConsentResults.filter((row) => row.consent === 'show').length} rows`);
+    log.debug(`[paid-audit] [Site: ${auditUrl}] Filtered urlConsent from ${urlConsentResults.length} to ${urlConsentResults.filter((row) => row.consent === 'show').length} rows`);
 
-    log.info(`[paid-audit] [Site: ${auditUrl}] Processing ${results?.length} combined query result rows`);
+    log.debug(`[paid-audit] [Site: ${auditUrl}] Processing ${results?.length} combined query result rows`);
 
     // Transform query results to RUM-compatible segments
     const allSegments = transformQueryResultsToSegments(results, baseURL);
 
-    log.info(`[paid-audit] [Site: ${auditUrl}] Processing ${allSegments?.length} segments`);
+    log.debug(`[paid-audit] [Site: ${auditUrl}] Processing ${allSegments?.length} segments`);
 
     // Log segment sizes before saving
     allSegments.forEach((segment) => {
-      log.info(`[paid-audit] [Site: ${auditUrl}] Segment '${segment.key}' contains ${segment.value.length} items`);
+      log.debug(`[paid-audit] [Site: ${auditUrl}] Segment '${segment.key}' contains ${segment.value.length} items`);
     });
     const auditResult = allSegments.filter(hasValues);
     return {
@@ -250,13 +250,13 @@ export async function paidConsentBannerCheck(auditUrl, auditData, context, site)
   const mystiqueMessage = buildMystiqueMessage(site, id, selectedPage);
 
   const projected = selected?.projectedTrafficLost;
-  log.info(
+  log.debug(
     `[paid-audit] [Site: ${auditUrl}] Sending consent-seen page ${selectedPage} with message `
     + `(projectedTrafficLoss: ${projected}) ${JSON.stringify(mystiqueMessage, 2)} `
     + 'evaluation to mystique',
   );
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-  log.info(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
+  log.debug(`[paid-audit] [Site: ${auditUrl}] Completed mystique evaluation step`);
 }
 
 export default new AuditBuilder()

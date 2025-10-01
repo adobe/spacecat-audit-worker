@@ -66,7 +66,7 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
     const serverSideKey = getS3Path(url, siteId, 'server-side.html');
     const clientSideKey = getS3Path(url, siteId, 'client-side.html');
 
-    log.info(`Prerender - Getting scraped content for URL: ${url}`);
+    log.debug(`Prerender - Getting scraped content for URL: ${url}`);
 
     const [serverSideHtml, clientSideHtml] = await Promise.all([
       getObjectFromKey(s3Client, bucketName, serverSideKey, log),
@@ -96,7 +96,7 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
 async function compareHtmlContent(url, siteId, context) {
   const { log } = context;
 
-  log.info(`Prerender - Comparing HTML content for: ${url}`);
+  log.debug(`Prerender - Comparing HTML content for: ${url}`);
 
   const scrapedData = await getScrapedHtmlFromS3(url, siteId, context);
 
@@ -170,7 +170,7 @@ export async function submitForScraping(context) {
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
 
-  log.info(`Prerender - Submitting ${finalUrls.length} URLs for scraping (${topPagesUrls.length} top pages + ${includedURLs.length} included URLs)`);
+  log.debug(`Prerender - Submitting ${finalUrls.length} URLs for scraping (${topPagesUrls.length} top pages + ${includedURLs.length} included URLs)`);
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
@@ -215,7 +215,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     return;
   }
 
-  log.info(`Prerender - Generated ${preRenderSuggestions.length} prerender suggestions for ${auditUrl}`);
+  log.debug(`Prerender - Generated ${preRenderSuggestions.length} prerender suggestions for ${auditUrl}`);
 
   const opportunity = await convertToOpportunity(
     auditUrl,
