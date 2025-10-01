@@ -16,7 +16,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
@@ -605,10 +605,6 @@ export async function opportunityAndSuggestionsForElmo(auditUrl, auditData, cont
   log.info(`Headings opportunity created for Elmo with oppty id ${opportunity.getId()}`);
 
   const buildKey = (suggestion) => `${suggestion.type}`;
-  const mergeDataFunction = (existingData, newData) => ({
-    ...newData,
-  });
-
   await syncSuggestions({
     opportunity,
     newData: auditData.elmoSuggestions,
@@ -622,7 +618,7 @@ export async function opportunityAndSuggestionsForElmo(auditUrl, auditData, cont
         suggestionValue: suggestion.recommendedAction,
       },
     }),
-    mergeDataFunction,
+    keepLatestMergeDataFunction,
     log,
   });
 
