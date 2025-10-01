@@ -1,3 +1,31 @@
+# [1.192.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.191.1...v1.192.0) (2025-10-01)
+
+
+### Features
+
+* add support for azure frontdoor CDN provider ([#1322](https://github.com/adobe/spacecat-audit-worker/issues/1322)) ([c12b2c5](https://github.com/adobe/spacecat-audit-worker/commit/c12b2c5f4ca5950d55edd29b261fbe9841bd8944))
+
+## [1.191.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.191.0...v1.191.1) (2025-10-01)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.65.1 ([#1327](https://github.com/adobe/spacecat-audit-worker/issues/1327)) ([bad30a8](https://github.com/adobe/spacecat-audit-worker/commit/bad30a8fbca4985e6df0b606084854dd526e326e))
+
+# [1.191.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.190.2...v1.191.0) (2025-09-30)
+
+
+### Features
+
+* redirect-chains audit ([#1325](https://github.com/adobe/spacecat-audit-worker/issues/1325)) ([cb733c2](https://github.com/adobe/spacecat-audit-worker/commit/cb733c29e7455a5ee1babad89b4de92d82278108))
+
+## [1.190.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.190.1...v1.190.2) (2025-09-30)
+
+
+### Bug Fixes
+
+* CSP suggestions were not raised for all expected cases ([#1252](https://github.com/adobe/spacecat-audit-worker/issues/1252)) ([7812266](https://github.com/adobe/spacecat-audit-worker/commit/78122666f86ab2ccad1e94865755b55ebe67b6b8))
+
 ## [1.190.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.190.0...v1.190.1) (2025-09-30)
 
 
