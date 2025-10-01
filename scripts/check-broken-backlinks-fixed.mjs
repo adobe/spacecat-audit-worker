@@ -210,41 +210,8 @@ class BrokenBacklinksFixChecker {
         this.log.debug(`Backlink ${url} returned status ${response.status}`);
       }
       
-      // Check for soft 404s - many sites return 200 for "page not found" content
-      if (response.ok) {
-        const content = await response.text();
-        const lowerContent = content.toLowerCase();
-        
-        // Common indicators of soft 404 pages
-        const soft404Indicators = [
-          'page not found',
-          'that page could not be found',
-          '404',
-          'page does not exist',
-          'page is not available',
-          'sorry, we couldn\'t find that page',
-          'the page you requested was not found',
-          'this page doesn\'t exist'
-        ];
-        
-        // Check if content suggests this is actually a 404 page
-        const isSoft404 = soft404Indicators.some(indicator => lowerContent.includes(indicator));
-        
-        if (isSoft404) {
-          this.log.debug(`Soft 404 detected for ${url} - returns 200 but shows error content`);
-          return true; // Still broken despite 200 status
-        }
-        
-        // Additional check: very short content might indicate error page
-        if (content.trim().length < 500) {
-          this.log.debug(`Suspiciously short content for ${url} (${content.length} chars) - might be error page`);
-          return true; // Likely still broken
-        }
-        
-        return false; // Genuinely working page
-      }
-      
-      return !response.ok; // Traditional HTTP error codes = broken
+      // Simple HTTP status check - no soft 404 detection
+      return !response.ok;
       
     } catch (error) {
       if (error.code === 'ETIMEOUT') {
@@ -262,7 +229,7 @@ class BrokenBacklinksFixChecker {
   async testUrlStatus(url) {
     try {
       const response = await fetch(url, {
-        method: 'HEAD',
+        method: 'GET',
         timeout: TIMEOUT,
         redirect: 'manual' // Don't follow redirects automatically
       });

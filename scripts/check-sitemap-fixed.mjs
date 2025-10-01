@@ -221,6 +221,48 @@ class SitemapFixChecker {
   }
 
   /**
+   * Check if URL exists in sitemap (EXACT MATCH ONLY)
+   */
+  async checkUrlInSitemap(sitemapUrl, pageUrl) {
+    try {
+      this.log.debug(`Checking if ${pageUrl} is in sitemap: ${sitemapUrl}`);
+      
+      const response = await fetch(sitemapUrl, { 
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; SpaceCat-SitemapChecker/1.0)'
+        }
+      });
+      
+      if (!response.ok) {
+        this.log.debug(`Sitemap ${sitemapUrl} returned ${response.status}, cannot verify`);
+        return { inSitemap: null, error: `Sitemap returned ${response.status}` };
+      }
+      
+      const sitemapContent = await response.text();
+      
+      // EXACT URL matching - no substring matching!
+      const normalizedPageUrl = this.normalizeUrl(pageUrl);
+      
+      // Check for exact matches in XML format
+      const urlPattern = new RegExp(`<loc>\\s*${normalizedPageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</loc>`, 'i');
+      const isPresent = urlPattern.test(sitemapContent);
+      
+      if (isPresent) {
+        this.log.debug(`✅ URL ${pageUrl} found in sitemap`);
+      } else {
+        this.log.debug(`❌ URL ${pageUrl} NOT found in sitemap (exact match)`);
+      }
+      
+      return { inSitemap: isPresent, error: null };
+      
+    } catch (error) {
+      this.log.debug(`Error checking sitemap ${sitemapUrl}: ${error.message}`);
+      return { inSitemap: null, error: error.message };
+    }
+  }
+
+  /**
    * Normalize URL for comparison
    */
   normalizeUrl(url) {
@@ -249,12 +291,71 @@ class SitemapFixChecker {
       const suggestion = suggestionsToCheck[i];
       const suggestionData = suggestion.getData ? suggestion.getData() : suggestion.data;
       
-      if (!suggestionData || suggestionData.type !== 'url') {
-        this.log.debug(`Skipping non-URL suggestion: ${suggestion.getId ? suggestion.getId() : 'unknown'}`);
+      // Determine suggestion type (default to 'url' if not specified but has pageUrl)
+      const suggestionType = suggestionData.type || (suggestionData.pageUrl ? 'url' : 'unknown');
+      
+      if (!suggestionData || (suggestionType !== 'url' && suggestionType !== 'error')) {
+        this.log.debug(`Skipping unsupported suggestion type '${suggestionType}': ${suggestion.getId ? suggestion.getId() : 'unknown'}`);
         continue;
       }
       
-      const { sitemapUrl, pageUrl, statusCode: originalStatusCode, urlsSuggested } = suggestionData;
+      // Handle different suggestion types
+      if (suggestionType === 'error') {
+        // Error-type suggestions (e.g., sitemap not found, invalid format)
+        this.log.debug(`Processing error suggestion ${i + 1}/${suggestionsToCheck.length}: ${suggestionData.error}`);
+        
+        // Error suggestions are typically not "fixable" in the traditional sense
+        // They represent systemic issues like "sitemap not found"
+        const opportunityId = suggestion.getOpportunityId ? suggestion.getOpportunityId() : 'unknown';
+        const opportunityData = this.opportunityDataMap[opportunityId] || {};
+        
+        this.results.push({
+          // Core identity
+          opportunityId: opportunityId,
+          opportunityStatus: opportunityData.status || 'unknown',
+          suggestionId: suggestion.getId ? suggestion.getId() : 'unknown',
+          
+          // Suggestion info
+          suggestionType: suggestion.getType ? suggestion.getType() : suggestion.type,
+          suggestionStatus: suggestion.getStatus ? suggestion.getStatus() : suggestion.status,
+          suggestionRank: suggestion.getRank ? suggestion.getRank() : suggestion.rank,
+          
+          // URL data (empty for error suggestions)
+          sitemapUrl: '',
+          pageUrl: '',
+          originalStatusCode: '',
+          currentStatusCode: '',
+          urlsSuggested: '',
+          recommendedAction: suggestionData.recommendedAction || '',
+          
+          // Our test results
+          redirectImplemented: false,
+          urlRemovedFromSitemap: false,
+          isFixed: false,
+          fixType: 'SYSTEMIC_ERROR',
+          
+          // Timestamps
+          opportunityCreated: opportunityData.createdAt || '',
+          opportunityUpdated: opportunityData.updatedAt || '',
+          suggestionCreated: suggestion.getCreatedAt ? suggestion.getCreatedAt() : (suggestion.createdAt || ''),
+          suggestionUpdated: suggestion.getUpdatedAt ? suggestion.getUpdatedAt() : (suggestion.updatedAt || ''),
+          updatedBy: suggestion.getUpdatedBy ? suggestion.getUpdatedBy() : (suggestion.updatedBy || '')
+        });
+        
+        continue;
+      }
+      
+      // Handle URL-type suggestions
+      const { 
+        siteMapUrl, 
+        sitemapUrl, 
+        pageUrl, 
+        statusCode: originalStatusCode, 
+        urlsSuggested 
+      } = suggestionData;
+      
+      // Handle both field name variations
+      const finalSitemapUrl = siteMapUrl || sitemapUrl;
       
       this.log.debug(`Testing ${i + 1}/${suggestionsToCheck.length}: ${pageUrl}`);
       
@@ -262,33 +363,44 @@ class SitemapFixChecker {
       const currentStatus = await this.testUrlStatus(pageUrl);
       await this.delay(100); // Rate limiting
       
+      // Check if URL was removed from sitemap
+      const sitemapCheck = await this.checkUrlInSitemap(finalSitemapUrl, pageUrl);
+      await this.delay(100); // Rate limiting
+      
       let isFixed = false;
       let fixType = 'NOT_FIXED';
       let currentStatusDisplay = currentStatus.success ? currentStatus.statusCode : 'ERROR';
       let redirectImplemented = false;
+      let urlRemovedFromSitemap = sitemapCheck.inSitemap === false;
       
       if (currentStatus.success) {
-        // Check if URL is now working (200 OK)
+        // According to handler: ONLY 200 OK = working/fixed
+        // 301/302/404 are considered "broken" and create suggestions
         if (currentStatus.statusCode === 200) {
           isFixed = true;
           fixType = 'URL_NOW_WORKS';
         }
-        // Check if redirect was implemented (any working redirect = fixed)
-        else if (currentStatus.statusCode === 301 || currentStatus.statusCode === 302) {
-          // Any redirect means the broken URL is now fixed
-          isFixed = true;
-          fixType = 'REDIRECT_IMPLEMENTED';
-          
-          // Check if they used our specific suggestion
-          if (urlsSuggested) {
-            const suggestedUrls = Array.isArray(urlsSuggested) ? urlsSuggested : [urlsSuggested];
-            
-            for (const suggestedUrl of suggestedUrls) {
-              redirectImplemented = await this.checkRedirectImplemented(pageUrl, suggestedUrl);
-              if (redirectImplemented) {
-                break; // Found a match to our suggestion
-              }
-            }
+        // All other status codes (including 301/302) = still broken/not fixed
+        else {
+          isFixed = false;
+          fixType = 'NOT_FIXED';
+        }
+      }
+      
+      // If URL is still broken but was removed from sitemap, consider it fixed
+      if (!isFixed && urlRemovedFromSitemap) {
+        isFixed = true;
+        fixType = 'URL_REMOVED_FROM_SITEMAP';
+      }
+      
+      // Check if they implemented our specific redirect suggestion (for reporting)
+      if (currentStatus.success && (currentStatus.statusCode === 301 || currentStatus.statusCode === 302) && urlsSuggested) {
+        const suggestedUrls = Array.isArray(urlsSuggested) ? urlsSuggested : [urlsSuggested];
+        
+        for (const suggestedUrl of suggestedUrls) {
+          redirectImplemented = await this.checkRedirectImplemented(pageUrl, suggestedUrl);
+          if (redirectImplemented) {
+            break; // Found a match to our suggestion
           }
         }
       }
@@ -313,7 +425,7 @@ class SitemapFixChecker {
         suggestionRank: suggestion.getRank ? suggestion.getRank() : suggestion.rank,
         
         // URL data
-        sitemapUrl,
+        sitemapUrl: finalSitemapUrl,
         pageUrl,
         originalStatusCode,
         currentStatusCode: currentStatusDisplay,
@@ -322,6 +434,7 @@ class SitemapFixChecker {
         
         // Our test results
         redirectImplemented,
+        urlRemovedFromSitemap,
         isFixed,
         fixType,
         
