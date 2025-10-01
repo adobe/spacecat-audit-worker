@@ -1744,7 +1744,12 @@ describe('Headings Audit', () => {
                   additionalMetrics: [
                     { key: 'subtype', value: 'headings' }
                   ]
-                })
+                }),
+                setAuditId: sinon.stub(),
+                setData: sinon.stub(),
+                setUpdatedBy: sinon.stub(),
+                save: sinon.stub().resolves(),
+                getId: () => 'test-existing-opportunity-id'
               }
             ]),
             create: sinon.stub().resolves({
@@ -1755,13 +1760,10 @@ describe('Headings Audit', () => {
         log: { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() }
       };
       
-      // Mock checkGoogleConnection to return true
-      const checkGoogleConnectionStub = sinon.stub().resolves(true);
-      
-      // Use esmock to replace the checkGoogleConnection import
+      // Use esmock to mock the opportunity-utils module
       const mockedOpportunity = await esmock('../../src/common/opportunity.js', {
-        './opportunity-utils.js': {
-          checkGoogleConnection: checkGoogleConnectionStub,
+        '../../src/common/opportunity-utils.js': {
+          checkGoogleConnection: sinon.stub().resolves(true),
         },
       });
       
@@ -1789,7 +1791,7 @@ describe('Headings Audit', () => {
       );
       
       expect(result).to.exist;
-      expect(result.getId()).to.equal('test-opportunity-id');
+      expect(result.getId()).to.equal('test-existing-opportunity-id');
     });
   });
 
