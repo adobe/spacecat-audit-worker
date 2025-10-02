@@ -1,3 +1,10 @@
+## [1.192.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.6...v1.192.7) (2025-10-02)
+
+
+### Bug Fixes
+
+* Robots blocked restructure ([#1307](https://github.com/adobe/spacecat-audit-worker/issues/1307)) ([a6573d1](https://github.com/adobe/spacecat-audit-worker/commit/a6573d130f6f5e4427f86b18acdb390e56454ba9))
+
 ## [1.192.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.5...v1.192.6) (2025-10-02)
 
 
