@@ -19,10 +19,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import analyzeDomain, { analyzeDomainFromUrls } from './domain-analysis.js';
-import { analyzeProducts } from './product-analysis.js';
-import { analyzePageTypes } from './page-type-analysis.js';
-import { uploadPatternsWorkbook, uploadUrlsWorkbook, getLastSunday } from './utils.js';
+import { validatePatternsFile, validateUrlsFile, getLastSunday } from './utils.js';
 import { referralTrafficRunner } from '../llmo-referral-traffic/handler.js';
 import { getRUMUrl } from '../support/utils.js';
 
@@ -153,16 +150,18 @@ async function runAgenticTrafficStep(context) {
     source = AHREFS_SOURCE_TYPE;
   }
 
-  log.info('Agentic Traffic Step: Extracting product and page type information');
+  log.info('Agentic Traffic Step: Validating that required pattern files exist');
 
-  const productRegexes = await analyzeProducts(domain, paths.map((p) => p.path), context);
-  const pagetypeRegexes = await analyzePageTypes(domain, paths.map((p) => p.path), context);
+  // Validate that the patterns file exists in SharePoint
+  try {
+    await validatePatternsFile(site, context);
+    log.info('Agentic Traffic Step: Pattern files validated successfully');
+  } catch (error) {
+    log.error(`Agentic Traffic Step: Pattern file validation failed: ${error.message}`);
+    throw new Error(`Required pattern files not found. Please ensure patterns.xlsx exists at {llmoFolder}/agentic-traffic/patterns/ in SharePoint with 'shared-products' and 'shared-pagetype' worksheets containing 'name' and 'regex' columns. Error: ${error.message}`);
+  }
 
-  log.info('Agentic Traffic Step: Extraction complete; uploading results');
-
-  await uploadPatternsWorkbook(productRegexes, pagetypeRegexes, site, context);
-
-  log.info('Agentic Traffic Step: Upload complete; initiating scrap');
+  log.info('Agentic Traffic Step: Validation complete; initiating scrape');
 
   return {
     auditResult: { source },
@@ -177,32 +176,24 @@ async function runAgenticTrafficStep(context) {
 
 async function runBrandPresenceStep(context) {
   const {
-    audit, dataAccess, log, scrapeResultPaths, site, sqs,
+    dataAccess, log, site, sqs,
   } = context;
-  const { Configuration, SiteTopPage } = dataAccess;
-  const auditResult = audit.getAuditResult();
+  const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
-  const domain = audit.getFullAuditRef();
-  const results = [...scrapeResultPaths.values()];
 
   try {
-    let domainInsights;
+    log.info('Brand Presence Step: Validating that required URL files exist');
 
-    if (auditResult.source === AHREFS_SOURCE_TYPE) {
-      log.info('Brand Presence Step: Starting domain analysis with URLs');
-      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getSiteId(), 'ahrefs', 'global');
-      const urls = topPages.slice(0, 100).map((topPage) => (topPage.getUrl()));
-      domainInsights = await analyzeDomainFromUrls(domain, urls, context);
-    } else if (auditResult.source === OPTEL_SOURCE_TYPE) {
-      log.info('Brand Presence Step: Starting domain analysis with scrapes');
-      domainInsights = await analyzeDomain(domain, results, context);
+    // Validate that the urls file exists in SharePoint
+    try {
+      await validateUrlsFile(site, context);
+      log.info('Brand Presence Step: URL files validated successfully');
+    } catch (error) {
+      log.error(`Brand Presence Step: URL file validation failed: ${error.message}`);
+      throw new Error(`Required URL files not found. Please ensure urls.xlsx exists at {llmoFolder}/prompts/ in SharePoint with 'URLs' worksheet containing 'category', 'region', 'topic', and 'url' columns. Error: ${error.message}`);
     }
 
-    log.info('Brand Presence Step: analysis complete; uploading results');
-
-    await uploadUrlsWorkbook(domainInsights, site, context);
-
-    log.info('Brand Presence Step: Upload complete; triggering geo-brand-presence audit');
+    log.info('Brand Presence Step: Validation complete; triggering geo-brand-presence audit');
 
     const geoBrandPresenceMessage = {
       type: 'geo-brand-presence',
