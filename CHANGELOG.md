@@ -1,3 +1,10 @@
+## [1.192.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.8...v1.192.9) (2025-10-02)
+
+
+### Bug Fixes
+
+* add fallback host filtering ([#1167](https://github.com/adobe/spacecat-audit-worker/issues/1167)) ([461e239](https://github.com/adobe/spacecat-audit-worker/commit/461e23987df02d66b63e206b730acbe01ab3fd74))
+
 ## [1.192.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.7...v1.192.8) (2025-10-02)
 
 
