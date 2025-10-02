@@ -132,10 +132,7 @@ export function buildSiteFilters(filters, site) {
   if (!filters || filters.length === 0) {
     const baseURL = site.getBaseURL();
     const { host } = new URL(baseURL);
-    // If it's a simple domain like "adobe.com", add www
-    // If it's already has www or subdomain, keep as-is
-    const regexPattern = (host?.split('.')?.length === 2 && !host.startsWith('www.')) ? `www.${host}` : host;
-    return `REGEXP_LIKE(host, '(?i)(${regexPattern})')`;
+    return `REGEXP_LIKE(host, '(?i)(${host})')`;
   }
 
   const clauses = filters.map(({ key, value, type }) => {

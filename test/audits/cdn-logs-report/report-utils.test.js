@@ -155,14 +155,14 @@ describe('CDN Logs Report Utils', () => {
       expect(result).to.include('AND');
     });
 
-    it('falls back to baseURL with www when filters are empty', () => {
+    it('falls back to baseURL when filters are empty', () => {
       const mockSite = {
         getBaseURL: () => 'https://adobe.com',
       };
 
       const result = reportUtils.buildSiteFilters([], mockSite);
 
-      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(www.adobe.com)')");
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(adobe.com)')");
     });
 
     it('keeps www prefix when already present', () => {
