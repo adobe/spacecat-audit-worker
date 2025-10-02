@@ -44,7 +44,7 @@ export const HEADINGS_CHECKS = Object.freeze({
     check: 'heading-h1-length',
     title: 'H1 Length',
     explanation: `H1 elements should be less than ${H1_LENGTH_CHARS} characters.`,
-    suggestion: `Below ${H1_LENGTH_CHARS} characters`,
+    suggestion: `Update the H1 to be less than ${H1_LENGTH_CHARS} characters`,
   },
   HEADING_MULTIPLE_H1: {
     check: 'heading-multiple-h1',
