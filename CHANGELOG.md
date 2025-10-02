@@ -1,3 +1,10 @@
+## [1.192.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.7...v1.192.8) (2025-10-02)
+
+
+### Bug Fixes
+
+* increase athena poll timeout for cdn-logs-report ([#1340](https://github.com/adobe/spacecat-audit-worker/issues/1340)) ([f9f2313](https://github.com/adobe/spacecat-audit-worker/commit/f9f2313467acfbf5d67076e1d2bb5435f8de6f0d))
+
 ## [1.192.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.6...v1.192.7) (2025-10-02)
 
 
