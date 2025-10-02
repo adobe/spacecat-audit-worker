@@ -998,6 +998,112 @@ describe('Redirect Chains Audit', () => {
         expect(result[0].fullDest).to.equal(`${url}/new-page?param=value`);
         expect(result[0].fullFinal).to.equal(`${url}/new-page?param=value&extra=param`);
       });
+
+      it('should handle source URL that redirects to itself (src-is-final scenario)', async () => {
+        const pageUrls = [
+          {
+            referencedBy: `${url}/redirects.json`,
+            origSrc: '/self-redirect',
+            origDest: '/intended-destination',
+            isDuplicateSrc: false,
+            ordinalDuplicate: 0,
+            tooQualified: false,
+            hasSameSrcDest: false,
+          },
+        ];
+
+        // First request: self-redirect redirects back to itself
+        nock(url)
+          .head('/self-redirect')
+          .times(2)
+          .reply(301, '', { location: '/self-redirect' });
+
+        // Second request: self-redirect (same as source)
+        nock(url)
+          .head('/self-redirect')
+          .times(2)
+          .reply(200);
+
+        const result = await processEntriesInParallel(pageUrls, url, context.log);
+        expect(result).to.be.an('array');
+        expect(result[0]).to.have.property('status', 200);
+        expect(result[0]).to.have.property('fullFinalMatchesDestUrl', false); // Doesn't match intended destination
+        expect(result[0].fullSrc).to.equal(`${url}/self-redirect`);
+        expect(result[0].fullDest).to.equal(`${url}/intended-destination`);
+        expect(result[0].fullFinal).to.equal(`${url}/self-redirect`); // Same as source
+      });
+
+      it('should handle source URL that redirects to itself with trailing slash normalization', async () => {
+        const pageUrls = [
+          {
+            referencedBy: `${url}/redirects.json`,
+            origSrc: '/self-redirect/',
+            origDest: '/intended-destination/',
+            isDuplicateSrc: false,
+            ordinalDuplicate: 0,
+            tooQualified: false,
+            hasSameSrcDest: false,
+          },
+        ];
+
+        // First request: self-redirect/ redirects back to itself
+        nock(url)
+          .head('/self-redirect/')
+          .times(2)
+          .reply(301, '', { location: '/self-redirect/' });
+
+        // Second request: self-redirect/ (same as source)
+        nock(url)
+          .head('/self-redirect/')
+          .times(2)
+          .reply(200);
+
+        const result = await processEntriesInParallel(pageUrls, url, context.log);
+        expect(result).to.be.an('array');
+        expect(result[0]).to.have.property('status', 200);
+        expect(result[0]).to.have.property('redirected', false); // No redirect detected since source equals final
+        expect(result[0]).to.have.property('redirectCount', 0);
+        expect(result[0]).to.have.property('fullFinalMatchesDestUrl', false); // Doesn't match intended destination
+        expect(result[0].fullSrc).to.equal(`${url}/self-redirect/`);
+        expect(result[0].fullDest).to.equal(`${url}/intended-destination/`);
+        expect(result[0].fullFinal).to.equal(`${url}/self-redirect/`); // Same as source
+      });
+
+      it('should handle source URL that redirects to itself with query parameters', async () => {
+        const pageUrls = [
+          {
+            referencedBy: `${url}/redirects.json`,
+            origSrc: '/self-redirect?param=value',
+            origDest: '/intended-destination',
+            isDuplicateSrc: false,
+            ordinalDuplicate: 0,
+            tooQualified: false,
+            hasSameSrcDest: false,
+          },
+        ];
+
+        // First request: self-redirect?param=value redirects back to itself
+        nock(url)
+          .head('/self-redirect?param=value')
+          .times(2)
+          .reply(301, '', { location: '/self-redirect?param=value' });
+
+        // Second request: self-redirect?param=value (same as source)
+        nock(url)
+          .head('/self-redirect?param=value')
+          .times(2)
+          .reply(200);
+
+        const result = await processEntriesInParallel(pageUrls, url, context.log);
+        expect(result).to.be.an('array');
+        expect(result[0]).to.have.property('status', 200);
+        expect(result[0]).to.have.property('redirected', false); // No redirect detected since source equals final
+        expect(result[0]).to.have.property('redirectCount', 0);
+        expect(result[0]).to.have.property('fullFinalMatchesDestUrl', false); // Doesn't match intended destination
+        expect(result[0].fullSrc).to.equal(`${url}/self-redirect?param=value`);
+        expect(result[0].fullDest).to.equal(`${url}/intended-destination`);
+        expect(result[0].fullFinal).to.equal(`${url}/self-redirect?param=value`); // Same as source
+      });
     });
 
     describe('analyzeResults', () => {
@@ -1261,6 +1367,161 @@ describe('Redirect Chains Audit', () => {
         expect(fixResult.canApplyFixAutomatically).to.be.false;
       });
 
+      it('should return src-is-final fix when source URL redirects to itself', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect',
+          fullSrc: `${baseUrl}/self-redirect`,
+          origDest: '/intended-destination',
+          fullDest: `${baseUrl}/intended-destination`,
+          fullFinal: `${baseUrl}/self-redirect`, // Same as fullSrc - redirects to itself
+          redirectCount: 1,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false, // Doesn't match intended destination
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+      });
+
+      it('should return src-is-final fix with relative finalUrl when baseUrl matches', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect',
+          fullSrc: `${baseUrl}/self-redirect`,
+          origDest: '/intended-destination',
+          fullDest: `${baseUrl}/intended-destination`,
+          fullFinal: `${baseUrl}/self-redirect`, // Same as fullSrc
+          redirectCount: 1,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false,
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+        expect(fixResult.finalUrl).to.equal('/self-redirect'); // Should be relative since origDest is relative
+      });
+
+      it('should return src-is-final fix for URLs with trailing slashes', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect/',
+          fullSrc: `${baseUrl}/self-redirect/`,
+          origDest: '/intended-destination/',
+          fullDest: `${baseUrl}/intended-destination/`,
+          fullFinal: `${baseUrl}/self-redirect/`, // Same as fullSrc
+          redirectCount: 1,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false,
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+      });
+
+      it('should return src-is-final fix for URLs with query parameters', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect?param=value',
+          fullSrc: `${baseUrl}/self-redirect?param=value`,
+          origDest: '/intended-destination',
+          fullDest: `${baseUrl}/intended-destination`,
+          fullFinal: `${baseUrl}/self-redirect?param=value`, // Same as fullSrc
+          redirectCount: 1,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false,
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+      });
+
+      it('should return src-is-final fix for URLs with hash fragments', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect#section',
+          fullSrc: `${baseUrl}/self-redirect#section`,
+          origDest: '/intended-destination',
+          fullDest: `${baseUrl}/intended-destination`,
+          fullFinal: `${baseUrl}/self-redirect#section`, // Same as fullSrc
+          redirectCount: 1,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false,
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+      });
+
+      it('should return src-is-final fix for URLs with both query parameters and hash fragments', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect?param=value#section',
+          fullSrc: `${baseUrl}/self-redirect?param=value#section`,
+          origDest: '/intended-destination',
+          fullDest: `${baseUrl}/intended-destination`,
+          fullFinal: `${baseUrl}/self-redirect?param=value#section`, // Same as fullSrc
+          redirectCount: 1,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false,
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+      });
+
+      it('should return src-is-final fix even with multiple redirects', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect',
+          fullSrc: `${baseUrl}/self-redirect`,
+          origDest: '/intended-destination',
+          fullDest: `${baseUrl}/intended-destination`,
+          fullFinal: `${baseUrl}/self-redirect`, // Same as fullSrc after multiple redirects
+          redirectCount: 3, // Multiple redirects but ends up at source
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false,
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+      });
+
       it('should generate suggested fixes for multiple entries with issues', () => {
         const baseUrl = 'https://www.example.com';
         const auditUrl = `${baseUrl}/redirects.json`;
@@ -1321,6 +1582,163 @@ describe('Redirect Chains Audit', () => {
 
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 2 affected entries.`);
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 2 suggested fixes.`);
+      });
+
+      it('should generate suggested fixes for src-is-final fix type', () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/self-redirect',
+                  fullSrc: `${baseUrl}/self-redirect`,
+                  origDest: '/intended-destination',
+                  fullDest: `${baseUrl}/intended-destination`,
+                  fullFinal: `${baseUrl}/self-redirect`, // Same as fullSrc - redirects to itself
+                  redirectCount: 1,
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  status: 200,
+                  fullFinalMatchesDestUrl: false, // Doesn't match intended destination
+                },
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result).to.have.property('suggestions');
+        expect(result.suggestions).to.be.an('array').with.lengthOf(1);
+        expect(result.suggestions[0]).to.have.property('key');
+        expect(result.suggestions[0]).to.have.property('fix');
+        expect(result.suggestions[0]).to.have.property('fixType', 'src-is-final');
+        expect(result.suggestions[0]).to.have.property('finalUrl', '/self-redirect'); // Should be relative
+        expect(result.suggestions[0]).to.have.property('canApplyFixAutomatically', true);
+        expect(result.suggestions[0]).to.have.property('redirectsFile', auditUrl);
+        expect(result.suggestions[0]).to.have.property('sourceUrl', '/self-redirect');
+        expect(result.suggestions[0]).to.have.property('destinationUrl', '/intended-destination');
+        expect(result.suggestions[0]).to.have.property('redirectCount', 1);
+        expect(result.suggestions[0]).to.have.property('httpStatusCode', 200);
+        expect(result.suggestions[0].fix).to.include('Remove this entry since the Source URL redirects to itself');
+
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 1 affected entries.`);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 1 suggested fixes.`);
+      });
+
+      it('should generate suggested fixes for src-is-final with query parameters', () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/self-redirect?param=value',
+                  fullSrc: `${baseUrl}/self-redirect?param=value`,
+                  origDest: '/intended-destination',
+                  fullDest: `${baseUrl}/intended-destination`,
+                  fullFinal: `${baseUrl}/self-redirect?param=value`, // Same as fullSrc
+                  redirectCount: 1,
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  status: 200,
+                  fullFinalMatchesDestUrl: false,
+                },
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result).to.have.property('suggestions');
+        expect(result.suggestions).to.be.an('array').with.lengthOf(1);
+        expect(result.suggestions[0]).to.have.property('fixType', 'src-is-final');
+        expect(result.suggestions[0]).to.have.property('sourceUrl', '/self-redirect?param=value');
+        expect(result.suggestions[0]).to.have.property('destinationUrl', '/intended-destination');
+        expect(result.suggestions[0]).to.have.property('finalUrl', '/self-redirect?param=value');
+        expect(result.suggestions[0].fix).to.include('Remove this entry since the Source URL redirects to itself');
+      });
+
+      it('should generate suggested fixes for src-is-final with hash fragments', () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/self-redirect#section',
+                  fullSrc: `${baseUrl}/self-redirect#section`,
+                  origDest: '/intended-destination',
+                  fullDest: `${baseUrl}/intended-destination`,
+                  fullFinal: `${baseUrl}/self-redirect#section`, // Same as fullSrc
+                  redirectCount: 1,
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  status: 200,
+                  fullFinalMatchesDestUrl: false,
+                },
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result).to.have.property('suggestions');
+        expect(result.suggestions).to.be.an('array').with.lengthOf(1);
+        expect(result.suggestions[0]).to.have.property('fixType', 'src-is-final');
+        expect(result.suggestions[0]).to.have.property('sourceUrl', '/self-redirect#section');
+        expect(result.suggestions[0]).to.have.property('destinationUrl', '/intended-destination');
+        expect(result.suggestions[0]).to.have.property('finalUrl', '/self-redirect#section');
+        expect(result.suggestions[0].fix).to.include('Remove this entry since the Source URL redirects to itself');
+      });
+
+      it('should generate suggested fixes for src-is-final with multiple redirects', () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/self-redirect',
+                  fullSrc: `${baseUrl}/self-redirect`,
+                  origDest: '/intended-destination',
+                  fullDest: `${baseUrl}/intended-destination`,
+                  fullFinal: `${baseUrl}/self-redirect`, // Same as fullSrc after multiple redirects
+                  redirectCount: 3, // Multiple redirects but ends up at source
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  status: 200,
+                  fullFinalMatchesDestUrl: false,
+                },
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result).to.have.property('suggestions');
+        expect(result.suggestions).to.be.an('array').with.lengthOf(1);
+        expect(result.suggestions[0]).to.have.property('fixType', 'src-is-final');
+        expect(result.suggestions[0]).to.have.property('sourceUrl', '/self-redirect');
+        expect(result.suggestions[0]).to.have.property('destinationUrl', '/intended-destination');
+        expect(result.suggestions[0]).to.have.property('redirectCount', 3);
+        expect(result.suggestions[0].fix).to.include('Remove this entry since the Source URL redirects to itself');
       });
 
       it('should skip suggestions with HTTP 418 + "unexpected end of file" + source equals final', () => {

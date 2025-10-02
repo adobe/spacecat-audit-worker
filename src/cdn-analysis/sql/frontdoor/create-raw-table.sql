@@ -1,15 +1,13 @@
 CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
-  `date`                    string,
-  `time`                    string,
-  `x-edge-location`         string,
-  `cs-method`               string,
-  `x-host-header`           string,
-  `cs-uri-stem`             string,
-  `sc-status`               string,
-  `cs(Referer)`             string,
-  `cs(User-Agent)`          string,
-  `time-to-first-byte`      string,
-  `sc-content-type`         string
+  time                  string,
+  properties            struct<
+    requestUri:           string,
+    userAgent:            string,
+    httpStatusCode:       string,
+    timeToFirstByte:      string,
+    referer:              string,
+    hostName:             string
+  >
 )
 PARTITIONED BY (
   year  string,
@@ -17,10 +15,7 @@ PARTITIONED BY (
   day   string,
   hour  string
 )
-ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
-WITH SERDEPROPERTIES (
-  'paths'='date,time,x-edge-location,cs-method,cs(Host),cs-uri-stem,sc-status,cs(Referer),cs(User-Agent),time-to-first-byte,sc-content-type,x-host-header'
-)
+ROW FORMAT SERDE 'org.apache.hive.hcatalog.data.JsonSerDe'
 LOCATION '{{rawLocation}}'
 TBLPROPERTIES (
   'projection.enabled'        = 'true',

@@ -14,7 +14,7 @@
 import { prompt } from './utils.js';
 
 async function derivePageTypesForPaths(domain, paths, context) {
-  const { env, log } = context;
+  const { log } = context;
   const systemPrompt = `You are an expert web page classifier. Your task is to analyze URL paths and categorize them into standardized page types based on web conventions and URL patterns.
 
 ## OBJECTIVE
@@ -121,8 +121,7 @@ Classify each provided URL path into one of the predefined page types and return
    - Administrative paths → other
 
 ## RESPONSE FORMAT
-Return ONLY valid JSON with this exact structure:
-\`\`\`json
+Return ONLY valid JSON with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only:
 {
   "paths": [
     { "path": "/", "pageType": "homepage" },
@@ -130,7 +129,6 @@ Return ONLY valid JSON with this exact structure:
     { "path": "/products/123", "pageType": "product" }
   ]
 }
-\`\`\`
 
 ## CRITICAL REQUIREMENTS
 - Include ALL provided paths in your response
@@ -145,7 +143,7 @@ ${JSON.stringify(paths, null, 2)}`;
 
   try {
     log.info('Extracting page types from URL paths');
-    const promptResponse = await prompt(systemPrompt, userPrompt, env);
+    const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       const { paths: parsedPaths } = JSON.parse(promptResponse.content);
       log.info('Successfully extracted page types from URL paths');
@@ -169,7 +167,7 @@ function groupPathsByPageType(pathTypeArray) {
 }
 
 async function deriveRegexesForPageTypes(domain, groupedPaths, context) {
-  const { env, log } = context;
+  const { log } = context;
 
   const systemPrompt = `You are an expert regex pattern generator specialized in creating URL path matching expressions for web analytics.
 
@@ -202,13 +200,11 @@ You will receive:
 - Consider common URL patterns and conventions
 
 ## OUTPUT FORMAT
-Return ONLY valid JSON with this exact structure:
-\`\`\`json
+Return ONLY valid JSON with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only:
 {
   "pageType1": "^/pattern1$",
   "pageType2": "^/pattern2$"
 }
-\`\`\`
 
 ## CRITICAL REQUIREMENTS
 - Include ONLY page types that exist in the provided grouped paths
@@ -223,7 +219,7 @@ ${JSON.stringify(groupedPaths, null, 2)}`;
 
   try {
     log.info('Generating regex patterns for page types');
-    const promptResponse = await prompt(systemPrompt, userPrompt, env);
+    const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       const parsed = JSON.parse(promptResponse.content);
       if (parsed && typeof parsed === 'object') {
