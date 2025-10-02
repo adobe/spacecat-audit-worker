@@ -164,14 +164,22 @@ async function getH1HeadingASuggestion(url, log, pageTags, context, brandGuideli
     'heading-empty-suggestion',
     log,
   );
-  const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
-    responseFormat: 'json_object',
-  });
-
-  const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
-  const { aiSuggestion } = aiResponseContent.h1;
-  log.info(`[Headings AI Suggestions] AI suggestion for empty heading for ${url}: ${aiSuggestion}`);
-  return aiSuggestion;
+  try {
+    const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
+      responseFormat: 'json_object',
+    });
+    const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
+    if (!aiResponseContent.h1 || !aiResponseContent.h1.aiSuggestion) {
+      log.error(`[Headings AI Suggestions] Invalid response structure for ${url}. Expected h1.aiSuggestion`);
+      return null;
+    }
+    const { aiSuggestion } = aiResponseContent.h1;
+    log.info(`[Headings AI Suggestions] AI suggestion for empty heading for ${url}: ${aiSuggestion}`);
+    return aiSuggestion;
+  } catch (error) {
+    log.error(`[Headings AI Suggestions] Error for empty heading suggestion: ${error}`);
+    return null;
+  }
 }
 
 async function getBrandGuidelines(healthyTagsObject, log, context) {
@@ -189,7 +197,6 @@ async function getBrandGuidelines(healthyTagsObject, log, context) {
     responseFormat: 'json_object',
   });
   const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
-  log.info(`[Headings AI Suggestions] AI suggestion for brand guidelines: ${aiResponseContent}`);
   return aiResponseContent;
 }
 
@@ -446,12 +453,13 @@ export async function headingsAuditRunner(baseURL, context, site) {
       description: healthyTags.description.join(', '),
       h1: healthyTags.h1.join(', '),
     };
+    log.info(`[Headings AI Suggestions] Healthy tags object: ${JSON.stringify(healthyTagsObject)}`);
 
     const brandGuidelines = await getBrandGuidelines(healthyTagsObject, log, context);
-    const auditResultsPromises = auditResults.forEach(async (result) => {
+    const auditResultsPromises = auditResults.map(async (result) => {
       if (result.status === 'fulfilled' && result.value) {
         const { url, checks } = result.value;
-        checks.forEach(async (check) => {
+        const checkPromises = checks.map(async (check) => {
           if (!check.success) {
             totalIssuesFound += 1;
             const checkType = check.check;
@@ -460,20 +468,24 @@ export async function headingsAuditRunner(baseURL, context, site) {
             if (checkType === HEADINGS_CHECKS.HEADING_MISSING_H1.check
               || checkType === HEADINGS_CHECKS.HEADING_H1_LENGTH.check
               || checkType === HEADINGS_CHECKS.HEADING_EMPTY.check) {
-              aiSuggestion = await getH1HeadingASuggestion(
-                url,
-                log,
-                check.pageTags,
-                context,
-                brandGuidelines,
-              );
+              try {
+                aiSuggestion = await getH1HeadingASuggestion(
+                  url,
+                  log,
+                  check.pageTags,
+                  context,
+                  brandGuidelines,
+                );
+              } catch (error) {
+                log.error(`[Headings AI Suggestions] Error generating AI suggestion for ${url}: ${error.message}`);
+                aiSuggestion = null;
+              }
             }
-
             if (!aggregatedResults[checkType]) {
               aggregatedResults[checkType] = {
                 success: false,
                 explanation: check.explanation,
-                suggestion: aiSuggestion || check.suggestion,
+                suggestion: check.suggestion,
                 urls: [],
               };
             }
@@ -482,7 +494,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
             if (!aggregatedResults[checkType].urls.includes(url)) {
               const urlObject = { url };
               if (check.suggestion) {
-                urlObject.suggestion = check.suggestion;
+                urlObject.suggestion = aiSuggestion || check.suggestion;
               }
               if (check.tagName) {
                 urlObject.tagName = check.tagName;
@@ -491,6 +503,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
             }
           }
         });
+        await Promise.all(checkPromises);
       }
     });
 
@@ -506,7 +519,6 @@ export async function headingsAuditRunner(baseURL, context, site) {
         auditResult: { status: 'success', message: 'No heading issues detected' },
       };
     }
-
     return {
       fullAuditRef: baseURL,
       auditResult: aggregatedResults,
