@@ -1,3 +1,10 @@
+## [1.192.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.3...v1.192.4) (2025-10-02)
+
+
+### Bug Fixes
+
+* updating prerender opp name and fixed content gain ([#1334](https://github.com/adobe/spacecat-audit-worker/issues/1334)) ([19b4fe2](https://github.com/adobe/spacecat-audit-worker/commit/19b4fe204cea4408c14834675e3bee603ddf89ea))
+
 ## [1.192.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.2...v1.192.3) (2025-10-01)
 
 
