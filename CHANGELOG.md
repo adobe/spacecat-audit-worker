@@ -1,3 +1,10 @@
+## [1.192.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.4...v1.192.5) (2025-10-02)
+
+
+### Bug Fixes
+
+* incorrectly use of last week instead of month ([#1332](https://github.com/adobe/spacecat-audit-worker/issues/1332)) ([98e8f3d](https://github.com/adobe/spacecat-audit-worker/commit/98e8f3de85d8b322ddd9e48228db60fc2f8d3239))
+
 ## [1.192.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.3...v1.192.4) (2025-10-02)
 
 
