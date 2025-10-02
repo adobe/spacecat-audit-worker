@@ -19,6 +19,7 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import analyzeDomain, { analyzeDomainFromUrls } from './domain-analysis.js';
 import { analyzeProducts } from './product-analysis.js';
 import { analyzePageTypes } from './page-type-analysis.js';
@@ -177,7 +178,7 @@ async function runAgenticTrafficStep(context) {
 
 async function runBrandPresenceStep(context) {
   const {
-    audit, dataAccess, log, scrapeResultPaths, site, sqs,
+    audit, auditContext, dataAccess, log, scrapeResultPaths, site, sqs,
   } = context;
   const { Configuration, SiteTopPage } = dataAccess;
   const auditResult = audit.getAuditResult();
@@ -185,7 +186,32 @@ async function runBrandPresenceStep(context) {
   const domain = audit.getFullAuditRef();
   const results = [...scrapeResultPaths.values()];
 
+  // Priority: auditContext > site config > default
+  const cadence = auditContext?.brandPresenceCadence
+    || site.getConfig()?.getBrandPresenceCadence?.()
+    || 'weekly';
+
+  const auditType = cadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence';
+
+  log.info(`Brand Presence Step: Using ${cadence} cadence (audit type: ${auditType})`);
+
   try {
+    // Check if the selected audit type is enabled
+    const isAuditEnabled = await isAuditEnabledForSite(auditType, site, context);
+    if (!isAuditEnabled) {
+      log.warn(`${auditType} audit is not enabled for site ${site.getSiteId()}, skipping brand presence step`);
+      return {
+        status: `${auditType} is not enabled for this site`,
+      };
+    }
+
+    // Optional: Warn if the opposite audit type is also enabled
+    const oppositeAuditType = cadence === 'daily' ? 'geo-brand-presence' : 'geo-brand-presence-daily';
+    const isOppositeEnabled = await isAuditEnabledForSite(oppositeAuditType, site, context);
+    if (isOppositeEnabled) {
+      log.warn(`Both ${auditType} and ${oppositeAuditType} are enabled for site ${site.getSiteId()}. Consider disabling ${oppositeAuditType} to avoid duplicate processing.`);
+    }
+
     let domainInsights;
 
     if (auditResult.source === AHREFS_SOURCE_TYPE) {
@@ -202,10 +228,10 @@ async function runBrandPresenceStep(context) {
 
     await uploadUrlsWorkbook(domainInsights, site, context);
 
-    log.info('Brand Presence Step: Upload complete; triggering geo-brand-presence audit');
+    log.info(`Brand Presence Step: Upload complete; triggering ${auditType} audit`);
 
     const geoBrandPresenceMessage = {
-      type: 'geo-brand-presence',
+      type: auditType,
       siteId: site.getSiteId(),
       data: getLastSunday(),
     };
@@ -214,6 +240,8 @@ async function runBrandPresenceStep(context) {
 
     return {
       status: 'llmo-customer-analysis audit completed',
+      triggeredAudit: auditType,
+      cadence,
     };
   } catch (error) {
     log.error(`Error during brand presence step: ${error.message}`);
