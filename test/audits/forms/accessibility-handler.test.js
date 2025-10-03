@@ -1825,6 +1825,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
           env: {
             QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+            IMPORT_WORKER_QUEUE_URL: 'test-import-worker-queue',
           },
           sqs: {
             sendMessage: sandbox.stub().resolves(),
@@ -1839,8 +1840,12 @@ describe('Forms Opportunities - Accessibility Handler', () => {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
               findById: sandbox.stub().resolves({
                 getId: () => opportunityId,
+                getType: () => 'form-accessibility',
+                getSiteId: () => siteId,
+                getSuggestions: sandbox.stub().resolves([]),
                 save: sandbox.stub().resolves({
                   getId: () => opportunityId,
+                  getSiteId: () => siteId,
                   getData: () => ({
                     accessibility: [{
                       form: 'test-form',
@@ -1864,6 +1869,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
               findById: sandbox.stub().resolves({
                 getDeliveryType: sinon.stub().returns('aem'),
                 getBaseURL: sinon.stub().returns('https://example.com'),
+              }),
+            },
+            Configuration: {
+              findLatest: sandbox.stub().resolves({
+                isHandlerEnabledForSite: sandbox.stub().resolves(false),
               }),
             },
           },
@@ -1930,6 +1940,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
           env: {
             QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+            IMPORT_WORKER_QUEUE_URL: 'test-import-worker-queue',
           },
           sqs: {
             sendMessage: sandbox.stub().resolves(),
@@ -1943,9 +1954,13 @@ describe('Forms Opportunities - Accessibility Handler', () => {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
               findById: sandbox.stub().resolves({
                 getId: () => opportunityId,
+                getType: () => 'form-accessibility',
+                getSiteId: () => siteId,
+                getSuggestions: sandbox.stub().resolves([]),
                 save: sandbox.stub().resolves({
                   getType: () => 'form-accessibility',
                   getId: () => opportunityId,
+                  getSiteId: () => siteId,
                   getData: () => ({
                     accessibility: [{
                       form: 'test-form-2',
@@ -1965,6 +1980,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 setData: (data) => {
                   mockOpportunityData = data;
                 },
+                getSiteId: () => siteId,
               }),
               create: sandbox.stub().resolves({
                 getId: () => opportunityId,
@@ -1976,6 +1992,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
               findById: sandbox.stub().resolves({
                 getDeliveryType: sinon.stub().returns('aem'),
                 getBaseURL: sinon.stub().returns('https://example.com'),
+              }),
+            },
+            Configuration: {
+              findLatest: sandbox.stub().resolves({
+                isHandlerEnabledForSite: sandbox.stub().resolves(false),
               }),
             },
           },
