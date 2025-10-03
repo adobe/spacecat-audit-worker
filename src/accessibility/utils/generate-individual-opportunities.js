@@ -438,6 +438,31 @@ export async function createIndividualOpportunitySuggestions(
       statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
     });
 
+    return { success: true };
+  } catch (e) {
+    log.error(`[A11yProcessingError] Failed to create suggestions for opportunity ${opportunity.getId()}: ${e.message}`);
+    throw new Error(e.message);
+  }
+}
+
+/**
+ * Sends messages to Mystique for remediation
+ *
+ * This function handles the responsibility of sending sqs messages to Mystique for remediation.
+ * It processes the opportunity's suggestions,
+ * and sends them to the Mystique queue for AI-powered remediation guidance.
+ *
+ * @param {Object} opportunity - The opportunity object with suggestions
+ * @param {Object} context - Audit context containing sqs, env, site, and other utilities
+ * @param {Object} log - Logger instance
+ * @returns {Object} Success status object
+ */
+export async function sendMessageToMystiqueForRemediation(
+  opportunity,
+  context,
+  log,
+) {
+  try {
     // Check if mystique suggestions are enabled for this site
     const isMystiqueEnabled = await isAuditEnabledForSite('a11y-mystique-auto-suggest', context.site, context);
     if (!isMystiqueEnabled) {
@@ -502,7 +527,6 @@ export async function createIndividualOpportunitySuggestions(
       env,
       log,
     }));
-
     // Wait for all messages to be sent (successfully or with errors)
     const results = await Promise.allSettled(messagePromises);
 
@@ -517,7 +541,7 @@ export async function createIndividualOpportunitySuggestions(
 
     return { success: true };
   } catch (e) {
-    log.error(`[A11yProcessingError] Failed to create suggestions for opportunity ${opportunity.getId()}: ${e.message}`);
+    log.error(`[A11yProcessingError] Failed to send messages to Mystique for opportunity ${opportunity.getId()}: ${e.message}`);
     throw new Error(e.message);
   }
 }
@@ -684,18 +708,19 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
 
           // Step 3: Update suggestions for this opportunity type using enhanced sync
           const typeSpecificData = { data: typeData };
-          try {
-            await createIndividualOpportunitySuggestions(
-              opportunity,
-              typeSpecificData,
-              context,
-              log,
-            );
-          } catch (error) {
-            const errorMsg = `Failed to update individual accessibility opportunity suggestions for ${opportunityType}: ${error.message}`;
-            log.error(`[A11yProcessingError] ${errorMsg}`);
-            throw new Error(error.message);
-          }
+          await createIndividualOpportunitySuggestions(
+            opportunity,
+            typeSpecificData,
+            context,
+            log,
+          );
+
+          // Step 4: Send messages to Mystique for remediation
+          await sendMessageToMystiqueForRemediation(
+            opportunity,
+            context,
+            log,
+          );
 
           // Calculate metrics for this opportunity type
           const typeMetrics = calculateAccessibilityMetrics(typeSpecificData);
