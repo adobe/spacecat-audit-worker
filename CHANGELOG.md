@@ -1,3 +1,10 @@
+## [1.192.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.10...v1.192.11) (2025-10-03)
+
+
+### Bug Fixes
+
+* redirect loop check on suggestions defaults to homepage ([#1318](https://github.com/adobe/spacecat-audit-worker/issues/1318)) ([55d9d76](https://github.com/adobe/spacecat-audit-worker/commit/55d9d76bde6aac31bcae83805954ae372ef8b22b))
+
 ## [1.192.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.9...v1.192.10) (2025-10-02)
 
 
