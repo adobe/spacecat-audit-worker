@@ -13,7 +13,12 @@
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES, formOpportunitiesMap } from '../constants.js';
-import { getSuccessCriteriaDetails, sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance } from '../utils.js';
+import {
+  getSuccessCriteriaDetails,
+  sendCodeFixMessagesToImporter,
+  sendMessageToFormsQualityAgent,
+  sendMessageToMystiqueForGuidance,
+} from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import {
   aggregateAccessibilityIssues,
@@ -462,6 +467,13 @@ export default async function handler(message, context) {
 
     // Create individual suggestions from Mystique data
     await createFormAccessibilitySuggestionsFromMystique(a11y, opportunity, context);
+
+    // send message to importer for code-fix generation
+    await sendCodeFixMessagesToImporter(
+      opportunity,
+      auditId,
+      context,
+    );
 
     log.info(`[Form Opportunity] [Site Id: ${siteId}] a11y opportunity: ${JSON.stringify(opportunity, null, 2)}`);
     const opportunityData = opportunity.getData();
