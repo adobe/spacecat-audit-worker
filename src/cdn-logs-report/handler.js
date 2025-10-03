@@ -43,8 +43,8 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     auditContext?.sharepointOptions,
   );
   const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation(), {
-    pollIntervalMs: 2000,
-    maxPollAttempts: 200,
+    pollIntervalMs: 3000,
+    maxPollAttempts: 250,
   });
   /* c8 ignore next */
   const { orgId } = site.getConfig().getLlmoCdnBucketConfig() || {};

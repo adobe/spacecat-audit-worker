@@ -34,14 +34,14 @@ export const HEADINGS_CHECKS = Object.freeze({
   HEADING_MISSING_H1: {
     check: 'heading-missing-h1',
     title: 'Missing H1 Heading',
-    explanation: 'Pages should have exactly one h1 element for SEO and accessibility.',
-    suggestion: 'Add an h1 element describing the main content.',
+    explanation: 'Pages should have exactly one H1 element for SEO and accessibility.',
+    suggestion: 'Add an H1 element describing the main content.',
   },
   HEADING_MULTIPLE_H1: {
     check: 'heading-multiple-h1',
     title: 'Multiple H1 Headings',
-    explanation: 'Pages should have only one h1 element.',
-    suggestion: 'Change additional h1 elements to h2 or appropriate levels.',
+    explanation: 'Pages should have only one H1 element.',
+    suggestion: 'Change additional H1 elements to H2 or appropriate levels.',
   },
   HEADING_DUPLICATE_TEXT: {
     check: 'heading-duplicate-text',
@@ -52,7 +52,7 @@ export const HEADINGS_CHECKS = Object.freeze({
   HEADING_ORDER_INVALID: {
     check: 'heading-order-invalid',
     title: 'Invalid Heading Order',
-    explanation: 'Heading levels should increase by one (h1→h2), not jump levels (h1→h3).',
+    explanation: 'Heading levels should increase by one (H1→H2), not jump levels (H1→H3).',
     suggestion: 'Adjust heading levels to maintain proper hierarchy.',
   },
   HEADING_NO_CONTENT: {
@@ -497,7 +497,7 @@ export function generateSuggestions(auditUrl, auditData, context) {
       suggestionsByType[checkType].forEach((suggestion) => {
         let suggestionExplanation = suggestion.explanation;
         if (suggestion.tagName) {
-          suggestionExplanation += `for tag name: ${suggestion.tagName}`;
+          suggestionExplanation += `for tag name: ${suggestion.tagName.toUpperCase()}`;
         }
         mdTable += `| ${suggestion.url} | ${suggestionExplanation} | ${suggestion.recommendedAction} |\n`;
       });

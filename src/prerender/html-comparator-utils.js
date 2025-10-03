@@ -12,6 +12,40 @@
 
 import * as cheerio from 'cheerio';
 
+const excludedSelectors = [
+  'nav', 'header', 'footer',
+  '.nav', '.navigation', '.navbar', '.nav-bar', '.menu', '.main-menu',
+  '.header', '.site-header', '.page-header', '.top-header',
+  '.footer', '.site-footer', '.page-footer', '.bottom-footer',
+  '.breadcrumb', '.breadcrumbs',
+  '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
+  // Common class patterns
+  '.navigation-wrapper', '.nav-wrapper', '.header-wrapper', '.footer-wrapper',
+  '.site-navigation', '.primary-navigation', '.secondary-navigation',
+  '.top-nav', '.bottom-nav', '.sidebar-nav',
+  // ID selectors for common navigation/footer elements
+  '#nav', '#navigation', '#navbar', '#header', '#footer', '#menu', '#main-menu',
+  '#site-header', '#site-footer', '#page-header', '#page-footer',
+  '.cc-banner', '.cc-grower', '.consent-banner', '.cookie-banner',
+  '.privacy-banner', '.gdpr-banner', '.cookie-consent', '.privacy-consent',
+  '.cookie-notice', '.privacy-notice', '.cookie-policy', '.privacy-policy',
+  '.cookie-bar', '.privacy-bar', '.consent-bar', '.gdpr-bar',
+  '.cookie-popup', '.privacy-popup', '.consent-popup', '.gdpr-popup',
+  '.cookie-modal', '.privacy-modal', '.consent-modal', '.gdpr-modal',
+  '.cookie-overlay', '.privacy-overlay', '.consent-overlay', '.gdpr-overlay',
+  '#cookie-banner', '#privacy-banner', '#consent-banner', '#gdpr-banner',
+  '#cookie-notice', '#privacy-notice', '#cookie-consent', '#privacy-consent',
+  '#cookie-bar', '#privacy-bar', '#consent-bar', '#gdpr-bar',
+  '#cookie-popup', '#privacy-popup', '#consent-popup', '#gdpr-popup',
+  '[role="dialog"][aria-label*="cookie" i]',
+  '[role="dialog"][aria-label*="privacy" i]',
+  '[role="dialog"][aria-label*="consent" i]',
+  '[role="alertdialog"][aria-label*="cookie" i]',
+  '[role="alertdialog"][aria-label*="privacy" i]',
+  '[aria-describedby*="cookie" i]',
+  '[aria-describedby*="privacy" i]',
+];
+
 function stripTagsToText(htmlContent) {
   /* c8 ignore next 1 */
   if (!htmlContent) return '';
@@ -23,6 +57,10 @@ function stripTagsToText(htmlContent) {
 
   // Remove all media elements (images, videos, audio, etc.) to keep only text
   $('img, video, audio, picture, svg, canvas, embed, object, iframe').remove();
+
+  // Remove excluded selectors
+  const allSelectors = excludedSelectors.join(',');
+  $(allSelectors).remove();
 
   // Get text content from document element
   const textContent = $('html').text() || $('body').text() || '';

@@ -16,7 +16,7 @@ const OpptyData = {
   runbook: '',
   origin: 'AUTOMATION',
   title: 'Heading structure issues affecting accessibility and SEO',
-  description: 'Ensure heading elements (h1–h6) are used in a logical, hierarchical order without skipping levels, and that no heading is empty. Proper heading structure improves accessibility and helps search engines understand page content. AI-powered suggestions are available to help improve heading quality and consistency.',
+  description: 'Ensure heading elements (h1–h6) are used in a logical, hierarchical order without skipping levels, and that no heading is empty. Proper heading structure improves accessibility and helps search engines and generative engines understand page content. AI-powered suggestions are available to help improve heading quality and consistency.',
   guidance: {
     steps: [
       'Review pages flagged for heading order or empty heading issues in the audit results.',
@@ -39,6 +39,16 @@ export function createOpportunityData() {
 export function createOpportunityDataForElmo() {
   return {
     ...OpptyData,
+    guidance: {
+      recommendations: [
+        {
+          insight: 'Headings analysis of page content reveals structure issues affecting accessibility and SEO',
+          recommendation: 'Ensure heading elements (h1–h6) are used in a logical, hierarchical order without skipping levels, and that no heading is empty',
+          type: 'CONTENT',
+          rationale: 'Proper heading structure improves accessibility and helps search engines and generative engines understand page content',
+        },
+      ],
+    },
     tags: [...OpptyData.tags, 'llm', 'isElmo'],
     data: {
       ...OpptyData.data,

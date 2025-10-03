@@ -1605,20 +1605,24 @@ describe('Headings Audit', () => {
       expect(opportunityData.tags).to.deep.equal(['Accessibility', 'SEO', 'llm', 'isElmo']);
     });
 
-    it('includes proper guidance steps for Elmo', () => {
+    it('includes proper guidance recommendations for Elmo', () => {
       const opportunityData = createOpportunityDataForElmo();
 
       expect(opportunityData).to.have.property('guidance');
-      expect(opportunityData.guidance).to.have.property('steps');
-      expect(opportunityData.guidance.steps).to.be.an('array');
-      expect(opportunityData.guidance.steps).to.have.lengthOf(5);
+      expect(opportunityData.guidance).to.have.property('recommendations');
+      expect(opportunityData.guidance.recommendations).to.be.an('array');
+      expect(opportunityData.guidance.recommendations).to.have.lengthOf(1);
 
-      const steps = opportunityData.guidance.steps;
-      expect(steps[0]).to.include('Review pages flagged for heading order');
-      expect(steps[1]).to.include('AI-generated suggestions');
-      expect(steps[2]).to.include('levels increase by at most one');
-      expect(steps[3]).to.include('Remove or fill any empty heading elements');
-      expect(steps[4]).to.include('brand guidelines');
+      const recommendation = opportunityData.guidance.recommendations[0];
+      expect(recommendation).to.have.property('insight');
+      expect(recommendation).to.have.property('recommendation');
+      expect(recommendation).to.have.property('type');
+      expect(recommendation).to.have.property('rationale');
+      
+      expect(recommendation.type).to.equal('CONTENT');
+      expect(recommendation.insight).to.include('Headings analysis of page content');
+      expect(recommendation.recommendation).to.include('heading elements (h1–h6)');
+      expect(recommendation.rationale).to.include('accessibility and helps search engines');
     });
 
     it('has correct data sources configuration for Elmo', () => {
@@ -1665,7 +1669,7 @@ describe('Headings Audit', () => {
       ]);
 
       // Check nested structure
-      expect(opportunityData.guidance).to.have.property('steps');
+      expect(opportunityData.guidance).to.have.property('recommendations');
       expect(opportunityData.data).to.have.property('dataSources');
       expect(opportunityData.data).to.have.property('additionalMetrics');
     });
@@ -1679,7 +1683,12 @@ describe('Headings Audit', () => {
       expect(elmoData.origin).to.equal(baseData.origin);
       expect(elmoData.title).to.equal(baseData.title);
       expect(elmoData.description).to.equal(baseData.description);
-      expect(elmoData.guidance).to.deep.equal(baseData.guidance);
+      
+      // Guidance structure is different for Elmo (recommendations vs steps)
+      expect(elmoData.guidance).to.have.property('recommendations');
+      expect(baseData.guidance).to.have.property('steps');
+      expect(elmoData.guidance.recommendations).to.be.an('array');
+      expect(baseData.guidance.steps).to.be.an('array');
 
       // Should have extended tags
       expect(elmoData.tags).to.include.members(baseData.tags);
