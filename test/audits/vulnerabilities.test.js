@@ -16,6 +16,7 @@ import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import esmock from 'esmock';
 import { DELIVERY_TYPES } from '@adobe/spacecat-shared-utils';
 import { MockContextBuilder } from '../shared.js';
 import {
@@ -58,6 +59,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         programId: '123456',
         environmentId: '789012',
       }),
+      getOrganizationId: () => 'test-org-id',
       getOpportunitiesByStatus: sandbox.stub().resolves([]),
     };
 
@@ -79,6 +81,11 @@ describe('Vulnerabilities Handler Integration Tests', () => {
             findLatest: sandbox.stub().resolves({
               isHandlerEnabledForSite: sandbox.stub().returns(true),
             }),
+          },
+          Organization: {
+            findById: sandbox.stub().resolves({
+              getImsOrgId: () => 'test-ims-org'
+            })
           },
           Opportunity: {
             allBySiteIdAndStatus: sandbox.stub().resolves([]),
@@ -164,6 +171,44 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       expect(result.auditResult.error).to.include('Unsupported delivery type');
     });
 
+    it('should handle missing imsOrg', async () => {
+      // Mock getImsOrgId to return null (missing IMS org)
+      const { vulnerabilityAuditRunner: mockedRunner } = await esmock('../../src/vulnerabilities/handler.js', {
+        '../../src/utils/data-access.js': {
+          getImsOrgId: sandbox.stub().resolves(null),
+          syncSuggestions: sandbox.stub().resolves(),
+        },
+      });
+
+      const result = await mockedRunner('https://example.com', context, site);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.include('Missing IMS org');
+      expect(result.auditResult.finalUrl).to.equal('https://example.com');
+    });
+
+    it('should handle default imsOrg', async () => {
+      // Mock getImsOrgId to return 'default' and set up successful API calls
+      const { vulnerabilityAuditRunner: mockedRunner } = await esmock('../../src/vulnerabilities/handler.js', {
+        '../../src/utils/data-access.js': {
+          getImsOrgId: sandbox.stub().resolves('default'),
+          syncSuggestions: sandbox.stub().resolves(),
+        },
+      });
+
+      setupSuccessfulImsAuth();
+      setupSuccessfulVulnerabilityApi();
+
+      const result = await mockedRunner('https://example.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.vulnerabilityReport).to.deep.equal(mockVulnerabilityReport);
+      expect(result.auditResult.finalUrl).to.equal('https://example.com');
+
+      // Verify that the debug log was called for default IMS org
+      expect(context.log.debug).to.have.been.calledWithMatch(/site is configured with default IMS org/);
+    });
+
     it('should handle missing programId in delivery config', async () => {
       site.getDeliveryConfig = () => ({ programId: undefined, environmentId: '789012' });
 
@@ -208,7 +253,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       const result = await vulnerabilityAuditRunner('https://example.com', context, site);
 
       expect(result.auditResult.success).to.be.false;
-      expect(result.auditResult.error).to.include('Cannot read properties of undefined (reading \'summary\')');
+      expect(result.auditResult.error).to.include('audit failed with error');
     });
 
     it('should handle 404 response when vulnerability report not found', async () => {
@@ -226,17 +271,24 @@ describe('Vulnerabilities Handler Integration Tests', () => {
 
     it('should handle fetch error and throw generic error message', async () => {
       setupSuccessfulImsAuth();
-      // Mock a network error by making fetch throw
-      const originalFetch = global.fetch;
-      global.fetch = sandbox.stub().rejects(new Error('Network error'));
+      // Mock tracingFetch to throw a network error
+      const { vulnerabilityAuditRunner: mockedRunner } = await esmock('../../src/vulnerabilities/handler.js', {
+        '@adobe/spacecat-shared-utils': {
+          isNonEmptyArray: (arr) => Array.isArray(arr) && arr.length > 0,
+          DELIVERY_TYPES: { AEM_CS: 'aem_cs' },
+          tracingFetch: sandbox.stub().rejects(new Error('Network error')),
+          hasText: (text) => typeof text === 'string' && text.trim().length > 0,
+        },
+        '../../src/utils/data-access.js': {
+          getImsOrgId: sandbox.stub().resolves('test-ims-org'),
+          syncSuggestions: sandbox.stub().resolves(),
+        },
+      });
 
-      const result = await vulnerabilityAuditRunner('https://example.com', context, site);
+      const result = await mockedRunner('https://example.com', context, site);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('Failed to fetch vulnerability report');
-
-      // Restore original fetch
-      global.fetch = originalFetch;
     });
 
     it('should format errors with correct structure when any error is thrown', async () => {

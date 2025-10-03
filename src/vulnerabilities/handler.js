@@ -12,7 +12,12 @@
 
 import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
   from '@adobe/spacecat-shared-data-access';
-import { isNonEmptyArray, DELIVERY_TYPES } from '@adobe/spacecat-shared-utils';
+import {
+  isNonEmptyArray,
+  DELIVERY_TYPES,
+  tracingFetch as fetch,
+  hasText,
+} from '@adobe/spacecat-shared-utils';
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { createHash } from 'node:crypto';
 import { AuditBuilder } from '../common/audit-builder.js';
@@ -41,8 +46,13 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
 
   // Retrieve site details
   const imsOrg = await getImsOrgId(site, dataAccess, log);
+  if (!hasText(imsOrg)) {
+    throw new Error('Missing IMS org');
+  } else if (imsOrg === 'default') {
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] site is configured with default IMS org`);
+  }
   const { programId, environmentId } = site.getDeliveryConfig();
-  if (!programId || !environmentId) {
+  if (!hasText(programId) || !hasText(environmentId)) {
     throw new Error('Invalid delivery config for AEM_CS');
   }
 
@@ -51,7 +61,12 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
   try {
     const imsContext = {
       log,
-      env,
+      env: {
+        IMS_HOST: env.IMS_HOST,
+        IMS_CLIENT_ID: env.IMS_CLIENT_ID,
+        IMS_CLIENT_CODE: env.IMS_CLIENT_CODE,
+        IMS_CLIENT_SECRET: env.IMS_CLIENT_SECRET,
+      },
     };
     const imsClient = ImsClient.createFrom(imsContext);
     token = await imsClient.getServiceAccessToken();
@@ -60,29 +75,31 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
   }
 
   // Fetch vulnerability report
+  const headers = {
+    Authorization: `Bearer ${token.access_token}`,
+    'x-api-key': env.IMS_CLIENT_ID,
+    'x-gw-ims-org-id': imsOrg,
+  };
+  let resp;
   try {
-    const headers = {
-      Authorization: `Bearer ${token.access_token}`,
-      'x-api-key': env.IMS_CLIENT_ID,
-      'x-gw-ims-org-id': imsOrg,
-    };
-    const resp = await fetch(
+    resp = await fetch(
       `https://aem-trustcenter-dev.adobe.io/api/reports/${programId}/${environmentId}/vulnerabilities`,
       { headers },
     );
-    if (resp.status === 404) {
-      log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] vulnerability report not found`);
-      return null;
-    }
-
-    const json = await resp.json();
-
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] successfully fetched vulnerability report`);
-
-    return json.data;
   } catch (error) {
     throw new Error('Failed to fetch vulnerability report');
   }
+  if (resp.status === 404) {
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] vulnerability report not found`);
+    return null;
+  }
+  if (!resp.ok) {
+    const json = await resp.json();
+    throw new Error(`Failed to fetch vulnerability report (${resp.status}): ${json?.error}`);
+  }
+  const json = await resp.json();
+  log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] successfully fetched vulnerability report`);
+  return json.data;
 }
 
 /**
@@ -113,7 +130,7 @@ export async function vulnerabilityAuditRunner(baseURL, context, site) {
 
   try {
     const vulnerabilityReport = await fetchVulnerabilityReport(baseURL, context, site);
-    if (vulnerabilityReport === null) {
+    if (!vulnerabilityReport) {
       const errorMessage = `[${AUDIT_TYPE}] [Site: ${site.getId()}] fetch successful, but report was empty / null`;
       log.debug(errorMessage);
       return {
