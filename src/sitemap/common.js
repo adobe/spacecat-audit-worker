@@ -53,6 +53,23 @@ function delay(ms) {
 }
 
 /**
+ * Validates if a suggested URL returns a 200 status code
+ * @param {string} url - The URL to validate
+ * @returns {Promise<boolean>} - True if URL returns 200, false otherwise
+ */
+async function isValidSuggestedUrl(url) {
+  try {
+    // eslint-disable-next-line no-use-before-define
+    const response = await fetchWithHeadFallback(url, {
+      redirect: 'follow',
+    });
+    return response.status === 200;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Helper function to try HEAD request first, then GET on 404
  * This handles cases where servers return 404 for HEAD but 200 for GET
  */
@@ -161,17 +178,23 @@ export async function filterValidUrls(urls) {
           return { type: 'ok', url };
         }
 
-        // Try to check the final destination
+        // Try to check the final destination and validate it properly
         if (finalUrl) {
+          let isValidSuggestion = false;
           let is404 = false;
+
           try {
             const redirectResponse = await fetchWithHeadFallback(finalUrl, {
               redirect: 'follow',
             });
+
+            // Check if the suggested URL actually returns 200
+            isValidSuggestion = redirectResponse.status === 200;
             is404 = redirectResponse.status === 404;
           } catch {
             // the fetch for the redirect URL can fail for various reasons (e.g. network error).
             // intentionally ignore the error and proceed to check for 404 patterns in the URL
+            isValidSuggestion = false;
           }
 
           // Also check for 404 patterns in the URL itself, as a fallback or additional signal
@@ -184,23 +207,30 @@ export async function filterValidUrls(urls) {
           const originalUrl = new URL(url);
           const homepageUrl = `${originalUrl.protocol}//${originalUrl.hostname}`;
 
+          // Only suggest the redirect URL if it's valid (returns 200), otherwise suggest homepage
+          const suggestedUrl = (isValidSuggestion && !is404) ? finalUrl : homepageUrl;
+
           return {
             type: 'notOk',
             url,
             statusCode: response.status,
-            urlsSuggested: is404 ? homepageUrl : finalUrl,
+            urlsSuggested: suggestedUrl,
           };
         }
 
-        // If no redirect URL, suggest homepage
+        // If no redirect URL, validate homepage before suggesting it
         const originalUrl = new URL(url);
         const homepageUrl = `${originalUrl.protocol}//${originalUrl.hostname}`;
+
+        // Validate the homepage suggestion
+        const isHomepageValid = await isValidSuggestedUrl(homepageUrl);
 
         return {
           type: 'notOk',
           url,
           statusCode: response.status,
-          urlsSuggested: homepageUrl,
+          // Only suggest homepage if it's valid, otherwise provide no suggestion
+          ...(isHomepageValid && { urlsSuggested: homepageUrl }),
         };
       }
 
