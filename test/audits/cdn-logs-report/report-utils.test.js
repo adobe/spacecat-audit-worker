@@ -133,11 +133,6 @@ describe('CDN Logs Report Utils', () => {
   });
 
   describe('buildSiteFilters', () => {
-    it('returns empty string for empty filters', () => {
-      expect(reportUtils.buildSiteFilters([])).to.equal('');
-      expect(reportUtils.buildSiteFilters(null)).to.equal('');
-    });
-
     it('builds include filters correctly', () => {
       const result = reportUtils.buildSiteFilters([
         { key: 'url', value: ['test'], type: 'include' },
@@ -158,6 +153,36 @@ describe('CDN Logs Report Utils', () => {
         { key: 'url', value: ['admin'], type: 'exclude' },
       ]);
       expect(result).to.include('AND');
+    });
+
+    it('falls back to baseURL when filters are empty', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://adobe.com',
+      };
+
+      const result = reportUtils.buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(adobe.com)')");
+    });
+
+    it('keeps www prefix when already present', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.adobe.com',
+      };
+
+      const result = reportUtils.buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(www.adobe.com)')");
+    });
+
+    it('keeps subdomain as-is without adding www', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://business.adobe.com',
+      };
+
+      const result = reportUtils.buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(business.adobe.com)')");
     });
   });
 

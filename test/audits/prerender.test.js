@@ -154,12 +154,10 @@ describe('Prerender Audit', () => {
       expect(opportunityData).to.be.an('object');
       expect(opportunityData.runbook).to.equal('');
       expect(opportunityData.origin).to.equal('AUTOMATION');
-      expect(opportunityData.title).to.equal('Prerender Optimization Opportunity');
-      expect(opportunityData.description).to.contain('Prerendering the page');
+      expect(opportunityData.title).to.equal('Recover Content Visibility');
+      expect(opportunityData.description).to.contain('Pre-rendering HTML for JavaScript-heavy pages');
       expect(opportunityData.guidance).to.be.an('object');
       expect(opportunityData.guidance.steps).to.be.an('array');
-      expect(opportunityData.tags).to.include('Prerendering');
-      expect(opportunityData.tags).to.include('LLM Optimisation');
       expect(opportunityData.data).to.be.an('object');
       expect(opportunityData.data.dataSources).to.be.an('array');
       expect(opportunityData.data.thresholds).to.be.an('object');
