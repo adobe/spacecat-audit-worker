@@ -160,11 +160,8 @@ describe('Experimentation Opportunities Tests', () => {
 
   describe('Organic Keywords Step', () => {
     it('should enable the imports if organic-keywords import is not enabled', async () => {
-      context.audit.getAuditResult.returns({
-        experimentationOpportunities: [
-          { type: 'high-organic-low-ctr', page: 'https://abc.com/page1' },
-        ],
-      });
+      context.scrapeResultPaths = new Map([['https://abc.com/page1', 'prefix/page1/scrape.json']]);
+
       const result = await organicKeywordsStep(context);
 
       expect(context.site.getConfig().enableImport).to.have.been.calledWith('organic-keywords');
@@ -176,11 +173,8 @@ describe('Experimentation Opportunities Tests', () => {
 
     it('should NOT enable the imports if organic-keywords import is already enabled', async () => {
       context.site.getConfig().getImports = () => [{ type: 'organic-keywords', enabled: true }];
-      context.audit.getAuditResult.returns({
-        experimentationOpportunities: [
-          { type: 'high-organic-low-ctr', page: 'https://abc.com/page2' },
-        ],
-      });
+      context.scrapeResultPaths = new Map([['https://abc.com/page2', 'prefix/page2/scrape.json']]);
+
       const result = await organicKeywordsStep(context);
       expect(context.site.getConfig().enableImport).not.to.have.been.called;
       expect(context.site.getConfig().disableImport).not.to.have.been.called;
@@ -190,11 +184,7 @@ describe('Experimentation Opportunities Tests', () => {
     });
 
     it('should log site config and imports information', async () => {
-      context.audit.getAuditResult.returns({
-        experimentationOpportunities: [
-          { type: 'high-organic-low-ctr', page: 'https://abc.com/page1' },
-        ],
-      });
+      context.scrapeResultPaths = new Map([['https://abc.com/page1', 'prefix/page1/scrape.json']]);
 
       await organicKeywordsStep(context);
 
@@ -202,11 +192,7 @@ describe('Experimentation Opportunities Tests', () => {
     });
 
     it('should handle null site config gracefully', async () => {
-      context.audit.getAuditResult.returns({
-        experimentationOpportunities: [
-          { type: 'high-organic-low-ctr', page: 'https://abc.com/page1' },
-        ],
-      });
+      context.scrapeResultPaths = new Map([['https://abc.com/page1', 'prefix/page1/scrape.json']]);
 
       // Mock site.getConfig to return null
       context.site.getConfig = sinon.stub().returns(null);
@@ -220,11 +206,7 @@ describe('Experimentation Opportunities Tests', () => {
     });
 
     it('should not call toggleImport if site config is null', async () => {
-      context.audit.getAuditResult.returns({
-        experimentationOpportunities: [
-          { type: 'high-organic-low-ctr', page: 'https://abc.com/page1' },
-        ],
-      });
+      context.scrapeResultPaths = new Map([['https://abc.com/page1', 'prefix/page1/scrape.json']]);
 
       // Mock site.getConfig to return null
       context.site.getConfig = sinon.stub().returns(null);
@@ -238,6 +220,7 @@ describe('Experimentation Opportunities Tests', () => {
 
     it('organic keywords step should handle failures in saving the site config', async () => {
       context.audit.getAuditResult.returns(auditDataMock.auditResult);
+      context.scrapeResultPaths = new Map([['https://abc.com/abc-adoption/account', 'prefix/abc-adoption/account/scrape.json']]);
       context.site.save.rejects(new Error('Failed to save site config'));
       const stepResult = await organicKeywordsStep(context);
       expect(
@@ -249,28 +232,8 @@ describe('Experimentation Opportunities Tests', () => {
       });
     });
 
-    it('organic keywords step should handle invalid urls in the audit result', async () => {
-      context.audit.getAuditResult.returns({
-        experimentationOpportunities: [
-          { type: 'high-organic-low-ctr', page: 'invalid-url' },
-        ],
-      });
-      const stepResult = await organicKeywordsStep(context);
-      expect(
-        stepResult,
-      ).to.deep.equal({
-        type: 'organic-keywords',
-        siteId: site.getId(),
-        urlConfigs: [],
-      });
-    });
-
     it('organic keywords step should use default geo if scrape not found', async () => {
-      context.audit.getAuditResult.returns({
-        experimentationOpportunities: [
-          { type: 'high-organic-low-ctr', page: 'https://abc.com/page3' },
-        ],
-      });
+      context.scrapeResultPaths = new Map([['https://abc.com/page3', 'prefix/page3/scrape.json']]);
       context.s3Client.send.resolves({
         Body: {
           transformToString: sinon.stub().resolves(null),
@@ -287,11 +250,8 @@ describe('Experimentation Opportunities Tests', () => {
     });
 
     it('organic keywords step should use default geo if lang tag not found in scrape', async () => {
-      context.audit.getAuditResult.returns({
-        experimentationOpportunities: [
-          { type: 'high-organic-low-ctr', page: 'https://abc.com/page3' },
-        ],
-      });
+      context.scrapeResultPaths = new Map([['https://abc.com/page3', 'prefix/page3/scrape.json']]);
+
       context.s3Client.send.resolves({
         Body: {
           transformToString: sinon.stub().resolves({ scrapeResult: { tags: {} } }),
