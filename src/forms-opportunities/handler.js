@@ -142,7 +142,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
 
   const result = {
     processingType: 'form',
-    allowCache: true,
+    allowCache: false,
     jobId: site.getId(),
     urls: urlsData,
     siteId: site.getId(),
@@ -220,7 +220,7 @@ export async function processOpportunityStep(context) {
   await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createAccessibilityOpportunity(latestAudit, context);
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity5 identified`);
   return {
     status: 'complete',
   };
@@ -229,6 +229,7 @@ export async function processOpportunityStep(context) {
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .addStep('runAuditAndSendUrlsForScraping', runAuditAndSendUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
-  .addStep('sendA11yUrlsForScrapingStep', sendA11yUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  // eslint-disable-next-line max-len
+  // .addStep('sendA11yUrlsForScrapingStep', sendA11yUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('processOpportunity', processOpportunityStep)
   .build();
