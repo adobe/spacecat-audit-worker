@@ -321,6 +321,48 @@ describe('CDN Logs Report Handler', function test() {
       );
     });
 
+    it('runs both week 0 and -1 on Monday when no weekOffset provided', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-06'),
+        toFake: ['Date']
+      });
+
+      context.athenaClient.query.resetHistory();
+      const auditContext = createAuditContext(sandbox);
+      await handler.runner('https://example.com', context, site, auditContext);
+      
+      clock.restore();
+      expect(context.athenaClient.query).to.have.been.callCount(4);
+    });
+
+    it('runs only week 0 on non-Monday when no weekOffset provided', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-07'),
+        toFake: ['Date']
+      });
+
+      context.athenaClient.query.resetHistory();
+      const auditContext = createAuditContext(sandbox);
+      await handler.runner('https://example.com', context, site, auditContext);
+
+      clock.restore();
+      expect(context.athenaClient.query).to.have.been.callCount(2);
+    });
+
+    it('uses provided weekOffset regardless of day', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-06'),
+        toFake: ['Date']
+      });
+
+      context.athenaClient.query.resetHistory();
+      const auditContext = createAuditContext(sandbox, { weekOffset: -3 });
+      await handler.runner('https://example.com', context, site, auditContext);
+
+      clock.restore();
+      expect(context.athenaClient.query).to.have.been.callCount(2);
+    });
+
     it('handles table creation errors', async () => {
       context.athenaClient.execute.onSecondCall().rejects(new Error('Table creation failed'));
       const auditContext = createAuditContext(sandbox);
