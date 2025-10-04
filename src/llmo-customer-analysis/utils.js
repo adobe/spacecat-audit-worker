@@ -13,197 +13,109 @@
 import ExcelJS from 'exceljs';
 import { getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { startOfISOWeek, addDays, format } from 'date-fns';
-import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
-import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
+import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 
-function getAzureOpenAIClient(context, deploymentName) {
-  const cacheKey = `azureOpenAIClient_${deploymentName}`;
-
-  if (context[cacheKey]) {
-    return context[cacheKey];
-  }
-
-  const { env, log = console } = context;
-
-  const {
-    AZURE_OPENAI_ENDPOINT: apiEndpoint,
-    AZURE_OPENAI_KEY: apiKey,
-    AZURE_API_VERSION: apiVersion,
-  } = env;
-
-  const config = {
-    apiEndpoint,
-    apiKey,
-    apiVersion,
-    deploymentName,
-  };
-
-  context[cacheKey] = new AzureOpenAIClient(config, log);
-  return context[cacheKey];
-}
-
-export async function prompt(systemPrompt, userPrompt, context = {}, deploymentName = null) {
-  try {
-    const deployment = deploymentName || context.env?.AZURE_COMPLETION_DEPLOYMENT || 'gpt-4o-mini';
-    const azureClient = getAzureOpenAIClient(context, deployment);
-
-    const response = await azureClient.fetchChatCompletion(userPrompt, {
-      systemPrompt,
-      responseFormat: 'json_object',
-    });
-
-    return {
-      content: response.choices[0].message.content,
-      usage: response.usage || null,
-    };
-  } catch (error) {
-    throw new Error(`Failed to trigger Azure LLM: ${error.message}`);
-  }
-}
-
-async function createAndSaveWorkbook(config, site, context) {
-  const {
-    filePrefix, successMessage, worksheets, folderName,
-  } = config;
+/**
+ * Validates that the patterns file exists in SharePoint and has the required structure.
+ * Expected file location: {llmoFolder}/agentic-traffic/patterns/patterns.xlsx
+ * Expected worksheets: 'shared-products' and 'shared-pagetype'
+ * Expected columns: 'name' and 'regex'
+ *
+ * @param {Object} site - The site object
+ * @param {Object} context - The context object containing log and env
+ * @throws {Error} If the file doesn't exist or has invalid structure
+ */
+export async function validatePatternsFile(site, context) {
   const { log } = context;
-
-  const workbook = new ExcelJS.Workbook();
-
-  for (const worksheetConfig of worksheets) {
-    const {
-      name, columns, data, emptyDataPlaceholder,
-    } = worksheetConfig;
-    const worksheet = workbook.addWorksheet(name);
-
-    worksheet.columns = columns;
-
-    if (data && data.length > 0) {
-      for (const row of data) {
-        worksheet.addRow(row);
-      }
-    } else {
-      worksheet.addRow(emptyDataPlaceholder);
-    }
-  }
-
-  let filename = `${filePrefix}.xlsx`;
+  const sharepointClient = await createLLMOSharepointClient(context);
+  const llmoFolder = site.getConfig()?.getLlmoDataFolder();
+  const outputLocation = `${llmoFolder}/agentic-traffic/patterns`;
+  const filename = 'patterns.xlsx';
 
   try {
-    const sharepointClient = await createLLMOSharepointClient(context);
-    const llmoFolder = site.getConfig()?.getLlmoDataFolder();
-    const outputLocation = `${llmoFolder}/${folderName}`;
+    log.info(`Validating patterns file at ${outputLocation}/${filename}`);
+    const buffer = await readFromSharePoint(filename, outputLocation, sharepointClient, log);
 
-    try {
-      await readFromSharePoint(filename, outputLocation, sharepointClient, log);
-      filename = `${filePrefix}-automation.xlsx`;
-      log.info(`File ${filePrefix}.xlsx already exists, using ${filename} instead`);
-    } catch (e) {
-      log.debug(`File ${filename} doesn't exist, proceeding with original filename`, e);
+    // Parse the Excel file to validate structure
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+
+    // Validate 'shared-products' worksheet
+    const productsSheet = workbook.getWorksheet('shared-products');
+    if (!productsSheet) {
+      throw new Error("Missing required worksheet 'shared-products'");
     }
 
-    await saveExcelReport({
-      sharepointClient,
-      workbook,
-      filename,
-      outputLocation,
-      log,
-    });
+    // Validate 'shared-pagetype' worksheet
+    const pagetypeSheet = workbook.getWorksheet('shared-pagetype');
+    if (!pagetypeSheet) {
+      throw new Error("Missing required worksheet 'shared-pagetype'");
+    }
 
-    log.info(`${successMessage}`);
+    // Validate columns in products sheet
+    const productsHeaders = productsSheet.getRow(1).values;
+    if (!productsHeaders.includes('name') || !productsHeaders.includes('regex')) {
+      throw new Error("'shared-products' worksheet must have 'name' and 'regex' columns");
+    }
+
+    // Validate columns in pagetype sheet
+    const pagetypeHeaders = pagetypeSheet.getRow(1).values;
+    if (!pagetypeHeaders.includes('name') || !pagetypeHeaders.includes('regex')) {
+      throw new Error("'shared-pagetype' worksheet must have 'name' and 'regex' columns");
+    }
+
+    log.info('Patterns file validation successful');
   } catch (error) {
-    log.error(`Failed to upload to SharePoint: ${error.message}`);
+    log.error(`Patterns file validation failed: ${error.message}`);
     throw error;
   }
 }
 
-export async function uploadUrlsWorkbook(insights, site, context) {
-  const worksheetData = [];
+/**
+ * Validates that the URLs file exists in SharePoint and has the required structure.
+ * Expected file location: {llmoFolder}/prompts/urls.xlsx
+ * Expected worksheet: 'URLs'
+ * Expected columns: 'category', 'region', 'topic', 'url'
+ *
+ * @param {Object} site - The site object
+ * @param {Object} context - The context object containing log and env
+ * @throws {Error} If the file doesn't exist or has invalid structure
+ */
+export async function validateUrlsFile(site, context) {
+  const { log } = context;
+  const sharepointClient = await createLLMOSharepointClient(context);
+  const llmoFolder = site.getConfig()?.getLlmoDataFolder();
+  const outputLocation = `${llmoFolder}/prompts`;
+  const filename = 'urls.xlsx';
 
-  for (const {
-    category, region, topic, url,
-  } of insights) {
-    worksheetData.push({
-      category,
-      region,
-      topic,
-      url,
-    });
-  }
+  try {
+    log.info(`Validating URLs file at ${outputLocation}/${filename}`);
+    const buffer = await readFromSharePoint(filename, outputLocation, sharepointClient, log);
 
-  const config = {
-    folderName: 'prompts',
-    filePrefix: 'urls',
-    successMessage: 'Successfully uploaded urls Excel file to SharePoint',
-    worksheets: [{
-      name: 'URLs',
-      columns: [
-        { header: 'category', key: 'category', width: 30 },
-        { header: 'region', key: 'region', width: 15 },
-        { header: 'topic', key: 'topic', width: 30 },
-        { header: 'url', key: 'url', width: 50 },
-      ],
-      data: worksheetData,
-      emptyDataPlaceholder: {
-        category: 'No products found',
-        region: 'N/A',
-        topic: 'N/A',
-        url: 'N/A',
-      },
-    }],
-  };
+    // Parse the Excel file to validate structure
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
 
-  await createAndSaveWorkbook(config, site, context);
-}
-
-export async function uploadPatternsWorkbook(products, pagetypes, site, context) {
-  const productData = [];
-  const pagetypeData = [];
-
-  if (products && Object.keys(products).length > 0) {
-    for (const [name, regex] of Object.entries(products)) {
-      productData.push({ name, regex });
+    // Validate 'URLs' worksheet
+    const urlsSheet = workbook.getWorksheet('URLs');
+    if (!urlsSheet) {
+      throw new Error("Missing required worksheet 'URLs'");
     }
-  }
 
-  if (pagetypes && Object.keys(pagetypes).length > 0) {
-    for (const [name, regex] of Object.entries(pagetypes)) {
-      pagetypeData.push({ name, regex });
+    // Validate columns
+    const headers = urlsSheet.getRow(1).values;
+    const requiredColumns = ['category', 'region', 'topic', 'url'];
+    for (const col of requiredColumns) {
+      if (!headers.includes(col)) {
+        throw new Error(`'URLs' worksheet must have '${col}' column`);
+      }
     }
+
+    log.info('URLs file validation successful');
+  } catch (error) {
+    log.error(`URLs file validation failed: ${error.message}`);
+    throw error;
   }
-
-  const config = {
-    folderName: 'agentic-traffic/patterns',
-    filePrefix: 'patterns',
-    successMessage: 'Successfully uploaded patterns Excel file to SharePoint',
-    worksheets: [
-      {
-        name: 'shared-products',
-        columns: [
-          { header: 'name', key: 'name', width: 50 },
-          { header: 'regex', key: 'regex', width: 50 },
-        ],
-        data: productData,
-        emptyDataPlaceholder: {
-          name: 'No products found',
-          regex: 'N/A',
-        },
-      },
-      {
-        name: 'shared-pagetype',
-        columns: [
-          { header: 'name', key: 'name', width: 50 },
-          { header: 'regex', key: 'regex', width: 50 },
-        ],
-        data: pagetypeData,
-        emptyDataPlaceholder: {
-          name: 'No pagetypes found',
-          regex: 'N/A',
-        },
-      },
-    ],
-  };
-
-  await createAndSaveWorkbook(config, site, context);
 }
 
 export function getLastSunday() {
