@@ -273,9 +273,22 @@ export async function createAccessibilityOpportunity(auditData, context) {
 
 export default async function handler(message, context) {
   const { log } = context;
-  const { auditId, siteId, data } = message;
+  const {
+    auditId, siteId, data, options,
+  } = message;
   const { opportunityId, a11y } = data;
   log.info(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
+
+  // if a11y preflight is detected, skip guidance and creation of opportunity
+  if (options && options.a11yPreflight) {
+    log.info(`[Form Opportunity] [Site Id: ${siteId}] A11y preflight detected, skipping guidance`);
+    return ok();
+  }
+
+  /*
+    if a11y preflight is not detected, create or update the opportunity and
+    send message to mystique for guidance and creation of opportunity
+  */
   try {
     const opportunity = await createOrUpdateOpportunity(
       auditId,
