@@ -29,7 +29,7 @@ describe('Guidance Readability Handler Tests', () => {
     this.timeout(5000);
 
     // Mock the handler with dependencies
-    handler = await esmock('../../../src/readability/guidance-readability-handler.js', {
+    handler = await esmock('../../../src/readability/preflight/guidance-handler.js', {
       '@adobe/spacecat-shared-http-utils': {
         ok: sinon.stub().returns({ ok: true }),
         notFound: sinon.stub().returns({ notFound: true }),
