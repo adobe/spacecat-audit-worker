@@ -74,6 +74,7 @@ import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
 import prerender from './prerender/handler.js';
+import productMetatags from './product-metatags/handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -133,6 +134,7 @@ const HANDLERS = {
   hreflang,
   headings,
   prerender,
+  'product-metatags': productMetatags,
   dummy: (message) => ok(message),
 };
 
