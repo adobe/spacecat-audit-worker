@@ -16,6 +16,7 @@ import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
+import { llmoConfig } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
@@ -79,6 +80,8 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     return;
   }
 
+  const config = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
+
   const url = await asPresignedJsonUrl(prompts, bucket, { ...context, getPresignedUrl });
   log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
   await Promise.all(OPPTY_TYPES.map(async (opptyType) => {
@@ -92,6 +95,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       week: calendarWeek.week,
       year: calendarWeek.year,
       data: {
+        config_version: config.version,
         url,
       },
     };

@@ -18,6 +18,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { parquetWriteBuffer } from 'hyparquet-writer';
 import { keywordPromptsImportStep, sendToMystique } from '../../src/geo-brand-presence/handler.js';
+import { llmoConfig } from '@adobe/spacecat-shared-utils';
 
 use(sinonChai);
 
@@ -56,6 +57,7 @@ describe('Geo Brand Presence Handler', () => {
     s3Client = {
       send: sinon.stub().throws(new Error('no stubbed response')),
     };
+    s3Client.send.withArgs(matchS3Cmd('PutObjectCommand')).resolves({});
     getPresignedUrl = sandbox.stub();
     context = {
       log,
@@ -160,7 +162,8 @@ describe('Geo Brand Presence Handler', () => {
 
   it('should send message to Mystique for all opportunity types when keywordQuestions are found', async () => {
     // Mock S3 client method used by getStoredMetrics (AWS SDK v3 style)
-    fakeS3Response(fakeData());
+    fakeS3ParquetResponse(fakeData());
+    fakeS3ConfigResponse('v12345');
 
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
@@ -183,6 +186,7 @@ describe('Geo Brand Presence Handler', () => {
       deliveryType: site.getDeliveryType(),
     });
     expect(brandPresenceMessage.data).deep.equal({
+      config_version: 'v12345',
       web_search_provider: 'chatgpt',
       url: 'https://example.com/presigned-url',
     });
@@ -203,7 +207,7 @@ describe('Geo Brand Presence Handler', () => {
   });
 
   it('should skip sending message to Mystique when no keywordQuestions', async () => {
-    fakeS3Response([]);
+    fakeS3ParquetResponse([]);
     await sendToMystique({
       ...context,
       auditContext: {
@@ -214,7 +218,7 @@ describe('Geo Brand Presence Handler', () => {
     expect(sqs.sendMessage).to.not.have.been.called;
   });
 
-  function fakeS3Response(response) {
+  function fakeS3ParquetResponse(response) {
     const columnData = {
       prompt: { data: [], name: 'prompt', type: 'STRING' },
       region: { data: [], name: 'region', type: 'STRING' },
@@ -236,12 +240,27 @@ describe('Geo Brand Presence Handler', () => {
 
     const buffer = parquetWriteBuffer({ columnData: Object.values(columnData) });
 
-    s3Client.send.resolves({
+    s3Client.send.withArgs(
+      matchS3Cmd('GetObjectCommand', { Key: sinon.match(/\/data\.parquet$/) })
+    ).resolves({
       Body: {
         async transformToByteArray() {
           return new Uint8Array(buffer);
         },
       },
+    });
+  }
+
+  function fakeS3ConfigResponse(version) {
+    s3Client.send.withArgs(
+      matchS3Cmd('GetObjectCommand', { Key: llmoConfig.llmoConfigPath(site.getId()) })
+    ).resolves({
+      Body: {
+        async transformToString() {
+          return JSON.stringify(llmoConfig.defaultConfig());
+        },
+      },
+      VersionId: version,
     });
   }
 
@@ -312,3 +331,15 @@ describe('Geo Brand Presence Handler', () => {
     return mapFn ? data.map(mapFn) : data;
   }
 });
+
+/**
+ * @param {string} name - The name of the S3 command to match.
+ * @param {Record<string, unknown>} [input] - The partial input of the S3 command to match.
+ */
+function matchS3Cmd(name, input) {
+  const match = { constructor: sinon.match({ name }) };
+  if (input) {
+    match.input = sinon.match(input);
+  }
+  return sinon.match(match);
+}
