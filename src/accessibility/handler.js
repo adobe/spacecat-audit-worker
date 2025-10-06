@@ -30,6 +30,7 @@ import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERI
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
+const AUDIT_CONCURRENCY = 10; // number of urls to scrape at a time
 
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
@@ -115,6 +116,7 @@ export async function scrapeAccessibilityData(context) {
     siteId,
     jobId: siteId,
     processingType: AUDIT_TYPE_ACCESSIBILITY,
+    concurrency: AUDIT_CONCURRENCY,
   };
 }
 
@@ -227,19 +229,49 @@ export async function processAccessibilityOpportunities(context) {
     };
   }
 
-  // Extract key metrics for the audit result summary
+  // Extract key metrics for the audit result summary with mobile support
   const totalIssues = aggregationResult.finalResultFiles.current.overall.violations.total;
   // Subtract 1 for the 'overall' key to get actual URL count
   const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length - 1;
 
-  log.info(`[A11yAudit] Found ${totalIssues} issues across ${urlsProcessed} unique URLs for site ${siteId} (${site.getBaseURL()})`);
+  // Calculate device-specific metrics from the aggregated data
+  let desktopOnlyIssues = 0;
+  let mobileOnlyIssues = 0;
+  let commonIssues = 0;
 
-  // Return the final audit result with metrics and status
+  Object.entries(aggregationResult.finalResultFiles.current).forEach(([key, urlData]) => {
+    if (key === 'overall' || !urlData.violations) return;
+
+    ['critical', 'serious'].forEach((severity) => {
+      if (urlData.violations[severity]?.items) {
+        Object.values(urlData.violations[severity].items).forEach((rule) => {
+          if (rule.htmlData) {
+            rule.htmlData.forEach((htmlItem) => {
+              if (htmlItem.deviceTypes?.includes('desktop') && htmlItem.deviceTypes?.includes('mobile')) {
+                commonIssues += 1;
+              } else if (htmlItem.deviceTypes?.includes('desktop')) {
+                desktopOnlyIssues += 1;
+              } else if (htmlItem.deviceTypes?.includes('mobile')) {
+                mobileOnlyIssues += 1;
+              }
+            });
+          }
+        });
+      }
+    });
+  });
+
+  log.info(`[A11yAudit] Found ${totalIssues} total issues (${desktopOnlyIssues} desktop-only, ${mobileOnlyIssues} mobile-only, ${commonIssues} common) across ${urlsProcessed} unique URLs for site ${siteId} (${site.getBaseURL()})`);
+
+  // Return the final audit result with enhanced metrics and status
   return {
     status: totalIssues > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
     opportunitiesFound: totalIssues,
     urlsProcessed,
-    summary: `Found ${totalIssues} accessibility issues across ${urlsProcessed} URLs`,
+    desktopOnlyIssues,
+    mobileOnlyIssues,
+    commonIssues,
+    summary: `Found ${totalIssues} accessibility issues (${desktopOnlyIssues} desktop-only, ${mobileOnlyIssues} mobile-only, ${commonIssues} common) across ${urlsProcessed} URLs`,
     fullReportUrl: outputKey, // Reference to the full report in S3
   };
 }

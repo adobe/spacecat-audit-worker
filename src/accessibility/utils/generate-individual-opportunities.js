@@ -190,11 +190,16 @@ export function formatIssue(type, issueData, severity) {
     // Use existing htmlWithIssues and ensure each has issue_id
     htmlWithIssues = issueData.htmlWithIssues.map((item) => {
       let updateFrom = '';
+      let deviceTypes = ['desktop']; // Default to desktop
 
       if (isString(item)) {
         updateFrom = item;
       } else if (item && item.update_from) {
         updateFrom = item.update_from;
+        // Include device types if available
+        if (item.deviceTypes && Array.isArray(item.deviceTypes)) {
+          deviceTypes = item.deviceTypes;
+        }
       } else {
         // Final fallback to empty string
         updateFrom = '';
@@ -203,6 +208,7 @@ export function formatIssue(type, issueData, severity) {
       return {
         update_from: updateFrom,
         target_selector: targetSelector,
+        deviceTypes, // Include device types for mobile support
       };
     });
   } else {
@@ -210,6 +216,7 @@ export function formatIssue(type, issueData, severity) {
     htmlWithIssues = [{
       update_from: '',
       target_selector: targetSelector,
+      deviceTypes: ['desktop'], // Default to desktop
     }];
   }
 
@@ -256,11 +263,37 @@ export function aggregateAccessibilityIssues(accessibilityData) {
     groupedData[opportunityType] = [];
   }
 
-  // NEW: Process individual HTML elements directly
+  // NEW: Process individual HTML elements directly with mobile support
   const processIssuesForSeverity = (items, severity, url, data) => {
     for (const [issueType, issueData] of Object.entries(items)) {
       const opportunityType = issueTypeToOpportunityMap[issueType];
-      if (opportunityType && issueData.htmlWithIssues) {
+      if (opportunityType && issueData.htmlData) {
+        issueData.htmlData.forEach((htmlElement) => {
+          const singleElementIssueData = {
+            ...issueData,
+            htmlWithIssues: [{
+              update_from: htmlElement.html || '',
+              target_selector: htmlElement.target || '',
+              deviceTypes: htmlElement.deviceTypes || ['desktop'], // Include device types
+            }],
+            target: htmlElement.target,
+            failureSummary: htmlElement.failureSummary || issueData.failureSummary,
+          };
+
+          const issue = formatIssue(issueType, singleElementIssueData, severity);
+          // Add device types to the issue for metrics calculation
+          issue.deviceTypes = htmlElement.deviceTypes || ['desktop'];
+
+          const urlObject = {
+            type: 'url',
+            url,
+            issues: [issue],
+          };
+
+          data[opportunityType].push(urlObject);
+        });
+      } else if (opportunityType && issueData.htmlWithIssues) {
+        // Legacy support for old format
         issueData.htmlWithIssues.forEach((htmlElement, index) => {
           const singleElementIssueData = {
             ...issueData,
@@ -534,7 +567,7 @@ export async function findOrCreateAccessibilityOpportunity(
 }
 
 /**
- * Calculates metrics from aggregated accessibility data
+ * Calculates metrics from aggregated accessibility data with mobile support
  *
  * @param {Object} aggregatedData - Aggregated accessibility data
  * @returns {Object} Calculated metrics
@@ -547,10 +580,35 @@ export function calculateAccessibilityMetrics(aggregatedData) {
   const totalSuggestions = aggregatedData.data.length;
   const pagesWithIssues = aggregatedData.data.length;
 
+  // Calculate device-specific metrics
+  let desktopOnlyIssues = 0;
+  let mobileOnlyIssues = 0;
+  let commonIssues = 0;
+
+  aggregatedData.data.forEach((page) => {
+    page.issues.forEach((issue) => {
+      if (issue.deviceTypes) {
+        if (issue.deviceTypes.includes('desktop') && issue.deviceTypes.includes('mobile')) {
+          commonIssues += issue.occurrences;
+        } else if (issue.deviceTypes.includes('desktop')) {
+          desktopOnlyIssues += issue.occurrences;
+        } else if (issue.deviceTypes.includes('mobile')) {
+          mobileOnlyIssues += issue.occurrences;
+        }
+      } else {
+        // Legacy support - assume desktop only
+        desktopOnlyIssues += issue.occurrences;
+      }
+    });
+  });
+
   return {
     totalIssues,
     totalSuggestions,
     pagesWithIssues,
+    desktopOnlyIssues,
+    mobileOnlyIssues,
+    commonIssues,
   };
 }
 
