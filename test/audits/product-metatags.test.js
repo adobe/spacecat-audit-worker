@@ -3554,10 +3554,10 @@ describe('Product MetaTags', () => {
 
       await productMetatagsAutoSuggest.default(allTags, ctx, site);
 
-      // Verify that generateSuggestions was called with the default endpoint
+      // Verify that generateSuggestions was called with the fallback endpoint
       expect(mockGenvarClient.generateSuggestions).to.have.been.calledWith(
         sinon.match.string,
-        '/api/v1/web/aem-genai-variations-appbuilder/product-metatags',
+        '/api/v1/web/aem-genai-variations-appbuilder/metatags',
       );
     });
 
@@ -3739,7 +3739,7 @@ describe('Product MetaTags', () => {
       // Verify that generateSuggestions was called with the default endpoint (fallback)
       expect(mockGenvarClient.generateSuggestions).to.have.been.calledWith(
         sinon.match.string,
-        '/api/v1/web/aem-genai-variations-appbuilder/product-metatags',
+        '/api/v1/web/aem-genai-variations-appbuilder/metatags',
       );
     });
   });
