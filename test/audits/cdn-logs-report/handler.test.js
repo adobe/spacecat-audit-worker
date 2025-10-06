@@ -240,6 +240,10 @@ describe('CDN Logs Report Handler', function test() {
 
   describe('Cdn logs report audit handler', () => {
     it('successfully processes CDN logs report', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-07'),
+        toFake: ['Date']
+      });
       const auditContext = createAuditContext(sandbox);
       const result = await handler.runner('https://example.com', context, site, auditContext);
 
@@ -256,6 +260,7 @@ describe('CDN Logs Report Handler', function test() {
         expect(reportResult).to.have.property('customer').that.is.a('string');
       });
 
+      clock.restore();
       // Verify logging calls
       expect(context.log.info).to.have.been.calledWith('Starting CDN logs report audit for https://example.com');
 
@@ -319,6 +324,48 @@ describe('CDN Logs Report Handler', function test() {
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(`week offset: ${weekOffset}`),
       );
+    });
+
+    it('runs both week 0 and -1 on Monday when no weekOffset provided', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-06'),
+        toFake: ['Date']
+      });
+
+      context.athenaClient.query.resetHistory();
+      const auditContext = createAuditContext(sandbox);
+      await handler.runner('https://example.com', context, site, auditContext);
+      
+      clock.restore();
+      expect(context.athenaClient.query).to.have.been.callCount(4);
+    });
+
+    it('runs only week 0 on non-Monday when no weekOffset provided', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-07'),
+        toFake: ['Date']
+      });
+
+      context.athenaClient.query.resetHistory();
+      const auditContext = createAuditContext(sandbox);
+      await handler.runner('https://example.com', context, site, auditContext);
+
+      clock.restore();
+      expect(context.athenaClient.query).to.have.been.callCount(2);
+    });
+
+    it('uses provided weekOffset regardless of day', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-06'),
+        toFake: ['Date']
+      });
+
+      context.athenaClient.query.resetHistory();
+      const auditContext = createAuditContext(sandbox, { weekOffset: -3 });
+      await handler.runner('https://example.com', context, site, auditContext);
+
+      clock.restore();
+      expect(context.athenaClient.query).to.have.been.callCount(2);
     });
 
     it('handles table creation errors', async () => {
