@@ -226,6 +226,7 @@ class StructuredDataFixChecker {
             totalJsonLdBlocks: 0,
             validJsonLdBlocks: 0,
             schemaTypes: '',
+            currentJsonLdContent: 'ERROR: Cannot fetch without URL',
             completenessScore: 0,
             aiSuggestionFix: 'ERROR: Cannot process without URL',
             bestSimilarity: 0,
@@ -291,6 +292,7 @@ class StructuredDataFixChecker {
           totalJsonLdBlocks: Array.isArray(currentStructuredData) ? currentStructuredData.length : (currentStructuredData ? 1 : 0),  // Added
           validJsonLdBlocks: Array.isArray(currentStructuredData) ? currentStructuredData.filter(item => item && typeof item === 'object').length : (currentStructuredData && typeof currentStructuredData === 'object' ? 1 : 0),  // Added
           schemaTypes: Array.isArray(currentStructuredData) ? currentStructuredData.map(item => item['@type']).filter(Boolean).join(', ') : (currentStructuredData && currentStructuredData['@type'] ? currentStructuredData['@type'] : ''),  // Added
+          currentJsonLdContent: currentStructuredData ? JSON.stringify(currentStructuredData).substring(0, 1000) : 'No structured data found',  // ENHANCED: Show actual content
           completenessScore: confidenceScore,  // Fixed: was confidenceScore
           aiSuggestionFix: suggestedFix.substring(0, 500),  // Fixed: was suggestedFix
           bestSimilarity: comparison.similarity || 0,  // Added

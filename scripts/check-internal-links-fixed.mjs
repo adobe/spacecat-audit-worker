@@ -27,6 +27,7 @@
  */
 
 import { writeFileSync } from 'fs';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 // Using simple console logger instead of shared-utils dependency
 import { createDataAccess } from '@adobe/spacecat-shared-data-access';
 import { SITES } from './constants.js';
@@ -98,6 +99,9 @@ class InternalLinksFixChecker {
       if (!this.site) {
         throw new Error(`Site not found: ${this.options.siteId}`);
       }
+      // Setup S3 client for source-page scraping detection
+      this.s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
+      this.s3Bucket = process.env.S3_SCRAPER_BUCKET_NAME;
       
       this.log.info(`✓ Site found: ${this.site.getBaseURL()}`);
       
@@ -247,6 +251,23 @@ class InternalLinksFixChecker {
         isFixed = false;
         fixType = 'STILL_BROKEN';
       }
+
+      // Enhancement: detect link removal from source page (urlFrom) via S3 scrape
+      let linkRemovedFromSource = false;
+      let detectionMethod = '';
+      if (!isFixed) {
+        try {
+          const removed = await this.wasLinkRemovedFromSource(urlFrom, urlTo);
+          if (removed === true) {
+            isFixed = true;
+            linkRemovedFromSource = true;
+            fixType = 'LINK_REMOVED_FROM_SOURCE';
+            detectionMethod = 'SOURCE_PAGE_SCRAPING';
+          }
+        } catch (err) {
+          this.log.debug(`Source page scraping check failed for ${urlFrom}: ${err.message}`);
+        }
+      }
       
       // Get opportunity data from our pre-built map (no additional API call!)
       const opportunityId = suggestion.getOpportunityId ? suggestion.getOpportunityId() : 'unknown';
@@ -277,8 +298,12 @@ class InternalLinksFixChecker {
         // Fix Detection Results (4 columns)
         linkFixed: isFixed,
         aiSuggestionImplemented: aiSuggestionImplemented,
+        linkRemovedFromSource: linkRemovedFromSource,
         fixType: fixType,
+        fixMethod: '',
         currentStatusCode: currentStatusDisplay,
+        redirectLocation: currentStatus.redirectLocation || '',
+        detectionMethod: detectionMethod,
         
         // Timestamps and Metadata (6 columns)
         opportunityCreated: opportunityData.createdAt || '',
@@ -360,6 +385,62 @@ class InternalLinksFixChecker {
       this.log.debug(`Error checking redirect for ${originalUrl}: ${error.message}`);
       return false;
     }
+  }
+
+  // --- Helpers for urlFrom scraping detection ---
+  getScrapeJsonPath(url, siteId) {
+    try {
+      const pathname = new URL(url).pathname.replace(/\/$/, '');
+      return `scrapes/${siteId}${pathname}/scrape.json`;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async getObjectJson(bucket, key) {
+    if (!key) return null;
+    const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+    const res = await this.s3Client.send(cmd);
+    const body = await res.Body.transformToString();
+    try {
+      return JSON.parse(body);
+    } catch (e) {
+      throw new Error(`Invalid JSON at s3://${bucket}/${key}`);
+    }
+  }
+
+  escapeForRegex(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, r => `\\${r}`);
+  }
+
+  normalizeHrefCandidates(urlFrom, urlTo) {
+    try {
+      const to = new URL(urlTo, urlFrom);
+      const abs = to.href;
+      const path = to.pathname + (to.search || '') + (to.hash || '');
+      const noHash = to.pathname + (to.search || '');
+      return Array.from(new Set([abs, path, noHash]));
+    } catch {
+      return [urlTo];
+    }
+  }
+
+  async wasLinkRemovedFromSource(urlFrom, urlTo) {
+    const key = this.getScrapeJsonPath(urlFrom, this.options.siteId);
+    if (!key) return null;
+    const obj = await this.getObjectJson(this.s3Bucket, key);
+    const html = obj?.scrapeResult?.rawBody;
+    if (!html || typeof html !== 'string' || html.length < 50) return null;
+    const lower = html.toLowerCase();
+    const candidates = this.normalizeHrefCandidates(urlFrom, urlTo).map(s => s.toLowerCase());
+    // Look for exact href matches (single or double quotes)
+    for (const c of candidates) {
+      const pattern = new RegExp(`href\\s*=\\s*(["'])${this.escapeForRegex(c)}\\1`, 'i');
+      if (pattern.test(lower)) {
+        return false; // Link still present
+      }
+    }
+    return true; // No candidate hrefs found → treated as removed
   }
 
   /**

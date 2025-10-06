@@ -30,8 +30,8 @@ import { writeFileSync } from 'fs';
 import { createDataAccess } from '@adobe/spacecat-shared-data-access';
 
 // Import metatags utilities
-import { metatagsAutoDetect } from '../src/metatags/handler.js';
-import { getTopPagesForSiteId } from '../src/canonical/handler.js';
+import { fetchAndProcessPageObject } from '../src/metatags/handler.js';
+import SeoChecks from '../src/metatags/seo-checks.js';
 import { S3Client } from '@aws-sdk/client-s3';
 
 // Helper function to transform URL to scrape.json path
@@ -124,23 +124,12 @@ class MetaTagsFixChecker {
       const existingSuggestions = await this.getExistingSuggestions();
       this.log.info(`Found ${existingSuggestions.length} existing suggestions`);
 
-      // Step 2: Run current audit
-      this.log.info('Step 2: Running current meta-tags audit...');
-      const auditResults = await this.getCurrentAuditResults();
-      
-      if (!auditResults || !auditResults.detectedTags || !auditResults.extractedTags) {
-        throw new Error('Failed to get audit results - no data returned');
-      }
-      
-      this.log.info(`Found ${Object.keys(auditResults.detectedTags).length} pages with current issues`);
-      this.log.info(`Found ${Object.keys(auditResults.extractedTags).length} pages with current content`);
+      // Step 2: Check each suggestion against S3 single-page content
+      this.log.info('Step 2: Checking suggestions using S3 single-page scrape + SEO checks...');
+      await this.compareAndIdentifyFixes(existingSuggestions);
 
-      // Step 3: Compare and identify fixes
-      this.log.info('Step 3: Comparing existing vs current...');
-      await this.compareAndIdentifyFixes(existingSuggestions, auditResults);
-
-      // Step 4: Generate CSV
-      this.log.info('Step 4: Generating CSV report...');
+      // Step 3: Generate CSV
+      this.log.info('Step 3: Generating CSV report...');
       this.generateCSV();
 
       // Step 5: Mark as fixed if requested (TODO)
@@ -185,7 +174,20 @@ class MetaTagsFixChecker {
       for (const opportunity of metaTagsOpportunities) {
         const opptyId = opportunity.getId();
         const outdatedSuggestions = await Suggestion.allByOpportunityIdAndStatus(opptyId, 'outdated');
-        suggestions.push(...outdatedSuggestions);
+        const oppStatus = opportunity.getStatus ? opportunity.getStatus() : (opportunity.status || '');
+        const oppCreated = opportunity.getCreatedAt ? opportunity.getCreatedAt() : (opportunity.createdAt || '');
+        const oppUpdated = opportunity.getUpdatedAt ? opportunity.getUpdatedAt() : (opportunity.updatedAt || '');
+        outdatedSuggestions.forEach((s) => {
+          suggestions.push({
+            suggestion: s,
+            opportunity: {
+              id: opptyId,
+              status: oppStatus,
+              createdAt: oppCreated,
+              updatedAt: oppUpdated,
+            },
+          });
+        });
       }
       
       this.log.debug(`Found ${suggestions.length} outdated suggestions`);
@@ -197,51 +199,13 @@ class MetaTagsFixChecker {
     }
   }
 
-  /**
-   * Run current meta-tags audit to get current issues
-   */
-  async getCurrentAuditResults() {
-    this.log.debug('Running current meta-tags audit...');
-    
-    try {
-      // Get top pages for the site
-      const topPages = await getTopPagesForSiteId(this.dataAccess, this.options.siteId, this.context, this.log);
-      const includedURLs = await this.site?.getConfig()?.getIncludedURLs('meta-tags') || [];
-
-      // Transform URLs into scrape.json paths and combine them into a Set
-      const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.url, this.options.siteId));
-      const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, this.options.siteId));
-      const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
-
-      this.log.debug(`Processing ${totalPagesSet.size} pages for current audit`);
-      this.log.debug(`S3 Bucket: ${this.context.env.S3_SCRAPER_BUCKET_NAME}`);
-      this.log.debug(`Site ID: ${this.options.siteId}`);
-      this.log.debug(`Sample pages: ${Array.from(totalPagesSet).slice(0, 3).join(', ')}`);
-
-      // Run the actual metatags audit
-      this.log.debug('Calling metatagsAutoDetect...');
-      const auditResults = await metatagsAutoDetect(this.site, totalPagesSet, this.context);
-      this.log.debug('metatagsAutoDetect completed');
-      
-      this.log.debug(`Current audit found issues on ${Object.keys(auditResults.detectedTags).length} pages`);
-      this.log.debug(`Current audit extracted content from ${Object.keys(auditResults.extractedTags).length} pages`);
-      return auditResults;
-
-    } catch (error) {
-      this.log.error('Failed to run current audit:', error.message);
-      return {
-        detectedTags: {},
-        extractedTags: {},
-        seoChecks: null
-      };
-    }
-  }
+  // removed full-audit path; checker now uses single-page S3 content only
 
   /**
-   * Compare existing suggestions with current audit results
+   * Compare existing suggestions using single-page S3 + SEO checks
    */
-  async compareAndIdentifyFixes(existingSuggestions, auditResults) {
-    this.log.info('Comparing existing suggestions with current audit results...');
+  async compareAndIdentifyFixes(existingSuggestions) {
+    this.log.info('Comparing existing suggestions via single-page S3 + SEO checks...');
 
     // Apply limit if specified
     const suggestionsToCheck = this.options.limit 
@@ -250,12 +214,47 @@ class MetaTagsFixChecker {
       
     this.log.info(`Processing ${suggestionsToCheck.length} suggestions${this.options.limit ? ` (limited from ${existingSuggestions.length})` : ''}`);
 
-    for (const suggestion of suggestionsToCheck) {
+    for (const entry of suggestionsToCheck) {
+      const suggestion = entry?.suggestion || entry;
+      const opportunityMeta = entry?.opportunity || {};
       const suggestionData = suggestion.getData ? suggestion.getData() : suggestion.data;
       const { url, issue, tagName, tagContent, aiSuggestion } = suggestionData;
+      const issueDetails = suggestionData.issueDetails || suggestionData.issue_detail || '';
       
-      // Check if AI suggestion was implemented by getting current content
-      const currentTagContent = this.getCurrentTagContentFromExtractedTags(url, tagName, auditResults.extractedTags);
+      // Try to run SEO checks for this specific URL using S3 single-page object
+      const normalizedUrl = url.replace(/^https?:\/\/[^\/]+/, '').replace(/\/$/, '') || '/';
+      let pageWasAudited = false;
+      let currentTagContent;
+      let singlePageDetectedIssueExists = null; // null = unknown, boolean if we could run checks
+
+      try {
+        const bucketName = this.context.env.S3_SCRAPER_BUCKET_NAME;
+        const prefix = `scrapes/${this.options.siteId}/`;
+        const singleKey = getScrapeJsonPath(url, this.options.siteId);
+        const pageObj = await fetchAndProcessPageObject(this.s3Client, bucketName, singleKey, prefix, this.log);
+        if (pageObj && pageObj[normalizedUrl]) {
+          pageWasAudited = true;
+          // Run SEO checks like the audit for this single page
+          const seoChecks = new SeoChecks(this.log);
+          seoChecks.performChecks(normalizedUrl, pageObj[normalizedUrl]);
+          seoChecks.finalChecks();
+          const singleDetected = seoChecks.getDetectedTags();
+          singlePageDetectedIssueExists = singleDetected[normalizedUrl]?.[tagName] !== undefined;
+          // Current tag content from single page extraction
+          const pageTags = pageObj[normalizedUrl];
+          currentTagContent = Array.isArray(pageTags[tagName]) ? (pageTags[tagName][0] || null) : pageTags[tagName];
+        }
+      } catch (e) {
+        this.log.debug(`Single-page SEO check failed for ${url}: ${e.message}`);
+      }
+
+      // If S3 page not found, set legacy "not in S3" behavior
+      if (!pageWasAudited) {
+        currentTagContent = {
+          error: 'PAGE_NOT_IN_BUCKET',
+          message: `Page not found in S3 bucket: ${normalizedUrl}`,
+        };
+      }
       
       // Handle error cases
       let currentContentDisplay;
@@ -272,23 +271,52 @@ class MetaTagsFixChecker {
       // Add small delay to avoid overwhelming servers
       await this.delay(100);
       
-      // Simple logic: If AI suggestion matches current content = FIXED
-      const isFixed = aiSuggestionImplemented;
+      // Complete fix logic covering all cases
+      let isFixed;
+      let fixType;
+
+      if (currentTagContent && typeof currentTagContent === 'object' && currentTagContent.error) {
+        // Keep legacy behavior: treat as NOT_IMPLEMENTED when page/tag unavailable
+        isFixed = false;
+        fixType = 'NOT_IMPLEMENTED';
+      } else if (aiSuggestionImplemented) {
+        isFixed = true;
+        fixType = 'AI_SUGGESTION_IMPLEMENTED';
+      } else if (singlePageDetectedIssueExists === false) {
+        isFixed = true;
+        fixType = 'FIXED_BY_OTHER_MEANS';
+      } else {
+        isFixed = false;
+        fixType = 'NOT_IMPLEMENTED';
+      }
       
-      const fixType = isFixed ? 'AI_SUGGESTION_IMPLEMENTED' : 'NOT_IMPLEMENTED';
-      
+      const toIso = (v) => (v && typeof v.toISOString === 'function' ? v.toISOString() : (v || ''));
       const result = {
+        siteId: this.options.siteId,
+        siteName: this.site?.getBaseURL ? this.site.getBaseURL() : '',
+        opportunityId: opportunityMeta.id || '',
+        opportunityStatus: opportunityMeta.status || '',
         suggestionId: suggestion.getId ? suggestion.getId() : suggestion.id,
-        currentStatus: suggestion.getStatus ? suggestion.getStatus() : suggestion.status,
-        url: url,
+        suggestionType: suggestion.getType ? (suggestion.getType() || 'METADATA_UPDATE') : (suggestion.type || 'METADATA_UPDATE'),
+        suggestionStatus: suggestion.getStatus ? suggestion.getStatus() : suggestion.status,
+        suggestionRank: suggestion.getRank ? suggestion.getRank() : (suggestion.rank || ''),
         tagName: tagName,
         issue: issue,
+        issueDetails: issueDetails,
+        url: url,
         originalContent: tagContent || '(empty)',
         aiSuggestion: aiSuggestion || '(none)',
-        currentContent: currentContentDisplay, 
+        currentContent: currentContentDisplay,
         aiSuggestionImplemented: aiSuggestionImplemented,
-        isFixed: isFixed,
+        isFixedOverall: isFixed,
         fixType: fixType,
+        contentScraped: pageWasAudited ? 'YES' : 'NO',
+        testDate: new Date().toISOString(),
+        opportunityCreated: toIso(opportunityMeta.createdAt),
+        opportunityUpdated: toIso(opportunityMeta.updatedAt),
+        suggestionCreated: toIso(suggestion.getCreatedAt ? suggestion.getCreatedAt() : suggestion.createdAt),
+        suggestionUpdated: toIso(suggestion.getUpdatedAt ? suggestion.getUpdatedAt() : suggestion.updatedAt),
+        updatedBy: suggestion.getUpdatedBy ? (suggestion.getUpdatedBy() || 'MISSING_UPDATED_BY') : (suggestion.updatedBy || 'MISSING_UPDATED_BY'),
         recommendedAction: isFixed ? 'MARK AS FIXED' : 'KEEP CURRENT STATUS'
       };
 
@@ -305,40 +333,7 @@ class MetaTagsFixChecker {
       }
     }
   }
-
-
-  /**
-   * Get current tag content directly from extractedTags (SIMPLE!)
-   */
-  getCurrentTagContentFromExtractedTags(url, tagName, extractedTags) {
-    // Normalize URL to match extractedTags format (pathname only)
-    const normalizedUrl = url.replace(/^https?:\/\/[^\/]+/, '').replace(/\/$/, '') || '/';
-    
-    const pageData = extractedTags[normalizedUrl];
-    if (!pageData) {
-      this.log.debug(`No extracted data found for ${normalizedUrl}`);
-      return { error: 'PAGE_NOT_IN_BUCKET', message: `Page not found in S3 bucket: ${normalizedUrl}` };
-    }
-    
-    const tagContent = pageData[tagName];
-    if (!tagContent) {
-      this.log.debug(`No ${tagName} found for ${normalizedUrl}`);
-      return { error: 'TAG_NOT_FOUND', message: `${tagName} tag not found on page` };
-    }
-    
-    // Handle h1 array format
-    if (tagName === 'h1' && Array.isArray(tagContent)) {
-      const h1Content = tagContent[0] || null;
-      if (!h1Content) {
-        return { error: 'TAG_EMPTY', message: `${tagName} tag exists but is empty` };
-      }
-      this.log.debug(`Found ${tagName} for ${normalizedUrl}: "${h1Content}"`);
-      return h1Content;
-    }
-    
-    this.log.debug(`Found ${tagName} for ${normalizedUrl}: "${tagContent}"`);
-    return tagContent;
-  }
+  // removed extractedTags fallback path
 
   /**
    * Add delay to avoid overwhelming servers
@@ -348,25 +343,36 @@ class MetaTagsFixChecker {
   }
 
   /**
-   * Check if AI suggestion was implemented (exact or similar match)
+   * Check if AI suggestion was implemented (exact or optional fuzzy match)
    */
   checkIfAISuggestionImplemented(currentContent, aiSuggestion) {
     if (!currentContent || !aiSuggestion) {
       return false;
     }
 
-    // Normalize strings for comparison (remove extra spaces, case insensitive)
-    const normalizedCurrent = currentContent.trim().toLowerCase();
-    const normalizedAI = aiSuggestion.trim().toLowerCase();
-    
+    const ignoreCase = !!this.options.ignoreCase;
+    const threshold = typeof this.options.similarity === 'number' ? this.options.similarity : 1;
+
+    const normalize = (s) => {
+      const t = String(s).trim();
+      return ignoreCase ? t.toLowerCase() : t;
+    };
+
+    const currentNorm = normalize(currentContent);
+    const aiNorm = normalize(aiSuggestion);
+
     // Exact match
-    if (normalizedCurrent === normalizedAI) {
+    if (currentNorm === aiNorm) {
       return true;
     }
-    
-    // High similarity match (90% similar)
-    const similarity = this.calculateStringSimilarity(normalizedCurrent, normalizedAI);
-    return similarity >= 0.9;
+
+    // Fuzzy match only if user opts-in by lowering threshold
+    if (threshold < 1) {
+      const similarity = this.calculateStringSimilarity(currentNorm, aiNorm);
+      return similarity >= threshold;
+    }
+
+    return false;
   }
 
   /**
@@ -407,32 +413,60 @@ class MetaTagsFixChecker {
    */
   generateCSV() {
     const csvHeaders = [
+      'Site ID',
+      'Site Name',
+      'Opportunity ID',
+      'Opportunity Status',
       'Suggestion ID',
-      'Current Status', 
-      'URL',
+      'Suggestion Type',
+      'Suggestion Status',
+      'Suggestion Rank',
       'Tag Name',
       'Issue',
+      'Issue Details',
+      'URL',
       'Original Content',
       'AI Suggestion',
       'Current Content',
       'AI Suggestion Implemented',
-      'Is Fixed',
+      'Is Fixed Overall',
       'Fix Type',
+      'Content Scraped',
+      'Test Date',
+      'Opportunity Created',
+      'Opportunity Updated',
+      'Suggestion Created',
+      'Suggestion Updated',
+      'Updated By',
       'Recommended Action'
     ];
 
     const csvRows = this.results.map(result => [
+      result.siteId,
+      result.siteName,
+      result.opportunityId,
+      result.opportunityStatus,
       result.suggestionId,
-      result.currentStatus,
-      result.url,
+      result.suggestionType,
+      result.suggestionStatus,
+      result.suggestionRank,
       result.tagName,
       result.issue,
+      result.issueDetails,
+      result.url,
       `"${result.originalContent}"`,
       `"${result.aiSuggestion}"`,
       `"${result.currentContent}"`,
       result.aiSuggestionImplemented ? 'YES' : 'NO',
-      result.isFixed ? 'YES' : 'NO',
+      result.isFixedOverall ? 'YES' : 'NO',
       result.fixType,
+      result.contentScraped,
+      result.testDate,
+      result.opportunityCreated,
+      result.opportunityUpdated,
+      result.suggestionCreated,
+      result.suggestionUpdated,
+      result.updatedBy,
       `"${result.recommendedAction}"`
     ]);
 
@@ -511,15 +545,22 @@ class MetaTagsFixChecker {
 // CLI setup
 program
   .name('check-metatags-fixed')
-  .description('Check which meta-tags suggestions have been fixed by comparing with current audit')
+  .description('Check which meta-tags suggestions have been fixed by comparing S3 single-page content')
   .option('--siteId <id>', 'Site ID to check (defaults to test site)')
   .option('--markFixed', 'Mark fixed suggestions in database', false)
   .option('--dryRun', 'Show what would be marked without making changes', false)
   .option('--verbose', 'Detailed logging', false)
   .option('--limit <number>', 'Limit number of suggestions to check (for testing)', parseInt)
+  .option('--ignoreCase', 'Case-insensitive string match for AI suggestion', false)
+  .option('--similarity <number>', '0-1 threshold for fuzzy match; 1 means exact only', parseFloat)
   .parse();
 
 const options = program.opts();
+
+// Default similarity to exact match unless overridden
+if (options.similarity === undefined || Number.isNaN(options.similarity)) {
+  options.similarity = 1;
+}
 
 // Default site ID for testing
 if (!options.siteId) {
