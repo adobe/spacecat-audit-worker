@@ -77,9 +77,11 @@ export default async function productMetatagsAutoSuggest(allTags, context, site,
   let responseWithSuggestions;
   try {
     const genvarClient = GenvarClient.createFrom(context);
+    // Use the existing metatags endpoint since product-metatags endpoint doesn't exist yet
+    // The auditType field in requestBody differentiates this from regular metatags
     responseWithSuggestions = await genvarClient.generateSuggestions(
       JSON.stringify(requestBody),
-      context.env.GENVAR_PRODUCT_METATAGS_API_ENDPOINT || '/api/v1/web/aem-genai-variations-appbuilder/product-metatags',
+      context.env.GENVAR_PRODUCT_METATAGS_API_ENDPOINT || context.env.GENVAR_METATAGS_API_ENDPOINT || '/api/v1/web/aem-genai-variations-appbuilder/metatags',
     );
     if (!isObject(responseWithSuggestions)) {
       throw new Error(`Invalid response received from Genvar API: ${JSON.stringify(responseWithSuggestions)}`);
