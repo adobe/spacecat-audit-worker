@@ -70,15 +70,11 @@ export default async function productMetatagsAutoSuggest(allTags, context, site,
     site: {
       baseUrl: site.getBaseURL(),
     },
-    // Add product context to help AI understand this is for product pages
-    auditType: 'product-metatags',
-    context: 'product-pages',
   };
   let responseWithSuggestions;
   try {
     const genvarClient = GenvarClient.createFrom(context);
-    // Use the existing metatags endpoint since product-metatags endpoint doesn't exist yet
-    // The auditType field in requestBody differentiates this from regular metatags
+    // Use the same metatags endpoint as regular metatags audit as a fallback
     responseWithSuggestions = await genvarClient.generateSuggestions(
       JSON.stringify(requestBody),
       context.env.GENVAR_PRODUCT_METATAGS_API_ENDPOINT || context.env.GENVAR_METATAGS_API_ENDPOINT || '/api/v1/web/aem-genai-variations-appbuilder/metatags',
