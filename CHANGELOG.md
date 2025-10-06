@@ -1,3 +1,10 @@
+## [1.193.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.193.0...v1.193.1) (2025-10-06)
+
+
+### Bug Fixes
+
+* updating prerender excluded selectors ([#1345](https://github.com/adobe/spacecat-audit-worker/issues/1345)) ([04afc25](https://github.com/adobe/spacecat-audit-worker/commit/04afc257db462b23f529dfb5fdf5bfbee81c2714))
+
 # [1.193.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.12...v1.193.0) (2025-10-06)
 
 
