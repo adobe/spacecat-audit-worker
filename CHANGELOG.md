@@ -1,3 +1,15 @@
+# [1.193.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.12...v1.193.0) (2025-10-06)
+
+
+### Bug Fixes
+
+* exclude OTF and php extensions ([#1344](https://github.com/adobe/spacecat-audit-worker/issues/1344)) ([a0cdc25](https://github.com/adobe/spacecat-audit-worker/commit/a0cdc25d25fa14ed85e6e201dfaaf5effdd2c17c))
+
+
+### Features
+
+* update reports daily for the cdn logs ([#1330](https://github.com/adobe/spacecat-audit-worker/issues/1330)) ([553d4c1](https://github.com/adobe/spacecat-audit-worker/commit/553d4c1448eb334e656aeb7ed10feac7aa713733))
+
 ## [1.192.12](https://github.com/adobe/spacecat-audit-worker/compare/v1.192.11...v1.192.12) (2025-10-03)
 
 
