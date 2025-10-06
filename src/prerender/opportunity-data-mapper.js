@@ -20,7 +20,7 @@ export function createOpportunityData() {
   return {
     runbook: '',
     origin: 'AUTOMATION',
-    title: 'Content Gain Opportunity',
+    title: 'Recover Content Visibility',
     description: 'Pre-rendering HTML for JavaScript-heavy pages ensures that all your important content is immediately visible to search engines and AI crawlers, significantly improving your content\'s discoverability and indexing.',
     guidance: {
       steps: [
@@ -33,7 +33,7 @@ export function createOpportunityData() {
         },
       ],
     },
-    tags: ['isElmo', 'Content Gain', 'Pre-rendering'],
+    tags: ['isElmo'],
     data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
       thresholds: {

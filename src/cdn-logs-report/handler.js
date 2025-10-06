@@ -43,8 +43,8 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     auditContext?.sharepointOptions,
   );
   const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation(), {
-    pollIntervalMs: 2000,
-    maxPollAttempts: 200,
+    pollIntervalMs: 3000,
+    maxPollAttempts: 250,
   });
   /* c8 ignore next */
   const { orgId } = site.getConfig().getLlmoCdnBucketConfig() || {};
@@ -72,16 +72,31 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
 
     log.info(`Running weekly report: ${reportConfig.name}...`);
-    const weekOffset = auditContext?.weekOffset ?? -1;
-    await runWeeklyReport({
-      athenaClient,
-      s3Config,
-      reportConfig,
-      log,
-      site,
-      sharepointClient,
-      weekOffset,
-    });
+
+    const isMonday = new Date().getDay() === 1;
+    // If weekOffset is not provided, run for both week 0 and -1 on Monday and
+    // on non-Monday, run for current week. Otherwise, run for the provided weekOffset
+    let weekOffsets;
+    if (auditContext?.weekOffset !== undefined) {
+      weekOffsets = [auditContext.weekOffset];
+    } else if (isMonday) {
+      weekOffsets = [0, -1];
+    } else {
+      weekOffsets = [0];
+    }
+
+    for (const weekOffset of weekOffsets) {
+      // eslint-disable-next-line no-await-in-loop
+      await runWeeklyReport({
+        athenaClient,
+        s3Config,
+        reportConfig,
+        log,
+        site,
+        sharepointClient,
+        weekOffset,
+      });
+    }
 
     results.push({
       name: reportConfig.name,

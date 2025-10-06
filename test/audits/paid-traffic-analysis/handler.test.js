@@ -137,6 +137,7 @@ describe('Paid Traffic Analysis Handler', () => {
         temporalCondition: '(year=2025 AND month=1 AND week=2)',
         month: 1,
         siteId,
+        period: 'weekly',
       };
 
       expect(result).to.deep.include({
@@ -159,6 +160,7 @@ describe('Paid Traffic Analysis Handler', () => {
         month: 12,
         siteId,
         temporalCondition: '(year=2024 AND month=12)',
+        period: 'monthly',
       };
 
       expect(result).to.deep.include({
@@ -180,8 +182,8 @@ describe('Paid Traffic Analysis Handler', () => {
           month: 1,
           siteId,
           temporalCondition: '(year=2025 AND month=1 AND week=2)',
+          period: 'weekly',
         },
-        period: 'weekly',
       };
 
       await sendRequestToMystique(auditUrl, auditData, context, site);
@@ -217,8 +219,8 @@ describe('Paid Traffic Analysis Handler', () => {
           month: 12,
           siteId,
           temporalCondition: '(year=2024 AND month=12)',
+          period: 'monthly',
         },
-        period: 'monthly',
       };
 
       await sendRequestToMystique(auditUrl, auditData, context, site);
@@ -233,7 +235,7 @@ describe('Paid Traffic Analysis Handler', () => {
         data: {
           year: 2024,
           month: 12,
-          week: undefined,
+          week: 0,
           temporalCondition: '(year=2024 AND month=12)',
         },
       };
