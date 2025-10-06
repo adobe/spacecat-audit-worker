@@ -73,7 +73,7 @@ UNLOAD (
 
       -- exclude static assets, but always include HTML
       AND (
-        NOT REGEXP_LIKE(url_extract_path(properties.requestUri), '(?i)\.(css|js|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|eot|mp4|mp3|avi|mov|zip|tar|gz|json|xml|pdf|txt)(\?.*)?$')
+        NOT REGEXP_LIKE(url_extract_path(properties.requestUri), '(?i)\.(css|js|png|jpg|jpeg|gif|webp|php|svg|ico|woff|woff2|otf|ttf|eot|mp4|mp3|avi|mov|zip|tar|gz|json|xml|pdf|txt)(\?.*)?$')
         OR url_extract_path(properties.requestUri) LIKE '%.htm%'
       )
   
