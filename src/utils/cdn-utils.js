@@ -165,7 +165,9 @@ export function buildCdnPaths(bucketName, serviceProvider, timeParts, imsOrgId =
   if (isStandardAdobeCdnBucket(bucketName) && imsOrgId) {
     return {
       rawLocation: `s3://${bucketName}/${imsOrgId}/raw/${serviceProvider}/`,
+      aggregatedLocation: `s3://${bucketName}/${imsOrgId}/aggregated/`,
       aggregatedOutput: `s3://${bucketName}/${imsOrgId}/aggregated/${year}/${month}/${day}/${hour}/`,
+      aggregatedReferralLocation: `s3://${bucketName}/${imsOrgId}/aggregated-referral/`,
       aggregatedReferralOutput: `s3://${bucketName}/${imsOrgId}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
       tempLocation: `s3://${bucketName}/temp/athena-results/`,
     };
@@ -173,6 +175,8 @@ export function buildCdnPaths(bucketName, serviceProvider, timeParts, imsOrgId =
 
   return {
     rawLocation: `s3://${bucketName}/raw/`,
+    aggregatedLocation: `s3://${bucketName}/aggregated/`,
+    aggregatedReferralLocation: `s3://${bucketName}/aggregated-referral/`,
     aggregatedOutput: `s3://${bucketName}/aggregated/${year}/${month}/${day}/${hour}/`,
     aggregatedReferralOutput: `s3://${bucketName}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
     tempLocation: `s3://${bucketName}/temp/athena-results/`,
