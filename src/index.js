@@ -73,6 +73,7 @@ import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
+import vulnerabilities from './vulnerabilities/handler.js';
 import prerender from './prerender/handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
@@ -137,6 +138,7 @@ const HANDLERS = {
   hreflang,
   headings,
   prerender,
+  'security-vulnerabilities': vulnerabilities,
   dummy: (message) => ok(message),
 };
 
