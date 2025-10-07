@@ -127,10 +127,65 @@ export function extractProductTagsFromHTML(rawBody, log) {
   }
 
   try {
-    // Extract SKU meta tag
-    const skuMatch = rawBody.match(/<meta\s+name=["']sku["']\s+content=["']([^"']+)["']/i);
+    // Extract SKU meta tag (standard format)
+    let skuMatch = rawBody.match(/<meta\s+name=["']sku["']\s+content=["']([^"']+)["']/i);
     if (skuMatch) {
       [, productTags.sku] = skuMatch;
+    }
+
+    // Try alternative SKU meta tag formats if not found
+    if (!productTags.sku) {
+      // Try product:sku property
+      skuMatch = rawBody.match(/<meta\s+property=["']product:sku["']\s+content=["']([^"']+)["']/i);
+      if (skuMatch) {
+        [, productTags.sku] = skuMatch;
+      }
+    }
+
+    // Try to extract SKU from JSON-LD structured data
+    if (!productTags.sku) {
+      const jsonLdMatch = rawBody.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+      if (jsonLdMatch) {
+        for (const jsonLdScript of jsonLdMatch) {
+          try {
+            const jsonContent = jsonLdScript.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
+            const data = JSON.parse(jsonContent);
+
+            // Handle both single objects and arrays
+            const items = Array.isArray(data) ? data : [data];
+
+            for (const item of items) {
+              // Check for Product schema
+              if (item['@type'] === 'Product' || (Array.isArray(item['@type']) && item['@type'].includes('Product'))) {
+                if (item.sku) {
+                  productTags.sku = item.sku;
+                  break;
+                }
+                if (item.productID) {
+                  productTags.sku = item.productID;
+                  break;
+                }
+                if (item.mpn) {
+                  productTags.sku = item.mpn;
+                  break;
+                }
+              }
+            }
+
+            if (productTags.sku) break;
+          } catch (jsonError) {
+            // Continue to next JSON-LD block if parsing fails
+          }
+        }
+      }
+    }
+
+    // Try to extract SKU from common data attributes
+    if (!productTags.sku) {
+      const dataSkuMatch = rawBody.match(/data-(?:product-)?(?:sku|id|code)=["']([^"']+)["']/i);
+      if (dataSkuMatch) {
+        [, productTags.sku] = dataSkuMatch;
+      }
     }
 
     // Extract og:image meta tag
@@ -155,6 +210,47 @@ export function extractProductTagsFromHTML(rawBody, log) {
     const imageMatch = rawBody.match(/<meta\s+name=["']image["']\s+content=["']([^"']+)["']/i);
     if (imageMatch) {
       [, productTags.image] = imageMatch;
+    }
+
+    // Try to extract image from JSON-LD structured data as fallback
+    if (!productTags['og:image'] && !productTags['twitter:image'] && !productTags['product:image'] && !productTags.image) {
+      const jsonLdMatch = rawBody.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+      if (jsonLdMatch) {
+        for (const jsonLdScript of jsonLdMatch) {
+          try {
+            const jsonContent = jsonLdScript.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
+            const data = JSON.parse(jsonContent);
+
+            // Handle both single objects and arrays
+            const items = Array.isArray(data) ? data : [data];
+
+            for (const item of items) {
+              // Check for Product schema
+              if (item['@type'] === 'Product' || (Array.isArray(item['@type']) && item['@type'].includes('Product'))) {
+                // Try to get image from various possible fields
+                if (item.image) {
+                  // image can be a string, object with url property, or array
+                  if (typeof item.image === 'string') {
+                    productTags['og:image'] = item.image;
+                    break;
+                  } else if (typeof item.image === 'object' && item.image.url) {
+                    productTags['og:image'] = item.image.url;
+                    break;
+                  } else if (Array.isArray(item.image) && item.image.length > 0) {
+                    const firstImage = item.image[0];
+                    productTags['og:image'] = typeof firstImage === 'string' ? firstImage : firstImage.url;
+                    break;
+                  }
+                }
+              }
+            }
+
+            if (productTags['og:image']) break;
+          } catch (jsonError) {
+            // Continue to next JSON-LD block if parsing fails
+          }
+        }
+      }
     }
 
     log.debug('[PRODUCT-METATAGS] Extracted product tags from HTML:', Object.keys(productTags));
@@ -323,8 +419,11 @@ export async function productMetatagsAutoDetect(site, pagesSet, context) {
 
   if (filteredKeys.length === 0) {
     log.warn(`[PRODUCT-METATAGS] No matching scraped content found for any of the ${pagesSet.size} pages`);
-    log.info('[PRODUCT-METATAGS] Pages set contains:', Array.from(pagesSet).slice(0, 5));
-    log.info('[PRODUCT-METATAGS] S3 keys sample:', scrapedObjectKeys.slice(0, 5));
+    log.info('[PRODUCT-METATAGS] Pages set sample (first 5):', Array.from(pagesSet).slice(0, 5));
+    log.info('[PRODUCT-METATAGS] S3 keys sample (first 5):', scrapedObjectKeys.slice(0, 5));
+    log.warn('[PRODUCT-METATAGS] PATH MISMATCH DETECTED - Pages set and S3 keys do not overlap');
+  } else {
+    log.info('[PRODUCT-METATAGS] Successfully matched pages. Sample filtered keys:', filteredKeys.slice(0, 3));
   }
 
   const pageMetadataResults = await Promise.all(filteredKeys
@@ -353,6 +452,8 @@ export async function productMetatagsAutoDetect(site, pagesSet, context) {
     // Check if page has product tags before processing
     const hasProductTags = ProductSeoChecks.hasProductTags(pageTags);
 
+    log.debug(`[PRODUCT-METATAGS] Checking page ${pageUrl}: hasProductTags=${hasProductTags}, sku=${pageTags.sku || 'none'}`);
+
     if (hasProductTags) {
       log.info(`[PRODUCT-METATAGS] Processing product page: ${pageUrl}`);
       seoChecks.performChecks(pageUrl, pageTags);
@@ -366,7 +467,7 @@ export async function productMetatagsAutoDetect(site, pagesSet, context) {
         log.info(`[PRODUCT-METATAGS] Extracted product tags for ${pageUrl}:`, Object.keys(productTags));
       }
     } else {
-      log.info(`[PRODUCT-METATAGS] Skipping non-product page: ${pageUrl}`);
+      log.debug(`[PRODUCT-METATAGS] Skipping non-product page: ${pageUrl} (no SKU found)`);
     }
   }
 
@@ -423,6 +524,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
 
   log.info(`[PRODUCT-METATAGS] Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`);
+  log.info('[PRODUCT-METATAGS] Sample generated paths:', Array.from(totalPagesSet).slice(0, 3));
 
   log.info('[PRODUCT-METATAGS] Starting product metatags auto-detection');
   const {
