@@ -75,6 +75,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
           IMS_HOST: 'https://ims-na1.adobelogin.com',
           IMS_CLIENT_SECRET: 'test-client-secret',
           IMS_CLIENT_CODE: 'test-client-code',
+          STARFISH_API_BASE_URL: 'https://starfish.adobe.com/api'
         },
         dataAccess: {
           Configuration: {
@@ -128,7 +129,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
   };
 
   const setupSuccessfulVulnerabilityApi = () => {
-    nock('https://aem-trustcenter-dev.adobe.io')
+    nock('https://starfish.adobe.com')
       .get('/api/reports/123456/789012/vulnerabilities')
       .reply(200, { data: mockVulnerabilityReport });
   };
@@ -140,13 +141,13 @@ describe('Vulnerabilities Handler Integration Tests', () => {
   };
 
   const setupFailedVulnerabilityApi = (status = 500) => {
-    nock('https://aem-trustcenter-dev.adobe.io')
+    nock('https://starfish.adobe.com')
       .get('/api/reports/123456/789012/vulnerabilities')
       .reply(status, { error: 'Internal Server Error' });
   };
 
   const setupVulnerabilityApi404 = () => {
-    nock('https://aem-trustcenter-dev.adobe.io')
+    nock('https://starfish.adobe.com')
       .get('/api/reports/123456/789012/vulnerabilities')
       .reply(404, { error: 'Not Found' });
   };
