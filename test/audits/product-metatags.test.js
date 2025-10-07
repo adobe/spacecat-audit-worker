@@ -2295,8 +2295,7 @@ describe('Product MetaTags', () => {
           <head>
             <script type="application/ld+json">
             {
-              "@type": "Product",
-              "sku": "should-not-parse
+              "invalid": "json without closing
             </script>
             <meta name="sku" content="FALLBACK-SKU">
           </head>
@@ -2305,8 +2304,8 @@ describe('Product MetaTags', () => {
 
       const result = extractProductTagsFromHTML(html, logStub);
       expect(result).to.have.property('sku', 'FALLBACK-SKU');
-      // Verify that the debug log was called for the JSON parse error on SKU extraction (lines 177-179)
-      expect(logStub.debug).to.have.been.calledWith(sinon.match(/Failed to parse JSON-LD block:/));
+      // Verify that the debug log was called for the JSON parse error (lines 177-179 or 251-253)
+      expect(logStub.debug).to.have.been.calledWith(sinon.match(/Failed to parse JSON-LD block/));
     });
 
     it('should handle malformed JSON-LD when extracting image and log debug (lines 251-253)', () => {
@@ -2796,7 +2795,7 @@ describe('Product MetaTags', () => {
 
       await mockedFunction(mockSite, pagesSet, mockContext);
 
-      expect(logStub.info).to.have.been.calledWith('[PRODUCT-METATAGS] Skipping non-product page: /page1');
+      expect(logStub.debug).to.have.been.calledWith(sinon.match(/Skipping non-product page: \/page1/));
       expect(logStub.info).to.have.been.calledWith('[PRODUCT-METATAGS] Product pages processed: 0 out of 1 total pages');
     });
 
@@ -3261,7 +3260,7 @@ describe('Product MetaTags', () => {
 
       // Verify processing loop handled both product and non-product pages
       expect(testLogStub.info).to.have.been.calledWith('[PRODUCT-METATAGS] Processing product page: /product1');
-      expect(testLogStub.info).to.have.been.calledWith('[PRODUCT-METATAGS] Skipping non-product page: /regular1');
+      expect(testLogStub.debug).to.have.been.calledWith(sinon.match(/Skipping non-product page: \/regular1/));
       expect(testLogStub.info).to.have.been.calledWith('[PRODUCT-METATAGS] Product pages processed: 1 out of 2 total pages');
     });
 
