@@ -13,6 +13,7 @@
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getSuggestionValue } from './utils.js';
+import { syncSuggestions } from '../utils/data-access.js';
 
 /**
  * Handles Mystique response for summarization and updates pages with AI suggestions
@@ -23,7 +24,7 @@ import { getSuggestionValue } from './utils.js';
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const {
-    Site, Audit, Suggestion, Opportunity,
+    Site, Audit, Opportunity,
   } = dataAccess;
   const { siteId, data, auditId } = message;
   const { guidance, suggestions } = data;
@@ -72,27 +73,31 @@ export default async function handler(message, context) {
     opportunity.setAuditId(auditId);
     opportunity.setUpdatedBy('system');
 
-    const existingSuggestions = await opportunity.getSuggestions();
-
-    // delete previous suggestions if any
-    await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
     const suggestionValue = getSuggestionValue(suggestions, log);
+    const newData = [{
+      suggestionValue,
+      bKey: `summarization:${site.getBaseURL()}`,
+    }];
 
-    // map the suggestions received from Mystique to ASO
-    const suggestionData = {
-      opportunityId: opportunity.getId(),
-      type: 'CONTENT_UPDATE',
-      rank: 1,
-      status: 'NEW',
-      data: {
-        suggestionValue,
-      },
-      kpiDeltas: {
-        estimatedKPILift: 0,
-      },
-    };
+    await syncSuggestions({
+      context,
+      opportunity,
+      newData,
+      buildKey: (dataItem) => dataItem.bKey,
+      mapNewSuggestion: (dataItem) => ({
+        opportunityId: opportunity.getId(),
+        type: 'CONTENT_UPDATE',
+        rank: 1,
+        status: 'NEW',
+        data: {
+          suggestionValue: dataItem.suggestionValue,
+        },
+        kpiDeltas: {
+          estimatedKPILift: 0,
+        },
+      }),
+    });
 
-    await Suggestion.create(suggestionData);
     log.info(`Saved summarization opportunity: ${opportunity.getId()}`);
   } catch (e) {
     log.error(`Failed to save summarization opportunity on Mystique callback: ${e.message}`);

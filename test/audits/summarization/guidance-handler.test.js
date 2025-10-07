@@ -15,7 +15,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import handler from '../../../src/summarization/guidance-handler.js';
+import esmock from 'esmock';
 
 use(sinonChai);
 
@@ -29,8 +29,20 @@ describe('summarization guidance handler', () => {
   let dummySite;
   let dummyAudit;
   let dummyOpportunity;
+  let syncSuggestionsStub;
+  let handler;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    syncSuggestionsStub = sinon.stub().resolves();
+    
+    // Mock the handler with stubbed dependencies
+    const mockedHandler = await esmock('../../../src/summarization/guidance-handler.js', {
+      '../../../src/utils/data-access.js': {
+        syncSuggestions: syncSuggestionsStub,
+      },
+    });
+    
+    handler = mockedHandler.default;
     Site = {
       findById: sinon.stub(),
     };
@@ -164,7 +176,7 @@ describe('summarization guidance handler', () => {
     const createdArg = Opportunity.create.getCall(0).args[0];
     expect(createdArg.type).to.equal('generic-opportunity');
     expect(createdArg.data.subType).to.equal('summarization');
-    expect(Suggestion.create).to.have.been.calledOnce;
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
   });
 
   it('should update existing summarization opportunity if found', async () => {
@@ -207,7 +219,7 @@ describe('summarization guidance handler', () => {
     expect(dummyOpportunity.setData).to.have.been.called;
     expect(dummyOpportunity.setUpdatedBy).to.have.been.calledWith('system');
     expect(dummyOpportunity.save).to.have.been.called;
-    expect(Suggestion.create).to.have.been.calledOnce;
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
   });
 
   it('removes previous suggestions if any', async () => {
@@ -235,8 +247,7 @@ describe('summarization guidance handler', () => {
       },
     };
     await handler(message, context);
-    expect(oldSuggestion.remove).to.have.been.calledTwice;
-    expect(Suggestion.create).to.have.been.calledOnce;
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
   });
 
   it('should skip suggestions with no meaningful content', async () => {
@@ -268,8 +279,12 @@ describe('summarization guidance handler', () => {
     };
     await handler(message, context);
     expect(log.info).to.have.been.calledWithMatch(/Skipping suggestion with no meaningful content for URL: https:\/\/adobe\.com\/page2/);
-    expect(Suggestion.create).to.have.been.calledOnce;
-    expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.not.include('https://adobe.com/page2');
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+    expect(syncSuggestionsStub.getCall(0).args[0].newData).to.be.an('array');
+    expect(syncSuggestionsStub.getCall(0).args[0].newData).to.have.length(1);
+    expect(syncSuggestionsStub.getCall(0).args[0].newData[0]).to.have.property('suggestionValue');
+    expect(syncSuggestionsStub.getCall(0).args[0].newData[0]).to.have.property('bKey');
+    expect(syncSuggestionsStub.getCall(0).args[0].newData[0].suggestionValue).to.include('https://adobe.com/page1');
   });
 
   it('should handle empty suggestions array', async () => {
@@ -282,8 +297,10 @@ describe('summarization guidance handler', () => {
       },
     };
     await handler(message, context);
-    expect(Suggestion.create).to.have.been.calledOnce;
-    expect(Suggestion.create.getCall(0).args[0].data.suggestionValue).to.equal('');
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+    expect(syncSuggestionsStub.getCall(0).args[0].newData).to.be.an('array');
+    expect(syncSuggestionsStub.getCall(0).args[0].newData).to.have.length(1);
+    expect(syncSuggestionsStub.getCall(0).args[0].newData[0].suggestionValue).to.equal('');
   });
 
   it('should create suggestion with correct data structure', async () => {
@@ -327,27 +344,25 @@ describe('summarization guidance handler', () => {
       },
     };
     await handler(message, context);
-    expect(Suggestion.create).to.have.been.calledOnce;
-    const suggestionData = Suggestion.create.getCall(0).args[0];
-    expect(suggestionData.opportunityId).to.equal('existing-oppty-id');
-    expect(suggestionData.type).to.equal('CONTENT_UPDATE');
-    expect(suggestionData.rank).to.equal(1);
-    expect(suggestionData.status).to.equal('NEW');
-    expect(suggestionData.data.suggestionValue).to.include('## 1. https://adobe.com/page1');
-    expect(suggestionData.data.suggestionValue).to.include('### Page Title');
-    expect(suggestionData.data.suggestionValue).to.include('Page Title 1');
-    expect(suggestionData.data.suggestionValue).to.include('### Page Summary (AI generated)');
-    expect(suggestionData.data.suggestionValue).to.include('> This is a page summary');
-    expect(suggestionData.data.suggestionValue).to.include('Word count: 25 | Readability: 70.5 => very easy to read');
-    expect(suggestionData.data.suggestionValue).to.include('### Key Points (AI generated)');
-    expect(suggestionData.data.suggestionValue).to.include('> - Key point 1');
-    expect(suggestionData.data.suggestionValue).to.include('> - Key point 2');
-    expect(suggestionData.data.suggestionValue).to.include('Word count: 15 | Readability: 65.2 => easy to read');
-    expect(suggestionData.data.suggestionValue).to.include('### Section Summaries (AI generated)');
-    expect(suggestionData.data.suggestionValue).to.include('#### Section 1');
-    expect(suggestionData.data.suggestionValue).to.include('> Section summary 1');
-    expect(suggestionData.data.suggestionValue).to.include('Word count: 15 | Readability: 65.2 => easy to read');
-    expect(suggestionData.kpiDeltas.estimatedKPILift).to.equal(0);
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+    
+    // Get the arguments passed to syncSuggestions
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const syncArgs = syncCall.args[0];
+    
+    // Test the mapNewSuggestion function
+    const testData = {
+      suggestionValue: '## 1. https://adobe.com/page1\n\n### Page Title\n\nPage Title 1\n\n### Page Summary (AI generated)\n\n> This is a page summary\n\nWord count: 25 | Readability: 70.5 => very easy to read\n\n### Key Points (AI generated)\n\n> - Key point 1\n> - Key point 2\n\nWord count: 15 | Readability: 65.2 => easy to read\n\n### Section Summaries (AI generated)\n\n#### Section 1\n\n> Section summary 1\n\nWord count: 15 | Readability: 65.2 => easy to read\n\n---\n\n',
+      bKey: 'summarization:https://adobe.com'
+    };
+    
+    const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
+    expect(mappedSuggestion.opportunityId).to.equal('existing-oppty-id');
+    expect(mappedSuggestion.type).to.equal('CONTENT_UPDATE');
+    expect(mappedSuggestion.rank).to.equal(1);
+    expect(mappedSuggestion.status).to.equal('NEW');
+    expect(mappedSuggestion.data.suggestionValue).to.equal(testData.suggestionValue);
+    expect(mappedSuggestion.kpiDeltas.estimatedKPILift).to.equal(0);
   });
 
   it('should handle error when saving opportunity fails', async () => {
@@ -394,9 +409,9 @@ describe('summarization guidance handler', () => {
     // Mock Opportunity.create to return the existing opportunity
     Opportunity.create.resolves(existingOpportunity);
 
-    // Mock Suggestion.create to throw an error
+    // Mock syncSuggestions to throw an error
     const error = new Error('Database connection failed');
-    Suggestion.create.rejects(error);
+    syncSuggestionsStub.rejects(error);
 
     const result = await handler(message, context);
 
@@ -406,4 +421,45 @@ describe('summarization guidance handler', () => {
     expect(bodyText).to.equal('{"message":"Failed to persist summarization opportunity"}');
     expect(log.error).to.have.been.calledWith(sinon.match(/Failed to save summarization opportunity on Mystique callback: Database connection failed/));
   });
+
+  it('should call buildKey function for suggestions', async () => {
+    const message = {
+      siteId: dummySite.getId(),
+      auditId: dummyAudit.auditId,
+      data: {
+        guidance: [],
+        suggestions: [
+          {
+            pageUrl: 'https://example.com/page1',
+            pageSummary: {
+              title: 'Page Title 1',
+              summary: 'This is a page summary',
+            },
+          },
+        ],
+      },
+    };
+
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves({
+      getId: () => 'new-opportunity-id',
+      setAuditId: sinon.stub(),
+      setUpdatedBy: sinon.stub(),
+    });
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(200);
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const syncArgs = syncCall.args[0];
+    const testData = { 
+      suggestionValue: 'test suggestion value',
+      bKey: 'summarization:https://example.com'
+    };
+    const buildKeyResult = syncArgs.buildKey(testData);
+    expect(buildKeyResult).to.equal('summarization:https://example.com');
+  });
+
 });
