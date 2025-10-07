@@ -175,6 +175,7 @@ export function extractProductTagsFromHTML(rawBody, log) {
             if (productTags.sku) break;
           } catch (jsonError) {
             // Continue to next JSON-LD block if parsing fails
+            log.debug(`[PRODUCT-METATAGS] Failed to parse JSON-LD block: ${jsonError.message}`);
           }
         }
       }
@@ -248,6 +249,7 @@ export function extractProductTagsFromHTML(rawBody, log) {
             if (productTags['og:image']) break;
           } catch (jsonError) {
             // Continue to next JSON-LD block if parsing fails
+            log.debug(`[PRODUCT-METATAGS] Failed to parse JSON-LD block for image: ${jsonError.message}`);
           }
         }
       }

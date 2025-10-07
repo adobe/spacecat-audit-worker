@@ -2035,6 +2035,298 @@ describe('Product MetaTags', () => {
         String.prototype.match = originalMatch;
       }
     });
+
+    it('should extract SKU from product:sku meta tag', () => {
+      const html = `
+        <html>
+          <head>
+            <meta property="product:sku" content="BULK-SKU-456">
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('sku', 'BULK-SKU-456');
+    });
+
+    it('should extract SKU from JSON-LD structured data', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Test Product",
+              "sku": "JSON-LD-SKU-789"
+            }
+            </script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('sku', 'JSON-LD-SKU-789');
+    });
+
+    it('should extract SKU from JSON-LD with productID', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Test Product",
+              "productID": "PRODUCT-ID-123"
+            }
+            </script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('sku', 'PRODUCT-ID-123');
+    });
+
+    it('should extract SKU from JSON-LD with mpn', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Test Product",
+              "mpn": "MPN-456"
+            }
+            </script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('sku', 'MPN-456');
+    });
+
+    it('should extract SKU from JSON-LD array', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">
+            [
+              {
+                "@context": "https://schema.org",
+                "@type": "Product",
+                "name": "Test Product",
+                "sku": "ARRAY-SKU-999"
+              }
+            ]
+            </script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('sku', 'ARRAY-SKU-999');
+    });
+
+    it('should extract SKU from data attributes', () => {
+      const html = `
+        <html>
+          <head>
+            <div data-sku="DATA-SKU-111"></div>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('sku', 'DATA-SKU-111');
+    });
+
+    it('should extract image from JSON-LD when no meta tags present', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Test Product",
+              "image": "https://example.com/jsonld-image.jpg"
+            }
+            </script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('og:image', 'https://example.com/jsonld-image.jpg');
+    });
+
+    it('should extract image from JSON-LD with object format', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Test Product",
+              "image": {
+                "url": "https://example.com/jsonld-object-image.jpg"
+              }
+            }
+            </script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('og:image', 'https://example.com/jsonld-object-image.jpg');
+    });
+
+    it('should extract image from JSON-LD with array format', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Test Product",
+              "image": ["https://example.com/jsonld-array-image1.jpg", "https://example.com/jsonld-array-image2.jpg"]
+            }
+            </script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('og:image', 'https://example.com/jsonld-array-image1.jpg');
+    });
+
+    it('should extract image from JSON-LD with array of objects', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Test Product",
+              "image": [
+                {"url": "https://example.com/jsonld-array-object-image.jpg"}
+              ]
+            }
+            </script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('og:image', 'https://example.com/jsonld-array-object-image.jpg');
+    });
+
+    it('should not extract image from JSON-LD when og:image meta tag exists', () => {
+      const html = `
+        <html>
+          <head>
+            <meta property="og:image" content="https://example.com/meta-image.jpg">
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Test Product",
+              "image": "https://example.com/jsonld-image.jpg"
+            }
+            </script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('og:image', 'https://example.com/meta-image.jpg');
+    });
+
+    it('should handle JSON-LD with @type array including Product', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": ["Product", "Offer"],
+              "name": "Test Product",
+              "sku": "MULTI-TYPE-SKU-123"
+            }
+            </script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('sku', 'MULTI-TYPE-SKU-123');
+    });
+
+    it('should handle malformed JSON-LD gracefully', () => {
+      const html = `
+        <html>
+          <head>
+            <meta name="sku" content="FALLBACK-SKU">
+            <script type="application/ld+json">
+            {
+              "invalid json",
+              "missing closing brace"
+            </script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('sku', 'FALLBACK-SKU');
+      // Verify that the debug log was called for the JSON parse error (lines 177-179 and 251-253)
+      expect(logStub.debug).to.have.been.calledWith(sinon.match(/Failed to parse JSON-LD block/));
+    });
+
+    it('should handle malformed JSON-LD when extracting SKU and log debug (lines 177-179)', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {
+              "@type": "Product",
+              "sku": "should-not-parse
+            </script>
+            <meta name="sku" content="FALLBACK-SKU">
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('sku', 'FALLBACK-SKU');
+      // Verify that the debug log was called for the JSON parse error on SKU extraction (lines 177-179)
+      expect(logStub.debug).to.have.been.calledWith(sinon.match(/Failed to parse JSON-LD block:/));
+    });
+
+    it('should handle malformed JSON-LD when extracting image and log debug (lines 251-253)', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {
+              "@type": "Product",
+              "image": "malformed
+            </script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.deep.equal({});
+      // Verify that the debug log was called for the JSON parse error on image extraction (lines 251-253)
+      expect(logStub.debug).to.have.been.calledWith(sinon.match(/Failed to parse JSON-LD block for image:/));
+    });
   });
 
   describe('extractEndpoint', () => {
