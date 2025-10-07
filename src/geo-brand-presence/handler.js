@@ -28,9 +28,59 @@ export const OPPTY_TYPES = [
   // GEO_FAQ_OPPTY_TYPE, // TODO reenable when working on faqs again
 ];
 
+// Web search providers to send messages for
+export const WEB_SEARCH_PROVIDERS = [
+  'all',
+  'chatgpt',
+  'gemini',
+  'google_ai_overviews',
+  // 'ai_mode',
+  // 'perplexity',
+  // Add more providers here as needed
+];
+
 /**
  * @import { S3Client } from '@aws-sdk/client-s3';
  */
+
+/**
+ * Creates a message object for sending to Mystique.
+ * @param {object} params - Message parameters
+ * @param {string} params.opptyType - The opportunity type
+ * @param {string} params.siteId - The site ID
+ * @param {string} params.baseURL - The base URL
+ * @param {string} params.auditId - The audit ID
+ * @param {string} params.deliveryType - The delivery type
+ * @param {object} params.calendarWeek - The calendar week object
+ * @param {string} params.url - The presigned URL for data
+ * @param {string} params.webSearchProvider - The web search provider
+ * @returns {object} The message object
+ */
+function createMystiqueMessage({
+  opptyType,
+  siteId,
+  baseURL,
+  auditId,
+  deliveryType,
+  calendarWeek,
+  url,
+  webSearchProvider,
+}) {
+  return {
+    type: opptyType,
+    siteId,
+    url: baseURL,
+    auditId,
+    deliveryType,
+    time: new Date().toISOString(),
+    week: calendarWeek.week,
+    year: calendarWeek.year,
+    data: {
+      url,
+      web_search_provider: webSearchProvider,
+    },
+  };
+}
 
 export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   const {
@@ -81,27 +131,34 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
 
   const url = await asPresignedJsonUrl(prompts, bucket, { ...context, getPresignedUrl });
   log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
-  await Promise.all(OPPTY_TYPES.map(async (opptyType) => {
-    const message = {
-      type: opptyType,
-      siteId,
-      url: baseURL,
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      week: calendarWeek.week,
-      year: calendarWeek.year,
-      data: {
-        url,
-      },
-    };
 
-    if (aiPlatform) {
-      message.data.web_search_provider = aiPlatform;
-    }
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info('GEO BRAND PRESENCE: %s Message sent to Mystique for site id %s (%s):', opptyType, siteId, baseURL, message);
-  }));
+  // Determine which providers to use
+  const providersToUse = aiPlatform ? [aiPlatform] : WEB_SEARCH_PROVIDERS;
+
+  /* c8 ignore next 4 */
+  if (!providersToUse || providersToUse.length === 0) {
+    log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
+    return;
+  }
+
+  // Send messages for each combination of opportunity type and web search provider
+  await Promise.all(
+    OPPTY_TYPES.flatMap((opptyType) => providersToUse.map(async (webSearchProvider) => {
+      const message = createMystiqueMessage({
+        opptyType,
+        siteId,
+        baseURL,
+        auditId: audit.getId(),
+        deliveryType: site.getDeliveryType(),
+        calendarWeek,
+        url,
+        webSearchProvider,
+      });
+
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+      log.info('GEO BRAND PRESENCE: %s message sent to Mystique for site id %s (%s) with provider %s', opptyType, siteId, baseURL, webSearchProvider);
+    })),
+  );
 }
 
 /**
