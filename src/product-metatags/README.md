@@ -18,7 +18,7 @@ The Product MetaTags Audit is a comprehensive **step-based audit** that analyzes
 This audit follows the **step-based audit pattern** with three main steps:
 
 ### Step 1: Import Top Pages
-- Imports top-performing pages from analytics data.
+- Imports top-performing pages from analytics data
 - Prepares S3 bucket structure for content scraping
 - **Destination**: `IMPORT_WORKER`
 
