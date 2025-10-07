@@ -9,7 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* eslint-disable no-use-before-define */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { parquetReadObjects } from 'hyparquet';
@@ -27,10 +26,6 @@ export const GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE = 'detect:geo-brand-presence-da
 export const DAILY_OPPTY_TYPES = [GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE];
 
 /**
- * @import { S3Client } from '@aws-sdk/client-s3';
- */
-
-/**
  * Calculates ISO 8601 week number for a given date
  * @param {Date} date - The date to calculate the week number for
  * @return {number} ISO 8601 week number
@@ -38,12 +33,12 @@ export const DAILY_OPPTY_TYPES = [GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE];
 function getISOWeekNumber(date) {
   // Calculate ISO 8601 week number
   const target = new Date(date.valueOf());
-  const dayNumber = (date.getDay() + 6) % 7;
-  target.setDate(target.getDate() - dayNumber + 3);
+  const dayNumber = (date.getUTCDay() + 6) % 7;
+  target.setUTCDate(target.getUTCDate() - dayNumber + 3);
   const firstThursday = target.valueOf();
-  target.setMonth(0, 1);
-  if (target.getDay() !== 4) {
-    target.setMonth(0, 1 + (((4 - target.getDay()) + 7) % 7));
+  target.setUTCMonth(0, 1);
+  if (target.getUTCDay() !== 4) {
+    target.setUTCMonth(0, 1 + (((4 - target.getUTCDay()) + 7) % 7));
   }
   const week = 1 + Math.ceil((firstThursday - target) / 604800000);
   return week;
@@ -56,9 +51,9 @@ function getISOWeekNumber(date) {
  */
 function getISOYear(date) {
   const target = new Date(date.valueOf());
-  const dayNumber = (date.getDay() + 6) % 7;
-  target.setDate(target.getDate() - dayNumber + 3);
-  return target.getFullYear();
+  const dayNumber = (date.getUTCDay() + 6) % 7;
+  target.setUTCDate(target.getUTCDate() - dayNumber + 3);
+  return target.getUTCFullYear();
 }
 
 /**
@@ -69,7 +64,7 @@ function getISOYear(date) {
 function getDailyDateContext(auditContext) {
   const referenceDate = auditContext?.referenceDate || new Date();
   const date = new Date(referenceDate);
-  date.setDate(date.getDate() - 1); // Yesterday
+  date.setUTCDate(date.getUTCDate() - 1); // Yesterday
 
   // Calculate ISO 8601 week and year
   const week = getISOWeekNumber(date);
@@ -199,11 +194,11 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     auditId: audit.getId(),
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
-    date: dailyDateContext.date, // Daily-specific field
     week: dailyDateContext.week,
     year: dailyDateContext.year,
     data: {
       url,
+      date: dailyDateContext.date, // Daily-specific field
     },
   };
 
