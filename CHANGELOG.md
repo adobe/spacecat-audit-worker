@@ -1,3 +1,10 @@
+## [1.194.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.194.3...v1.194.4) (2025-10-07)
+
+
+### Bug Fixes
+
+* update data access to 2.68.1 ([#1356](https://github.com/adobe/spacecat-audit-worker/issues/1356)) ([08ba402](https://github.com/adobe/spacecat-audit-worker/commit/08ba4029c3781cb528b25febfb1bee4c30e2c66c))
+
 ## [1.194.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.194.2...v1.194.3) (2025-10-07)
 
 
