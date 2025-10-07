@@ -53,6 +53,7 @@ describe('Step-based Audit Tests', () => {
 
     configuration = {
       isHandlerEnabledForSite: sandbox.stub().returns(true),
+      getHandlers: sandbox.stub().returns({}),
     };
 
     context = new MockContextBuilder()

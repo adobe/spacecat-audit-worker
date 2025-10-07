@@ -654,6 +654,7 @@ describe('Preflight Audit', () => {
       }));
       configuration = {
         isHandlerEnabledForSite: sinon.stub(),
+        getHandlers: sinon.stub().returns({}),
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
 

@@ -86,6 +86,7 @@
     "@adobe/spacecat-shared-http-utils": "1.17.6",
     "@adobe/spacecat-shared-rum-api-client": "2.37.7",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
+    "@adobe/spacecat-shared-tier-client": "1.1.2",
     "@adobe/spacecat-shared-utils": "1.55.0",
     "@adobe/spacecat-shared-scrape-client": "2.1.5",
     "@adobe/structured-data-validator": "1.5.0",

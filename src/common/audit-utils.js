@@ -11,13 +11,67 @@
  */
 
 import { isValidUUID } from '@adobe/spacecat-shared-utils';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { retrieveAuditById } from '../utils/data-access.js';
+
+/**
+ * Check if site has valid entitlement for any of the product codes
+ * @param {string[]} productCodes - Array of product codes to check
+ * @param {Object} site - Site object
+ * @param {Object} context - Lambda context
+ * @returns {Promise<boolean>} - True if site has entitlement for any product code
+ */
+async function checkProductCodeEntitlements(productCodes, site, context) {
+  if (!productCodes || !Array.isArray(productCodes) || productCodes.length === 0) {
+    return true; // No product codes to check, allow by default
+  }
+
+  try {
+    // Check entitlements for each product code
+    const entitlementChecks = await Promise.all(
+      productCodes.map(async (productCode) => {
+        try {
+          const tierClient = await TierClient.createForSite(context, site, productCode);
+          const tierResult = await tierClient.checkValidEntitlement();
+          return tierResult.entitlement || false;
+        } catch (error) {
+          context.log.warn(`Failed to check entitlement for product code ${productCode}:`, error);
+          return false;
+        }
+      }),
+    );
+
+    // Return true if site has entitlement for any of the product codes
+    return entitlementChecks.some((hasEntitlement) => hasEntitlement);
+  } catch (error) {
+    context.log.error('Error checking product code entitlements:', error);
+    return false; // Fail safe - deny access if entitlement check fails
+  }
+}
 
 export async function isAuditEnabledForSite(type, site, context) {
   const { Configuration } = context.dataAccess;
   const configuration = await Configuration.findLatest();
+  const handler = configuration.getHandlers()?.[type];
+  context.log.info(`Checking product code entitlements for handler ${type}`);
+  // Check if handler has PROD_CODES and verify entitlements
+  if (handler?.PROD_CODES && Array.isArray(handler.PROD_CODES)) {
+    context.log.info(`Checking product code entitlements for handler ${type} with product codes ${JSON.stringify(handler.PROD_CODES)}`);
+    const hasValidEntitlement = await checkProductCodeEntitlements(
+      handler.PROD_CODES,
+      site,
+      context,
+    );
+    if (!hasValidEntitlement) {
+      context.log.info(`No valid entitlement for handler ${type} with product codes ${handler.PROD_CODES}`);
+      return false;
+    }
+  }
+
   return configuration.isHandlerEnabledForSite(type, site);
 }
+
+export { checkProductCodeEntitlements };
 
 export async function loadExistingAudit(auditId, context) {
   if (!isValidUUID(auditId)) {

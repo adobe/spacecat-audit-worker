@@ -17,7 +17,10 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 
-import { isAuditEnabledForSite, loadExistingAudit, sendContinuationMessage } from '../../src/common/audit-utils.js';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
+import {
+  isAuditEnabledForSite, loadExistingAudit, sendContinuationMessage, checkProductCodeEntitlements,
+} from '../../src/common/audit-utils.js';
 import { MockContextBuilder } from '../shared.js';
 
 use(sinonChai);
@@ -38,6 +41,7 @@ describe('Audit Utils Tests', () => {
 
     configuration = {
       isHandlerEnabledForSite: sandbox.stub(),
+      getHandlers: sandbox.stub().returns({}),
     };
 
     context = new MockContextBuilder()
@@ -73,6 +77,179 @@ describe('Audit Utils Tests', () => {
 
       await expect(isAuditEnabledForSite('content-audit', site, context))
         .to.be.rejectedWith('DB error');
+    });
+
+    it('returns true when handler has no PROD_CODES', async () => {
+      configuration.getHandlers = () => ({
+        'test-handler': {
+          enabledByDefault: true,
+          // No PROD_CODES
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(true);
+
+      const result = await isAuditEnabledForSite('test-handler', site, context);
+      expect(result).to.be.true;
+    });
+
+    it('returns false when handler has PROD_CODES but no entitlement', async () => {
+      configuration.getHandlers = () => ({
+        'test-handler': {
+          enabledByDefault: true,
+          PROD_CODES: ['ASO', 'LLMO'],
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(true);
+
+      // Mock TierClient to return no entitlement
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: false }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await isAuditEnabledForSite('test-handler', site, context);
+      expect(result).to.be.false;
+    });
+
+    it('returns true when handler has PROD_CODES and entitlement', async () => {
+      configuration.getHandlers = () => ({
+        'test-handler': {
+          enabledByDefault: true,
+          PROD_CODES: ['ASO', 'LLMO'],
+        },
+      });
+      configuration.isHandlerEnabledForSite.returns(true);
+
+      // Mock TierClient to return entitlement for ASO
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub()
+          .onFirstCall().resolves({ entitlement: true }) // ASO
+          .onSecondCall()
+          .resolves({ entitlement: false }), // LLMO
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await isAuditEnabledForSite('test-handler', site, context);
+      expect(result).to.be.true;
+    });
+  });
+
+  describe('checkProductCodeEntitlements', () => {
+    it('returns true when no product codes provided', async () => {
+      const result = await checkProductCodeEntitlements([], site, context);
+      expect(result).to.be.true;
+    });
+
+    it('returns true when productCodes is null', async () => {
+      const result = await checkProductCodeEntitlements(null, site, context);
+      expect(result).to.be.true;
+    });
+
+    it('returns true when site has entitlement for any product code (OR logic)', async () => {
+      // Mock TierClient: ASO has entitlement, LLMO doesn't
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub()
+          .onFirstCall().resolves({ entitlement: true }) // ASO
+          .onSecondCall()
+          .resolves({ entitlement: false }), // LLMO
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await checkProductCodeEntitlements(['ASO', 'LLMO'], site, context);
+      expect(result).to.be.true;
+    });
+
+    it('returns true when site has entitlement for all product codes', async () => {
+      // Mock TierClient: Both ASO and LLMO have entitlement
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub()
+          .onFirstCall().resolves({ entitlement: true }) // ASO
+          .onSecondCall()
+          .resolves({ entitlement: true }), // LLMO
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await checkProductCodeEntitlements(['ASO', 'LLMO'], site, context);
+      expect(result).to.be.true;
+    });
+
+    it('returns false when site has no entitlement for any product code', async () => {
+      // Mock TierClient: Neither ASO nor LLMO has entitlement
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub()
+          .onFirstCall().resolves({ entitlement: false }) // ASO
+          .onSecondCall()
+          .resolves({ entitlement: false }), // LLMO
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await checkProductCodeEntitlements(['ASO', 'LLMO'], site, context);
+      expect(result).to.be.false;
+    });
+
+    it('returns false when entitlement check fails for all product codes', async () => {
+      // Mock TierClient: All entitlement checks throw errors
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub()
+          .onFirstCall().rejects(new Error('ASO check failed'))
+          .onSecondCall()
+          .rejects(new Error('LLMO check failed')),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await checkProductCodeEntitlements(['ASO', 'LLMO'], site, context);
+      expect(result).to.be.false;
+      expect(context.log.warn).to.have.been.calledTwice;
+    });
+
+    it('returns true when one product code fails but another succeeds', async () => {
+      // Mock TierClient: ASO fails, LLMO succeeds
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub()
+          .onFirstCall().rejects(new Error('ASO check failed'))
+          .onSecondCall()
+          .resolves({ entitlement: true }), // LLMO
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await checkProductCodeEntitlements(['ASO', 'LLMO'], site, context);
+      expect(result).to.be.true;
+      expect(context.log.warn).to.have.been.calledOnce;
+    });
+
+    it('handles single product code', async () => {
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await checkProductCodeEntitlements(['ASO'], site, context);
+      expect(result).to.be.true;
+    });
+
+    it('handles multiple product codes with mixed results', async () => {
+      // Mock TierClient: ASO fails, LLMO succeeds, CWV fails
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub()
+          .onFirstCall().rejects(new Error('ASO check failed'))
+          .onSecondCall()
+          .resolves({ entitlement: true }) // LLMO
+          .onThirdCall()
+          .resolves({ entitlement: false }), // CWV
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      const result = await checkProductCodeEntitlements(['ASO', 'LLMO', 'CWV'], site, context);
+      expect(result).to.be.true; // Should return true because LLMO succeeded
+    });
+
+    it('handles critical error in checkProductCodeEntitlements and returns false', async () => {
+      // Mock Promise.all to throw an error to trigger the outer try-catch block
+      sandbox.stub(Promise, 'all').throws(new Error('Critical Promise.all error'));
+
+      const result = await checkProductCodeEntitlements(['ASO', 'LLMO'], site, context);
+      expect(result).to.be.false;
+      expect(context.log.error).to.have.been.calledWith('Error checking product code entitlements:', sinon.match.instanceOf(Error));
     });
   });
 

@@ -254,6 +254,7 @@ describe('Backlinks Tests', function () {
     beforeEach(() => {
       configuration = {
         isHandlerEnabledForSite: sandbox.stub(),
+        getHandlers: sandbox.stub().returns({}),
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([brokenBacklinksOpportunity]);
