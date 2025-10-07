@@ -79,17 +79,17 @@ describe('Audit Utils Tests', () => {
         .to.be.rejectedWith('DB error');
     });
 
-    it('returns true when handler has no PROD_CODES', async () => {
+    it('returns false when handler has no PROD_CODES', async () => {
       configuration.getHandlers = () => ({
         'test-handler': {
           enabledByDefault: true,
           // No PROD_CODES
         },
       });
-      configuration.isHandlerEnabledForSite.returns(true);
 
       const result = await isAuditEnabledForSite('test-handler', site, context);
-      expect(result).to.be.true;
+      expect(result).to.be.false;
+      expect(context.log.error).to.have.been.calledWith('Handler test-handler has no product codes');
     });
 
     it('returns false when handler has PROD_CODES but no entitlement', async () => {
@@ -199,7 +199,6 @@ describe('Audit Utils Tests', () => {
 
       const result = await checkProductCodeEntitlements(['ASO', 'LLMO'], site, context);
       expect(result).to.be.false;
-      expect(context.log.warn).to.have.been.calledTwice;
     });
 
     it('returns true when one product code fails but another succeeds', async () => {
@@ -214,7 +213,6 @@ describe('Audit Utils Tests', () => {
 
       const result = await checkProductCodeEntitlements(['ASO', 'LLMO'], site, context);
       expect(result).to.be.true;
-      expect(context.log.warn).to.have.been.calledOnce;
     });
 
     it('handles single product code', async () => {

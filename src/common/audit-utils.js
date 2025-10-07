@@ -21,7 +21,7 @@ import { retrieveAuditById } from '../utils/data-access.js';
  * @param {Object} context - Lambda context
  * @returns {Promise<boolean>} - True if site has entitlement for any product code
  */
-async function checkProductCodeEntitlements(productCodes, site, context) {
+export async function checkProductCodeEntitlements(productCodes, site, context) {
   if (!productCodes || !Array.isArray(productCodes) || productCodes.length === 0) {
     return true; // No product codes to check, allow by default
   }
@@ -35,17 +35,16 @@ async function checkProductCodeEntitlements(productCodes, site, context) {
           const tierResult = await tierClient.checkValidEntitlement();
           return tierResult.entitlement || false;
         } catch (error) {
-          context.log.warn(`Failed to check entitlement for product code ${productCode}:`, error);
+          context.log.error(`Failed to check entitlement for product code ${productCode}:`, error);
           return false;
         }
       }),
     );
-
     // Return true if site has entitlement for any of the product codes
     return entitlementChecks.some((hasEntitlement) => hasEntitlement);
   } catch (error) {
     context.log.error('Error checking product code entitlements:', error);
-    return false; // Fail safe - deny access if entitlement check fails
+    return false; // Fail safe - deny audit if entitlement check fails
   }
 }
 
@@ -53,25 +52,25 @@ export async function isAuditEnabledForSite(type, site, context) {
   const { Configuration } = context.dataAccess;
   const configuration = await Configuration.findLatest();
   const handler = configuration.getHandlers()?.[type];
-  context.log.info(`Checking product code entitlements for handler ${type}`);
   // Check if handler has PROD_CODES and verify entitlements
   if (handler?.PROD_CODES && Array.isArray(handler.PROD_CODES)) {
-    context.log.info(`Checking product code entitlements for handler ${type} with product codes ${JSON.stringify(handler.PROD_CODES)}`);
     const hasValidEntitlement = await checkProductCodeEntitlements(
       handler.PROD_CODES,
       site,
       context,
     );
     if (!hasValidEntitlement) {
-      context.log.info(`No valid entitlement for handler ${type} with product codes ${handler.PROD_CODES}`);
+      context.log.error(`No valid entitlement for handler ${type} with product codes 
+        ${handler.PROD_CODES} for site ${site.getId()}`);
       return false;
     }
+  } else {
+    context.log.error(`Handler ${type} has no product codes`);
+    return false;
   }
 
   return configuration.isHandlerEnabledForSite(type, site);
 }
-
-export { checkProductCodeEntitlements };
 
 export async function loadExistingAudit(auditId, context) {
   if (!isValidUUID(auditId)) {
