@@ -94,7 +94,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   // Get aiPlatform from the audit result
   const auditResult = audit?.getAuditResult();
   const aiPlatform = auditResult?.aiPlatform;
-  log.info('GEO BRAND PRESENCE: aiPlatform: %s', aiPlatform);
+  log.info('GEO BRAND PRESENCE: aiPlatform: %s for site id %s (%s)', aiPlatform, siteId, baseURL);
   /* c8 ignore start */
   if (success === false) {
     log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
@@ -133,7 +133,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
 
   // Determine which providers to use
-  const providersToUse = aiPlatform ? [aiPlatform] : WEB_SEARCH_PROVIDERS;
+  const providersToUse = aiPlatform !== undefined ? [aiPlatform] : WEB_SEARCH_PROVIDERS;
 
   /* c8 ignore next 4 */
   if (!providersToUse || providersToUse.length === 0) {
