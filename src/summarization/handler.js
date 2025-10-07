@@ -62,17 +62,19 @@ export async function sendMystiqueMessagePostProcessor(auditUrl, auditData, cont
 }
 
 export async function summarizationAudit(url, context, site) {
-  const { dataAccess } = context;
+  const { dataAccess, log } = context;
   const { SiteTopPage } = dataAccess;
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+  let success = true;
   if (topPages.length === 0) {
-    throw new Error('No top pages found for site');
+    log.warn('No top pages found for site');
+    success = false;
   }
 
   return {
     auditResult: {
       topPages: topPages.map((page) => page.getUrl()),
-      success: true,
+      success,
     },
     fullAuditRef: url,
   };

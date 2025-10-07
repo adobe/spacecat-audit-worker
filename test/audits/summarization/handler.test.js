@@ -110,16 +110,14 @@ describe('Summarization Handler', () => {
       );
     });
 
-    it('should throw error when no top pages are found', async () => {
+    it('should return success false when no top pages are found', async () => {
       dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
-      try {
-        await summarizationAudit('https://adobe.com', context, site);
-        expect.fail('Should have thrown error');
-      } catch (error) {
-        expect(error.message).to.equal('No top pages found for site');
-      }
+      const result = await summarizationAudit('https://adobe.com', context, site);
 
+      expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.topPages).to.deep.equal([]);
+      expect(result.fullAuditRef).to.equal('https://adobe.com');
       expect(dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
         site.getId(),
         'ahrefs',
