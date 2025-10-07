@@ -1,3 +1,10 @@
+## [1.194.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.194.1...v1.194.2) (2025-10-07)
+
+
+### Bug Fixes
+
+* handle no optel data case for llmo-referral-traffic ([#1354](https://github.com/adobe/spacecat-audit-worker/issues/1354)) ([24da783](https://github.com/adobe/spacecat-audit-worker/commit/24da783124d4931781f5250f0968bebbf4bcfc1b))
+
 ## [1.194.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.194.0...v1.194.1) (2025-10-07)
 
 
