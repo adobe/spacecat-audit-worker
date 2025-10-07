@@ -83,7 +83,7 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
   let resp;
   try {
     resp = await fetch(
-      `https://aem-trustcenter-dev.adobe.io/api/reports/${programId}/${environmentId}/vulnerabilities`,
+      `${env.STARFISH_API_BASE_URL}/reports/${programId}/${environmentId}/vulnerabilities`,
       { headers },
     );
   } catch (error) {
