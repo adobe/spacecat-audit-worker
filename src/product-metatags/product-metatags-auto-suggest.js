@@ -71,6 +71,14 @@ export default async function productMetatagsAutoSuggest(allTags, context, site,
       baseUrl: site.getBaseURL(),
     },
   };
+  log.info('[PRODUCT-METATAGS] Sending request to Genvar client:', {
+    detectedTagsCount: Object.keys(requestBody.detectedTags).length,
+    detectedTagsEndpoints: Object.keys(requestBody.detectedTags),
+    healthyTagsKeys: Object.keys(requestBody.healthyTags),
+    siteBaseUrl: requestBody.site.baseUrl,
+    requestBodyKeys: Object.keys(requestBody),
+  });
+  log.debug('[PRODUCT-METATAGS] Full request body to Genvar:', JSON.stringify(requestBody, null, 2));
   let responseWithSuggestions;
   try {
     const genvarClient = GenvarClient.createFrom(context);
