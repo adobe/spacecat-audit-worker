@@ -43,7 +43,6 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
       log.info(`CWV opportunity sent to mystique for guidance: ${JSON.stringify(mystiqueMessage)}`);
     }
   } catch (error) {
-    log.debug(`[CWV] Failed to send message to Mystique for opportunity ${opportunity?.getId()}: ${error.message}`);
     log.error(`[CWV] Failed to send message to Mystique for opportunity ${opportunity?.getId()}: ${error.message}`);
     throw new Error(error.message);
   }
