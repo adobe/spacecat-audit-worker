@@ -11,31 +11,6 @@
  */
 
 /**
- * Formats metrics into a consistent string format
- * @param {Object} metrics - Object containing metric values
- * @returns {string} Formatted metrics string or empty string if no metrics
- */
-export function formatMetrics(metrics) {
-  const metricStrings = [];
-  if (metrics.word_count !== undefined && metrics.word_count !== null) {
-    metricStrings.push(`Word count: ${metrics.word_count}`);
-  }
-  if (metrics.readability_score !== undefined && metrics.readability_score !== null) {
-    const score = metrics.readability_score;
-    let readabilityText = `${score}`;
-    if (score >= 0 && score < 30) {
-      readabilityText += ' => difficult to read';
-    } else if (score >= 30 && score < 70) {
-      readabilityText += ' => easy to read';
-    } else if (score >= 70 && score <= 100) {
-      readabilityText += ' => very easy to read';
-    }
-    metricStrings.push(`Readability: ${readabilityText}`);
-  }
-  return metricStrings.length > 0 ? metricStrings.join(' | ') : '';
-}
-
-/**
  * Generates formatted markdown from suggestions data
  * @param {Array} suggestions - Array of suggestion objects
  * @param {Object} log - Logger object
@@ -75,61 +50,43 @@ export function getSuggestionValue(suggestions, log) {
     // Increment counter only for processed suggestions
     processedCount += 1;
 
-    // Main section for each URL
-    suggestionValue += `## ${processedCount}. ${suggestion.pageUrl}\n\n`;
-
-    suggestionValue += '### Page Title\n\n';
-
-    // Page title as subsection
-    if (suggestion.pageSummary?.title) {
-      suggestionValue += `${suggestion.pageSummary.title}\n\n`;
+    // Main section for each URL - use page title as heading
+    const pageTitle = suggestion.pageSummary?.title || `Page ${processedCount}`;
+    const urlPath = suggestion.pageUrl.replace(/^https?:\/\/[^/]+/, '');
+    suggestionValue += `## ${processedCount}. ${pageTitle}\n\n`;
+    // Add URL path as smaller link
+    if (urlPath) {
+      suggestionValue += `[${urlPath}](${suggestion.pageUrl})\n\n`;
     }
 
-    // Page Summary subsection
+    // Add summary ideally before the main content starts
+    suggestionValue += '### Add summary ideally before the main content starts\n\n';
+    // Summary section
     const pageSummaryContent = suggestion.pageSummary?.formatted_summary
       || suggestion.pageSummary?.summary;
     if (pageSummaryContent) {
-      suggestionValue += `### Page Summary (AI generated)\n\n> ${pageSummaryContent}\n\n`;
-
-      // Add page summary metrics
-      const pageSummaryMetrics = formatMetrics(suggestion.pageSummary);
-      if (pageSummaryMetrics) {
-        suggestionValue += `${pageSummaryMetrics}\n\n`;
-      }
+      suggestionValue += `**Summary**\n\n${pageSummaryContent}\n\n`;
     }
 
-    // Key Points subsection
+    // Key Points section
     const keyPointsItems = suggestion.keyPoints?.formatted_items || suggestion.keyPoints?.items;
     if (keyPointsItems && Array.isArray(keyPointsItems)) {
-      suggestionValue += '### Key Points (AI generated)\n\n';
+      suggestionValue += '**Key points**\n\n';
       keyPointsItems.forEach((point) => {
         if (point.trim()) {
-          suggestionValue += `> - ${point}\n`;
+          suggestionValue += `- ${point}\n`;
         }
       });
-
-      // Add key points metrics
-      const keyPointsMetrics = formatMetrics(suggestion.keyPoints);
-      if (keyPointsMetrics) {
-        suggestionValue += `\n${keyPointsMetrics}\n\n`;
-      } else {
-        suggestionValue += '\n';
-      }
+      suggestionValue += '\n';
     }
 
-    // Section Summaries subsection
+    // Add section summaries above or below section content
     if (suggestion.sectionSummaries && suggestion.sectionSummaries.length > 0) {
-      suggestionValue += '### Section Summaries (AI generated)\n\n';
+      suggestionValue += '### Add section summaries above or below section content\n\n';
       suggestion.sectionSummaries.forEach((section) => {
         const sectionContent = section.formatted_summary || section.summary;
         if (section.title && section.title.trim() && sectionContent && sectionContent.trim()) {
-          suggestionValue += `#### ${section.title}\n\n> ${sectionContent}\n\n`;
-
-          // Add section metrics
-          const sectionMetrics = formatMetrics(section);
-          if (sectionMetrics) {
-            suggestionValue += `${sectionMetrics}\n\n`;
-          }
+          suggestionValue += `*Section:* **${section.title}**\n\n${sectionContent}\n\n`;
         }
       });
     }

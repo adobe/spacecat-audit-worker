@@ -13,7 +13,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { formatMetrics, getSuggestionValue } from '../../../src/summarization/utils.js';
+import { getSuggestionValue } from '../../../src/summarization/utils.js';
 
 use(sinonChai);
 
@@ -32,76 +32,6 @@ describe('Summarization Utils', () => {
     sinon.restore();
   });
 
-  describe('formatMetrics', () => {
-    it('should format all metrics when all are present', () => {
-      const metrics = {
-        readability_score: 75.5,
-        word_count: 150,
-        brand_consistency_score: 85,
-      };
-
-      const result = formatMetrics(metrics);
-      expect(result).to.equal('Word count: 150 | Readability: 75.5 => very easy to read');
-    });
-
-    it('should format partial metrics when only some are present', () => {
-      const metrics = {
-        readability_score: 60.2,
-        brand_consistency_score: 60,
-      };
-
-      const result = formatMetrics(metrics);
-      expect(result).to.equal('Readability: 60.2 => easy to read');
-    });
-
-    it('should not show brand consistency score', () => {
-      const metrics = {
-        brand_consistency_score: 90,
-      };
-
-      const result = formatMetrics(metrics);
-      expect(result).to.equal('');
-    });
-
-    it('should return empty string when no metrics are present', () => {
-      const metrics = {};
-
-      const result = formatMetrics(metrics);
-      expect(result).to.equal('');
-    });
-
-    it('should handle undefined values gracefully', () => {
-      const metrics = {
-        readability_score: undefined,
-        word_count: 50,
-        brand_consistency_score: undefined,
-      };
-
-      const result = formatMetrics(metrics);
-      expect(result).to.equal('Word count: 50');
-    });
-
-    it('should handle null values gracefully', () => {
-      const metrics = {
-        readability_score: null,
-        word_count: 75,
-        brand_consistency_score: null,
-      };
-
-      const result = formatMetrics(metrics);
-      expect(result).to.equal('Word count: 75');
-    });
-
-    it('should format readability score in difficult to read range', () => {
-      const metrics = {
-        readability_score: 25,
-        word_count: 100,
-      };
-
-      const result = formatMetrics(metrics);
-      expect(result).to.equal('Word count: 100 | Readability: 25 => difficult to read');
-    });
-  });
 
   describe('getSuggestionValue', () => {
     it('should format suggestions with all content types', () => {
@@ -133,20 +63,16 @@ describe('Summarization Utils', () => {
 
       const result = getSuggestionValue(suggestions, mockLog);
 
-      expect(result).to.include('## 1. https://example.com/page1');
-      expect(result).to.include('### Page Title');
-      expect(result).to.include('Page Title 1');
-      expect(result).to.include('### Page Summary (AI generated)');
-      expect(result).to.include('> This is a page summary');
-      expect(result).to.include('Word count: 25 | Readability: 70.5 => very easy to read');
-      expect(result).to.include('### Key Points (AI generated)');
-      expect(result).to.include('> - Key point 1');
-      expect(result).to.include('> - Key point 2');
-      expect(result).to.include('Word count: 15 | Readability: 65.2 => easy to read');
-      expect(result).to.include('### Section Summaries (AI generated)');
-      expect(result).to.include('#### Section 1');
-      expect(result).to.include('> Section summary 1');
-      expect(result).to.include('Word count: 15 | Readability: 65.2 => easy to read');
+      expect(result).to.include('## 1. Page Title 1');
+      expect(result).to.include('[/page1](https://example.com/page1)');
+      expect(result).to.include('### Add summary ideally before the main content starts');
+      expect(result).to.include('**Summary**');
+      expect(result).to.include('This is a page summary');
+      expect(result).to.include('**Key points**');
+      expect(result).to.include('- Key point 1');
+      expect(result).to.include('- Key point 2');
+      expect(result).to.include('### Add section summaries above or below section content');
+      expect(result).to.include('*Section:* **Section 1**\n\nSection summary 1');
     });
 
     it('should skip suggestions with no meaningful content', () => {
@@ -168,7 +94,8 @@ describe('Summarization Utils', () => {
 
       const result = getSuggestionValue(suggestions, mockLog);
 
-      expect(result).to.include('## 1. https://example.com/valid');
+      expect(result).to.include('## 1. Valid Page');
+      expect(result).to.include('[/valid](https://example.com/valid)');
       expect(result).to.not.include('https://example.com/empty');
       expect(mockLog.info).to.have.been.calledWith('Skipping suggestion with no meaningful content for URL: https://example.com/empty');
     });
@@ -187,12 +114,13 @@ describe('Summarization Utils', () => {
 
       const result = getSuggestionValue(suggestions, mockLog);
 
-      expect(result).to.include('## 1. https://example.com/summary-only');
-      expect(result).to.include('### Page Summary (AI generated)');
-      expect(result).to.include('> This page has only a summary');
-      expect(result).to.include('Readability: 80 => very easy to read');
-      expect(result).to.not.include('### Key Points');
-      expect(result).to.not.include('### Section Summaries');
+      expect(result).to.include('## 1. Summary Only Page');
+      expect(result).to.include('[/summary-only](https://example.com/summary-only)');
+      expect(result).to.include('### Add summary ideally before the main content starts');
+      expect(result).to.include('**Summary**');
+      expect(result).to.include('This page has only a summary');
+      expect(result).to.not.include('**Key points:**');
+      expect(result).to.not.include('### Add section summaries above or below section content');
     });
 
     it('should handle suggestions with only key points', () => {
@@ -209,14 +137,15 @@ describe('Summarization Utils', () => {
 
       const result = getSuggestionValue(suggestions, mockLog);
 
-      expect(result).to.include('## 1. https://example.com/keypoints-only');
-      expect(result).to.include('### Key Points (AI generated)');
-      expect(result).to.include('> - Point 1');
-      expect(result).to.include('> - Point 2');
-      expect(result).to.include('> - Point 3');
-      expect(result).to.include('Word count: 20 | Readability: 60 => easy to read');
-      expect(result).to.not.include('### Page Summary');
-      expect(result).to.not.include('### Section Summaries');
+      expect(result).to.include('## 1. Page 1');
+      expect(result).to.include('[/keypoints-only](https://example.com/keypoints-only)');
+      expect(result).to.include('### Add summary ideally before the main content starts');
+      expect(result).to.include('**Key points**');
+      expect(result).to.include('- Point 1');
+      expect(result).to.include('- Point 2');
+      expect(result).to.include('- Point 3');
+      expect(result).to.not.include('**Summary:**');
+      expect(result).to.not.include('### Add section summaries above or below section content');
     });
 
     it('should handle suggestions with only section summaries', () => {
@@ -240,16 +169,14 @@ describe('Summarization Utils', () => {
 
       const result = getSuggestionValue(suggestions, mockLog);
 
-      expect(result).to.include('## 1. https://example.com/sections-only');
-      expect(result).to.include('### Section Summaries (AI generated)');
-      expect(result).to.include('#### Section A');
-      expect(result).to.include('> Summary A');
-      expect(result).to.include('Readability: 60 => easy to read');
-      expect(result).to.include('#### Section B');
-      expect(result).to.include('> Summary B');
-      expect(result).to.include('Word count: 20');
-      expect(result).to.not.include('### Page Summary');
-      expect(result).to.not.include('### Key Points');
+      expect(result).to.include('## 1. Page 1');
+      expect(result).to.include('[/sections-only](https://example.com/sections-only)');
+      expect(result).to.include('### Add summary ideally before the main content starts');
+      expect(result).to.include('### Add section summaries above or below section content');
+      expect(result).to.include('*Section:* **Section A**\n\nSummary A');
+      expect(result).to.include('*Section:* **Section B**\n\nSummary B');
+      expect(result).to.not.include('**Summary:**');
+      expect(result).to.not.include('**Key points:**');
     });
 
     it('should handle multiple suggestions with correct numbering', () => {
@@ -272,8 +199,10 @@ describe('Summarization Utils', () => {
 
       const result = getSuggestionValue(suggestions, mockLog);
 
-      expect(result).to.include('## 1. https://example.com/page1');
-      expect(result).to.include('## 2. https://example.com/page2');
+      expect(result).to.include('## 1. Page 1');
+      expect(result).to.include('[/page1](https://example.com/page1)');
+      expect(result).to.include('## 2. Page 2');
+      expect(result).to.include('[/page2](https://example.com/page2)');
       expect(result).to.not.include('https://example.com/empty');
     });
 
@@ -290,7 +219,8 @@ describe('Summarization Utils', () => {
 
       const result = getSuggestionValue(suggestions, mockLog);
 
-      expect(result).to.include('## 1. https://example.com/valid');
+      expect(result).to.include('## 1. Valid Page');
+      expect(result).to.include('[/valid](https://example.com/valid)');
       expect(result).to.not.include('No URL Page');
       expect(mockLog.warn).to.have.been.calledWith(sinon.match(/No pageUrl found for suggestion/));
     });
@@ -321,12 +251,12 @@ describe('Summarization Utils', () => {
 
       const result = getSuggestionValue(suggestions, mockLog);
 
-      expect(result).to.include('> - Valid point');
-      expect(result).to.include('> - Another valid point');
-      expect(result).to.not.include('> - \n');
-      expect(result).to.not.include('> -    \n');
-      expect(result).to.include('#### Valid Section');
-      expect(result).to.not.include('#### \n');
+      expect(result).to.include('- Valid point');
+      expect(result).to.include('- Another valid point');
+      expect(result).to.not.include('- \n');
+      expect(result).to.not.include('-    \n');
+      expect(result).to.include('*Section:* **Valid Section**\n\nValid summary');
+      expect(result).to.not.include('*Section:* **:** Empty title');
       expect(result).to.not.include('####    \n');
     });
 
@@ -379,17 +309,18 @@ describe('Summarization Utils', () => {
 
       const result = getSuggestionValue(suggestions, mockLog);
 
-      expect(result).to.include('## 1. https://example.com/formatted');
-      expect(result).to.include('### Page Summary (AI generated)');
-      expect(result).to.include('> **Bold** text summary with *emphasis*');
-      expect(result).to.not.include('> Plain text summary');
-      expect(result).to.include('### Key Points (AI generated)');
-      expect(result).to.include('> - **Bold** key point with *emphasis*');
-      expect(result).to.not.include('> - Plain key point');
-      expect(result).to.include('### Section Summaries (AI generated)');
-      expect(result).to.include('#### Formatted Section');
-      expect(result).to.include('> **Bold** section summary with *emphasis*');
-      expect(result).to.not.include('> Plain section summary');
+      expect(result).to.include('## 1. Formatted Test');
+      expect(result).to.include('[/formatted](https://example.com/formatted)');
+      expect(result).to.include('### Add summary ideally before the main content starts');
+      expect(result).to.include('**Summary**');
+      expect(result).to.include('**Bold** text summary with *emphasis*');
+      expect(result).to.not.include('Plain text summary');
+      expect(result).to.include('**Key points**');
+      expect(result).to.include('- **Bold** key point with *emphasis*');
+      expect(result).to.not.include('- Plain key point');
+      expect(result).to.include('### Add section summaries above or below section content');
+      expect(result).to.include('*Section:* **Formatted Section**\n\n**Bold** section summary with *emphasis*');
+      expect(result).to.not.include('*Section:* **Formatted Section**\n\nPlain section summary');
     });
   });
 });

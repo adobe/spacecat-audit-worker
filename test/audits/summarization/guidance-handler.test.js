@@ -352,7 +352,7 @@ describe('summarization guidance handler', () => {
     
     // Test the mapNewSuggestion function
     const testData = {
-      suggestionValue: '## 1. https://adobe.com/page1\n\n### Page Title\n\nPage Title 1\n\n### Page Summary (AI generated)\n\n> This is a page summary\n\nWord count: 25 | Readability: 70.5 => very easy to read\n\n### Key Points (AI generated)\n\n> - Key point 1\n> - Key point 2\n\nWord count: 15 | Readability: 65.2 => easy to read\n\n### Section Summaries (AI generated)\n\n#### Section 1\n\n> Section summary 1\n\nWord count: 15 | Readability: 65.2 => easy to read\n\n---\n\n',
+      suggestionValue: '## 1. https://adobe.com/page1\n\n### Page Title\n\nPage Title 1\n\n### Page Summary (AI generated)\n\n> This is a page summary\n\n### Key Points (AI generated)\n\n> - Key point 1\n> - Key point 2\n\n### Section Summaries (AI generated)\n\n#### Section 1\n\n> Section summary 1\n\n---\n\n',
       bKey: 'summarization:https://adobe.com'
     };
     
