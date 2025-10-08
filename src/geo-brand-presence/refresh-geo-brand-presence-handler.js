@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+/* eslint-disable no-use-before-define */
+
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
@@ -59,7 +61,7 @@ async function fetchQueryIndexPaths(site, context) {
         if (rowNumber === 1) return;
 
         // Look for path-like data in the first column or any column that contains path information
-        row.eachCell((cell, _) => {
+        row.eachCell((cell) => {
           const cellValue = cell.value;
           if (cellValue && typeof cellValue === 'string') {
             // Check for brand-presence/latest/ first (priority)
