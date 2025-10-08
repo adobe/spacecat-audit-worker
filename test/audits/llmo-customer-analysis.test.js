@@ -39,6 +39,7 @@ describe('LLMO Customer Analysis Handler', () => {
       info: sandbox.stub(),
       error: sandbox.stub(),
       warn: sandbox.stub(),
+      debug: sandbox.stub(),
     };
 
     configuration = {
@@ -47,12 +48,16 @@ describe('LLMO Customer Analysis Handler', () => {
         audits: 'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
       }),
       enableHandlerForSite: sandbox.stub(),
+      isHandlerEnabledForSite: sandbox.stub().returns(false),
       save: sandbox.stub().resolves(),
     };
 
     dataAccess = {
       Configuration: {
         findLatest: sandbox.stub().resolves(configuration),
+      },
+      Site: {
+        allByOrganizationId: sandbox.stub().resolves([]),
       },
     };
 
@@ -64,6 +69,7 @@ describe('LLMO Customer Analysis Handler', () => {
     site = {
       getSiteId: sandbox.stub().returns('site-123'),
       getBaseURL: sandbox.stub().returns('https://example.com'),
+      getOrganizationId: sandbox.stub().returns('org-123'),
       getConfig: sandbox.stub().returns(siteConfig),
     };
 
@@ -154,6 +160,47 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
+    });
+
+    it('should skip enabling cdn-analysis when already enabled for organization', async () => {
+      const otherSite = {
+        getSiteId: () => 'other-site-123',
+        getOrganizationId: () => 'org-123',
+      };
+
+      context.dataAccess.Site.allByOrganizationId.resolves([site, otherSite]);
+
+      configuration.isHandlerEnabledForSite.callsFake((auditType, checkSite) => {
+        if (auditType === 'cdn-analysis' && checkSite.getSiteId() === 'other-site-123') {
+          return true;
+        }
+        return false;
+      });
+
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(configuration.enableHandlerForSite).to.not.have.been.calledWith('cdn-analysis', site);
+
+      expect(result.auditResult.status).to.equal('completed');
     });
 
     it('should not trigger referral traffic imports on subsequent config updates', async () => {
@@ -386,7 +433,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
     });
 
-    it('should return early when no config version provided', async () => {
+    it('should trigger all audits when no config version provided', async () => {
       const auditContext = {};
 
       const result = await mockHandler.runLlmoCustomerAnalysis(
@@ -398,7 +445,13 @@ describe('LLMO Customer Analysis Handler', () => {
 
       expect(mockLlmoConfig.readConfig).to.not.have.been.called;
       expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.message).to.equal('No config version provided');
+      expect(result.auditResult.configChangesDetected).to.equal(true);
+      expect(result.auditResult.message).to.equal('All audits triggered (no config version provided)');
+      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
+      expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
+      // 4 referral traffic imports + 2 audits (cdn-logs-report, geo-brand-presence)
+      expect(sqs.sendMessage).to.have.callCount(6);
     });
 
     it('should handle multiple changes and trigger multiple steps', async () => {

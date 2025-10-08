@@ -23,6 +23,7 @@ import { getRUMUrl } from '../support/utils.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
+const AGENTIC_TRAFFIC_ANALYSIS_AUDIT = 'cdn-analysis';
 
 async function enableAudits(site, context, audits = []) {
   const { dataAccess } = context;
@@ -43,6 +44,26 @@ function enableImports(site, imports = []) {
       siteConfig.enableImport(type, options);
     }
   });
+}
+
+// Enables the cdn-analysis audit only if no other site in this organization has it enabled
+async function enableCdnAnalysis(site, context) {
+  const { dataAccess, log } = context;
+  const { Configuration, Site } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const orgId = site.getOrganizationId();
+  const sitesInOrg = await Site.allByOrganizationId(orgId);
+
+  const hasAgenticTrafficEnabled = sitesInOrg.some(
+    (orgSite) => configuration.isHandlerEnabledForSite(AGENTIC_TRAFFIC_ANALYSIS_AUDIT, orgSite),
+  );
+
+  if (!hasAgenticTrafficEnabled) {
+    log.info(`Enabling agentic traffic audits for organization ${orgId} (first site in org)`);
+    configuration.enableHandlerForSite(AGENTIC_TRAFFIC_ANALYSIS_AUDIT, site);
+  } else {
+    log.debug(`Agentic traffic audits already enabled for organization ${orgId}, skipping`);
+  }
 }
 
 async function checkOptelData(domain, context) {
@@ -126,6 +147,16 @@ export async function triggerGeoBrandPresence(context, site) {
   log.info('Successfully triggered geo-brand-presence audit');
 }
 
+async function triggerAllSteps(context, site, log, triggeredSteps) {
+  log.info('Triggering all relevant audits (no config version provided or first-time setup)');
+
+  await triggerCdnLogsReport(context, site);
+  triggeredSteps.push('cdn-logs-report');
+
+  await triggerGeoBrandPresence(context, site);
+  triggeredSteps.push('geo-brand-presence');
+}
+
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
   const {
     log, s3Client,
@@ -138,26 +169,31 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   await enableAudits(site, context, [
     'headings',
     'llm-blocked',
+    'llm-error-pages',
+    'canonical',
+    'hreflang',
+    'summarization',
     REFERRAL_TRAFFIC_AUDIT,
-    'geo-brand-presence',
     'cdn-logs-report',
+    'geo-brand-presence',
   ]);
 
   enableImports(site, [
     { type: REFERRAL_TRAFFIC_IMPORT },
     { type: 'llmo-prompts-ahrefs', options: { limit: 25 } },
+    { type: 'top-pages' },
   ]);
 
-  const siteConfig = site.getConfig();
-  await siteConfig.enableImport(REFERRAL_TRAFFIC_IMPORT);
-  await siteConfig.enableImport('llmo-prompts-ahrefs', { limit: 25 });
+  await enableCdnAnalysis(site, context);
 
   log.info(`Starting LLMO customer analysis for site: ${siteId}, domain: ${domain}`);
 
   const triggeredSteps = [];
   const hasOptelData = await checkOptelData(domain, context);
-  const isFirstTimeOnboarding = !auditContext.previousConfigVersion;
+  const { configVersion, previousConfigVersion } = auditContext;
+  const isFirstTimeOnboarding = !previousConfigVersion;
 
+  // Handle referral traffic imports for first-time onboarding
   if (hasOptelData && isFirstTimeOnboarding) {
     log.info('First-time LLMO onboarding detected with OpTel data; initiating referral traffic import for the last 4 full calendar weeks');
     await triggerReferralTrafficImports(context, site);
@@ -168,16 +204,23 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     log.info('Domain has no OpTel data available; skipping referral traffic import');
   }
 
-  const { configVersion, previousConfigVersion } = auditContext;
-
+  // If no config version provided, trigger all steps
   if (!configVersion) {
-    log.info('No config version provided in audit context; skipping config comparison');
+    log.info('No config version provided; triggering all relevant audits');
+    await triggerAllSteps(context, site, log, triggeredSteps);
+
     return {
-      auditResult: { status: 'completed', message: 'No config version provided' },
+      auditResult: {
+        status: 'completed',
+        configChangesDetected: true,
+        message: 'All audits triggered (no config version provided)',
+        triggeredSteps,
+      },
       fullAuditRef: finalUrl,
     };
   }
 
+  // Fetch and compare configs
   log.info(`Fetching LLMO config versions - current: ${configVersion}, previous: ${previousConfigVersion || 'none'}`);
 
   const newConfigResult = await llmoConfig.readConfig(siteId, s3Client, { version: configVersion });
