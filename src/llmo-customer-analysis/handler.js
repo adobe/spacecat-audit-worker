@@ -24,6 +24,27 @@ import { getRUMUrl } from '../support/utils.js';
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
 
+async function enableAudits(site, context, audits = []) {
+  const { dataAccess } = context;
+  const { Configuration } = dataAccess;
+
+  const configuration = await Configuration.findLatest();
+  audits.forEach((audit) => {
+    configuration.enableHandlerForSite(audit, site);
+  });
+  await configuration.save();
+}
+
+function enableImports(site, imports = []) {
+  const siteConfig = site.getConfig();
+
+  imports.forEach(({ type, options }) => {
+    if (!siteConfig.isImportEnabled(type, options)) {
+      siteConfig.enableImport(type, options);
+    }
+  });
+}
+
 async function checkOptelData(domain, context) {
   const { log } = context;
   const rumAPIClient = RUMAPIClient.createFrom(context);
@@ -78,6 +99,7 @@ export async function triggerCdnLogsReport(context, site) {
   const cdnLogsMessage = {
     type: 'cdn-logs-report',
     siteId,
+    auditContext: { weekOffset: -1 },
   };
 
   await sqs.sendMessage(configuration.getQueues().audits, cdnLogsMessage);
@@ -111,6 +133,24 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   const siteId = site.getSiteId();
   const domain = finalUrl;
+
+  // Ensure relevant audits and imports are enabled
+  await enableAudits(site, context, [
+    'headings',
+    'llm-blocked',
+    REFERRAL_TRAFFIC_AUDIT,
+    'geo-brand-presence',
+    'cdn-logs-report',
+  ]);
+
+  enableImports(site, [
+    { type: REFERRAL_TRAFFIC_IMPORT },
+    { type: 'llmo-prompts-ahrefs', options: { limit: 25 } },
+  ]);
+
+  const siteConfig = site.getConfig();
+  await siteConfig.enableImport(REFERRAL_TRAFFIC_IMPORT);
+  await siteConfig.enableImport('llmo-prompts-ahrefs', { limit: 25 });
 
   log.info(`Starting LLMO customer analysis for site: ${siteId}, domain: ${domain}`);
 

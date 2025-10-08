@@ -46,6 +46,8 @@ describe('LLMO Customer Analysis Handler', () => {
         imports: 'https://sqs.us-east-1.amazonaws.com/123456789/imports-queue',
         audits: 'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
       }),
+      enableHandlerForSite: sandbox.stub(),
+      save: sandbox.stub().resolves(),
     };
 
     dataAccess = {
@@ -54,9 +56,15 @@ describe('LLMO Customer Analysis Handler', () => {
       },
     };
 
+    const siteConfig = {
+      enableImport: sandbox.stub().resolves(),
+      isImportEnabled: sandbox.stub().returns(false),
+    };
+
     site = {
       getSiteId: sandbox.stub().returns('site-123'),
       getBaseURL: sandbox.stub().returns('https://example.com'),
+      getConfig: sandbox.stub().returns(siteConfig),
     };
 
     context = {
