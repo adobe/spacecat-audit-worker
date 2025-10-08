@@ -34,8 +34,8 @@ export const WEB_SEARCH_PROVIDERS = [
   'chatgpt',
   'gemini',
   'google_ai_overviews',
-  // 'ai_mode',
-  // 'perplexity',
+  'ai_mode',
+  'perplexity',
   // Add more providers here as needed
 ];
 
@@ -94,7 +94,8 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   // Get aiPlatform from the audit result
   const auditResult = audit?.getAuditResult();
   const aiPlatform = auditResult?.aiPlatform;
-  log.info('GEO BRAND PRESENCE: aiPlatform: %s for site id %s (%s)', aiPlatform, siteId, baseURL);
+  const providersToUse = aiPlatform !== undefined ? [aiPlatform] : WEB_SEARCH_PROVIDERS;
+  log.info('GEO BRAND PRESENCE: aiPlatform: %s for site id %s (%s). Will use providers: %j', aiPlatform, siteId, baseURL, providersToUse);
   /* c8 ignore start */
   if (success === false) {
     log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
@@ -131,9 +132,6 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
 
   const url = await asPresignedJsonUrl(prompts, bucket, { ...context, getPresignedUrl });
   log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
-
-  // Determine which providers to use
-  const providersToUse = aiPlatform !== undefined ? [aiPlatform] : WEB_SEARCH_PROVIDERS;
 
   /* c8 ignore next 4 */
   if (!providersToUse || providersToUse.length === 0) {
@@ -214,17 +212,22 @@ export async function keywordPromptsImportStep(context) {
   let aiPlatform;
 
   /* c8 ignore start */
-  try {
-    // Try to parse as JSON first
-    const parsedData = JSON.parse(data);
-    if (parsedData.endDate && Date.parse(parsedData.endDate)) {
-      endDate = parsedData.endDate;
+  if (data) {
+    try {
+      // Try to parse as JSON first (for new format with endDate and aiPlatform)
+      const parsedData = JSON.parse(data);
+      if (parsedData.endDate && Date.parse(parsedData.endDate)) {
+        endDate = parsedData.endDate;
+      }
+      aiPlatform = parsedData.aiPlatform;
+    } catch (e) {
+      // If JSON parsing fails, treat as a date string (legacy behavior)
+      if (Date.parse(data)) {
+        endDate = data;
+      } else {
+        log.warn('GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s', data);
+      }
     }
-    aiPlatform = parsedData.aiPlatform;
-  } catch (e) {
-    // If JSON parsing fails, treat as a date string (legacy behavior)
-    log.error('GEO BRAND PRESENCE:failed to parse %s as JSON', data, e);
-    endDate = Date.parse(data) ? data : undefined;
   }
   /* c8 ignore stop */
 
