@@ -14,6 +14,7 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { sendMessageToMystiqueForGuidance } from '../../../src/cwv/utils.js';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 
 describe('sendMessageToMystiqueForGuidance', () => {
   let context;
