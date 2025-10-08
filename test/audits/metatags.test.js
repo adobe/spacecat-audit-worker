@@ -310,6 +310,9 @@ describe('Meta Tags', () => {
           ],
           siteId: 'site-id',
           type: 'meta-tags',
+          options: {
+            waitTimeoutForMetaTags: 5000,
+          },
         });
       });
 
@@ -337,6 +340,9 @@ describe('Meta Tags', () => {
           ],
           siteId: 'site-id',
           type: 'meta-tags',
+          options: {
+            waitTimeoutForMetaTags: 5000,
+          },
         });
       });
     });
