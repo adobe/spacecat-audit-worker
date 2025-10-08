@@ -13,10 +13,15 @@
 /* eslint-disable no-use-before-define */
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl as getPresignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 import ExcelJS from 'exceljs';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
+
+/**
+ * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js';
+ */
 
 const AUDIT_NAME = 'REFRESH GEO BRAND PRESENCE';
 /* c8 ignore start */
@@ -25,15 +30,13 @@ const AUDIT_NAME = 'REFRESH GEO BRAND PRESENCE';
  * Fetches the list of paths from the query-index SharePoint file
  * @param {Object} site - The site object to get LLMO data folder from
  * @param {Object} context - The context object containing env and log
- * @returns {Promise<Array>} Array of path strings
+ * @param {SharepointClient} sharepointClient - The SharePoint client instance
+ * @returns {Promise<{ sourceFolder: string, paths: Array<string> }>}
  */
-async function fetchQueryIndexPaths(site, context) {
+async function fetchQueryIndexPaths(site, context, sharepointClient) {
   const { log } = context;
   let errorMsg;
   try {
-    // Get the SharePoint client
-    const sharepointClient = await createLLMOSharepointClient(context);
-
     // Get the site's LLMO data folder
     const dataFolder = site.getConfig()?.getLlmoDataFolder?.();
     if (!dataFolder) {
@@ -98,7 +101,7 @@ async function fetchQueryIndexPaths(site, context) {
     log.info(`paths found: ${paths.join(', ')}`);
     if (paths.length > 0) {
       log.info(`%s:Extracted ${paths.length} paths from query-index SharePoint file (source: ${sourceFolder})`, AUDIT_NAME);
-      return paths;
+      return { paths, sourceFolder };
     }
 
     throw new Error('REFRESH GEO BRAND PRESENCE: No paths found in query-index file');
@@ -116,7 +119,12 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   const site = await Site.findById(siteId);
   log.info('site was loaded', site);
   // fetch sheets that need to be refreshed from SharePoint
-  const sheets = await fetchQueryIndexPaths(site, context);
+  // Get the SharePoint client
+  const sharepointClient = await createLLMOSharepointClient(context);
+  const {
+    sourceFolder,
+    paths: sheets,
+  } = await fetchQueryIndexPaths(site, context, sharepointClient);
 
   // save metadata for S3 to track progress
 
@@ -130,7 +138,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
 
   if (bucketName && s3Client) {
     const auditId = randomUUID();
-    const folderKey = `refresh_geo_brand_presence/${auditId}/metadata.json`;
+    const folderKey = `refresh_geo_brand_presence/${auditId}`;
 
     try {
       // Create a metadata file to establish the folder structure
@@ -155,9 +163,27 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
 
       await s3Client.send(new PutObjectCommand({
         Bucket: bucketName,
-        Key: folderKey,
+        Key: `${folderKey}/metadata.json`,
         Body: JSON.stringify(metadata, null, 2),
         ContentType: 'application/json',
+      }));
+
+      // eslint-disable-next-line no-unused-vars
+      const sheetsPresignedUrls = await Promise.all(sheets.map(async (sheetName) => {
+        const sheet = await readFromSharePoint(`${sheetName}.xlsx`, sourceFolder, sharepointClient, log);
+
+        await s3Client.send(new PutObjectCommand({
+          Bucket: bucketName,
+          Key: `${folderKey}/${sheetName}.xlsx`,
+          Body: sheet,
+          ContentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }));
+
+        return getPresignedUrl(
+          s3Client,
+          new GetObjectCommand({ Bucket: bucketName, Key: `${folderKey}/${sheetName}.xlsx` }),
+          { expiresIn: 86_400 /* seconds, 24h */ },
+        );
       }));
 
       log.info('%s:Created S3 folder for audit %s at s3://%s/%s', AUDIT_NAME, auditId, bucketName, folderKey);
