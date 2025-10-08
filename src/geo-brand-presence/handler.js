@@ -44,45 +44,6 @@ export const WEB_SEARCH_PROVIDERS = [
  * @import { S3Client } from '@aws-sdk/client-s3';
  */
 
-/**
- * Creates a message object for sending to Mystique.
- * @param {object} params - Message parameters
- * @param {string} params.opptyType - The opportunity type
- * @param {string} params.siteId - The site ID
- * @param {string} params.baseURL - The base URL
- * @param {string} params.auditId - The audit ID
- * @param {string} params.deliveryType - The delivery type
- * @param {object} params.calendarWeek - The calendar week object
- * @param {string} params.url - The presigned URL for data
- * @param {string} params.webSearchProvider - The web search provider
- * @returns {object} The message object
- */
-function createMystiqueMessage({
-  opptyType,
-  siteId,
-  baseURL,
-  auditId,
-  deliveryType,
-  calendarWeek,
-  url,
-  webSearchProvider,
-}) {
-  return {
-    type: opptyType,
-    siteId,
-    url: baseURL,
-    auditId,
-    deliveryType,
-    time: new Date().toISOString(),
-    week: calendarWeek.week,
-    year: calendarWeek.year,
-    data: {
-      url,
-      web_search_provider: webSearchProvider,
-    },
-  };
-}
-
 export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   const {
     auditContext, log, sqs, env, site, audit, s3Client,
@@ -95,7 +56,9 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   // Get aiPlatform from the audit result
   const auditResult = audit?.getAuditResult();
   const aiPlatform = auditResult?.aiPlatform;
-  const providersToUse = WEB_SEARCH_PROVIDERS.includes(aiPlatform) ? [aiPlatform] : WEB_SEARCH_PROVIDERS;
+  const providersToUse = WEB_SEARCH_PROVIDERS.includes(aiPlatform)
+    ? [aiPlatform]
+    : WEB_SEARCH_PROVIDERS;
   log.info('GEO BRAND PRESENCE: aiPlatform: %s for site id %s (%s). Will use providers: %j', aiPlatform, siteId, baseURL, providersToUse);
 
   if (success === false) {
@@ -239,6 +202,45 @@ export async function keywordPromptsImportStep(context) {
     // auditResult can't be empty, so sending empty array and include aiPlatform
     auditResult: { keywordQuestions: [], aiPlatform },
     fullAuditRef: finalUrl,
+  };
+}
+
+/**
+ * Creates a message object for sending to Mystique.
+ * @param {object} params - Message parameters
+ * @param {string} params.opptyType - The opportunity type
+ * @param {string} params.siteId - The site ID
+ * @param {string} params.baseURL - The base URL
+ * @param {string} params.auditId - The audit ID
+ * @param {string} params.deliveryType - The delivery type
+ * @param {object} params.calendarWeek - The calendar week object
+ * @param {string} params.url - The presigned URL for data
+ * @param {string} params.webSearchProvider - The web search provider
+ * @returns {object} The message object
+ */
+function createMystiqueMessage({
+  opptyType,
+  siteId,
+  baseURL,
+  auditId,
+  deliveryType,
+  calendarWeek,
+  url,
+  webSearchProvider,
+}) {
+  return {
+    type: opptyType,
+    siteId,
+    url: baseURL,
+    auditId,
+    deliveryType,
+    time: new Date().toISOString(),
+    week: calendarWeek.week,
+    year: calendarWeek.year,
+    data: {
+      url,
+      web_search_provider: webSearchProvider,
+    },
   };
 }
 

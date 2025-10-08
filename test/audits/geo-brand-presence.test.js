@@ -187,6 +187,25 @@ describe('Geo Brand Presence Handler', () => {
     });
   });
 
+  it('should fall back to all providers when aiPlatform is invalid', async () => {
+    // Set aiPlatform to an invalid value
+    audit.getAuditResult = () => ({ aiPlatform: 'invalid-provider' });
+    
+    fakeS3Response(fakeData());
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    // Should send messages for all providers since 'invalid-provider' is not in WEB_SEARCH_PROVIDERS
+    expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length);
+  });
+
   // TODO(aurelio): check that we write the right file to s3
   it('should send messages to Mystique for all web search providers when no aiPlatform is provided', async () => {
     // Remove aiPlatform from audit result
