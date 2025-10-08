@@ -161,6 +161,8 @@ describe('CDN Utils', () => {
 
       expect(paths).to.deep.equal({
         rawLocation: 's3://cdn-logs-adobe-prod/ims-org-123/raw/byocdn-fastly/',
+        aggregatedLocation: 's3://cdn-logs-adobe-prod/ims-org-123/aggregated/',
+        aggregatedReferralLocation: 's3://cdn-logs-adobe-prod/ims-org-123/aggregated-referral/',
         aggregatedOutput: 's3://cdn-logs-adobe-prod/ims-org-123/aggregated/2025/01/15/10/',
         aggregatedReferralOutput: 's3://cdn-logs-adobe-prod/ims-org-123/aggregated-referral/2025/01/15/10/',
         tempLocation: 's3://cdn-logs-adobe-prod/temp/athena-results/',
@@ -172,6 +174,8 @@ describe('CDN Utils', () => {
 
       expect(paths).to.deep.equal({
         rawLocation: 's3://test-bucket/raw/',
+        aggregatedLocation: 's3://test-bucket/aggregated/',
+        aggregatedReferralLocation: 's3://test-bucket/aggregated-referral/',
         aggregatedOutput: 's3://test-bucket/aggregated/2025/01/15/10/',
         aggregatedReferralOutput: 's3://test-bucket/aggregated-referral/2025/01/15/10/',
         tempLocation: 's3://test-bucket/temp/athena-results/',
