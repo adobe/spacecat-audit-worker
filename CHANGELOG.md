@@ -1,3 +1,10 @@
+## [1.194.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.194.4...v1.194.5) (2025-10-08)
+
+
+### Bug Fixes
+
+* support new bucket formats ([#1355](https://github.com/adobe/spacecat-audit-worker/issues/1355)) ([3568a4a](https://github.com/adobe/spacecat-audit-worker/commit/3568a4a3728613d04eadb7900a3d1e79dfca2365))
+
 ## [1.194.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.194.3...v1.194.4) (2025-10-07)
 
 
