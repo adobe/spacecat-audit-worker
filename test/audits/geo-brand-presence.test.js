@@ -183,6 +183,7 @@ describe('Geo Brand Presence Handler', () => {
       deliveryType: site.getDeliveryType(),
     });
     expect(brandPresenceMessage.data).deep.equal({
+      configVersion: '1.0.0',
       web_search_provider: 'chatgpt',
       url: 'https://example.com/presigned-url',
     });
@@ -241,7 +242,26 @@ describe('Geo Brand Presence Handler', () => {
         async transformToByteArray() {
           return new Uint8Array(buffer);
         },
+        async transformToString() {
+          // Return a valid LLMO config for the readConfig call
+          const defaultLlmoConfig = {
+            entities: {},
+            categories: {},
+            topics: {},
+            brands: {
+              aliases: [],
+            },
+            competitors: {
+              competitors: [],
+            },
+            deleted: {
+              prompts: {},
+            },
+          };
+          return JSON.stringify(defaultLlmoConfig);
+        },
       },
+      VersionId: '1.0.0', // This is where the version comes from in llmoConfig.readConfig()
     });
   }
 
