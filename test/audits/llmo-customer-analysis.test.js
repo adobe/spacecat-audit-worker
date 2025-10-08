@@ -386,7 +386,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
     });
 
-    it('should return early when no config version provided', async () => {
+    it('should trigger all audits when no config version provided', async () => {
       const auditContext = {};
 
       const result = await mockHandler.runLlmoCustomerAnalysis(
@@ -398,7 +398,13 @@ describe('LLMO Customer Analysis Handler', () => {
 
       expect(mockLlmoConfig.readConfig).to.not.have.been.called;
       expect(result.auditResult.status).to.equal('completed');
-      expect(result.auditResult.message).to.equal('No config version provided');
+      expect(result.auditResult.configChangesDetected).to.equal(true);
+      expect(result.auditResult.message).to.equal('All audits triggered (no config version provided)');
+      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
+      expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
+      // 4 referral traffic imports + 2 audits (cdn-logs-report, geo-brand-presence)
+      expect(sqs.sendMessage).to.have.callCount(6);
     });
 
     it('should handle multiple changes and trigger multiple steps', async () => {

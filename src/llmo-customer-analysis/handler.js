@@ -126,6 +126,16 @@ export async function triggerGeoBrandPresence(context, site) {
   log.info('Successfully triggered geo-brand-presence audit');
 }
 
+async function triggerAllSteps(context, site, log, triggeredSteps) {
+  log.info('Triggering all relevant audits (no config version provided or first-time setup)');
+
+  await triggerCdnLogsReport(context, site);
+  triggeredSteps.push('cdn-logs-report');
+
+  await triggerGeoBrandPresence(context, site);
+  triggeredSteps.push('geo-brand-presence');
+}
+
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
   const {
     log, s3Client,
@@ -138,26 +148,29 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   await enableAudits(site, context, [
     'headings',
     'llm-blocked',
+    'llm-error-pages',
+    'canonical',
+    'hreflang',
+    'summarization',
     REFERRAL_TRAFFIC_AUDIT,
-    'geo-brand-presence',
     'cdn-logs-report',
+    'geo-brand-presence',
   ]);
 
   enableImports(site, [
     { type: REFERRAL_TRAFFIC_IMPORT },
     { type: 'llmo-prompts-ahrefs', options: { limit: 25 } },
+    { type: 'top-pages' },
   ]);
-
-  const siteConfig = site.getConfig();
-  await siteConfig.enableImport(REFERRAL_TRAFFIC_IMPORT);
-  await siteConfig.enableImport('llmo-prompts-ahrefs', { limit: 25 });
 
   log.info(`Starting LLMO customer analysis for site: ${siteId}, domain: ${domain}`);
 
   const triggeredSteps = [];
   const hasOptelData = await checkOptelData(domain, context);
-  const isFirstTimeOnboarding = !auditContext.previousConfigVersion;
+  const { configVersion, previousConfigVersion } = auditContext;
+  const isFirstTimeOnboarding = !previousConfigVersion;
 
+  // Handle referral traffic imports for first-time onboarding
   if (hasOptelData && isFirstTimeOnboarding) {
     log.info('First-time LLMO onboarding detected with OpTel data; initiating referral traffic import for the last 4 full calendar weeks');
     await triggerReferralTrafficImports(context, site);
@@ -168,16 +181,23 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     log.info('Domain has no OpTel data available; skipping referral traffic import');
   }
 
-  const { configVersion, previousConfigVersion } = auditContext;
-
+  // If no config version provided, trigger all steps
   if (!configVersion) {
-    log.info('No config version provided in audit context; skipping config comparison');
+    log.info('No config version provided; triggering all relevant audits');
+    await triggerAllSteps(context, site, log, triggeredSteps);
+
     return {
-      auditResult: { status: 'completed', message: 'No config version provided' },
+      auditResult: {
+        status: 'completed',
+        configChangesDetected: true,
+        message: 'All audits triggered (no config version provided)',
+        triggeredSteps,
+      },
       fullAuditRef: finalUrl,
     };
   }
 
+  // Fetch and compare configs
   log.info(`Fetching LLMO config versions - current: ${configVersion}, previous: ${previousConfigVersion || 'none'}`);
 
   const newConfigResult = await llmoConfig.readConfig(siteId, s3Client, { version: configVersion });
