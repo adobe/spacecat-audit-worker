@@ -74,8 +74,11 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   }
 
   // Load customer-defined prompts from customer config
-  /** @type { { config: import('@adobe/spacecat-shared-utils/src/schemas.js').LLMOConfig } } */
-  const { config } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
+  const {
+    config,
+    exists: configExists,
+    version: configVersion,
+  } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
   const customerPrompts = Object.values(config.topics).flatMap((x) => {
     const category = config.categories[x.category];
     return x.prompts.map((p) => ({
@@ -116,6 +119,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       week: calendarWeek.week,
       year: calendarWeek.year,
       data: {
+        configVersion: configExists ? configVersion : null,
         url,
       },
     };
