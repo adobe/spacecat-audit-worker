@@ -1,3 +1,38 @@
+# [1.195.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.194.6...v1.195.0) (2025-10-08)
+
+
+### Features
+
+* add multi-provider support for geo-brand-presence audit ([#1351](https://github.com/adobe/spacecat-audit-worker/issues/1351)) ([ae86ebb](https://github.com/adobe/spacecat-audit-worker/commit/ae86ebb652e93a09e00589879cb2858033b69793))
+
+## [1.194.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.194.5...v1.194.6) (2025-10-08)
+
+
+### Bug Fixes
+
+* use insert into for tables for aggregated data ([#1350](https://github.com/adobe/spacecat-audit-worker/issues/1350)) ([5c0a275](https://github.com/adobe/spacecat-audit-worker/commit/5c0a275a89f008698486039286c68a8244390306))
+
+## [1.194.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.194.4...v1.194.5) (2025-10-08)
+
+
+### Bug Fixes
+
+* support new bucket formats ([#1355](https://github.com/adobe/spacecat-audit-worker/issues/1355)) ([3568a4a](https://github.com/adobe/spacecat-audit-worker/commit/3568a4a3728613d04eadb7900a3d1e79dfca2365))
+
+## [1.194.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.194.3...v1.194.4) (2025-10-07)
+
+
+### Bug Fixes
+
+* update data access to 2.68.1 ([#1356](https://github.com/adobe/spacecat-audit-worker/issues/1356)) ([08ba402](https://github.com/adobe/spacecat-audit-worker/commit/08ba4029c3781cb528b25febfb1bee4c30e2c66c))
+
+## [1.194.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.194.2...v1.194.3) (2025-10-07)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.56.0 ([#1353](https://github.com/adobe/spacecat-audit-worker/issues/1353)) ([8dd3d2d](https://github.com/adobe/spacecat-audit-worker/commit/8dd3d2d4063aee7f68dd52179c3af869e7cc21ae))
+
 ## [1.194.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.194.1...v1.194.2) (2025-10-07)
 
 
