@@ -20,6 +20,7 @@ import nock from 'nock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
+import * as cwvUtils from '../../src/cwv/utils.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import expectedOpptyWithoutGSC from '../fixtures/cwv/opptyWithoutGSC.json' with { type: 'json' };
 import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
@@ -256,6 +257,17 @@ describe('CWVRunner Tests', () => {
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+    });
+
+    it('calls sendMessageToMystiqueForGuidance with opportunity', async () => {
+      const sendMessageStub = sandbox.stub(cwvUtils, 'sendMessageToMystiqueForGuidance').resolves();
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+
+      expect(sendMessageStub).to.have.been.calledOnceWith(context, oppty);
     });
   });
 });
