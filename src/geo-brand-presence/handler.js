@@ -95,7 +95,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   // Get aiPlatform from the audit result
   const auditResult = audit?.getAuditResult();
   const aiPlatform = auditResult?.aiPlatform;
-  const providersToUse = isString(aiPlatform) ? [aiPlatform] : WEB_SEARCH_PROVIDERS;
+  const providersToUse = WEB_SEARCH_PROVIDERS.includes(aiPlatform) ? [aiPlatform] : WEB_SEARCH_PROVIDERS;
   log.info('GEO BRAND PRESENCE: aiPlatform: %s for site id %s (%s). Will use providers: %j', aiPlatform, siteId, baseURL, providersToUse);
 
   if (success === false) {
