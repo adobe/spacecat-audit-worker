@@ -18,6 +18,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit from './kpi-metrics.js';
+import { sendMessageToMystiqueForGuidance } from './utils.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
@@ -80,6 +81,9 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
       },
     }),
   });
+
+  // Send message to Mystique for CWV guidance
+  await sendMessageToMystiqueForGuidance(context, opportunity);
 }
 
 export default new AuditBuilder()
