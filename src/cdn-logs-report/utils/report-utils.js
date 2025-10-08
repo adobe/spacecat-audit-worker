@@ -168,7 +168,7 @@ export async function fetchRemotePatterns(site) {
     });
 
     if (!res.ok) {
-      throw new Error(`Failed to fetch pattern data from ${url}: ${res.status} ${res.statusText}`);
+      return null;
     }
 
     const data = await res.json();
