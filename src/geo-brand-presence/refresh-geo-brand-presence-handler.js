@@ -59,7 +59,7 @@ async function fetchQueryIndexPaths(site, context) {
         if (rowNumber === 1) return;
 
         // Look for path-like data in the first column or any column that contains path information
-        row.eachCell((cell, colNumber) => {
+        row.eachCell((cell, _) => {
           const cellValue = cell.value;
           if (cellValue && typeof cellValue === 'string') {
             // Check for brand-presence/latest/ first (priority)
@@ -72,9 +72,8 @@ async function fetchQueryIndexPaths(site, context) {
                   latestPaths.push(filenameWithoutExt);
                 }
               }
-            }
+            } else if (cellValue.includes('/brand-presence/') && !cellValue.includes('/brand-presence/latest/')) {
             // Then check for regular brand-presence/ (fallback)
-            else if (cellValue.includes('/brand-presence/') && !cellValue.includes('/brand-presence/latest/')) {
               const filename = cellValue.split('/').pop();
               if (filename) {
                 // Remove .json extension
