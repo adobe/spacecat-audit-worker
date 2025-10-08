@@ -74,13 +74,26 @@ export function generateStandardBucketName(env = 'prod') {
 }
 
 /**
- * Validates if a bucket name is a standard Adobe CDN bucket for allowed environments
+ * Validates if a bucket name is a standard CDN logs bucket
  * @param {string} bucketName - The bucket name to validate
- * @returns {boolean} True if it's a valid Adobe CDN bucket for prod/dev/stage
+ * @returns {boolean} True if it matches allowed patterns
  */
 export function isStandardAdobeCdnBucket(bucketName) {
-  const allowedEnvironments = ['prod', 'dev', 'stage'];
-  return allowedEnvironments.some((env) => bucketName === `cdn-logs-adobe-${env}`);
+  // Match cdn-logs-adobe-(prod|dev|stage) exactly
+  if (/^cdn-logs-adobe-(prod|dev|stage)$/.test(bucketName)) {
+    return true;
+  }
+
+  // Match cdn-logs-{mixed alphanumeric} - must contain both letters and numbers
+  if (/^cdn-logs-[a-zA-Z0-9-]+$/.test(bucketName)) {
+    // Extract the part after 'cdn-logs-' to check for mixed content
+    const suffix = bucketName.substring('cdn-logs-'.length);
+    if (/[a-zA-Z]/.test(suffix) && /[0-9]/.test(suffix)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**

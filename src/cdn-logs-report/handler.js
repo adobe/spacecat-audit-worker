@@ -73,7 +73,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
     log.info(`Running weekly report: ${reportConfig.name}...`);
 
-    const isMonday = new Date().getDay() === 1;
+    const isMonday = new Date().getUTCDay() === 1;
     // If weekOffset is not provided, run for both week 0 and -1 on Monday and
     // on non-Monday, run for current week. Otherwise, run for the provided weekOffset
     let weekOffsets;
