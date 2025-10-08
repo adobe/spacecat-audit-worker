@@ -95,10 +95,9 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
 
     // Use latest paths if available, otherwise fall back to regular paths
     const paths = latestPaths.length > 0 ? latestPaths : regularPaths;
-    const sourceFolder = latestPaths.length > 0 ? 'brand-presence/latest' : 'brand-presence';
+    const brandPresenceFolder = latestPaths.length > 0 ? 'brand-presence/latest' : 'brand-presence';
+    const sourceFolder = `${dataFolder}/${brandPresenceFolder}`;
     // @todo need to make  sure that we load data starting week
-    log.info(`Using files from ${sourceFolder} folder`);
-    log.info(`paths found: ${paths.join(', ')}`);
     if (paths.length > 0) {
       log.info(`%s:Extracted ${paths.length} paths from query-index SharePoint file (source: ${sourceFolder})`, AUDIT_NAME);
       return { paths, sourceFolder };
@@ -125,7 +124,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
     sourceFolder,
     paths: sheets,
   } = await fetchQueryIndexPaths(site, context, sharepointClient);
-
+  log.info(`Source folder: ${sourceFolder}, Sheets to refresh: ${sheets.join(', ')}`);
   // save metadata for S3 to track progress
 
   // const audit = await createAudit({
