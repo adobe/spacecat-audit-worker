@@ -12,6 +12,7 @@
 /* eslint-disable no-use-before-define */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { isString, isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -94,11 +95,12 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   // Get aiPlatform from the audit result
   const auditResult = audit?.getAuditResult();
   const aiPlatform = auditResult?.aiPlatform;
-  const providersToUse = aiPlatform !== undefined ? [aiPlatform] : WEB_SEARCH_PROVIDERS;
+  const providersToUse = isString(aiPlatform) ? [aiPlatform] : WEB_SEARCH_PROVIDERS;
   log.info('GEO BRAND PRESENCE: aiPlatform: %s for site id %s (%s). Will use providers: %j', aiPlatform, siteId, baseURL, providersToUse);
-  /* c8 ignore start */
+
   if (success === false) {
     log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
+    return;
   }
   if (!calendarWeek || typeof calendarWeek !== 'object' || !calendarWeek.week || !calendarWeek.year) {
     log.error('GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
@@ -108,7 +110,6 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     log.error('GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
     return;
   }
-  /* c8 ignore stop */
 
   log.info('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s), calendarWeek: %j', siteId, baseURL, calendarWeek);
 
@@ -124,7 +125,6 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   }
 
   log.info('GEO BRAND PRESENCE: Found %d keyword prompts for site id %s (%s)', prompts.length, siteId, baseURL);
-  /* c8 ignore next 4 */
   if (prompts.length === 0) {
     log.warn('GEO BRAND PRESENCE: No keyword prompts found for site id %s (%s), skipping message to mystique', siteId, baseURL);
     return;
@@ -133,8 +133,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   const url = await asPresignedJsonUrl(prompts, bucket, { ...context, getPresignedUrl });
   log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
 
-  /* c8 ignore next 4 */
-  if (!providersToUse || providersToUse.length === 0) {
+  if (!isNonEmptyArray(providersToUse)) {
     log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
     return;
   }
@@ -211,15 +210,16 @@ export async function keywordPromptsImportStep(context) {
   let endDate;
   let aiPlatform;
 
-  /* c8 ignore start */
-  if (data) {
+  if (isString(data) && data.length > 0) {
     try {
       // Try to parse as JSON first (for new format with endDate and aiPlatform)
       const parsedData = JSON.parse(data);
-      if (parsedData.endDate && Date.parse(parsedData.endDate)) {
-        endDate = parsedData.endDate;
+      if (isNonEmptyObject(parsedData)) {
+        if (parsedData.endDate && Date.parse(parsedData.endDate)) {
+          endDate = parsedData.endDate;
+        }
+        aiPlatform = parsedData.aiPlatform;
       }
-      aiPlatform = parsedData.aiPlatform;
     } catch (e) {
       // If JSON parsing fails, treat as a date string (legacy behavior)
       if (Date.parse(data)) {
@@ -229,7 +229,6 @@ export async function keywordPromptsImportStep(context) {
       }
     }
   }
-  /* c8 ignore stop */
 
   log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
 

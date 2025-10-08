@@ -268,6 +268,97 @@ describe('Geo Brand Presence Handler', () => {
     }
   });
 
+  it('should skip sending message to Mystique when success is false', async () => {
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        success: false,
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    expect(sqs.sendMessage).to.not.have.been.called;
+    expect(log.error).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique',
+      site.getId(),
+      site.getBaseURL(),
+      sinon.match.object,
+    );
+  });
+
+  it('should skip sending message to Mystique when calendarWeek is invalid', async () => {
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: null,
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    expect(sqs.sendMessage).to.not.have.been.called;
+    expect(log.error).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique',
+      site.getId(),
+      site.getBaseURL(),
+      sinon.match.object,
+    );
+  });
+
+  it('should skip sending message to Mystique when calendarWeek is missing week', async () => {
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: { year: 2025 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    expect(sqs.sendMessage).to.not.have.been.called;
+    expect(log.error).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique',
+      site.getId(),
+      site.getBaseURL(),
+      sinon.match.object,
+    );
+  });
+
+  it('should skip sending message to Mystique when parquetFiles is invalid', async () => {
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: 'not-an-array',
+      },
+    }, getPresignedUrl);
+
+    expect(sqs.sendMessage).to.not.have.been.called;
+    expect(log.error).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique',
+      site.getId(),
+      site.getBaseURL(),
+      sinon.match.object,
+    );
+  });
+
+  it('should skip sending message to Mystique when parquetFiles contains non-strings', async () => {
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['valid.parquet', 123, 'another.parquet'],
+      },
+    }, getPresignedUrl);
+
+    expect(sqs.sendMessage).to.not.have.been.called;
+    expect(log.error).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique',
+      site.getId(),
+      site.getBaseURL(),
+      sinon.match.object,
+    );
+  });
+
   function fakeS3Response(response) {
     const columnData = {
       prompt: { data: [], name: 'prompt', type: 'STRING' },
