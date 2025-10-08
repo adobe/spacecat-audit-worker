@@ -14,7 +14,6 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { sendMessageToMystiqueForGuidance } from '../../../src/cwv/utils.js';
-import { Audit } from '@adobe/spacecat-shared-data-access';
 
 describe('sendMessageToMystiqueForGuidance', () => {
   let context;
@@ -242,5 +241,30 @@ describe('sendMessageToMystiqueForGuidance', () => {
     expect(context.log.info.calledTwice).to.be.true;
     expect(context.log.info.firstCall.args[0]).to.include('Received CWV opportunity for guidance');
     expect(context.log.info.secondCall.args[0]).to.include('CWV opportunity sent to mystique for guidance');
+  });
+
+  it('should handle SQS sendMessage error and throw', async () => {
+    const error = new Error('SQS send failed');
+    context.sqs.sendMessage.rejects(error);
+
+    const opportunity = {
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      opportunityId: 'oppty-789',
+      getId: () => 'oppty-789',
+      data: {
+        cwv_metrics: [],
+        total_suggestions: 0,
+      },
+    };
+
+    try {
+      await sendMessageToMystiqueForGuidance(context, opportunity);
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('SQS send failed');
+      expect(context.log.error.calledOnce).to.be.true;
+      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send message to Mystique');
+    }
   });
 });
