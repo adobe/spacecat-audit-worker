@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { Audit } from '@adobe/spacecat-shared-data-access';
+
 export async function sendMessageToMystiqueForGuidance(context, opportunity) {
   const {
     log, sqs, env, site,
@@ -31,7 +33,7 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
           url: site ? site.getBaseURL() : '',
           opportunityId: opptyData.opportunityId || '',
           cwv_metrics: opptyData.data?.cwv_metrics || [],
-          opportunity_type: 'cwv',
+          opportunity_type: Audit.AUDIT_TYPES.CWV,
           total_suggestions: opptyData.data?.total_suggestions || 0,
         },
       };

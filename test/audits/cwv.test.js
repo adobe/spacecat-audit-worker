@@ -20,7 +20,6 @@ import nock from 'nock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
-import * as cwvUtils from '../../src/cwv/utils.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import expectedOpptyWithoutGSC from '../fixtures/cwv/opptyWithoutGSC.json' with { type: 'json' };
 import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
@@ -116,6 +115,14 @@ describe('CWVRunner Tests', () => {
         bulkUpdateStatus: sandbox.stub(),
       };
 
+      context.sqs = {
+        sendMessage: sandbox.stub().resolves(),
+      };
+
+      context.env = {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+      };
+
       addSuggestionsResponse = {
         createdItems: [],
         errorItems: [],
@@ -132,6 +139,9 @@ describe('CWVRunner Tests', () => {
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
         setUpdatedBy: sandbox.stub().returnsThis(),
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        opportunityId: 'oppty-id',
       };
 
       auditData = {
@@ -260,14 +270,17 @@ describe('CWVRunner Tests', () => {
     });
 
     it('calls sendMessageToMystiqueForGuidance with opportunity', async () => {
-      const sendMessageStub = sandbox.stub(cwvUtils, 'sendMessageToMystiqueForGuidance').resolves();
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      expect(sendMessageStub).to.have.been.calledOnceWith(context, oppty);
+      // Verify that SQS sendMessage was called (indicating sendMessageToMystiqueForGuidance was called)
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const message = context.sqs.sendMessage.firstCall.args[1];
+      expect(message.type).to.equal('guidance:cwv-analysis');
+      expect(message.siteId).to.equal('site-id');
     });
   });
 });
