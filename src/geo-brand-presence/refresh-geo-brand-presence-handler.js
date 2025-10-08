@@ -12,6 +12,7 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { randomUUID } from 'crypto';
 import ExcelJS from 'exceljs';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 
@@ -34,7 +35,7 @@ async function fetchQueryIndexPaths(site, context) {
     // Get the site's LLMO data folder
     const dataFolder = site.getConfig()?.getLlmoDataFolder?.();
     if (!dataFolder) {
-      errorMsg = AUDIT_NAME + `:No LLMO data folder configured for site can't proceed with audit`;
+      errorMsg = `${AUDIT_NAME}:No LLMO data folder configured for site can't proceed with audit`;
       throw new Error(errorMsg);
     }
 
@@ -91,7 +92,7 @@ async function fetchQueryIndexPaths(site, context) {
     // Use latest paths if available, otherwise fall back to regular paths
     const paths = latestPaths.length > 0 ? latestPaths : regularPaths;
     const sourceFolder = latestPaths.length > 0 ? 'brand-presence/latest' : 'brand-presence';
-    //@todo need to make  sure that we load data starting week
+    // @todo need to make  sure that we load data starting week
     log.info(`Using files from ${sourceFolder} folder`);
     log.info(`paths found: ${paths.join(', ')}`);
     if (paths.length > 0) {
@@ -100,36 +101,17 @@ async function fetchQueryIndexPaths(site, context) {
     }
 
     throw new Error('REFRESH GEO BRAND PRESENCE: No paths found in query-index file');
-
   } catch (error) {
     log.error(`Failed to read query-index from SharePoint: ${error instanceof Error ? error.message : String(error)}`);
-    // Fall back to mock data if SharePoint access fails
-    return getFallbackPaths();
+    throw new Error(errorMsg || 'Failed to fetch query-index paths');
   }
-}
-
-/**
- * Returns fallback paths when SharePoint access fails
- * @returns {Array} Array of fallback path strings
- */
-function getFallbackPaths() {
-  return [
-    'brandpresence-all-w35-2025',
-    'brandpresence-all-w36-2025',
-    'brandpresence-all-w37-2025',
-    'brandpresence-all-w38-2025',
-    'brandpresence-all-w39-2025',
-    'brandpresence-all-w40-2025',
-    'brandpresence-all-w41-2025',
-    'brandpresence-all-w42-2025',
-  ];
 }
 
 export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   const { log, dataAccess } = context;
-  const {Site } = dataAccess;
+  const { Site } = dataAccess;
   const { siteId, auditContext } = message;
-
+  let errMsg;
   const site = await Site.findById(siteId);
   log.info('site was loaded', site);
   // fetch sheets that need to be refreshed from SharePoint
@@ -146,8 +128,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   const bucketName = env?.S3_IMPORTER_BUCKET_NAME;
 
   if (bucketName && s3Client) {
-    // const auditId = audit.getId();
-    const auditId = 'test_ira2';
+    const auditId = randomUUID();
     const folderKey = `refresh_geo_brand_presence/${auditId}/metadata.json`;
 
     try {
@@ -178,12 +159,16 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
         ContentType: 'application/json',
       }));
 
-      log.info('Created S3 folder for audit %s at s3://%s/%s', auditId, bucketName, folderKey);
+      log.info('%s:Created S3 folder for audit %s at s3://%s/%s', AUDIT_NAME, auditId, bucketName, folderKey);
     } catch (error) {
-      log.error('Failed to create S3 folder for audit %s: %s', auditId, error instanceof Error ? error.message : String(error));
+      log.error('%s:Failed to create S3 folder for audit %s: %s', AUDIT_NAME, auditId, error instanceof Error ? error.message : String(error));
+      errMsg = `${AUDIT_NAME}:Failed to create S3 folder for audit ${auditId}`;
+      throw new Error(errMsg);
     }
   } else {
-    log.warn('S3 bucket name or client not available, skipping folder creation');
+    log.warn('%s: S3 bucket name or client not available, skipping folder creation', AUDIT_NAME);
+    errMsg = `${AUDIT_NAME}:S3 bucket name or client not available, skipping folder creation`;
+    throw new Error(errMsg);
   }
 
   log.info('Site: %s, Audit: %s, Context:', site, {}, auditContext);
