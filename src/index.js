@@ -75,6 +75,7 @@ import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import prerender from './prerender/handler.js';
+import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/refresh-geo-brand-presence-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -111,6 +112,7 @@ const HANDLERS = {
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
   'detect:geo-brand-presence': detectGeoBrandPresence,
+  'refresh:geo-brand-presence': refreshGeoBrandPresenceSheetsHandler,
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
