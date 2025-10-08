@@ -17,6 +17,7 @@ import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
+import { llmoConfig } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
@@ -81,11 +82,34 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
   );
 
-  const prompts = recordSets.flat();
+  let prompts = recordSets.flat();
   for (const x of prompts) {
     x.market = x.region; // TODO(aurelio): remove when .region is supported by Mystique
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
   }
+
+  // Load customer-defined prompts from customer config
+  /** @type { { config: import('@adobe/spacecat-shared-utils/src/schemas.js').LLMOConfig } } */
+  const { config } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
+  const customerPrompts = Object.values(config.topics).flatMap((x) => {
+    const category = config.categories[x.category];
+    return x.prompts.map((p) => ({
+      prompt: p.prompt,
+      region: p.regions.join(','),
+      category: category.name,
+      topic: x.name,
+      url: '',
+      keyword: '',
+      keywordImportTime: -1,
+      volume: -1,
+      volumeImportTime: -1,
+      source: 'human',
+      market: p.regions.join(','),
+      origin: 'human',
+    }));
+  });
+
+  prompts = prompts.concat(customerPrompts);
 
   log.info('GEO BRAND PRESENCE: Found %d keyword prompts for site id %s (%s)', prompts.length, siteId, baseURL);
   if (prompts.length === 0) {
