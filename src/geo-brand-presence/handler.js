@@ -290,14 +290,16 @@ function createMystiqueMessage({
 }
 
 const EXCLUDE_FROM_HARD_LIMIT = new Set([
-  '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3', // adobe.com
-  '63c38133-4991-4ed0-886b-2d0f440d81ab', // experienceleague.adobe.com
-  '1f582f10-41d3-4ff0-afaa-cd1a267ba58a', // acrobat.adobe.com
-  'd8db1956-b24c-4ad7-bdb6-6f5a90d89edc', // business.adobe.com
-  '4b4ed67e-af44-49f7-ab24-3dda37609c9d', // express.adobe.com
-  '0f770626-6843-4fbd-897c-934a9c19f079', // helpx.adobe.com
-  'fdc7c65b-c0d0-40ff-ab26-fd0e16b75877', // stock.adobe.com
-  '9a1cfdaf-3bb3-49a7-bbaa-995653f4c2f4', // developer.adobe.com
+  '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+  '63c38133-4991-4ed0-886b-2d0f440d81ab',
+  '1f582f10-41d3-4ff0-afaa-cd1a267ba58a',
+  'd8db1956-b24c-4ad7-bdb6-6f5a90d89edc',
+  '4b4ed67e-af44-49f7-ab24-3dda37609c9d',
+  '0f770626-6843-4fbd-897c-934a9c19f079',
+  'fdc7c65b-c0d0-40ff-ab26-fd0e16b75877',
+  '9a1cfdaf-3bb3-49a7-bbaa-995653f4c2f4',
+  '1398e8f1-90c9-4a5d-bfca-f585fa35fc69',
+  '1905ef6e-c112-477e-9fae-c22ebf21973a',
 ]);
 
 export default new AuditBuilder()
