@@ -115,6 +115,19 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
 
   prompts = prompts.concat(customerPrompts);
 
+  // TEMPORARY!!!!
+  /* c8 ignore start */
+  if (!EXCLUDE_FROM_HARD_LIMIT.has(siteId)) {
+    if (customerPrompts.length >= 200) {
+      // only use customer prompts
+      prompts = customerPrompts.slice(0, 200);
+    } else if (prompts.length > 200) {
+      // throw away ai prompts as needed, retain customer prompts
+      prompts = prompts.slice(0, 200 - customerPrompts.length).concat(customerPrompts);
+    }
+  }
+  /* c8 ignore end */
+
   log.info('GEO BRAND PRESENCE: Found %d keyword prompts for site id %s (%s)', prompts.length, siteId, baseURL);
   if (prompts.length === 0) {
     log.warn('GEO BRAND PRESENCE: No keyword prompts found for site id %s (%s), skipping message to mystique', siteId, baseURL);
@@ -275,6 +288,17 @@ function createMystiqueMessage({
     },
   };
 }
+
+const EXCLUDE_FROM_HARD_LIMIT = new Set([
+  '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3', // adobe.com
+  '63c38133-4991-4ed0-886b-2d0f440d81ab', // experienceleague.adobe.com
+  '1f582f10-41d3-4ff0-afaa-cd1a267ba58a', // acrobat.adobe.com
+  'd8db1956-b24c-4ad7-bdb6-6f5a90d89edc', // business.adobe.com
+  '4b4ed67e-af44-49f7-ab24-3dda37609c9d', // express.adobe.com
+  '0f770626-6843-4fbd-897c-934a9c19f079', // helpx.adobe.com
+  'fdc7c65b-c0d0-40ff-ab26-fd0e16b75877', // stock.adobe.com
+  '9a1cfdaf-3bb3-49a7-bbaa-995653f4c2f4', // developer.adobe.com
+]);
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
