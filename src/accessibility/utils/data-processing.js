@@ -646,12 +646,6 @@ export function getEnvAsoDomain(env) {
   return isProd ? 'experience' : 'experience-stage';
 }
 
-export function getWeekNumber(date) {
-  // Calculate ISO 8601 week number using shared utility
-  const { week } = isoCalendarWeek(date);
-  return week;
-}
-
 export function getWeekNumberAndYear() {
   const date = new Date();
   // Use ISO calendar week and year from shared utility

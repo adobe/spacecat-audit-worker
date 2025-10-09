@@ -18,6 +18,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { parquetWriteBuffer } from 'hyparquet-writer';
 import { keywordPromptsImportStep, sendToMystique } from '../../src/geo-brand-presence/handler.js';
+import { llmoConfig } from '@adobe/spacecat-shared-utils';
 
 use(sinonChai);
 
@@ -54,7 +55,12 @@ describe('Geo Brand Presence Daily Handler', () => {
       S3_IMPORTER_BUCKET_NAME: 'bucket',
     };
     s3Client = {
-      send: sinon.stub().throws(new Error('no stubbed response')),
+      send: sinon.stub()
+        .callsFake((cmd) => {
+          const { name } = cmd.constructor;
+          const input = JSON.stringify(cmd.input, null, 2).replace(/\n[ ]*/g, ' ');
+          throw new Error(`no stubbed response for ${name} ${input}`)
+        }),
     };
     getPresignedUrl = sandbox.stub();
     context = {
@@ -65,6 +71,12 @@ describe('Geo Brand Presence Daily Handler', () => {
       audit,
       s3Client,
     };
+
+    fakeConfigS3Response();
+
+    s3Client.send
+      .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^temp[/]audit-geo-brand-presence-daily[/]/) }))
+      .resolves({});
   });
 
   afterEach(() => {
@@ -159,7 +171,7 @@ describe('Geo Brand Presence Daily Handler', () => {
 
   it('should send daily message to Mystique with date field', async () => {
     // Mock S3 client method used by getStoredMetrics (AWS SDK v3 style)
-    fakeS3Response(fakeData());
+    fakeParquetS3Response(fakeData());
 
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
@@ -196,7 +208,7 @@ describe('Geo Brand Presence Daily Handler', () => {
   });
 
   it('should calculate correct ISO week for dates at year boundaries', async () => {
-    fakeS3Response(fakeData());
+    fakeParquetS3Response(fakeData());
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
     // Test December 30, 2024 (Monday of Week 1, 2025)
@@ -218,7 +230,7 @@ describe('Geo Brand Presence Daily Handler', () => {
   });
 
   it('should skip sending message to Mystique when no keywordQuestions', async () => {
-    fakeS3Response([]);
+    fakeParquetS3Response([]);
     await sendToMystique({
       ...context,
       brandPresenceCadence: 'daily',
@@ -231,7 +243,7 @@ describe('Geo Brand Presence Daily Handler', () => {
   });
 
   it('should use current date when referenceDate is not provided', async () => {
-    fakeS3Response(fakeData());
+    fakeParquetS3Response(fakeData());
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
     await sendToMystique({
@@ -255,7 +267,26 @@ describe('Geo Brand Presence Daily Handler', () => {
     expect(message.year).to.be.a('number');
   });
 
-  function fakeS3Response(response) {
+  /**
+   * Mocks the S3 GetObjectCommand response for the LLMO config file
+   * @param {import('@adobe/spacecat-shared-utils/src/schemas.js').LLMOConfig} [config]
+   */
+  function fakeConfigS3Response(config = llmoConfig.defaultConfig()) {
+    s3Client.send.withArgs(
+      matchS3Cmd(
+        'GetObjectCommand',
+        { Key: llmoConfig.llmoConfigPath(site.getId()) },
+      ),
+    ).resolves({
+      Body: {
+        async transformToString() {
+          return JSON.stringify(config);
+        },
+      },
+    });
+  }
+
+  function fakeParquetS3Response(response) {
     const columnData = {
       prompt: { data: [], name: 'prompt', type: 'STRING' },
       region: { data: [], name: 'region', type: 'STRING' },
@@ -277,7 +308,12 @@ describe('Geo Brand Presence Daily Handler', () => {
 
     const buffer = parquetWriteBuffer({ columnData: Object.values(columnData) });
 
-    s3Client.send.resolves({
+    s3Client.send.withArgs(
+      matchS3Cmd(
+        'GetObjectCommand',
+        { Key: sinon.match(/[/]data[.]parquet$/) },
+      ),
+    ).resolves({
       Body: {
         async transformToByteArray() {
           return new Uint8Array(buffer);
@@ -330,4 +366,13 @@ describe('Geo Brand Presence Daily Handler', () => {
   }
 });
 
-
+/**
+ * @param {"GetObjectCommand" | "PutObjectCommand"} name
+ * @param {Record<string, any>} input
+ */
+function matchS3Cmd(name, input) {
+  return sinon.match({
+    constructor: sinon.match({ name }),
+    input: sinon.match(input),
+  });
+}
