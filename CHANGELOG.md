@@ -1,3 +1,10 @@
+# [1.203.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.202.0...v1.203.0) (2025-10-09)
+
+
+### Features
+
+* unify geo brand presence daily/weekly provider logic ([#1376](https://github.com/adobe/spacecat-audit-worker/issues/1376)) ([71067c8](https://github.com/adobe/spacecat-audit-worker/commit/71067c8026aac4a47a3e47ef892d2e7efa29da66))
+
 # [1.202.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.201.0...v1.202.0) (2025-10-09)
 
 
