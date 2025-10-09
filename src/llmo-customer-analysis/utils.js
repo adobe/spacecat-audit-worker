@@ -213,4 +213,102 @@ export function getLastSunday() {
   const lastSunday = format(addDays(targetWeekStart, 6), 'yyyy-MM-dd');
   return lastSunday;
 }
+
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  if (typeof a !== typeof b) return false;
+
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    return a.every((item, index) => deepEqual(item, b[index]));
+  }
+
+  if (typeof a === 'object' && typeof b === 'object') {
+    const keysA = Object.keys(a).sort();
+    const keysB = Object.keys(b).sort();
+    if (!deepEqual(keysA, keysB)) return false;
+    return keysA.every((key) => deepEqual(a[key], b[key]));
+  }
+
+  return false;
+}
+
+function compareRecords(oldRecord, newRecord) {
+  const changed = {};
+  let hasChanges = false;
+
+  for (const [uuid, newItem] of Object.entries(newRecord)) {
+    const oldItem = oldRecord[uuid];
+    if (!oldItem || !deepEqual(oldItem, newItem)) {
+      changed[uuid] = newItem;
+      hasChanges = true;
+    }
+  }
+
+  for (const uuid of Object.keys(oldRecord)) {
+    if (!newRecord[uuid]) {
+      hasChanges = true;
+    }
+  }
+
+  return hasChanges ? changed : null;
+}
+
+function compareArrays(oldArray, newArray) {
+  if (deepEqual(oldArray, newArray)) {
+    return null;
+  }
+  return newArray;
+}
+
+export function compareConfigs(oldConfig, newConfig) {
+  const changes = {};
+
+  const entitiesChanges = compareRecords(
+    oldConfig.entities || {},
+    newConfig.entities || {},
+  );
+  if (entitiesChanges) {
+    changes.entities = entitiesChanges;
+  }
+
+  const categoriesChanges = compareRecords(
+    oldConfig.categories || {},
+    newConfig.categories || {},
+  );
+  if (categoriesChanges) {
+    changes.categories = categoriesChanges;
+  }
+
+  const topicsChanges = compareRecords(
+    oldConfig.topics || {},
+    newConfig.topics || {},
+  );
+  if (topicsChanges) {
+    changes.topics = topicsChanges;
+  }
+
+  const brandsAliasesChanges = compareArrays(
+    oldConfig.brands?.aliases || [],
+    newConfig.brands?.aliases || [],
+  );
+  if (brandsAliasesChanges) {
+    changes.brands = {
+      aliases: brandsAliasesChanges,
+    };
+  }
+
+  const competitorsChanges = compareArrays(
+    oldConfig.competitors?.competitors || [],
+    newConfig.competitors?.competitors || [],
+  );
+  if (competitorsChanges) {
+    changes.competitors = {
+      competitors: competitorsChanges,
+    };
+  }
+
+  return changes;
+}
 /* c8 ignore end */

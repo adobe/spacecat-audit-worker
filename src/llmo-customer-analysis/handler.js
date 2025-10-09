@@ -10,29 +10,62 @@
  * governing permissions and limitations under the License.
  */
 
-/* c8 ignore start */
 import {
-  getStaticContent, getLastNumberOfWeeks, getWeekInfo,
+  getLastNumberOfWeeks, llmoConfig,
 } from '@adobe/spacecat-shared-utils';
-import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
-import { Audit } from '@adobe/spacecat-shared-data-access';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { isAuditEnabledForSite } from '../common/audit-utils.js';
-import analyzeDomain, { analyzeDomainFromUrls } from './domain-analysis.js';
-import { analyzeProducts } from './product-analysis.js';
-import { analyzePageTypes } from './page-type-analysis.js';
-import { uploadPatternsWorkbook, uploadUrlsWorkbook, getLastSunday } from './utils.js';
-import { referralTrafficRunner } from '../llmo-referral-traffic/handler.js';
+import {
+  getLastSunday, compareConfigs,
+} from './utils.js';
 import { getRUMUrl } from '../support/utils.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
-const TOP_PAGES_IMPORT = 'top-pages';
-const OPTEL_SOURCE_TYPE = 'optel';
-const AHREFS_SOURCE_TYPE = 'ahrefs';
+const AGENTIC_TRAFFIC_ANALYSIS_AUDIT = 'cdn-analysis';
+
+async function enableAudits(site, context, audits = []) {
+  const { dataAccess } = context;
+  const { Configuration } = dataAccess;
+
+  const configuration = await Configuration.findLatest();
+  audits.forEach((audit) => {
+    configuration.enableHandlerForSite(audit, site);
+  });
+  await configuration.save();
+}
+
+function enableImports(site, imports = []) {
+  const siteConfig = site.getConfig();
+
+  imports.forEach(({ type, options }) => {
+    if (!siteConfig.isImportEnabled(type, options)) {
+      siteConfig.enableImport(type, options);
+    }
+  });
+}
+
+// Enables the cdn-analysis audit only if no other site in this organization has it enabled
+async function enableCdnAnalysis(site, context) {
+  const { dataAccess, log } = context;
+  const { Configuration, Site } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const orgId = site.getOrganizationId();
+  const sitesInOrg = await Site.allByOrganizationId(orgId);
+
+  const hasAgenticTrafficEnabled = sitesInOrg.some(
+    (orgSite) => configuration.isHandlerEnabledForSite(AGENTIC_TRAFFIC_ANALYSIS_AUDIT, orgSite),
+  );
+
+  if (!hasAgenticTrafficEnabled) {
+    log.info(`Enabling agentic traffic audits for organization ${orgId} (first site in org)`);
+    configuration.enableHandlerForSite(AGENTIC_TRAFFIC_ANALYSIS_AUDIT, site);
+  } else {
+    log.debug(`Agentic traffic audits already enabled for organization ${orgId}, skipping`);
+  }
+}
 
 async function checkOptelData(domain, context) {
   const { log } = context;
@@ -51,140 +84,56 @@ async function checkOptelData(domain, context) {
   }
 }
 
-async function runReferralTrafficStep(context) {
-  const {
-    dataAccess, finalUrl, site, sqs, log,
-  } = context;
-
+export async function triggerReferralTrafficImports(context, site) {
+  const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   const siteId = site.getSiteId();
-  const domain = finalUrl;
+  const last4Weeks = getLastNumberOfWeeks(4);
 
-  log.info(`Checking domain and triggering appropriate import for site: ${siteId}, domain: ${domain}`);
+  log.info(`Triggering ${last4Weeks.length} referral traffic imports for site: ${siteId}`);
 
-  const hasOptelData = await checkOptelData(domain, context);
-
-  if (hasOptelData) {
-    log.info('Domain has OpTel data; initiating referral traffic import for the last 4 full calendar weeks');
-
-    const last4Weeks = getLastNumberOfWeeks(4);
-
-    // Last week will be imported via step audit
-    const lastWeek = last4Weeks.shift();
-
-    for (const last4Week of last4Weeks) {
-      const { week, year } = last4Week;
-      const message = {
-        type: REFERRAL_TRAFFIC_IMPORT,
-        siteId,
-        auditContext: {
-          auditType: REFERRAL_TRAFFIC_AUDIT,
-          week,
-          year,
-        },
-      };
-      // eslint-disable-next-line no-await-in-loop
-      sqs.sendMessage(configuration.getQueues().imports, message);
-    }
-
-    return {
-      auditResult: { source: OPTEL_SOURCE_TYPE },
-      fullAuditRef: finalUrl,
+  for (const week of last4Weeks) {
+    const referralMessage = {
       type: REFERRAL_TRAFFIC_IMPORT,
-      week: lastWeek.week,
-      year: lastWeek.year,
       siteId,
+      auditContext: {
+        auditType: REFERRAL_TRAFFIC_AUDIT,
+        week: week.week,
+        year: week.year,
+      },
     };
-  } else {
-    log.info('Domain has no OpTel data, skipping referral traffic import; triggering Ahrefs top pages import');
-
-    return {
-      type: TOP_PAGES_IMPORT,
-      allowCache: false,
-      siteId,
-      auditResult: { source: AHREFS_SOURCE_TYPE },
-      fullAuditRef: finalUrl,
-    };
-  }
-}
-
-async function runAgenticTrafficStep(context) {
-  const {
-    audit, dataAccess, env, site, log,
-  } = context;
-
-  const siteId = site.getSiteId();
-  const domain = audit.getFullAuditRef();
-  const { SiteTopPage } = dataAccess;
-  const auditResult = audit.getAuditResult();
-  const lastFourWeeks = getLastNumberOfWeeks(4);
-  let urls = [];
-  let paths = [];
-  let source;
-
-  if (auditResult.source === OPTEL_SOURCE_TYPE) {
-    log.info('Agentic Traffic Step: Fetching top URLs from OpTel data');
-    // Make sure to create the referral traffic workbook for the last week
-    const lastWeek = lastFourWeeks[0];
-    referralTrafficRunner(null, context, site, lastWeek);
-    const { S3_IMPORTER_BUCKET_NAME: importerBucket } = env;
-    const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
-    const databaseName = 'rum_metrics';
-    const tableName = 'compact_metrics';
-    const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
-    const temporalConditions = lastFourWeeks
-      .map(({ year, week }) => getWeekInfo(week, year).temporalCondition);
-
-    const variables = {
-      tableName: `${databaseName}.${tableName}`,
-      siteId,
-      temporalCondition: `(${temporalConditions.join(' OR ')})`,
-    };
-
-    const query = await getStaticContent(variables, './src/llmo-customer-analysis/sql/urls.sql');
-    const description = `[Athena Query] Fetching customer analysis data for ${domain}`;
-    paths = await athenaClient.query(query, databaseName, description);
-    urls = paths.slice(0, 20).map((p) => ({ url: `https://${audit.getFullAuditRef()}${p.path}` }));
-    source = OPTEL_SOURCE_TYPE;
-  } else if (auditResult.source === AHREFS_SOURCE_TYPE) {
-    log.info('Agentic Traffic Step: fetching top URLs Ahrefs data');
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-    paths = topPages.slice(0, 100).map((topPage) => ({ path: topPage.getUrl() }));
-    source = AHREFS_SOURCE_TYPE;
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(configuration.getQueues().imports, referralMessage);
   }
 
-  log.info('Agentic Traffic Step: Extracting product and page type information');
-
-  const productRegexes = await analyzeProducts(domain, paths.map((p) => p.path), context);
-  const pagetypeRegexes = await analyzePageTypes(domain, paths.map((p) => p.path), context);
-
-  log.info('Agentic Traffic Step: Extraction complete; uploading results');
-
-  await uploadPatternsWorkbook(productRegexes, pagetypeRegexes, site, context);
-
-  log.info('Agentic Traffic Step: Upload complete; initiating scrap');
-
-  return {
-    auditResult: { source },
-    siteId,
-    urls: urls.length > 0 ? urls : [{ url: `https://${domain}` }],
-    maxScrapeAge: 24 * 7,
-    options: {
-      screenshotTypes: [],
-    },
-  };
+  log.info(`Successfully triggered ${last4Weeks.length} referral traffic imports`);
 }
 
-async function runBrandPresenceStep(context) {
-  const {
-    audit, auditContext, dataAccess, log, scrapeResultPaths, site, sqs,
-  } = context;
-  const { Configuration, SiteTopPage } = dataAccess;
-  const auditResult = audit.getAuditResult();
+export async function triggerCdnLogsReport(context, site) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
-  const domain = audit.getFullAuditRef();
-  const results = [...scrapeResultPaths.values()];
+  const siteId = site.getSiteId();
+
+  log.info(`Triggering cdn-logs-report audit for site: ${siteId}`);
+
+  const cdnLogsMessage = {
+    type: 'cdn-logs-report',
+    siteId,
+    auditContext: { weekOffset: -1 },
+  };
+
+  await sqs.sendMessage(configuration.getQueues().audits, cdnLogsMessage);
+
+  log.info('Successfully triggered cdn-logs-report audit');
+}
+
+export async function triggerGeoBrandPresence(context, site, auditContext = {}) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const siteId = site.getSiteId();
 
   // Priority: auditContext > site config > default
   const cadence = auditContext?.brandPresenceCadence
@@ -193,69 +142,168 @@ async function runBrandPresenceStep(context) {
 
   const auditType = cadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence';
 
-  log.info(`Brand Presence Step: Using ${cadence} cadence (audit type: ${auditType})`);
+  log.info(`Triggering ${auditType} audit for site: ${siteId} (cadence: ${cadence})`);
 
-  try {
-    // Check if the selected audit type is enabled
-    const isAuditEnabled = await isAuditEnabledForSite(auditType, site, context);
-    if (!isAuditEnabled) {
-      log.warn(`${auditType} audit is not enabled for site ${site.getSiteId()}, skipping brand presence step`);
-      return {
-        status: `${auditType} is not enabled for this site`,
-      };
-    }
+  // Check if the selected audit type is enabled
+  const isAuditEnabled = await isAuditEnabledForSite(auditType, site, context);
+  if (!isAuditEnabled) {
+    log.warn(`${auditType} audit is not enabled for site ${siteId}, skipping geo-brand-presence trigger`);
+    return;
+  }
 
-    // Optional: Warn if the opposite audit type is also enabled
-    const oppositeAuditType = cadence === 'daily' ? 'geo-brand-presence' : 'geo-brand-presence-daily';
-    const isOppositeEnabled = await isAuditEnabledForSite(oppositeAuditType, site, context);
-    if (isOppositeEnabled) {
-      log.warn(`Both ${auditType} and ${oppositeAuditType} are enabled for site ${site.getSiteId()}. Consider disabling ${oppositeAuditType} to avoid duplicate processing.`);
-    }
+  // Optional: Warn if the opposite audit type is also enabled
+  const oppositeAuditType = cadence === 'daily' ? 'geo-brand-presence' : 'geo-brand-presence-daily';
+  const isOppositeEnabled = await isAuditEnabledForSite(oppositeAuditType, site, context);
+  if (isOppositeEnabled) {
+    log.warn(`Both ${auditType} and ${oppositeAuditType} are enabled for site ${siteId}. Consider disabling ${oppositeAuditType} to avoid duplicate processing.`);
+  }
 
-    let domainInsights;
+  const geoBrandPresenceMessage = {
+    type: auditType,
+    siteId,
+    data: getLastSunday(),
+  };
 
-    if (auditResult.source === AHREFS_SOURCE_TYPE) {
-      log.info('Brand Presence Step: Starting domain analysis with URLs');
-      const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getSiteId(), 'ahrefs', 'global');
-      const urls = topPages.slice(0, 100).map((topPage) => (topPage.getUrl()));
-      domainInsights = await analyzeDomainFromUrls(domain, urls, context);
-    } else if (auditResult.source === OPTEL_SOURCE_TYPE) {
-      log.info('Brand Presence Step: Starting domain analysis with scrapes');
-      domainInsights = await analyzeDomain(domain, results, context);
-    }
+  await sqs.sendMessage(configuration.getQueues().audits, geoBrandPresenceMessage);
 
-    log.info('Brand Presence Step: analysis complete; uploading results');
+  log.info(`Successfully triggered ${auditType} audit`);
+}
 
-    await uploadUrlsWorkbook(domainInsights, site, context);
+async function triggerAllSteps(context, site, log, triggeredSteps, auditContext = {}) {
+  log.info('Triggering all relevant audits (no config version provided or first-time setup)');
 
-    log.info(`Brand Presence Step: Upload complete; triggering ${auditType} audit`);
+  await triggerCdnLogsReport(context, site);
+  triggeredSteps.push('cdn-logs-report');
 
-    const geoBrandPresenceMessage = {
-      type: auditType,
-      siteId: site.getSiteId(),
-      data: getLastSunday(),
-    };
+  await triggerGeoBrandPresence(context, site, auditContext);
+  triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
+}
 
-    await sqs.sendMessage(configuration.getQueues().audits, geoBrandPresenceMessage);
+export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
+  const {
+    log, s3Client,
+  } = context;
+
+  const siteId = site.getSiteId();
+  const domain = finalUrl;
+
+  // Ensure relevant audits and imports are enabled
+  await enableAudits(site, context, [
+    'headings',
+    'llm-blocked',
+    'llm-error-pages',
+    'canonical',
+    'hreflang',
+    'summarization',
+    REFERRAL_TRAFFIC_AUDIT,
+    'cdn-logs-report',
+    'geo-brand-presence',
+  ]);
+
+  enableImports(site, [
+    { type: REFERRAL_TRAFFIC_IMPORT },
+    { type: 'llmo-prompts-ahrefs', options: { limit: 25 } },
+    { type: 'top-pages' },
+  ]);
+
+  await enableCdnAnalysis(site, context);
+
+  log.info(`Starting LLMO customer analysis for site: ${siteId}, domain: ${domain}`);
+
+  const triggeredSteps = [];
+  const hasOptelData = await checkOptelData(domain, context);
+  const { configVersion, previousConfigVersion } = auditContext;
+  const isFirstTimeOnboarding = !previousConfigVersion;
+
+  // Handle referral traffic imports for first-time onboarding
+  if (hasOptelData && isFirstTimeOnboarding) {
+    log.info('First-time LLMO onboarding detected with OpTel data; initiating referral traffic import for the last 4 full calendar weeks');
+    await triggerReferralTrafficImports(context, site);
+    triggeredSteps.push(REFERRAL_TRAFFIC_IMPORT);
+  } else if (hasOptelData && !isFirstTimeOnboarding) {
+    log.info('Subsequent LLMO config update detected; skipping historical referral traffic imports (only triggered on first-time onboarding)');
+  } else {
+    log.info('Domain has no OpTel data available; skipping referral traffic import');
+  }
+
+  // If no config version provided, trigger all steps
+  if (!configVersion) {
+    log.info('No config version provided; triggering all relevant audits');
+    await triggerAllSteps(context, site, log, triggeredSteps, auditContext);
 
     return {
-      status: 'llmo-customer-analysis audit completed',
-      triggeredAudit: auditType,
-      cadence,
-    };
-  } catch (error) {
-    log.error(`Error during brand presence step: ${error.message}`);
-
-    return {
-      status: 'failed to complete brand presence step successfully',
+      auditResult: {
+        status: 'completed',
+        configChangesDetected: true,
+        message: 'All audits triggered (no config version provided)',
+        triggeredSteps,
+      },
+      fullAuditRef: finalUrl,
     };
   }
+
+  // Fetch and compare configs
+  log.info(`Fetching LLMO config versions - current: ${configVersion}, previous: ${previousConfigVersion || 'none'}`);
+
+  const newConfigResult = await llmoConfig.readConfig(siteId, s3Client, { version: configVersion });
+  const newConfig = newConfigResult.config;
+  let oldConfig;
+
+  if (previousConfigVersion) {
+    const oldConfigResult = await llmoConfig.readConfig(
+      siteId,
+      s3Client,
+      { version: previousConfigVersion },
+    );
+    oldConfig = oldConfigResult.config;
+  } else {
+    oldConfig = llmoConfig.defaultConfig();
+  }
+
+  const changes = compareConfigs(oldConfig, newConfig);
+  const hasCdnLogsChanges = changes.categories;
+
+  if (hasCdnLogsChanges) {
+    log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
+    await triggerCdnLogsReport(context, site);
+    triggeredSteps.push('cdn-logs-report');
+  }
+
+  const hasBrandPresenceChanges = changes.brands
+    || changes.competitors || changes.topics || changes.categories || changes.entities;
+
+  if (hasBrandPresenceChanges) {
+    log.info('LLMO config changes detected in brands, competitors, topics, categories, or entities; triggering geo-brand-presence audit');
+    await triggerGeoBrandPresence(context, site, auditContext);
+    triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
+  }
+
+  if (triggeredSteps.length > 0) {
+    log.info(`LLMO config changes detected; triggered steps: ${triggeredSteps.join(', ')}`);
+
+    return {
+      auditResult: {
+        status: 'completed',
+        configChangesDetected: true,
+        changes,
+        triggeredSteps,
+      },
+      fullAuditRef: finalUrl,
+    };
+  }
+
+  log.info('No relevant LLMO config changes detected; no audits triggered');
+
+  return {
+    auditResult: {
+      status: 'completed',
+      configChangesDetected: false,
+    },
+    fullAuditRef: finalUrl,
+  };
 }
 
 export default new AuditBuilder()
+  .withRunner(runLlmoCustomerAnalysis)
   .withUrlResolver(wwwUrlResolver)
-  .addStep('runReferralTrafficStep', runReferralTrafficStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('runAgenticTrafficStep', runAgenticTrafficStep, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
-  .addStep('runBrandPresenceStep', runBrandPresenceStep)
   .build();
-/* c8 ignore end */
