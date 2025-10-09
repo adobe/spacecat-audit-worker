@@ -23,6 +23,7 @@ import { getRUMUrl } from '../support/utils.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
+const AGENTIC_TRAFFIC_ANALYSIS_AUDIT = 'cdn-analysis';
 
 async function enableAudits(site, context, audits = []) {
   const { dataAccess } = context;
@@ -43,6 +44,26 @@ function enableImports(site, imports = []) {
       siteConfig.enableImport(type, options);
     }
   });
+}
+
+// Enables the cdn-analysis audit only if no other site in this organization has it enabled
+async function enableCdnAnalysis(site, context) {
+  const { dataAccess, log } = context;
+  const { Configuration, Site } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const orgId = site.getOrganizationId();
+  const sitesInOrg = await Site.allByOrganizationId(orgId);
+
+  const hasAgenticTrafficEnabled = sitesInOrg.some(
+    (orgSite) => configuration.isHandlerEnabledForSite(AGENTIC_TRAFFIC_ANALYSIS_AUDIT, orgSite),
+  );
+
+  if (!hasAgenticTrafficEnabled) {
+    log.info(`Enabling agentic traffic audits for organization ${orgId} (first site in org)`);
+    configuration.enableHandlerForSite(AGENTIC_TRAFFIC_ANALYSIS_AUDIT, site);
+  } else {
+    log.debug(`Agentic traffic audits already enabled for organization ${orgId}, skipping`);
+  }
 }
 
 async function checkOptelData(domain, context) {
@@ -162,6 +183,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     { type: 'llmo-prompts-ahrefs', options: { limit: 25 } },
     { type: 'top-pages' },
   ]);
+
+  await enableCdnAnalysis(site, context);
 
   log.info(`Starting LLMO customer analysis for site: ${siteId}, domain: ${domain}`);
 
