@@ -10,7 +10,9 @@
  * governing permissions and limitations under the License.
  */
 
-import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import {
+  badRequest, noContent, notFound, ok,
+} from '@adobe/spacecat-shared-http-utils';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { getSuggestionValue } from './utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -41,6 +43,11 @@ export default async function handler(message, context) {
   if (!audit) {
     log.warn(`No audit found for auditId: ${auditId}`);
     return notFound();
+  }
+
+  if (suggestions.length === 0) {
+    log.info(`No suggestions found for siteId: ${siteId}`);
+    return noContent();
   }
 
   const wrappedGuidance = {
