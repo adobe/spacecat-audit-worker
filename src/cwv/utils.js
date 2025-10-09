@@ -36,12 +36,22 @@ const CWV_GUIDANCE_MESSAGE_TYPE = 'guidance:cwv-analysis';
  */
 export async function needsGuidance(opportunity) {
   const suggestions = await opportunity.getSuggestions();
+
+  if (suggestions.length === 0) {
+    return false; // No suggestions (no guidance needed)
+  }
+
   return suggestions.some((suggestion) => {
     const data = suggestion.getData();
     const issues = data?.issues || [];
 
-    // Check if any guidance is empty
-    return !issues.some((issue) => issue.value && issue.value.trim());
+    // Check if suggestion has no issues at all (needs guidance)
+    if (issues.length === 0) {
+      return true;
+    }
+
+    // Check if any guidance is empty (needs guidance)
+    return issues.some((issue) => !issue.value || !issue.value.trim());
   });
 }
 

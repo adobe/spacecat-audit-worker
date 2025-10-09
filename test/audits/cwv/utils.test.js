@@ -230,11 +230,10 @@ describe('sendSQSMessageForGuidance', () => {
 });
 
 describe('needsGuidance', () => {
-  it('returns true when suggestions need guidance', async () => {
+  it('returns true when suggestions have empty guidance values', async () => {
     const suggestions = [
-      { getData: () => ({ issues: [] }) },
-      { getData: () => ({ issues: [{ type: 'lcp', value: '' }] }) },
-      { getData: () => ({ issues: [{ type: 'cls', value: '   ' }] }) },
+      { getData: () => ({ issues: [{ type: 'lcp', value: '' }] }) }, // Empty string
+      { getData: () => ({ issues: [{ type: 'cls', value: '   ' }] }) }, // Whitespace only
     ];
 
     const opportunity = {
@@ -245,11 +244,10 @@ describe('needsGuidance', () => {
     expect(result).to.be.true;
   });
 
-  it('returns true when some suggestions need guidance', async () => {
+  it('returns true when some suggestions have whitespace-only guidance values', async () => {
     const suggestions = [
-      { getData: () => ({ issues: [] }) },
       { getData: () => ({ issues: [{ type: 'lcp', value: '# LCP Optimization...' }] }) },
-      { getData: () => ({ issues: [{ type: 'cls', value: '   ' }] }) },
+      { getData: () => ({ issues: [{ type: 'cls', value: '   ' }] }) }, // Whitespace only
     ];
 
     const opportunity = {
@@ -260,10 +258,10 @@ describe('needsGuidance', () => {
     expect(result).to.be.true;
   });
 
-  it('returns true when some suggestions need guidance', async () => {
+  it('returns true when some suggestions have empty string guidance values', async () => {
     const suggestions = [
       { getData: () => ({ issues: [{ type: 'lcp', value: '# LCP Optimization...' }] }) },
-      { getData: () => ({ issues: [{ type: 'cls', value: '' }] }) },
+      { getData: () => ({ issues: [{ type: 'cls', value: '' }] }) }, // Empty string
       { getData: () => ({ issues: [{ type: 'inp', value: '# INP Optimization...' }] }) },
     ];
 
@@ -284,10 +282,24 @@ describe('needsGuidance', () => {
     expect(result).to.be.false;
   });
 
-  it('returns true when suggestions have undefined issues', async () => {
+  it('returns true when suggestions have empty issues array', async () => {
     const suggestions = [
-      { getData: () => ({}) },
-      { getData: () => ({ issues: undefined }) },
+      { getData: () => ({ issues: [] }) },
+      { getData: () => ({ issues: [] }) },
+    ];
+
+    const opportunity = {
+      getSuggestions: () => Promise.resolve(suggestions),
+    };
+
+    const result = await needsGuidance(opportunity);
+    expect(result).to.be.true;
+  });
+
+  it('returns true when suggestions have undefined or missing issues', async () => {
+    const suggestions = [
+      { getData: () => ({}) }, // No issues field
+      { getData: () => ({ issues: undefined }) }, // Issues is undefined
     ];
 
     const opportunity = {

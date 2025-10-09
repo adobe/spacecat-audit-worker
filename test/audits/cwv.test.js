@@ -268,12 +268,12 @@ describe('CWVRunner Tests', () => {
       expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
     });
 
-    it('calls sendMessageToMystiqueForGuidance when suggestions have no guidance', async () => {
+    it('calls sendSQSMessageForGuidance when suggestions have no guidance', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
 
-      // Mock suggestions without guidance
+      // Mock suggestions without guidance (empty issues array)
       const mockSuggestions = [
         { getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
         { getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
@@ -289,7 +289,7 @@ describe('CWVRunner Tests', () => {
       expect(message.siteId).to.equal('site-id');
     });
 
-    it('does not call sendMessageToMystiqueForGuidance when all suggestions have guidance', async () => {
+    it('does not call sendSQSMessageForGuidance when all suggestions have guidance', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
@@ -315,7 +315,7 @@ describe('CWVRunner Tests', () => {
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('calls sendMessageToMystiqueForGuidance when some suggestions have guidance and some do not', async () => {
+    it('calls sendSQSMessageForGuidance when some suggestions have guidance and some do not', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
@@ -336,7 +336,7 @@ describe('CWVRunner Tests', () => {
           getData: () => ({ 
             type: 'url', 
             url: 'test2',
-            issues: [] // No guidance
+            issues: [] // No guidance (empty issues array)
           }),
           getStatus: () => 'NEW'
         }
