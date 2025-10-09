@@ -17,7 +17,6 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import { Audit } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
@@ -276,8 +275,8 @@ describe('CWVRunner Tests', () => {
 
       // Mock suggestions without guidance
       const mockSuggestions = [
-        { getData: () => ({ type: 'url', url: 'test1', issues: [] }) },
-        { getData: () => ({ type: 'url', url: 'test2', issues: [] }) }
+        { getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
+        { getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
       ];
       oppty.getSuggestions.resolves(mockSuggestions);
 
@@ -304,7 +303,8 @@ describe('CWVRunner Tests', () => {
             issues: [
               { type: 'lcp', value: '# LCP Optimization\n\nYour LCP is too slow...' }
             ]
-          }) 
+          }),
+          getStatus: () => 'NEW'
         }
       ];
       oppty.getSuggestions.resolves(mockSuggestions);
@@ -329,14 +329,16 @@ describe('CWVRunner Tests', () => {
             issues: [
               { type: 'lcp', value: '# LCP Optimization...' }
             ]
-          }) 
+          }),
+          getStatus: () => 'NEW'
         },
         { 
           getData: () => ({ 
             type: 'url', 
             url: 'test2',
             issues: [] // No guidance
-          }) 
+          }),
+          getStatus: () => 'NEW'
         }
       ];
       oppty.getSuggestions.resolves(mockSuggestions);
