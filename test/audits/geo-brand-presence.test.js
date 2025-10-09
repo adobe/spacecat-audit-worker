@@ -388,7 +388,7 @@ describe('Geo Brand Presence Handler', () => {
 
     expect(sqs.sendMessage).to.not.have.been.called;
     expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique',
+      'GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique',
       site.getId(),
       site.getBaseURL(),
       sinon.match.object,
@@ -406,7 +406,7 @@ describe('Geo Brand Presence Handler', () => {
 
     expect(sqs.sendMessage).to.not.have.been.called;
     expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique',
+      'GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique',
       site.getId(),
       site.getBaseURL(),
       sinon.match.object,
@@ -447,6 +447,547 @@ describe('Geo Brand Presence Handler', () => {
       site.getBaseURL(),
       sinon.match.object,
     );
+  });
+
+  // NEW TESTS: Deduplication Logic
+  describe('Deduplication Logic', () => {
+    it('should remove duplicate AI prompts within same region/topic', async () => {
+      const duplicateData = [
+        {
+          prompt: 'what is adobe?',
+          region: 'us',
+          topic: 'general',
+          category: 'adobe',
+          url: 'https://adobe.com/page1',
+          keyword: 'adobe',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 1000,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+        {
+          prompt: 'What is Adobe?', // Duplicate (case insensitive)
+          region: 'US', // Same region (case insensitive)
+          topic: 'General', // Same topic (case insensitive)
+          category: 'adobe',
+          url: 'https://adobe.com/page2',
+          keyword: 'adobe',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 2000,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+        {
+          prompt: 'adobe pricing', // Different prompt, same region/topic
+          region: 'us',
+          topic: 'general',
+          category: 'adobe',
+          url: 'https://adobe.com/page3',
+          keyword: 'adobe',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 1500,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+      ];
+
+      fakeParquetS3Response(duplicateData);
+      fakeConfigS3Response(); // Empty config
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await sendToMystique({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // Should only have 2 prompts (duplicate removed, different prompt kept)
+      expect(s3Client.send).calledWith(
+        matchS3Cmd('PutObjectCommand', {
+          Body: sinon.match((json) => {
+            const data = JSON.parse(json);
+            expect(data).to.have.lengthOf(2); // 1 duplicate removed
+            expect(data.map(p => p.prompt)).to.include('what is adobe?');
+            expect(data.map(p => p.prompt)).to.include('adobe pricing');
+            return true;
+          })
+        })
+      );
+    });
+
+    it('should keep same prompts in different regions/topics', async () => {
+      const samePromptDifferentContext = [
+        {
+          prompt: 'what is adobe?',
+          region: 'us',
+          topic: 'general',
+          category: 'adobe',
+          url: 'https://adobe.com/page1',
+          keyword: 'adobe',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 1000,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+        {
+          prompt: 'what is adobe?', // Same prompt
+          region: 'uk', // Different region
+          topic: 'general',
+          category: 'adobe',
+          url: 'https://adobe.com/page2',
+          keyword: 'adobe',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 2000,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+        {
+          prompt: 'what is adobe?', // Same prompt
+          region: 'us',
+          topic: 'pricing', // Different topic
+          category: 'adobe',
+          url: 'https://adobe.com/page3',
+          keyword: 'adobe',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 1500,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+      ];
+
+      fakeParquetS3Response(samePromptDifferentContext);
+      fakeConfigS3Response(); // Empty config
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await sendToMystique({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // Should keep all 3 prompts (different region/topic combinations)
+      expect(s3Client.send).calledWith(
+        matchS3Cmd('PutObjectCommand', {
+          Body: sinon.match((json) => {
+            const data = JSON.parse(json);
+            expect(data).to.have.lengthOf(3); // All kept due to different contexts
+            return true;
+          })
+        })
+      );
+    });
+
+    it('should skip empty and invalid prompts', async () => {
+      const mixedData = [
+        {
+          prompt: 'valid prompt',
+          region: 'us',
+          topic: 'general',
+          category: 'adobe',
+          url: 'https://adobe.com/page1',
+          keyword: 'adobe',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 1000,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+        {
+          prompt: '', // Empty prompt (should be skipped)
+          region: 'us',
+          topic: 'general',
+          category: 'adobe',
+          url: 'https://adobe.com/page2',
+          keyword: 'adobe',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 2000,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+        {
+          prompt: '   ', // Whitespace only (should be skipped)
+          region: 'us',
+          topic: 'general',
+          category: 'adobe',
+          url: 'https://adobe.com/page3',
+          keyword: 'adobe',
+          keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+          volume: 1500,
+          volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+          source: 'ahrefs',
+        },
+      ];
+
+      fakeParquetS3Response(mixedData);
+      fakeConfigS3Response(); // Empty config
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await sendToMystique({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // Should only keep the valid prompt
+      expect(s3Client.send).calledWith(
+        matchS3Cmd('PutObjectCommand', {
+          Body: sinon.match((json) => {
+            const data = JSON.parse(json);
+            expect(data).to.have.lengthOf(1); // Only valid prompt kept
+            expect(data[0].prompt).to.equal('valid prompt');
+            return true;
+          })
+        })
+      );
+    });
+  });
+
+  // NEW TESTS: 200-Limit Customer Priority Logic
+  describe('200-Limit Customer Priority Logic', () => {
+    it('should prioritize customer prompts when total exceeds 200', async () => {
+      // Create 150 AI prompts
+      const aiPrompts = Array.from({ length: 150 }, (_, i) => ({
+        prompt: `ai prompt ${i + 1}`,
+        region: 'us',
+        topic: 'general',
+        category: 'adobe',
+        url: `https://adobe.com/page${i + 1}`,
+        keyword: 'adobe',
+        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+        volume: 1000 + i,
+        volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+        source: 'ahrefs',
+      }));
+
+      const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+
+      fakeParquetS3Response(aiPrompts);
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'Category 1', region: ['us'] },
+        },
+        topics: {
+          'f1a9605a-5a05-49e7-8760-b40ca2426380': {
+            name: 'Topic 1',
+            category: cat1,
+            prompts: Array.from({ length: 75 }, (_, i) => ({
+              prompt: `customer prompt ${i + 1}`,
+              regions: ['us'],
+              origin: 'human',
+              source: 'config'
+            })),
+          },
+        }
+      });
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await sendToMystique({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // Total: 150 AI + 75 Customer = 225, should be trimmed to 200
+      // Expected: 125 AI prompts + 75 Customer prompts = 200 total
+      expect(s3Client.send).calledWith(
+        matchS3Cmd('PutObjectCommand', {
+          Body: sinon.match((json) => {
+            const data = JSON.parse(json);
+            expect(data).to.have.lengthOf(200); // Exactly 200 prompts
+            
+            // Should have all 75 customer prompts
+            const customerPrompts = data.filter(p => p.source === 'human');
+            expect(customerPrompts).to.have.lengthOf(75);
+            
+            // Should have 125 AI prompts
+            const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
+            expect(aiPromptsInResult).to.have.lengthOf(125);
+            
+            return true;
+          })
+        })
+      );
+    });
+
+    it('should use only customer prompts when customer count >= 200', async () => {
+      // Create 50 AI prompts
+      const aiPrompts = Array.from({ length: 50 }, (_, i) => ({
+        prompt: `ai prompt ${i + 1}`,
+        region: 'us',
+        topic: 'general',
+        category: 'adobe',
+        url: `https://adobe.com/page${i + 1}`,
+        keyword: 'adobe',
+        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+        volume: 1000 + i,
+        volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+        source: 'ahrefs',
+      }));
+
+      const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+
+      fakeParquetS3Response(aiPrompts);
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'Category 1', region: ['us'] },
+        },
+        topics: {
+          'f1a9605a-5a05-49e7-8760-b40ca2426380': {
+            name: 'Topic 1',
+            category: cat1,
+            prompts: Array.from({ length: 250 }, (_, i) => ({
+              prompt: `customer prompt ${i + 1}`,
+              regions: ['us'],
+              origin: 'human',
+              source: 'config'
+            })),
+          },
+        }
+      });
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await sendToMystique({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // Should use only first 200 customer prompts, ignore all AI prompts
+      expect(s3Client.send).calledWith(
+        matchS3Cmd('PutObjectCommand', {
+          Body: sinon.match((json) => {
+            const data = JSON.parse(json);
+            expect(data).to.have.lengthOf(200); // Exactly 200 prompts
+            
+            // Should have NO AI prompts
+            const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
+            expect(aiPromptsInResult).to.have.lengthOf(0);
+            
+            // Should have exactly 200 customer prompts
+            const customerPrompts = data.filter(p => p.source === 'human');
+            expect(customerPrompts).to.have.lengthOf(200);
+            
+            return true;
+          })
+        })
+      );
+    });
+
+    it('should use all prompts when total <= 200', async () => {
+      // Create 50 AI prompts
+      const aiPrompts = Array.from({ length: 50 }, (_, i) => ({
+        prompt: `ai prompt ${i + 1}`,
+        region: 'us',
+        topic: 'general',
+        category: 'adobe',
+        url: `https://adobe.com/page${i + 1}`,
+        keyword: 'adobe',
+        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+        volume: 1000 + i,
+        volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+        source: 'ahrefs',
+      }));
+
+      const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+
+      fakeParquetS3Response(aiPrompts);
+      fakeConfigS3Response({
+        ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'Category 1', region: ['us'] },
+        },
+        topics: {
+          'f1a9605a-5a05-49e7-8760-b40ca2426380': {
+            name: 'Topic 1',
+            category: cat1,
+            prompts: Array.from({ length: 25 }, (_, i) => ({
+              prompt: `customer prompt ${i + 1}`,
+              regions: ['us'],
+              origin: 'human',
+              source: 'config'
+            })),
+          },
+        }
+      });
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await sendToMystique({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // Total: 50 AI + 25 Customer = 75 < 200, should keep all
+      expect(s3Client.send).calledWith(
+        matchS3Cmd('PutObjectCommand', {
+          Body: sinon.match((json) => {
+            const data = JSON.parse(json);
+            expect(data).to.have.lengthOf(75); // All prompts kept
+            
+            // Should have all 50 AI prompts
+            const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
+            expect(aiPromptsInResult).to.have.lengthOf(50);
+            
+            // Should have all 25 customer prompts
+            const customerPrompts = data.filter(p => p.source === 'human');
+            expect(customerPrompts).to.have.lengthOf(25);
+            
+            return true;
+          })
+        })
+      );
+    });
+
+    it('should respect EXCLUDE_FROM_HARD_LIMIT sites', async () => {
+      // Override site ID to use excluded Adobe site
+      const excludedSite = {
+        getBaseURL: () => 'https://adobe.com',
+        getId: () => '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3', // adobe.com (excluded)
+        getDeliveryType: () => 'geo_edge',
+      };
+
+      // Create 300 AI prompts
+      const aiPrompts = Array.from({ length: 300 }, (_, i) => ({
+        prompt: `ai prompt ${i + 1}`,
+        region: 'us',
+        topic: 'general',
+        category: 'adobe',
+        url: `https://adobe.com/page${i + 1}`,
+        keyword: 'adobe',
+        keywordImportTime: new Date('2024-05-01T00:00:00Z'),
+        volume: 1000 + i,
+        volumeImportTime: new Date('2025-08-13T14:00:00.000Z'),
+        source: 'ahrefs',
+      }));
+
+      const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+
+      // Setup parquet mock
+      fakeParquetS3Response(aiPrompts);
+      
+      // Setup config mock specifically for the excluded site ID - need to reset and add both mocks
+      s3Client.send.reset(); // Reset all previous stubs
+      
+      // Re-add the parquet mock
+      const columnData = {
+        prompt: { data: [], name: 'prompt', type: 'STRING' },
+        region: { data: [], name: 'region', type: 'STRING' },
+        category: { data: [], name: 'category', type: 'STRING' },
+        topic: { data: [], name: 'topic', type: 'STRING' },
+        url: { data: [], name: 'url', type: 'STRING' },
+        keyword: { data: [], name: 'keyword', type: 'STRING' },
+        keywordImportTime: { data: [], name: 'keywordImportTime', type: 'TIMESTAMP' },
+        volume: { data: [], name: 'volume', type: 'INT32' },
+        volumeImportTime: { data: [], name: 'volumeImportTime', type: 'TIMESTAMP' },
+        source: { data: [], name: 'source', type: 'STRING' },
+      };
+      const keys = Object.keys(columnData);
+      for (const x of aiPrompts) {
+        for (const key of keys) {
+          columnData[key].data.push(x[key]);
+        }
+      }
+      const buffer = parquetWriteBuffer({ columnData: Object.values(columnData) });
+      
+      s3Client.send.withArgs(
+        matchS3Cmd(
+          'GetObjectCommand',
+          { Key: sinon.match(/[/]data[.]parquet$/) },
+        ),
+      ).resolves({
+        Body: {
+          async transformToByteArray() {
+            return new Uint8Array(buffer);
+          },
+        },
+      });
+
+      // Setup config mock for the excluded site ID
+      s3Client.send.withArgs(
+        matchS3Cmd(
+          'GetObjectCommand',
+          { Key: llmoConfig.llmoConfigPath(excludedSite.getId()) },
+        ),
+      ).resolves({
+        Body: {
+          async transformToString() {
+            return JSON.stringify({
+              ...llmoConfig.defaultConfig(),
+              categories: {
+                [cat1]: { name: 'Category 1', region: ['us'] },
+              },
+              topics: {
+                'f1a9605a-5a05-49e7-8760-b40ca2426380': {
+                  name: 'Topic 1',
+                  category: cat1,
+                  prompts: Array.from({ length: 100 }, (_, i) => ({
+                    prompt: `customer prompt ${i + 1}`,
+                    regions: ['us'],
+                    origin: 'human',
+                    source: 'config'
+                  })),
+                },
+              }
+            });
+          },
+        },
+      });
+      
+      // Add PutObjectCommand mock
+      s3Client.send
+        .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^temp[/]audit-geo-brand-presence[/]/) }))
+        .resolves({});
+
+      getPresignedUrl.resolves('https://example.com/presigned-url');
+
+      await sendToMystique({
+        ...context,
+        site: excludedSite, // Use excluded site
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      // Should keep ALL prompts (no 200 limit for excluded sites)
+      expect(s3Client.send).calledWith(
+        matchS3Cmd('PutObjectCommand', {
+          Body: sinon.match((json) => {
+            const data = JSON.parse(json);
+            expect(data).to.have.lengthOf(400); // 300 AI + 100 customer = 400 total
+            
+            // Should have all 300 AI prompts
+            const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
+            expect(aiPromptsInResult).to.have.lengthOf(300);
+            
+            // Should have all 100 customer prompts
+            const customerPrompts = data.filter(p => p.source === 'human');
+            expect(customerPrompts).to.have.lengthOf(100);
+            
+            return true;
+          })
+        })
+      );
+    });
   });
 
   /**
