@@ -317,7 +317,7 @@ describe('Geo Brand Presence Handler', () => {
 
     expect(sqs.sendMessage).to.not.have.been.called;
     expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique',
+      'GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique',
       site.getId(),
       site.getBaseURL(),
       sinon.match.object,
@@ -335,7 +335,7 @@ describe('Geo Brand Presence Handler', () => {
 
     expect(sqs.sendMessage).to.not.have.been.called;
     expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique',
+      'GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique',
       site.getId(),
       site.getBaseURL(),
       sinon.match.object,

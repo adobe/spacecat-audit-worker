@@ -17,7 +17,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { parquetWriteBuffer } from 'hyparquet-writer';
-import { keywordPromptsImportStep, sendToMystique } from '../../src/geo-brand-presence-daily/handler.js';
+import { keywordPromptsImportStep, sendToMystique } from '../../src/geo-brand-presence/handler.js';
 
 use(sinonChai);
 
@@ -73,7 +73,7 @@ describe('Geo Brand Presence Daily Handler', () => {
 
   it('should run the keywordPromptsImport step with cadence: daily', async () => {
     const finalUrl = 'https://adobe.com';
-    const ctx = { ...context, finalUrl };
+    const ctx = { ...context, finalUrl, brandPresenceCadence: 'daily' };
     const result = await keywordPromptsImportStep(ctx);
     expect(result).to.deep.equal({
       type: 'llmo-prompts-ahrefs',
@@ -86,7 +86,7 @@ describe('Geo Brand Presence Daily Handler', () => {
 
   it('passes on a string date in ctx.data', async () => {
     const finalUrl = 'https://adobe.com';
-    const ctx = { ...context, finalUrl, data: '2025-10-01' };
+    const ctx = { ...context, finalUrl, data: '2025-10-01', brandPresenceCadence: 'daily' };
     const result = await keywordPromptsImportStep(ctx);
     expect(result).to.deep.equal({
       type: 'llmo-prompts-ahrefs',
@@ -99,7 +99,7 @@ describe('Geo Brand Presence Daily Handler', () => {
 
   it('ignores non-date values in ctx.data', async () => {
     const finalUrl = 'https://adobe.com';
-    const ctx = { ...context, finalUrl, data: 'not a parseable date' };
+    const ctx = { ...context, finalUrl, data: 'not a parseable date', brandPresenceCadence: 'daily' };
     const result = await keywordPromptsImportStep(ctx);
     expect(result).to.deep.equal({
       type: 'llmo-prompts-ahrefs',
@@ -116,7 +116,7 @@ describe('Geo Brand Presence Daily Handler', () => {
       endDate: '2025-10-01',
       aiPlatform: 'gemini',
     });
-    const ctx = { ...context, finalUrl, data: jsonData };
+    const ctx = { ...context, finalUrl, data: jsonData, brandPresenceCadence: 'daily' };
     const result = await keywordPromptsImportStep(ctx);
     expect(result).to.deep.equal({
       type: 'llmo-prompts-ahrefs',
@@ -126,7 +126,7 @@ describe('Geo Brand Presence Daily Handler', () => {
       fullAuditRef: finalUrl,
     });
     expect(log.info).to.have.been.calledWith(
-      'GEO BRAND PRESENCE DAILY: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
+      'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
       finalUrl,
       '2025-10-01',
       'gemini',
@@ -136,7 +136,7 @@ describe('Geo Brand Presence Daily Handler', () => {
   it('handles JSON parsing failure and falls back to legacy date parsing', async () => {
     const finalUrl = 'https://adobe.com';
     const invalidJson = '{ invalid json data';
-    const ctx = { ...context, finalUrl, data: invalidJson };
+    const ctx = { ...context, finalUrl, data: invalidJson, brandPresenceCadence: 'daily' };
     const result = await keywordPromptsImportStep(ctx);
     expect(result).to.deep.equal({
       type: 'llmo-prompts-ahrefs',
@@ -145,13 +145,12 @@ describe('Geo Brand Presence Daily Handler', () => {
       auditResult: { keywordQuestions: [], aiPlatform: undefined, cadence: 'daily' },
       fullAuditRef: finalUrl,
     });
-    expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE DAILY: failed to parse %s as JSON',
+    expect(log.warn).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s',
       invalidJson,
-      sinon.match.instanceOf(Error),
     );
     expect(log.info).to.have.been.calledWith(
-      'GEO BRAND PRESENCE DAILY: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
+      'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
       finalUrl,
       undefined,
       undefined,
@@ -168,6 +167,7 @@ describe('Geo Brand Presence Daily Handler', () => {
 
     await sendToMystique({
       ...context,
+      brandPresenceCadence: 'daily',
       auditContext: {
         referenceDate,
         parquetFiles: ['some/parquet/file/data.parquet'],
@@ -184,14 +184,14 @@ describe('Geo Brand Presence Daily Handler', () => {
       auditId: audit.getId(),
       deliveryType: site.getDeliveryType(),
     });
-    
+
     // Verify daily-specific fields
-    expect(message.date).to.equal('2025-10-01'); // Yesterday from reference date
     expect(message.week).to.be.a('number');
     expect(message.year).to.be.a('number');
     expect(message.data).to.deep.equal({
       web_search_provider: 'chatgpt',
       url: 'https://example.com/presigned-url',
+      date: '2025-10-01', // Yesterday from reference date
     });
   });
 
@@ -204,6 +204,7 @@ describe('Geo Brand Presence Daily Handler', () => {
 
     await sendToMystique({
       ...context,
+      brandPresenceCadence: 'daily',
       auditContext: {
         referenceDate,
         parquetFiles: ['some/parquet/file/data.parquet'],
@@ -211,7 +212,7 @@ describe('Geo Brand Presence Daily Handler', () => {
     }, getPresignedUrl);
 
     const [, message] = sqs.sendMessage.firstCall.args;
-    expect(message.date).to.equal('2024-12-30'); // Yesterday
+    expect(message.data.date).to.equal('2024-12-30'); // Yesterday
     expect(message.week).to.equal(1); // ISO week 1
     expect(message.year).to.equal(2025); // ISO year 2025 (even though calendar year is 2024)
   });
@@ -220,6 +221,7 @@ describe('Geo Brand Presence Daily Handler', () => {
     fakeS3Response([]);
     await sendToMystique({
       ...context,
+      brandPresenceCadence: 'daily',
       auditContext: {
         referenceDate: new Date('2025-10-02T12:00:00Z'),
         parquetFiles: ['some/parquet/file/data.parquet'],
@@ -234,6 +236,7 @@ describe('Geo Brand Presence Daily Handler', () => {
 
     await sendToMystique({
       ...context,
+      brandPresenceCadence: 'daily',
       auditContext: {
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
@@ -241,13 +244,13 @@ describe('Geo Brand Presence Daily Handler', () => {
 
     expect(sqs.sendMessage).to.have.been.calledOnce;
     const [, message] = sqs.sendMessage.firstCall.args;
-    
+
     // Verify date is yesterday's date
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const expectedDate = yesterday.toISOString().split('T')[0];
-    
-    expect(message.date).to.equal(expectedDate);
+
+    expect(message.data.date).to.equal(expectedDate);
     expect(message.week).to.be.a('number');
     expect(message.year).to.be.a('number');
   });
