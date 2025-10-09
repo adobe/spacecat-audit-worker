@@ -123,7 +123,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       prompts = customerPrompts.slice(0, 200);
     } else if (prompts.length > 200) {
       // throw away ai prompts as needed, retain customer prompts
-      prompts = prompts.slice(0, 200 - customerPrompts.length).concat(customerPrompts);
+      prompts = prompts.slice(-200);
     }
   }
   /* c8 ignore end */
