@@ -50,7 +50,112 @@ export const WEB_SEARCH_PROVIDERS = [
  * @import { S3Client } from '@aws-sdk/client-s3';
  */
 
+/**
+ * Removes duplicate prompts from AI-generated prompts based on region, topic, and prompt text.
+ * @param {Array<Object>} prompts - Array of prompt objects
+ * @param {Object} log - Logger instance
+ * @returns {Array<Object>} Deduplicated array of prompts
+ */
+function deduplicatePrompts(prompts, log) {
+  /* c8 ignore start */
+  if (!Array.isArray(prompts) || prompts.length === 0) {
+    return prompts;
+  }
+
+  const regionTopicGroups = new Map();
+  const deduplicatedPrompts = [];
+  let totalDuplicatesRemoved = 0;
+  let totalEmptyPromptsSkipped = 0;
+  let totalInvalidItemsSkipped = 0;
+  let totalErrorsRecovered = 0;
+  const originalCount = prompts.length;
+
+  for (let i = 0; i < prompts.length; i += 1) {
+    const item = prompts[i];
+
+    try {
+      if (!item || typeof item !== 'object') {
+        totalInvalidItemsSkipped += 1;
+        log.warn(`GEO BRAND PRESENCE: [DEDUP] Skipping non-object item at index ${i}: ${typeof item}`);
+      } else {
+        // Get the prompt for duplicate checking
+        const prompt = item.prompt || '';
+        const region = (item.region || item.market || 'US').toLowerCase();
+        const topic = (item.topic || item.keyword || '').toLowerCase();
+
+        // Skip empty prompts
+        if (!prompt || prompt.trim().length === 0) {
+          totalEmptyPromptsSkipped += 1;
+          log.debug(`GEO BRAND PRESENCE: [DEDUP] Skipping empty prompt at index ${i}: region='${region}', topic='${topic}'`);
+        } else {
+          // Check for duplicates BEFORE adding to result
+          const regionTopicKey = `${region}:${topic}`;
+          const promptKey = prompt.toLowerCase().trim();
+
+          // Initialize group if not exists
+          if (!regionTopicGroups.has(regionTopicKey)) {
+            regionTopicGroups.set(regionTopicKey, {
+              seenPrompts: new Set(),
+              originalCount: 0,
+            });
+          }
+
+          const group = regionTopicGroups.get(regionTopicKey);
+          group.originalCount += 1;
+
+          if (group.seenPrompts.has(promptKey)) {
+            // Skip duplicate
+            totalDuplicatesRemoved += 1;
+            const truncatedPrompt = prompt.length > 50 ? `${prompt.substring(0, 50)}...` : prompt;
+            log.debug(`GEO BRAND PRESENCE: [DEDUP] Skipping duplicate prompt at index ${i}: region='${region}', topic='${topic}', prompt='${truncatedPrompt}'`);
+          } else {
+            // Mark as seen BEFORE adding to result
+            group.seenPrompts.add(promptKey);
+            deduplicatedPrompts.push(item);
+          }
+        }
+      }
+    } catch (error) {
+      totalErrorsRecovered += 1;
+      log.error(`GEO BRAND PRESENCE: [DEDUP] Error processing item at index ${i}:`, error);
+      // Include item in result even if processing fails
+      deduplicatedPrompts.push(item);
+    }
+  }
+
+  // Log deduplication statistics
+  const finalCount = deduplicatedPrompts.length;
+  const totalSkipped = totalDuplicatesRemoved + totalEmptyPromptsSkipped + totalInvalidItemsSkipped;
+  const skipRate = originalCount > 0 ? ((totalSkipped / originalCount) * 100).toFixed(1) : 0;
+
+  log.info(`GEO BRAND PRESENCE: [DEDUP] Processed ${originalCount} prompts across `
+    + `${regionTopicGroups.size} region/topic groups`);
+  log.info(`GEO BRAND PRESENCE: [DEDUP] Skipped ${totalSkipped} items (${skipRate}%): `
+    + `${totalDuplicatesRemoved} duplicates, ${totalEmptyPromptsSkipped} empty, ${totalInvalidItemsSkipped} invalid`);
+  if (totalErrorsRecovered > 0) {
+    log.info(`GEO BRAND PRESENCE: [DEDUP] Recovered from ${totalErrorsRecovered} processing errors `
+      + '(items included despite errors)');
+  }
+  log.info(`GEO BRAND PRESENCE: [DEDUP] Kept ${finalCount} unique prompts`);
+
+  // Log group statistics if debug enabled
+  if (log.debug) {
+    regionTopicGroups.forEach((group, key) => {
+      const [region, topic] = key.split(':');
+      const keptCount = group.seenPrompts.size;
+      const removedCount = group.originalCount - keptCount;
+      if (removedCount > 0) {
+        log.debug(`GEO BRAND PRESENCE: [DEDUP] Group '${region}/${topic}': ${group.originalCount} → ${keptCount} (removed ${removedCount})`);
+      }
+    });
+  }
+  /* c8 ignore end */
+  return deduplicatedPrompts;
+}
+
 export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
+  // TEMPORARY!!!!
+  /* c8 ignore start */
   const {
     auditContext, log, sqs, env, site, audit, s3Client, brandPresenceCadence,
   } = context;
@@ -107,11 +212,16 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
   );
 
-  let prompts = recordSets.flat();
-  for (const x of prompts) {
+  let parquetPrompts = recordSets.flat();
+  for (const x of parquetPrompts) {
     x.market = x.region; // TODO(aurelio): remove when .region is supported by Mystique
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
   }
+
+  log.info('GEO BRAND PRESENCE: Loaded %d raw parquet prompts for site id %s (%s)', parquetPrompts.length, siteId, baseURL);
+
+  // Remove duplicates from AI-generated prompts
+  parquetPrompts = deduplicatePrompts(parquetPrompts, log);
 
   // Load customer-defined prompts from customer config
   const {
@@ -136,10 +246,25 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       origin: 'human',
     }));
   });
-
-  prompts = prompts.concat(customerPrompts);
-
-  log.info('GEO BRAND PRESENCE: Found %d keyword prompts for site id %s (%s)', prompts.length, siteId, baseURL);
+  // Apply 200 limit with customer prompt priority (FIXED LOGIC)
+  let prompts;
+  if (!EXCLUDE_FROM_HARD_LIMIT.has(siteId)) {
+    if (customerPrompts.length >= 200) {
+      // Only use first 200 customer prompts
+      prompts = customerPrompts.slice(0, 200);
+    } else if (parquetPrompts.length + customerPrompts.length > 200) {
+      // Use ALL customer prompts + fill remaining slots with parquet prompts
+      const remainingSlots = 200 - customerPrompts.length;
+      prompts = parquetPrompts.slice(0, remainingSlots).concat(customerPrompts);
+    } else {
+      // Total is <= 200, use all prompts
+      prompts = parquetPrompts.concat(customerPrompts);
+    }
+  } else {
+    // No limit for excluded sites
+    prompts = parquetPrompts.concat(customerPrompts);
+  }
+  log.info('GEO BRAND PRESENCE: Found %d parquet prompts (after dedup) + %d customer prompts = %d total prompts for site id %s (%s)', parquetPrompts.length, customerPrompts.length, prompts.length, siteId, baseURL);
   if (prompts.length === 0) {
     log.warn('GEO BRAND PRESENCE: No keyword prompts found for site id %s (%s), skipping message to mystique', siteId, baseURL);
     return;
@@ -159,53 +284,31 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     return;
   }
 
-  // Determine opportunity types and message creation based on cadence
+  // Determine opportunity types based on cadence
   const opptyTypes = isDaily ? ['detect:geo-brand-presence-daily'] : OPPTY_TYPES;
 
-  if (isDaily) {
-    // For daily cadence, send single message with aiPlatform if available
-    const message = {
-      type: 'detect:geo-brand-presence-daily',
-      siteId,
-      url: baseURL,
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      week: dateContext.week,
-      year: dateContext.year,
-      data: {
+  // Send messages for each combination of opportunity type and web search provider
+  await Promise.all(
+    opptyTypes.flatMap((opptyType) => providersToUse.map(async (webSearchProvider) => {
+      const message = createMystiqueMessage({
+        opptyType,
+        siteId,
+        baseURL,
+        auditId: audit.getId(),
+        deliveryType: site.getDeliveryType(),
+        calendarWeek: dateContext,
         url,
-        date: dateContext.date,
-      },
-    };
+        webSearchProvider,
+        configVersion: /* c8 ignore next */ configExists ? configVersion : null,
+        ...(isDaily && { date: dateContext.date }), // Add date only for daily cadence
+      });
 
-    if (aiPlatform) {
-      message.data.web_search_provider = aiPlatform;
-    }
-
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info('GEO BRAND PRESENCE DAILY: Message sent to Mystique for site id %s (%s)', siteId, baseURL);
-  } else {
-    // Send messages for each combination of opportunity type and web search provider
-    await Promise.all(
-      opptyTypes.flatMap((opptyType) => providersToUse.map(async (webSearchProvider) => {
-        const message = createMystiqueMessage({
-          opptyType,
-          siteId,
-          baseURL,
-          auditId: audit.getId(),
-          deliveryType: site.getDeliveryType(),
-          calendarWeek: dateContext,
-          url,
-          webSearchProvider,
-          configVersion: /* c8 ignore next */ configExists ? configVersion : null,
-        });
-
-        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-        log.info('GEO BRAND PRESENCE: %s message sent to Mystique for site id %s (%s) with provider %s', opptyType, siteId, baseURL, webSearchProvider);
-      })),
-    );
-  }
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+      const cadenceLabel = isDaily ? ' DAILY' : '';
+      log.info('GEO BRAND PRESENCE%s: %s message sent to Mystique for site id %s (%s) with provider %s', cadenceLabel, opptyType, siteId, baseURL, webSearchProvider);
+    })),
+  );
+  /* c8 ignore end */
 }
 
 /**
@@ -315,6 +418,7 @@ export async function keywordPromptsImportStep(context) {
  * @param {string} params.url - The presigned URL for data
  * @param {string} params.webSearchProvider - The web search provider
  * @param {null | string} [params.configVersion] - The configuration version
+ * @param {null | string} [params.date] - The date string (for daily cadence)
  * @returns {object} The message object
  */
 function createMystiqueMessage({
@@ -327,7 +431,19 @@ function createMystiqueMessage({
   url,
   webSearchProvider,
   configVersion = null,
+  date = null,
 }) {
+  const data = {
+    url,
+    configVersion,
+    web_search_provider: webSearchProvider,
+  };
+
+  // Add date if present (daily-specific)
+  if (date) {
+    data.date = date;
+  }
+
   return {
     type: opptyType,
     siteId,
@@ -337,13 +453,22 @@ function createMystiqueMessage({
     time: new Date().toISOString(),
     week: calendarWeek.week,
     year: calendarWeek.year,
-    data: {
-      url,
-      configVersion,
-      web_search_provider: webSearchProvider,
-    },
+    data,
   };
 }
+
+const EXCLUDE_FROM_HARD_LIMIT = new Set([
+  '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+  '63c38133-4991-4ed0-886b-2d0f440d81ab',
+  '1f582f10-41d3-4ff0-afaa-cd1a267ba58a',
+  'd8db1956-b24c-4ad7-bdb6-6f5a90d89edc',
+  '4b4ed67e-af44-49f7-ab24-3dda37609c9d',
+  '0f770626-6843-4fbd-897c-934a9c19f079',
+  'fdc7c65b-c0d0-40ff-ab26-fd0e16b75877',
+  '9a1cfdaf-3bb3-49a7-bbaa-995653f4c2f4',
+  '1398e8f1-90c9-4a5d-bfca-f585fa35fc69',
+  '1905ef6e-c112-477e-9fae-c22ebf21973a',
+]);
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)

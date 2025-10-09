@@ -151,3 +151,14 @@ export function ensureFullUrl(url, domain = '') {
   }
   return reasonableUrl;
 }
+
+/**
+ * Calculates the byte length of a string in UTF-8 encoding.
+ * This is a utility function to standardize the calculation of string sizes.
+ *
+ * @param {string} theString - The string to measure
+ * @returns {number} The byte length of the string in UTF-8 encoding
+ */
+export function getStringByteLength(theString) {
+  return Buffer.byteLength(theString, 'utf8');
+}
