@@ -12,12 +12,13 @@
 /* eslint-disable no-use-before-define */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
-import { isString, isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
+import {
+  isString, isNonEmptyArray, isNonEmptyObject, llmoConfig,
+} from '@adobe/spacecat-shared-utils';
 import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
-import { llmoConfig } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
@@ -89,8 +90,11 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   }
 
   // Load customer-defined prompts from customer config
-  /** @type { { config: import('@adobe/spacecat-shared-utils/src/schemas.js').LLMOConfig } } */
-  const { config } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
+  const {
+    config,
+    exists: configExists,
+    version: configVersion,
+  } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
   const customerPrompts = Object.values(config.topics).flatMap((x) => {
     const category = config.categories[x.category];
     return x.prompts.map((p) => ({
@@ -137,6 +141,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
         calendarWeek,
         url,
         webSearchProvider,
+        configVersion: configExists ? configVersion : null,
       });
 
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
@@ -240,6 +245,7 @@ export async function keywordPromptsImportStep(context) {
  * @param {object} params.calendarWeek - The calendar week object
  * @param {string} params.url - The presigned URL for data
  * @param {string} params.webSearchProvider - The web search provider
+ * @param {null | string} [params.configVersion] - The configuration version
  * @returns {object} The message object
  */
 function createMystiqueMessage({
@@ -251,6 +257,7 @@ function createMystiqueMessage({
   calendarWeek,
   url,
   webSearchProvider,
+  configVersion = null,
 }) {
   return {
     type: opptyType,
@@ -263,6 +270,7 @@ function createMystiqueMessage({
     year: calendarWeek.year,
     data: {
       url,
+      configVersion,
       web_search_provider: webSearchProvider,
     },
   };
