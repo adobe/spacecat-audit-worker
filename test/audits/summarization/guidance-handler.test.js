@@ -130,6 +130,32 @@ describe('summarization guidance handler', () => {
     expect(Suggestion.create).not.to.have.been.called;
   });
 
+  it('should return noContent when no suggestions are found', async () => {
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        guidance: [
+          {
+            insight: 'Content analysis reveals opportunities',
+            rationale: 'Content summarization elements improve discoverability',
+            recommendation: 'Focus on creating clear, engaging summaries',
+            type: 'guidance',
+          },
+        ],
+        suggestions: [],
+      },
+    };
+    
+    const result = await handler(message, context);
+    
+    expect(log.info).to.have.been.calledWith(sinon.match(/No suggestions found for siteId: site-id/));
+    expect(result.status).to.equal(204);
+    expect(Opportunity.allBySiteId).not.to.have.been.called;
+    expect(Opportunity.create).not.to.have.been.called;
+    expect(syncSuggestionsStub).not.to.have.been.called;
+  });
+
   it('should create a new summarization opportunity if no existing opportunity is found', async () => {
     Opportunity.allBySiteId.resolves([]);
     const message = {
@@ -296,11 +322,10 @@ describe('summarization guidance handler', () => {
         suggestions: [],
       },
     };
-    await handler(message, context);
-    expect(syncSuggestionsStub).to.have.been.calledOnce;
-    expect(syncSuggestionsStub.getCall(0).args[0].newData).to.be.an('array');
-    expect(syncSuggestionsStub.getCall(0).args[0].newData).to.have.length(1);
-    expect(syncSuggestionsStub.getCall(0).args[0].newData[0].suggestionValue).to.equal('');
+    const result = await handler(message, context);
+    expect(log.info).to.have.been.calledWith(sinon.match(/No suggestions found for siteId: site-id/));
+    expect(result.status).to.equal(204);
+    expect(syncSuggestionsStub).not.to.have.been.called;
   });
 
   it('should create suggestion with correct data structure', async () => {
