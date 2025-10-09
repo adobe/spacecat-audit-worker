@@ -32,6 +32,7 @@ import {
 import {
   addWWW,
   ensureFullUrl,
+  getStringByteLength,
   hasProtocol,
   is404page,
 } from '../../src/redirect-chains/opportunity-utils.js';
@@ -187,6 +188,35 @@ describe('Redirect Chains Audit', () => {
 
       it('should handle domain without trailing slash and path without leading slash (add slash)', () => {
         expect(ensureFullUrl('path', 'https://example.com')).to.equal('https://example.com/path');
+      });
+    });
+
+    describe('getStringByteLength', () => {
+      it('should calculate byte length of string correctly', () => {
+        const testString = '{"key": "value"}';
+        const expectedLength = Buffer.byteLength(testString, 'utf8');
+        expect(getStringByteLength(testString)).to.equal(expectedLength);
+      });
+
+      it('should handle empty string', () => {
+        expect(getStringByteLength('')).to.equal(0);
+      });
+
+      it('should handle string with special characters', () => {
+        const testString = '{"key": "value with émojis 🚀"}';
+        const expectedLength = Buffer.byteLength(testString, 'utf8');
+        expect(getStringByteLength(testString)).to.equal(expectedLength);
+      });
+
+      it('should handle complex JSON objects', () => {
+        const complexObject = {
+          name: 'Test',
+          items: [1, 2, 3],
+          nested: { key: 'value' }
+        };
+        const testString = JSON.stringify(complexObject);
+        const expectedLength = Buffer.byteLength(testString, 'utf8');
+        expect(getStringByteLength(testString)).to.equal(expectedLength);
       });
     });
   });

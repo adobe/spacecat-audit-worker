@@ -26,6 +26,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import {
   ensureFullUrl,
   is404page,
+  getStringByteLength,
 } from './opportunity-utils.js';
 
 const auditType = 'redirect-chains';
@@ -598,7 +599,7 @@ export function filterIssuesToFitIntoSpace(issues, log) {
   // Calculate total size of all issues
   const totalSize = issues.reduce((sum, issue) => {
     const issueJson = JSON.stringify(issue);
-    return sum + Buffer.byteLength(issueJson, 'utf8');
+    return sum + getStringByteLength(issueJson);
   }, 0);
 
   // If all issues fit within the limit, return them all
@@ -629,7 +630,7 @@ export function filterIssuesToFitIntoSpace(issues, log) {
   // Calculate size statistics for conservative estimation
   const issueSizes = issues.map((issue) => {
     const issueJson = JSON.stringify(issue);
-    return Buffer.byteLength(issueJson, 'utf8');
+    return getStringByteLength(issueJson);
   });
   const averageSize = issueSizes.reduce((sum, size) => sum + size, 0) / issueSizes.length;
   const largestSize = Math.max(...issueSizes);
@@ -666,7 +667,7 @@ export function filterIssuesToFitIntoSpace(issues, log) {
   // Log the stats about the size of the filtered set
   const filteredSize = filteredIssues.reduce((sum, issue) => {
     const issueJson = JSON.stringify(issue);
-    return sum + Buffer.byteLength(issueJson, 'utf8');
+    return sum + getStringByteLength(issueJson);
   }, 0);
   log.info(`${AUDIT_LOGGING_NAME} - Filtered ${totalFiltered} issues (${Math.round(filteredSize / 1024)} KB) from original ${issues.length} issues (${Math.round(totalSize / 1024)} KB)`);
 
@@ -960,7 +961,7 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
 
   // Calculate and log the size of suggestions
   const suggestionsJson = JSON.stringify(suggestedFixes);
-  const sizeInBytes = Buffer.byteLength(suggestionsJson, 'utf8');
+  const sizeInBytes = getStringByteLength(suggestionsJson);
   const sizeInKB = Math.max(1, Math.round(sizeInBytes / 1024));
 
   log.info(`${AUDIT_LOGGING_NAME} - Total size of suggestions (rounded up): ${sizeInKB} KB`);
@@ -969,7 +970,7 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
   if (suggestedFixes && suggestedFixes.length > 0) {
     const suggestionSizes = suggestedFixes.map((suggestion) => {
       const suggestionJson = JSON.stringify(suggestion);
-      return Buffer.byteLength(suggestionJson, 'utf8');
+      return getStringByteLength(suggestionJson);
     });
 
     const nonZeroSizes = suggestionSizes.filter((size) => size > 0);
