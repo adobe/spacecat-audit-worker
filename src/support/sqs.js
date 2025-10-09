@@ -22,7 +22,7 @@ class SQS {
     this.log = log;
   }
 
-  async sendMessage(queueUrl, message, msgGroupId) {
+  async sendMessage(queueUrl, message, msgGroupId, delaySeconds = 0) {
     const body = {
       ...message,
       timestamp: new Date().toISOString(),
@@ -33,6 +33,7 @@ class SQS {
       MessageBody: asJSON,
       QueueUrl: queueUrl,
       MessageGroupId: msgGroupId, // Only needed for FIFO queues
+      DelaySeconds: delaySeconds,
     });
 
     try {
