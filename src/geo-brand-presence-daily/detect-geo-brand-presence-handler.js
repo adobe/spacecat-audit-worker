@@ -11,66 +11,23 @@
  */
 /* c8 ignore start */
 
-import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import { createLLMOSharepointClient, uploadAndPublishFile } from '../utils/report-uploader.js';
+import baseHandler from '../geo-brand-presence/detect-geo-brand-presence-handler.js';
 
-// Import daily opportunity types
-import { DAILY_OPPTY_TYPES } from './handler.js';
-
+/**
+ * Daily version of the geo brand presence handler
+ * Extends the base handler with daily-specific path logic
+ */
 export default async function handler(message, context) {
-  const { log, dataAccess } = context;
-  const { Audit, Site } = dataAccess;
-  const {
-    auditId, siteId, type: subType, data,
-  } = message;
-
-  log.info('GEO BRAND PRESENCE DAILY: Message received:', message);
-
-  // Validate daily opportunity types only
-  if (!subType || !DAILY_OPPTY_TYPES.includes(subType)) {
-    log.error(`GEO BRAND PRESENCE DAILY: Unsupported subtype: ${subType}`);
-    return notFound();
-  }
-
-  const [audit, site] = await Promise.all([Audit.findById(auditId), Site.findById(siteId)]);
-  if (!audit || !site) {
-    log.error(`GEO BRAND PRESENCE DAILY: Audit or site not found for auditId: ${auditId}, siteId: ${siteId}`);
-    return notFound();
-  }
-
-  // Extract daily-specific information from message
-  const dailyDate = message.date;
+  // Extract daily-specific information
   const weekNumber = message.week ? String(message.week).padStart(2, '0') : '01';
 
-  log.info(`GEO BRAND PRESENCE DAILY: Processing daily report for ${dailyDate}, week: w${weekNumber}`);
+  // Create a modified context with daily-specific path logic
+  const dailyContext = {
+    ...context,
+    // Override the path construction for daily processing
+    getOutputLocation: (site) => `${site.getConfig().getLlmoDataFolder()}/brand-presence/w${weekNumber}`,
+  };
 
-  const sheetUrl = URL.parse(data.presigned_url);
-  if (!sheetUrl || !sheetUrl.href) {
-    log.error(`GEO BRAND PRESENCE DAILY: Invalid presigned URL: ${data.presigned_url}`);
-    return badRequest('Invalid presigned URL');
-  }
-
-  /** @type {Response} */
-  const res = await fetch(sheetUrl);
-  const sheet = await res.arrayBuffer();
-
-  // Create SharePoint client (reusing original logic)
-  const sharepointClient = await createLLMOSharepointClient(context);
-
-  // Daily-specific SharePoint path: brand-presence/w{weekNumber}/
-  const outputLocation = `${site.getConfig().getLlmoDataFolder()}/brand-presence/w${weekNumber}`;
-
-  // Extract filename (reusing original logic)
-  const xlsxName = (
-    /;\s*content=(brandpresence-.*$)/.exec(sheetUrl.searchParams.get('response-content-disposition') ?? '')?.[1]
-    ?? sheetUrl.pathname.replace(/.*[/]/, '')
-  );
-
-  log.info(`GEO BRAND PRESENCE DAILY: Uploading to SharePoint location: ${outputLocation}/${xlsxName}`);
-
-  // Upload file (reusing original logic)
-  await uploadAndPublishFile(sheet, xlsxName, outputLocation, sharepointClient, log);
-
-  return ok();
+  // Call the base handler with modified context
+  return baseHandler(message, dailyContext);
 }
