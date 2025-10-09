@@ -69,7 +69,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendMessageToMystiqueForGuidance(context, opportunity);
+    await sendSQSMessageForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -97,7 +97,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendMessageToMystiqueForGuidance(context, opportunity);
+    await sendSQSMessageForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -114,7 +114,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendMessageToMystiqueForGuidance(context, opportunity);
+    await sendSQSMessageForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -131,7 +131,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendMessageToMystiqueForGuidance(context, opportunity);
+    await sendSQSMessageForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -148,7 +148,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendMessageToMystiqueForGuidance(context, opportunity);
+    await sendSQSMessageForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -172,7 +172,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendMessageToMystiqueForGuidance(context, opportunity);
+    await sendSQSMessageForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -186,7 +186,7 @@ describe('sendSQSMessageForGuidance', () => {
       opportunityId: 'oppty-789',
     };
 
-    await sendMessageToMystiqueForGuidance(context, opportunity);
+    await sendSQSMessageForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -206,7 +206,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendMessageToMystiqueForGuidance(context, opportunity);
+    await sendSQSMessageForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -215,13 +215,13 @@ describe('sendSQSMessageForGuidance', () => {
   });
 
   it('should handle null opportunity gracefully', async () => {
-    await sendMessageToMystiqueForGuidance(context, null);
+    await sendSQSMessageForGuidance(context, null);
 
     expect(sqsStub.called).to.be.false;
   });
 
   it('should handle undefined opportunity gracefully', async () => {
-    await sendMessageToMystiqueForGuidance(context, undefined);
+    await sendSQSMessageForGuidance(context, undefined);
 
     expect(sqsStub.called).to.be.false;
   });
@@ -237,11 +237,30 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendMessageToMystiqueForGuidance(context, opportunity);
+    await sendSQSMessageForGuidance(context, opportunity);
 
     expect(context.log.info.calledTwice).to.be.true;
     expect(context.log.info.firstCall.args[0]).to.include('Received CWV opportunity for guidance');
     expect(context.log.info.secondCall.args[0]).to.include('CWV opportunity sent to mystique for guidance');
+  });
+
+  it('should handle missing opportunityId', async () => {
+    const opportunity = {
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      // opportunityId is missing/undefined
+      getId: () => 'oppty-789',
+      data: {
+        cwv_metrics: [],
+        total_suggestions: 0,
+      },
+    };
+
+    await sendSQSMessageForGuidance(context, opportunity);
+
+    expect(context.sqs.sendMessage.calledOnce).to.be.true;
+    const message = context.sqs.sendMessage.firstCall.args[1];
+    expect(message.data.opportunityId).to.equal('');
   });
 
   it('should handle SQS sendMessage error and throw', async () => {
@@ -260,7 +279,7 @@ describe('sendSQSMessageForGuidance', () => {
     };
 
     try {
-      await sendSQSMessageForGuidance(context, opportunity);
+    await sendSQSMessageForGuidance(context, opportunity);
       expect.fail('Should have thrown an error');
     } catch (thrownError) {
       expect(thrownError.message).to.equal('SQS send failed');
