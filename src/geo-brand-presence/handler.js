@@ -17,6 +17,7 @@ import {
   isNonEmptyArray,
   isNonEmptyObject,
   isoCalendarWeek,
+  llmoConfig,
 } from '@adobe/spacecat-shared-utils';
 import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
@@ -106,11 +107,37 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
   );
 
-  const prompts = recordSets.flat();
+  let prompts = recordSets.flat();
   for (const x of prompts) {
     x.market = x.region; // TODO(aurelio): remove when .region is supported by Mystique
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
   }
+
+  // Load customer-defined prompts from customer config
+  const {
+    config,
+    exists: configExists,
+    version: configVersion,
+  } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
+  const customerPrompts = Object.values(config.topics).flatMap((x) => {
+    const category = config.categories[x.category];
+    return x.prompts.map((p) => ({
+      prompt: p.prompt,
+      region: p.regions.join(','),
+      category: category.name,
+      topic: x.name,
+      url: '',
+      keyword: '',
+      keywordImportTime: -1,
+      volume: -1,
+      volumeImportTime: -1,
+      source: 'human',
+      market: p.regions.join(','),
+      origin: 'human',
+    }));
+  });
+
+  prompts = prompts.concat(customerPrompts);
 
   log.info('GEO BRAND PRESENCE: Found %d keyword prompts for site id %s (%s)', prompts.length, siteId, baseURL);
   if (prompts.length === 0) {
@@ -171,6 +198,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
           calendarWeek: dateContext,
           url,
           webSearchProvider,
+          configVersion: /* c8 ignore next */ configExists ? configVersion : null,
         });
 
         await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
@@ -286,6 +314,7 @@ export async function keywordPromptsImportStep(context) {
  * @param {object} params.calendarWeek - The calendar week object
  * @param {string} params.url - The presigned URL for data
  * @param {string} params.webSearchProvider - The web search provider
+ * @param {null | string} [params.configVersion] - The configuration version
  * @returns {object} The message object
  */
 function createMystiqueMessage({
@@ -297,6 +326,7 @@ function createMystiqueMessage({
   calendarWeek,
   url,
   webSearchProvider,
+  configVersion = null,
 }) {
   return {
     type: opptyType,
@@ -309,6 +339,7 @@ function createMystiqueMessage({
     year: calendarWeek.year,
     data: {
       url,
+      configVersion,
       web_search_provider: webSearchProvider,
     },
   };
