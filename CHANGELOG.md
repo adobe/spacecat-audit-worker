@@ -1,3 +1,10 @@
+# [1.199.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.198.0...v1.199.0) (2025-10-09)
+
+
+### Features
+
+* **llmo-customer-analysis:** trigger on config changes ([#1348](https://github.com/adobe/spacecat-audit-worker/issues/1348)) ([d25e89e](https://github.com/adobe/spacecat-audit-worker/commit/d25e89e4a6c56131458f6aefc252c73d20a9bcb6))
+
 # [1.198.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.197.2...v1.198.0) (2025-10-09)
 
 
