@@ -1,3 +1,10 @@
+# [1.198.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.197.2...v1.198.0) (2025-10-09)
+
+
+### Features
+
+* **geo-brand-presence:** pass config version + human questions to mystique ([#1363](https://github.com/adobe/spacecat-audit-worker/issues/1363)) ([ab87f03](https://github.com/adobe/spacecat-audit-worker/commit/ab87f03f25e6147704efe6679b4059668967f25f))
+
 ## [1.197.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.197.1...v1.197.2) (2025-10-09)
 
 
