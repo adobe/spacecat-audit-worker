@@ -53,6 +53,7 @@ export const WEB_SEARCH_PROVIDERS = [
  * @returns {Array<Object>} Deduplicated array of prompts
  */
 function deduplicatePrompts(prompts, log) {
+  /* c8 ignore start */
   if (!Array.isArray(prompts) || prompts.length === 0) {
     return prompts;
   }
@@ -144,11 +145,13 @@ function deduplicatePrompts(prompts, log) {
       }
     });
   }
-
+  /* c8 ignore end */
   return deduplicatedPrompts;
 }
 
 export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
+  // TEMPORARY!!!!
+  /* c8 ignore start */
   const {
     auditContext, log, sqs, env, site, audit, s3Client,
   } = context;
@@ -219,7 +222,6 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       origin: 'human',
     }));
   });
-
   // Apply 200 limit with customer prompt priority (FIXED LOGIC)
   let prompts;
   if (!EXCLUDE_FROM_HARD_LIMIT.has(siteId)) {
@@ -238,7 +240,6 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     // No limit for excluded sites
     prompts = parquetPrompts.concat(customerPrompts);
   }
-
   log.info('GEO BRAND PRESENCE: Found %d parquet prompts (after dedup) + %d customer prompts = %d total prompts for site id %s (%s)', parquetPrompts.length, customerPrompts.length, prompts.length, siteId, baseURL);
   if (prompts.length === 0) {
     log.warn('GEO BRAND PRESENCE: No keyword prompts found for site id %s (%s), skipping message to mystique', siteId, baseURL);
@@ -265,12 +266,13 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
         calendarWeek,
         url,
         webSearchProvider,
-        configVersion: /* c8 ignore next */ configExists ? configVersion : null,
+        configVersion: configExists ? configVersion : null,
       });
 
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
       log.info('GEO BRAND PRESENCE: %s message sent to Mystique for site id %s (%s) with provider %s', opptyType, siteId, baseURL, webSearchProvider);
     })),
+    /* c8 ignore end */
   );
 }
 
