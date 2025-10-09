@@ -13,13 +13,12 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { calculateCPCValue } from '../support/utils.js';
-import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 import ProductSeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import productMetatagsAutoSuggest from './product-metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getIssueRanking, getBaseUrl } from './opportunity-utils.js';
 import {
   DESCRIPTION,
@@ -263,7 +262,7 @@ export function extractProductTagsFromHTML(rawBody, log) {
   return productTags;
 }
 
-export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
+export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
     log.error(`[PRODUCT-METATAGS] No Scraped tags found in S3 ${key} object`);
@@ -275,11 +274,27 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefi
     return null;
   }
 
-  let pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
-    : key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
-  // handling for homepage
-  if (pageUrl === '') {
-    pageUrl = '/';
+  // Handle empty or invalid URLs gracefully
+  let pageUrl;
+  try {
+    if (object.finalUrl) {
+      pageUrl = new URL(object.finalUrl).pathname;
+    } else if (url) {
+      pageUrl = new URL(url).pathname;
+    } else {
+      pageUrl = '/';
+    }
+  } catch (urlError) {
+    // If URL parsing fails, try to extract pathname from S3 key format
+    // e.g., 'scrapes/site-id/products/item/scrape.json' -> '/products/item'
+    if (url && url.includes('/')) {
+      const parts = url.split('/');
+      // Remove 'scrapes', site-id, and 'scrape.json' to get the pathname
+      const pathParts = parts.slice(2, -1); // Skip first 2 parts and last part
+      pageUrl = pathParts.length > 0 ? `/${pathParts.join('/')}` : '/';
+    } else {
+      pageUrl = '/';
+    }
   }
 
   // Debug: Log available tags to understand what scraper extracted
@@ -376,9 +391,11 @@ export async function calculateProjectedTraffic(context, site, detectedTags, log
         rumDataMapBiMonthly,
         log,
       );
-      Object.values((tags)).forEach((tagIssueDetails) => {
-        // Skip productTags from traffic calculation
-        if (tagIssueDetails.tagName === 'productTags') return;
+      // Iterate only over SEO tag names (title, description, h1) - following metatags pattern
+      [TITLE, DESCRIPTION, H1].forEach((tagName) => {
+        const tagIssueDetails = tags[tagName];
+        // Skip if tag doesn't have an issue
+        if (!tagIssueDetails?.issue) return;
 
         // Multiplying by 1% for missing tags, and 0.5% for other tag issues
         // For duplicate tags, each page's traffic is multiplied by .5% so
@@ -401,35 +418,31 @@ export async function calculateProjectedTraffic(context, site, detectedTags, log
   }
 }
 
-export async function productMetatagsAutoDetect(site, pagesSet, context) {
+export async function productMetatagsAutoDetect(site, pagesMap, context) {
   const { log, s3Client } = context;
 
   log.info(`[PRODUCT-METATAGS] Starting auto-detection for site: ${site.getId()}`);
-  log.info(`[PRODUCT-METATAGS] Pages to process: ${pagesSet.size}`);
+  log.info(`[PRODUCT-METATAGS] Pages to process: ${pagesMap?.size || 0}`);
 
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
   const prefix = `scrapes/${site.getId()}/`;
 
-  log.info(`[PRODUCT-METATAGS] Fetching scraped content from S3 bucket: ${bucketName}, prefix: ${prefix}`);
-  const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
-  log.info(`[PRODUCT-METATAGS] Found ${scrapedObjectKeys.length} scraped objects in S3`);
-
   const extractedTags = {};
-  const filteredKeys = scrapedObjectKeys.filter((key) => pagesSet.has(key));
-  log.info(`[PRODUCT-METATAGS] Filtered to ${filteredKeys.length} keys that match our pages set`);
 
-  if (filteredKeys.length === 0) {
-    log.warn(`[PRODUCT-METATAGS] No matching scraped content found for any of the ${pagesSet.size} pages`);
-    log.info('[PRODUCT-METATAGS] Pages set sample (first 5):', Array.from(pagesSet).slice(0, 5));
-    log.info('[PRODUCT-METATAGS] S3 keys sample (first 5):', scrapedObjectKeys.slice(0, 5));
-    log.warn('[PRODUCT-METATAGS] PATH MISMATCH DETECTED - Pages set and S3 keys do not overlap');
-  } else {
-    log.info('[PRODUCT-METATAGS] Successfully matched pages. Sample filtered keys:', filteredKeys.slice(0, 3));
+  // Ensure pagesMap is iterable
+  if (!pagesMap || typeof pagesMap[Symbol.iterator] !== 'function') {
+    log.error('[PRODUCT-METATAGS] pagesMap is not iterable');
+    const emptySeoChecks = new ProductSeoChecks(log);
+    return {
+      seoChecks: emptySeoChecks,
+      detectedTags: {},
+      extractedTags: {},
+    };
   }
 
-  const pageMetadataResults = await Promise.all(filteredKeys
-    .map((key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)));
+  const pageMetadataResults = await Promise.all([...pagesMap]
+    .map(([url, path]) => fetchAndProcessPageObject(s3Client, bucketName, url, path, log)));
 
   pageMetadataResults.forEach((pageMetadata) => {
     if (pageMetadata) {
@@ -486,20 +499,28 @@ export async function productMetatagsAutoDetect(site, pagesSet, context) {
   };
 }
 
-/**
- * Transforms a URL into a scrape.json path for a given site
- * @param {string} url - The URL to transform
- * @param {string} siteId - The site ID
- * @returns {string} The path to the scrape.json file
- */
-export function getScrapeJsonPath(url, siteId) {
-  const pathname = new URL(url).pathname.replace(/\/$/, '');
-  return `scrapes/${siteId}${pathname}/scrape.json`;
+// Exported helper to make conditional auditResult construction directly testable
+export function buildProductMetatagsAuditResult(
+  updatedDetectedTags,
+  finalUrl,
+  projectedTrafficLost,
+  projectedTrafficValue,
+  context,
+  site,
+) {
+  return {
+    detectedTags: updatedDetectedTags || {},
+    sourceS3Folder: `${context.env.S3_SCRAPER_BUCKET_NAME}/scrapes/${site.getId()}/`,
+    fullAuditRef: '',
+    finalUrl,
+    ...(projectedTrafficLost && { projectedTrafficLost }),
+    ...(projectedTrafficValue && { projectedTrafficValue }),
+  };
 }
 
 export async function runAuditAndGenerateSuggestions(context) {
   const {
-    site, audit, finalUrl, log, dataAccess,
+    site, audit, finalUrl, log, scrapeResultPaths,
   } = context;
 
   log.info('[PRODUCT-METATAGS] Starting runAuditAndGenerateSuggestions');
@@ -507,33 +528,16 @@ export async function runAuditAndGenerateSuggestions(context) {
     siteId: site.getId(),
     auditId: audit.getId(),
     finalUrl,
-    hasDataAccess: !!dataAccess,
+    hasScrapeResultPaths: !!scrapeResultPaths,
+    scrapeResultPathsSize: scrapeResultPaths?.size || 0,
   });
 
-  // Get top pages for a site
-  const siteId = site.getId();
-  log.info(`[PRODUCT-METATAGS] Getting top pages for siteId: ${siteId}`);
-
-  const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-  log.info(`[PRODUCT-METATAGS] Retrieved ${topPages.length} top pages`);
-
-  const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
-  log.info(`[PRODUCT-METATAGS] Retrieved ${includedURLs.length} included URLs from site config`);
-
-  // Transform URLs into scrape.json paths and combine them into a Set
-  const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.url, siteId));
-  const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, siteId));
-  const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
-
-  log.info(`[PRODUCT-METATAGS] Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`);
-  log.info('[PRODUCT-METATAGS] Sample generated paths:', Array.from(totalPagesSet).slice(0, 3));
-
-  log.info('[PRODUCT-METATAGS] Starting product metatags auto-detection');
+  log.info(scrapeResultPaths);
   const {
     seoChecks,
     detectedTags,
     extractedTags,
-  } = await productMetatagsAutoDetect(site, totalPagesSet, context);
+  } = await productMetatagsAutoDetect(site, scrapeResultPaths, context);
 
   log.info('[PRODUCT-METATAGS] Auto-detection completed:', {
     detectedTagsCount: Object.keys(detectedTags).length,
@@ -568,14 +572,14 @@ export async function runAuditAndGenerateSuggestions(context) {
   const updatedDetectedTags = await productMetatagsAutoSuggest(allTags, context, site);
   log.info(`[PRODUCT-METATAGS] AI auto-suggest completed, updated detected tags count: ${Object.keys(updatedDetectedTags || {}).length}`);
 
-  const auditResult = {
-    detectedTags: updatedDetectedTags || {},
-    sourceS3Folder: `${context.env.S3_SCRAPER_BUCKET_NAME}/scrapes/${site.getId()}/`,
-    fullAuditRef: '',
+  const auditResult = buildProductMetatagsAuditResult(
+    updatedDetectedTags,
     finalUrl,
-    ...(projectedTrafficLost && { projectedTrafficLost }),
-    ...(projectedTrafficValue && { projectedTrafficValue }),
-  };
+    projectedTrafficLost,
+    projectedTrafficValue,
+    context,
+    site,
+  );
 
   log.info('[PRODUCT-METATAGS] Audit result prepared:', {
     detectedTagsCount: Object.keys(auditResult.detectedTags).length,
@@ -654,6 +658,6 @@ export async function submitForScraping(context) {
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
   .build();

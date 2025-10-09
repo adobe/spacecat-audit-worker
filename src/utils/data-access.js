@@ -226,8 +226,23 @@ export async function syncSuggestions({
 
     if (suggestions.errorItems?.length > 0) {
       log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);
-      suggestions.errorItems.forEach((errorItem) => {
-        log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+      suggestions.errorItems.forEach((errorItem, index) => {
+        try {
+          // Log summary of each failed item to avoid issues with large objects or circular refs
+          const itemSummary = {
+            url: errorItem.item?.data?.url,
+            issue: errorItem.item?.data?.issue,
+            tagName: errorItem.item?.data?.tagName,
+            rank: errorItem.item?.rank,
+            type: errorItem.item?.type,
+          };
+          log.error(`Error ${index + 1}/${suggestions.errorItems.length}: ${errorItem.error}`);
+          log.error(`Failed item summary: ${JSON.stringify(itemSummary)}`);
+        } catch (loggingError) {
+          // Fallback if JSON.stringify fails
+          log.error(`Failed to log error item ${index + 1}: ${loggingError.message}`);
+          log.error(`Raw error: ${errorItem.error}`);
+        }
       });
 
       if (suggestions.createdItems?.length <= 0) {

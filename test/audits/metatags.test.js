@@ -734,7 +734,7 @@ describe('Meta Tags', () => {
         }
         expect(opportunity.save).to.be.calledOnce;
         expect(logStub.error).to.be.calledWith('Suggestions for siteId site-id contains 1 items with errors');
-        expect(logStub.error).to.be.calledTwice;
+        expect(logStub.error).to.be.calledThrice; // Now includes "Error 1/1" and "Failed item summary" logs
       });
 
       it('should take rank as -1 if issue is not known', async () => {

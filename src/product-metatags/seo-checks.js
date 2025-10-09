@@ -157,7 +157,7 @@ class ProductSeoChecks {
         [ISSUE]: issue,
         [ISSUE_DETAILS]: issueDetails,
         [SEO_RECOMMENDATION]: recommendation,
-        tagContent,
+        ...(tagContent && { tagContent }), // Only add if tagContent has a value
       };
     };
 

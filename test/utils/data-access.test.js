@@ -324,9 +324,9 @@ describe('data-access', () => {
         expect(e.message).to.equal('Failed to create suggestions for siteId site-id');
       }
 
-      expect(mockLogger.error).to.have.been.calledTwice;
+      expect(mockLogger.error).to.have.been.calledThrice;
       expect(mockLogger.error.firstCall.args[0]).to.include('contains 1 items with errors');
-      expect(mockLogger.error.secondCall.args[0]).to.include('failed with error: some error');
+      expect(mockLogger.error.secondCall.args[0]).to.include('Error 1/1: some error');
     });
 
     it('should throw an error if all items fail to be created', async () => {
@@ -353,6 +353,55 @@ describe('data-access', () => {
         buildKey,
         mapNewSuggestion,
       })).to.be.rejectedWith('Failed to create suggestions for siteId');
+    });
+
+    it('should handle JSON.stringify errors when logging error items', async () => {
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [{
+        id: '1',
+        data: suggestionsData[0],
+        remove: sinon.stub(),
+        getData: sinon.stub().returns(suggestionsData[0]),
+        getStatus: sinon.stub().returns('NEW'),
+      }];
+
+      // Create an object with a getter that creates a circular reference
+      const problematicData = {};
+      Object.defineProperty(problematicData, 'url', {
+        get() {
+          return this; // Returns itself, creating circular reference
+        },
+        enumerable: true,
+      });
+
+      const newData = [{ id: '2' }];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addSuggestions.resolves({
+        errorItems: [{
+          item: {
+            id: '2',
+            data: problematicData,
+            rank: 1,
+            type: 'test-type',
+          },
+          error: 'some error',
+        }],
+        createdItems: [{ id: '3' }], // At least one created to avoid throwing
+      });
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      });
+
+      // Should log the fallback error messages
+      const errorCalls = mockLogger.error.getCalls();
+      const hasFallbackLog = errorCalls.some((call) => call.args[0].includes('Failed to log error item'));
+      expect(hasFallbackLog).to.be.true;
     });
   });
 
