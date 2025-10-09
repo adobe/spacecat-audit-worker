@@ -284,54 +284,31 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     return;
   }
 
-  // Determine opportunity types and message creation based on cadence
+  // Determine opportunity types based on cadence
   const opptyTypes = isDaily ? ['detect:geo-brand-presence-daily'] : OPPTY_TYPES;
 
-  if (isDaily) {
-    // For daily cadence, send single message with aiPlatform if available
-    const message = {
-      type: 'detect:geo-brand-presence-daily',
-      siteId,
-      url: baseURL,
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      week: dateContext.week,
-      year: dateContext.year,
-      data: {
+  // Send messages for each combination of opportunity type and web search provider
+  await Promise.all(
+    opptyTypes.flatMap((opptyType) => providersToUse.map(async (webSearchProvider) => {
+      const message = createMystiqueMessage({
+        opptyType,
+        siteId,
+        baseURL,
+        auditId: audit.getId(),
+        deliveryType: site.getDeliveryType(),
+        calendarWeek: dateContext,
         url,
-        date: dateContext.date,
-      },
-    };
+        webSearchProvider,
+        configVersion: /* c8 ignore next */ configExists ? configVersion : null,
+        ...(isDaily && { date: dateContext.date }), // Add date only for daily cadence
+      });
 
-    if (aiPlatform) {
-      message.data.web_search_provider = aiPlatform;
-    }
-
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info('GEO BRAND PRESENCE DAILY: Message sent to Mystique for site id %s (%s)', siteId, baseURL);
-  } else {
-    // Send messages for each combination of opportunity type and web search provider
-    await Promise.all(
-      opptyTypes.flatMap((opptyType) => providersToUse.map(async (webSearchProvider) => {
-        const message = createMystiqueMessage({
-          opptyType,
-          siteId,
-          baseURL,
-          auditId: audit.getId(),
-          deliveryType: site.getDeliveryType(),
-          calendarWeek: dateContext,
-          url,
-          webSearchProvider,
-          configVersion: /* c8 ignore next */ configExists ? configVersion : null,
-        });
-
-        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-        log.info('GEO BRAND PRESENCE: %s message sent to Mystique for site id %s (%s) with provider %s', opptyType, siteId, baseURL, webSearchProvider);
-      })),
-    );
-    /* c8 ignore end */
-  }
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+      const cadenceLabel = isDaily ? ' DAILY' : '';
+      log.info('GEO BRAND PRESENCE%s: %s message sent to Mystique for site id %s (%s) with provider %s', cadenceLabel, opptyType, siteId, baseURL, webSearchProvider);
+    })),
+  );
+  /* c8 ignore end */
 }
 
 /**
@@ -441,6 +418,7 @@ export async function keywordPromptsImportStep(context) {
  * @param {string} params.url - The presigned URL for data
  * @param {string} params.webSearchProvider - The web search provider
  * @param {null | string} [params.configVersion] - The configuration version
+ * @param {null | string} [params.date] - The date string (for daily cadence)
  * @returns {object} The message object
  */
 function createMystiqueMessage({
@@ -453,7 +431,19 @@ function createMystiqueMessage({
   url,
   webSearchProvider,
   configVersion = null,
+  date = null,
 }) {
+  const data = {
+    url,
+    configVersion,
+    web_search_provider: webSearchProvider,
+  };
+
+  // Add date if present (daily-specific)
+  if (date) {
+    data.date = date;
+  }
+
   return {
     type: opptyType,
     siteId,
@@ -463,11 +453,7 @@ function createMystiqueMessage({
     time: new Date().toISOString(),
     week: calendarWeek.week,
     year: calendarWeek.year,
-    data: {
-      url,
-      configVersion,
-      web_search_provider: webSearchProvider,
-    },
+    data,
   };
 }
 
