@@ -18,12 +18,14 @@ import { getSignedUrl as getPresignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 import ExcelJS from 'exceljs';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
+import { createMystiqueMessage } from './handler.js';
 
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js';
+ * @import { ISOCalendarWeek } from '@adobe/spacecat-shared-utils';
  */
 
-const AUDIT_NAME = 'REFRESH GEO BRAND PRESENCE';
+const AUDIT_NAME = 'REFRESH_GEO_BRAND_PRESENCE';
 /* c8 ignore start */
 
 /**
@@ -132,7 +134,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   // }, context);
 
   // Create S3 folder for audit tracking
-  const { s3Client, env } = context;
+  const { s3Client, env, sqs } = context;
   const bucketName = env?.S3_IMPORTER_BUCKET_NAME;
 
   if (bucketName && s3Client) {
@@ -167,8 +169,19 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
         ContentType: 'application/json',
       }));
 
+      const baseURL = site.getBaseUrl();
+      const deliveryType = site.getDeliveryType();
+      const { configVersion } = auditContext;
+
       // eslint-disable-next-line no-unused-vars
-      const sheetsPresignedUrls = await Promise.all(sheets.map(async (sheetName) => {
+      const results = await Promise.allSettled(sheets.map(async (sheetName) => {
+        const match = RE_SHEET_NAME.exec(sheetName);
+        if (!match) {
+          log.warn('%s:Skipping invalid sheet name %s', AUDIT_NAME, sheetName);
+          return;
+        }
+        const { webSearchProvider, week, year } = match.groups;
+
         const sheet = await readFromSharePoint(`${sheetName}.xlsx`, sourceFolder, sharepointClient, log);
 
         await s3Client.send(new PutObjectCommand({
@@ -178,11 +191,26 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
           ContentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         }));
 
-        return getPresignedUrl(
+        const url = await getPresignedUrl(
           s3Client,
           new GetObjectCommand({ Bucket: bucketName, Key: `${folderKey}/${sheetName}.xlsx` }),
           { expiresIn: 86_400 /* seconds, 24h */ },
         );
+
+        const msg = createMystiqueMessage({
+          type: 'detect:geo-brand-presence',
+          auditId,
+          baseURL,
+          siteId,
+          deliveryType,
+          calendarWeek: { week: +week, year: +year },
+          url,
+          webSearchProvider,
+          configVersion,
+          date: null, // TODO support daily refreshes
+        });
+
+        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, msg);
       }));
 
       log.info('%s:Created S3 folder for audit %s at s3://%s/%s', AUDIT_NAME, auditId, bucketName, folderKey);
@@ -201,3 +229,5 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
 
   return ok();
 }
+
+const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})$/;

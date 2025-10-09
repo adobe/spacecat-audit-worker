@@ -48,6 +48,7 @@ export const WEB_SEARCH_PROVIDERS = [
 
 /**
  * @import { S3Client } from '@aws-sdk/client-s3';
+ * @import { ISOCalendarWeek } from '@adobe/spacecat-shared-utils';
  */
 
 /**
@@ -291,7 +292,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   await Promise.all(
     opptyTypes.flatMap((opptyType) => providersToUse.map(async (webSearchProvider) => {
       const message = createMystiqueMessage({
-        opptyType,
+        type: opptyType,
         siteId,
         baseURL,
         auditId: audit.getId(),
@@ -409,20 +410,20 @@ export async function keywordPromptsImportStep(context) {
 /**
  * Creates a message object for sending to Mystique.
  * @param {object} params - Message parameters
- * @param {string} params.opptyType - The opportunity type
+ * @param {string} params.type - The opportunity type
  * @param {string} params.siteId - The site ID
  * @param {string} params.baseURL - The base URL
  * @param {string} params.auditId - The audit ID
  * @param {string} params.deliveryType - The delivery type
- * @param {object} params.calendarWeek - The calendar week object
+ * @param {ISOCalendarWeek} params.calendarWeek - The calendar week object
  * @param {string} params.url - The presigned URL for data
  * @param {string} params.webSearchProvider - The web search provider
  * @param {null | string} [params.configVersion] - The configuration version
  * @param {null | string} [params.date] - The date string (for daily cadence)
  * @returns {object} The message object
  */
-function createMystiqueMessage({
-  opptyType,
+export function createMystiqueMessage({
+  type,
   siteId,
   baseURL,
   auditId,
@@ -445,7 +446,7 @@ function createMystiqueMessage({
   }
 
   return {
-    type: opptyType,
+    type,
     siteId,
     url: baseURL,
     auditId,
