@@ -190,7 +190,7 @@ export function formatIssue(type, issueData, severity) {
     const htmlDataArray = issueData.htmlData.map((htmlElement) => ({
       html: htmlElement.html || '',
       target: htmlElement.target || '',
-      failureSummary: issueData.failureSummary || '',
+      failureSummary: htmlElement.failureSummary || '',
       deviceTypes: htmlElement.deviceTypes || ['desktop'],
     }));
 
@@ -298,7 +298,7 @@ export function aggregateAccessibilityIssues(accessibilityData) {
         const htmlDataArray = issueData.htmlData.map((htmlElement) => ({
           html: htmlElement.html || '',
           target: htmlElement.target || '',
-          failureSummary: issueData.failureSummary || '',
+          failureSummary: htmlElement.failureSummary || '',
           deviceTypes: htmlElement.deviceTypes || ['desktop'],
         }));
 
@@ -477,7 +477,7 @@ export async function createIndividualOpportunitySuggestions(
               htmlData: {
                 targetSelector: issue.htmlData?.[0]?.target || '',
                 updateFrom: issue.htmlData?.[0]?.html || '',
-                failureSummary: issue.failureSummary || '',
+                failureSummary: issue.htmlData?.[0]?.failureSummary || issue.failureSummary || '',
               },
               violationDetails: {
                 wcagLevel: issue.wcagLevel || '',
