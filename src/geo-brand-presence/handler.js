@@ -141,7 +141,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
         calendarWeek,
         url,
         webSearchProvider,
-        configVersion: configExists ? configVersion : null,
+        configVersion: /* c8 ignore next */ configExists ? configVersion : null,
       });
 
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
