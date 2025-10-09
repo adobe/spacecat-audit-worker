@@ -17,7 +17,8 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { parquetWriteBuffer } from 'hyparquet-writer';
-import { keywordPromptsImportStep, sendToMystique } from '../../src/geo-brand-presence/handler.js';
+import { keywordPromptsImportStep, sendToMystique, WEB_SEARCH_PROVIDERS } from '../../src/geo-brand-presence/handler.js';
+import { llmoConfig } from '@adobe/spacecat-shared-utils';
 
 use(sinonChai);
 
@@ -54,7 +55,12 @@ describe('Geo Brand Presence Handler', () => {
       S3_IMPORTER_BUCKET_NAME: 'bucket',
     };
     s3Client = {
-      send: sinon.stub().throws(new Error('no stubbed response')),
+      send: sinon.stub()
+        .callsFake((cmd) => {
+          const { name } = cmd.constructor;
+          const input = JSON.stringify(cmd.input, null, 2).replace(/\n[ ]*/g, ' ');
+          throw new Error(`no stubbed response for ${name} ${input}`)
+        }),
     };
     getPresignedUrl = sandbox.stub();
     context = {
@@ -65,6 +71,12 @@ describe('Geo Brand Presence Handler', () => {
       audit,
       s3Client,
     };
+
+    fakeConfigS3Response();
+
+    s3Client.send
+      .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^temp[/]audit-geo-brand-presence[/]/) }))
+      .resolves({});
   });
 
   afterEach(() => {
@@ -145,10 +157,9 @@ describe('Geo Brand Presence Handler', () => {
       auditResult: { keywordQuestions: [], aiPlatform: undefined },
       fullAuditRef: finalUrl,
     });
-    expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE:failed to parse %s as JSON',
+    expect(log.warn).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s',
       invalidJson,
-      sinon.match.instanceOf(Error),
     );
     expect(log.info).to.have.been.calledWith(
       'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
@@ -158,9 +169,9 @@ describe('Geo Brand Presence Handler', () => {
     );
   });
 
-  it('should send message to Mystique for all opportunity types when keywordQuestions are found', async () => {
+  it('should send message to Mystique using aiPlatform when provided', async () => {
     // Mock S3 client method used by getStoredMetrics (AWS SDK v3 style)
-    fakeS3Response(fakeData());
+    fakeParquetS3Response(fakeData());
 
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
@@ -171,7 +182,7 @@ describe('Geo Brand Presence Handler', () => {
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
-    // two messages are sent to Mystique, one for brand presence and one for faq
+    // When aiPlatform is provided (chatgpt), only one message is sent per opportunity type
     expect(sqs.sendMessage).to.have.been.calledOnce;
     const [brandPresenceQueue, brandPresenceMessage] = sqs.sendMessage.firstCall.args;
     expect(brandPresenceQueue).to.equal('spacecat-to-mystique');
@@ -187,24 +198,121 @@ describe('Geo Brand Presence Handler', () => {
       web_search_provider: 'chatgpt',
       url: 'https://example.com/presigned-url',
     });
+  });
 
-    // TODO(aurelio): check that we write the right file to s3
-    // const expectedPrompts = fakeData((x) => ({ ...x, market: x.region, origin: x.source }));
+  it('should fall back to all providers when aiPlatform is invalid', async () => {
+    // Set aiPlatform to an invalid value
+    audit.getAuditResult = () => ({ aiPlatform: 'invalid-provider' });
 
-    // const [faqQueue, faqMessage] = sqs.sendMessage.secondCall.args;
-    // expect(faqQueue).to.equal('spacecat-to-mystique');
-    // expect(faqMessage).to.include({
-    //   type: 'guidance:geo-faq',
-    //   siteId: site.getId(),
-    //   url: site.getBaseURL(),
-    //   auditId: audit.getId(),
-    //   deliveryType: site.getDeliveryType(),
-    // });
-    // expect(faqMessage.data).deep.equal({ url: 'https://example.com/presigned-url' });
+    fakeParquetS3Response(fakeData());
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    // Should send messages for all providers since 'invalid-provider' is not in WEB_SEARCH_PROVIDERS
+    expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length);
+  });
+
+  // TODO(aurelio): check that we write the right file to s3
+  it('should send messages to Mystique for all web search providers when no aiPlatform is provided', async () => {
+    // Remove aiPlatform from audit result
+    audit.getAuditResult = () => ({});
+
+    fakeParquetS3Response(fakeData());
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    // Should send messages equal to the number of configured providers
+    expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length);
+
+    // Verify each message has the correct provider
+    WEB_SEARCH_PROVIDERS.forEach((provider, index) => {
+      const [queue, message] = sqs.sendMessage.getCall(index).args;
+      expect(queue).to.equal('spacecat-to-mystique');
+      expect(message).to.include({
+        type: 'detect:geo-brand-presence',
+        siteId: site.getId(),
+        url: site.getBaseURL(),
+        auditId: audit.getId(),
+        deliveryType: site.getDeliveryType(),
+      });
+      expect(message.data).deep.equal({
+        configVersion: '1.0.0',
+        web_search_provider: provider,
+        url: 'https://example.com/presigned-url',
+      });
+    });
+  });
+
+  it('sends customer defined prompts from the config to mystique', async () => {
+    const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+    const cat2 = '2a2f9b39-126b-411e-af0b-ad2a48dfd9b1';
+
+    fakeParquetS3Response(fakeData());
+    fakeConfigS3Response({
+      ...llmoConfig.defaultConfig(),
+        categories: {
+          [cat1]: { name: 'Category 1', region: ['ch', 'de', 'fr', 'it'] },
+          [cat2]: { name: 'Category 2', region: 'es' },
+        },
+        topics: {
+        'f1a9605a-5a05-49e7-8760-b40ca2426380': {
+          name: 'Topic 1',
+          category: cat1,
+          prompts: [
+            {prompt: 'custom prompt 1', regions: ['de'], origin: 'human', source: 'config' },
+            {prompt: 'custom prompt 2', regions: ['it'], origin: 'human', source: 'config' },
+            {prompt: 'custom prompt 3', regions: ['ch', 'fr'], origin: 'human', source: 'config' },
+          ],
+        },
+        '49db7cbc-326f-437f-bedc-e4b7b33ac220': {
+          name: 'Topic 2',
+          category: cat2,
+          prompts: [
+            {prompt: 'custom prompt 4', regions: ['es'], origin: 'human', source: 'config' },
+          ],
+        },
+      }
+    });
+
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    expect(s3Client.send).calledWith(
+        matchS3Cmd('PutObjectCommand', {
+          Body: sinon.match((json) =>
+            sinon.match([
+              customPrompt({ prompt: 'custom prompt 1', region: 'de', category: 'Category 1', topic: 'Topic 1' }),
+              customPrompt({ prompt: 'custom prompt 2', region: 'it', category: 'Category 1', topic: 'Topic 1' }),
+              customPrompt({ prompt: 'custom prompt 3', region: 'ch,fr', category: 'Category 1', topic: 'Topic 1' }),
+              customPrompt({ prompt: 'custom prompt 4', region: 'es', category: 'Category 2', topic: 'Topic 2' }),
+            ]).test(JSON.parse(json).slice(-4)))
+        })
+      );
   });
 
   it('should skip sending message to Mystique when no keywordQuestions', async () => {
-    fakeS3Response([]);
+    fakeParquetS3Response([]);
     await sendToMystique({
       ...context,
       auditContext: {
@@ -215,7 +323,150 @@ describe('Geo Brand Presence Handler', () => {
     expect(sqs.sendMessage).to.not.have.been.called;
   });
 
-  function fakeS3Response(response) {
+  it('should skip sending message to Mystique when aiPlatform is undefined (simulating empty providers)', async () => {
+    // Set aiPlatform to undefined to simulate empty provider scenario
+    audit.getAuditResult = () => ({ aiPlatform: undefined });
+
+    fakeParquetS3Response(fakeData());
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    // Temporarily empty the providers array
+    const originalProviders = [...WEB_SEARCH_PROVIDERS];
+    WEB_SEARCH_PROVIDERS.splice(0, WEB_SEARCH_PROVIDERS.length);
+
+    try {
+      await sendToMystique({
+        ...context,
+        auditContext: {
+          calendarWeek: { year: 2025, week: 33 },
+          parquetFiles: ['some/parquet/file/data.parquet'],
+        },
+      }, getPresignedUrl);
+
+      expect(sqs.sendMessage).to.not.have.been.called;
+      expect(log.warn).to.have.been.calledWith(
+        'GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique',
+        site.getId(),
+        site.getBaseURL(),
+      );
+    } finally {
+      // Restore original providers
+      WEB_SEARCH_PROVIDERS.push(...originalProviders);
+    }
+  });
+
+  it('should skip sending message to Mystique when success is false', async () => {
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        success: false,
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    expect(sqs.sendMessage).to.not.have.been.called;
+    expect(log.error).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique',
+      site.getId(),
+      site.getBaseURL(),
+      sinon.match.object,
+    );
+  });
+
+  it('should skip sending message to Mystique when calendarWeek is invalid', async () => {
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: null,
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    expect(sqs.sendMessage).to.not.have.been.called;
+    expect(log.error).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique',
+      site.getId(),
+      site.getBaseURL(),
+      sinon.match.object,
+    );
+  });
+
+  it('should skip sending message to Mystique when calendarWeek is missing week', async () => {
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: { year: 2025 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    expect(sqs.sendMessage).to.not.have.been.called;
+    expect(log.error).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique',
+      site.getId(),
+      site.getBaseURL(),
+      sinon.match.object,
+    );
+  });
+
+  it('should skip sending message to Mystique when parquetFiles is invalid', async () => {
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: 'not-an-array',
+      },
+    }, getPresignedUrl);
+
+    expect(sqs.sendMessage).to.not.have.been.called;
+    expect(log.error).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique',
+      site.getId(),
+      site.getBaseURL(),
+      sinon.match.object,
+    );
+  });
+
+  it('should skip sending message to Mystique when parquetFiles contains non-strings', async () => {
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['valid.parquet', 123, 'another.parquet'],
+      },
+    }, getPresignedUrl);
+
+    expect(sqs.sendMessage).to.not.have.been.called;
+    expect(log.error).to.have.been.calledWith(
+      'GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique',
+      site.getId(),
+      site.getBaseURL(),
+      sinon.match.object,
+    );
+  });
+
+  /**
+   * Mocks the S3 GetObjectCommand response for the LLMO config file
+   * @param {import('@adobe/spacecat-shared-utils/src/schemas.js').LLMOConfig} [config]
+   */
+  function fakeConfigS3Response(config = llmoConfig.defaultConfig()) {
+    s3Client.send.withArgs(
+      matchS3Cmd(
+        'GetObjectCommand',
+        { Key: llmoConfig.llmoConfigPath(site.getId()) },
+      ),
+    ).resolves({
+      Body: {
+        async transformToString() {
+          return JSON.stringify(config);
+        },
+      },
+      VersionId: '1.0.0', // This is where the version comes from in llmoConfig.readConfig()
+    });
+  }
+
+  function fakeParquetS3Response(response) {
     const columnData = {
       prompt: { data: [], name: 'prompt', type: 'STRING' },
       region: { data: [], name: 'region', type: 'STRING' },
@@ -237,31 +488,17 @@ describe('Geo Brand Presence Handler', () => {
 
     const buffer = parquetWriteBuffer({ columnData: Object.values(columnData) });
 
-    s3Client.send.resolves({
+    s3Client.send.withArgs(
+      matchS3Cmd(
+        'GetObjectCommand',
+        { Key: sinon.match(/[/]data[.]parquet$/) },
+      ),
+    ).resolves({
       Body: {
         async transformToByteArray() {
           return new Uint8Array(buffer);
         },
-        async transformToString() {
-          // Return a valid LLMO config for the readConfig call
-          const defaultLlmoConfig = {
-            entities: {},
-            categories: {},
-            topics: {},
-            brands: {
-              aliases: [],
-            },
-            competitors: {
-              competitors: [],
-            },
-            deleted: {
-              prompts: {},
-            },
-          };
-          return JSON.stringify(defaultLlmoConfig);
-        },
       },
-      VersionId: '1.0.0', // This is where the version comes from in llmoConfig.readConfig()
     });
   }
 
@@ -332,3 +569,46 @@ describe('Geo Brand Presence Handler', () => {
     return mapFn ? data.map(mapFn) : data;
   }
 });
+
+/**
+ * @param {"GetObjectCommand" | "PutObjectCommand"} name
+ * @param {Record<string, any>} input
+ */
+function matchS3Cmd(name, input) {
+  return sinon.match({
+    constructor: sinon.match({ name }),
+    input: sinon.match(input),
+  });
+}
+
+function customPrompt({ prompt, region, category, topic }) {
+  return {
+    prompt,
+    region,
+    category,
+    topic,
+    url: '',
+    keyword: '',
+    keywordImportTime: -1,
+    volume: -1,
+    volumeImportTime: -1,
+    source: 'human',
+    market: region,
+    origin: 'human'
+  };
+}
+
+/**
+ * @param {sinon.SinonSpy} spy
+ * @param {sinon.SinonMatcher} matcher
+ * @returns {undefined | sinon.SinonSpyCall}
+ */
+function findCall(spy, matcher) {
+  for (let i = 0; i < spy.callCount; i += 1) {
+    const call = spy.getCall(i);
+    if (matcher.test(call)) {
+      return call;
+    }
+  }
+  return undefined;
+}
