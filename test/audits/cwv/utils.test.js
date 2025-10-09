@@ -51,25 +51,10 @@ describe('sendSQSMessageForGuidance', () => {
       auditId: 'audit-456',
       opportunityId: 'oppty-789',
       data: {
-        cwv_metrics: [
-          {
-            deviceType: 'desktop',
-            lcp: 2500,
-            cls: 0.1,
-            inp: 200,
-          },
-          {
-            deviceType: 'mobile',
-            lcp: 3000,
-            cls: 0.15,
-            inp: 250,
-          },
-        ],
-        total_suggestions: 5,
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity);
+    await sendMessageToMystiqueForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -80,11 +65,8 @@ describe('sendSQSMessageForGuidance', () => {
     expect(message.deliveryType).to.equal('aem_cs');
     expect(message.time).to.be.a('string');
     
-    expect(message.data.url).to.equal('https://example.com');
+    expect(message.data.page).to.equal('https://example.com');
     expect(message.data.opportunityId).to.equal('oppty-789');
-    expect(message.data.opportunity_type).to.equal(Audit.AUDIT_TYPES.CWV);
-    expect(message.data.cwv_metrics).to.deep.equal(opportunity.data.cwv_metrics);
-    expect(message.data.total_suggestions).to.equal(5);
   });
 
   it('should handle opportunity without siteId', async () => {
@@ -92,12 +74,10 @@ describe('sendSQSMessageForGuidance', () => {
       auditId: 'audit-456',
       opportunityId: 'oppty-789',
       data: {
-        cwv_metrics: [],
-        total_suggestions: 0,
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity);
+    await sendMessageToMystiqueForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -109,12 +89,10 @@ describe('sendSQSMessageForGuidance', () => {
       siteId: 'site-123',
       opportunityId: 'oppty-789',
       data: {
-        cwv_metrics: [],
-        total_suggestions: 0,
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity);
+    await sendMessageToMystiqueForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -126,32 +104,31 @@ describe('sendSQSMessageForGuidance', () => {
       siteId: 'site-123',
       auditId: 'audit-456',
       data: {
-        cwv_metrics: [],
-        total_suggestions: 0,
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity);
+    await sendMessageToMystiqueForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
     expect(message.data.opportunityId).to.equal('');
   });
 
-  it('should handle opportunity without cwv_metrics', async () => {
+  it('should handle opportunity without data', async () => {
     const opportunity = {
       siteId: 'site-123',
       auditId: 'audit-456',
       opportunityId: 'oppty-789',
       data: {
-        total_suggestions: 3,
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity);
+    await sendMessageToMystiqueForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
+<<<<<<< HEAD
+=======
     expect(message.data.cwv_metrics).to.deep.equal([]);
   });
 
@@ -172,11 +149,12 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity);
+    await sendMessageToMystiqueForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
     expect(message.data.total_suggestions).to.equal(0);
+>>>>>>> parent of 96dada26 (feat: implement CWV SQS integration for Mystique guidance)
   });
 
   it('should handle opportunity without data object', async () => {
@@ -186,12 +164,10 @@ describe('sendSQSMessageForGuidance', () => {
       opportunityId: 'oppty-789',
     };
 
-    await sendSQSMessageForGuidance(context, opportunity);
+    await sendMessageToMystiqueForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.cwv_metrics).to.deep.equal([]);
-    expect(message.data.total_suggestions).to.equal(0);
   });
 
   it('should send message with default deliveryType when site is not available', async () => {
@@ -201,27 +177,25 @@ describe('sendSQSMessageForGuidance', () => {
       auditId: 'audit-456',
       opportunityId: 'oppty-789',
       data: {
-        cwv_metrics: [],
-        total_suggestions: 0,
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity);
+    await sendMessageToMystiqueForGuidance(context, opportunity);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
     expect(message.deliveryType).to.equal('aem_cs');
-    expect(message.data.url).to.equal('');
+    expect(message.data.page).to.equal('');
   });
 
   it('should handle null opportunity gracefully', async () => {
-    await sendSQSMessageForGuidance(context, null);
+    await sendMessageToMystiqueForGuidance(context, null);
 
     expect(sqsStub.called).to.be.false;
   });
 
   it('should handle undefined opportunity gracefully', async () => {
-    await sendSQSMessageForGuidance(context, undefined);
+    await sendMessageToMystiqueForGuidance(context, undefined);
 
     expect(sqsStub.called).to.be.false;
   });
@@ -232,18 +206,17 @@ describe('sendSQSMessageForGuidance', () => {
       auditId: 'audit-456',
       opportunityId: 'oppty-789',
       data: {
-        cwv_metrics: [],
-        total_suggestions: 0,
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity);
+    await sendMessageToMystiqueForGuidance(context, opportunity);
 
     expect(context.log.info.calledTwice).to.be.true;
     expect(context.log.info.firstCall.args[0]).to.include('Received CWV opportunity for guidance');
     expect(context.log.info.secondCall.args[0]).to.include('CWV opportunity sent to mystique for guidance');
   });
 
+<<<<<<< HEAD
   it('should handle missing opportunityId', async () => {
     const opportunity = {
       siteId: 'site-123',
@@ -251,8 +224,6 @@ describe('sendSQSMessageForGuidance', () => {
       // opportunityId is missing/undefined
       getId: () => 'oppty-789',
       data: {
-        cwv_metrics: [],
-        total_suggestions: 0,
       },
     };
 
@@ -263,6 +234,8 @@ describe('sendSQSMessageForGuidance', () => {
     expect(message.data.opportunityId).to.equal('');
   });
 
+=======
+>>>>>>> parent of 96dada26 (feat: implement CWV SQS integration for Mystique guidance)
   it('should handle SQS sendMessage error and throw', async () => {
     const error = new Error('SQS send failed');
     context.sqs.sendMessage.rejects(error);
@@ -273,13 +246,11 @@ describe('sendSQSMessageForGuidance', () => {
       opportunityId: 'oppty-789',
       getId: () => 'oppty-789',
       data: {
-        cwv_metrics: [],
-        total_suggestions: 0,
       },
     };
 
     try {
-    await sendSQSMessageForGuidance(context, opportunity);
+      await sendSQSMessageForGuidance(context, opportunity);
       expect.fail('Should have thrown an error');
     } catch (thrownError) {
       expect(thrownError.message).to.equal('SQS send failed');

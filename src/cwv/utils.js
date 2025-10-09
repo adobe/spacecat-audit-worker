@@ -10,8 +10,6 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
-
 const CWV_GUIDANCE_MESSAGE_TYPE = 'guidance:cwv-analysis';
 
 /**
@@ -34,7 +32,7 @@ const CWV_GUIDANCE_MESSAGE_TYPE = 'guidance:cwv-analysis';
  * }
  *
  * @param {Object} opportunity - Opportunity object
- * @returns {boolean} True if opportunity needs guidance (has suggestions without guidance)
+ * @returns {Promise<boolean>} True if opportunity needs guidance (has suggestions without guidance)
  */
 export async function needsGuidance(opportunity) {
   const suggestions = await opportunity.getSuggestions();
@@ -71,11 +69,8 @@ export async function sendSQSMessageForGuidance(context, opportunity) {
         deliveryType: site ? site.getDeliveryType() : 'aem_cs',
         time: new Date().toISOString(),
         data: {
-          url: site ? site.getBaseURL() : '',
+          page: site ? site.getBaseURL() : '',
           opportunityId: opptyData.opportunityId || '',
-          cwv_metrics: opptyData.data?.cwv_metrics || [],
-          opportunity_type: Audit.AUDIT_TYPES.CWV,
-          total_suggestions: opptyData.data?.total_suggestions || 0,
         },
       };
 

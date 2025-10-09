@@ -113,7 +113,6 @@ describe('CWVRunner Tests', () => {
 
       context.dataAccess.Suggestion = {
         bulkUpdateStatus: sandbox.stub(),
-        allByOpportunityId: sandbox.stub().resolves([]),
       };
 
       context.sqs = {
@@ -277,14 +276,8 @@ describe('CWVRunner Tests', () => {
 
       // Mock suggestions without guidance
       const mockSuggestions = [
-        { 
-          getData: () => ({ type: 'url', url: 'test1', issues: [] }),
-          getStatus: () => 'NEW'
-        },
-        { 
-          getData: () => ({ type: 'url', url: 'test2', issues: [] }),
-          getStatus: () => 'NEW'
-        }
+        { getData: () => ({ type: 'url', url: 'test1', issues: [] }) },
+        { getData: () => ({ type: 'url', url: 'test2', issues: [] }) }
       ];
       oppty.getSuggestions.resolves(mockSuggestions);
 
@@ -311,8 +304,7 @@ describe('CWVRunner Tests', () => {
             issues: [
               { type: 'lcp', value: '# LCP Optimization\n\nYour LCP is too slow...' }
             ]
-          }),
-          getStatus: () => 'NEW'
+          }) 
         }
       ];
       oppty.getSuggestions.resolves(mockSuggestions);
@@ -337,16 +329,14 @@ describe('CWVRunner Tests', () => {
             issues: [
               { type: 'lcp', value: '# LCP Optimization...' }
             ]
-          }),
-          getStatus: () => 'NEW'
+          }) 
         },
         { 
           getData: () => ({ 
             type: 'url', 
             url: 'test2',
             issues: [] // No guidance
-          }),
-          getStatus: () => 'NEW'
+          }) 
         }
       ];
       oppty.getSuggestions.resolves(mockSuggestions);
