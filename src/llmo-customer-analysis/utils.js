@@ -10,11 +10,9 @@
  * governing permissions and limitations under the License.
  */
 /* c8 ignore start */
-import ExcelJS from 'exceljs';
 import { getLastNumberOfWeeks } from '@adobe/spacecat-shared-utils';
 import { startOfISOWeek, addDays, format } from 'date-fns';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
-import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
 
 function getAzureOpenAIClient(context, deploymentName) {
   const cacheKey = `azureOpenAIClient_${deploymentName}`;
@@ -61,156 +59,109 @@ export async function prompt(systemPrompt, userPrompt, context = {}, deploymentN
   }
 }
 
-async function createAndSaveWorkbook(config, site, context) {
-  const {
-    filePrefix, successMessage, worksheets, folderName,
-  } = config;
-  const { log } = context;
-
-  const workbook = new ExcelJS.Workbook();
-
-  for (const worksheetConfig of worksheets) {
-    const {
-      name, columns, data, emptyDataPlaceholder,
-    } = worksheetConfig;
-    const worksheet = workbook.addWorksheet(name);
-
-    worksheet.columns = columns;
-
-    if (data && data.length > 0) {
-      for (const row of data) {
-        worksheet.addRow(row);
-      }
-    } else {
-      worksheet.addRow(emptyDataPlaceholder);
-    }
-  }
-
-  let filename = `${filePrefix}.xlsx`;
-
-  try {
-    const sharepointClient = await createLLMOSharepointClient(context);
-    const llmoFolder = site.getConfig()?.getLlmoDataFolder();
-    const outputLocation = `${llmoFolder}/${folderName}`;
-
-    try {
-      await readFromSharePoint(filename, outputLocation, sharepointClient, log);
-      filename = `${filePrefix}-automation.xlsx`;
-      log.info(`File ${filePrefix}.xlsx already exists, using ${filename} instead`);
-    } catch (e) {
-      log.debug(`File ${filename} doesn't exist, proceeding with original filename`, e);
-    }
-
-    await saveExcelReport({
-      sharepointClient,
-      workbook,
-      filename,
-      outputLocation,
-      log,
-    });
-
-    log.info(`${successMessage}`);
-  } catch (error) {
-    log.error(`Failed to upload to SharePoint: ${error.message}`);
-    throw error;
-  }
-}
-
-export async function uploadUrlsWorkbook(insights, site, context) {
-  const worksheetData = [];
-
-  for (const {
-    category, region, topic, url,
-  } of insights) {
-    worksheetData.push({
-      category,
-      region,
-      topic,
-      url,
-    });
-  }
-
-  const config = {
-    folderName: 'prompts',
-    filePrefix: 'urls',
-    successMessage: 'Successfully uploaded urls Excel file to SharePoint',
-    worksheets: [{
-      name: 'URLs',
-      columns: [
-        { header: 'category', key: 'category', width: 30 },
-        { header: 'region', key: 'region', width: 15 },
-        { header: 'topic', key: 'topic', width: 30 },
-        { header: 'url', key: 'url', width: 50 },
-      ],
-      data: worksheetData,
-      emptyDataPlaceholder: {
-        category: 'No products found',
-        region: 'N/A',
-        topic: 'N/A',
-        url: 'N/A',
-      },
-    }],
-  };
-
-  await createAndSaveWorkbook(config, site, context);
-}
-
-export async function uploadPatternsWorkbook(products, pagetypes, site, context) {
-  const productData = [];
-  const pagetypeData = [];
-
-  if (products && Object.keys(products).length > 0) {
-    for (const [name, regex] of Object.entries(products)) {
-      productData.push({ name, regex });
-    }
-  }
-
-  if (pagetypes && Object.keys(pagetypes).length > 0) {
-    for (const [name, regex] of Object.entries(pagetypes)) {
-      pagetypeData.push({ name, regex });
-    }
-  }
-
-  const config = {
-    folderName: 'agentic-traffic/patterns',
-    filePrefix: 'patterns',
-    successMessage: 'Successfully uploaded patterns Excel file to SharePoint',
-    worksheets: [
-      {
-        name: 'shared-products',
-        columns: [
-          { header: 'name', key: 'name', width: 50 },
-          { header: 'regex', key: 'regex', width: 50 },
-        ],
-        data: productData,
-        emptyDataPlaceholder: {
-          name: 'No products found',
-          regex: 'N/A',
-        },
-      },
-      {
-        name: 'shared-pagetype',
-        columns: [
-          { header: 'name', key: 'name', width: 50 },
-          { header: 'regex', key: 'regex', width: 50 },
-        ],
-        data: pagetypeData,
-        emptyDataPlaceholder: {
-          name: 'No pagetypes found',
-          regex: 'N/A',
-        },
-      },
-    ],
-  };
-
-  await createAndSaveWorkbook(config, site, context);
-}
-
 export function getLastSunday() {
   const { year, week } = getLastNumberOfWeeks(1)[0];
   const weekStart = startOfISOWeek(new Date(year, 0, 4));
   const targetWeekStart = addDays(weekStart, (week - 1) * 7);
   const lastSunday = format(addDays(targetWeekStart, 6), 'yyyy-MM-dd');
   return lastSunday;
+}
+
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  if (typeof a !== typeof b) return false;
+
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    return a.every((item, index) => deepEqual(item, b[index]));
+  }
+
+  if (typeof a === 'object' && typeof b === 'object') {
+    const keysA = Object.keys(a).sort();
+    const keysB = Object.keys(b).sort();
+    if (!deepEqual(keysA, keysB)) return false;
+    return keysA.every((key) => deepEqual(a[key], b[key]));
+  }
+
+  return false;
+}
+
+function compareRecords(oldRecord, newRecord) {
+  const changed = {};
+  let hasChanges = false;
+
+  for (const [uuid, newItem] of Object.entries(newRecord)) {
+    const oldItem = oldRecord[uuid];
+    if (!oldItem || !deepEqual(oldItem, newItem)) {
+      changed[uuid] = newItem;
+      hasChanges = true;
+    }
+  }
+
+  for (const uuid of Object.keys(oldRecord)) {
+    if (!newRecord[uuid]) {
+      hasChanges = true;
+    }
+  }
+
+  return hasChanges ? changed : null;
+}
+
+function compareArrays(oldArray, newArray) {
+  if (deepEqual(oldArray, newArray)) {
+    return null;
+  }
+  return newArray;
+}
+
+export function compareConfigs(oldConfig, newConfig) {
+  const changes = {};
+
+  const entitiesChanges = compareRecords(
+    oldConfig.entities || {},
+    newConfig.entities || {},
+  );
+  if (entitiesChanges) {
+    changes.entities = entitiesChanges;
+  }
+
+  const categoriesChanges = compareRecords(
+    oldConfig.categories || {},
+    newConfig.categories || {},
+  );
+  if (categoriesChanges) {
+    changes.categories = categoriesChanges;
+  }
+
+  const topicsChanges = compareRecords(
+    oldConfig.topics || {},
+    newConfig.topics || {},
+  );
+  if (topicsChanges) {
+    changes.topics = topicsChanges;
+  }
+
+  const brandsAliasesChanges = compareArrays(
+    oldConfig.brands?.aliases || [],
+    newConfig.brands?.aliases || [],
+  );
+  if (brandsAliasesChanges) {
+    changes.brands = {
+      aliases: brandsAliasesChanges,
+    };
+  }
+
+  const competitorsChanges = compareArrays(
+    oldConfig.competitors?.competitors || [],
+    newConfig.competitors?.competitors || [],
+  );
+  if (competitorsChanges) {
+    changes.competitors = {
+      competitors: competitorsChanges,
+    };
+  }
+
+  return changes;
 }
 /* c8 ignore end */
