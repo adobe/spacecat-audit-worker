@@ -194,6 +194,15 @@ export function formatIssue(type, issueData, severity) {
       deviceTypes: htmlElement.deviceTypes || ['desktop'],
     }));
 
+    // Aggregate all device types from all HTML elements
+    const allDeviceTypes = new Set();
+    issueData.htmlData.forEach((htmlElement) => {
+      if (htmlElement.deviceTypes) {
+        htmlElement.deviceTypes.forEach((deviceType) => allDeviceTypes.add(deviceType));
+      }
+    });
+    const aggregatedDeviceTypes = Array.from(allDeviceTypes);
+
     return {
       type,
       description: issueData.description || '',
@@ -203,7 +212,7 @@ export function formatIssue(type, issueData, severity) {
       occurrences: issueData.htmlData.length,
       htmlData: htmlDataArray,
       failureSummary: issueData.failureSummary || '',
-      deviceTypes: issueData.htmlData[0]?.deviceTypes || ['desktop'],
+      deviceTypes: aggregatedDeviceTypes.length > 0 ? aggregatedDeviceTypes : ['desktop'],
     };
   }
 
@@ -293,6 +302,15 @@ export function aggregateAccessibilityIssues(accessibilityData) {
           deviceTypes: htmlElement.deviceTypes || ['desktop'],
         }));
 
+        // Aggregate all device types from all HTML elements
+        const allDeviceTypes = new Set();
+        issueData.htmlData.forEach((htmlElement) => {
+          if (htmlElement.deviceTypes) {
+            htmlElement.deviceTypes.forEach((deviceType) => allDeviceTypes.add(deviceType));
+          }
+        });
+        const aggregatedDeviceTypes = Array.from(allDeviceTypes);
+
         const issue = {
           type: issueType,
           description: issueData.description || '',
@@ -302,7 +320,7 @@ export function aggregateAccessibilityIssues(accessibilityData) {
           occurrences: issueData.htmlData.length,
           htmlData: htmlDataArray,
           failureSummary: issueData.failureSummary || '',
-          deviceTypes: issueData.htmlData[0]?.deviceTypes || ['desktop'],
+          deviceTypes: aggregatedDeviceTypes.length > 0 ? aggregatedDeviceTypes : ['desktop'],
         };
 
         const urlObject = {
@@ -321,10 +339,16 @@ export function aggregateAccessibilityIssues(accessibilityData) {
             target: issueData.target ? issueData.target[index] : '',
           };
 
+          const issue = formatIssue(issueType, singleElementIssueData, severity);
+          // Ensure old format issues have device types (default to desktop)
+          if (!issue.deviceTypes) {
+            issue.deviceTypes = ['desktop'];
+          }
+
           const urlObject = {
             type: 'url',
             url,
-            issues: [formatIssue(issueType, singleElementIssueData, severity)],
+            issues: [issue],
           };
 
           data[opportunityType].push(urlObject);
@@ -422,7 +446,11 @@ export async function createIndividualOpportunitySuggestions(
     if (issues.length === 0) {
       return data.url;
     }
-    return `${data.url}|${issues[0].type}|${issues[0]?.htmlWithIssues[0]?.target_selector || ''}`;
+    const firstIssue = issues[0];
+    if (!firstIssue) {
+      return data.url;
+    }
+    return `${data.url}|${firstIssue.type}|${firstIssue?.htmlWithIssues?.[0]?.target_selector || ''}`;
   };
 
   log.info(`[A11yIndividual] ${aggregatedData.data.length} issues aggregated for opportunity ${opportunity.getId()}`);
@@ -447,8 +475,8 @@ export async function createIndividualOpportunitySuggestions(
               url: urlData.url,
               deviceTypes: issue.deviceTypes,
               htmlData: {
-                targetSelector: issue.htmlData[0]?.target || '',
-                updateFrom: issue.htmlData[0]?.html || '',
+                targetSelector: issue.htmlData?.[0]?.target || '',
+                updateFrom: issue.htmlData?.[0]?.html || '',
                 failureSummary: issue.failureSummary || '',
               },
               violationDetails: {
@@ -458,7 +486,7 @@ export async function createIndividualOpportunitySuggestions(
                 description: issue.description || '',
                 issueType: issue.type || '',
               },
-              guidance: issue.htmlData[0]?.guidance || {},
+              guidance: issue.htmlData?.[0]?.guidance || {},
             },
           };
         } else {
@@ -633,7 +661,11 @@ export function calculateAccessibilityMetrics(aggregatedData) {
   let commonIssues = 0;
 
   aggregatedData.data.forEach((opportunityTypeData) => {
-    const [, urlObjects] = Object.entries(opportunityTypeData)[0];
+    const entries = Object.entries(opportunityTypeData);
+    if (entries.length === 0) {
+      return;
+    }
+    const [, urlObjects] = entries[0];
 
     urlObjects.forEach((urlObject) => {
       uniqueUrls.add(urlObject.url);
@@ -724,7 +756,11 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
       aggregatedData.data.map(
         async (opportunityTypeData) => {
           // Each item is an object with one key (the opportunity type) and an array of URLs
-          const [opportunityType, typeData] = Object.entries(opportunityTypeData)[0];
+          const entries = Object.entries(opportunityTypeData);
+          if (entries.length === 0) {
+            throw new Error('No opportunity type data found');
+          }
+          const [opportunityType, typeData] = entries[0];
 
           log.debug(`[A11yIndividual] Processing opportunity for type: ${opportunityType}`);
 
