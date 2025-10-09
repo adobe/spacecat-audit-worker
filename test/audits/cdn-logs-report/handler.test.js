@@ -231,6 +231,14 @@ describe('CDN Logs Report Handler', function test() {
         },
       })
       .build();
+
+    // Mock the patterns.json endpoint to avoid pattern generation
+    nock('https://main--project-elmo-ui-data--adobe.aem.live')
+      .get('/test-folder/agentic-traffic/patterns/patterns.json')
+      .reply(200, {
+        pagetype: { data: [] },
+        products: { data: [] },
+      });
   });
 
   afterEach(() => {
