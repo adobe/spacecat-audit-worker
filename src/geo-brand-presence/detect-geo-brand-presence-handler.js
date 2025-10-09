@@ -36,6 +36,8 @@ export default async function handler(message, context) {
     return notFound();
   }
 
+  // TODO: does data.config_version exist?
+  const configVersion = data.config_version;
   const sheetUrl = URL.parse(data.presigned_url);
   if (!sheetUrl || !sheetUrl.href) {
     log.error(`GEO BRAND PRESENCE: Invalid presigned URL: ${data.presigned_url}`);
@@ -48,12 +50,15 @@ export default async function handler(message, context) {
 
   // upload to sharepoint & publish via hlx admin api
   const sharepointClient = await createLLMOSharepointClient(context);
-  const outputLocation = `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
+  const mainOutputLocation = `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
+  const outputLocations = [mainOutputLocation, `${mainOutputLocation}/config_${configVersion || 'absent'}`];
   const xlsxName = (
     /;\s*content=(brandpresence-.*$)/.exec(sheetUrl.searchParams.get('response-content-disposition') ?? '')?.[1]
     ?? sheetUrl.pathname.replace(/.*[/]/, '')
   );
-  await uploadAndPublishFile(sheet, xlsxName, outputLocation, sharepointClient, log);
+  await Promise.all(outputLocations.map(async (outputLocation) => {
+    await uploadAndPublishFile(sheet, xlsxName, outputLocation, sharepointClient, log);
+  }));
 
   return ok();
 }
