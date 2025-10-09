@@ -78,12 +78,24 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
     await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
 
+    const isMonday = new Date().getUTCDay() === 1;
+    // If weekOffset is not provided, run for both week 0 and -1 on Monday and
+    // on non-Monday, run for current week. Otherwise, run for the provided weekOffset
+    let weekOffsets;
+    if (auditContext?.weekOffset !== undefined) {
+      weekOffsets = [auditContext.weekOffset];
+    } else if (isMonday) {
+      weekOffsets = [0, -1];
+    } else {
+      weekOffsets = [0];
+    }
+
     if (reportConfig.name === 'agentic') {
       const patternsExist = await fetchRemotePatterns(site);
 
       if (!patternsExist) {
         log.info('Patterns not found, generating patterns workbook...');
-        const periods = generateReportingPeriods();
+        const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
 
         await generatePatternsWorkbook({
           site,
@@ -100,18 +112,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
 
     log.info(`Running weekly report: ${reportConfig.name}...`);
-
-    const isMonday = new Date().getUTCDay() === 1;
-    // If weekOffset is not provided, run for both week 0 and -1 on Monday and
-    // on non-Monday, run for current week. Otherwise, run for the provided weekOffset
-    let weekOffsets;
-    if (auditContext?.weekOffset !== undefined) {
-      weekOffsets = [auditContext.weekOffset];
-    } else if (isMonday) {
-      weekOffsets = [0, -1];
-    } else {
-      weekOffsets = [0];
-    }
 
     for (const weekOffset of weekOffsets) {
       // eslint-disable-next-line no-await-in-loop

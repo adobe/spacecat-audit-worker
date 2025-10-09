@@ -79,10 +79,11 @@ INSTRUCTIONS:
 4. Data Quality Rules:
    - If input is empty or invalid, return empty object: {}
    - Ensure all original product names are included in the mapping
-   - Target 5-15 distinct categories representing the most prominent product offerings
+   - Target MAXIMUM 5-6 distinct categories representing the most prominent product offerings
    - Focus on the most important products that drive business value
    - Use descriptive but appropriately broad category names
    - Keep "unknown" as standalone if present
+   - Prioritize grouping less important products into broader categories to stay within the 5-6 limit
 
 RESPONSE FORMAT: Return only a valid JSON object mapping original names to high-level category names. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only.
 

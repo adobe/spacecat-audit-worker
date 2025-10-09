@@ -6,7 +6,7 @@ WITH hosts AS (
   WHERE year  = '{{year}}'
     AND month = '{{month}}'
     AND day   = '{{day}}'
-    AND hour  = '{{hour}}'
+    {{hourFilter}}
 ),
 
 base AS (
@@ -20,7 +20,7 @@ base AS (
   WHERE year  = '{{year}}'
     AND month = '{{month}}'
     AND day   = '{{day}}'
-    AND hour  = '{{hour}}'
+    {{hourFilter}}
 ),
 
 referrals_raw AS (
