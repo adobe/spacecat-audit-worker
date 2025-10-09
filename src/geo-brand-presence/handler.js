@@ -46,6 +46,108 @@ export const WEB_SEARCH_PROVIDERS = [
  * @import { S3Client } from '@aws-sdk/client-s3';
  */
 
+/**
+ * Removes duplicate prompts from AI-generated prompts based on region, topic, and prompt text.
+ * @param {Array<Object>} prompts - Array of prompt objects
+ * @param {Object} log - Logger instance
+ * @returns {Array<Object>} Deduplicated array of prompts
+ */
+function deduplicatePrompts(prompts, log) {
+  if (!Array.isArray(prompts) || prompts.length === 0) {
+    return prompts;
+  }
+
+  const regionTopicGroups = new Map();
+  const deduplicatedPrompts = [];
+  let totalDuplicatesRemoved = 0;
+  let totalEmptyPromptsSkipped = 0;
+  let totalInvalidItemsSkipped = 0;
+  let totalErrorsRecovered = 0;
+  const originalCount = prompts.length;
+
+  for (let i = 0; i < prompts.length; i += 1) {
+    const item = prompts[i];
+
+    try {
+      if (!item || typeof item !== 'object') {
+        totalInvalidItemsSkipped += 1;
+        log.warn(`GEO BRAND PRESENCE: [DEDUP] Skipping non-object item at index ${i}: ${typeof item}`);
+      } else {
+        // Get the prompt for duplicate checking
+        const prompt = item.prompt || '';
+        const region = (item.region || item.market || 'US').toLowerCase();
+        const topic = (item.topic || item.keyword || '').toLowerCase();
+
+        // Skip empty prompts
+        if (!prompt || prompt.trim().length === 0) {
+          totalEmptyPromptsSkipped += 1;
+          log.debug(`GEO BRAND PRESENCE: [DEDUP] Skipping empty prompt at index ${i}: region='${region}', topic='${topic}'`);
+        } else {
+          // Check for duplicates BEFORE adding to result
+          const regionTopicKey = `${region}:${topic}`;
+          const promptKey = prompt.toLowerCase().trim();
+
+          // Initialize group if not exists
+          if (!regionTopicGroups.has(regionTopicKey)) {
+            regionTopicGroups.set(regionTopicKey, {
+              seenPrompts: new Set(),
+              originalCount: 0,
+            });
+          }
+
+          const group = regionTopicGroups.get(regionTopicKey);
+          group.originalCount += 1;
+
+          if (group.seenPrompts.has(promptKey)) {
+            // Skip duplicate
+            totalDuplicatesRemoved += 1;
+            const truncatedPrompt = prompt.length > 50 ? `${prompt.substring(0, 50)}...` : prompt;
+            log.debug(`GEO BRAND PRESENCE: [DEDUP] Skipping duplicate prompt at index ${i}: region='${region}', topic='${topic}', prompt='${truncatedPrompt}'`);
+          } else {
+            // Mark as seen BEFORE adding to result
+            group.seenPrompts.add(promptKey);
+            deduplicatedPrompts.push(item);
+          }
+        }
+      }
+    } catch (error) {
+      totalErrorsRecovered += 1;
+      log.error(`GEO BRAND PRESENCE: [DEDUP] Error processing item at index ${i}:`, error);
+      // Include item in result even if processing fails
+      deduplicatedPrompts.push(item);
+    }
+  }
+
+  // Log deduplication statistics
+  const finalCount = deduplicatedPrompts.length;
+  const totalSkipped = totalDuplicatesRemoved + totalEmptyPromptsSkipped + totalInvalidItemsSkipped;
+  const skipRate = originalCount > 0 ? ((totalSkipped / originalCount) * 100).toFixed(1) : 0;
+
+  log.info(`GEO BRAND PRESENCE: [DEDUP] Processed ${originalCount} prompts across `
+    + `${regionTopicGroups.size} region/topic groups`);
+  log.info(`GEO BRAND PRESENCE: [DEDUP] Skipped ${totalSkipped} items (${skipRate}%): `
+    + `${totalDuplicatesRemoved} duplicates, ${totalEmptyPromptsSkipped} empty, ${totalInvalidItemsSkipped} invalid`);
+  if (totalErrorsRecovered > 0) {
+    log.info(`GEO BRAND PRESENCE: [DEDUP] Recovered from ${totalErrorsRecovered} processing errors `
+      + '(items included despite errors)');
+  }
+  log.info(`GEO BRAND PRESENCE: [DEDUP] Kept ${finalCount} unique prompts`);
+
+  // Log group statistics if debug enabled
+  if (log.debug) {
+    regionTopicGroups.forEach((group, key) => {
+      const [region, topic] = key.split(':');
+      const keptCount = group.seenPrompts.size;
+      const removedCount = group.originalCount - keptCount;
+      if (removedCount > 0) {
+        log.debug(`GEO BRAND PRESENCE: [DEDUP] Group '${region}/${topic}': ${group.originalCount} → ${keptCount} (removed ${removedCount})`);
+      }
+    });
+  }
+
+  return deduplicatedPrompts;
+}
+
 export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   const {
     auditContext, log, sqs, env, site, audit, s3Client,
@@ -83,11 +185,16 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
   );
 
-  let prompts = recordSets.flat();
-  for (const x of prompts) {
+  let parquetPrompts = recordSets.flat();
+  for (const x of parquetPrompts) {
     x.market = x.region; // TODO(aurelio): remove when .region is supported by Mystique
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
   }
+
+  log.info('GEO BRAND PRESENCE: Loaded %d raw parquet prompts for site id %s (%s)', parquetPrompts.length, siteId, baseURL);
+
+  // Remove duplicates from AI-generated prompts
+  parquetPrompts = deduplicatePrompts(parquetPrompts, log);
 
   // Load customer-defined prompts from customer config
   const {
@@ -113,22 +220,26 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     }));
   });
 
-  prompts = prompts.concat(customerPrompts);
-
-  // TEMPORARY!!!!
-  /* c8 ignore start */
+  // Apply 200 limit with customer prompt priority (FIXED LOGIC)
+  let prompts;
   if (!EXCLUDE_FROM_HARD_LIMIT.has(siteId)) {
     if (customerPrompts.length >= 200) {
-      // only use customer prompts
+      // Only use first 200 customer prompts
       prompts = customerPrompts.slice(0, 200);
-    } else if (prompts.length > 200) {
-      // throw away ai prompts as needed, retain customer prompts
-      prompts = prompts.slice(-200);
+    } else if (parquetPrompts.length + customerPrompts.length > 200) {
+      // Use ALL customer prompts + fill remaining slots with parquet prompts
+      const remainingSlots = 200 - customerPrompts.length;
+      prompts = parquetPrompts.slice(0, remainingSlots).concat(customerPrompts);
+    } else {
+      // Total is <= 200, use all prompts
+      prompts = parquetPrompts.concat(customerPrompts);
     }
+  } else {
+    // No limit for excluded sites
+    prompts = parquetPrompts.concat(customerPrompts);
   }
-  /* c8 ignore end */
 
-  log.info('GEO BRAND PRESENCE: Found %d keyword prompts for site id %s (%s)', prompts.length, siteId, baseURL);
+  log.info('GEO BRAND PRESENCE: Found %d parquet prompts (after dedup) + %d customer prompts = %d total prompts for site id %s (%s)', parquetPrompts.length, customerPrompts.length, prompts.length, siteId, baseURL);
   if (prompts.length === 0) {
     log.warn('GEO BRAND PRESENCE: No keyword prompts found for site id %s (%s), skipping message to mystique', siteId, baseURL);
     return;
