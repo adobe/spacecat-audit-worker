@@ -1,3 +1,10 @@
+## [1.199.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.199.1...v1.199.2) (2025-10-09)
+
+
+### Bug Fixes
+
+* summary oppty saved despite no suggestions ([#1367](https://github.com/adobe/spacecat-audit-worker/issues/1367)) ([33abd39](https://github.com/adobe/spacecat-audit-worker/commit/33abd39f35c623b1159e8e710dc92cee5605b2e9))
+
 ## [1.199.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.199.0...v1.199.1) (2025-10-09)
 
 
