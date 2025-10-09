@@ -32,17 +32,28 @@ export function processSuggestionsForMystique(suggestions) {
     const suggestionId = suggestion.getId();
     // skip sending to M suggestions that are fixed or skipped
     if (![SuggestionDataAccess.STATUSES.FIXED, SuggestionDataAccess.STATUSES.SKIPPED]
-      .includes(suggestion.getStatus())
-      && suggestionData.issues
-      && isNonEmptyArray(suggestionData.issues)
-      && isNonEmptyArray(suggestionData.issues[0].htmlWithIssues)) {
-      // Starting with SITES-33832, a suggestion corresponds to a single granular issue,
-      // i.e. target selector and faulty HTML line
-      const singleIssue = suggestionData.issues[0];
-      const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
-      // skip sending to M suggestions that already have guidance
-      if (issueTypesForMystique.includes(singleIssue.type)
-      && !isNonEmptyObject(singleHtmlWithIssue.guidance)) {
+      .includes(suggestion.getStatus())) {
+      // Handle both old and new data formats
+      let shouldProcess = false;
+      let issueType = '';
+      let hasGuidance = false;
+
+      // Check for old format
+      if (suggestionData.issues && isNonEmptyArray(suggestionData.issues)
+        && isNonEmptyArray(suggestionData.issues[0].htmlWithIssues)) {
+        const singleIssue = suggestionData.issues[0];
+        const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
+        issueType = singleIssue.type;
+        hasGuidance = isNonEmptyObject(singleHtmlWithIssue.guidance);
+        shouldProcess = true;
+      } else if (suggestionData.violationDetails && suggestionData.htmlData) {
+        // Fallback to new format
+        issueType = suggestionData.violationDetails.issueType;
+        hasGuidance = isNonEmptyObject(suggestionData.guidance);
+        shouldProcess = true;
+      }
+      // Skip sending to Mystique suggestions that already have guidance
+      if (shouldProcess && issueTypesForMystique.includes(issueType) && !hasGuidance) {
         const { url } = suggestionData;
         if (!suggestionsByUrl[url]) {
           suggestionsByUrl[url] = [];
@@ -56,9 +67,8 @@ export function processSuggestionsForMystique(suggestions) {
   for (const [url, suggestionsForUrl] of Object.entries(suggestionsByUrl)) {
     const issuesList = [];
     for (const suggestion of suggestionsForUrl) {
-      if (isNonEmptyArray(suggestion.issues)) {
-        // Starting with SITES-33832, a suggestion corresponds to a single granular issue,
-        // i.e. target selector and faulty HTML line
+      // Handle old format
+      if (suggestion.issues && isNonEmptyArray(suggestion.issues)) {
         const singleIssue = suggestion.issues[0];
         if (isNonEmptyArray(singleIssue.htmlWithIssues)) {
           const singleHtmlWithIssue = singleIssue.htmlWithIssues[0];
@@ -70,6 +80,15 @@ export function processSuggestionsForMystique(suggestions) {
             suggestionId: suggestion.suggestionId,
           });
         }
+      } else if (suggestion.violationDetails && suggestion.htmlData) {
+        // Handle new format
+        issuesList.push({
+          issueName: suggestion.violationDetails.issueType,
+          faultyLine: suggestion.htmlData.updateFrom || '',
+          targetSelector: suggestion.htmlData.targetSelector || '',
+          issueDescription: suggestion.violationDetails.description || '',
+          suggestionId: suggestion.suggestionId,
+        });
       }
     }
     messageData.push({
