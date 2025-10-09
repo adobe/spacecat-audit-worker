@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 /* c8 ignore start */
-import { prompt } from './utils.js';
+import { prompt } from './prompt.js';
 
 async function concentrateProducts(pathProductArray, context) {
   const { log } = context;
@@ -101,99 +101,72 @@ Example output:
   "unknown": "unknown"
 }`;
 
-  const userPrompt = `Analyze and concentrate the following product list:
-
-${JSON.stringify(uniqueProducts, null, 2)}`;
+  const userPrompt = `Products to concentrate:
+${JSON.stringify(uniqueProducts)}`;
 
   try {
+    log.info('Concentrating products into categories');
     const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
-      let mapping;
-      try {
-        mapping = JSON.parse(promptResponse.content);
-      } catch (parseError) {
-        log.error(`Failed to parse concentration response as JSON: ${parseError.message}`);
-        return {
-          paths: pathProductArray,
-          usage: promptResponse.usage,
-        }; // Return original if parsing fails
-      }
-
-      if (!mapping || typeof mapping !== 'object') {
-        log.warn('Unexpected concentration response structure received');
-        return { paths: pathProductArray, usage: promptResponse.usage };
-      }
-
-      // Apply the mapping to the original path-product array
-      const concentratedArray = pathProductArray.map((item) => ({
-        path: item.path,
-        product: mapping[item.product] || item.product, // Use mapping or fallback to original
+      const mapping = JSON.parse(promptResponse.content);
+      const concentratedPaths = pathProductArray.map(({ path, product }) => ({
+        path,
+        product: mapping[product] || product,
       }));
-
-      const originalCount = uniqueProducts.length;
-      const concentratedCount = [...new Set(concentratedArray.map((item) => item.product))].length;
-
-      log.info(`Concentrated ${originalCount} unique products into ${concentratedCount} products`);
-      return { paths: concentratedArray, usage: promptResponse.usage };
+      log.info('Successfully concentrated products');
+      return { paths: concentratedPaths, usage: promptResponse.usage };
+    } else {
+      log.info('No content received; skipping concentration');
+      return { paths: pathProductArray, usage: null };
     }
-  } catch (err) {
-    log.error(`Failed to concentrate products: ${err.message}`);
-    return { paths: pathProductArray, usage: null }; // Return original array if concentration fails
+  } catch (error) {
+    log.error(`Failed to concentrate products: ${error.message}`);
+    return { paths: pathProductArray, usage: null };
   }
-
-  return { paths: pathProductArray, usage: null };
 }
 
 async function deriveProductsForPaths(domain, paths, context) {
   const { log } = context;
-  const systemPrompt = `You are a content extraction specialist. Analyze URL paths from websites to identify the most specific content, product, or resource being referenced.
+  const systemPrompt = `You are an expert product classifier for URL path analysis. Your task is to analyze URL paths and identify the product or product category they represent.
 
-TASK: Extract the primary content identifier from each URL path.
+## OBJECTIVE
+Classify each provided URL path to identify what product or product category it represents based on the path structure and content.
 
-IDENTIFICATION RULES:
-1. Prioritize specific content names over generic categories
-2. Look for content identifiers in path segments, not query parameters
-3. Ignore navigation elements like "shop", "buy", "product", "item", "category", "blog", "news", "about"
-4. Extract the most granular content reference available
+## CLASSIFICATION APPROACH
 
-CONTENT TYPES (in order of preference):
-1. Specific items: "iphone-15-pro", "quarterly-report-2024", "getting-started-guide", "premium-subscription"
-2. General content names: "iphone", "annual-report", "user-guide", "subscription"
-3. Content codes/IDs: "SKU123", "DOC-456", "POST-789", "VIDEO-123"
-4. Content categories (only if no specific content): "laptops", "reports", "tutorials", "services"
-5. Use "unknown" only if no content can be identified
+### Product Identification Strategies:
+1. **Direct Product References**: Look for product names, SKUs, or identifiers in the path
+2. **Category Inference**: Infer product from category or section names
+3. **Path Structure Analysis**: Use path hierarchy to determine product context
+4. **Domain Context**: Consider the domain's business type when classifying
 
-EXAMPLES:
-- "/product/iphone-15-pro/buy" → "iphone-15-pro"
-- "/blog/web-development-tips" → "web-development-tips"
-- "/docs/api-reference/authentication" → "authentication"
-- "/services/premium-support" → "premium-support"
-- "/reports/2024/quarterly-earnings" → "quarterly-earnings"
-- "/videos/tutorial-123" → "tutorial-123"
-- "/about/company" → "unknown"
-- "/search?q=tutorial" → "unknown" (query parameter, not path)
-- "/category/electronics/phones" → "phones"
+### Product Naming Guidelines:
+- Use lowercase, hyphenated format: "product-name"
+- Be specific when possible: "iphone-15" not just "phone"
+- Use singular form: "laptop" not "laptops"
+- Avoid generic terms when specific products are identifiable
+- For ambiguous paths, use broader category: "electronics", "clothing", "services"
+- Use "unknown" only when no product can be reasonably inferred
 
-OUTPUT FORMAT:
-Return ONLY a valid JSON object with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only:
+## RESPONSE FORMAT
+Return ONLY valid JSON with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only:
 {
   "paths": [
-    { "path": "/original/path", "product": "extracted-content" },
-    { "path": "/another/path", "product": "another-content" }
+    { "path": "/products/iphone-15", "product": "iphone-15" },
+    { "path": "/shop/laptops/macbook", "product": "macbook" },
+    { "path": "/about", "product": "unknown" }
   ]
 }
 
-CRITICAL REQUIREMENTS:
-- Include every input path exactly once in the "paths" array
-- No additional text, explanations, or formatting
-- Valid JSON syntax only
-- Content names should be lowercase and hyphenated when multi-word`;
+## CRITICAL REQUIREMENTS
+- Include ALL provided paths in your response
+- Return valid JSON with NO additional text or explanations
+- Ensure proper JSON syntax and formatting
+- Use descriptive product names when identifiable`;
 
-  const userPrompt = `Extract the primary content identifier from each URL path.
+  const userPrompt = `Domain: ${domain}
 
-DOMAIN: ${domain}
-
-PATHS:
+URL Paths:
 ${JSON.stringify(paths, null, 2)}`;
 
   try {
@@ -367,15 +340,7 @@ export async function analyzeProducts(domain, paths, context) {
       totalTokenUsage.total_tokens += regexPatterns.usage.total_tokens || 0;
     }
 
-    // Add default patterns
-    const defaultPatterns = {
-      Robots: '.*/robots.txt$',
-      Sitemap: '.*/sitemap.*.xml$',
-      'Error Pages': '404|500|error|goodbye',
-    };
-
-    // Combine generated patterns with default patterns
-    const combinedPatterns = { ...regexPatterns.patterns, ...defaultPatterns };
+    const combinedPatterns = regexPatterns.patterns;
 
     // Remove "unknown" key if it exists
     delete combinedPatterns.unknown;

@@ -73,7 +73,10 @@ import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
+import vulnerabilities from './vulnerabilities/handler.js';
 import prerender from './prerender/handler.js';
+import summarization from './summarization/handler.js';
+import summarizationGuidance from './summarization/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -130,9 +133,12 @@ const HANDLERS = {
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
   'llmo-customer-analysis': llmoCustomerAnalysis,
+  summarization,
+  'guidance:summarization': summarizationGuidance,
   hreflang,
   headings,
   prerender,
+  'security-vulnerabilities': vulnerabilities,
   dummy: (message) => ok(message),
 };
 

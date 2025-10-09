@@ -11,7 +11,7 @@
  */
 
 /* c8 ignore start */
-import { prompt } from './utils.js';
+import { prompt } from './prompt.js';
 
 async function derivePageTypesForPaths(domain, paths, context) {
   const { log } = context;
@@ -292,7 +292,15 @@ export async function analyzePageTypes(domain, paths, context) {
     log.info(`Total token usage for page type analysis: ${JSON.stringify(totalTokenUsage)}`);
 
     log.info(`Page type analysis complete for domain: ${domain}`);
-    return regexPatterns.regexes;
+
+    // Add default patterns
+    const defaultPatterns = {
+      Robots: '.*/robots.txt$',
+      Sitemap: '.*/sitemap.*.xml$',
+      'Error Pages': '404|500|error|goodbye',
+    };
+
+    return { ...defaultPatterns, ...regexPatterns.regexes };
   } catch (error) {
     log.error(`Failed to complete page type analysis: ${error.message}`);
     throw error;

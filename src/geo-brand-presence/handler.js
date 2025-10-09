@@ -12,6 +12,9 @@
 /* eslint-disable no-use-before-define */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import {
+  isString, isNonEmptyArray, isNonEmptyObject, llmoConfig,
+} from '@adobe/spacecat-shared-utils';
 import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -26,6 +29,17 @@ export const GEO_FAQ_OPPTY_TYPE = 'guidance:geo-faq';
 export const OPPTY_TYPES = [
   GEO_BRAND_PRESENCE_OPPTY_TYPE,
   // GEO_FAQ_OPPTY_TYPE, // TODO reenable when working on faqs again
+];
+
+// Web search providers to send messages for
+export const WEB_SEARCH_PROVIDERS = [
+  'all',
+  'chatgpt',
+  'gemini',
+  'google_ai_overviews',
+  'ai_mode',
+  'perplexity',
+  // Add more providers here as needed
 ];
 
 /**
@@ -44,10 +58,14 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   // Get aiPlatform from the audit result
   const auditResult = audit?.getAuditResult();
   const aiPlatform = auditResult?.aiPlatform;
-  log.info('GEO BRAND PRESENCE: aiPlatform: %s', aiPlatform);
-  /* c8 ignore start */
+  const providersToUse = WEB_SEARCH_PROVIDERS.includes(aiPlatform)
+    ? [aiPlatform]
+    : WEB_SEARCH_PROVIDERS;
+  log.info('GEO BRAND PRESENCE: aiPlatform: %s for site id %s (%s). Will use providers: %j', aiPlatform, siteId, baseURL, providersToUse);
+
   if (success === false) {
     log.error('GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
+    return;
   }
   if (!calendarWeek || typeof calendarWeek !== 'object' || !calendarWeek.week || !calendarWeek.year) {
     log.error('GEO BRAND PRESENCE: Invalid calendarWeek in auditContext for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
@@ -57,7 +75,6 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     log.error('GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique', siteId, baseURL, auditContext);
     return;
   }
-  /* c8 ignore stop */
 
   log.info('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s), calendarWeek: %j', siteId, baseURL, calendarWeek);
 
@@ -66,14 +83,39 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
   );
 
-  const prompts = recordSets.flat();
+  let prompts = recordSets.flat();
   for (const x of prompts) {
     x.market = x.region; // TODO(aurelio): remove when .region is supported by Mystique
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
   }
 
+  // Load customer-defined prompts from customer config
+  const {
+    config,
+    exists: configExists,
+    version: configVersion,
+  } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
+  const customerPrompts = Object.values(config.topics).flatMap((x) => {
+    const category = config.categories[x.category];
+    return x.prompts.map((p) => ({
+      prompt: p.prompt,
+      region: p.regions.join(','),
+      category: category.name,
+      topic: x.name,
+      url: '',
+      keyword: '',
+      keywordImportTime: -1,
+      volume: -1,
+      volumeImportTime: -1,
+      source: 'human',
+      market: p.regions.join(','),
+      origin: 'human',
+    }));
+  });
+
+  prompts = prompts.concat(customerPrompts);
+
   log.info('GEO BRAND PRESENCE: Found %d keyword prompts for site id %s (%s)', prompts.length, siteId, baseURL);
-  /* c8 ignore next 4 */
   if (prompts.length === 0) {
     log.warn('GEO BRAND PRESENCE: No keyword prompts found for site id %s (%s), skipping message to mystique', siteId, baseURL);
     return;
@@ -81,27 +123,31 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
 
   const url = await asPresignedJsonUrl(prompts, bucket, { ...context, getPresignedUrl });
   log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
-  await Promise.all(OPPTY_TYPES.map(async (opptyType) => {
-    const message = {
-      type: opptyType,
-      siteId,
-      url: baseURL,
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      week: calendarWeek.week,
-      year: calendarWeek.year,
-      data: {
-        url,
-      },
-    };
 
-    if (aiPlatform) {
-      message.data.web_search_provider = aiPlatform;
-    }
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info('GEO BRAND PRESENCE: %s Message sent to Mystique for site id %s (%s):', opptyType, siteId, baseURL, message);
-  }));
+  if (!isNonEmptyArray(providersToUse)) {
+    log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
+    return;
+  }
+
+  // Send messages for each combination of opportunity type and web search provider
+  await Promise.all(
+    OPPTY_TYPES.flatMap((opptyType) => providersToUse.map(async (webSearchProvider) => {
+      const message = createMystiqueMessage({
+        opptyType,
+        siteId,
+        baseURL,
+        auditId: audit.getId(),
+        deliveryType: site.getDeliveryType(),
+        calendarWeek,
+        url,
+        webSearchProvider,
+        configVersion: /* c8 ignore next */ configExists ? configVersion : null,
+      });
+
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+      log.info('GEO BRAND PRESENCE: %s message sent to Mystique for site id %s (%s) with provider %s', opptyType, siteId, baseURL, webSearchProvider);
+    })),
+  );
 }
 
 /**
@@ -156,20 +202,25 @@ export async function keywordPromptsImportStep(context) {
   let endDate;
   let aiPlatform;
 
-  /* c8 ignore start */
-  try {
-    // Try to parse as JSON first
-    const parsedData = JSON.parse(data);
-    if (parsedData.endDate && Date.parse(parsedData.endDate)) {
-      endDate = parsedData.endDate;
+  if (isString(data) && data.length > 0) {
+    try {
+      // Try to parse as JSON first (for new format with endDate and aiPlatform)
+      const parsedData = JSON.parse(data);
+      if (isNonEmptyObject(parsedData)) {
+        if (parsedData.endDate && Date.parse(parsedData.endDate)) {
+          endDate = parsedData.endDate;
+        }
+        aiPlatform = parsedData.aiPlatform;
+      }
+    } catch (e) {
+      // If JSON parsing fails, treat as a date string (legacy behavior)
+      if (Date.parse(data)) {
+        endDate = data;
+      } else {
+        log.warn('GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s', data);
+      }
     }
-    aiPlatform = parsedData.aiPlatform;
-  } catch (e) {
-    // If JSON parsing fails, treat as a date string (legacy behavior)
-    log.error('GEO BRAND PRESENCE:failed to parse %s as JSON', data, e);
-    endDate = Date.parse(data) ? data : undefined;
   }
-  /* c8 ignore stop */
 
   log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
 
@@ -180,6 +231,48 @@ export async function keywordPromptsImportStep(context) {
     // auditResult can't be empty, so sending empty array and include aiPlatform
     auditResult: { keywordQuestions: [], aiPlatform },
     fullAuditRef: finalUrl,
+  };
+}
+
+/**
+ * Creates a message object for sending to Mystique.
+ * @param {object} params - Message parameters
+ * @param {string} params.opptyType - The opportunity type
+ * @param {string} params.siteId - The site ID
+ * @param {string} params.baseURL - The base URL
+ * @param {string} params.auditId - The audit ID
+ * @param {string} params.deliveryType - The delivery type
+ * @param {object} params.calendarWeek - The calendar week object
+ * @param {string} params.url - The presigned URL for data
+ * @param {string} params.webSearchProvider - The web search provider
+ * @param {null | string} [params.configVersion] - The configuration version
+ * @returns {object} The message object
+ */
+function createMystiqueMessage({
+  opptyType,
+  siteId,
+  baseURL,
+  auditId,
+  deliveryType,
+  calendarWeek,
+  url,
+  webSearchProvider,
+  configVersion = null,
+}) {
+  return {
+    type: opptyType,
+    siteId,
+    url: baseURL,
+    auditId,
+    deliveryType,
+    time: new Date().toISOString(),
+    week: calendarWeek.week,
+    year: calendarWeek.year,
+    data: {
+      url,
+      configVersion,
+      web_search_provider: webSearchProvider,
+    },
   };
 }
 

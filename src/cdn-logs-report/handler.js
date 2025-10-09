@@ -13,13 +13,20 @@
 
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
+import {
+  getS3Config,
+  ensureTableExists,
+  loadSql,
+  generateReportingPeriods,
+  fetchRemotePatterns,
+} from './utils/report-utils.js';
 import { pathHasData } from '../utils/cdn-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { createLLMOSharepointClient } from '../utils/report-uploader.js';
 import { getConfigs } from './constants/report-configs.js';
 import { getImsOrgId } from '../utils/data-access.js';
+import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
 
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log, dataAccess } = context;
@@ -43,8 +50,8 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     auditContext?.sharepointOptions,
   );
   const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation(), {
-    pollIntervalMs: 2000,
-    maxPollAttempts: 200,
+    pollIntervalMs: 3000,
+    maxPollAttempts: 250,
   });
   /* c8 ignore next */
   const { orgId } = site.getConfig().getLlmoCdnBucketConfig() || {};
@@ -71,17 +78,54 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
     await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
 
+    if (reportConfig.name === 'agentic') {
+      const patternsExist = await fetchRemotePatterns(site);
+
+      if (!patternsExist) {
+        log.info('Patterns not found, generating patterns workbook...');
+        const periods = generateReportingPeriods();
+
+        await generatePatternsWorkbook({
+          site,
+          context,
+          athenaClient,
+          s3Config: {
+            ...s3Config,
+            tableName: reportConfigs[0]?.tableName, // Use first report config's table
+          },
+          periods,
+          sharepointClient,
+        });
+      }
+    }
+
     log.info(`Running weekly report: ${reportConfig.name}...`);
-    const weekOffset = auditContext?.weekOffset ?? -1;
-    await runWeeklyReport({
-      athenaClient,
-      s3Config,
-      reportConfig,
-      log,
-      site,
-      sharepointClient,
-      weekOffset,
-    });
+
+    const isMonday = new Date().getUTCDay() === 1;
+    // If weekOffset is not provided, run for both week 0 and -1 on Monday and
+    // on non-Monday, run for current week. Otherwise, run for the provided weekOffset
+    let weekOffsets;
+    if (auditContext?.weekOffset !== undefined) {
+      weekOffsets = [auditContext.weekOffset];
+    } else if (isMonday) {
+      weekOffsets = [0, -1];
+    } else {
+      weekOffsets = [0];
+    }
+
+    for (const weekOffset of weekOffsets) {
+      // eslint-disable-next-line no-await-in-loop
+      await runWeeklyReport({
+        athenaClient,
+        s3Config,
+        reportConfig,
+        log,
+        site,
+        sharepointClient,
+        weekOffset,
+        context,
+      });
+    }
 
     results.push({
       name: reportConfig.name,
