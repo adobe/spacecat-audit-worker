@@ -1,3 +1,10 @@
+# [1.201.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.200.0...v1.201.0) (2025-10-09)
+
+
+### Features
+
+* **geo-brand-presence:** hard prompt limit ([#1374](https://github.com/adobe/spacecat-audit-worker/issues/1374)) ([b5733b0](https://github.com/adobe/spacecat-audit-worker/commit/b5733b0c4e9082f110b02eb2358025827634d2fd))
+
 # [1.200.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.199.3...v1.200.0) (2025-10-09)
 
 
