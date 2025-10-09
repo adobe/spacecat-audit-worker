@@ -22,6 +22,7 @@ import {
 } from './utils.js';
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
+import { sendOnboardingNotification } from './onboarding-notifications.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
@@ -238,6 +239,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     oldConfig = oldConfigResult.config;
   } else {
     oldConfig = llmoConfig.defaultConfig();
+    await sendOnboardingNotification(context, site, 'first_configuration', { configVersion });
   }
 
   const changes = compareConfigs(oldConfig, newConfig);
@@ -249,6 +251,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
       /* c8 ignore next */
       if (isFirstTimeOnboarding || !oldConfig.cdnBucketConfig) {
+        await sendOnboardingNotification(context, site, 'cdn_provisioning', { cdnBucketConfig: changes.cdnBucketConfig });
         log.info('First-time LLMO onboarding detected', {
           siteId,
           cdnBucketConfig: changes.cdnBucketConfig,
