@@ -12,7 +12,49 @@
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 
-export async function sendMessageToMystiqueForGuidance(context, opportunity) {
+const CWV_GUIDANCE_MESSAGE_TYPE = 'guidance:cwv-analysis';
+
+/**
+ * Checks if opportunity needs guidance from Mystique
+ *
+ * CWV suggestion structure:
+ * {
+ *   opportunityId: string,
+ *   status: 'NEW' | 'APPROVED' | 'SKIPPED' | 'FIXED' | 'ERROR',
+ *   ...
+ *   data: {
+ *     issues?: [              // Guidance stored here
+ *       {
+ *         type: 'lcp' | 'cls' | 'inp',
+ *         value: string       // Markdown text with guidance/patch
+ *       }
+ *     ]
+ *   },
+ *   ...
+ * }
+ *
+ * @param {Object} opportunity - Opportunity object
+ * @returns {boolean} True if opportunity needs guidance (has suggestions without guidance)
+ */
+export async function needsGuidance(opportunity) {
+  const suggestions = await opportunity.getSuggestions();
+  return suggestions.some((suggestion) => {
+    const data = suggestion.getData();
+    const issues = data?.issues || [];
+
+    // Check if any guidance is empty
+    return !issues.some((issue) => issue.value && issue.value.trim());
+  });
+}
+
+/**
+ * Sends a message to Mystique for CWV guidance processing
+ *
+ * @param {Object} context - Context object containing log, sqs, env, and site
+ * @param {Object} opportunity - Opportunity object with siteId, auditId, opportunityId, and data
+ * @throws {Error} When SQS message sending fails
+ */
+export async function sendSQSMessageForGuidance(context, opportunity) {
   const {
     log, sqs, env, site,
   } = context;
@@ -22,13 +64,12 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
       log.info(`Received CWV opportunity for guidance: ${JSON.stringify(opportunity)}`);
       const opptyData = JSON.parse(JSON.stringify(opportunity));
 
-      const mystiqueMessage = {
-        type: 'guidance:cwv-analysis',
+      const sqsMessage = {
+        type: CWV_GUIDANCE_MESSAGE_TYPE,
         siteId: opptyData.siteId,
         auditId: opptyData.auditId,
         deliveryType: site ? site.getDeliveryType() : 'aem_cs',
         time: new Date().toISOString(),
-        // keys inside data should follow snake case and outside should follow camel case
         data: {
           url: site ? site.getBaseURL() : '',
           opportunityId: opptyData.opportunityId || '',
@@ -39,8 +80,8 @@ export async function sendMessageToMystiqueForGuidance(context, opportunity) {
       };
 
       // eslint-disable-next-line no-await-in-loop
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-      log.info(`CWV opportunity sent to mystique for guidance: ${JSON.stringify(mystiqueMessage)}`);
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
+      log.info(`CWV opportunity sent to mystique for guidance: ${JSON.stringify(sqsMessage)}`);
     }
   } catch (error) {
     log.error(`[CWV] Failed to send message to Mystique for opportunity ${opportunity?.getId()}: ${error.message}`);

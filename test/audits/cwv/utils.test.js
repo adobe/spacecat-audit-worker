@@ -13,10 +13,10 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { sendMessageToMystiqueForGuidance } from '../../../src/cwv/utils.js';
+import { sendSQSMessageForGuidance, needsGuidance } from '../../../src/cwv/utils.js';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 
-describe('sendMessageToMystiqueForGuidance', () => {
+describe('sendSQSMessageForGuidance', () => {
   let context;
   let sqsStub;
   const sandbox = sinon.createSandbox();
@@ -260,12 +260,96 @@ describe('sendMessageToMystiqueForGuidance', () => {
     };
 
     try {
-      await sendMessageToMystiqueForGuidance(context, opportunity);
+      await sendSQSMessageForGuidance(context, opportunity);
       expect.fail('Should have thrown an error');
     } catch (thrownError) {
       expect(thrownError.message).to.equal('SQS send failed');
       expect(context.log.error.calledOnce).to.be.true;
       expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send message to Mystique');
     }
+  });
+});
+
+describe('needsGuidance', () => {
+  it('returns true when suggestions need guidance', async () => {
+    const suggestions = [
+      { getData: () => ({ issues: [] }) },
+      { getData: () => ({ issues: [{ type: 'lcp', value: '' }] }) },
+      { getData: () => ({ issues: [{ type: 'cls', value: '   ' }] }) },
+    ];
+
+    const opportunity = {
+      getSuggestions: () => Promise.resolve(suggestions),
+    };
+
+    const result = await needsGuidance(opportunity);
+    expect(result).to.be.true;
+  });
+
+  it('returns true when some suggestions need guidance', async () => {
+    const suggestions = [
+      { getData: () => ({ issues: [] }) },
+      { getData: () => ({ issues: [{ type: 'lcp', value: '# LCP Optimization...' }] }) },
+      { getData: () => ({ issues: [{ type: 'cls', value: '   ' }] }) },
+    ];
+
+    const opportunity = {
+      getSuggestions: () => Promise.resolve(suggestions),
+    };
+
+    const result = await needsGuidance(opportunity);
+    expect(result).to.be.true;
+  });
+
+  it('returns true when some suggestions need guidance', async () => {
+    const suggestions = [
+      { getData: () => ({ issues: [{ type: 'lcp', value: '# LCP Optimization...' }] }) },
+      { getData: () => ({ issues: [{ type: 'cls', value: '' }] }) },
+      { getData: () => ({ issues: [{ type: 'inp', value: '# INP Optimization...' }] }) },
+    ];
+
+    const opportunity = {
+      getSuggestions: () => Promise.resolve(suggestions),
+    };
+
+    const result = await needsGuidance(opportunity);
+    expect(result).to.be.true;
+  });
+
+  it('returns false when no suggestions exist', async () => {
+    const opportunity = {
+      getSuggestions: () => Promise.resolve([]),
+    };
+
+    const result = await needsGuidance(opportunity);
+    expect(result).to.be.false;
+  });
+
+  it('returns true when suggestions have undefined issues', async () => {
+    const suggestions = [
+      { getData: () => ({}) },
+      { getData: () => ({ issues: undefined }) },
+    ];
+
+    const opportunity = {
+      getSuggestions: () => Promise.resolve(suggestions),
+    };
+
+    const result = await needsGuidance(opportunity);
+    expect(result).to.be.true;
+  });
+
+  it('returns false when all suggestions have guidance', async () => {
+    const suggestions = [
+      { getData: () => ({ issues: [{ type: 'lcp', value: '# LCP Optimization...' }] }) },
+      { getData: () => ({ issues: [{ type: 'cls', value: '# CLS Optimization...' }] }) },
+    ];
+
+    const opportunity = {
+      getSuggestions: () => Promise.resolve(suggestions),
+    };
+
+    const result = await needsGuidance(opportunity);
+    expect(result).to.be.false;
   });
 });

@@ -269,18 +269,82 @@ describe('CWVRunner Tests', () => {
       expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
     });
 
-    it('calls sendMessageToMystiqueForGuidance with opportunity', async () => {
+    it('calls sendMessageToMystiqueForGuidance when suggestions have no guidance', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
 
+      // Mock suggestions without guidance
+      const mockSuggestions = [
+        { getData: () => ({ type: 'url', url: 'test1', issues: [] }) },
+        { getData: () => ({ type: 'url', url: 'test2', issues: [] }) }
+      ];
+      oppty.getSuggestions.resolves(mockSuggestions);
+
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      // Verify that SQS sendMessage was called (indicating sendMessageToMystiqueForGuidance was called)
+      // Verify that SQS sendMessage was called
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const message = context.sqs.sendMessage.firstCall.args[1];
       expect(message.type).to.equal('guidance:cwv-analysis');
       expect(message.siteId).to.equal('site-id');
+    });
+
+    it('does not call sendMessageToMystiqueForGuidance when all suggestions have guidance', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      // Mock suggestions with existing guidance
+      const mockSuggestions = [
+        { 
+          getData: () => ({ 
+            type: 'url', 
+            url: 'test1',
+            issues: [
+              { type: 'lcp', value: '# LCP Optimization\n\nYour LCP is too slow...' }
+            ]
+          }) 
+        }
+      ];
+      oppty.getSuggestions.resolves(mockSuggestions);
+
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+
+      // Verify that SQS sendMessage was NOT called
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('calls sendMessageToMystiqueForGuidance when some suggestions have guidance and some do not', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      // Mock mixed suggestions - some with guidance, some without
+      const mockSuggestions = [
+        { 
+          getData: () => ({ 
+            type: 'url', 
+            url: 'test1',
+            issues: [
+              { type: 'lcp', value: '# LCP Optimization...' }
+            ]
+          }) 
+        },
+        { 
+          getData: () => ({ 
+            type: 'url', 
+            url: 'test2',
+            issues: [] // No guidance
+          }) 
+        }
+      ];
+      oppty.getSuggestions.resolves(mockSuggestions);
+
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+
+      // Verify that SQS sendMessage was called (because at least one suggestion needs guidance)
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
   });
 });
