@@ -77,6 +77,7 @@ import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import prerender from './prerender/handler.js';
+import productMetatags from './product-metatags/handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
 
@@ -142,6 +143,7 @@ const HANDLERS = {
   hreflang,
   headings,
   prerender,
+  'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
   dummy: (message) => ok(message),
 };
