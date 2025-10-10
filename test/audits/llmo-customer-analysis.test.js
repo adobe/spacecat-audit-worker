@@ -78,6 +78,7 @@ describe('LLMO Customer Analysis Handler', () => {
       log,
       dataAccess,
       s3Client: {},
+      env: { S3_IMPORTER_BUCKET_NAME: 'importer-bucket' },
     };
   });
 
@@ -130,6 +131,9 @@ describe('LLMO Customer Analysis Handler', () => {
         },
         '../../src/support/utils.js': {
           getRUMUrl: mockGetRUMUrl,
+        },
+        '../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: sandbox.stub().resolves(true),
         },
       });
     });
@@ -765,6 +769,203 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
       expect(result.fullAuditRef).to.equal('https://example.com');
     });
+
+    it('should trigger geo-brand-presence-daily when brandPresenceCadence is daily', async () => {
+      const auditContext = {
+        brandPresenceCadence: 'daily',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'geo-brand-presence-daily' }),
+      );
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-daily');
+    });
+
+    it('should warn when both geo-brand-presence and geo-brand-presence-daily are enabled', async () => {
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+        brandPresenceCadence: 'daily',
+      };
+
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: ['brand1'] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      // Create a mock where both audit types are enabled
+      const mockBothEnabled = await esmock('../../src/llmo-customer-analysis/handler.js', {
+        '@adobe/spacecat-shared-utils': {
+          getLastNumberOfWeeks: () => [
+            { week: 1, year: 2025 },
+            { week: 2, year: 2025 },
+            { week: 3, year: 2025 },
+            { week: 4, year: 2025 },
+          ],
+          llmoConfig: mockLlmoConfig,
+        },
+        '@adobe/spacecat-shared-rum-api-client': {
+          default: {
+            createFrom: sandbox.stub().returns(mockRUMAPIClient),
+          },
+        },
+        '../../src/support/utils.js': {
+          getRUMUrl: mockGetRUMUrl,
+        },
+        '../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: sandbox.stub().resolves(true),
+        },
+      });
+
+      const result = await mockBothEnabled.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(log.warn).to.have.been.calledWith(sinon.match(/Both.*and.*are enabled for site/));
+      expect(result.auditResult.status).to.equal('completed');
+    });
+
+    it('should skip geo-brand-presence when audit is not enabled (covering lines 150-152)', async () => {
+      // Create a mock where isAuditEnabledForSite returns false
+      const mockIsAuditDisabled = sandbox.stub().resolves(false);
+      
+      const testMockRUMAPIClientClass = {
+        createFrom: sandbox.stub().returns(mockRUMAPIClient),
+      };
+      
+      const mockHandlerDisabled = await esmock('../../src/llmo-customer-analysis/handler.js', {
+        '@adobe/spacecat-shared-utils': {
+          getLastNumberOfWeeks: () => [
+            { week: 1, year: 2025 },
+            { week: 2, year: 2025 },
+            { week: 3, year: 2025 },
+            { week: 4, year: 2025 },
+          ],
+          llmoConfig: mockLlmoConfig,
+        },
+        '@adobe/spacecat-shared-rum-api-client': {
+          default: testMockRUMAPIClientClass,
+        },
+        '../../src/support/utils.js': {
+          getRUMUrl: mockGetRUMUrl,
+        },
+        '../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: mockIsAuditDisabled,
+        },
+      });
+
+      const auditContext = {
+        configVersion: 'v2',
+        previousConfigVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.onFirstCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: ['brand1'] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      mockLlmoConfig.readConfig.onSecondCall().resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      await mockHandlerDisabled.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // The warning should be logged
+      expect(log.warn).to.have.been.calledWith(sinon.match(/audit is not enabled for site.*skipping/));
+    });
+
+    it('should use getBrandPresenceCadence from site config when available (covering line 140 branch)', async () => {
+      // Create a site with getBrandPresenceCadence function that returns 'daily'
+      const siteWithGetBrandPresenceCadence = {
+        getSiteId: () => 'site-123',
+        getBaseURL: () => 'https://example.com',
+        getOrganizationId: () => 'org-123',
+        getConfig: () => ({
+          enableImport: sandbox.stub().resolves(),
+          isImportEnabled: sandbox.stub().returns(false),
+          getBrandPresenceCadence: () => 'daily',
+        }),
+      };
+
+      const auditContext = {}; // No brandPresenceCadence in auditContext
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        siteWithGetBrandPresenceCadence,
+        auditContext,
+      );
+
+      // Should trigger geo-brand-presence-daily since site config returns 'daily'
+      expect(sqs.sendMessage).to.have.been.calledWith(
+        'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
+        sinon.match({ type: 'geo-brand-presence-daily' }),
+      );
+      expect(result.auditResult.status).to.equal('completed');
+    });
+
   });
 });
 

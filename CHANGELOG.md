@@ -1,3 +1,66 @@
+# [1.206.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.205.0...v1.206.0) (2025-10-10)
+
+
+### Features
+
+* enhance canonical and hreflang for Elmo integration ([#1359](https://github.com/adobe/spacecat-audit-worker/issues/1359)) ([7eaf356](https://github.com/adobe/spacecat-audit-worker/commit/7eaf356cc068113a1e67500d82f7edc825126487))
+
+# [1.205.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.204.3...v1.205.0) (2025-10-10)
+
+
+### Features
+
+* implement CWV SQS integration for Mystique guidance ([#1360](https://github.com/adobe/spacecat-audit-worker/issues/1360)) ([83ae3fb](https://github.com/adobe/spacecat-audit-worker/commit/83ae3fb286460ee1ae98f9ee8269d8a8b40e5749))
+
+## [1.204.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.204.2...v1.204.3) (2025-10-10)
+
+
+### Bug Fixes
+
+* geo brand presence linting ([#1383](https://github.com/adobe/spacecat-audit-worker/issues/1383)) ([ffb7409](https://github.com/adobe/spacecat-audit-worker/commit/ffb74094f5a7b0427f63cccea1ac73ef9b57a768))
+
+## [1.204.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.204.1...v1.204.2) (2025-10-10)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.70.0 ([#1379](https://github.com/adobe/spacecat-audit-worker/issues/1379)) ([17e53bc](https://github.com/adobe/spacecat-audit-worker/commit/17e53bc701d49ab472011e645d566700bacc239e))
+
+## [1.204.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.204.0...v1.204.1) (2025-10-10)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** use correct s3 bucket for llmo config ([#1380](https://github.com/adobe/spacecat-audit-worker/issues/1380)) ([ef910a5](https://github.com/adobe/spacecat-audit-worker/commit/ef910a53c9c33eea823cb8d76df21e9f225a8e7d))
+
+# [1.204.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.203.1...v1.204.0) (2025-10-10)
+
+
+### Features
+
+* enable Copilot for Geo Brand Presence ([#1378](https://github.com/adobe/spacecat-audit-worker/issues/1378)) ([0cadb56](https://github.com/adobe/spacecat-audit-worker/commit/0cadb568a1af54b86f26169722dead06b5aa5002))
+
+## [1.203.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.203.0...v1.203.1) (2025-10-10)
+
+
+### Bug Fixes
+
+* update content gain threshold ([#1377](https://github.com/adobe/spacecat-audit-worker/issues/1377)) ([d97b567](https://github.com/adobe/spacecat-audit-worker/commit/d97b5671882670416bcf1576b241eadb2089f62b))
+
+# [1.203.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.202.0...v1.203.0) (2025-10-09)
+
+
+### Features
+
+* unify geo brand presence daily/weekly provider logic ([#1376](https://github.com/adobe/spacecat-audit-worker/issues/1376)) ([71067c8](https://github.com/adobe/spacecat-audit-worker/commit/71067c8026aac4a47a3e47ef892d2e7efa29da66))
+
+# [1.202.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.201.0...v1.202.0) (2025-10-09)
+
+
+### Features
+
+* brand presence daily trigger ([#1373](https://github.com/adobe/spacecat-audit-worker/issues/1373)) ([ca241d6](https://github.com/adobe/spacecat-audit-worker/commit/ca241d6442c5ca904b0034a93b42a7676ee78025))
+
 # [1.201.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.200.0...v1.201.0) (2025-10-09)
 
 

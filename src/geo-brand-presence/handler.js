@@ -9,7 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* eslint-disable no-use-before-define */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
@@ -29,9 +28,11 @@ import { wwwUrlResolver } from '../common/index.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const LLMO_QUESTIONS_IMPORT_TYPE = 'llmo-prompts-ahrefs';
 export const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
+export const GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE = 'detect:geo-brand-presence-daily';
 export const GEO_FAQ_OPPTY_TYPE = 'guidance:geo-faq';
 export const OPPTY_TYPES = [
   GEO_BRAND_PRESENCE_OPPTY_TYPE,
+  GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE,
   // GEO_FAQ_OPPTY_TYPE, // TODO reenable when working on faqs again
 ];
 
@@ -43,12 +44,121 @@ export const WEB_SEARCH_PROVIDERS = [
   'google_ai_overviews',
   'ai_mode',
   'perplexity',
+  'copilot',
   // Add more providers here as needed
 ];
+
+const EXCLUDE_FROM_HARD_LIMIT = new Set([
+  '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+  '63c38133-4991-4ed0-886b-2d0f440d81ab',
+  '1f582f10-41d3-4ff0-afaa-cd1a267ba58a',
+  'd8db1956-b24c-4ad7-bdb6-6f5a90d89edc',
+  '4b4ed67e-af44-49f7-ab24-3dda37609c9d',
+  '0f770626-6843-4fbd-897c-934a9c19f079',
+  'fdc7c65b-c0d0-40ff-ab26-fd0e16b75877',
+  '9a1cfdaf-3bb3-49a7-bbaa-995653f4c2f4',
+  '1398e8f1-90c9-4a5d-bfca-f585fa35fc69',
+  '1905ef6e-c112-477e-9fae-c22ebf21973a',
+]);
 
 /**
  * @import { S3Client } from '@aws-sdk/client-s3';
  */
+
+/**
+ * Loads Parquet data from S3 and returns the parsed data.
+ * @param {object} options - Options for loading Parquet data.
+ * @param {string} options.key - The S3 object key for the Parquet file.
+ * @param {string} options.bucket - The S3 bucket name.
+ * @param {S3Client} options.s3Client - The S3 client instance.
+ * @return {Promise<Array<Record<string, unknown>>>}
+ */
+export async function loadParquetDataFromS3({ key, bucket, s3Client }) {
+  const res = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  const body = await res.Body?.transformToByteArray();
+  /* c8 ignore start */
+  if (!body) {
+    throw new Error(`Failed to read Parquet file from s3://${bucket}/${key}`);
+  }
+  /* c8 ignore end */
+
+  return parquetReadObjects({ file: body.buffer });
+}
+
+export async function asPresignedJsonUrl(data, bucketName, context) {
+  const {
+    s3Client, log, getPresignedUrl, isDaily, dateContext,
+  } = context;
+
+  // Use daily-specific path if daily cadence
+  const basePath = isDaily ? 'temp/audit-geo-brand-presence-daily' : 'temp/audit-geo-brand-presence';
+  const dateStr = isDaily ? dateContext.date : new Date().toISOString().split('T')[0];
+  const key = `${basePath}/${dateStr}-${randomUUID()}.json`;
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    Body: JSON.stringify(data),
+    ContentType: 'application/json',
+  }));
+
+  log.info('GEO BRAND PRESENCE: Data uploaded to S3 at s3://%s/%s', bucketName, key);
+  return getPresignedUrl(
+    s3Client,
+    new GetObjectCommand({ Bucket: bucketName, Key: key }),
+    { expiresIn: 86_400 /* seconds, 24h */ },
+  );
+}
+
+/**
+ * Creates a message object for sending to Mystique.
+ * @param {object} params - Message parameters
+ * @param {string} params.opptyType - The opportunity type
+ * @param {string} params.siteId - The site ID
+ * @param {string} params.baseURL - The base URL
+ * @param {string} params.auditId - The audit ID
+ * @param {string} params.deliveryType - The delivery type
+ * @param {object} params.calendarWeek - The calendar week object
+ * @param {string} params.url - The presigned URL for data
+ * @param {string} params.webSearchProvider - The web search provider
+ * @param {null | string} [params.configVersion] - The configuration version
+ * @param {null | string} [params.date] - The date string (for daily cadence)
+ * @returns {object} The message object
+ */
+function createMystiqueMessage({
+  opptyType,
+  siteId,
+  baseURL,
+  auditId,
+  deliveryType,
+  calendarWeek,
+  url,
+  webSearchProvider,
+  configVersion = null,
+  date = null,
+}) {
+  const data = {
+    url,
+    configVersion,
+    web_search_provider: webSearchProvider,
+  };
+
+  // Add date if present (daily-specific)
+  if (date) {
+    data.date = date;
+  }
+
+  return {
+    type: opptyType,
+    siteId,
+    url: baseURL,
+    auditId,
+    deliveryType,
+    time: new Date().toISOString(),
+    week: calendarWeek.week,
+    year: calendarWeek.year,
+    data,
+  };
+}
 
 /**
  * Removes duplicate prompts from AI-generated prompts based on region, topic, and prompt text.
@@ -284,98 +394,33 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     return;
   }
 
-  // Determine opportunity types and message creation based on cadence
-  const opptyTypes = isDaily ? ['detect:geo-brand-presence-daily'] : OPPTY_TYPES;
+  // Determine opportunity types based on cadence
+  const opptyTypes = isDaily
+    ? [GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE]
+    : [GEO_BRAND_PRESENCE_OPPTY_TYPE];
 
-  if (isDaily) {
-    // For daily cadence, send single message with aiPlatform if available
-    const message = {
-      type: 'detect:geo-brand-presence-daily',
-      siteId,
-      url: baseURL,
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-      time: new Date().toISOString(),
-      week: dateContext.week,
-      year: dateContext.year,
-      data: {
+  // Send messages for each combination of opportunity type and web search provider
+  await Promise.all(
+    opptyTypes.flatMap((opptyType) => providersToUse.map(async (webSearchProvider) => {
+      const message = createMystiqueMessage({
+        opptyType,
+        siteId,
+        baseURL,
+        auditId: audit.getId(),
+        deliveryType: site.getDeliveryType(),
+        calendarWeek: dateContext,
         url,
-        date: dateContext.date,
-      },
-    };
+        webSearchProvider,
+        configVersion: /* c8 ignore next */ configExists ? configVersion : null,
+        ...(isDaily && { date: dateContext.date }), // Add date only for daily cadence
+      });
 
-    if (aiPlatform) {
-      message.data.web_search_provider = aiPlatform;
-    }
-
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info('GEO BRAND PRESENCE DAILY: Message sent to Mystique for site id %s (%s)', siteId, baseURL);
-  } else {
-    // Send messages for each combination of opportunity type and web search provider
-    await Promise.all(
-      opptyTypes.flatMap((opptyType) => providersToUse.map(async (webSearchProvider) => {
-        const message = createMystiqueMessage({
-          opptyType,
-          siteId,
-          baseURL,
-          auditId: audit.getId(),
-          deliveryType: site.getDeliveryType(),
-          calendarWeek: dateContext,
-          url,
-          webSearchProvider,
-          configVersion: /* c8 ignore next */ configExists ? configVersion : null,
-        });
-
-        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-        log.info('GEO BRAND PRESENCE: %s message sent to Mystique for site id %s (%s) with provider %s', opptyType, siteId, baseURL, webSearchProvider);
-      })),
-    );
-    /* c8 ignore end */
-  }
-}
-
-/**
- * Loads Parquet data from S3 and returns the parsed data.
- * @param {object} options - Options for loading Parquet data.
- * @param {string} options.key - The S3 object key for the Parquet file.
- * @param {string} options.bucket - The S3 bucket name.
- * @param {S3Client} options.s3Client - The S3 client instance.
- * @return {Promise<Array<Record<string, unknown>>>}
- */
-export async function loadParquetDataFromS3({ key, bucket, s3Client }) {
-  const res = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-  const body = await res.Body?.transformToByteArray();
-  /* c8 ignore start */
-  if (!body) {
-    throw new Error(`Failed to read Parquet file from s3://${bucket}/${key}`);
-  }
-  /* c8 ignore end */
-
-  return parquetReadObjects({ file: body.buffer });
-}
-
-export async function asPresignedJsonUrl(data, bucketName, context) {
-  const {
-    s3Client, log, getPresignedUrl, isDaily, dateContext,
-  } = context;
-
-  // Use daily-specific path if daily cadence
-  const basePath = isDaily ? 'temp/audit-geo-brand-presence-daily' : 'temp/audit-geo-brand-presence';
-  const dateStr = isDaily ? dateContext.date : new Date().toISOString().split('T')[0];
-  const key = `${basePath}/${dateStr}-${randomUUID()}.json`;
-  await s3Client.send(new PutObjectCommand({
-    Bucket: bucketName,
-    Key: key,
-    Body: JSON.stringify(data),
-    ContentType: 'application/json',
-  }));
-
-  log.info('GEO BRAND PRESENCE: Data uploaded to S3 at s3://%s/%s', bucketName, key);
-  return getPresignedUrl(
-    s3Client,
-    new GetObjectCommand({ Bucket: bucketName, Key: key }),
-    { expiresIn: 86_400 /* seconds, 24h */ },
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+      const cadenceLabel = isDaily ? ' DAILY' : '';
+      log.info('GEO BRAND PRESENCE%s: %s message sent to Mystique for site id %s (%s) with provider %s', cadenceLabel, opptyType, siteId, baseURL, webSearchProvider);
+    })),
   );
+  /* c8 ignore end */
 }
 
 export async function keywordPromptsImportStep(context) {
@@ -428,61 +473,6 @@ export async function keywordPromptsImportStep(context) {
 
   return result;
 }
-
-/**
- * Creates a message object for sending to Mystique.
- * @param {object} params - Message parameters
- * @param {string} params.opptyType - The opportunity type
- * @param {string} params.siteId - The site ID
- * @param {string} params.baseURL - The base URL
- * @param {string} params.auditId - The audit ID
- * @param {string} params.deliveryType - The delivery type
- * @param {object} params.calendarWeek - The calendar week object
- * @param {string} params.url - The presigned URL for data
- * @param {string} params.webSearchProvider - The web search provider
- * @param {null | string} [params.configVersion] - The configuration version
- * @returns {object} The message object
- */
-function createMystiqueMessage({
-  opptyType,
-  siteId,
-  baseURL,
-  auditId,
-  deliveryType,
-  calendarWeek,
-  url,
-  webSearchProvider,
-  configVersion = null,
-}) {
-  return {
-    type: opptyType,
-    siteId,
-    url: baseURL,
-    auditId,
-    deliveryType,
-    time: new Date().toISOString(),
-    week: calendarWeek.week,
-    year: calendarWeek.year,
-    data: {
-      url,
-      configVersion,
-      web_search_provider: webSearchProvider,
-    },
-  };
-}
-
-const EXCLUDE_FROM_HARD_LIMIT = new Set([
-  '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
-  '63c38133-4991-4ed0-886b-2d0f440d81ab',
-  '1f582f10-41d3-4ff0-afaa-cd1a267ba58a',
-  'd8db1956-b24c-4ad7-bdb6-6f5a90d89edc',
-  '4b4ed67e-af44-49f7-ab24-3dda37609c9d',
-  '0f770626-6843-4fbd-897c-934a9c19f079',
-  'fdc7c65b-c0d0-40ff-ab26-fd0e16b75877',
-  '9a1cfdaf-3bb3-49a7-bbaa-995653f4c2f4',
-  '1398e8f1-90c9-4a5d-bfca-f585fa35fc69',
-  '1905ef6e-c112-477e-9fae-c22ebf21973a',
-]);
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)

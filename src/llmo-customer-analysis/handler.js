@@ -16,6 +16,7 @@ import {
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import {
   getLastSunday, compareConfigs,
 } from './utils.js';
@@ -128,38 +129,59 @@ export async function triggerCdnLogsReport(context, site) {
   log.info('Successfully triggered cdn-logs-report audit');
 }
 
-export async function triggerGeoBrandPresence(context, site) {
+export async function triggerGeoBrandPresence(context, site, auditContext = {}) {
   const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
   const siteId = site.getSiteId();
 
-  log.info(`Triggering geo-brand-presence audit for site: ${siteId}`);
+  // Priority: auditContext > site config > default
+  const cadence = auditContext?.brandPresenceCadence
+    || site.getConfig()?.getBrandPresenceCadence?.()
+    || 'weekly';
+
+  const auditType = cadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence';
+
+  log.info(`Triggering ${auditType} audit for site: ${siteId} (cadence: ${cadence})`);
+
+  // Check if the selected audit type is enabled
+  const isAuditEnabled = await isAuditEnabledForSite(auditType, site, context);
+  if (!isAuditEnabled) {
+    log.warn(`${auditType} audit is not enabled for site ${siteId}, skipping geo-brand-presence trigger`);
+    return;
+  }
+
+  // Optional: Warn if the opposite audit type is also enabled
+  const oppositeAuditType = cadence === 'daily' ? 'geo-brand-presence' : 'geo-brand-presence-daily';
+  const isOppositeEnabled = await isAuditEnabledForSite(oppositeAuditType, site, context);
+  if (isOppositeEnabled) {
+    log.warn(`Both ${auditType} and ${oppositeAuditType} are enabled for site ${siteId}. Consider disabling ${oppositeAuditType} to avoid duplicate processing.`);
+  }
 
   const geoBrandPresenceMessage = {
-    type: 'geo-brand-presence',
+    type: auditType,
     siteId,
     data: getLastSunday(),
   };
 
   await sqs.sendMessage(configuration.getQueues().audits, geoBrandPresenceMessage);
 
-  log.info('Successfully triggered geo-brand-presence audit');
+  log.info(`Successfully triggered ${auditType} audit`);
 }
 
-async function triggerAllSteps(context, site, log, triggeredSteps) {
+async function triggerAllSteps(context, site, log, triggeredSteps, auditContext = {}) {
   log.info('Triggering all relevant audits (no config version provided or first-time setup)');
 
   await triggerCdnLogsReport(context, site);
   triggeredSteps.push('cdn-logs-report');
 
-  await triggerGeoBrandPresence(context, site);
-  triggeredSteps.push('geo-brand-presence');
+  await triggerGeoBrandPresence(context, site, auditContext);
+  triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
 }
 
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
   const {
-    log, s3Client,
+    env, log, s3Client,
   } = context;
 
   const siteId = site.getSiteId();
@@ -207,7 +229,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   // If no config version provided, trigger all steps
   if (!configVersion) {
     log.info('No config version provided; triggering all relevant audits');
-    await triggerAllSteps(context, site, log, triggeredSteps);
+    await triggerAllSteps(context, site, log, triggeredSteps, auditContext);
 
     return {
       auditResult: {
@@ -223,7 +245,12 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   // Fetch and compare configs
   log.info(`Fetching LLMO config versions - current: ${configVersion}, previous: ${previousConfigVersion || 'none'}`);
 
-  const newConfigResult = await llmoConfig.readConfig(siteId, s3Client, { version: configVersion });
+  const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
+  const newConfigResult = await llmoConfig.readConfig(
+    siteId,
+    s3Client,
+    { s3Bucket, version: configVersion },
+  );
   const newConfig = newConfigResult.config;
   let oldConfig;
 
@@ -231,7 +258,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     const oldConfigResult = await llmoConfig.readConfig(
       siteId,
       s3Client,
-      { version: previousConfigVersion },
+      { s3Bucket, version: previousConfigVersion },
     );
     oldConfig = oldConfigResult.config;
   } else {
@@ -252,8 +279,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   if (hasBrandPresenceChanges) {
     log.info('LLMO config changes detected in brands, competitors, topics, categories, or entities; triggering geo-brand-presence audit');
-    await triggerGeoBrandPresence(context, site);
-    triggeredSteps.push('geo-brand-presence');
+    await triggerGeoBrandPresence(context, site, auditContext);
+    triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
   }
 
   if (triggeredSteps.length > 0) {
