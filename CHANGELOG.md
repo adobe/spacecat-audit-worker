@@ -1,3 +1,10 @@
+## [1.204.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.204.0...v1.204.1) (2025-10-10)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** use correct s3 bucket for llmo config ([#1380](https://github.com/adobe/spacecat-audit-worker/issues/1380)) ([ef910a5](https://github.com/adobe/spacecat-audit-worker/commit/ef910a53c9c33eea823cb8d76df21e9f225a8e7d))
+
 # [1.204.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.203.1...v1.204.0) (2025-10-10)
 
 
