@@ -93,7 +93,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     if (reportConfig.name === 'agentic') {
       const patternsExist = await fetchRemotePatterns(site);
 
-      if (!patternsExist) {
+      if (!patternsExist || auditContext?.categoriesUpdated) {
         log.info('Patterns not found, generating patterns workbook...');
         const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
 
@@ -103,10 +103,11 @@ async function runCdnLogsReport(url, context, site, auditContext) {
           athenaClient,
           s3Config: {
             ...s3Config,
-            tableName: reportConfigs[0]?.tableName, // Use first report config's table
+            tableName: reportConfig.tableName,
           },
           periods,
           sharepointClient,
+          configCategories: auditContext?.configCategories || [],
         });
       }
     }

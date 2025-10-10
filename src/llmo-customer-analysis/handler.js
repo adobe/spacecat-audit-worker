@@ -91,7 +91,7 @@ export async function triggerReferralTrafficImports(context, site) {
   log.info(`Successfully triggered ${last4Weeks.length} referral traffic imports`);
 }
 
-export async function triggerCdnLogsReport(context, site) {
+export async function triggerCdnLogsReport(context, site, configCategories = []) {
   const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
@@ -99,13 +99,31 @@ export async function triggerCdnLogsReport(context, site) {
 
   log.info(`Triggering cdn-logs-report audit for site: ${siteId}`);
 
-  const cdnLogsMessage = {
+  // first send with categoriesUpdated flag for last week
+  await sqs.sendMessage(configuration.getQueues().audits, {
     type: 'cdn-logs-report',
     siteId,
-    auditContext: { weekOffset: -1 },
-  };
+    auditContext: {
+      weekOffset: -1,
+      categoriesUpdated: true,
+      configCategories,
+    },
+  });
 
-  await sqs.sendMessage(configuration.getQueues().audits, cdnLogsMessage);
+  // then trigger cdn-logs-report for last 3 weeks
+  for (const weekOffset of [-2, -3, -4]) {
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(
+      configuration.getQueues().audits,
+      {
+        type: 'cdn-logs-report',
+        siteId,
+        auditContext: { weekOffset },
+      },
+      null,
+      300,
+    );
+  }
 
   log.info('Successfully triggered cdn-logs-report audit');
 }
@@ -275,7 +293,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     const existingReport = await LatestAudit?.findBySiteIdAndAuditType(siteId, 'cdn-logs-report');
     if (existingReport?.length > 0) {
       log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
-      await triggerCdnLogsReport(context, site);
+      const configCategories = Object.values(newConfig.categories).map((cat) => cat.name);
+      await triggerCdnLogsReport(context, site, configCategories);
       triggeredSteps.push('cdn-logs-report');
     }
   }

@@ -12,7 +12,12 @@
 /* c8 ignore start */
 import { prompt } from './prompt.js';
 
-async function concentrateProducts(pathProductArray, context) {
+async function concentrateProducts(
+  pathProductArray,
+  context,
+  configCategories = [],
+  maxCategories = 6,
+) {
   const { log } = context;
 
   if (!pathProductArray || pathProductArray.length === 0) {
@@ -21,6 +26,13 @@ async function concentrateProducts(pathProductArray, context) {
 
   // Extract unique product names for concentration
   const uniqueProducts = [...new Set(pathProductArray.map((item) => item.product))];
+  const configCategoryCount = configCategories.length;
+
+  // If we have config categories and enough products, prioritize them
+  if (configCategoryCount >= 3) {
+    log.info('Config categories >= 3: Using config categories only, no concentration needed');
+    return { paths: pathProductArray, usage: null };
+  }
 
   if (uniqueProducts.length <= 1) {
     return {
@@ -29,84 +41,128 @@ async function concentrateProducts(pathProductArray, context) {
     }; // No need to concentrate if only one or no products
   }
 
-  const systemPrompt = `You are an expert content categorization specialist focused on grouping products into categories; these should as a low-level as possible.
+  const hasConfigCategories = configCategories.length > 0;
 
-TASK: Analyze the provided product list and create a concentrated version by:
-1. Grouping products into specific categories
-2. Preferring product series over higher level categories
-3. Fallback to high-level categories if no series can be identified
-4. Creating representative category names that encompass multiple products
+  let systemPrompt = `You are an expert content categorization specialist focused on AGGRESSIVE GROUPING and SIMPLIFICATION of products into main categories.
+
+TASK: Reduce the product list to ${maxCategories} or fewer main categories by:
+1. Finding the MAIN umbrella category for each product (tennis, basketball, golf, etc.)
+2. Ignoring all version numbers, model names, and sub-types
+3. Grouping ALL related products under ONE main category
+4. Being VERY aggressive - err on the side of grouping too much rather than too little
+
+CRITICAL RULES BEFORE YOU START:
+- Maximum ${maxCategories} final categories - if you have more, group more aggressively!
+- NO version numbers in output (v1, v2, v3, v9, 2024, etc.)
+- NO series names (pro-staff-series, blade-series, etc.)
+- NO model variations (pro, plus, max, ultra) - just main category!
 
 INSTRUCTIONS:
 
-1. Series and Product Line Grouping (HIGHEST PRIORITY):
-   - When multiple products belong to the same series or product line, group them under the series name
-   - Examples: "iphone-15", "iphone-15-pro", "iphone-15-pro-max" → "iphone-15-series"
-   - Examples: "galaxy-s24", "galaxy-s24-plus", "galaxy-s24-ultra" → "galaxy-s24-series"
-   - Examples: "macbook-air-13", "macbook-air-15" → "macbook-air-series"
-   - Use "-series" suffix for product families with multiple variants
+1. Umbrella Category Grouping (HIGHEST PRIORITY - ALWAYS DO THIS FIRST):
+   - **CRITICAL**: Look for the MAIN umbrella category FIRST, ignore specific models/series/versions
+   - If products are related to same activity/purpose → group under ONE main category
+   - **DO NOT** create sub-categories with version numbers (v1, v2, v3, 2024, etc.)
+   - **DO NOT** create multiple series for same category (just use main category name)
+   - **DO NOT** include model names, variants, or specific product lines in final categories
 
 2. High-Level Category Grouping (SECONDARY PRIORITY):
-   - If no series grouping applies, prefer broad categories over specific products
-   - Group by activity, industry, or general purpose rather than brand or model
-   - Examples: "tennis-racket-wilson" → "tennis", "running-shoes-nike" → "running"
+   - **CRITICAL RULE**: If multiple products can be grouped under ONE umbrella category, do it
+   - Look for common prefixes or themes - group them together
    - Use the most general meaningful category that still provides useful distinction
-   - Do not add/create categories that are not core to the domain's offering (e.g., news category makes sense for a broadcasting domain, but not for a commercial domain)
-   - If a domain has a very high number of individual products (e.g., ecommerce websites), create higher level categories rather than individual product categories
+   - If a domain has many products, create higher level categories rather than individual product categories
 
-3. Series Detection Guidelines:
-   - Look for common patterns: base model + variants (Pro, Plus, Max, Ultra, Mini)
-   - Version numbers: v1, v2, v3 or generational naming (2023, 2024, etc.)
-   - Size variants: 13-inch, 15-inch, or Small, Medium, Large
-   - Performance tiers: Basic, Standard, Premium, Enterprise
-   - When in doubt, group related products into series rather than individual categories
+3. Aggressive Simplification Rules:
+   - **Remove ALL version numbers**: product-v3 → product, product-2024 → product
+   - **Remove ALL model variations**: product-pro, product-plus, product-max → all become product
+   - **Remove ALL series suffixes**: Don't use "-series", just use main category name
+   - **Maximum simplification**: Always choose the broadest category that makes sense
 
-4. Category Guidelines (when no series applies):
-   - Prioritize grouping brands, series or product lines
-   - Sports products should group by sport type: "tennis", "basketball", "golf", etc.
-   - Technology products should group by broad categories: "smartphones", "computers", "software"
-   - Clothing/fashion should group by type: "clothing", "footwear", "accessories"
-   - Food/beverage should group by specific types: "coffee", "wine", "pizza", "bakery", "dairy", "snacks"
-   - Services should group by specific service type: "consulting", "support", "training", "hosting", "analytics", "marketing", "design", "development"
+4. Mapping Rules:
+   - Focus on WHAT the product is for, not the specific model
+   - Group by activity/purpose or main product line
+   - Aim for 4-6 final categories maximum
+   - If you have more than 6 categories, you're not grouping aggressively enough!
 
-5. Mapping Rules:
-   - PRIORITIZE series grouping over individual product mapping
-   - Multiple specific products should map to the same series or high-level category
-   - Series names should be lowercase and hyphenated with "-series" suffix
-   - For non-series products, avoid brand names and model numbers in category names
-   - Focus on what the product IS rather than who makes it or specific variants
-
-4. Data Quality Rules:
+5. Data Quality Rules:
    - If input is empty or invalid, return empty object: {}
    - Ensure all original product names are included in the mapping
-   - Target MAXIMUM 5-6 distinct categories representing the most prominent product offerings
+   - **MANDATORY**: Result must have ${maxCategories} or fewer distinct category names
+   - Count unique values in your output - if > ${maxCategories}, go back and group more aggressively
    - Focus on the most important products that drive business value
    - Use descriptive but appropriately broad category names
    - Keep "unknown" as standalone if present
    - Prioritize grouping less important products into broader categories to stay within the 5-6 limit
 
+VALIDATION STEP: Before returning your answer, count the unique category names (not including "unknown"). If you have more than ${maxCategories}, you MUST revise and group more categories together!`;
+
+  if (hasConfigCategories) {
+    const isExactMatch = maxCategories === configCategories.length;
+
+    systemPrompt += `
+
+## CRITICAL: PRESERVE CONFIG CATEGORIES
+The following categories are provided by the user and MUST be preserved EXACTLY as-is in your output:
+${configCategories.map((cat) => `- ${cat}`).join('\n')}
+
+RULES for config categories:
+1. If a product name matches a config category EXACTLY, map it to itself (preserve it)
+2. If a product is a variant of a config category (e.g., "product-x-2024" when "product-x" is config), map it to the config category
+3. NEVER rename or change config categories - they are fixed and cannot be modified
+4. ${isExactMatch ? 'ONLY map products that are TRULY RELEVANT to these config categories. SKIP/OMIT products that don\'t belong to any of these categories - do NOT force them into a category!' : `CREATE additional categories for products that DON'T match config categories. Target: ${maxCategories} total categories (${configCategories.length} config + ${maxCategories - configCategories.length} new)`}
+5. Config categories are already optimized - treat them as immutable
+6. Look for keywords, themes, or related terms to map products to config categories (e.g., "category-x-accessories", "category-x-parts" → "category-x")
+7. ${isExactMatch ? 'If a product is unrelated to ANY config category, simply DON\'T include it in the output. The user only cares about these specific categories.' : 'DO NOT map unrelated products to config categories just to avoid creating new ones - create new categories when products are genuinely different!'}
+
+Example (Config Categories: ${configCategories.length}, Target: ${maxCategories}):
+Config categories: ${isExactMatch ? '["category-a", "category-b", "category-c"]' : '["product-x", "product-y"]'}
+Input: ${isExactMatch ? '["category-a-item1", "category-a-item2", "category-b-item1", "category-b-accessories", "category-c-variant", "unrelated-item1", "unrelated-item2"]' : '["product-x", "product-x-2024", "product-x-pro", "product-z", "product-w", "service-m"]'}
+Output: {
+  ${isExactMatch ? `"category-a-item1": "category-a",        ← Maps to category-a config
+  "category-a-item2": "category-a",        ← Maps to category-a config
+  "category-b-item1": "category-b",        ← Maps to category-b config
+  "category-b-accessories": "category-b",  ← Maps to category-b config
+  "category-c-variant": "category-c"       ← Maps to category-c config
+  (Note: "unrelated-item1" and "unrelated-item2" are OMITTED - not relevant to any config category)` : `"product-x": "product-x",              ← Preserve config category exactly
+  "product-x-2024": "product-x",         ← Variant maps to config category
+  "product-x-pro": "product-x",          ← Variant maps to config category
+  "product-y": "product-y",              ← Preserve config category
+  "product-z": "services",               ← Create new category for unrelated products
+  "product-w": "tools",                  ← Create new category
+  "service-m": "services"                ← Group with similar products`}
+}`;
+  }
+
+  systemPrompt += `
+
 RESPONSE FORMAT: Return only a valid JSON object mapping original names to high-level category names. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only.
 
-Example input products: ["iphone-15", "iphone-15-pro", "iphone-15-pro-max", "galaxy-s24", "galaxy-s24-plus", "macbook-air-13", "macbook-air-15", "tennis-racket-wilson", "unknown"]
+Example input: ["product-a", "product-a-v2", "product-a-pro", "category-x", "category-x-accessories", "category-y", "category-y-shoes", "service-z", "unknown"]
 
 Example output:
 {
-  "iphone-15": "iphone-15-series",
-  "iphone-15-pro": "iphone-15-series",
-  "iphone-15-pro-max": "iphone-15-series",
-  "galaxy-s24": "galaxy-s24-series",
-  "galaxy-s24-plus": "galaxy-s24-series",
-  "macbook-air-13": "macbook-air-series",
-  "macbook-air-15": "macbook-air-series",
-  "tennis-racket-wilson": "tennis",
+  "product-a": "product-a",
+  "product-a-v2": "product-a",
+  "product-a-pro": "product-a",
+  "category-x": "category-x",
+  "category-x-accessories": "category-x",
+  "category-y": "category-y",
+  "category-y-shoes": "category-y",
+  "service-z": "service-z",
   "unknown": "unknown"
-}`;
+}
+
+CRITICAL: Group related products under ONE main category. Remove version numbers and model variations!`;
 
   const userPrompt = `Products to concentrate:
-${JSON.stringify(uniqueProducts)}`;
+${JSON.stringify(uniqueProducts)}
+${hasConfigCategories ? `\n\nCONFIG CATEGORIES (must preserve exactly):\n${JSON.stringify(configCategories)}` : ''}`;
 
   try {
     log.info('Concentrating products into categories');
+    if (hasConfigCategories) {
+      log.info(`Config categories to preserve: ${configCategories.join(', ')}`);
+    }
     const promptResponse = await prompt(systemPrompt, userPrompt, context);
     if (promptResponse && promptResponse.content) {
       const mapping = JSON.parse(promptResponse.content);
@@ -126,35 +182,86 @@ ${JSON.stringify(uniqueProducts)}`;
   }
 }
 
-async function deriveProductsForPaths(domain, paths, context) {
+async function deriveProductsForPaths(domain, paths, context, configCategories = []) {
   const { log } = context;
-  const systemPrompt = `You are an expert product classifier for URL path analysis. Your task is to analyze URL paths and identify the product or product category they represent.
+  const hasConfigCategories = configCategories.length > 0;
+
+  let systemPrompt = `You are an expert product classifier for URL path analysis. Your task is to analyze URL paths and identify BUSINESS PRODUCTS/SERVICES categories for Athena SQL analytics.
 
 ## OBJECTIVE
-Classify each provided URL path to identify what product or product category it represents based on the path structure and content.
+Classify each URL path to identify BUSINESS PRODUCTS/SERVICES categories that are useful for business analytics and reporting.
 
-## CLASSIFICATION APPROACH
+## ANALYTICAL THINKING PROCESS
 
-### Product Identification Strategies:
-1. **Direct Product References**: Look for product names, SKUs, or identifiers in the path
-2. **Category Inference**: Infer product from category or section names
-3. **Path Structure Analysis**: Use path hierarchy to determine product context
-4. **Domain Context**: Consider the domain's business type when classifying
+Think like you're analyzing a spreadsheet of URLs - follow these steps systematically:
 
-### Product Naming Guidelines:
-- Use lowercase, hyphenated format: "product-name"
-- Be specific when possible: "iphone-15" not just "phone"
-- Use singular form: "laptop" not "laptops"
-- Avoid generic terms when specific products are identifiable
-- For ambiguous paths, use broader category: "electronics", "clothing", "services"
-- Use "unknown" only when no product can be reasonably inferred
+### STEP 1: DOMAIN UNDERSTANDING
+- What industry is this domain in? (Tech, retail, healthcare, finance, media, etc.)
+- What do they likely sell/offer? (Products, services, content, solutions)
+- What business model? (SaaS, e-commerce, publishing, consulting)
+
+### STEP 2: URL STRUCTURE ANALYSIS
+For each URL path, examine:
+- **Path segments**: Break down /segment1/segment2/segment3
+- **Hierarchy clues**: First segment often indicates section type (/products/, /solutions/, /services/)
+- **Business indicators**: Keywords that signal commercial offerings vs. informational content
+- **Naming patterns**: How does this domain structure their URLs?
+
+### STEP 3: PRODUCT/SERVICE IDENTIFICATION
+Ask yourself for each path:
+1. "Does this represent something the company sells or provides?" → Product/Service
+2. "Is this generic content (blog, about, careers, legal)?" → Unknown
+3. "What specific offering does this relate to?" → Extract the product name
+4. "What's the most specific identifier?" → Use the lowest-level meaningful category
+
+### STEP 4: CATEGORY EXTRACTION LOGIC
+Examples of thinking process:
+
+Example A: "/products/analytics-platform/features"
+- Thinking: "products" → business offering, "analytics-platform" → specific product, "features" → content type
+- Result: product = "analytics-platform"
+
+Example B: "/solutions/cloud/pricing"
+- Thinking: "solutions" → business offering, "cloud" → product category, "pricing" → content type
+- Result: product = "cloud"
+
+Example C: "/blog/design-tips"
+- Thinking: "blog" → generic content, not a business offering
+- Result: product = "unknown"
+
+Example D: "/enterprise/marketing-automation/integrations"
+- Thinking: "enterprise" → customer segment, "marketing-automation" → specific product
+- Result: product = "marketing-automation"
+
+### STEP 5: NAMING STANDARDIZATION & OUTPUT RULES
+- **Format**: Lowercase, hyphenated (e.g., "marketing-automation" not "Marketing_Automation")
+- **Singular form**: "solution" not "solutions", "software" not "softwares"
+- **Product-focused**: "analytics" not "analytics-page" or "analytics-features"
+- **Consistency**: Same product = same name across all paths
+- **Business focus**: Only classify business offerings (products/services/solutions)
+- **Exclusions**: Use "unknown" for generic content (blog, support, about, legal, careers, contact, press, investors)
+- **Domain-agnostic**: Work for any industry (tech, retail, healthcare, finance, etc.)`;
+
+  if (hasConfigCategories) {
+    systemPrompt += `
+
+## PRIORITY CATEGORIES
+The following categories are provided by the user and should be PRIORITIZED when classifying paths:
+${configCategories.map((cat) => `- ${cat}`).join('\n')}
+
+When a URL path could match one of these categories, prefer these over generic classifications.
+If none of these categories fit, then use your standard classification approach.`;
+  }
+
+  systemPrompt += `
 
 ## RESPONSE FORMAT
 Return ONLY valid JSON with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only:
+
 {
   "paths": [
-    { "path": "/products/iphone-15", "product": "iphone-15" },
-    { "path": "/shop/laptops/macbook", "product": "macbook" },
+    { "path": "/products/software", "product": "software" },
+    { "path": "/solutions/analytics", "product": "analytics" },
     { "path": "/about", "product": "unknown" }
   ]
 }
@@ -162,10 +269,10 @@ Return ONLY valid JSON with this exact structure. Do NOT include markdown format
 ## CRITICAL REQUIREMENTS
 - Include ALL provided paths in your response
 - Return valid JSON with NO additional text or explanations
-- Ensure proper JSON syntax and formatting
-- Use descriptive product names when identifiable`;
+- ONLY return the JSON object, nothing else`;
 
   const userPrompt = `Domain: ${domain}
+${hasConfigCategories ? `\nPriority Categories: ${JSON.stringify(configCategories)}` : ''}
 
 URL Paths:
 ${JSON.stringify(paths, null, 2)}`;
@@ -207,51 +314,86 @@ You will receive a map/object where:
 - Each KEY is a product or category name
 - Each VALUE is an array of URL paths that have been assigned to that product/category
 
-Your goal is to analyze the ACTUAL provided URL paths for each product/category and create a regex pattern that will match each of the following in order of priority:
-1. The given example paths in the input data
-2. Variations in naming, formatting, and structure
-3. Similar paths that would logically belong to the same product/category
+## ANALYTICAL THINKING PROCESS
 
-AMAZON ATHENA SQL REGEX REQUIREMENTS:
+For each product/category, follow this systematic analysis (think like you're analyzing URLs in Excel):
+
+### STEP 1: STRUCTURAL PATTERN RECOGNITION
+- Examine the URL structure: What sections appear? (/products/, /solutions/, /docs/)
+- Identify fixed vs. variable parts: What stays constant? What changes?
+- Detect hierarchy levels: Is there a consistent depth? (/level1/level2/level3)
+- Look for versioning patterns: Are there dates, versions, or generations? (2024, v2, pro, enterprise)
+
+### STEP 2: COMMONALITY EXTRACTION
+- Find the core identifier: What keyword consistently appears across all paths?
+- Identify separators: Do paths use hyphens, underscores, slashes, or mixed? (-_, /)
+- Detect variants: Are there plurals, abbreviations, or alternative spellings? (photo/photos, ai/artificial-intelligence)
+- Recognize suffixes/prefixes: Any consistent additions? (mobile-, -app, -pro, -enterprise)
+
+### STEP 3: VARIATION MAPPING
+Examples of what to look for:
+- Path position: Does the identifier appear in different URL segments?
+- Case variations: PhotoShop vs photoshop vs PHOTOSHOP
+- Separators: photoshop-cc vs photoshop_cc vs photoshop/cc
+- Compound forms: photoshop, photoshop-2024, photoshop-pro, adobe-photoshop
+- Pluralization: product vs products, service vs services
+
+### STEP 4: REGEX CONSTRUCTION LOGIC
+Based on your analysis:
+1. Start with the core identifier (the consistent keyword)
+2. Add optional separators: [._-]? or [/_-] depending on what you observed
+3. Add optional version/variant patterns: ([._-]?(2024|2025|pro|enterprise))?
+4. Consider path boundaries: Should it match anywhere in URL or specific positions?
+5. Balance specificity vs flexibility: Too narrow = miss valid URLs; too broad = false positives
+
+### STEP 5: VALIDATION THINKING
+Ask yourself:
+- "Will this match ALL the example paths provided?" (Must match 100%)
+- "Will this match reasonable variations?" (Version updates, new releases)
+- "Could this create false positives?" (photoshop matching photography)
+- "Is this maintainable?" (Simple enough to understand and update)
+
+## AMAZON ATHENA SQL REGEX REQUIREMENTS
 - Use POSIX Extended Regular Expression (ERE) syntax only
 - NO lookahead (?=) or lookbehind (?<=) assertions
 - NO non-capturing groups (?:)
 - Use case-insensitive matching with (?i) flag at the start
 - Escape special characters: \\., \\-, \\+, \\?, \\*, \\(, \\), \\[, \\], \\{, \\}, \\^, \\$
 
-PATTERN DESIGN PRINCIPLES:
-1. Use (?i) flag for case-insensitive matching - much simpler than character classes
-2. Focus on key product identifiers, not exact word boundaries
-3. Use simple word matching with optional separators [._-]
-4. Make patterns readable and maintainable
-5. Avoid overly specific patterns that might miss variations
-6. Consider common URL variations (plurals, abbreviations, alternative naming)
-7. IMPORTANT: Base patterns on the ACTUAL input data provided, not generic examples
+## PATTERN EXAMPLES (To guide your thinking)
 
-ANALYSIS METHODOLOGY:
-1. Look at each product's actual URL paths in the input data
-2. Identify common patterns, keywords, and path segments
-3. Extract the core product identifier from the actual paths
-4. Create patterns that capture variations seen in the real data
-5. Make patterns flexible enough to match similar future paths
+Example 1 - Simple product:
+Paths: ["/products/photoshop", "/docs/photoshop", "/photoshop-features"]
+Thinking: Core = "photoshop", appears in various positions, no complex variants
+Regex: (?i)photoshop
 
-OUTPUT FORMAT:
-Return ONLY a valid JSON object with this exact structure.Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only:
+Example 2 - Versioned product:
+Paths: ["/products/iphone-15", "/iphone-15-pro", "/store/iphone-15-pro-max"]
+Thinking: Core = "iphone-15", has variants (pro, max), uses hyphens
+Regex: (?i)iphone[._-]?15([._-]?(pro|max))*
+
+Example 3 - Category with variations:
+Paths: ["/sports/tennis", "/tennis-equipment", "/products/tennis-rackets"]
+Thinking: Core = "tennis", appears with related terms, different positions
+Regex: (?i)tennis
+
+Example 4 - Broad category:
+Paths: ["/solutions/analytics", "/products/analytics-platform", "/analytics-tools"]
+Thinking: Core = "analytics", consistent keyword, various contexts
+Regex: (?i)analytics
+
+## OUTPUT FORMAT
+Return ONLY a valid JSON object with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only:
 {
   "product-name": "(?i)regex-pattern",
   "another-product": "(?i)another-pattern"
 }
 
-CRITICAL REQUIREMENTS:
+## CRITICAL REQUIREMENTS
+- Base patterns on the ACTUAL input data provided (not the examples above)
 - Generate patterns for all product/category identifiers
-- Only skip entries that clearly do not relate to any product or category
-- Focus on creating meaningful patterns even for broad categories
 - Each regex must be a valid POSIX ERE pattern with (?i) flag
-- Patterns must be based on the ACTUAL input data provided
-- Patterns should match the provided paths AND similar variations
-- For broad categories like "unknown", create patterns that match unclassified content paths
-- No additional text, explanations, or markdown formatting
-- Valid JSON syntax only`;
+- No additional text, explanations, or markdown formatting - return valid JSON only`;
 
   const userPrompt = `Generate regex patterns for the following domain, with the products and their URL paths:
 
@@ -299,7 +441,7 @@ ${JSON.stringify(groupedPaths)}`;
   }
 }
 
-export async function analyzeProducts(domain, paths, context) {
+export async function analyzeProducts(domain, paths, context, configCategories = []) {
   const { log } = context;
   const totalTokenUsage = {
     prompt_tokens: 0,
@@ -308,9 +450,20 @@ export async function analyzeProducts(domain, paths, context) {
   };
 
   log.info(`Starting product analysis for domain: ${domain}`);
+  const configCategoryCount = configCategories.length;
+
+  if (configCategoryCount > 0) {
+    log.info(`Using ${configCategoryCount} config categories with priority`);
+  }
 
   try {
-    const pathClassifications = await deriveProductsForPaths(domain, paths, context);
+    // Step 1: Classify paths with config category priority
+    const pathClassifications = await deriveProductsForPaths(
+      domain,
+      paths,
+      context,
+      configCategories,
+    );
 
     // Track token usage from path classification
     if (pathClassifications.usage) {
@@ -319,10 +472,37 @@ export async function analyzeProducts(domain, paths, context) {
       totalTokenUsage.total_tokens += pathClassifications.usage.total_tokens || 0;
     }
 
-    const concentratedClassifications = await concentrateProducts(
-      pathClassifications.paths,
-      context,
-    );
+    // Step 2: Apply category count logic and concentration
+    let concentratedClassifications;
+
+    if (configCategoryCount >= 3) {
+      // Use ONLY config categories - map all derived products to config categories
+      log.info(`Config categories >= 3 (${configCategoryCount}): Mapping to config categories only (limit ${configCategoryCount})`);
+      concentratedClassifications = await concentrateProducts(
+        pathClassifications.paths,
+        context,
+        configCategories,
+        configCategoryCount, // Limit to ONLY the config categories provided
+      );
+    } else if (configCategoryCount >= 1) {
+      // Use config categories + LLM concentration to reach 6 total
+      log.info(`Config categories 1-2 (${configCategoryCount}): Adding LLM categories to reach 6 total`);
+      concentratedClassifications = await concentrateProducts(
+        pathClassifications.paths,
+        context,
+        configCategories,
+        6, // Target 6 total categories
+      );
+    } else {
+      // Pure LLM generation - max 6 categories
+      log.info('No config categories: Using LLM-only generation (max 6)');
+      concentratedClassifications = await concentrateProducts(
+        pathClassifications.paths,
+        context,
+        [],
+        6, // Max 6 LLM-only categories
+      );
+    }
 
     // Track token usage from concentration step
     if (concentratedClassifications.usage) {
@@ -343,10 +523,26 @@ export async function analyzeProducts(domain, paths, context) {
 
     const combinedPatterns = regexPatterns.patterns;
 
-    // Remove "unknown" key if it exists
+    // Remove "unknown", "unclassified", and "other" keys if they exist
     delete combinedPatterns.unknown;
+    delete combinedPatterns.unclassified;
+    delete combinedPatterns.other;
 
     log.info(`Completed product analysis for domain: ${domain}`);
+
+    const finalCategories = Object.keys(combinedPatterns);
+    log.info(`Final categories (${finalCategories.length}): ${finalCategories.join(', ')}`);
+
+    // Log category breakdown if config categories were provided
+    if (configCategoryCount > 0) {
+      const matchedConfig = finalCategories.filter((c) => configCategories.includes(c));
+      const extraCategories = finalCategories.filter((c) => !configCategories.includes(c));
+      log.info(`├─ Matched config categories (${matchedConfig.length}): ${matchedConfig.join(', ') || 'none'}`);
+      if (extraCategories.length > 0) {
+        log.info(`└─ Additional LLM categories (${extraCategories.length}): ${extraCategories.join(', ')}`);
+      }
+    }
+
     log.info(`Total token usage for product analysis: ${JSON.stringify(totalTokenUsage)}`);
     return combinedPatterns;
   } catch (error) {
