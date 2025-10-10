@@ -267,13 +267,18 @@ class ProductSeoChecks {
           const pageUrls = [...value.pageUrls];
           pageUrls.forEach((url) => {
             this.detectedTags[url] ??= {};
+            const otherUrls = pageUrls.filter((u) => u !== url);
+
+            // Limit duplicateUrls to first 10 to prevent payload size issues
+            // Store full count for reference
             this.detectedTags[url][tagName] = {
               tagContent: value.tagContent,
               [SEO_IMPACT]: MODERATE,
               [ISSUE]: `Duplicate ${capitalisedTagName}`,
               [ISSUE_DETAILS]: `${pageUrls.length} pages share same ${tagName}`,
               [SEO_RECOMMENDATION]: UNIQUE_ACROSS_PAGES,
-              duplicateUrls: pageUrls.filter((u) => u !== url),
+              duplicateUrls: otherUrls.slice(0, 10),
+              duplicateCount: otherUrls.length,
             };
           });
         }

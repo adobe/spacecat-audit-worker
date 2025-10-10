@@ -72,7 +72,21 @@ const issueRankings = {
  * @param tagName
  */
 export function getIssueRanking(tagName, issue) {
-  const tagIssues = issueRankings[tagName];
+  // Add null checks
+  if (!tagName || typeof tagName !== 'string') {
+    return -1;
+  }
+
+  if (!issue || typeof issue !== 'string') {
+    return -1;
+  }
+
+  const tagIssues = issueRankings[tagName.toLowerCase()];
+
+  if (!tagIssues) {
+    return -1;
+  }
+
   const issueWords = issue.toLowerCase().split(' ');
   for (const word of issueWords) {
     if (tagIssues[word]) {

@@ -32,6 +32,13 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 const auditType = Audit.AUDIT_TYPES.PRODUCT_METATAGS;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
+export function buildSuggestionKey(data) {
+  const url = data?.url || 'unknown-url';
+  const issue = data?.issue || 'unknown-issue';
+  const tagContent = data?.tagContent || '';
+  return `${url}|${issue}|${tagContent}`;
+}
+
 export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const { log } = context;
 
@@ -77,44 +84,103 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
     log.error('[PRODUCT-METATAGS] Error in product-metatags configuration:', error);
   }
   const suggestions = [];
+  const invalidSuggestions = [];
+
   // Generate suggestions data to be inserted in product-metatags opportunity suggestions
   Object.keys(detectedTags)
     .forEach((endpoint) => {
       [TITLE, DESCRIPTION, H1].forEach((tag) => {
         if (detectedTags[endpoint]?.[tag]?.issue) {
-          const suggestion = {
-            ...detectedTags[endpoint][tag],
-            tagName: tag,
-            url: getBaseUrl(auditData.auditResult.finalUrl, useHostnameOnly) + endpoint,
-            rank: getIssueRanking(tag, detectedTags[endpoint][tag].issue),
-          };
+          try {
+            const tagData = detectedTags[endpoint][tag];
+            const baseUrl = getBaseUrl(auditData.auditResult.finalUrl, useHostnameOnly);
+            const fullUrl = baseUrl + endpoint;
+            const rank = getIssueRanking(tag, tagData.issue);
 
-          // Add product-specific data (SKU and image) to each suggestion
-          if (detectedTags[endpoint]?.productTags) {
-            suggestion.productTags = detectedTags[endpoint].productTags;
+            // Validate required fields
+            if (!tagData.issue) {
+              log.warn(`[PRODUCT-METATAGS] Missing issue for ${fullUrl}, tag: ${tag}`);
+              invalidSuggestions.push({ endpoint, tag, reason: 'missing issue' });
+              return;
+            }
+
+            if (rank === undefined || rank === null || rank < 0) {
+              log.warn(`[PRODUCT-METATAGS] Invalid rank (${rank}) for ${fullUrl}, tag: ${tag}, issue: ${tagData.issue}`);
+              invalidSuggestions.push({ endpoint, tag, reason: `invalid rank: ${rank}` });
+              return;
+            }
+
+            if (!fullUrl || typeof fullUrl !== 'string') {
+              log.warn(`[PRODUCT-METATAGS] Invalid URL for endpoint: ${endpoint}, tag: ${tag}`);
+              invalidSuggestions.push({ endpoint, tag, reason: 'invalid URL' });
+              return;
+            }
+
+            // Build suggestion object with validated data
+            const suggestion = {
+              ...tagData,
+              tagName: tag,
+              url: fullUrl,
+              rank,
+            };
+
+            // Add product-specific data (SKU and image) to each suggestion
+            if (detectedTags[endpoint]?.productTags) {
+              suggestion.productTags = detectedTags[endpoint].productTags;
+            }
+
+            // Log suggestion details for debugging
+            log.debug(`[PRODUCT-METATAGS] Created suggestion for ${fullUrl}: issue="${tagData.issue}", rank=${rank}, tagName=${tag}`);
+
+            suggestions.push(suggestion);
+          } catch (error) {
+            log.error(`[PRODUCT-METATAGS] Error creating suggestion for endpoint ${endpoint}, tag ${tag}:`, error);
+            invalidSuggestions.push({ endpoint, tag, reason: error.message });
           }
-
-          suggestions.push(suggestion);
         }
       });
     });
 
-  const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent}`;
+  log.info(`[PRODUCT-METATAGS] Generated ${suggestions.length} valid suggestions and ${invalidSuggestions.length} invalid suggestions`);
+
+  if (invalidSuggestions.length > 0) {
+    log.warn('[PRODUCT-METATAGS] Invalid suggestions summary:', invalidSuggestions.slice(0, 10));
+  }
+
+  if (suggestions.length === 0) {
+    log.warn('[PRODUCT-METATAGS] No valid suggestions to sync');
+    log.info(`[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
+    return;
+  }
+
+  const buildKey = buildSuggestionKey;
 
   // Sync the suggestions from new audit with old ones
-  await syncSuggestions({
-    opportunity,
-    newData: suggestions,
-    context,
-    buildKey,
-    mapNewSuggestion: (suggestion) => ({
-      opportunityId: opportunity.getId(),
-      type: 'PRODUCT_METADATA_UPDATE',
-      rank: suggestion.rank,
-      data: { ...suggestion },
-    }),
-  });
-  log.info(`[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
+  try {
+    await syncSuggestions({
+      opportunity,
+      newData: suggestions,
+      context,
+      buildKey,
+      mapNewSuggestion: (suggestion) => {
+        // Validate suggestion before mapping
+        if (suggestion.rank === undefined || suggestion.rank === null || suggestion.rank < 0) {
+          log.error(`[PRODUCT-METATAGS] Invalid rank in mapNewSuggestion: ${suggestion.rank}`, { url: suggestion.url, issue: suggestion.issue });
+        }
+
+        return {
+          opportunityId: opportunity.getId(),
+          type: 'PRODUCT_METADATA_UPDATE',
+          rank: suggestion.rank,
+          data: { ...suggestion },
+        };
+      },
+    });
+    log.info(`[PRODUCT-METATAGS] Successfully synced ${suggestions.length} suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
+  } catch (error) {
+    log.error(`[PRODUCT-METATAGS] Error syncing suggestions for site ${auditData.siteId}:`, error);
+    throw error;
+  }
 }
 
 // Extract product-specific meta tags from raw HTML
@@ -479,7 +545,7 @@ export async function productMetatagsAutoDetect(site, pagesMap, context) {
       if (Object.keys(productTags).length > 0) {
         seoChecks.detectedTags[pageUrl] ??= {};
         seoChecks.detectedTags[pageUrl].productTags = productTags;
-        log.info(`[PRODUCT-METATAGS] Extracted product tags for ${pageUrl}:`, Object.keys(productTags));
+        log.debug(`[PRODUCT-METATAGS] Extracted product tags for ${pageUrl}:`, Object.keys(productTags));
       }
     } else {
       log.debug(`[PRODUCT-METATAGS] Skipping non-product page: ${pageUrl} (no SKU found)`);
@@ -491,6 +557,22 @@ export async function productMetatagsAutoDetect(site, pagesMap, context) {
   seoChecks.finalChecks();
   const detectedTags = seoChecks.getDetectedTags();
   log.info(`[PRODUCT-METATAGS] Found ${Object.keys(detectedTags).length} product pages with issues out of ${productPagesProcessed} product pages processed (${extractedTagsCount} total pages)`);
+
+  // Log detailed breakdown of detected issues
+  const issueBreakdown = {};
+  Object.entries(detectedTags).forEach(([, tags]) => {
+    Object.entries(tags).forEach(([tagName, tagData]) => {
+      // Skip non-tag entries like 'productTags'
+      if (tagName !== 'productTags' && tagData?.issue) {
+        const issueType = tagData.issue;
+        issueBreakdown[issueType] = (issueBreakdown[issueType] || 0) + 1;
+      }
+    });
+  });
+
+  if (Object.keys(issueBreakdown).length > 0) {
+    log.info('[PRODUCT-METATAGS] Issue breakdown:', issueBreakdown);
+  }
 
   return {
     seoChecks,

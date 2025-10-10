@@ -1,5 +1,4 @@
 import { expect } from 'chai';
-import sinon from 'sinon';
 
 import { buildProductMetatagsAuditResult } from '../../src/product-metatags/handler.js';
 
@@ -34,4 +33,3 @@ describe('buildProductMetatagsAuditResult', () => {
     expect(res).to.have.property('projectedTrafficValue', 1234);
   });
 });
-
