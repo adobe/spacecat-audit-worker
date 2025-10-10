@@ -269,7 +269,7 @@ describe('CDN Config Handler', () => {
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://example.com', context);
 
       expect(result).to.deep.equal({
-        orgId: 'org-123',
+        serviceName: 'org-123',
         serviceId: 'service-456',
         matchedDomains: ['example.com', 'other.com'],
       });
@@ -291,7 +291,7 @@ describe('CDN Config Handler', () => {
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://example.com', context);
 
       expect(result).to.deep.equal({
-        orgId: 'org-123',
+        serviceName: 'org-123',
         serviceId: 'service-456',
         matchedDomains: ['main.example.com', 'other.com'],
       });
@@ -313,7 +313,7 @@ describe('CDN Config Handler', () => {
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://www.example.com', context);
 
       expect(result).to.deep.equal({
-        orgId: 'org-123',
+        serviceName: 'org-123',
         serviceId: 'service-456',
         matchedDomains: ['example.com'],
       });
@@ -367,7 +367,7 @@ describe('CDN Config Handler', () => {
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://example.com', context);
 
       expect(result).to.deep.equal({
-        orgId: 'org-valid',
+        serviceName: 'org-valid',
         serviceId: 'service-valid',
         matchedDomains: ['example.com'],
       });
@@ -389,7 +389,7 @@ describe('CDN Config Handler', () => {
       const result = await cdnConfigHandler.fetchCommerceFastlyService('https://example.com', context);
 
       expect(result).to.deep.equal({
-        orgId: 'org-123',
+        serviceName: 'org-123',
         serviceId: 'service-456',
         matchedDomains: ['example.com', 'other.com'],
       });
@@ -485,7 +485,7 @@ describe('CDN Config Handler', () => {
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
-      expect(data.orgId).to.equal('commerce-org');
+      expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ orgId: 'commerce-org' });
     });
 
     it('should handle bucket configuration when bucketName provided', async () => {
@@ -497,8 +497,8 @@ describe('CDN Config Handler', () => {
       expect(mockSite.save).to.have.been.called;
     });
 
-    it('should handle bucket configuration when orgId provided', async () => {
-      const data = { orgId: 'test-org' };
+    it('should handle bucket configuration when allowedPaths provided', async () => {
+      const data = { allowedPaths: ['test-org/path1', 'test-org/path2'] };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
@@ -506,8 +506,8 @@ describe('CDN Config Handler', () => {
       expect(mockSite.save).to.have.been.called;
     });
 
-    it('should handle bucket configuration when both bucketName and orgId provided', async () => {
-      const data = { bucketName: 'test-bucket', orgId: 'test-org' };
+    it('should handle bucket configuration when both bucketName and allowedPaths provided', async () => {
+      const data = { bucketName: 'test-bucket', allowedPaths: ['test-org/path1'] };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 

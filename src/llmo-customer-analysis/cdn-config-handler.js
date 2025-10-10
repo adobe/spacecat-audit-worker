@@ -106,7 +106,7 @@ export async function fetchCommerceFastlyService(domain, { log }) {
       );
 
     return service ? {
-      orgId: service.ServiceName,
+      serviceName: service.ServiceName,
       serviceId: service.ServiceID,
       matchedDomains: service.domains.split(',').map((d) => d.trim()).filter(Boolean),
     } : null;
@@ -166,11 +166,14 @@ async function handleAdobeFastly(siteId, { dataAccess: { Configuration, LatestAu
   }, null, 900);
 }
 
-async function handleBucketConfiguration(siteId, { bucketName, orgId }, { dataAccess: { Site } }) {
+async function handleBucketConfiguration(siteId, bucketName, pathId, { dataAccess: { Site } }) {
   const site = await Site.findById(siteId);
   const config = site.getConfig();
 
-  config.updateLlmoCdnBucketConfig({ ...(bucketName && { bucketName }), ...(orgId && { orgId }) });
+  config.updateLlmoCdnBucketConfig({
+    ...(bucketName && { bucketName }),
+    ...(pathId && { orgId: pathId }),
+  });
   site.setConfig(Config.toDynamoItem(config));
   await site.save();
 }
@@ -181,7 +184,7 @@ async function handleBucketConfiguration(siteId, { bucketName, orgId }, { dataAc
 export async function handleCdnBucketConfigChanges(context, data) {
   /* c8 ignore next */
   const { siteId } = context.params || {};
-  const { cdnProvider } = data;
+  const { cdnProvider, allowedPaths, bucketName } = data;
   const { dataAccess: { Configuration } } = context;
 
   if (!siteId) throw new Error('Site ID is required for CDN configuration');
@@ -189,18 +192,24 @@ export async function handleCdnBucketConfigChanges(context, data) {
   const site = await context.dataAccess.Site.findById(siteId);
   if (!site) throw new Error(`Site with ID ${siteId} not found`);
 
+  let pathId;
+
+  if (allowedPaths && allowedPaths.length > 0) {
+    const [firstPath] = allowedPaths;
+    [pathId] = firstPath.split('/');
+  }
+
   if (cdnProvider === 'commerce-fastly') {
     const service = await fetchCommerceFastlyService(site.getBaseURL(), context);
     if (service) {
-      // eslint-disable-next-line no-param-reassign
-      data.orgId = service.orgId;
-      await enableCdnAnalysisPerService(service.orgId, service.matchedDomains, context);
+      pathId = service.serviceName;
+      await enableCdnAnalysisPerService(service.serviceName, service.matchedDomains, context);
     }
   }
 
   // Set bucket configuration
-  if (data.bucketName || data.orgId) {
-    await handleBucketConfiguration(siteId, data, context);
+  if (bucketName || pathId) {
+    await handleBucketConfiguration(siteId, bucketName, pathId, context);
   }
 
   // Enable audits and run analysis
