@@ -17,7 +17,7 @@ import { saveExcelReport } from '../../utils/report-uploader.js';
 
 export async function generatePatternsWorkbook(options) {
   const {
-    site, context, athenaClient, s3Config, periods, sharepointClient,
+    site, context, athenaClient, s3Config, periods, sharepointClient, configCategories = [],
   } = options;
   const { log } = context;
 
@@ -46,7 +46,7 @@ export async function generatePatternsWorkbook(options) {
     const domain = new URL(baseURL).hostname;
 
     // Analyze products and page types
-    const productRegexes = await analyzeProducts(domain, paths, context);
+    const productRegexes = await analyzeProducts(domain, paths, context, configCategories);
     const pagetypeRegexes = await analyzePageTypes(domain, paths, context);
 
     // Prepare data for workbook
