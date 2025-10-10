@@ -26,6 +26,14 @@ const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
 const AGENTIC_TRAFFIC_ANALYSIS_AUDIT = 'cdn-analysis';
 
+// These audits don't depend on any additonal data being configured
+const BASIC_AUDITS = [
+  'headings',
+  'llm-blocked',
+  'canonical',
+  'hreflang',
+];
+
 async function enableAudits(site, context, audits = []) {
   const { dataAccess } = context;
   const { Configuration } = dataAccess;
@@ -169,6 +177,23 @@ export async function triggerGeoBrandPresence(context, site, auditContext = {}) 
   log.info(`Successfully triggered ${auditType} audit`);
 }
 
+async function triggerAudits(audits, context, site, log, triggeredSteps) {
+  const { sqs, dataAccess } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+
+  await Promise.allSettled(
+    audits.map(async (audit) => {
+      log.info(`Triggering ${audit} audit for site: ${site.getId()}`);
+      await sqs.sendMessage(configuration.getQueues().audits, {
+        type: audit,
+        siteId: site.getId(),
+      });
+      triggeredSteps.push(audit);
+    }),
+  );
+}
+
 async function triggerAllSteps(context, site, log, triggeredSteps, auditContext = {}) {
   log.info('Triggering all relevant audits (no config version provided or first-time setup)');
 
@@ -189,12 +214,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   // Ensure relevant audits and imports are enabled
   await enableAudits(site, context, [
-    'headings',
-    'llm-blocked',
-    'llm-error-pages',
-    'canonical',
-    'hreflang',
-    'summarization',
+    ...BASIC_AUDITS,
     REFERRAL_TRAFFIC_AUDIT,
     'cdn-logs-report',
     'geo-brand-presence',
@@ -214,6 +234,11 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const hasOptelData = await checkOptelData(domain, context);
   const { configVersion, previousConfigVersion } = auditContext;
   const isFirstTimeOnboarding = !previousConfigVersion;
+
+  if (isFirstTimeOnboarding) {
+    log.info('First-time LLMO onboarding detected; triggering all basic audits');
+    await triggerAudits(BASIC_AUDITS, context, site, log, triggeredSteps);
+  }
 
   // Handle referral traffic imports for first-time onboarding
   if (hasOptelData && isFirstTimeOnboarding) {
@@ -272,6 +297,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
     await triggerCdnLogsReport(context, site);
     triggeredSteps.push('cdn-logs-report');
+    // re-trigger llm-error-pages, as this reads CDN data
+    await triggerAudits(['llm-error-pages'], context, site, log, triggeredSteps);
   }
 
   const hasBrandPresenceChanges = changes.brands
