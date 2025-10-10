@@ -37,79 +37,72 @@ const AUDIT_NAME = 'REFRESH_GEO_BRAND_PRESENCE';
  */
 async function fetchQueryIndexPaths(site, context, sharepointClient) {
   const { log } = context;
-  let errorMsg;
-  try {
-    // Get the site's LLMO data folder
-    const dataFolder = site.getConfig()?.getLlmoDataFolder?.();
-    if (!dataFolder) {
-      errorMsg = `${AUDIT_NAME}:No LLMO data folder configured for site can't proceed with audit`;
-      throw new Error(errorMsg);
-    }
+  // Get the site's LLMO data folder
+  const dataFolder = site.getConfig()?.getLlmoDataFolder?.();
+  if (!dataFolder) {
+    throw new Error(`${AUDIT_NAME}:No LLMO data folder configured for site can't proceed with audit`);
+  }
 
-    log.info(`%s:Reading query-index from SharePoint: ${dataFolder}/query-index.xlsx`, AUDIT_NAME);
+  log.info(`%s:Reading query-index from SharePoint: ${dataFolder}/query-index.xlsx`, AUDIT_NAME);
 
-    // Read the query-index.xlsx file from SharePoint
-    const queryIndexBuffer = await readFromSharePoint('query-index.xlsx', dataFolder, sharepointClient, log);
+  // Read the query-index.xlsx file from SharePoint
+  const queryIndexBuffer = await readFromSharePoint('query-index.xlsx', dataFolder, sharepointClient, log);
 
-    // Parse the Excel file to extract paths
-    const workbook = new ExcelJS.Workbook();
-    // @ts-ignore - Buffer type compatibility issue with ExcelJS
-    await workbook.xlsx.load(queryIndexBuffer);
+  // Parse the Excel file to extract paths
+  const workbook = new ExcelJS.Workbook();
+  // @ts-ignore - Buffer type compatibility issue with ExcelJS
+  await workbook.xlsx.load(queryIndexBuffer);
 
-    const latestPaths = [];
-    const regularPaths = [];
+  const latestPaths = [];
+  const regularPaths = [];
 
-    // Iterate through all worksheets to find path data
-    workbook.worksheets.forEach((worksheet) => {
-      worksheet.eachRow((row, rowNumber) => {
-        // Skip header row
-        if (rowNumber === 1) return;
+  // Iterate through all worksheets to find path data
+  workbook.worksheets.forEach((worksheet) => {
+    worksheet.eachRow((row, rowNumber) => {
+      // Skip header row
+      if (rowNumber === 1) return;
 
-        // Look for path-like data in the first column or any column that contains path information
-        row.eachCell((cell) => {
-          const cellValue = cell.value;
-          if (cellValue && typeof cellValue === 'string') {
-            // Check for brand-presence/latest/ first (priority)
-            if (cellValue.includes('/brand-presence/latest/')) {
-              const filename = cellValue.split('/').pop();
-              if (filename) {
-                // Remove .json extension
-                const filenameWithoutExt = filename.replace(/\.json$/i, '');
-                if (!latestPaths.includes(filenameWithoutExt)) {
-                  latestPaths.push(filenameWithoutExt);
-                }
+      // Look for path-like data in the first column or any column that contains path information
+      row.eachCell((cell) => {
+        const cellValue = cell.value;
+        if (cellValue && typeof cellValue === 'string') {
+          // Check for brand-presence/latest/ first (priority)
+          if (cellValue.includes('/brand-presence/latest/')) {
+            const filename = cellValue.split('/').pop();
+            if (filename) {
+              // Remove .json extension
+              const filenameWithoutExt = filename.replace(/\.json$/i, '');
+              if (!latestPaths.includes(filenameWithoutExt)) {
+                latestPaths.push(filenameWithoutExt);
               }
-            } else if (cellValue.includes('/brand-presence/') && !cellValue.includes('/brand-presence/latest/')) {
+            }
+          } else if (cellValue.includes('/brand-presence/') && !cellValue.includes('/brand-presence/latest/')) {
             // Then check for regular brand-presence/ (fallback)
-              const filename = cellValue.split('/').pop();
-              if (filename) {
-                // Remove .json extension
-                const filenameWithoutExt = filename.replace(/\.json$/i, '');
-                if (!regularPaths.includes(filenameWithoutExt)) {
-                  regularPaths.push(filenameWithoutExt);
-                }
+            const filename = cellValue.split('/').pop();
+            if (filename) {
+              // Remove .json extension
+              const filenameWithoutExt = filename.replace(/\.json$/i, '');
+              if (!regularPaths.includes(filenameWithoutExt)) {
+                regularPaths.push(filenameWithoutExt);
               }
             }
           }
-        });
+        }
       });
     });
+  });
 
-    // Use latest paths if available, otherwise fall back to regular paths
-    const paths = latestPaths.length > 0 ? latestPaths : regularPaths;
-    const brandPresenceFolder = latestPaths.length > 0 ? 'brand-presence/latest' : 'brand-presence';
-    const sourceFolder = `${dataFolder}/${brandPresenceFolder}`;
-    // @todo need to make  sure that we load data starting week
-    if (paths.length > 0) {
-      log.info(`%s:Extracted ${paths.length} paths from query-index SharePoint file (source: ${sourceFolder})`, AUDIT_NAME);
-      return { paths, sourceFolder };
-    }
-
-    throw new Error('REFRESH GEO BRAND PRESENCE: No paths found in query-index file');
-  } catch (error) {
-    log.error(`Failed to read query-index from SharePoint: ${error instanceof Error ? error.message : String(error)}`);
-    throw new Error(errorMsg || 'Failed to fetch query-index paths');
+  // Use latest paths if available, otherwise fall back to regular paths
+  const paths = latestPaths.length > 0 ? latestPaths : regularPaths;
+  const brandPresenceFolder = latestPaths.length > 0 ? 'brand-presence/latest' : 'brand-presence';
+  const sourceFolder = `${dataFolder}/${brandPresenceFolder}`;
+  // @todo need to make  sure that we load data starting week
+  if (paths.length > 0) {
+    log.info(`%s:Extracted ${paths.length} paths from query-index SharePoint file (source: ${sourceFolder})`, AUDIT_NAME);
+    return { paths, sourceFolder };
   }
+
+  throw new Error('REFRESH GEO BRAND PRESENCE: No paths found in query-index file');
 }
 
 export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
@@ -122,10 +115,18 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   // fetch sheets that need to be refreshed from SharePoint
   // Get the SharePoint client
   const sharepointClient = await createLLMOSharepointClient(context);
-  const {
-    sourceFolder,
-    paths: sheets,
-  } = await fetchQueryIndexPaths(site, context, sharepointClient);
+  let sourceFolder;
+  let sheets;
+  try {
+    ({
+      sourceFolder,
+      paths: sheets,
+    } = await fetchQueryIndexPaths(site, context, sharepointClient));
+  } catch (cause) {
+    const errorMsg = `Failed to read query-index from SharePoint: ${cause instanceof Error ? cause.message : String(cause)}`;
+    log.error(errorMsg);
+    throw new Error(errorMsg, { cause });
+  }
   log.info(`Source folder: ${sourceFolder}, Sheets to refresh: ${sheets.join(', ')}`);
   // save metadata for S3 to track progress
 
@@ -137,91 +138,116 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   const { s3Client, env, sqs } = context;
   const bucketName = env?.S3_IMPORTER_BUCKET_NAME;
 
-  if (bucketName && s3Client) {
-    const auditId = randomUUID();
-    const folderKey = `refresh_geo_brand_presence/${auditId}`;
+  if (!bucketName || !s3Client) {
+    log.warn('%s: S3 bucket name or client not available, skipping folder creation', AUDIT_NAME);
+    errMsg = `${AUDIT_NAME}:S3 bucket name or client not available, skipping folder creation`;
+    throw new Error(errMsg);
+  }
+  const auditId = randomUUID();
+  const folderKey = `refresh_geo_brand_presence/${auditId}`;
 
-    try {
-      // Create a metadata file to establish the folder structure
-      const files = sheets.map((sheetName) => ({
-        file_name: `${sheetName}.xlsx`,
-        status: 'pending',
-        last_updated: null,
-      }));
+  try {
+    // Create a metadata file to establish the folder structure
+    const files = sheets.map((sheetName) => ({
+      file_name: `${sheetName}.xlsx`,
+      status: 'pending',
+      last_updated: null,
+    }));
 
-      const metadata = {
-        audit_id: auditId,
-        created_at: new Date().toISOString(),
-        status: 'in_progress',
-        files,
-        summary: {
-          total_files: files.length,
-          completed: 0,
-          pending: files.length,
-          failed: 0,
-        },
-      };
+    const metadata = {
+      audit_id: auditId,
+      created_at: new Date().toISOString(),
+      status: 'in_progress',
+      files,
+      summary: {
+        total_files: files.length,
+        completed: 0,
+        pending: files.length,
+        failed: 0,
+      },
+    };
+
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: `${folderKey}/metadata.json`,
+      Body: JSON.stringify(metadata, null, 2),
+      ContentType: 'application/json',
+    }));
+
+    const baseURL = site.getBaseUrl();
+    const deliveryType = site.getDeliveryType();
+    const { configVersion } = auditContext;
+
+    // eslint-disable-next-line no-unused-vars
+    const results = await Promise.allSettled(sheets.map(async (sheetName) => {
+      const match = RE_SHEET_NAME.exec(sheetName);
+      if (!match) {
+        log.warn('%s:Skipping invalid sheet name %s. Expected format: brandpresence-<webSearchProvider>-w<WW>-<YYYY>', AUDIT_NAME, sheetName);
+        return false;
+      }
+      const { webSearchProvider, week, year } = match.groups;
+
+      const sheet = await readFromSharePoint(`${sheetName}.xlsx`, sourceFolder, sharepointClient, log);
 
       await s3Client.send(new PutObjectCommand({
         Bucket: bucketName,
-        Key: `${folderKey}/metadata.json`,
-        Body: JSON.stringify(metadata, null, 2),
-        ContentType: 'application/json',
+        Key: `${folderKey}/${sheetName}.xlsx`,
+        Body: sheet,
+        ContentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       }));
 
-      const baseURL = site.getBaseUrl();
-      const deliveryType = site.getDeliveryType();
-      const { configVersion } = auditContext;
+      const url = await getPresignedUrl(
+        s3Client,
+        new GetObjectCommand({ Bucket: bucketName, Key: `${folderKey}/${sheetName}.xlsx` }),
+        { expiresIn: 86_400 /* seconds, 24h */ },
+      );
 
-      // eslint-disable-next-line no-unused-vars
-      const results = await Promise.allSettled(sheets.map(async (sheetName) => {
-        const match = RE_SHEET_NAME.exec(sheetName);
-        if (!match) {
-          log.warn('%s:Skipping invalid sheet name %s', AUDIT_NAME, sheetName);
-          return;
-        }
-        const { webSearchProvider, week, year } = match.groups;
+      const msg = createMystiqueMessage({
+        type: 'detect:geo-brand-presence',
+        auditId,
+        baseURL,
+        siteId,
+        deliveryType,
+        calendarWeek: { week: +week, year: +year },
+        url,
+        webSearchProvider,
+        configVersion,
+        date: null, // TODO support daily refreshes
+      });
 
-        const sheet = await readFromSharePoint(`${sheetName}.xlsx`, sourceFolder, sharepointClient, log);
+      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, msg);
+      return true;
+    }));
 
-        await s3Client.send(new PutObjectCommand({
-          Bucket: bucketName,
-          Key: `${folderKey}/${sheetName}.xlsx`,
-          Body: sheet,
-          ContentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        }));
-
-        const url = await getPresignedUrl(
-          s3Client,
-          new GetObjectCommand({ Bucket: bucketName, Key: `${folderKey}/${sheetName}.xlsx` }),
-          { expiresIn: 86_400 /* seconds, 24h */ },
-        );
-
-        const msg = createMystiqueMessage({
-          type: 'detect:geo-brand-presence',
-          auditId,
-          baseURL,
-          siteId,
-          deliveryType,
-          calendarWeek: { week: +week, year: +year },
-          url,
-          webSearchProvider,
-          configVersion,
-          date: null, // TODO support daily refreshes
-        });
-
-        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, msg);
-      }));
-
-      log.info('%s:Created S3 folder for audit %s at s3://%s/%s', AUDIT_NAME, auditId, bucketName, folderKey);
-    } catch (error) {
-      log.error('%s:Failed to create S3 folder for audit %s: %s', AUDIT_NAME, auditId, error instanceof Error ? error.message : String(error));
-      errMsg = `${AUDIT_NAME}:Failed to create S3 folder for audit ${auditId}`;
-      throw new Error(errMsg);
+    const errors = [];
+    let successful = 0;
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) {
+        successful += 1;
+      } else if (result.status === 'rejected') {
+        errors.push(result.reason);
+      }
     }
-  } else {
-    log.warn('%s: S3 bucket name or client not available, skipping folder creation', AUDIT_NAME);
-    errMsg = `${AUDIT_NAME}:S3 bucket name or client not available, skipping folder creation`;
+
+    let logMsg = '%s:Created S3 folder for audit %s at s3://%s/%s';
+    const logArgs = [AUDIT_NAME, auditId, bucketName, folderKey];
+    let logLevel = 'info';
+
+    if (successful < results.length) {
+      logLevel = 'warn';
+      logMsg += ' with %d/%d sheets successfully queued';
+      logArgs.push(successful, results.length);
+    }
+    if (errors.length > 0) {
+      logLevel = 'error';
+      logMsg += '. Errors: %s';
+      logArgs.push(errors.map((e) => (e instanceof Error ? e.message : String(e))).join('; '));
+    }
+
+    log[logLevel](logMsg, ...logArgs);
+  } catch (error) {
+    log.error('%s:Failed to create S3 folder for audit %s: %s', AUDIT_NAME, auditId, error instanceof Error ? error.message : String(error));
+    errMsg = `${AUDIT_NAME}:Failed to create S3 folder for audit ${auditId}`;
     throw new Error(errMsg);
   }
 
