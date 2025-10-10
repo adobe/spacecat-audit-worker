@@ -134,6 +134,17 @@ const handleOutdatedSuggestions = async ({
 export const keepSameDataFunction = (existingData) => ({ ...existingData });
 
 /**
+ * Keep latest merge function for combining existing and new data.
+ * This performs a shallow merge where new data overrides existing data.
+ * @param {Object} existingData - The existing suggestion data.
+ * @param {Object} newData - The new data to merge.
+ * @returns {Object} - The merged data object.
+ */
+export const keepLatestMergeDataFunction = (existingData, newData) => ({
+  ...newData,
+});
+
+/**
  * Default merge function for combining existing and new data.
  * This performs a shallow merge where new data overrides existing data.
  *
