@@ -228,38 +228,44 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
       (o) => markOpportunityAsFixed(TOO_STRONG_AUDIT_TYPE, o, site, context),
     ));
     return { status: 'complete' };
-  } else {
-    const tooStrongOpt = await convertToOpportunity(
-      auditUrl,
-      { siteId: auditData.siteId, id: auditData.auditId },
-      context,
-      createTooStrongOpportunityData,
-      TOO_STRONG_AUDIT_TYPE,
-      createTooStrongMetrics(permissionsReport.allPermissions),
-    );
-
-    // Flatten allPermission arrays by path and principal
-    const flattenedPermissions = permissionsReport.allPermissions
-      // eslint-disable-next-line max-len
-      .flatMap(({ path, details }) => details.map(() => ({ path, ...details })));
-
-    const buildTooStrongSuggestionKey = (data) => {
-      const s = JSON.stringify(data);
-      const hash = createHash('sha256').update(s).digest('hex').slice(0, 8);
-      return `${data.path}@${data.principal}#${hash}`;
-    };
-
-    await syncSuggestions({
-      context,
-      opportunity: tooStrongOpt,
-      newData: flattenedPermissions,
-      buildKey: buildTooStrongSuggestionKey,
-      mapNewSuggestion: (entry) => mapTooStrongSuggestion(tooStrongOpt, entry),
-    });
-
-    tooStrongOpt.setUpdatedBy('system');
-    await tooStrongOpt.save();
   }
+
+  const tooStrongOpt = await convertToOpportunity(
+    auditUrl,
+    { siteId: auditData.siteId, id: auditData.auditId },
+    context,
+    createTooStrongOpportunityData,
+    TOO_STRONG_AUDIT_TYPE,
+    createTooStrongMetrics(permissionsReport.allPermissions),
+  );
+
+  const generateSuggestions = configuration.isHandlerEnabledForSite('security-permissions-auto-suggest', site);
+  if (!generateSuggestions) {
+    log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] security-permissions-auto-suggest not configured, skipping permission suggestion`);
+    return { status: 'complete' };
+  }
+
+  // Flatten allPermission arrays by path and principal
+  const flattenedPermissions = permissionsReport.allPermissions
+    // eslint-disable-next-line max-len
+    .flatMap(({ path, details }) => details.map(() => ({ path, ...details })));
+
+  const buildTooStrongSuggestionKey = (data) => {
+    const s = JSON.stringify(data);
+    const hash = createHash('sha256').update(s).digest('hex').slice(0, 8);
+    return `${data.path}@${data.principal}#${hash}`;
+  };
+
+  await syncSuggestions({
+    context,
+    opportunity: tooStrongOpt,
+    newData: flattenedPermissions,
+    buildKey: buildTooStrongSuggestionKey,
+    mapNewSuggestion: (entry) => mapTooStrongSuggestion(tooStrongOpt, entry),
+  });
+
+  tooStrongOpt.setUpdatedBy('system');
+  await tooStrongOpt.save();
 
   return { status: 'complete' };
 };
@@ -310,44 +316,43 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
       adminOpportunities.map((o) => markOpportunityAsFixed(REDUNDANT_AUDIT_TYPE, o, site, context)),
     );
     return { status: 'complete' };
-  } else {
-    const adminOpt = await convertToOpportunity(
-      auditUrl,
-      { siteId: auditData.siteId, id: auditData.auditId },
-      context,
-      createAdminOpportunityData,
-      REDUNDANT_AUDIT_TYPE,
-      createAdminMetrics(permissionsReport.adminChecks),
-    );
-
-    const generateSuggestions = configuration.isHandlerEnabledForSite('security-permissions-auto-suggest', site);
-    if (!generateSuggestions) {
-      log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] security-permissions-auto-suggest not configured, skipping version recommendations`);
-      return { status: 'complete' };
-    }
-
-    // Flatten adminChecks arrays by principal and path and privileges
-    const flattenedPermissions = permissionsReport.adminChecks
-      // eslint-disable-next-line max-len
-      .flatMap(({ principal, details }) => details.map((d) => ({ principal, path: d.path, ...d })));
-
-    const buildAdminSuggestionKey = (data) => {
-      const s = JSON.stringify(data);
-      const hash = createHash('sha256').update(s).digest('hex').slice(0, 8);
-      return `${data.principal}@${data.path}#${hash}`;
-    };
-
-    await syncSuggestions({
-      context,
-      opportunity: adminOpt,
-      newData: flattenedPermissions,
-      buildKey: buildAdminSuggestionKey,
-      mapNewSuggestion: (entry) => mapAdminSuggestion(adminOpt, entry),
-    });
-
-    adminOpt.setUpdatedBy('system');
-    await adminOpt.save();
   }
+  const adminOpt = await convertToOpportunity(
+    auditUrl,
+    { siteId: auditData.siteId, id: auditData.auditId },
+    context,
+    createAdminOpportunityData,
+    REDUNDANT_AUDIT_TYPE,
+    createAdminMetrics(permissionsReport.adminChecks),
+  );
+
+  const generateSuggestions = configuration.isHandlerEnabledForSite('security-permissions-auto-suggest', site);
+  if (!generateSuggestions) {
+    log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] security-permissions-auto-suggest not configured, skipping permission suggestion`);
+    return { status: 'complete' };
+  }
+
+  // Flatten adminChecks arrays by principal and path and privileges
+  const flattenedPermissions = permissionsReport.adminChecks
+  // eslint-disable-next-line max-len
+    .flatMap(({ principal, details }) => details.map((d) => ({ principal, path: d.path, ...d })));
+
+  const buildAdminSuggestionKey = (data) => {
+    const s = JSON.stringify(data);
+    const hash = createHash('sha256').update(s).digest('hex').slice(0, 8);
+    return `${data.principal}@${data.path}#${hash}`;
+  };
+
+  await syncSuggestions({
+    context,
+    opportunity: adminOpt,
+    newData: flattenedPermissions,
+    buildKey: buildAdminSuggestionKey,
+    mapNewSuggestion: (entry) => mapAdminSuggestion(adminOpt, entry),
+  });
+
+  adminOpt.setUpdatedBy('system');
+  await adminOpt.save();
 
   return { status: 'complete' };
 };

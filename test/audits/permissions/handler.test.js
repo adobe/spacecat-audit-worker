@@ -34,7 +34,6 @@ import {
   mapTooStrongSuggestion,
   mapAdminSuggestion,
 } from '../../../src/permissions/suggestion-data-mapper.js';
-import { convertToOpportunity } from '../../../src/common/opportunity.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -576,6 +575,32 @@ describe('Permissions Handler Tests', () => {
       expect(tooStrongOpp.setStatus).to.have.been.calledWith(Oppty.STATUSES.RESOLVED);
       expect(adminOpp.setStatus).to.have.been.calledWith(Oppty.STATUSES.RESOLVED);
     });
+
+    it('should early exit in tooStrongOpportunityStep when security-permissions-auto-suggest is not enabled by configuration', async () => {
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sandbox.stub().callsFake((handler, site) => {
+          return handler !== 'security-permissions-auto-suggest';
+        }),
+      });
+      const auditData = {
+        auditResult: {
+          permissionsReport: {
+            allPermissions: [
+              {
+                path: '/content/test',
+                details: [{ principal: 'everyone', acl: ['jcr:all'], otherPermissions: [] }],
+              },
+            ],
+            adminChecks: [],
+          },
+          success: true,
+        },
+        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        auditId: 'audit-123',
+      };
+      const result = await tooStrongOpportunityStep('https://example.com', auditData, context, site);
+      expect(result).to.deep.equal({ status: 'complete' });
+    });
   });
 
   describe('redundantPermissionsOpportunityStep', () => {
@@ -717,6 +742,27 @@ describe('Permissions Handler Tests', () => {
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.log.debug).to.have.been.calledWithMatch(/security-permissions-auto-suggest not configured/);
+    });
+
+    it('should early exit when security-permissions-auto-suggest is not enabled by configuration', async () => {
+      context.dataAccess.Configuration.findLatest.resolves({
+        isHandlerEnabledForSite: sandbox.stub().callsFake((handler, site) => {
+          return handler !== 'security-permissions-auto-suggest';
+        }),
+      });
+      const auditData = {
+        auditResult: {
+          permissionsReport: {
+            allPermissions: [],
+            adminChecks: [],
+          },
+          success: true,
+        },
+        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        auditId: 'audit-123',
+      };
+      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
+      expect(result).to.deep.equal({ status: 'complete' });
     });
   });
 
