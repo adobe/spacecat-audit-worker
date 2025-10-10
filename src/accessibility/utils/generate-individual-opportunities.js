@@ -162,6 +162,7 @@ export function formatWcagRule(wcagRule) {
  * Transforms raw accessibility issue data into a standardized format with:
  * - Formatted WCAG rule information
  * - Complete issue metadata for suggestions
+ * - Support for both old (htmlWithIssues) and new (htmlData) formats
  *
  * @param {string} type - The type of accessibility issue (e.g., "color-contrast")
  * @param {Object} issueData - Raw issue data from accessibility scan
@@ -183,7 +184,39 @@ export function formatIssue(type, issueData, severity) {
     targetSelector = issueData.target;
   }
 
-  // Use htmlWithIssues directly from issueData if available, otherwise create minimal structure
+  // Check if this is new format (has htmlData)
+  if (isNonEmptyArray(issueData.htmlData)) {
+    // NEW FORMAT: Create flattened structure with htmlData array
+    const htmlDataArray = issueData.htmlData.map((htmlElement) => ({
+      html: htmlElement.html || '',
+      target: htmlElement.target || '',
+      failureSummary: htmlElement.failureSummary || '',
+      deviceTypes: htmlElement.deviceTypes || ['desktop'],
+    }));
+
+    // Aggregate all device types from all HTML elements
+    const allDeviceTypes = new Set();
+    issueData.htmlData.forEach((htmlElement) => {
+      if (htmlElement.deviceTypes) {
+        htmlElement.deviceTypes.forEach((deviceType) => allDeviceTypes.add(deviceType));
+      }
+    });
+    const aggregatedDeviceTypes = Array.from(allDeviceTypes);
+
+    return {
+      type,
+      description: issueData.description || '',
+      wcagRule,
+      wcagLevel: issueData.level || '',
+      severity,
+      occurrences: issueData.htmlData.length,
+      htmlData: htmlDataArray,
+      failureSummary: issueData.failureSummary || '',
+      deviceTypes: aggregatedDeviceTypes.length > 0 ? aggregatedDeviceTypes : ['desktop'],
+    };
+  }
+
+  // OLD FORMAT: Keep original implementation exactly the same
   let htmlWithIssues = [];
 
   if (isNonEmptyArray(issueData.htmlWithIssues)) {
@@ -256,11 +289,49 @@ export function aggregateAccessibilityIssues(accessibilityData) {
     groupedData[opportunityType] = [];
   }
 
-  // NEW: Process individual HTML elements directly
+  // Process individual HTML elements directly with support for both old and new formats
   const processIssuesForSeverity = (items, severity, url, data) => {
     for (const [issueType, issueData] of Object.entries(items)) {
       const opportunityType = issueTypeToOpportunityMap[issueType];
-      if (opportunityType && issueData.htmlWithIssues) {
+      if (opportunityType && issueData.htmlData) {
+        // NEW FORMAT: Create flattened structure with htmlData array
+        const htmlDataArray = issueData.htmlData.map((htmlElement) => ({
+          html: htmlElement.html || '',
+          target: htmlElement.target || '',
+          failureSummary: htmlElement.failureSummary || '',
+          deviceTypes: htmlElement.deviceTypes || ['desktop'],
+        }));
+
+        // Aggregate all device types from all HTML elements
+        const allDeviceTypes = new Set();
+        issueData.htmlData.forEach((htmlElement) => {
+          if (htmlElement.deviceTypes) {
+            htmlElement.deviceTypes.forEach((deviceType) => allDeviceTypes.add(deviceType));
+          }
+        });
+        const aggregatedDeviceTypes = Array.from(allDeviceTypes);
+
+        const issue = {
+          type: issueType,
+          description: issueData.description || '',
+          wcagRule: formatWcagRule(issueData.successCriteriaTags?.[0] || ''),
+          wcagLevel: issueData.level || '',
+          severity,
+          occurrences: issueData.htmlData.length,
+          htmlData: htmlDataArray,
+          failureSummary: issueData.failureSummary || '',
+          deviceTypes: aggregatedDeviceTypes.length > 0 ? aggregatedDeviceTypes : ['desktop'],
+        };
+
+        const urlObject = {
+          type: 'url',
+          url,
+          issues: [issue],
+        };
+
+        data[opportunityType].push(urlObject);
+      } else if (opportunityType && issueData.htmlWithIssues) {
+        // OLD FORMAT: Keep original processing exactly the same
         issueData.htmlWithIssues.forEach((htmlElement, index) => {
           const singleElementIssueData = {
             ...issueData,
@@ -268,10 +339,16 @@ export function aggregateAccessibilityIssues(accessibilityData) {
             target: issueData.target ? issueData.target[index] : '',
           };
 
+          const issue = formatIssue(issueType, singleElementIssueData, severity);
+          // Ensure old format issues have device types (default to desktop)
+          if (!issue.deviceTypes) {
+            issue.deviceTypes = ['desktop'];
+          }
+
           const urlObject = {
             type: 'url',
             url,
-            issues: [formatIssue(issueType, singleElementIssueData, severity)],
+            issues: [issue],
           };
 
           data[opportunityType].push(urlObject);
@@ -369,7 +446,11 @@ export async function createIndividualOpportunitySuggestions(
     if (issues.length === 0) {
       return data.url;
     }
-    return `${data.url}|${issues[0].type}|${issues[0]?.htmlWithIssues[0]?.target_selector || ''}`;
+    const firstIssue = issues[0];
+    if (!firstIssue) {
+      return data.url;
+    }
+    return `${data.url}|${firstIssue.type}|${firstIssue?.htmlWithIssues?.[0]?.target_selector || ''}`;
   };
 
   log.info(`[A11yIndividual] ${aggregatedData.data.length} issues aggregated for opportunity ${opportunity.getId()}`);
@@ -381,18 +462,47 @@ export async function createIndividualOpportunitySuggestions(
       context,
       buildKey,
       // Map each URL's data to a suggestion format
-      mapNewSuggestion: (urlData) => ({
-        opportunityId: opportunity.getId(),
-        type: 'CODE_CHANGE', // Indicates this requires code updates
-        // Rank by total occurrences across all issues for this URL
-        rank: urlData.issues.reduce((total, issue) => total + issue.occurrences, 0),
-        data: {
-          url: urlData.url,
-          type: urlData.type,
-          issues: urlData.issues, // Array of formatted accessibility issues
-          jiraLink: '',
-        },
-      }),
+      mapNewSuggestion: (urlData) => {
+        const issue = urlData.issues[0];
+        const isNewFormat = issue.deviceTypes && Array.isArray(issue.deviceTypes);
+        if (isNewFormat) {
+          return {
+            opportunityId: opportunity.getId(),
+            type: 'CODE_CHANGE',
+            rank: issue.occurrences,
+            data: {
+              type: 'url',
+              url: urlData.url,
+              deviceTypes: issue.deviceTypes,
+              htmlData: {
+                targetSelector: issue.htmlData?.[0]?.target || '',
+                updateFrom: issue.htmlData?.[0]?.html || '',
+                failureSummary: issue.htmlData?.[0]?.failureSummary || issue.failureSummary || '',
+              },
+              violationDetails: {
+                wcagLevel: issue.wcagLevel || '',
+                severity: issue.severity || '',
+                wcagRule: issue.wcagRule || '',
+                description: issue.description || '',
+                issueType: issue.type || '',
+              },
+              guidance: issue.htmlData?.[0]?.guidance || {},
+            },
+          };
+        } else {
+          return {
+            opportunityId: opportunity.getId(),
+            type: 'CODE_CHANGE',
+            rank: issue.occurrences,
+            data: {
+              url: urlData.url,
+              type: urlData.type,
+              issues: urlData.issues,
+              jiraLink: '',
+            },
+          };
+        }
+      },
       mergeDataFunction: keepSameDataFunction,
       statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
     });
@@ -534,23 +644,61 @@ export async function findOrCreateAccessibilityOpportunity(
 }
 
 /**
- * Calculates metrics from aggregated accessibility data
+ * Calculates metrics from aggregated accessibility data with mobile support
  *
  * @param {Object} aggregatedData - Aggregated accessibility data
  * @returns {Object} Calculated metrics
  */
 export function calculateAccessibilityMetrics(aggregatedData) {
-  const totalIssues = aggregatedData.data.reduce((total, page) => (
-    total + page.issues.reduce((pageTotal, issue) => pageTotal + issue.occurrences, 0)
-  ), 0);
+  // Calculate total issues and suggestions from the aggregated data structure
+  let totalIssues = 0;
+  let totalSuggestions = 0;
+  const uniqueUrls = new Set();
 
-  const totalSuggestions = aggregatedData.data.length;
-  const pagesWithIssues = aggregatedData.data.length;
+  // Calculate device-specific metrics
+  let desktopOnlyIssues = 0;
+  let mobileOnlyIssues = 0;
+  let commonIssues = 0;
+
+  aggregatedData.data.forEach((opportunityTypeData) => {
+    const entries = Object.entries(opportunityTypeData);
+    if (entries.length === 0) {
+      return;
+    }
+    const [, urlObjects] = entries[0];
+
+    urlObjects.forEach((urlObject) => {
+      uniqueUrls.add(urlObject.url);
+      totalSuggestions += 1;
+
+      urlObject.issues.forEach((issue) => {
+        totalIssues += issue.occurrences;
+
+        if (issue.deviceTypes) {
+          if (issue.deviceTypes.includes('desktop') && issue.deviceTypes.includes('mobile')) {
+            commonIssues += issue.occurrences;
+          } else if (issue.deviceTypes.includes('desktop')) {
+            desktopOnlyIssues += issue.occurrences;
+          } else if (issue.deviceTypes.includes('mobile')) {
+            mobileOnlyIssues += issue.occurrences;
+          }
+        } else {
+          // Legacy support - assume desktop only
+          desktopOnlyIssues += issue.occurrences;
+        }
+      });
+    });
+  });
+
+  const pagesWithIssues = uniqueUrls.size;
 
   return {
     totalIssues,
     totalSuggestions,
     pagesWithIssues,
+    desktopOnlyIssues,
+    mobileOnlyIssues,
+    commonIssues,
   };
 }
 
@@ -608,7 +756,11 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
       aggregatedData.data.map(
         async (opportunityTypeData) => {
           // Each item is an object with one key (the opportunity type) and an array of URLs
-          const [opportunityType, typeData] = Object.entries(opportunityTypeData)[0];
+          const entries = Object.entries(opportunityTypeData);
+          if (entries.length === 0) {
+            throw new Error('No opportunity type data found');
+          }
+          const [opportunityType, typeData] = entries[0];
 
           log.debug(`[A11yIndividual] Processing opportunity for type: ${opportunityType}`);
 
@@ -812,30 +964,85 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
       if (targetSuggestion) {
         // Process this specific remediation for this specific suggestion
         const suggestionData = targetSuggestion.getData();
-        const updatedIssues = suggestionData.issues.map((issue) => {
-          if (isNonEmptyArray(issue.htmlWithIssues)) {
-            const enhancedHtmlWithIssues = issue.htmlWithIssues.map((htmlIssueObj) => ({
-              ...htmlIssueObj,
+
+        // Handle both old and new data formats
+        let updatedSuggestionData;
+
+        if (suggestionData.issues && isNonEmptyArray(suggestionData.issues)) {
+          // OLD FORMAT - update guidance in htmlWithIssues
+          const updatedIssues = suggestionData.issues.map((issue) => {
+            if (isNonEmptyArray(issue.htmlWithIssues)) {
+              const enhancedHtmlWithIssues = issue.htmlWithIssues.map((htmlIssueObj) => ({
+                ...htmlIssueObj,
+                guidance: {
+                  // eslint-disable-next-line max-len
+                  generalSuggestion: remediation.generalSuggestion || remediation.general_suggestion,
+                  updateTo: remediation.updateTo || remediation.update_to,
+                  userImpact: remediation.userImpact || remediation.user_impact,
+                },
+              }));
+
+              return {
+                ...issue,
+                htmlWithIssues: enhancedHtmlWithIssues,
+              };
+            }
+            return issue;
+          });
+
+          updatedSuggestionData = {
+            ...suggestionData,
+            issues: updatedIssues,
+          };
+        } else if (suggestionData.violationDetails && suggestionData.htmlData) {
+          // NEW FORMAT - update guidance directly
+          updatedSuggestionData = {
+            ...suggestionData,
+            guidance: {
+              generalSuggestion: remediation.generalSuggestion || remediation.general_suggestion,
+              updateTo: remediation.updateTo || remediation.update_to,
+              userImpact: remediation.userImpact || remediation.user_impact,
+            },
+          };
+        } else {
+          // Convert old format to new flattened format
+          const issue = suggestionData.issues?.[0];
+          if (issue && isNonEmptyArray(issue.htmlWithIssues)) {
+            const htmlIssue = issue.htmlWithIssues[0];
+            updatedSuggestionData = {
+              type: 'url',
+              url: suggestionData.url,
+              deviceTypes: issue.deviceTypes || ['desktop'],
+              htmlData: {
+                targetSelector: htmlIssue.target_selector || '',
+                updateFrom: htmlIssue.update_from || '',
+                failureSummary: issue.failureSummary || '',
+              },
+              violationDetails: {
+                wcagLevel: issue.wcagLevel || '',
+                severity: issue.severity || '',
+                wcagRule: issue.wcagRule || '',
+                description: issue.description || '',
+                issueType: issue.type || '',
+              },
               guidance: {
                 generalSuggestion: remediation.generalSuggestion || remediation.general_suggestion,
                 updateTo: remediation.updateTo || remediation.update_to,
                 userImpact: remediation.userImpact || remediation.user_impact,
               },
-            }));
-
-            return {
-              ...issue,
-              htmlWithIssues: enhancedHtmlWithIssues,
+            };
+          } else {
+            // Fallback - create new format structure
+            updatedSuggestionData = {
+              ...suggestionData,
+              guidance: {
+                generalSuggestion: remediation.generalSuggestion || remediation.general_suggestion,
+                updateTo: remediation.updateTo || remediation.update_to,
+                userImpact: remediation.userImpact || remediation.user_impact,
+              },
             };
           }
-          return issue;
-        });
-
-        // Update the suggestion with enhanced issues containing remediation details
-        const updatedSuggestionData = {
-          ...suggestionData,
-          issues: updatedIssues,
-        };
+        }
 
         // Update the suggestion
         targetSuggestion.setData(updatedSuggestionData);
