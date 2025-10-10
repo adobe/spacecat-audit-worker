@@ -318,7 +318,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   const hasBrandPresenceChanges = changes.topics || changes.categories || changes.entities;
   const needsBrandPresenceRefresh = previousConfigVersion
-    && (changes.brands?.aliases || changes.competitors?.competitors);
+    && (changes.brands || changes.competitors);
 
   if (hasBrandPresenceChanges) {
     log.info('LLMO config changes detected in brands, competitors, topics, categories, or entities; triggering geo-brand-presence audit');
