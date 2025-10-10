@@ -29,9 +29,11 @@ import { wwwUrlResolver } from '../common/index.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const LLMO_QUESTIONS_IMPORT_TYPE = 'llmo-prompts-ahrefs';
 export const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
+export const GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE = 'detect:geo-brand-presence-daily';
 export const GEO_FAQ_OPPTY_TYPE = 'guidance:geo-faq';
 export const OPPTY_TYPES = [
   GEO_BRAND_PRESENCE_OPPTY_TYPE,
+  GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE,
   // GEO_FAQ_OPPTY_TYPE, // TODO reenable when working on faqs again
 ];
 
@@ -233,9 +235,9 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
   const customerPrompts = Object.values(config.topics).flatMap((x) => {
     const category = config.categories[x.category];
-    return x.prompts.map((p) => ({
+    return x.prompts.flatMap((p) => p.regions.map((region) => ({
       prompt: p.prompt,
-      region: p.regions.join(','),
+      region,
       category: category.name,
       topic: x.name,
       url: '',
@@ -246,7 +248,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       source: 'human',
       market: p.regions.join(','),
       origin: 'human',
-    }));
+    })));
   });
   // Apply 200 limit with customer prompt priority (FIXED LOGIC)
   let prompts;
@@ -287,7 +289,9 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   }
 
   // Determine opportunity types based on cadence
-  const opptyTypes = isDaily ? ['detect:geo-brand-presence-daily'] : OPPTY_TYPES;
+  const opptyTypes = isDaily
+    ? [GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE]
+    : [GEO_BRAND_PRESENCE_OPPTY_TYPE];
 
   // Send messages for each combination of opportunity type and web search provider
   await Promise.all(

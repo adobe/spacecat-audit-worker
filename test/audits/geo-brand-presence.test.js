@@ -56,11 +56,11 @@ describe('Geo Brand Presence Handler', () => {
     };
     s3Client = {
       send: sinon.stub()
-        .callsFake((cmd) => {
-          const { name } = cmd.constructor;
-          const input = JSON.stringify(cmd.input, null, 2).replace(/\n[ ]*/g, ' ');
-          throw new Error(`no stubbed response for ${name} ${input}`)
-        }),
+          .callsFake((cmd) => {
+            const { name } = cmd.constructor;
+            const input = JSON.stringify(cmd.input, null, 2).replace(/\n[ ]*/g, ' ');
+            throw new Error(`no stubbed response for ${name} ${input}`)
+          }),
     };
     getPresignedUrl = sandbox.stub();
     context = {
@@ -75,8 +75,8 @@ describe('Geo Brand Presence Handler', () => {
     fakeConfigS3Response();
 
     s3Client.send
-      .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^temp[/]audit-geo-brand-presence[/]/) }))
-      .resolves({});
+        .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^temp[/]audit-geo-brand-presence[/]/) }))
+        .resolves({});
   });
 
   afterEach(() => {
@@ -138,10 +138,10 @@ describe('Geo Brand Presence Handler', () => {
       fullAuditRef: finalUrl,
     });
     expect(log.info).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
-      finalUrl,
-      '2025-09-15',
-      'gemini',
+        'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
+        finalUrl,
+        '2025-09-15',
+        'gemini',
     );
   });
 
@@ -158,14 +158,14 @@ describe('Geo Brand Presence Handler', () => {
       fullAuditRef: finalUrl,
     });
     expect(log.warn).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s',
-      invalidJson,
+        'GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s',
+        invalidJson,
     );
     expect(log.info).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
-      finalUrl,
-      undefined,
-      undefined,
+        'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
+        finalUrl,
+        undefined,
+        undefined,
     );
   });
 
@@ -264,11 +264,11 @@ describe('Geo Brand Presence Handler', () => {
     fakeParquetS3Response(fakeData());
     fakeConfigS3Response({
       ...llmoConfig.defaultConfig(),
-        categories: {
-          [cat1]: { name: 'Category 1', region: ['ch', 'de', 'fr', 'it'] },
-          [cat2]: { name: 'Category 2', region: 'es' },
-        },
-        topics: {
+      categories: {
+        [cat1]: { name: 'Category 1', region: ['ch', 'de', 'fr', 'it'] },
+        [cat2]: { name: 'Category 2', region: 'es' },
+      },
+      topics: {
         'f1a9605a-5a05-49e7-8760-b40ca2426380': {
           name: 'Topic 1',
           category: cat1,
@@ -298,17 +298,159 @@ describe('Geo Brand Presence Handler', () => {
       },
     }, getPresignedUrl);
 
+    // custom prompt 3 has regions ['ch', 'fr'] so it should be split into 2 items
+    // Total: 1 (de) + 1 (it) + 2 (ch, fr) + 1 (es) = 5 customer prompts
     expect(s3Client.send).calledWith(
         matchS3Cmd('PutObjectCommand', {
-          Body: sinon.match((json) =>
-            sinon.match([
-              customPrompt({ prompt: 'custom prompt 1', region: 'de', category: 'Category 1', topic: 'Topic 1' }),
-              customPrompt({ prompt: 'custom prompt 2', region: 'it', category: 'Category 1', topic: 'Topic 1' }),
-              customPrompt({ prompt: 'custom prompt 3', region: 'ch,fr', category: 'Category 1', topic: 'Topic 1' }),
-              customPrompt({ prompt: 'custom prompt 4', region: 'es', category: 'Category 2', topic: 'Topic 2' }),
-            ]).test(JSON.parse(json).slice(-4)))
+          Body: sinon.match((json) => {
+            const data = JSON.parse(json);
+            const customerPrompts = data.filter(p => p.source === 'human');
+
+            // Should have 5 customer prompt items (custom prompt 3 was split)
+            expect(customerPrompts).to.have.lengthOf(5);
+
+            // Check individual prompts
+            const prompt1 = customerPrompts.find(p => p.prompt === 'custom prompt 1');
+            expect(prompt1).to.exist;
+            expect(prompt1.region).to.equal('de');
+            expect(prompt1.market).to.equal('de');
+
+            const prompt2 = customerPrompts.find(p => p.prompt === 'custom prompt 2');
+            expect(prompt2).to.exist;
+            expect(prompt2.region).to.equal('it');
+            expect(prompt2.market).to.equal('it');
+
+            // Check custom prompt 3 is split into ch and fr
+            const prompt3Ch = customerPrompts.find(p => p.prompt === 'custom prompt 3' && p.region === 'ch');
+            expect(prompt3Ch).to.exist;
+            expect(prompt3Ch.market).to.equal('ch,fr');
+
+            const prompt3Fr = customerPrompts.find(p => p.prompt === 'custom prompt 3' && p.region === 'fr');
+            expect(prompt3Fr).to.exist;
+            expect(prompt3Fr.market).to.equal('ch,fr');
+
+            const prompt4 = customerPrompts.find(p => p.prompt === 'custom prompt 4');
+            expect(prompt4).to.exist;
+            expect(prompt4.region).to.equal('es');
+            expect(prompt4.market).to.equal('es');
+
+            return true;
+          })
         })
       );
+  });
+
+  it('should split customer prompts with multiple regions into separate items', async () => {
+    const cat1 = 'ecfc4ebe-8841-4d10-a52f-1ab79bbc77a9'; // Acrobat
+    const cat2 = '49d70928-c542-45ba-bbfb-528c69cfdbe7'; // Firefly
+    const cat3 = 'bae2762a-fca8-4a05-97d4-0cbd4adb1ef4'; // Photoshop
+
+    fakeParquetS3Response(fakeData());
+    fakeConfigS3Response({
+      ...llmoConfig.defaultConfig(),
+      categories: {
+        [cat1]: { name: 'Acrobat', region: ['us', 'jp', 'br', 'in', 'gb', 'de'] },
+        [cat2]: { name: 'Firefly', region: ['us', 'in', 'br', 'jp', 'de', 'gb'] },
+        [cat3]: { name: 'Photoshop', region: ['jp'] },
+      },
+      topics: {
+        'b7fdf770-4dca-41fd-9af7-e9c30f42f0ce': {
+          name: 'Generic QUestion',
+          category: cat1,
+          prompts: [
+            { prompt: 'What is Acrobat ?', regions: ['gb', 'us'], origin: 'human', source: 'config' },
+            { prompt: 'Wie sagt man Acrobat auf deutsch ?', regions: ['de'], origin: 'human', source: 'config' },
+          ],
+        },
+        '3de2e5fd-cfdd-480e-b10a-bffbe2fcdde3': {
+          name: 'General Question',
+          category: cat2,
+          prompts: [
+            { prompt: 'What is Firefly', regions: ['gb', 'us'], origin: 'human', source: 'config' },
+            { prompt: 'Was ist Firefly', regions: ['de'], origin: 'human', source: 'config' },
+          ],
+        },
+        '82cc9206-82ce-471d-ab78-43e01c1a9350': {
+          name: 'General Prompt',
+          category: cat3,
+          prompts: [
+            { prompt: 'Photoshopとは何ですか？', regions: ['jp'], origin: 'human', source: 'config' },
+          ],
+        },
+      },
+    });
+
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    await sendToMystique({
+      ...context,
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    // Verify that:
+    // - "What is Acrobat ?" with regions ['gb', 'us'] creates 2 items (one for gb, one for us)
+    // - "Wie sagt man Acrobat auf deutsch ?" with regions ['de'] creates 1 item
+    // - "What is Firefly" with regions ['gb', 'us'] creates 2 items
+    // - "Was ist Firefly" with regions ['de'] creates 1 item
+    // - "Photoshopとは何ですか？" with regions ['jp'] creates 1 item
+    // Total: 2 + 1 + 2 + 1 + 1 = 7 customer prompts
+
+    expect(s3Client.send).calledWith(
+        matchS3Cmd('PutObjectCommand', {
+          Body: sinon.match((json) => {
+            const data = JSON.parse(json);
+            const customerPrompts = data.filter(p => p.source === 'human');
+
+            // Should have 7 customer prompt items total
+            expect(customerPrompts).to.have.lengthOf(7);
+
+            // Check "What is Acrobat ?" split into gb and us
+            const acrobatGb = customerPrompts.find(p => p.prompt === 'What is Acrobat ?' && p.region === 'gb');
+            expect(acrobatGb).to.exist;
+            expect(acrobatGb.market).to.equal('gb,us'); // market should have original list
+            expect(acrobatGb.category).to.equal('Acrobat');
+            expect(acrobatGb.topic).to.equal('Generic QUestion');
+
+            const acrobatUs = customerPrompts.find(p => p.prompt === 'What is Acrobat ?' && p.region === 'us');
+            expect(acrobatUs).to.exist;
+            expect(acrobatUs.market).to.equal('gb,us'); // market should have original list
+            expect(acrobatUs.category).to.equal('Acrobat');
+
+            // Check "Wie sagt man Acrobat auf deutsch ?" stays as single item
+            const acrobatDe = customerPrompts.filter(p => p.prompt === 'Wie sagt man Acrobat auf deutsch ?');
+            expect(acrobatDe).to.have.lengthOf(1);
+            expect(acrobatDe[0].region).to.equal('de');
+            expect(acrobatDe[0].market).to.equal('de');
+
+            // Check "What is Firefly" split into gb and us
+            const fireflyGb = customerPrompts.find(p => p.prompt === 'What is Firefly' && p.region === 'gb');
+            expect(fireflyGb).to.exist;
+            expect(fireflyGb.market).to.equal('gb,us');
+            expect(fireflyGb.category).to.equal('Firefly');
+
+            const fireflyUs = customerPrompts.find(p => p.prompt === 'What is Firefly' && p.region === 'us');
+            expect(fireflyUs).to.exist;
+            expect(fireflyUs.market).to.equal('gb,us');
+
+            // Check "Was ist Firefly" stays as single item
+            const fireflyDe = customerPrompts.filter(p => p.prompt === 'Was ist Firefly');
+            expect(fireflyDe).to.have.lengthOf(1);
+            expect(fireflyDe[0].region).to.equal('de');
+            expect(fireflyDe[0].market).to.equal('de');
+
+            // Check Photoshop prompt stays as single item
+            const photoshopJp = customerPrompts.filter(p => p.prompt === 'Photoshopとは何ですか？');
+            expect(photoshopJp).to.have.lengthOf(1);
+            expect(photoshopJp[0].region).to.equal('jp');
+            expect(photoshopJp[0].market).to.equal('jp');
+
+            return true;
+          })
+        })
+    );
   });
 
   it('should skip sending message to Mystique when no keywordQuestions', async () => {
@@ -345,9 +487,9 @@ describe('Geo Brand Presence Handler', () => {
 
       expect(sqs.sendMessage).to.not.have.been.called;
       expect(log.warn).to.have.been.calledWith(
-        'GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique',
-        site.getId(),
-        site.getBaseURL(),
+          'GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique',
+          site.getId(),
+          site.getBaseURL(),
       );
     } finally {
       // Restore original providers
@@ -367,10 +509,10 @@ describe('Geo Brand Presence Handler', () => {
 
     expect(sqs.sendMessage).to.not.have.been.called;
     expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique',
-      site.getId(),
-      site.getBaseURL(),
-      sinon.match.object,
+        'GEO BRAND PRESENCE: Received the following errors for site id %s (%s). Cannot send data to Mystique',
+        site.getId(),
+        site.getBaseURL(),
+        sinon.match.object,
     );
   });
 
@@ -385,10 +527,10 @@ describe('Geo Brand Presence Handler', () => {
 
     expect(sqs.sendMessage).to.not.have.been.called;
     expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique',
-      site.getId(),
-      site.getBaseURL(),
-      sinon.match.object,
+        'GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique',
+        site.getId(),
+        site.getBaseURL(),
+        sinon.match.object,
     );
   });
 
@@ -403,10 +545,10 @@ describe('Geo Brand Presence Handler', () => {
 
     expect(sqs.sendMessage).to.not.have.been.called;
     expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique',
-      site.getId(),
-      site.getBaseURL(),
-      sinon.match.object,
+        'GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot send data to Mystique',
+        site.getId(),
+        site.getBaseURL(),
+        sinon.match.object,
     );
   });
 
@@ -421,10 +563,10 @@ describe('Geo Brand Presence Handler', () => {
 
     expect(sqs.sendMessage).to.not.have.been.called;
     expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique',
-      site.getId(),
-      site.getBaseURL(),
-      sinon.match.object,
+        'GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique',
+        site.getId(),
+        site.getBaseURL(),
+        sinon.match.object,
     );
   });
 
@@ -439,10 +581,10 @@ describe('Geo Brand Presence Handler', () => {
 
     expect(sqs.sendMessage).to.not.have.been.called;
     expect(log.error).to.have.been.calledWith(
-      'GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique',
-      site.getId(),
-      site.getBaseURL(),
-      sinon.match.object,
+        'GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot send data to Mystique',
+        site.getId(),
+        site.getBaseURL(),
+        sinon.match.object,
     );
   });
 
@@ -503,15 +645,15 @@ describe('Geo Brand Presence Handler', () => {
 
       // Should only have 2 prompts (duplicate removed, different prompt kept)
       expect(s3Client.send).calledWith(
-        matchS3Cmd('PutObjectCommand', {
-          Body: sinon.match((json) => {
-            const data = JSON.parse(json);
-            expect(data).to.have.lengthOf(2); // 1 duplicate removed
-            expect(data.map(p => p.prompt)).to.include('what is adobe?');
-            expect(data.map(p => p.prompt)).to.include('adobe pricing');
-            return true;
+          matchS3Cmd('PutObjectCommand', {
+            Body: sinon.match((json) => {
+              const data = JSON.parse(json);
+              expect(data).to.have.lengthOf(2); // 1 duplicate removed
+              expect(data.map(p => p.prompt)).to.include('what is adobe?');
+              expect(data.map(p => p.prompt)).to.include('adobe pricing');
+              return true;
+            })
           })
-        })
       );
     });
 
@@ -570,13 +712,13 @@ describe('Geo Brand Presence Handler', () => {
 
       // Should keep all 3 prompts (different region/topic combinations)
       expect(s3Client.send).calledWith(
-        matchS3Cmd('PutObjectCommand', {
-          Body: sinon.match((json) => {
-            const data = JSON.parse(json);
-            expect(data).to.have.lengthOf(3); // All kept due to different contexts
-            return true;
+          matchS3Cmd('PutObjectCommand', {
+            Body: sinon.match((json) => {
+              const data = JSON.parse(json);
+              expect(data).to.have.lengthOf(3); // All kept due to different contexts
+              return true;
+            })
           })
-        })
       );
     });
 
@@ -635,14 +777,14 @@ describe('Geo Brand Presence Handler', () => {
 
       // Should only keep the valid prompt
       expect(s3Client.send).calledWith(
-        matchS3Cmd('PutObjectCommand', {
-          Body: sinon.match((json) => {
-            const data = JSON.parse(json);
-            expect(data).to.have.lengthOf(1); // Only valid prompt kept
-            expect(data[0].prompt).to.equal('valid prompt');
-            return true;
+          matchS3Cmd('PutObjectCommand', {
+            Body: sinon.match((json) => {
+              const data = JSON.parse(json);
+              expect(data).to.have.lengthOf(1); // Only valid prompt kept
+              expect(data[0].prompt).to.equal('valid prompt');
+              return true;
+            })
           })
-        })
       );
     });
   });
@@ -699,22 +841,22 @@ describe('Geo Brand Presence Handler', () => {
       // Total: 150 AI + 75 Customer = 225, should be trimmed to 200
       // Expected: 125 AI prompts + 75 Customer prompts = 200 total
       expect(s3Client.send).calledWith(
-        matchS3Cmd('PutObjectCommand', {
-          Body: sinon.match((json) => {
-            const data = JSON.parse(json);
-            expect(data).to.have.lengthOf(200); // Exactly 200 prompts
-            
-            // Should have all 75 customer prompts
-            const customerPrompts = data.filter(p => p.source === 'human');
-            expect(customerPrompts).to.have.lengthOf(75);
-            
-            // Should have 125 AI prompts
-            const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
-            expect(aiPromptsInResult).to.have.lengthOf(125);
-            
-            return true;
+          matchS3Cmd('PutObjectCommand', {
+            Body: sinon.match((json) => {
+              const data = JSON.parse(json);
+              expect(data).to.have.lengthOf(200); // Exactly 200 prompts
+
+              // Should have all 75 customer prompts
+              const customerPrompts = data.filter(p => p.source === 'human');
+              expect(customerPrompts).to.have.lengthOf(75);
+
+              // Should have 125 AI prompts
+              const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
+              expect(aiPromptsInResult).to.have.lengthOf(125);
+
+              return true;
+            })
           })
-        })
       );
     });
 
@@ -767,22 +909,22 @@ describe('Geo Brand Presence Handler', () => {
 
       // Should use only first 200 customer prompts, ignore all AI prompts
       expect(s3Client.send).calledWith(
-        matchS3Cmd('PutObjectCommand', {
-          Body: sinon.match((json) => {
-            const data = JSON.parse(json);
-            expect(data).to.have.lengthOf(200); // Exactly 200 prompts
-            
-            // Should have NO AI prompts
-            const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
-            expect(aiPromptsInResult).to.have.lengthOf(0);
-            
-            // Should have exactly 200 customer prompts
-            const customerPrompts = data.filter(p => p.source === 'human');
-            expect(customerPrompts).to.have.lengthOf(200);
-            
-            return true;
+          matchS3Cmd('PutObjectCommand', {
+            Body: sinon.match((json) => {
+              const data = JSON.parse(json);
+              expect(data).to.have.lengthOf(200); // Exactly 200 prompts
+
+              // Should have NO AI prompts
+              const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
+              expect(aiPromptsInResult).to.have.lengthOf(0);
+
+              // Should have exactly 200 customer prompts
+              const customerPrompts = data.filter(p => p.source === 'human');
+              expect(customerPrompts).to.have.lengthOf(200);
+
+              return true;
+            })
           })
-        })
       );
     });
 
@@ -835,22 +977,22 @@ describe('Geo Brand Presence Handler', () => {
 
       // Total: 50 AI + 25 Customer = 75 < 200, should keep all
       expect(s3Client.send).calledWith(
-        matchS3Cmd('PutObjectCommand', {
-          Body: sinon.match((json) => {
-            const data = JSON.parse(json);
-            expect(data).to.have.lengthOf(75); // All prompts kept
-            
-            // Should have all 50 AI prompts
-            const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
-            expect(aiPromptsInResult).to.have.lengthOf(50);
-            
-            // Should have all 25 customer prompts
-            const customerPrompts = data.filter(p => p.source === 'human');
-            expect(customerPrompts).to.have.lengthOf(25);
-            
-            return true;
+          matchS3Cmd('PutObjectCommand', {
+            Body: sinon.match((json) => {
+              const data = JSON.parse(json);
+              expect(data).to.have.lengthOf(75); // All prompts kept
+
+              // Should have all 50 AI prompts
+              const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
+              expect(aiPromptsInResult).to.have.lengthOf(50);
+
+              // Should have all 25 customer prompts
+              const customerPrompts = data.filter(p => p.source === 'human');
+              expect(customerPrompts).to.have.lengthOf(25);
+
+              return true;
+            })
           })
-        })
       );
     });
 
@@ -880,10 +1022,10 @@ describe('Geo Brand Presence Handler', () => {
 
       // Setup parquet mock
       fakeParquetS3Response(aiPrompts);
-      
+
       // Setup config mock specifically for the excluded site ID - need to reset and add both mocks
       s3Client.send.reset(); // Reset all previous stubs
-      
+
       // Re-add the parquet mock
       const columnData = {
         prompt: { data: [], name: 'prompt', type: 'STRING' },
@@ -904,12 +1046,12 @@ describe('Geo Brand Presence Handler', () => {
         }
       }
       const buffer = parquetWriteBuffer({ columnData: Object.values(columnData) });
-      
+
       s3Client.send.withArgs(
-        matchS3Cmd(
-          'GetObjectCommand',
-          { Key: sinon.match(/[/]data[.]parquet$/) },
-        ),
+          matchS3Cmd(
+              'GetObjectCommand',
+              { Key: sinon.match(/[/]data[.]parquet$/) },
+          ),
       ).resolves({
         Body: {
           async transformToByteArray() {
@@ -920,10 +1062,10 @@ describe('Geo Brand Presence Handler', () => {
 
       // Setup config mock for the excluded site ID
       s3Client.send.withArgs(
-        matchS3Cmd(
-          'GetObjectCommand',
-          { Key: llmoConfig.llmoConfigPath(excludedSite.getId()) },
-        ),
+          matchS3Cmd(
+              'GetObjectCommand',
+              { Key: llmoConfig.llmoConfigPath(excludedSite.getId()) },
+          ),
       ).resolves({
         Body: {
           async transformToString() {
@@ -948,11 +1090,11 @@ describe('Geo Brand Presence Handler', () => {
           },
         },
       });
-      
+
       // Add PutObjectCommand mock
       s3Client.send
-        .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^temp[/]audit-geo-brand-presence[/]/) }))
-        .resolves({});
+          .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^temp[/]audit-geo-brand-presence[/]/) }))
+          .resolves({});
 
       getPresignedUrl.resolves('https://example.com/presigned-url');
 
@@ -967,22 +1109,22 @@ describe('Geo Brand Presence Handler', () => {
 
       // Should keep ALL prompts (no 200 limit for excluded sites)
       expect(s3Client.send).calledWith(
-        matchS3Cmd('PutObjectCommand', {
-          Body: sinon.match((json) => {
-            const data = JSON.parse(json);
-            expect(data).to.have.lengthOf(400); // 300 AI + 100 customer = 400 total
-            
-            // Should have all 300 AI prompts
-            const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
-            expect(aiPromptsInResult).to.have.lengthOf(300);
-            
-            // Should have all 100 customer prompts
-            const customerPrompts = data.filter(p => p.source === 'human');
-            expect(customerPrompts).to.have.lengthOf(100);
-            
-            return true;
+          matchS3Cmd('PutObjectCommand', {
+            Body: sinon.match((json) => {
+              const data = JSON.parse(json);
+              expect(data).to.have.lengthOf(400); // 300 AI + 100 customer = 400 total
+
+              // Should have all 300 AI prompts
+              const aiPromptsInResult = data.filter(p => p.source === 'ahrefs');
+              expect(aiPromptsInResult).to.have.lengthOf(300);
+
+              // Should have all 100 customer prompts
+              const customerPrompts = data.filter(p => p.source === 'human');
+              expect(customerPrompts).to.have.lengthOf(100);
+
+              return true;
+            })
           })
-        })
       );
     });
   });
@@ -993,10 +1135,10 @@ describe('Geo Brand Presence Handler', () => {
    */
   function fakeConfigS3Response(config = llmoConfig.defaultConfig()) {
     s3Client.send.withArgs(
-      matchS3Cmd(
-        'GetObjectCommand',
-        { Key: llmoConfig.llmoConfigPath(site.getId()) },
-      ),
+        matchS3Cmd(
+            'GetObjectCommand',
+            { Key: llmoConfig.llmoConfigPath(site.getId()) },
+        ),
     ).resolves({
       Body: {
         async transformToString() {
@@ -1030,10 +1172,10 @@ describe('Geo Brand Presence Handler', () => {
     const buffer = parquetWriteBuffer({ columnData: Object.values(columnData) });
 
     s3Client.send.withArgs(
-      matchS3Cmd(
-        'GetObjectCommand',
-        { Key: sinon.match(/[/]data[.]parquet$/) },
-      ),
+        matchS3Cmd(
+            'GetObjectCommand',
+            { Key: sinon.match(/[/]data[.]parquet$/) },
+        ),
     ).resolves({
       Body: {
         async transformToByteArray() {
@@ -1122,34 +1264,3 @@ function matchS3Cmd(name, input) {
   });
 }
 
-function customPrompt({ prompt, region, category, topic }) {
-  return {
-    prompt,
-    region,
-    category,
-    topic,
-    url: '',
-    keyword: '',
-    keywordImportTime: -1,
-    volume: -1,
-    volumeImportTime: -1,
-    source: 'human',
-    market: region,
-    origin: 'human'
-  };
-}
-
-/**
- * @param {sinon.SinonSpy} spy
- * @param {sinon.SinonMatcher} matcher
- * @returns {undefined | sinon.SinonSpyCall}
- */
-function findCall(spy, matcher) {
-  for (let i = 0; i < spy.callCount; i += 1) {
-    const call = spy.getCall(i);
-    if (matcher.test(call)) {
-      return call;
-    }
-  }
-  return undefined;
-}

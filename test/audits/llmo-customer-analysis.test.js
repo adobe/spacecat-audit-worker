@@ -59,6 +59,9 @@ describe('LLMO Customer Analysis Handler', () => {
       Site: {
         allByOrganizationId: sandbox.stub().resolves([]),
       },
+      LatestAudit: {
+        findBySiteIdAndAuditType: sandbox.stub().resolves(['test']),
+      },
     };
 
     const siteConfig = {
@@ -78,6 +81,7 @@ describe('LLMO Customer Analysis Handler', () => {
       log,
       dataAccess,
       s3Client: {},
+      env: { S3_IMPORTER_BUCKET_NAME: 'importer-bucket' },
     };
   });
 
@@ -133,6 +137,16 @@ describe('LLMO Customer Analysis Handler', () => {
         },
         '../../src/common/audit-utils.js': {
           isAuditEnabledForSite: sandbox.stub().resolves(true),
+        },
+        '../../src/llmo-customer-analysis/cdn-config-handler.js': {
+          handleCdnBucketConfigChanges: sandbox.stub().callsFake(async (context, data) => {
+            // Throw error for aem-cs-fastly to test error handling
+            if (data?.cdnProvider === 'aem-cs-fastly') {
+              throw new Error('CDN config error');
+            }
+            // Resolve normally for other providers
+            return Promise.resolve();
+          }),
         },
       });
     });
@@ -450,11 +464,10 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.message).to.equal('All audits triggered (no config version provided)');
-      expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
       expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
-      // 4 referral traffic imports + 2 audits (cdn-logs-report, geo-brand-presence)
-      expect(sqs.sendMessage).to.have.callCount(6);
+      // 4 referral traffic imports + 1 audit (geo-brand-presence)
+      expect(sqs.sendMessage).to.have.callCount(5);
     });
 
     it('should handle multiple changes and trigger multiple steps', async () => {
@@ -490,7 +503,7 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.have.callCount(2);
+      expect(sqs.sendMessage).to.have.callCount(5);
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
@@ -616,7 +629,7 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.have.callCount(2);
+      expect(sqs.sendMessage).to.have.callCount(5);
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
         sinon.match({ type: 'cdn-logs-report' }),
@@ -716,6 +729,62 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.fullAuditRef).to.equal('https://example.com');
     });
 
+    it('should trigger CDN bucket config changes on first-time onboarding', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+          cdnBucketConfig: { cdnProvider: 'commerce-fastly' },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      expect(result.auditResult.triggeredSteps).to.include('cdn-bucket-config');
+    });
+
+    it('should handle CDN bucket config changes error gracefully', async () => {
+      const auditContext = {
+        configVersion: 'v1',
+        // Initial onboarding, hence no previousConfigVersion
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+          cdnBucketConfig: { cdnProvider: 'aem-cs-fastly' },
+        },
+      });
+
+      const result = await mockHandler.runLlmoCustomerAnalysis(
+        'https://example.com',
+        context,
+        site,
+        auditContext,
+      );
+
+      // Should still complete successfully despite the error
+      expect(result.auditResult.status).to.equal('completed');
+      // Should log the error but continue processing
+      expect(log.error).to.have.been.calledWith('Error processing CDN bucket configuration changes');
+    });
+
     it('should trigger both referral imports and config-based audits on first-time onboarding with config changes', async () => {
       const auditContext = {
         configVersion: 'v1',
@@ -741,10 +810,10 @@ describe('LLMO Customer Analysis Handler', () => {
 
       // Should trigger:
       // - 4 referral traffic imports (one for each of the 4 weeks)
-      // - 1 cdn-logs-report (categories changed)
+      // - 4 cdn-logs-report (categories changed)
       // - 1 geo-brand-presence (brands and categories changed)
       // Total: 6 SQS messages
-      expect(sqs.sendMessage).to.have.callCount(6);
+      expect(sqs.sendMessage).to.have.callCount(9);
 
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/imports-queue',

@@ -6,7 +6,7 @@ WITH hosts AS (
   WHERE year  = '{{year}}'
     AND month = '{{month}}'
     AND day   = '{{day}}'
-    AND hour  = '{{hour}}'
+    {{hourFilter}}
 ),
 
 referrals_raw AS (
@@ -47,7 +47,7 @@ referrals_raw AS (
   WHERE year  = '{{year}}'
     AND month = '{{month}}'
     AND day   = '{{day}}'
-    AND hour  = '{{hour}}'
+    {{hourFilter}}
 
     -- referral traffic definition
     AND (

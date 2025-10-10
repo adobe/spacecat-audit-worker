@@ -26,7 +26,7 @@ FROM {{database}}.{{rawTable}}
 WHERE year  = '{{year}}'
   AND month = '{{month}}'
   AND day   = '{{day}}'
-  AND hour  = '{{hour}}'
+  {{hourFilter}}
 
   -- match known LLM-related user-agents
   AND REGEXP_LIKE(ua, '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot|^Google$)')
