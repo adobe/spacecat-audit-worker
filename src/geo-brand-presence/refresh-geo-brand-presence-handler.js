@@ -19,6 +19,13 @@ import { randomUUID } from 'crypto';
 import ExcelJS from 'exceljs';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { createMystiqueMessage } from './handler.js';
+import {
+  refreshDirectoryS3Key,
+  refreshMetadataFileS3Key,
+  refreshSheetResultFileName,
+  writeSheetRefreshResultFailed,
+  writeSheetRefreshResultSkipped,
+} from './util.js';
 
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js';
@@ -144,32 +151,29 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
     throw new Error(errMsg);
   }
   const auditId = randomUUID();
-  const folderKey = `refresh_geo_brand_presence/${auditId}`;
+  const folderKey = refreshDirectoryS3Key(auditId);
 
   try {
     // Create a metadata file to establish the folder structure
     const files = sheets.map((sheetName) => ({
-      file_name: `${sheetName}.xlsx`,
-      status: 'pending',
-      last_updated: null,
+      name: `${sheetName}.xlsx`,
+      resultFile: refreshSheetResultFileName(sheetName),
     }));
 
     const metadata = {
-      audit_id: auditId,
-      created_at: new Date().toISOString(),
-      status: 'in_progress',
+      auditId,
+      createdAt: new Date().toISOString(),
       files,
-      summary: {
-        total_files: files.length,
-        completed: 0,
-        pending: files.length,
-        failed: 0,
-      },
     };
+
+    // In our metadata directory, we write the following files:
+    // - metadata.json: contains a list of sheets to be processed, and their expected result files.
+    // - <sheetName>.metadata.json: for each sheet, a metadata file indicating
+    //                              success or failure of processing.
 
     await s3Client.send(new PutObjectCommand({
       Bucket: bucketName,
-      Key: `${folderKey}/metadata.json`,
+      Key: refreshMetadataFileS3Key(auditId),
       Body: JSON.stringify(metadata, null, 2),
       ContentType: 'application/json',
     }));
@@ -221,13 +225,33 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
 
     const errors = [];
     let successful = 0;
-    for (const result of results) {
-      if (result.status === 'fulfilled' && result.value) {
-        successful += 1;
-      } else if (result.status === 'rejected') {
-        errors.push(result.reason);
-      }
-    }
+    await Promise.allSettled(
+      results.map(async (result, i) => {
+        const sheetName = sheets[i];
+        if (result.status === 'fulfilled') {
+          if (result.value) {
+            successful += 1;
+          } else {
+            await writeSheetRefreshResultSkipped({
+              message: `Invalid sheet name format: ${sheets[i]}`,
+              outputDir: folderKey,
+              s3Client,
+              s3Bucket: bucketName,
+              sheetName,
+            });
+          }
+        } else if (result.status === 'rejected') {
+          await writeSheetRefreshResultFailed({
+            message: result.reason instanceof Error ? result.reason.message : String(result.reason),
+            outputDir: folderKey,
+            s3Client,
+            s3Bucket: bucketName,
+            sheetName,
+          });
+          errors.push(result.reason);
+        }
+      }),
+    );
 
     let logMsg = '%s:Created S3 folder for audit %s at s3://%s/%s';
     const logArgs = [AUDIT_NAME, auditId, bucketName, folderKey];
