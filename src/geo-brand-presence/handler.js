@@ -45,6 +45,7 @@ export const WEB_SEARCH_PROVIDERS = [
   'google_ai_overviews',
   'ai_mode',
   'perplexity',
+  'copilot',
   // Add more providers here as needed
 ];
 

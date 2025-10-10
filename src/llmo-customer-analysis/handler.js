@@ -181,7 +181,7 @@ async function triggerAllSteps(context, site, log, triggeredSteps, auditContext 
 
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
   const {
-    log, s3Client,
+    env, log, s3Client,
   } = context;
 
   const siteId = site.getSiteId();
@@ -245,7 +245,12 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   // Fetch and compare configs
   log.info(`Fetching LLMO config versions - current: ${configVersion}, previous: ${previousConfigVersion || 'none'}`);
 
-  const newConfigResult = await llmoConfig.readConfig(siteId, s3Client, { version: configVersion });
+  const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
+  const newConfigResult = await llmoConfig.readConfig(
+    siteId,
+    s3Client,
+    { s3Bucket, version: configVersion },
+  );
   const newConfig = newConfigResult.config;
   let oldConfig;
 
@@ -253,7 +258,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     const oldConfigResult = await llmoConfig.readConfig(
       siteId,
       s3Client,
-      { version: previousConfigVersion },
+      { s3Bucket, version: previousConfigVersion },
     );
     oldConfig = oldConfigResult.config;
   } else {
