@@ -288,7 +288,9 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   }
 
   // Determine opportunity types based on cadence
-  const opptyTypes = isDaily ? [GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE] : OPPTY_TYPES;
+  const opptyTypes = isDaily
+    ? [GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE]
+    : [GEO_BRAND_PRESENCE_OPPTY_TYPE];
 
   // Send messages for each combination of opportunity type and web search provider
   await Promise.all(
