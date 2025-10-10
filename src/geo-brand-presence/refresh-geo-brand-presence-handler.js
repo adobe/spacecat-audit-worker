@@ -179,7 +179,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
       ContentType: 'application/json',
     }));
 
-    const baseURL = site.getBaseUrl();
+    const baseURL = site.getBaseURL();
     const deliveryType = site.getDeliveryType();
     const { configVersion } = auditContext;
 
