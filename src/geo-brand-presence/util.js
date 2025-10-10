@@ -11,11 +11,15 @@
  */
 /* eslint-disable no-use-before-define */
 
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { z } from 'zod';
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 
 /**
  * @import {S3Client} from '@aws-sdk/client-s3';
  */
+
+/** @typedef {z.infer<typeof refreshMetadataSchema>} RefreshMetadata */
+/** @typedef {z.infer<typeof refreshSheetResultSchema>} RefreshSheetResult */
 
 /**
  * @param {string} auditId
@@ -52,7 +56,7 @@ export function refreshSheetResultFileS3Key(auditId, sheetName) {
 
 /**
  * @param {object} params
- * @param {params.message} [string]
+ * @param {string} [params.message]
  * @param {S3Client} params.s3Client
  * @param {string} params.s3Bucket
  * @param {string} params.outputDir
@@ -64,7 +68,7 @@ export function writeSheetRefreshResultFailed({ message, ...opts }) {
 
 /**
  * @param {object} params
- * @param {params.message} [string]
+ * @param {string} [params.message]
  * @param {S3Client} params.s3Client
  * @param {string} params.s3Bucket
  * @param {string} params.outputDir
@@ -76,7 +80,7 @@ export function writeSheetRefreshResultSkipped({ message, ...opts }) {
 
 /**
  * @param {object} params
- * @param {params.message} [string]
+ * @param {string} [params.message]
  * @param {S3Client} params.s3Client
  * @param {string} params.s3Bucket
  * @param {string} params.outputDir
@@ -113,3 +117,46 @@ async function writeSheetRefreshResult(status, message, {
     ContentType: 'application/json',
   }));
 }
+
+/**
+ * @template {z.ZodTypeAny} T
+ * @param {S3Client} s3Client
+ * @param {string} s3Bucket
+ * @param {string} s3Key
+ * @param {T} [schema]
+ * @returns {Promise<PromiseSettledResult<z.infer<T>>>}
+ */
+export async function loadJSONFromS3(s3Client, s3Bucket, s3Key, schema) {
+  try {
+    const result = await s3Client.send(
+      new GetObjectCommand({
+        Bucket: s3Bucket,
+        Key: s3Key,
+      }),
+    );
+
+    const text = await result.Body?.transformToString() ?? '';
+    const value = JSON.parse(text);
+    return { status: 'fulfilled', value: schema ? schema.parse(value) : value };
+  } catch (reason) {
+    return { status: 'rejected', reason };
+  }
+}
+
+export const refreshMetadataSchema = z.object({
+  auditId: z.uuid(),
+  createdAt: z.iso.datetime(),
+  files: z.array(
+    z.object({
+      name: z.string().endsWith('.xlsx'),
+      resultFile: z.string().endsWith('.metadata.json'),
+    }),
+  ),
+});
+
+export const refreshSheetResultSchema = z.object({
+  message: z.string().optional(),
+  sheetName: z.string().min(1),
+  status: z.enum(['failure', 'skipped', 'success']),
+  time: z.iso.datetime(),
+});

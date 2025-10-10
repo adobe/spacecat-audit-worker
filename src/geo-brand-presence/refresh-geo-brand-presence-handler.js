@@ -29,7 +29,7 @@ import {
 
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js';
- * @import { ISOCalendarWeek } from '@adobe/spacecat-shared-utils';
+ * @import { RefreshMetadata } from './util.js';
  */
 
 const AUDIT_NAME = 'REFRESH_GEO_BRAND_PRESENCE';
@@ -118,7 +118,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   const { siteId, auditContext } = message;
   let errMsg;
   const site = await Site.findById(siteId);
-  log.info('site was loaded', site);
+
   // fetch sheets that need to be refreshed from SharePoint
   // Get the SharePoint client
   const sharepointClient = await createLLMOSharepointClient(context);
@@ -160,6 +160,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
       resultFile: refreshSheetResultFileName(sheetName),
     }));
 
+    /** @type {RefreshMetadata} */
     const metadata = {
       auditId,
       createdAt: new Date().toISOString(),
@@ -207,7 +208,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
       );
 
       const msg = createMystiqueMessage({
-        type: 'detect:geo-brand-presence',
+        type: 'refresh:geo-brand-presence',
         auditId,
         baseURL,
         siteId,
