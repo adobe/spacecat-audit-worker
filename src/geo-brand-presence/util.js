@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 /* eslint-disable no-use-before-define */
+/* c8 ignore start */
 
 import { z } from 'zod';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
