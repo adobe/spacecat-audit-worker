@@ -1,3 +1,10 @@
+# [1.206.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.205.0...v1.206.0) (2025-10-10)
+
+
+### Features
+
+* enhance canonical and hreflang for Elmo integration ([#1359](https://github.com/adobe/spacecat-audit-worker/issues/1359)) ([7eaf356](https://github.com/adobe/spacecat-audit-worker/commit/7eaf356cc068113a1e67500d82f7edc825126487))
+
 # [1.205.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.204.3...v1.205.0) (2025-10-10)
 
 
