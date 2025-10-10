@@ -12,7 +12,12 @@
 /* c8 ignore start */
 import { prompt } from './prompt.js';
 
-async function concentrateProducts(pathProductArray, context, configCategories = [], maxCategories = 6) {
+async function concentrateProducts(
+  pathProductArray,
+  context,
+  configCategories = [],
+  maxCategories = 6,
+) {
   const { log } = context;
 
   if (!pathProductArray || pathProductArray.length === 0) {
@@ -25,7 +30,7 @@ async function concentrateProducts(pathProductArray, context, configCategories =
 
   // If we have config categories and enough products, prioritize them
   if (configCategoryCount >= 3) {
-    log.info(`Config categories >= 3: Using config categories only, no concentration needed`);
+    log.info('Config categories >= 3: Using config categories only, no concentration needed');
     return { paths: pathProductArray, usage: null };
   }
 
@@ -37,7 +42,7 @@ async function concentrateProducts(pathProductArray, context, configCategories =
   }
 
   const hasConfigCategories = configCategories.length > 0;
-  
+
   let systemPrompt = `You are an expert content categorization specialist focused on AGGRESSIVE GROUPING and SIMPLIFICATION of products into main categories.
 
 TASK: Reduce the product list to ${maxCategories} or fewer main categories by:
@@ -93,12 +98,12 @@ VALIDATION STEP: Before returning your answer, count the unique category names (
 
   if (hasConfigCategories) {
     const isExactMatch = maxCategories === configCategories.length;
-    
+
     systemPrompt += `
 
 ## CRITICAL: PRESERVE CONFIG CATEGORIES
 The following categories are provided by the user and MUST be preserved EXACTLY as-is in your output:
-${configCategories.map(cat => `- ${cat}`).join('\n')}
+${configCategories.map((cat) => `- ${cat}`).join('\n')}
 
 RULES for config categories:
 1. If a product name matches a config category EXACTLY, map it to itself (preserve it)
@@ -180,7 +185,7 @@ ${hasConfigCategories ? `\n\nCONFIG CATEGORIES (must preserve exactly):\n${JSON.
 async function deriveProductsForPaths(domain, paths, context, configCategories = []) {
   const { log } = context;
   const hasConfigCategories = configCategories.length > 0;
-  
+
   let systemPrompt = `You are an expert product classifier for URL path analysis. Your task is to analyze URL paths and identify BUSINESS PRODUCTS/SERVICES categories for Athena SQL analytics.
 
 ## OBJECTIVE
@@ -242,7 +247,7 @@ Example D: "/enterprise/marketing-automation/integrations"
 
 ## PRIORITY CATEGORIES
 The following categories are provided by the user and should be PRIORITIZED when classifying paths:
-${configCategories.map(cat => `- ${cat}`).join('\n')}
+${configCategories.map((cat) => `- ${cat}`).join('\n')}
 
 When a URL path could match one of these categories, prefer these over generic classifications.
 If none of these categories fit, then use your standard classification approach.`;
@@ -446,14 +451,19 @@ export async function analyzeProducts(domain, paths, context, configCategories =
 
   log.info(`Starting product analysis for domain: ${domain}`);
   const configCategoryCount = configCategories.length;
-  
+
   if (configCategoryCount > 0) {
     log.info(`Using ${configCategoryCount} config categories with priority`);
   }
 
   try {
     // Step 1: Classify paths with config category priority
-    const pathClassifications = await deriveProductsForPaths(domain, paths, context, configCategories);
+    const pathClassifications = await deriveProductsForPaths(
+      domain,
+      paths,
+      context,
+      configCategories,
+    );
 
     // Track token usage from path classification
     if (pathClassifications.usage) {
@@ -464,7 +474,7 @@ export async function analyzeProducts(domain, paths, context, configCategories =
 
     // Step 2: Apply category count logic and concentration
     let concentratedClassifications;
-    
+
     if (configCategoryCount >= 3) {
       // Use ONLY config categories - map all derived products to config categories
       log.info(`Config categories >= 3 (${configCategoryCount}): Mapping to config categories only (limit ${configCategoryCount})`);
@@ -472,7 +482,7 @@ export async function analyzeProducts(domain, paths, context, configCategories =
         pathClassifications.paths,
         context,
         configCategories,
-        configCategoryCount // Limit to ONLY the config categories provided
+        configCategoryCount, // Limit to ONLY the config categories provided
       );
     } else if (configCategoryCount >= 1) {
       // Use config categories + LLM concentration to reach 6 total
@@ -481,7 +491,7 @@ export async function analyzeProducts(domain, paths, context, configCategories =
         pathClassifications.paths,
         context,
         configCategories,
-        6 // Target 6 total categories
+        6, // Target 6 total categories
       );
     } else {
       // Pure LLM generation - max 6 categories
@@ -490,7 +500,7 @@ export async function analyzeProducts(domain, paths, context, configCategories =
         pathClassifications.paths,
         context,
         [],
-        6 // Max 6 LLM-only categories
+        6, // Max 6 LLM-only categories
       );
     }
 
@@ -519,10 +529,10 @@ export async function analyzeProducts(domain, paths, context, configCategories =
     delete combinedPatterns.other;
 
     log.info(`Completed product analysis for domain: ${domain}`);
-    
+
     const finalCategories = Object.keys(combinedPatterns);
     log.info(`Final categories (${finalCategories.length}): ${finalCategories.join(', ')}`);
-    
+
     // Log category breakdown if config categories were provided
     if (configCategoryCount > 0) {
       const matchedConfig = finalCategories.filter((c) => configCategories.includes(c));
@@ -532,7 +542,7 @@ export async function analyzeProducts(domain, paths, context, configCategories =
         log.info(`└─ Additional LLM categories (${extraCategories.length}): ${extraCategories.join(', ')}`);
       }
     }
-    
+
     log.info(`Total token usage for product analysis: ${JSON.stringify(totalTokenUsage)}`);
     return combinedPatterns;
   } catch (error) {

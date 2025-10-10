@@ -315,15 +315,15 @@ export async function analyzePageTypes(domain, paths, context) {
     }
 
     const groupedPaths = groupPathsByPageType(pathClassifications.paths);
-    
+
     // Filter out "other" and "unknown" page types before generating regexes
     const filteredGroupedPaths = Object.entries(groupedPaths)
       .filter(([pageType]) => pageType !== 'other' && pageType !== 'unknown')
-      .reduce((acc, [pageType, paths]) => {
-        acc[pageType] = paths;
+      .reduce((acc, [pageType, pathsForType]) => {
+        acc[pageType] = pathsForType;
         return acc;
       }, {});
-    
+
     const regexPatterns = await deriveRegexesForPageTypes(domain, filteredGroupedPaths, context);
 
     // Track token usage from regex generation
@@ -349,13 +349,13 @@ export async function analyzePageTypes(domain, paths, context) {
     // Order page types: homepage first, then alphabetically
     const pageTypeOrder = ['homepage', 'product', 'blog', 'help', 'about', 'contact', 'search', 'cart', 'checkout', 'legal', 'category'];
     const orderedRegexes = {};
-    
+
     pageTypeOrder.forEach((pageType) => {
       if (filteredRegexes[pageType]) {
         orderedRegexes[pageType] = filteredRegexes[pageType];
       }
     });
-    
+
     // Add any remaining page types not in the order list
     Object.keys(filteredRegexes).forEach((pageType) => {
       if (!orderedRegexes[pageType]) {

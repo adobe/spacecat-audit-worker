@@ -102,7 +102,7 @@ export async function triggerCdnLogsReport(context, site, configCategories = [])
   const cdnLogsMessage = {
     type: 'cdn-logs-report',
     siteId,
-    auditContext: { 
+    auditContext: {
       weekOffset: -1,
       categoriesUpdated: true,
       configCategories,
@@ -279,7 +279,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     const existingReport = await LatestAudit?.findBySiteIdAndAuditType(siteId, 'cdn-logs-report');
     if (existingReport?.length > 0) {
       log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
-      const configCategories = Object.values(newConfig.categories || {}).map(cat => cat.name);
+      const configCategories = Object.values(newConfig.categories).map((cat) => cat.name);
       await triggerCdnLogsReport(context, site, configCategories);
       triggeredSteps.push('cdn-logs-report');
     }
