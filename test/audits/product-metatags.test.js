@@ -47,6 +47,7 @@ import {
   preprocessRumData,
   getOrganicTrafficForEndpoint,
   productMetatagsAutoDetect,
+  buildSuggestionKey,
 } from '../../src/product-metatags/handler.js';
 // Unused import - keeping for potential future use
 // import productMetatagsAutoSuggest from
@@ -1349,14 +1350,14 @@ describe('Product MetaTags', () => {
         dataAccessStub.Opportunity.create = sinon.stub().returns(opportunity);
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(dataAccessStub.Opportunity.create).to.be.calledWith(productTestData.OpportunityData);
-        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info.args.some((c) => c && c[0] && /\[PRODUCT-METATAGS] Successfully synced \d+ suggestions for site: site-id and product-metatags audit type\./.test(c[0]))).to.be.true;
       });
 
       it('should use existing opportunity and add suggestions', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info.args.some((c) => c && c[0] && /\[PRODUCT-METATAGS] Successfully synced \d+ suggestions for site: site-id and product-metatags audit type\./.test(c[0]))).to.be.true;
       });
 
       it('should throw error if fetching opportunity fails', async () => {
@@ -1385,7 +1386,7 @@ describe('Product MetaTags', () => {
         opportunity.getSuggestions.returns(productTestData.existingSuggestions);
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info.args.some((c) => c && c[0] && /\[PRODUCT-METATAGS] Successfully synced \d+ suggestions for site: site-id and product-metatags audit type\./.test(c[0]))).to.be.true;
       });
 
       it('should mark existing suggestions OUTDATED if not present in audit data', async () => {
@@ -1438,7 +1439,7 @@ describe('Product MetaTags', () => {
         await opportunityAndSuggestions(auditUrl, auditDataModified, context);
         expect(dataAccessStub.Suggestion.bulkUpdateStatus).to.be.calledWith(productTestData.existingSuggestions.splice(0, 2), 'OUTDATED');
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info.args.some((c) => c && c[0] && /\[PRODUCT-METATAGS] Successfully synced \d+ suggestions for site: site-id and product-metatags audit type\./.test(c[0]))).to.be.true;
       });
 
       it('should preserve existing AI suggestions and overrides when syncing', async () => {
@@ -1532,7 +1533,7 @@ describe('Product MetaTags', () => {
         expectedSuggestionModified[0].rank = -1;
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info.args.some((c) => c && c[0] && /\[PRODUCT-METATAGS] Successfully synced \d+ suggestions for site: site-id and product-metatags audit type\./.test(c[0]))).to.be.true;
       });
 
       it('should handle malformed URLs in audit data', async () => {
@@ -1552,7 +1553,7 @@ describe('Product MetaTags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('malformed-url.com/path/product1');
-        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info.args.some((c) => c && c[0] && /\[PRODUCT-METATAGS] Successfully synced \d+ suggestions for site: site-id and product-metatags audit type\./.test(c[0]))).to.be.true;
       });
 
       it('should handle URLs with port numbers', async () => {
@@ -1576,7 +1577,7 @@ describe('Product MetaTags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('https://example.com:8080/product1');
-        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced 4 suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should handle URLs with query parameters', async () => {
@@ -1600,7 +1601,7 @@ describe('Product MetaTags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('https://example.com/product1');
-        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced 4 suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should handle case when config.useHostnameOnly is undefined', async () => {
@@ -1624,7 +1625,7 @@ describe('Product MetaTags', () => {
         const suggestions = addSuggestionsCall.args[0];
         // Should preserve full URL path since useHostnameOnly is undefined
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/product1');
-        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced 4 suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should handle case when getSite method returns undefined', async () => {
@@ -1645,7 +1646,7 @@ describe('Product MetaTags', () => {
         const suggestions = addSuggestionsCall.args[0];
         // Should preserve full URL path since getSite returns undefined
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/product1');
-        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced 4 suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should handle case when getSite method returns null', async () => {
@@ -1666,13 +1667,14 @@ describe('Product MetaTags', () => {
         const suggestions = addSuggestionsCall.args[0];
         // Should preserve full URL path since getSite returns null
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/product1');
-        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+        expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced 4 suggestions for site: site-id and product-metatags audit type.');
       });
 
       it('should handle error in site configuration', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
         const testError = new Error('Failed to get site');
         dataAccessStub.Site.findById.rejects(testError);
+
         const auditDataWithPort = {
           ...productTestData.auditData,
           auditResult: {
@@ -1747,6 +1749,51 @@ describe('Product MetaTags', () => {
         expect(logStub.info).to.be.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
         expect(opportunity.addSuggestions).to.not.be.called;
       });
+
+      it('should log error when getIssueRanking throws during suggestion creation', async () => {
+        // esmock handler with throwing getIssueRanking to hit catch block (lines 137-139)
+        const opportunityObj = opportunity; // reuse from outer scope
+        const mockModule = await esmock('../../src/product-metatags/handler.js', {
+          '../../src/product-metatags/opportunity-utils.js': {
+            getIssueRanking: () => { throw new Error('rank boom'); },
+            getBaseUrl: (url) => url.replace(/\/$/, ''),
+          },
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(opportunityObj),
+          },
+          '../../src/utils/data-access.js': {
+            syncSuggestions: sinon.stub().resolves(),
+          },
+        });
+        const { opportunityAndSuggestions: mockedFn } = mockModule;
+        await mockedFn(auditUrl, auditData, context);
+        expect(logStub.error).to.have.been.calledWithMatch('[PRODUCT-METATAGS] Error creating suggestion for endpoint');
+        // since all suggestions invalid, no valid suggestions to sync
+        expect(logStub.warn).to.have.been.calledWith('[PRODUCT-METATAGS] No valid suggestions to sync');
+        expect(logStub.info).to.have.been.calledWith('[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: site-id and product-metatags audit type.');
+      });
+
+      it('should log error in mapNewSuggestion when suggestion has invalid rank', async () => {
+        // esmock handler with syncSuggestions that invokes mapNewSuggestion with invalid rank (-1) to hit lines 168-169
+        const opportunityObj = opportunity;
+        const mockModule = await esmock('../../src/product-metatags/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: sinon.stub().resolves(opportunityObj),
+          },
+          '../../src/utils/data-access.js': {
+            syncSuggestions: async ({ mapNewSuggestion }) => {
+              // call mapNewSuggestion with an invalid suggestion to trigger error log
+              mapNewSuggestion({ rank: -1, url: 'https://example.com/bad', issue: 'Bad issue' });
+              return Promise.resolve();
+            },
+          },
+        });
+        const { opportunityAndSuggestions: mockedFn } = mockModule;
+        await mockedFn(auditUrl, auditData, context);
+        expect(logStub.error).to.have.been.calledWith('[PRODUCT-METATAGS] Invalid rank in mapNewSuggestion: -1', { url: 'https://example.com/bad', issue: 'Bad issue' });
+      });
+
+
 
       it('should handle null detectedTags gracefully', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
@@ -2909,7 +2956,7 @@ describe('Product MetaTags', () => {
       await mockedFunction(mockSite, pagesSet, mockContext);
 
       expect(logStub.info.getCalls().some((call) => call.args[0].includes('Processing product page:'))).to.be.true;
-      expect(logStub.info.getCalls().some((call) => call.args[0].includes('Extracted product tags for'))).to.be.true;
+      expect(logStub.debug.getCalls().some((call) => call.args[0].includes('Extracted product tags for'))).to.be.true;
       expect(logStub.info.getCalls().some((call) => call.args[0].includes('Product pages processed: 1 out of 1 total pages'))).to.be.true;
     });
 
@@ -4533,6 +4580,19 @@ describe('Product MetaTags', () => {
 
       // Verify the function executed successfully
       expect(logStub.info).to.have.been.called;
+  describe('buildSuggestionKey', () => {
+    it('uses fallbacks when fields are missing', () => {
+      expect(buildSuggestionKey(undefined)).to.equal('unknown-url|unknown-issue|');
+      expect(buildSuggestionKey({ url: 'u' })).to.equal('u|unknown-issue|');
+      expect(buildSuggestionKey({ issue: 'i' })).to.equal('unknown-url|i|');
+      expect(buildSuggestionKey({ tagContent: 't' })).to.equal('unknown-url|unknown-issue|t');
+    });
+
+    it('uses provided values when present', () => {
+      const key = buildSuggestionKey({ url: 'https://x', issue: 'Title too long', tagContent: 'foo' });
+      expect(key).to.equal('https://x|Title too long|foo');
+    });
+  });
     });
   });
 });

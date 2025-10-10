@@ -364,8 +364,8 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
+          'http://example.com/page1',
           'scrapes/site-id/page1/scrape.json',
-          'scrapes/site-id/',
           logStub,
         );
 
@@ -401,8 +401,8 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
+          'http://example.com/',
           'scrapes/site-id/scrape.json',
-          'scrapes/site-id/',
           logStub,
         );
 
@@ -427,8 +427,8 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
+          'http://example.com/page1',
           'scrapes/site-id/page1/scrape.json',
-          'scrapes/site-id/',
           logStub,
         );
 
@@ -461,8 +461,8 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
+          'http://example.com/404',
           'scrapes/site-id/404/scrape.json',
-          'scrapes/site-id/',
           logStub,
         );
 
@@ -495,8 +495,8 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
+          'http://example.com/valid-page',
           'scrapes/site-id/valid-page/scrape.json',
-          'scrapes/site-id/',
           logStub,
         );
 
@@ -1103,9 +1103,13 @@ describe('Meta Tags', () => {
           log: logStub,
           s3Client: s3ClientStub,
           dataAccess: dataAccessStub,
-          env: {
-            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-          },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          scrapeResultPaths: new Map([
+            ['http://example.com/blog/page1', 'scrapes/site-id/blog/page1/scrape.json'],
+            ['http://example.com/blog/page2', 'scrapes/site-id/blog/page2/scrape.json'],
+            ['http://example.com/blog/page3', 'scrapes/site-id/blog/page3/scrape.json'],
+            ['http://example.com/', 'scrapes/site-id/scrape.json'],
+          ]),
         };
       });
 
@@ -1170,7 +1174,7 @@ describe('Meta Tags', () => {
 
         expect(result).to.deep.equal({ status: 'complete' });
         expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
-        expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket and prefix scrapes/site-id/');
+        expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket');
       }).timeout(10000);
 
       it('should handle RUM API errors gracefully', async () => {

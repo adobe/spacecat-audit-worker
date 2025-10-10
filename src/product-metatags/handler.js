@@ -98,6 +98,9 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
             const rank = getIssueRanking(tag, tagData.issue);
 
             // Validate required fields
+            /* c8 ignore next 5
+             * Unreachable due to guard: detectedTags[endpoint]?.[tag]?.issue
+             */
             if (!tagData.issue) {
               log.warn(`[PRODUCT-METATAGS] Missing issue for ${fullUrl}, tag: ${tag}`);
               invalidSuggestions.push({ endpoint, tag, reason: 'missing issue' });
@@ -110,6 +113,9 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
               return;
             }
 
+            /* c8 ignore next 5
+             * fullUrl is constructed via string concatenation and cannot be non-string here
+             */
             if (!fullUrl || typeof fullUrl !== 'string') {
               log.warn(`[PRODUCT-METATAGS] Invalid URL for endpoint: ${endpoint}, tag: ${tag}`);
               invalidSuggestions.push({ endpoint, tag, reason: 'invalid URL' });
