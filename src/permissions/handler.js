@@ -227,6 +227,7 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
     await Promise.all(strongOpportunities.map(
       (o) => markOpportunityAsFixed(TOO_STRONG_AUDIT_TYPE, o, site, context),
     ));
+    return { status: 'complete' };
   } else {
     const tooStrongOpt = await convertToOpportunity(
       auditUrl,
@@ -308,6 +309,7 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
     await Promise.all(
       adminOpportunities.map((o) => markOpportunityAsFixed(REDUNDANT_AUDIT_TYPE, o, site, context)),
     );
+    return { status: 'complete' };
   } else {
     const adminOpt = await convertToOpportunity(
       auditUrl,
@@ -321,6 +323,7 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
     const generateSuggestions = configuration.isHandlerEnabledForSite('security-permissions-auto-suggest', site);
     if (!generateSuggestions) {
       log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] security-permissions-auto-suggest not configured, skipping version recommendations`);
+      return { status: 'complete' };
     }
 
     // Flatten adminChecks arrays by principal and path and privileges
