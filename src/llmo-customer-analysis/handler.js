@@ -317,13 +317,15 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   }
 
   const hasBrandPresenceChanges = changes.topics || changes.categories || changes.entities;
-  const needsBrandPresenceRefresh = changes.brands?.aliases || changes.competitors?.competitors;
+  const needsBrandPresenceRefresh = previousConfigVersion
+    && (changes.brands?.aliases || changes.competitors?.competitors);
 
   if (hasBrandPresenceChanges) {
     log.info('LLMO config changes detected in brands, competitors, topics, categories, or entities; triggering geo-brand-presence audit');
     await triggerGeoBrandPresence(context, site, auditContext);
     triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
-  } else if (needsBrandPresenceRefresh) {
+  }
+  if (needsBrandPresenceRefresh) {
     log.info('LLMO config changes detected in brand or competitor aliases; triggering geo-brand-presence refresh');
     await triggerRefreshGeoBrandPresence(context, site, configVersion);
     triggeredSteps.push('refresh-geo-brand-presence');
