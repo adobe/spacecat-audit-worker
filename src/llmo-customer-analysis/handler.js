@@ -21,10 +21,11 @@ import {
   getLastSunday, compareConfigs,
 } from './utils.js';
 import { getRUMUrl } from '../support/utils.js';
+import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
+import { sendOnboardingNotification } from './onboarding-notifications.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
-const AGENTIC_TRAFFIC_ANALYSIS_AUDIT = 'cdn-analysis';
 
 async function enableAudits(site, context, audits = []) {
   const { dataAccess } = context;
@@ -45,26 +46,6 @@ function enableImports(site, imports = []) {
       siteConfig.enableImport(type, options);
     }
   });
-}
-
-// Enables the cdn-analysis audit only if no other site in this organization has it enabled
-async function enableCdnAnalysis(site, context) {
-  const { dataAccess, log } = context;
-  const { Configuration, Site } = dataAccess;
-  const configuration = await Configuration.findLatest();
-  const orgId = site.getOrganizationId();
-  const sitesInOrg = await Site.allByOrganizationId(orgId);
-
-  const hasAgenticTrafficEnabled = sitesInOrg.some(
-    (orgSite) => configuration.isHandlerEnabledForSite(AGENTIC_TRAFFIC_ANALYSIS_AUDIT, orgSite),
-  );
-
-  if (!hasAgenticTrafficEnabled) {
-    log.info(`Enabling agentic traffic audits for organization ${orgId} (first site in org)`);
-    configuration.enableHandlerForSite(AGENTIC_TRAFFIC_ANALYSIS_AUDIT, site);
-  } else {
-    log.debug(`Agentic traffic audits already enabled for organization ${orgId}, skipping`);
-  }
 }
 
 async function checkOptelData(domain, context) {
@@ -110,7 +91,7 @@ export async function triggerReferralTrafficImports(context, site) {
   log.info(`Successfully triggered ${last4Weeks.length} referral traffic imports`);
 }
 
-export async function triggerCdnLogsReport(context, site) {
+export async function triggerCdnLogsReport(context, site, configCategories = []) {
   const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
@@ -118,13 +99,31 @@ export async function triggerCdnLogsReport(context, site) {
 
   log.info(`Triggering cdn-logs-report audit for site: ${siteId}`);
 
-  const cdnLogsMessage = {
+  // first send with categoriesUpdated flag for last week
+  await sqs.sendMessage(configuration.getQueues().audits, {
     type: 'cdn-logs-report',
     siteId,
-    auditContext: { weekOffset: -1 },
-  };
+    auditContext: {
+      weekOffset: -1,
+      categoriesUpdated: true,
+      configCategories,
+    },
+  });
 
-  await sqs.sendMessage(configuration.getQueues().audits, cdnLogsMessage);
+  // then trigger cdn-logs-report for last 3 weeks
+  for (const weekOffset of [-2, -3, -4]) {
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(
+      configuration.getQueues().audits,
+      {
+        type: 'cdn-logs-report',
+        siteId,
+        auditContext: { weekOffset },
+      },
+      null,
+      300,
+    );
+  }
 
   log.info('Successfully triggered cdn-logs-report audit');
 }
@@ -172,9 +171,6 @@ export async function triggerGeoBrandPresence(context, site, auditContext = {}) 
 async function triggerAllSteps(context, site, log, triggeredSteps, auditContext = {}) {
   log.info('Triggering all relevant audits (no config version provided or first-time setup)');
 
-  await triggerCdnLogsReport(context, site);
-  triggeredSteps.push('cdn-logs-report');
-
   await triggerGeoBrandPresence(context, site, auditContext);
   triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
 }
@@ -205,8 +201,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     { type: 'llmo-prompts-ahrefs', options: { limit: 25 } },
     { type: 'top-pages' },
   ]);
-
-  await enableCdnAnalysis(site, context);
 
   log.info(`Starting LLMO customer analysis for site: ${siteId}, domain: ${domain}`);
 
@@ -263,15 +257,46 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     oldConfig = oldConfigResult.config;
   } else {
     oldConfig = llmoConfig.defaultConfig();
+    await sendOnboardingNotification(context, site, 'first_configuration', { configVersion });
   }
 
   const changes = compareConfigs(oldConfig, newConfig);
   const hasCdnLogsChanges = changes.categories;
 
+  if (changes.cdnBucketConfig) {
+    try {
+      log.info('LLMO config changes detected in CDN bucket configuration; processing CDN config changes');
+
+      /* c8 ignore next */
+      if (isFirstTimeOnboarding || !oldConfig.cdnBucketConfig) {
+        await sendOnboardingNotification(context, site, 'cdn_provisioning', { cdnBucketConfig: changes.cdnBucketConfig });
+        log.info('First-time LLMO onboarding detected', {
+          siteId,
+          cdnBucketConfig: changes.cdnBucketConfig,
+        });
+      }
+
+      const cdnConfigContext = {
+        ...context,
+        params: { siteId },
+      };
+
+      await handleCdnBucketConfigChanges(cdnConfigContext, changes.cdnBucketConfig);
+      triggeredSteps.push('cdn-bucket-config');
+    } catch (error) {
+      log.error('Error processing CDN bucket configuration changes', error);
+    }
+  }
+
   if (hasCdnLogsChanges) {
-    log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
-    await triggerCdnLogsReport(context, site);
-    triggeredSteps.push('cdn-logs-report');
+    const { LatestAudit } = context.dataAccess;
+    const existingReport = await LatestAudit?.findBySiteIdAndAuditType(siteId, 'cdn-logs-report');
+    if (existingReport?.length > 0) {
+      log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
+      const configCategories = Object.values(newConfig.categories).map((cat) => cat.name);
+      await triggerCdnLogsReport(context, site, configCategories);
+      triggeredSteps.push('cdn-logs-report');
+    }
   }
 
   const hasBrandPresenceChanges = changes.brands
