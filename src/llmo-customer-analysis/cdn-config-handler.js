@@ -137,12 +137,12 @@ async function handleAdobeFastly(siteId, { dataAccess: { Configuration, LatestAu
   const config = await Configuration.findLatest();
   const auditQueue = config.getQueues().audits;
 
-  // Queue CDN analysis for last week (Monday to Sunday)
+  // Queue CDN analysis from last Monday until today
   const lastMonday = startOfWeek(subWeeks(new Date(), 1), { weekStartsOn: 1 });
-  const lastSunday = addDays(lastMonday, 6);
+  const today = new Date();
 
   const analysisPromises = [];
-  for (let date = new Date(lastMonday); !isAfter(date, lastSunday); date = addDays(date, 1)) {
+  for (let date = new Date(lastMonday); !isAfter(date, today); date = addDays(date, 1)) {
     analysisPromises.push(sqs.sendMessage(auditQueue, {
       type: 'cdn-analysis',
       siteId,
