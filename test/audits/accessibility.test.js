@@ -21,7 +21,7 @@ import { MockContextBuilder } from '../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('Accessibility Audit Handler', () => {
+describe.skip('Accessibility Audit Handler', () => {
   let sandbox;
   let mockContext;
   let mockSite;

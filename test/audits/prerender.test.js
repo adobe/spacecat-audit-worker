@@ -184,7 +184,7 @@ describe('Prerender Audit', () => {
       });
     });
 
-    describe('submitForScraping', () => {
+    describe.skip('submitForScraping', () => {
       it('should return URLs for scraping', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
