@@ -99,7 +99,8 @@ export async function triggerCdnLogsReport(context, site, configCategories = [])
 
   log.info(`Triggering cdn-logs-report audit for site: ${siteId}`);
 
-  const cdnLogsMessage = {
+  // first send with categoriesUpdated flag for last week
+  await sqs.sendMessage(configuration.getQueues().audits, {
     type: 'cdn-logs-report',
     siteId,
     auditContext: {
@@ -107,9 +108,22 @@ export async function triggerCdnLogsReport(context, site, configCategories = [])
       categoriesUpdated: true,
       configCategories,
     },
-  };
+  });
 
-  await sqs.sendMessage(configuration.getQueues().audits, cdnLogsMessage);
+  // then trigger cdn-logs-report for last 3 weeks
+  for (const weekOffset of [-2, -3, -4]) {
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(
+      configuration.getQueues().audits,
+      {
+        type: 'cdn-logs-report',
+        siteId,
+        auditContext: { weekOffset },
+      },
+      null,
+      300,
+    );
+  }
 
   log.info('Successfully triggered cdn-logs-report audit');
 }
