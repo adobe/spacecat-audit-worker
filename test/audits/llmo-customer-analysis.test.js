@@ -78,6 +78,7 @@ describe('LLMO Customer Analysis Handler', () => {
       log,
       dataAccess,
       s3Client: {},
+      env: { S3_IMPORTER_BUCKET_NAME: 'importer-bucket' },
     };
   });
 
