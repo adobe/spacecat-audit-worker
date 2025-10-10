@@ -15,12 +15,12 @@ import { main as universalMain } from './index.js';
 export const main = async () => {
   const messageBody = {
     type: 'llm-blocked',
-    siteId: 'c2473d89-e997-458d-a86d-b4096649c12b',
+    siteId: 'b1555a54-48b4-47ee-97c1-438257bd3839',
     auditContext: {
       next: 'check-llm-blocked',
       auditId: 'a263123c-9f9a-44a8-9531-955884563472',
       type: 'llm-blocked',
-      fullAuditRef: 'llm-blocked::adobe.com',
+      fullAuditRef: 'llm-blocked::cisco.com',
     },
   };
 

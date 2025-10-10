@@ -124,4 +124,16 @@ export const SHEET_CONFIGS = {
         .sort((a, b) => b[6] - a[6]); // sort by pageviews (descending)
     },
   },
+  patterns: {
+    getHeaders: () => [
+      'name',
+      'regex',
+    ],
+    headerColor: HEADER_COLOR,
+    numberColumns: [],
+    processData: (data) => data?.map((row) => [
+      row.name || '',
+      row.regex || '',
+    ]) || [],
+  },
 };

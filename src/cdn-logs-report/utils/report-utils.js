@@ -128,8 +128,12 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
   };
 }
 
-export function buildSiteFilters(filters = []) {
-  if (!filters || filters.length === 0) return '';
+export function buildSiteFilters(filters, site) {
+  if (!filters || filters.length === 0) {
+    const baseURL = site.getBaseURL();
+    const { host } = new URL(baseURL);
+    return `REGEXP_LIKE(host, '(?i)(${host})')`;
+  }
 
   const clauses = filters.map(({ key, value, type }) => {
     const regexPattern = value.join('|');
@@ -164,7 +168,7 @@ export async function fetchRemotePatterns(site) {
     });
 
     if (!res.ok) {
-      throw new Error(`Failed to fetch pattern data from ${url}: ${res.status} ${res.statusText}`);
+      return null;
     }
 
     const data = await res.json();
