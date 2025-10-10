@@ -1,3 +1,10 @@
+# [1.204.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.203.1...v1.204.0) (2025-10-10)
+
+
+### Features
+
+* enable Copilot for Geo Brand Presence ([#1378](https://github.com/adobe/spacecat-audit-worker/issues/1378)) ([0cadb56](https://github.com/adobe/spacecat-audit-worker/commit/0cadb568a1af54b86f26169722dead06b5aa5002))
+
 ## [1.203.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.203.0...v1.203.1) (2025-10-10)
 
 
