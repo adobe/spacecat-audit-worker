@@ -354,6 +354,310 @@ describe('data-access', () => {
         mapNewSuggestion,
       })).to.be.rejectedWith('Failed to create suggestions for siteId');
     });
+
+    describe('debug logging for large datasets', () => {
+      it('should log count only when there are 0 outdated suggestions', async () => {
+        const newData = [{ key: '1' }];
+        mockOpportunity.getSuggestions.resolves([]);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        // Check that outdated count is logged
+        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 0');
+        // Verify no sample logs for empty array
+        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
+        expect(debugCalls.some((msg) => msg.includes('Outdated suggestions sample'))).to.be.false;
+      });
+
+      it('should log full data when there are 1-10 outdated suggestions', async () => {
+        const existingSuggestions = Array.from({ length: 5 }, (_, i) => ({
+          id: `${i + 1}`,
+          data: { key: `${i + 1}` },
+          getData: sinon.stub().returns({ key: `${i + 1}` }),
+          getStatus: sinon.stub().returns('NEW'),
+        }));
+        const newData = [{ key: '99' }];
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        // Check that outdated count is logged
+        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 5');
+        // Check that full sample is logged (all 5 items)
+        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
+        const sampleLog = debugCalls.find((msg) => msg.includes('Outdated suggestions sample:'));
+        expect(sampleLog).to.exist;
+        expect(sampleLog).to.not.include('first 10');
+      });
+
+      it('should log only first 10 items when there are more than 10 outdated suggestions', async () => {
+        const existingSuggestions = Array.from({ length: 15 }, (_, i) => ({
+          id: `${i + 1}`,
+          data: { key: `${i + 1}` },
+          getData: sinon.stub().returns({ key: `${i + 1}` }),
+          getStatus: sinon.stub().returns('NEW'),
+        }));
+        const newData = [{ key: '99' }];
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        // Check that outdated count is logged
+        expect(mockLogger.debug).to.have.been.calledWith('Outdated suggestions count: 15');
+        // Check that only first 10 are logged
+        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
+        const sampleLog = debugCalls.find((msg) => msg.includes('Outdated suggestions sample (first 10):'));
+        expect(sampleLog).to.exist;
+      });
+
+      it('should log count only when there are 0 existing suggestions', async () => {
+        const newData = [{ key: '1' }];
+        mockOpportunity.getSuggestions.resolves([]);
+        mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        // Check that existing count is logged
+        expect(mockLogger.debug).to.have.been.calledWith('Existing suggestions count: 0');
+        // Verify no sample logs for empty array
+        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
+        expect(debugCalls.some((msg) => msg.includes('Existing suggestions sample'))).to.be.false;
+      });
+
+      it('should log full data when there are 1-10 existing suggestions', async () => {
+        const existingSuggestions = Array.from({ length: 8 }, (_, i) => ({
+          id: `${i + 1}`,
+          data: { key: `${i + 1}` },
+          getData: sinon.stub().returns({ key: `${i + 1}` }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+          save: sinon.stub(),
+          setUpdatedBy: sinon.stub().returnsThis(),
+        }));
+        const newData = existingSuggestions.map((s) => s.data);
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        // Check that existing count is logged
+        expect(mockLogger.debug).to.have.been.calledWith('Existing suggestions count: 8');
+        // Check that full sample is logged
+        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
+        const sampleLog = debugCalls.find((msg) => msg.includes('Existing suggestions sample:'));
+        expect(sampleLog).to.exist;
+        expect(sampleLog).to.not.include('first 10');
+      });
+
+      it('should log only first 10 items when there are more than 10 existing suggestions', async () => {
+        const existingSuggestions = Array.from({ length: 20 }, (_, i) => ({
+          id: `${i + 1}`,
+          data: { key: `${i + 1}` },
+          getData: sinon.stub().returns({ key: `${i + 1}` }),
+          getStatus: sinon.stub().returns('NEW'),
+          setData: sinon.stub(),
+          save: sinon.stub(),
+          setUpdatedBy: sinon.stub().returnsThis(),
+        }));
+        const newData = existingSuggestions.map((s) => s.data);
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        // Check that existing count is logged
+        expect(mockLogger.debug).to.have.been.calledWith('Existing suggestions count: 20');
+        // Check that only first 10 are logged
+        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
+        const sampleLog = debugCalls.find((msg) => msg.includes('Existing suggestions sample (first 10):'));
+        expect(sampleLog).to.exist;
+      });
+
+      it('should log full data when there are 1-10 updated suggestions', async () => {
+        const existingSuggestions = Array.from({ length: 7 }, (_, i) => ({
+          id: `${i + 1}`,
+          data: { key: `${i + 1}`, title: 'old' },
+          getData: sinon.stub().returns({ key: `${i + 1}`, title: 'old' }),
+          setData: sinon.stub(),
+          save: sinon.stub(),
+          getStatus: sinon.stub().returns('NEW'),
+          setUpdatedBy: sinon.stub().returnsThis(),
+        }));
+        const newData = existingSuggestions.map((s) => ({ key: s.data.key, title: 'new' }));
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        // Check that updated count is logged
+        expect(mockLogger.debug).to.have.been.calledWith('Updated existing suggestions count: 7');
+        // Check that full sample is logged
+        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
+        const sampleLog = debugCalls.find((msg) => msg.includes('Updated existing suggestions sample:'));
+        expect(sampleLog).to.exist;
+        expect(sampleLog).to.not.include('first 10');
+      });
+
+      it('should log only first 10 items when there are more than 10 updated suggestions', async () => {
+        const existingSuggestions = Array.from({ length: 12 }, (_, i) => ({
+          id: `${i + 1}`,
+          data: { key: `${i + 1}`, title: 'old' },
+          getData: sinon.stub().returns({ key: `${i + 1}`, title: 'old' }),
+          setData: sinon.stub(),
+          save: sinon.stub(),
+          getStatus: sinon.stub().returns('NEW'),
+          setUpdatedBy: sinon.stub().returnsThis(),
+        }));
+        const newData = existingSuggestions.map((s) => ({ key: s.data.key, title: 'new' }));
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        // Check that updated count is logged
+        expect(mockLogger.debug).to.have.been.calledWith('Updated existing suggestions count: 12');
+        // Check that only first 10 are logged
+        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
+        const sampleLog = debugCalls.find((msg) => msg.includes('Updated existing suggestions sample (first 10):'));
+        expect(sampleLog).to.exist;
+      });
+
+      it('should log full data when there are 1-10 new suggestions', async () => {
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { key: '1' },
+            getData: sinon.stub().returns({ key: '1' }),
+            getStatus: sinon.stub().returns('NEW'),
+            setData: sinon.stub(),
+            save: sinon.stub(),
+            setUpdatedBy: sinon.stub().returnsThis(),
+          },
+        ];
+        const newData = [
+          { key: '1' },
+          ...Array.from({ length: 9 }, (_, i) => ({ key: `new-${i + 2}` })),
+        ];
+
+        // Create an array-like object with errorItems/createdItems properties
+        const mockSuggestions = Array.from({ length: 9 }, (_, i) => ({ id: `new-${i + 1}` }));
+        mockSuggestions.errorItems = [];
+        mockSuggestions.createdItems = newData.slice(1);
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves(mockSuggestions);
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        // Check that new suggestions count is logged
+        expect(mockLogger.debug).to.have.been.calledWith('New suggestions count: 9');
+        // Check that full sample is logged
+        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
+        const sampleLog = debugCalls.find((msg) => msg.includes('New suggestions sample:'));
+        expect(sampleLog).to.exist;
+        expect(sampleLog).to.not.include('first 10');
+      });
+
+      it('should log only first 10 items when there are more than 10 new suggestions', async () => {
+        const existingSuggestions = [
+          {
+            id: '1',
+            data: { key: '1' },
+            getData: sinon.stub().returns({ key: '1' }),
+            getStatus: sinon.stub().returns('NEW'),
+            setData: sinon.stub(),
+            save: sinon.stub(),
+            setUpdatedBy: sinon.stub().returnsThis(),
+          },
+        ];
+        const newData = [
+          { key: '1' },
+          ...Array.from({ length: 15 }, (_, i) => ({ key: `new-${i + 2}` })),
+        ];
+
+        // Create an array-like object with errorItems/createdItems properties
+        const mockSuggestions = Array.from({ length: 15 }, (_, i) => ({ id: `new-${i + 1}` }));
+        mockSuggestions.errorItems = [];
+        mockSuggestions.createdItems = newData.slice(1);
+
+        mockOpportunity.getSuggestions.resolves(existingSuggestions);
+        mockOpportunity.addSuggestions.resolves(mockSuggestions);
+
+        await syncSuggestions({
+          opportunity: mockOpportunity,
+          newData,
+          context,
+          buildKey,
+          mapNewSuggestion,
+        });
+
+        // Check that new suggestions count is logged
+        expect(mockLogger.debug).to.have.been.calledWith('New suggestions count: 15');
+        // Check that only first 10 are logged
+        const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
+        const sampleLog = debugCalls.find((msg) => msg.includes('New suggestions sample (first 10):'));
+        expect(sampleLog).to.exist;
+      });
+    });
   });
 
   describe('getImsOrgId', () => {

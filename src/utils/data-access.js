@@ -121,7 +121,13 @@ const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.SKIPPED,
     ].includes(existing.getStatus()));
 
-  log.debug(`Outdated suggestions = ${existingOutdatedSuggestions.length}: ${JSON.stringify(existingOutdatedSuggestions, null, 2)}`);
+  // prevents JSON.stringify overflow
+  log.debug(`Outdated suggestions count: ${existingOutdatedSuggestions.length}`);
+  if (existingOutdatedSuggestions.length > 0 && existingOutdatedSuggestions.length <= 10) {
+    log.debug(`Outdated suggestions sample: ${JSON.stringify(existingOutdatedSuggestions, null, 2)}`);
+  } else if (existingOutdatedSuggestions.length > 10) {
+    log.debug(`Outdated suggestions sample (first 10): ${JSON.stringify(existingOutdatedSuggestions.slice(0, 10), null, 2)}`);
+  }
 
   if (isNonEmptyArray(existingOutdatedSuggestions)) {
     await Suggestion.bulkUpdateStatus(
@@ -201,7 +207,12 @@ export async function syncSuggestions({
     statusToSetForOutdated,
   });
 
-  log.debug(`Existing suggestions = ${existingSuggestions.length}: ${JSON.stringify(existingSuggestions, null, 2)}`);
+  log.debug(`Existing suggestions count: ${existingSuggestions.length}`);
+  if (existingSuggestions.length > 0 && existingSuggestions.length <= 10) {
+    log.debug(`Existing suggestions sample: ${JSON.stringify(existingSuggestions, null, 2)}`);
+  } else if (existingSuggestions.length > 10) {
+    log.debug(`Existing suggestions sample (first 10): ${JSON.stringify(existingSuggestions.slice(0, 10), null, 2)}`);
+  }
 
   // Update existing suggestions
   await Promise.all(
@@ -221,7 +232,12 @@ export async function syncSuggestions({
         return existing.save();
       }),
   );
-  log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${JSON.stringify(existingSuggestions, null, 2)}`);
+  log.debug(`Updated existing suggestions count: ${existingSuggestions.length}`);
+  if (existingSuggestions.length > 0 && existingSuggestions.length <= 10) {
+    log.debug(`Updated existing suggestions sample: ${JSON.stringify(existingSuggestions, null, 2)}`);
+  } else if (existingSuggestions.length > 10) {
+    log.debug(`Updated existing suggestions sample (first 10): ${JSON.stringify(existingSuggestions.slice(0, 10), null, 2)}`);
+  }
 
   // Prepare new suggestions
   const newSuggestions = newData
@@ -233,7 +249,12 @@ export async function syncSuggestions({
   // Add new suggestions if any
   if (newSuggestions.length > 0) {
     const suggestions = await opportunity.addSuggestions(newSuggestions);
-    log.debug(`New suggestions = ${suggestions.length}: ${JSON.stringify(suggestions, null, 2)}`);
+    log.debug(`New suggestions count: ${suggestions.length}`);
+    if (suggestions.length > 0 && suggestions.length <= 10) {
+      log.debug(`New suggestions sample: ${JSON.stringify(suggestions, null, 2)}`);
+    } else if (suggestions.length > 10) {
+      log.debug(`New suggestions sample (first 10): ${JSON.stringify(suggestions.slice(0, 10), null, 2)}`);
+    }
 
     if (suggestions.errorItems?.length > 0) {
       log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);
