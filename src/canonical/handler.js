@@ -16,9 +16,9 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { isPreviewPage } from '../utils/url-utils.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
+import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { CANONICAL_CHECKS } from './constants.js';
 
 /**
@@ -583,19 +583,61 @@ export function generateSuggestions(auditUrl, auditData, context) {
     return { ...auditData };
   }
 
+  // Get the order from CANONICAL_CHECKS object
+  const auditTypeOrder = [
+    ...Object.keys(CANONICAL_CHECKS),
+  ];
+
+  // Group suggestions by audit type
+  const suggestionsByType = {};
+  const allSuggestions = [];
+
   // transform audit results into suggestions
-  const suggestions = auditData.auditResult
-    .flatMap((issue) => issue.affectedUrls.map((urlData) => ({
-      type: 'CODE_CHANGE',
-      checkType: issue.type,
-      explanation: issue.explanation,
-      url: urlData.url,
-      suggestion: urlData.suggestion,
-      recommendedAction: urlData.suggestion,
-    })));
+  auditData.auditResult.forEach((issue) => {
+    const checkType = issue.type;
+    if (!suggestionsByType[checkType]) {
+      suggestionsByType[checkType] = [];
+    }
+
+    issue.affectedUrls.forEach((urlData) => {
+      const suggestion = {
+        type: 'CODE_CHANGE',
+        checkType: issue.type,
+        explanation: issue.explanation,
+        url: urlData.url,
+        suggestion: urlData.suggestion,
+        recommendedAction: urlData.suggestion,
+      };
+      suggestionsByType[checkType].push(suggestion);
+      allSuggestions.push(suggestion);
+    });
+  });
+
+  // Build markdown table for Elmo
+  let mdTable = '';
+  auditTypeOrder.forEach((currentAuditType) => {
+    const checkType = CANONICAL_CHECKS[currentAuditType].check;
+    if (suggestionsByType[checkType] && suggestionsByType[checkType].length > 0) {
+      mdTable += `## ${CANONICAL_CHECKS[currentAuditType].title}\n\n`;
+      mdTable += '| Page Url | Explanation | Suggestion |\n';
+      mdTable += '|-------|-------|-------|\n';
+      suggestionsByType[checkType].forEach((suggestion) => {
+        mdTable += `| ${suggestion.url} | ${suggestion.explanation} | ${suggestion.recommendedAction} |\n`;
+      });
+      mdTable += '\n';
+    }
+  });
+
+  const elmoSuggestions = [];
+  elmoSuggestions.push({
+    type: 'CODE_CHANGE',
+    recommendedAction: mdTable,
+  });
+
+  const suggestions = [...allSuggestions];
 
   log.info(`Generated ${suggestions.length} canonical suggestions for ${auditUrl}`);
-  return { ...auditData, suggestions };
+  return { ...auditData, suggestions, elmoSuggestions };
 }
 
 /**
@@ -651,8 +693,74 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   return { ...auditData };
 }
 
+/**
+ * Creates opportunities and syncs suggestions for canonical issues for Elmo.
+ *
+ * @param {string} auditUrl - The URL that was audited.
+ * @param {Object} auditData - The audit data containing results and suggestions.
+ * @param {Object} context - The context object containing log, dataAccess, etc.
+ * @returns {Object} The audit data unchanged (opportunities created as side effect).
+ */
+export async function opportunityAndSuggestionsForElmo(auditUrl, auditData, context) {
+  const { log } = context;
+  if (!auditData.elmoSuggestions?.length) {
+    log.info('Canonical audit has no issues, skipping opportunity creation for Elmo');
+    return { ...auditData };
+  }
+
+  const elmoOpportunityType = 'generic-opportunity';
+  const comparisonFn = (oppty) => {
+    const opptyData = oppty.getData();
+    const opptyAdditionalMetrics = opptyData?.additionalMetrics;
+    if (!opptyAdditionalMetrics || !Array.isArray(opptyAdditionalMetrics)) {
+      return false;
+    }
+    const hasCanonicalSubtype = opptyAdditionalMetrics.some(
+      (metric) => metric.key === 'subtype' && metric.value === 'canonical',
+    );
+    return hasCanonicalSubtype;
+  };
+
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityDataForElmo,
+    elmoOpportunityType,
+    {},
+    comparisonFn,
+  );
+
+  log.info(`Canonical opportunity created for Elmo with oppty id ${opportunity.getId()}`);
+
+  const buildKey = (suggestion) => `${suggestion.type}`;
+  await syncSuggestions({
+    opportunity,
+    newData: auditData.elmoSuggestions,
+    context,
+    buildKey,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: suggestion.type,
+      rank: 0,
+      data: {
+        suggestionValue: suggestion.recommendedAction,
+      },
+    }),
+    keepLatestMergeDataFunction,
+    log,
+  });
+
+  log.info(`Canonical opportunity created for Elmo and ${auditData.elmoSuggestions.length} suggestions synced for ${auditUrl}`);
+  return { ...auditData };
+}
+
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(canonicalAuditRunner)
-  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
+  .withPostProcessors([
+    generateSuggestions,
+    opportunityAndSuggestions,
+    opportunityAndSuggestionsForElmo,
+  ])
   .build();
