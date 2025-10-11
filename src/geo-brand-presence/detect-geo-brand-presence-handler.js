@@ -174,6 +174,7 @@ async function handleRefresh(
     const sharepointClient = await createLLMOSharepointClient(context);
     await Promise.all(
       sheets.flatMap(async (s, i) => {
+        throw new Error("HAVE TO UPLOAD THE XLSX, BUT IT'S THE METADATA FILE");
         const { name } = files[i];
         const sheet = await s.Body.transformToByteArray();
         return outputLocations.map(
