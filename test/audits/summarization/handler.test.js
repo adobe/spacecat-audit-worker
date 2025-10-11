@@ -142,6 +142,28 @@ describe('Summarization Handler', () => {
         fullAuditRef: 'https://adobe.com',
       });
     });
+
+    it('should filter out duplicate URLs', async () => {
+      const mockTopPages = [
+        { getUrl: () => 'https://adobe.com/page1' },
+        { getUrl: () => 'https://adobe.com/page2' },
+        { getUrl: () => 'https://adobe.com/page1' }, // duplicate
+        { getUrl: () => 'https://adobe.com/page3' },
+        { getUrl: () => 'https://adobe.com/page2' }, // duplicate
+      ];
+
+      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
+
+      const result = await summarizationAudit('https://adobe.com', context, site);
+
+      expect(result.auditResult.topPages).to.have.length(3);
+      expect(result.auditResult.topPages).to.deep.equal([
+        'https://adobe.com/page1',
+        'https://adobe.com/page2',
+        'https://adobe.com/page3',
+      ]);
+      expect(result.auditResult.success).to.equal(true);
+    });
   });
 
   describe('sendMystiqueMessagePostProcessor', () => {

@@ -71,9 +71,12 @@ export async function summarizationAudit(url, context, site) {
     success = false;
   }
 
+  // Filter out duplicate URLs
+  const uniqueUrls = [...new Set(topPages.map((page) => page.getUrl()))];
+
   return {
     auditResult: {
-      topPages: topPages.map((page) => page.getUrl()),
+      topPages: uniqueUrls,
       success,
     },
     fullAuditRef: url,
