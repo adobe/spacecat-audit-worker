@@ -50,7 +50,7 @@ export function createLLMOSharepointClient({ env, log }, options = {}) {
 
 /**
  * Downloads a document from SharePoint and returns its raw buffer
- * @param {string} fileLocation - The path to the document in SharePoint
+ * @param {string} filename - The path to the document in SharePoint
  * @param {SharepointClient} sharepointClient - The SharePoint client instance
  * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} log - Logger instance
  * @returns {Promise<Buffer>} - The document content as a buffer
@@ -106,6 +106,13 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
   }
 }
 
+/**
+ * @param {ArrayBuffer} buffer
+ * @param {string} filename
+ * @param {string} outputLocation
+ * @param {SharepointClient} sharepointClient
+ * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} log
+ */
 export async function uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log) {
   try {
     const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
@@ -118,6 +125,14 @@ export async function uploadToSharePoint(buffer, filename, outputLocation, share
   }
 }
 
+/**
+ * Uploads a file to SharePoint and publishes it via the admin.hlx.page API
+ * @param {ArrayBuffer} buffer - The file content as a buffer
+ * @param {string} filename - The name of the file to upload
+ * @param {string} outputLocation - The SharePoint folder path where the file will be uploaded
+ * @param {SharepointClient} sharepointClient - The SharePoint client instance
+ * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} log - Logger instance
+ */
 export async function uploadAndPublishFile(
   buffer,
   filename,
