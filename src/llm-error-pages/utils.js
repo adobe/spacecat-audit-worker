@@ -281,8 +281,12 @@ export function generateReportingPeriods(referenceDate = new Date()) {
 // FILTERING
 // ============================================================================
 
-export function buildSiteFilters(filters) {
-  if (!filters || filters.length === 0) return '';
+export function buildSiteFilters(filters, site) {
+  if ((!filters || filters.length === 0) && site) {
+    const baseURL = site.getBaseURL();
+    const { host } = new URL(baseURL);
+    return `REGEXP_LIKE(host, '(?i)(${host})')`;
+  }
 
   const clauses = filters.map(({ key, value, type }) => {
     const regexPattern = value.join('|');
