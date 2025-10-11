@@ -1,3 +1,10 @@
+## [1.207.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.207.0...v1.207.1) (2025-10-11)
+
+
+### Bug Fixes
+
+* use categories from config always ([#1390](https://github.com/adobe/spacecat-audit-worker/issues/1390)) ([20b0d4f](https://github.com/adobe/spacecat-audit-worker/commit/20b0d4f6c2437fe4747a0200174ab15a5b07349f))
+
 # [1.207.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.206.3...v1.207.0) (2025-10-10)
 
 
