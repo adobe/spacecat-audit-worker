@@ -91,7 +91,7 @@ export async function triggerReferralTrafficImports(context, site) {
   log.info(`Successfully triggered ${last4Weeks.length} referral traffic imports`);
 }
 
-export async function triggerCdnLogsReport(context, site, configCategories = []) {
+export async function triggerCdnLogsReport(context, site) {
   const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
@@ -106,7 +106,6 @@ export async function triggerCdnLogsReport(context, site, configCategories = [])
     auditContext: {
       weekOffset: -1,
       categoriesUpdated: true,
-      configCategories,
     },
   });
 
@@ -293,8 +292,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     const existingReport = await LatestAudit?.findBySiteIdAndAuditType(siteId, 'cdn-logs-report');
     if (existingReport?.length > 0) {
       log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
-      const configCategories = Object.values(newConfig.categories).map((cat) => cat.name);
-      await triggerCdnLogsReport(context, site, configCategories);
+      await triggerCdnLogsReport(context, site);
       triggeredSteps.push('cdn-logs-report');
     }
   }

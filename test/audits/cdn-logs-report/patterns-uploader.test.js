@@ -165,6 +165,19 @@ describe('Patterns Uploader', () => {
     clock.restore();
   });
 
+  it('returns false when both product and pagetype arrays are empty', async () => {
+    mockAnalyzeProducts.resolves({});
+    mockAnalyzePageTypes.resolves({});
+    const options = createMockOptions();
+
+    const result = await generatePatternsWorkbook(options);
+
+    expect(result).to.be.false;
+    expect(options.context.log.warn).to.have.been.calledWith('No pattern data available to generate report');
+    expect(mockCreateExcelReport).to.not.have.been.called;
+    expect(mockSaveExcelReport).to.not.have.been.called;
+  });
+
   it('handles errors and returns false', async () => {
     const options = createMockOptions({
       athenaClient: {

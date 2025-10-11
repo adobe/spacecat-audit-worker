@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { getStaticContent, llmoConfig } from '@adobe/spacecat-shared-utils';
 import {
   getWeek,
   getYear,
@@ -179,5 +179,31 @@ export async function fetchRemotePatterns(site) {
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Fetches config categories from the latest LLMO config
+ */
+export async function getConfigCategories(site, context) {
+  const { log, s3Client, env } = context;
+  const siteId = site.getSiteId();
+  const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
+
+  try {
+    const { config } = await llmoConfig.readConfig(
+      siteId,
+      s3Client,
+      { s3Bucket },
+    );
+
+    if (!config?.categories) {
+      return [];
+    }
+
+    return Object.values(config.categories).map((category) => category.name);
+  } catch (error) {
+    log.warn(`Failed to fetch config categories: ${error.message}`);
+    return [];
   }
 }
