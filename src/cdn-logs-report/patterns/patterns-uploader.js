@@ -64,6 +64,12 @@ export async function generatePatternsWorkbook(options) {
       }
     }
 
+    // Return early if both arrays are empty
+    if (productData.length === 0 && pagetypeData.length === 0) {
+      log.warn('No pattern data available to generate report');
+      return false;
+    }
+
     const reportData = {
       'shared-products': productData,
       'shared-pagetype': pagetypeData,

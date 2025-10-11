@@ -19,6 +19,7 @@ import {
   loadSql,
   generateReportingPeriods,
   fetchRemotePatterns,
+  getConfigCategories,
 } from './utils/report-utils.js';
 import { pathHasData } from '../utils/cdn-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
@@ -96,6 +97,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
       if (!patternsExist || auditContext?.categoriesUpdated) {
         log.info('Patterns not found, generating patterns workbook...');
         const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
+        const configCategories = await getConfigCategories(site, context);
 
         await generatePatternsWorkbook({
           site,
@@ -107,7 +109,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
           },
           periods,
           sharepointClient,
-          configCategories: auditContext?.configCategories || [],
+          configCategories,
         });
       }
     }
