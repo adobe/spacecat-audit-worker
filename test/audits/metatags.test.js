@@ -311,7 +311,7 @@ describe('Meta Tags', () => {
           siteId: 'site-id',
           type: 'meta-tags',
           allowCache: false,
-          maxScrapeAge: 0,
+          maxScrapeAge: 0.001,
           options: {
             waitTimeoutForMetaTags: 5000,
           },
@@ -343,7 +343,7 @@ describe('Meta Tags', () => {
           siteId: 'site-id',
           type: 'meta-tags',
           allowCache: false,
-          maxScrapeAge: 0,
+          maxScrapeAge: 0.001,
           options: {
             waitTimeoutForMetaTags: 5000,
           },

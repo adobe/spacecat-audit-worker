@@ -322,7 +322,7 @@ export async function submitForScraping(context) {
     siteId: site.getId(),
     type: 'meta-tags',
     allowCache: false,
-    maxScrapeAge: 0,
+    maxScrapeAge: 0.001,
     options: {
       waitTimeoutForMetaTags: 5000,
     },
