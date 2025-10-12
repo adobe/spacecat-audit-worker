@@ -310,6 +310,7 @@ describe('Meta Tags', () => {
           ],
           siteId: 'site-id',
           type: 'meta-tags',
+          allowCache: false,
           options: {
             waitTimeoutForMetaTags: 5000,
           },
@@ -340,6 +341,7 @@ describe('Meta Tags', () => {
           ],
           siteId: 'site-id',
           type: 'meta-tags',
+          allowCache: false,
           options: {
             waitTimeoutForMetaTags: 5000,
           },
