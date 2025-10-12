@@ -51,7 +51,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
 
     // Get site configuration
     const filters = site.getConfig()?.getLlmoCdnlogsFilter?.() || [];
-    const siteFilters = buildSiteFilters(filters);
+    const siteFilters = buildSiteFilters(filters, site);
 
     // Build and execute query
     const query = await buildLlmErrorPagesQuery({
