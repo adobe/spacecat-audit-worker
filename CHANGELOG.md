@@ -1,3 +1,10 @@
+## [1.208.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.6...v1.208.7) (2025-10-13)
+
+
+### Bug Fixes
+
+* align form accessibility suggestion creation with sites ([#1201](https://github.com/adobe/spacecat-audit-worker/issues/1201)) ([25d24dd](https://github.com/adobe/spacecat-audit-worker/commit/25d24ddcb8d4adae04aca4042868b836fbb87fe5))
+
 ## [1.208.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.5...v1.208.6) (2025-10-13)
 
 
