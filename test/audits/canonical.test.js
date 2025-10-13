@@ -809,11 +809,9 @@ describe('Canonical URL Tests', () => {
 
       nock('https://example.com').get('/page1').twice().reply(200, html);
 
-      // Create top pages with URLs that will cause URL constructor to throw
-      // These truly malformed URLs will trigger catch blocks in both shouldSkipAuthPage and isPdfUrl
       const getTopPagesForSiteStub = sinon.stub().resolves([
-        { getUrl: () => '://invalid' }, // Invalid protocol separator without protocol
-        { getUrl: () => 'ht!tp://bad-protocol.com' }, // Invalid protocol characters
+        { getUrl: () => '://invalid' },
+        { getUrl: () => 'ht!tp://bad-protocol.com' },
         { getUrl: () => pageURL },
       ]);
 
@@ -829,9 +827,6 @@ describe('Canonical URL Tests', () => {
 
       expect(result).to.be.an('object');
       expect(result).to.have.property('fullAuditRef', baseURL);
-      
-      // The malformed URLs should not crash the audit
-      // They will be processed and likely fail during fetch, appearing in the audit result
       expect(result).to.have.property('auditResult');
     });
   });

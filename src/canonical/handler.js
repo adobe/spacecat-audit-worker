@@ -473,7 +473,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       }
     };
 
-    // Exclude PDF files from canonical checks (PDFs can't have canonical tags)
+    // Exclude PDF files from canonical checks
     const isPdfUrl = (u) => {
       try {
         const pathname = new URL(u).pathname.toLowerCase();
