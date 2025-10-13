@@ -532,7 +532,9 @@ export async function headingsAuditRunner(baseURL, context, site) {
 
 export function generateSuggestions(auditUrl, auditData, context) {
   const { log } = context;
-  if (auditData.auditResult?.status === 'success' || auditData.auditResult?.error) {
+  if (auditData.auditResult?.status === 'success'
+      || auditData.auditResult?.error
+      || auditData.auditResult?.check === HEADINGS_CHECKS.TOPPAGES.check) {
     log.info(`Headings audit for ${auditUrl} has no issues or failed, skipping suggestions generation`);
     return { ...auditData };
   }
