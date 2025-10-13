@@ -1,3 +1,10 @@
+## [1.208.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.0...v1.208.1) (2025-10-13)
+
+
+### Bug Fixes
+
+* updating h1 length check ([#1341](https://github.com/adobe/spacecat-audit-worker/issues/1341)) ([61cb31a](https://github.com/adobe/spacecat-audit-worker/commit/61cb31ae54f47e122754d3255fe000cf0c00b0d7))
+
 # [1.208.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.207.2...v1.208.0) (2025-10-13)
 
 
