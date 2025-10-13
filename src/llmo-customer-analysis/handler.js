@@ -38,7 +38,7 @@ async function enableAudits(site, context, audits = []) {
   await configuration.save();
 }
 
-function enableImports(site, imports = []) {
+async function enableImports(site, imports = []) {
   const siteConfig = site.getConfig();
 
   imports.forEach(({ type, options }) => {
@@ -46,6 +46,8 @@ function enableImports(site, imports = []) {
       siteConfig.enableImport(type, options);
     }
   });
+
+  await site.save();
 }
 
 async function checkOptelData(domain, context) {
@@ -195,7 +197,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     'geo-brand-presence',
   ]);
 
-  enableImports(site, [
+  await enableImports(site, [
     { type: REFERRAL_TRAFFIC_IMPORT },
     { type: 'llmo-prompts-ahrefs', options: { limit: 25 } },
     { type: 'top-pages' },
