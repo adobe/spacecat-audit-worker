@@ -321,8 +321,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       await triggerCdnLogsReport(context, site);
       triggeredSteps.push('cdn-logs-report');
     }
-    // re-trigger llm-error-pages, as this reads CDN data
-    await triggerAudits(['llm-error-pages'], context, site, log, triggeredSteps);
   }
 
   const hasBrandPresenceChanges = changes.brands
