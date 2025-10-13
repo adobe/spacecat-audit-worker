@@ -2168,7 +2168,7 @@ describe('Headings Audit', () => {
     }
   });
 
-  it('directly tests getH1HeadingASuggestion with null pageTags (lines 156,158,161)', async () => {
+  it('tests getH1HeadingASuggestion with null pageTags', async () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy() };
     
@@ -2200,7 +2200,7 @@ describe('Headings Audit', () => {
     expect(mockClient.fetchChatCompletion).to.have.been.called;
   });
 
-  it('directly tests getH1HeadingASuggestion with null brandGuidelines (line 161 falsy branch)', async () => {
+  it('tests getH1HeadingASuggestion with null brandGuidelines', async () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy() };
     
@@ -2236,7 +2236,7 @@ describe('Headings Audit', () => {
     expect(mockClient.fetchChatCompletion).to.have.been.called;
   });
 
-  it('directly tests getH1HeadingASuggestion with undefined brandGuidelines (line 161 falsy branch)', async () => {
+  it('tests getH1HeadingASuggestion with undefined brandGuidelines', async () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy() };
     
