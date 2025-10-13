@@ -21,6 +21,7 @@ import {
   buildCdnPaths,
   getBucketInfo,
   discoverCdnProviders,
+  isStandardAdobeCdnBucket,
 } from '../../src/utils/cdn-utils.js';
 
 use(sinonChai);
@@ -160,6 +161,8 @@ describe('CDN Utils', () => {
 
       expect(paths).to.deep.equal({
         rawLocation: 's3://cdn-logs-adobe-prod/ims-org-123/raw/byocdn-fastly/',
+        aggregatedLocation: 's3://cdn-logs-adobe-prod/ims-org-123/aggregated/',
+        aggregatedReferralLocation: 's3://cdn-logs-adobe-prod/ims-org-123/aggregated-referral/',
         aggregatedOutput: 's3://cdn-logs-adobe-prod/ims-org-123/aggregated/2025/01/15/10/',
         aggregatedReferralOutput: 's3://cdn-logs-adobe-prod/ims-org-123/aggregated-referral/2025/01/15/10/',
         tempLocation: 's3://cdn-logs-adobe-prod/temp/athena-results/',
@@ -171,6 +174,8 @@ describe('CDN Utils', () => {
 
       expect(paths).to.deep.equal({
         rawLocation: 's3://test-bucket/raw/',
+        aggregatedLocation: 's3://test-bucket/aggregated/',
+        aggregatedReferralLocation: 's3://test-bucket/aggregated-referral/',
         aggregatedOutput: 's3://test-bucket/aggregated/2025/01/15/10/',
         aggregatedReferralOutput: 's3://test-bucket/aggregated-referral/2025/01/15/10/',
         tempLocation: 's3://test-bucket/temp/athena-results/',
@@ -220,6 +225,39 @@ describe('CDN Utils', () => {
       const providers = await discoverCdnProviders(s3Client, 'test-bucket', timeParts);
 
       expect(providers).to.deep.equal([]);
+    });
+  });
+
+  describe('isStandardAdobeCdnBucket', () => {
+    it('validates bucket names correctly', () => {
+      // Should accept valid Adobe environment buckets
+      expect(isStandardAdobeCdnBucket('cdn-logs-adobe-prod')).to.be.true;
+      expect(isStandardAdobeCdnBucket('cdn-logs-adobe-dev')).to.be.true;
+      expect(isStandardAdobeCdnBucket('cdn-logs-adobe-stage')).to.be.true;
+
+      // Should accept valid mixed alphanumeric buckets
+      expect(isStandardAdobeCdnBucket('cdn-logs-4ad94d1a5763f6457f000101')).to.be.true;
+      expect(isStandardAdobeCdnBucket('cdn-logs-4ad94dfd5763f6457f000101')).to.be.true;
+
+      // Should reject old buckets
+      expect(isStandardAdobeCdnBucket('cdn-logs-adobe-com')).to.be.false;
+      expect(isStandardAdobeCdnBucket('cdn-logs-adobe-test')).to.be.false;
+      expect(isStandardAdobeCdnBucket('cdn-logs-adobe')).to.be.false;
+      expect(isStandardAdobeCdnBucket('cdn-logs-adobe-prod-extra')).to.be.false;
+
+      // Should reject buckets with only letters
+      expect(isStandardAdobeCdnBucket('cdn-logs-onlyletters')).to.be.false;
+      expect(isStandardAdobeCdnBucket('cdn-logs-bulk-com')).to.be.false;
+      expect(isStandardAdobeCdnBucket('cdn-logs-amersports')).to.be.false;
+
+      // Should reject buckets with only numbers
+      expect(isStandardAdobeCdnBucket('cdn-logs-123456')).to.be.false;
+      expect(isStandardAdobeCdnBucket('cdn-logs-123-456')).to.be.false;
+
+      // Should reject invalid patterns
+      expect(isStandardAdobeCdnBucket('logs-test123')).to.be.false;
+      expect(isStandardAdobeCdnBucket('')).to.be.false;
+      expect(isStandardAdobeCdnBucket('cdn-logs-test@123')).to.be.false;
     });
   });
 });

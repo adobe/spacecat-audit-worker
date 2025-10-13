@@ -124,4 +124,20 @@ export const SHEET_CONFIGS = {
         .sort((a, b) => b[6] - a[6]); // sort by pageviews (descending)
     },
   },
+  patterns: {
+    getHeaders: () => [
+      'name',
+      'regex',
+    ],
+    headerColor: HEADER_COLOR,
+    numberColumns: [],
+    processData: (data) => data?.map((row) => {
+      const name = row.name || '';
+      const capitalizedName = name.charAt(0).toUpperCase() + name.slice(1);
+      return [
+        capitalizedName,
+        row.regex || '',
+      ];
+    }) || [],
+  },
 };

@@ -13,13 +13,21 @@
 
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
+import {
+  getS3Config,
+  ensureTableExists,
+  loadSql,
+  generateReportingPeriods,
+  fetchRemotePatterns,
+  getConfigCategories,
+} from './utils/report-utils.js';
 import { pathHasData } from '../utils/cdn-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { createLLMOSharepointClient } from '../utils/report-uploader.js';
 import { getConfigs } from './constants/report-configs.js';
 import { getImsOrgId } from '../utils/data-access.js';
+import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
 
 async function runCdnLogsReport(url, context, site, auditContext) {
   const { log, dataAccess } = context;
@@ -71,9 +79,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
     await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
 
-    log.info(`Running weekly report: ${reportConfig.name}...`);
-
-    const isMonday = new Date().getDay() === 1;
+    const isMonday = new Date().getUTCDay() === 1;
     // If weekOffset is not provided, run for both week 0 and -1 on Monday and
     // on non-Monday, run for current week. Otherwise, run for the provided weekOffset
     let weekOffsets;
@@ -85,6 +91,31 @@ async function runCdnLogsReport(url, context, site, auditContext) {
       weekOffsets = [0];
     }
 
+    if (reportConfig.name === 'agentic') {
+      const patternsExist = await fetchRemotePatterns(site);
+
+      if (!patternsExist || auditContext?.categoriesUpdated) {
+        log.info('Patterns not found, generating patterns workbook...');
+        const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
+        const configCategories = await getConfigCategories(site, context);
+
+        await generatePatternsWorkbook({
+          site,
+          context,
+          athenaClient,
+          s3Config: {
+            ...s3Config,
+            tableName: reportConfig.tableName,
+          },
+          periods,
+          sharepointClient,
+          configCategories,
+        });
+      }
+    }
+
+    log.info(`Running weekly report: ${reportConfig.name}...`);
+
     for (const weekOffset of weekOffsets) {
       // eslint-disable-next-line no-await-in-loop
       await runWeeklyReport({
@@ -95,6 +126,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
         site,
         sharepointClient,
         weekOffset,
+        context,
       });
     }
 
