@@ -21,14 +21,17 @@ import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
+import SeoChecks from '../metatags/seo-checks.js';
 
 const auditType = Audit.AUDIT_TYPES.HEADINGS;
+
+const H1_LENGTH_CHARS = 70;
 
 export const HEADINGS_CHECKS = Object.freeze({
   HEADING_EMPTY: {
     check: 'heading-empty',
     title: 'Empty Heading',
-    explanation: 'Heading elements should not be empty.',
+    explanation: 'Heading elements (H2–H6) should not be empty.',
     suggestion: 'Add descriptive text or remove the empty heading.',
   },
   HEADING_MISSING_H1: {
@@ -36,6 +39,12 @@ export const HEADINGS_CHECKS = Object.freeze({
     title: 'Missing H1 Heading',
     explanation: 'Pages should have exactly one H1 element for SEO and accessibility.',
     suggestion: 'Add an H1 element describing the main content.',
+  },
+  HEADING_H1_LENGTH: {
+    check: 'heading-h1-length',
+    title: 'H1 Length',
+    explanation: `H1 elements should be less than ${H1_LENGTH_CHARS} characters.`,
+    suggestion: `Update the H1 to be less than ${H1_LENGTH_CHARS} characters`,
   },
   HEADING_MULTIPLE_H1: {
     check: 'heading-multiple-h1',
@@ -140,27 +149,55 @@ function getScrapeJsonPath(url, siteId) {
   return `scrapes/${siteId}${pathname}/scrape.json`;
 }
 
-async function getH1HeadingASuggestion(url, log, scrapeJsonObject, context) {
+export async function getH1HeadingASuggestion(url, log, pageTags, context, brandGuidelines) {
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const prompt = await getPrompt(
     {
-      finalUrl: scrapeJsonObject.finalUrl,
-      title: scrapeJsonObject.scrapeResult.tags.title,
-      h1: scrapeJsonObject.scrapeResult.tags.h1,
-      description: scrapeJsonObject.scrapeResult.tags.description,
-      lang: scrapeJsonObject.scrapeResult.tags.lang,
+      finalUrl: pageTags?.finalUrl || '',
+      title: pageTags?.title || '',
+      h1: pageTags?.h1 || '',
+      description: pageTags?.description || '',
+      lang: pageTags?.lang || 'en',
+      brandGuidelines: brandGuidelines || '',
+      max_char: H1_LENGTH_CHARS,
     },
     'heading-empty-suggestion',
+    log,
+  );
+  try {
+    const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
+      responseFormat: 'json_object',
+    });
+    const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
+    if (!aiResponseContent.h1 || !aiResponseContent.h1.aiSuggestion) {
+      log.error(`[Headings AI Suggestions] Invalid response structure for ${url}. Expected h1.aiSuggestion`);
+      return null;
+    }
+    const { aiSuggestion } = aiResponseContent.h1;
+    log.info(`[Headings AI Suggestions] AI suggestion for empty heading for ${url}: ${aiSuggestion}`);
+    return aiSuggestion;
+  } catch (error) {
+    log.error(`[Headings AI Suggestions] Error for empty heading suggestion: ${error}`);
+    return null;
+  }
+}
+
+async function getBrandGuidelines(healthyTagsObject, log, context) {
+  const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
+  const prompt = await getPrompt(
+    {
+      titles: healthyTagsObject.title,
+      descriptions: healthyTagsObject.description,
+      h1s: healthyTagsObject.h1,
+    },
+    'generate-brand-guidelines',
     log,
   );
   const aiResponse = await azureOpenAIClient.fetchChatCompletion(prompt, {
     responseFormat: 'json_object',
   });
-
   const aiResponseContent = JSON.parse(aiResponse.choices[0].message.content);
-  const { aiSuggestion } = aiResponseContent.h1;
-  log.info(`[Headings AI Suggestions] AI suggestion for empty heading for ${url}: ${aiSuggestion}`);
-  return aiSuggestion;
+  return aiResponseContent;
 }
 
 /**
@@ -180,6 +217,7 @@ export async function validatePageHeadings(
   s3Client,
   S3_SCRAPER_BUCKET_NAME,
   context,
+  seoChecks,
 ) {
   if (!url) {
     log.error('URL is undefined or null, cannot validate headings');
@@ -207,6 +245,15 @@ export async function validatePageHeadings(
       }
     }
 
+    const pageTags = {
+      h1: scrapeJsonObject.scrapeResult.tags.h1 || [],
+      title: scrapeJsonObject.scrapeResult.tags.title,
+      description: scrapeJsonObject.scrapeResult.tags.description,
+      lang: scrapeJsonObject.scrapeResult.tags.lang,
+      finalUrl: scrapeJsonObject.finalUrl,
+    };
+    seoChecks.performChecks(url, pageTags);
+
     const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
 
     const checks = [];
@@ -216,12 +263,12 @@ export async function validatePageHeadings(
     if (h1Elements.length === 0
       || (h1Elements.length === 1 && getTextContent(h1Elements[0]).length === 0)) {
       log.info(`Missing h1 element detected at ${url}`);
-      const aiSuggestion = await getH1HeadingASuggestion(url, log, scrapeJsonObject, context);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
-        suggestion: aiSuggestion || HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
+        suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
+        pageTags,
       });
     } else if (h1Elements.length > 1) {
       log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
@@ -232,6 +279,15 @@ export async function validatePageHeadings(
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
         count: h1Elements.length,
       });
+    } else if (h1Elements[0].textContent.length > H1_LENGTH_CHARS) {
+      log.info(`H1 length too long detected at ${url}: ${h1Elements[0].textContent.length} characters`);
+      checks.push({
+        check: HEADINGS_CHECKS.HEADING_H1_LENGTH.check,
+        success: false,
+        explanation: HEADINGS_CHECKS.HEADING_H1_LENGTH.explanation,
+        suggestion: HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion,
+        pageTags,
+      });
     }
 
     // Check for empty headings and collect text content for duplicate detection
@@ -241,13 +297,13 @@ export async function validatePageHeadings(
         const text = getTextContent(heading);
         if (text.length === 0) {
           log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
-          const aiSuggestion = await getH1HeadingASuggestion(url, log, scrapeJsonObject, context);
           return {
             check: HEADINGS_CHECKS.HEADING_EMPTY.check,
             success: false,
             explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
-            suggestion: aiSuggestion || HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
+            suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
             tagName: heading.tagName,
+            pageTags,
           };
         } else {
           // For tracking purposes
@@ -287,8 +343,6 @@ export async function validatePageHeadings(
         log.info(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`);
       }
     }
-
-    // Check for headings without content before the next heading
     for (let i = 0; i < headings.length - 1; i += 1) {
       const currentHeading = headings[i];
       const nextHeading = headings[i + 1];
@@ -370,6 +424,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
     }
     const prefix = `scrapes/${site.getId()}/`;
     const allKeys = await getObjectKeysUsingPrefix(s3Client, S3_SCRAPER_BUCKET_NAME, prefix, log);
+    const seoChecks = new SeoChecks(log);
 
     // Validate headings for each page
     const auditPromises = topPages.map(async (page) => validatePageHeadings(
@@ -380,6 +435,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
       s3Client,
       S3_SCRAPER_BUCKET_NAME,
       context,
+      seoChecks,
     ));
     const auditResults = await Promise.allSettled(auditPromises);
 
@@ -387,15 +443,42 @@ export async function headingsAuditRunner(baseURL, context, site) {
     const aggregatedResults = {};
     let totalIssuesFound = 0;
 
-    auditResults.forEach((result) => {
+    const healthyTags = seoChecks.getFewHealthyTags();
+
+    // iterate over healthy tags and create object  titles , descriptions and h1s comma separated
+    const healthyTagsObject = {
+      title: healthyTags.title.join(', '),
+      description: healthyTags.description.join(', '),
+      h1: healthyTags.h1.join(', '),
+    };
+    log.info(`[Headings AI Suggestions] Healthy tags object: ${JSON.stringify(healthyTagsObject)}`);
+
+    const brandGuidelines = await getBrandGuidelines(healthyTagsObject, log, context);
+    const auditResultsPromises = auditResults.map(async (result) => {
       if (result.status === 'fulfilled' && result.value) {
         const { url, checks } = result.value;
-
-        checks.forEach((check) => {
+        const checkPromises = checks.map(async (check) => {
           if (!check.success) {
             totalIssuesFound += 1;
             const checkType = check.check;
-
+            let aiSuggestion = null;
+            // if checktype is missing h1, h1 length or empty heading generate ai suggestion here
+            if (checkType === HEADINGS_CHECKS.HEADING_MISSING_H1.check
+              || checkType === HEADINGS_CHECKS.HEADING_H1_LENGTH.check
+              || checkType === HEADINGS_CHECKS.HEADING_EMPTY.check) {
+              try {
+                aiSuggestion = await getH1HeadingASuggestion(
+                  url,
+                  log,
+                  check.pageTags,
+                  context,
+                  brandGuidelines,
+                );
+              } catch (error) {
+                log.error(`[Headings AI Suggestions] Error generating AI suggestion for ${url}: ${error.message}`);
+                aiSuggestion = null;
+              }
+            }
             if (!aggregatedResults[checkType]) {
               aggregatedResults[checkType] = {
                 success: false,
@@ -409,7 +492,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
             if (!aggregatedResults[checkType].urls.includes(url)) {
               const urlObject = { url };
               if (check.suggestion) {
-                urlObject.suggestion = check.suggestion;
+                urlObject.suggestion = aiSuggestion || check.suggestion;
               }
               if (check.tagName) {
                 urlObject.tagName = check.tagName;
@@ -418,8 +501,12 @@ export async function headingsAuditRunner(baseURL, context, site) {
             }
           }
         });
+        await Promise.all(checkPromises);
       }
     });
+
+    // wait for all promises to resolve
+    await Promise.all(auditResultsPromises);
 
     log.info(`Successfully completed Headings Audit for site: ${baseURL}. Found ${totalIssuesFound} issues across ${Object.keys(aggregatedResults).length} check types.`);
 
@@ -430,7 +517,6 @@ export async function headingsAuditRunner(baseURL, context, site) {
         auditResult: { status: 'success', message: 'No heading issues detected' },
       };
     }
-
     return {
       fullAuditRef: baseURL,
       auditResult: aggregatedResults,

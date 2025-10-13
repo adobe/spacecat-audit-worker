@@ -15,6 +15,7 @@ Analyze the scraped page data and provide an AI-powered H1 tag suggestion that i
 - **Current H1:** `{{h1}}`
 - **Current Description:** `{{description}}`
 - **Page Language:** `{{lang}}`
+- **Brand Guidelines** `{{brandGuidelines}}`
 
 ### Output Format:
 Your response must be a valid JSON object with the following structure:
@@ -35,6 +36,7 @@ Your response must be a valid JSON object with the following structure:
 - Keep under 60 characters for optimal display in search results
 - Use primary keywords naturally without stuffing
 - Be specific and actionable when appropriate
+- length should be less than `{{max_char}}`
 
 #### Content Analysis:
 - Analyze the page URL structure to understand the page's purpose
