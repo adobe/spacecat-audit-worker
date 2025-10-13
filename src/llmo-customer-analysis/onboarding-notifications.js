@@ -12,8 +12,6 @@
 
 import { postMessageSafe } from '../utils/slack-utils.js';
 
-const SLACK_CHANNEL_ID = process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID;
-
 /**
  * Creates modern Slack blocks for onboarding notifications with Adobe colors
  */
@@ -134,7 +132,7 @@ export async function sendOnboardingNotification(context, site, eventType, detai
     cdn_provisioning: '#FF6B35', // Adobe Orange
   };
 
-  const result = await postMessageSafe(context, SLACK_CHANNEL_ID, '', {
+  const result = await postMessageSafe(context, process.env.SLACK_CHANNEL_LLMO_ONBOARDING_ID, '', {
     attachments: [{
       color: colors[eventType],
       blocks,
