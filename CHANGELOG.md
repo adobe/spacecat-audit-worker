@@ -1,3 +1,10 @@
+# [1.208.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.207.2...v1.208.0) (2025-10-13)
+
+
+### Features
+
+* add support for ams customers ([#1392](https://github.com/adobe/spacecat-audit-worker/issues/1392)) ([cb10fe3](https://github.com/adobe/spacecat-audit-worker/commit/cb10fe3819ac5eaa43d6e0888db4cab9b97e5055))
+
 ## [1.207.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.207.1...v1.207.2) (2025-10-13)
 
 
