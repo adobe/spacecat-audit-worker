@@ -18,7 +18,6 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import * as cdnConfigHandler from '../../src/llmo-customer-analysis/cdn-config-handler.js';
-import * as dataAccessUtils from '../../src/utils/data-access.js';
 
 use(sinonChai);
 
@@ -31,9 +30,6 @@ describe('CDN Config Handler', () => {
     
     // Mock environment variable
     process.env.LLMO_HLX_API_KEY = 'test-api-key';
-    
-    // Mock getImsOrgId function
-    sandbox.stub(dataAccessUtils, 'getImsOrgId');
 
     context = {
       log: {
@@ -53,6 +49,9 @@ describe('CDN Config Handler', () => {
         },
         Configuration: {
           findLatest: sandbox.stub(),
+        },
+        Organization: {
+          findById: sandbox.stub(),
         },
       },
       sqs: {
@@ -470,8 +469,13 @@ describe('CDN Config Handler', () => {
     it('should throw error when site is not found', async () => {
       context.dataAccess.Site.findById.resolves(null);
 
-      await expect(cdnConfigHandler.handleCdnBucketConfigChanges(context, {}))
+      await expect(cdnConfigHandler.handleCdnBucketConfigChanges(context, { cdnProvider: 'test-provider' }))
         .to.be.rejectedWith('Site with ID site-123 not found');
+    });
+
+    it('should throw error when cdnProvider is not provided', async () => {
+      await expect(cdnConfigHandler.handleCdnBucketConfigChanges(context, {}))
+        .to.be.rejectedWith('CDN provider is required for CDN configuration');
     });
 
     it('should handle commerce-fastly provider with service found', async () => {
@@ -493,7 +497,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should handle bucket configuration when bucketName provided', async () => {
-      const data = { bucketName: 'test-bucket' };
+      const data = { bucketName: 'test-bucket', cdnProvider: 'commerce-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
@@ -502,7 +506,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should handle bucket configuration when allowedPaths provided', async () => {
-      const data = { allowedPaths: ['test-org/path1', 'test-org/path2'] };
+      const data = { allowedPaths: ['test-org/path1', 'test-org/path2'], cdnProvider: 'commerce-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
@@ -511,7 +515,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should handle bucket configuration when both bucketName and allowedPaths provided', async () => {
-      const data = { bucketName: 'test-bucket', allowedPaths: ['test-org/path1'] };
+      const data = { bucketName: 'test-bucket', allowedPaths: ['test-org/path1'], cdnProvider: 'commerce-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
@@ -587,13 +591,17 @@ describe('CDN Config Handler', () => {
       });
 
       it('should handle ams-cloudfront provider and remove @ from IMS org ID', async () => {
-        dataAccessUtils.getImsOrgId.resolves('TestOrg123@AdobeOrg');
+        // Mock organization with IMS org ID
+        const mockOrganization = {
+          getImsOrgId: sandbox.stub().returns('TestOrg123@AdobeOrg'),
+        };
+        context.dataAccess.Organization.findById.resolves(mockOrganization);
         
         const data = { cdnProvider: 'ams-cloudfront' };
 
         await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
-        expect(dataAccessUtils.getImsOrgId).to.have.been.calledWith(mockSite, context.dataAccess, context.log);
+        expect(context.dataAccess.Organization.findById).to.have.been.calledWith(mockSite.getOrganizationId());
         expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ 
           orgId: 'TestOrg123AdobeOrg' 
         });
@@ -605,7 +613,7 @@ describe('CDN Config Handler', () => {
 
         await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
-        expect(dataAccessUtils.getImsOrgId).to.not.have.been.called;
+        expect(context.dataAccess.Organization.findById).to.not.have.been.called;
         expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-analysis', mockSite);
       });
     });

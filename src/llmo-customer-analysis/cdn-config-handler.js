@@ -190,6 +190,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
   const { dataAccess: { Configuration }, log } = context;
 
   if (!siteId) throw new Error('Site ID is required for CDN configuration');
+  if (!cdnProvider) throw new Error('CDN provider is required for CDN configuration');
 
   const site = await context.dataAccess.Site.findById(siteId);
   if (!site) throw new Error(`Site with ID ${siteId} not found`);
