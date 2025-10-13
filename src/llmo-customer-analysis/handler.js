@@ -280,7 +280,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
         params: { siteId },
       };
 
-      await handleCdnBucketConfigChanges(cdnConfigContext, changes.cdnBucketConfig);
+      await handleCdnBucketConfigChanges(cdnConfigContext, newConfig.cdnBucketConfig);
       triggeredSteps.push('cdn-bucket-config');
     } catch (error) {
       log.error('Error processing CDN bucket configuration changes', error);

@@ -14,6 +14,8 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import {
   startOfWeek, subWeeks, addDays, isAfter,
 } from 'date-fns';
+import { getImsOrgId } from '../utils/data-access.js';
+import { SERVICE_PROVIDER_TYPES } from '../utils/cdn-utils.js';
 
 /**
  * Enables CDN analysis for one domain per service
@@ -131,8 +133,8 @@ async function enableCdnAnalysisPerOrg(site, { dataAccess: { Configuration, Site
 
 async function handleAdobeFastly(siteId, { dataAccess: { Configuration, LatestAudit }, sqs }) {
   // Skip if CDN logs report already exists
-  const existingReport = await LatestAudit?.findBySiteIdAndAuditType(siteId, 'cdn-logs-report');
-  if (existingReport?.length > 0) return;
+  const existingAnalysis = await LatestAudit?.findBySiteIdAndAuditType(siteId, 'cdn-analysis');
+  if (existingAnalysis?.length > 0 && existingAnalysis[0]?.fullAuditRef?.length > 0) return;
 
   const config = await Configuration.findLatest();
   const auditQueue = config.getQueues().audits;
@@ -185,9 +187,10 @@ export async function handleCdnBucketConfigChanges(context, data) {
   /* c8 ignore next */
   const { siteId } = context.params || {};
   const { cdnProvider, allowedPaths, bucketName } = data;
-  const { dataAccess: { Configuration } } = context;
+  const { dataAccess: { Configuration }, log } = context;
 
   if (!siteId) throw new Error('Site ID is required for CDN configuration');
+  if (!cdnProvider) throw new Error('CDN provider is required for CDN configuration');
 
   const site = await context.dataAccess.Site.findById(siteId);
   if (!site) throw new Error(`Site with ID ${siteId} not found`);
@@ -199,12 +202,22 @@ export async function handleCdnBucketConfigChanges(context, data) {
     [pathId] = firstPath.split('/');
   }
 
-  if (cdnProvider === 'commerce-fastly') {
+  if (cdnProvider === SERVICE_PROVIDER_TYPES.COMMERCE_FASTLY) {
     const service = await fetchCommerceFastlyService(site.getBaseURL(), context);
     if (service) {
       pathId = service.serviceName;
       await enableCdnAnalysisPerService(service.serviceName, service.matchedDomains, context);
     }
+  }
+
+  if (cdnProvider.includes('ams')) {
+    if (cdnProvider === SERVICE_PROVIDER_TYPES.AMS_CLOUDFRONT) {
+      const imsOrgId = await getImsOrgId(site, context.dataAccess, log);
+      if (imsOrgId) {
+        pathId = imsOrgId.replace('@', ''); // Remove @ for filesystem-safe path
+      }
+    }
+    await enableCdnAnalysisPerOrg(site, context);
   }
 
   // Set bucket configuration
@@ -213,7 +226,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
   }
 
   // Enable audits and run analysis
-  if (cdnProvider === 'aem-cs-fastly') {
+  if (cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY) {
     await Promise.all([
       enableCdnAnalysisPerOrg(site, context),
       handleAdobeFastly(siteId, context),
