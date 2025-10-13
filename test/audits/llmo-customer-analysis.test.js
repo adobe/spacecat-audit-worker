@@ -61,7 +61,7 @@ describe('LLMO Customer Analysis Handler', () => {
         allByOrganizationId: sandbox.stub().resolves([]),
       },
       LatestAudit: {
-        findBySiteIdAndAuditType: sandbox.stub().resolves({ getAuditResult: () => ['test'] }),
+        findBySiteIdAndAuditType: sandbox.stub().resolves({ getAuditResult: () => ({}) }),
       },
     };
 
