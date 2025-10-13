@@ -159,6 +159,7 @@ async function handleRefresh(
     return internalServerError(message);
   }
 
+  log.info(`GEO BRAND PRESENCE REFRESH: Successfully wrote sheet ${sheetName} for auditId: ${auditId} to S3`);
   // 3. Write the successful marker json to S3
   await writeSheetRefreshResultSuccess({
     sheetName,
@@ -169,11 +170,12 @@ async function handleRefresh(
 
   // 4. Check whether all sheets exist and upload when ready
   const { files } = refreshMeta.value;
-  const resultFiles = await allSheetsUploaded(s3Client, s3Bucket, refreshDir, files);
+  const resultFiles = await allSheetsUploaded(s3Client, s3Bucket, refreshDir, files, log);
   if (!resultFiles) {
+    log.info(`GEO BRAND PRESENCE REFRESH: Not all sheets uploaded yet for auditId: ${auditId}`);
     return ok();
   }
-
+  log.info(`GEO BRAND PRESENCE REFRESH: All sheets uploaded for auditId: ${auditId}, proceeding to upload to SharePoint`);
   try {
     const sharepointClient = await createLLMOSharepointClient(context);
     await Promise.all(
@@ -223,20 +225,31 @@ function extractXlsxName(sheetUrl) {
  * @param {string} s3Bucket
  * @param {string} outputDir
  * @param {RefreshMetadata['files']} files
+ * @param {Console} log
  */
-async function allSheetsUploaded(s3Client, s3Bucket, outputDir, files) {
+async function allSheetsUploaded(s3Client, s3Bucket, outputDir, files, log) {
   const checks = await Promise.allSettled(
-    files.map((f) => s3Client.send(
-      new GetObjectCommand({
-        Bucket: s3Bucket,
-        Key: `${outputDir}/${refreshSheetResultFileName(f.name)}`,
-      }),
-    )),
+    files.map((file) => {
+      const fileName = file.name.replace(/\.xlsx$/, '');
+      const key = `${outputDir}/${refreshSheetResultFileName(fileName)}`;
+      log.info(`Fetching S3 object with Key: ${key}`);
+      return s3Client.send(
+        new GetObjectCommand({
+          Bucket: s3Bucket,
+          Key: key,
+        }),
+      );
+    }),
   );
+
+  checks.forEach((c, index) => {
+    log.info(`Check ${index + 1}: Status - ${c.status}`);
+  });
 
   if (!checks.every((c) => c.status === 'fulfilled')) {
     return null;
   }
+  log.info('All checks fulfilled, verifying bodies...');
   return checks.every((c) => c.value.Body)
     ? checks.map((c) => c.value)
     : null;

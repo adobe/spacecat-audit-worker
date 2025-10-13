@@ -23,6 +23,7 @@ import {
   refreshDirectoryS3Key,
   refreshMetadataFileS3Key,
   refreshSheetResultFileName,
+  transformWebSearchProviderForMystique,
   writeSheetRefreshResultFailed,
   writeSheetRefreshResultSkipped,
 } from './util.js';
@@ -215,7 +216,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
         deliveryType,
         calendarWeek: { week: +week, year: +year },
         url,
-        webSearchProvider,
+        webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
         configVersion,
         date: null, // TODO support daily refreshes
       });

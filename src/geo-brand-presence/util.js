@@ -155,6 +155,22 @@ export const refreshMetadataSchema = z.object({
   ),
 });
 
+/**
+ * Transforms webSearchProvider names for Mystique compatibility.
+ * Converts hyphenated names to underscore format.
+ * @param {string} webSearchProvider - The original webSearchProvider name
+ * @returns {string} The transformed webSearchProvider name
+ */
+export function transformWebSearchProviderForMystique(webSearchProvider) {
+  // Define transformation patterns
+  const transformations = {
+    'google-ai-overviews': 'google_ai_overviews',
+    // Add more transformations here as needed
+  };
+
+  return transformations[webSearchProvider] || webSearchProvider;
+}
+
 export const refreshSheetResultSchema = z.object({
   message: z.string().optional(),
   sheetName: z.string().min(1),

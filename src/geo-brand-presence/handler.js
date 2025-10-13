@@ -23,6 +23,7 @@ import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
+import { transformWebSearchProviderForMystique } from './util.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
@@ -304,7 +305,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
         deliveryType: site.getDeliveryType(),
         calendarWeek: dateContext,
         url,
-        webSearchProvider,
+        webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
         configVersion: /* c8 ignore next */ configExists ? configVersion : null,
         ...(isDaily && { date: dateContext.date }), // Add date only for daily cadence
       });
