@@ -144,7 +144,7 @@ async function hasOrgCdnAnalysisWithResults(site, { dataAccess: { Site, LatestAu
     return false;
     /* c8 ignore next 4 */
   } catch (error) {
-    log.error(`Error checking org cdn-analysis: ${error.message}`);
+    log.error('Error checking org cdn-analysis:', error);
     return false;
   }
 }
