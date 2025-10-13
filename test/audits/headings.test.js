@@ -93,49 +93,65 @@ describe('Headings Audit', () => {
   });
 
   it('flags empty headings', async () => {
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1></h1><h2>Valid</h2>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
       },
-      ContentType: 'application/json',
-    });
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    console.log(result);
-    expect(result.url).to.equal(url);
-    console.log(JSON.stringify(HEADINGS_CHECKS));
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
-      pageTags: {
-        h1: 'Page H1',
-        title: 'Page Title',
-        description: 'Page Description',
-        lang: undefined,
-        finalUrl: url,
-      },
-    });
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })), // wrap in {Key}
+          NextContinuationToken: undefined,
+        });
+      }
     
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
-      heading: 'H1',
-      nextHeading: 'H2',
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1></h1><h2>Valid</h2>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
     });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
+    
+    // Check heading-missing-h1
+    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check]).to.exist;
+    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].success).to.equal(false);
+    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_MISSING_H1.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion);
+    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].urls).to.be.an('array').with.lengthOf.at.least(1);
+    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].urls[0].url).to.equal(url);
+    
+    // Check heading-no-content
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion);
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls).to.be.an('array').with.lengthOf.at.least(1);
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls[0].url).to.equal(url);
   });
 
   it('flags heading order jumps (h1 → h3)', async () => {
