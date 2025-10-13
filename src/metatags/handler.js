@@ -329,7 +329,7 @@ export async function submitForScraping(context) {
   return {
     urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
-    type: 'meta-tags',
+    type: 'default',
     allowCache: false,
     maxScrapeAge: 0,
     options: {

@@ -309,7 +309,7 @@ describe('Meta Tags', () => {
             { url: 'http://example.com/page2' },
           ],
           siteId: 'site-id',
-          type: 'meta-tags',
+          type: 'default',
           allowCache: false,
           maxScrapeAge: 0,
           options: {
@@ -341,7 +341,7 @@ describe('Meta Tags', () => {
             { url: 'http://example.com/page2' },
           ],
           siteId: 'site-id',
-          type: 'meta-tags',
+          type: 'default',
           allowCache: false,
           maxScrapeAge: 0,
           options: {
