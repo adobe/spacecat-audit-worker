@@ -112,6 +112,7 @@ async function handleRefresh(
     refreshMetadataFileS3Key(auditId),
     refreshMetadataSchema,
   );
+  log.info(`GEO BRAND PRESENCE REFRESH: Loaded refresh metadata for auditId: ${auditId} refreshMeta:`, refreshMeta);
   if (refreshMeta.status === 'rejected') {
     const { reason } = refreshMeta;
     let msg;
@@ -131,6 +132,7 @@ async function handleRefresh(
   const sheetXlsxName = extractXlsxName(presignedURL);
   const sheetName = sheetXlsxName.replace(/\.xlsx$/, '');
 
+  log.info(`GEO BRAND PRESENCE REFRESH: Processing sheet ${sheetName} for auditId: ${auditId} into ${refreshDir}`);
   // 2. Write the sheet to S3
   try {
     /** @type {Response} */
@@ -143,9 +145,10 @@ async function handleRefresh(
       Body: new Uint8Array(sheet),
       ContentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }));
+    log.info(`GEO BRAND PRESENCE REFRESH: Uploaded sheet ${sheetName} for auditId: ${auditId} to S3`);
   } catch (e) {
     const message = `Failed to write sheet to S3: ${e.message}`;
-    log.error(`GEO BRAND PRESENCE: ${message} for auditId: ${auditId}`);
+    log.error(`GEO BRAND PRESENCE REFRESH: ${message} for auditId: ${auditId}`);
     await writeSheetRefreshResultFailed({
       message,
       outputDir: refreshDir,
@@ -191,6 +194,7 @@ async function handleRefresh(
           throw new Error(`Missing XLSX file for sheet ${name}`);
         }
         const xlsxBuffer = await xlsxObj.Body.transformToByteArray();
+        log.info(`GEO BRAND PRESENCE REFRESH: Uploading sheet ${name} for auditId: ${auditId} to SharePoint`);
         return outputLocations.map(
           (outDir) => uploadAndPublishFile(xlsxBuffer.buffer, name, outDir, sharepointClient, log),
         );
@@ -199,7 +203,7 @@ async function handleRefresh(
   } catch (e) {
     return internalServerError(`Failed to upload to SharePoint: ${e.message}`);
   }
-
+  log.info(`GEO BRAND PRESENCE REFRESH: Successfully uploaded all sheets for auditId: ${auditId} to SharePoint`);
   return ok();
 }
 
