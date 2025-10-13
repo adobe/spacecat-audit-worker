@@ -201,6 +201,13 @@ export function extractProductTagsFromHTML(rawBody, log) {
     let skuMatch = rawBody.match(/<meta\s+name=["']sku["']\s+content=["']([^"']+)["']/i);
     if (skuMatch) {
       [, productTags.sku] = skuMatch;
+      log.debug(`[PRODUCT-METATAGS] Extracted SKU from meta tag: ${productTags.sku}`);
+    } else {
+      // Debug: Check if SKU meta tag exists but doesn't match our pattern
+      const skuMetaExists = rawBody.includes('name="sku"') || rawBody.includes("name='sku'");
+      if (skuMetaExists) {
+        log.warn('[PRODUCT-METATAGS] SKU meta tag found but regex did not match. Sample:', rawBody.substring(rawBody.indexOf('sku') - 50, rawBody.indexOf('sku') + 100));
+      }
     }
 
     // Try alternative SKU meta tag formats if not found
@@ -340,7 +347,11 @@ export function extractProductTagsFromHTML(rawBody, log) {
       }
     }
 
-    log.debug('[PRODUCT-METATAGS] Extracted product tags from HTML:', Object.keys(productTags));
+    if (Object.keys(productTags).length === 0) {
+      log.debug('[PRODUCT-METATAGS] No product tags extracted. HTML length:', rawBody.length, 'HTML sample (first 500 chars):', rawBody.substring(0, 500));
+    } else {
+      log.debug('[PRODUCT-METATAGS] Extracted product tags from HTML:', Object.keys(productTags), 'Values:', productTags);
+    }
   } catch (error) {
     log.warn(`[PRODUCT-METATAGS] Error extracting product tags from HTML: ${error.message}`);
   }
@@ -390,7 +401,7 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
   // from raw HTML since scraper doesn't support custom extraction
   const productTags = extractProductTagsFromHTML(object.scrapeResult.rawBody, log);
 
-  return {
+  const result = {
     [pageUrl]: {
       title: object.scrapeResult.tags.title,
       description: object.scrapeResult.tags.description,
@@ -401,6 +412,10 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
       s3key: key,
     },
   };
+
+  log.debug(`[PRODUCT-METATAGS] Processed page ${pageUrl}: hasSku=${!!productTags.sku}, hasThumbnail=${!!productTags.thumbnail}, rawBodyLength=${object.scrapeResult.rawBody.length}`);
+
+  return result;
 }
 
 // Extract endpoint from a url, removes trailing slash if present

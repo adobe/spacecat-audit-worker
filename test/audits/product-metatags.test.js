@@ -421,69 +421,21 @@ describe('Product MetaTags', () => {
     });
 
     describe('extractProductTags', () => {
-      it('should extract product tags with image priority', () => {
+      it('should extract SKU and thumbnail from page tags', () => {
         const pageTags = {
           [SKU]: 'PROD-123',
-          'og:image': 'https://example.com/og.jpg',
-          'twitter:image': 'https://example.com/twitter.jpg',
-          'product:image': 'https://example.com/product.jpg',
-          image: 'https://example.com/image.jpg',
+          thumbnail: 'https://example.com/product-image.jpg',
         };
 
         const result = ProductSeoChecks.extractProductTags(pageTags);
 
         expect(result).to.deep.equal({
           [SKU]: 'PROD-123',
-          image: 'https://example.com/og.jpg', // og:image has priority
+          thumbnail: 'https://example.com/product-image.jpg',
         });
       });
 
-      it('should use twitter:image when og:image not available', () => {
-        const pageTags = {
-          [SKU]: 'PROD-123',
-          'twitter:image': 'https://example.com/twitter.jpg',
-          'product:image': 'https://example.com/product.jpg',
-          image: 'https://example.com/image.jpg',
-        };
-
-        const result = ProductSeoChecks.extractProductTags(pageTags);
-
-        expect(result).to.deep.equal({
-          [SKU]: 'PROD-123',
-          image: 'https://example.com/twitter.jpg', // twitter:image has second priority
-        });
-      });
-
-      it('should use product:image when og:image and twitter:image not available', () => {
-        const pageTags = {
-          [SKU]: 'PROD-123',
-          'product:image': 'https://example.com/product.jpg',
-          image: 'https://example.com/image.jpg',
-        };
-
-        const result = ProductSeoChecks.extractProductTags(pageTags);
-
-        expect(result).to.deep.equal({
-          [SKU]: 'PROD-123',
-          image: 'https://example.com/product.jpg', // product:image has third priority
-        });
-      });
-
-      it('should use image when other image types not available', () => {
-        const pageTags = {
-          [SKU]: 'PROD-123',
-          image: 'https://example.com/image.jpg',
-        };
-
-        const result = ProductSeoChecks.extractProductTags(pageTags);
-
-        expect(result).to.deep.equal({
-          [SKU]: 'PROD-123',
-          image: 'https://example.com/image.jpg', // image has lowest priority
-        });
-      });
-
-      it('should return only SKU when no images available', () => {
+      it('should extract only SKU when thumbnail not available', () => {
         const pageTags = {
           [SKU]: 'PROD-123',
           [TITLE]: 'Product Title',
@@ -497,18 +449,17 @@ describe('Product MetaTags', () => {
         });
       });
 
-      it('should return empty object when no SKU', () => {
+      it('should extract thumbnail even when no SKU', () => {
         const pageTags = {
           [TITLE]: 'Product Title',
-          'og:image': 'https://example.com/og.jpg',
+          thumbnail: 'https://example.com/product-thumbnail.jpg',
         };
 
         const result = ProductSeoChecks.extractProductTags(pageTags);
 
-        // The function actually extracts the image even without SKU,
-        // so let's test the actual behavior
+        // The function extracts thumbnail even without SKU
         expect(result).to.deep.equal({
-          image: 'https://example.com/og.jpg',
+          thumbnail: 'https://example.com/product-thumbnail.jpg',
         });
       });
     });
@@ -2134,6 +2085,24 @@ describe('Product MetaTags', () => {
       expect(extractProductTagsFromHTML(123, logStub)).to.deep.equal({});
     });
 
+    it('should warn when SKU meta tag exists but regex does not match', () => {
+      // Malformed SKU tag with reversed attribute order (content before name)
+      const html = `
+        <html>
+          <head>
+            <meta content="MALFORMED-SKU" name="sku">
+          </head>
+        </html>
+      `;
+      const result = extractProductTagsFromHTML(html, logStub);
+      // Should not extract SKU because regex expects name before content
+      expect(result).to.deep.equal({});
+      // Should log warning because name="sku" exists in the HTML
+      expect(logStub.warn).to.have.been.called;
+      const warnCall = logStub.warn.getCall(0);
+      expect(warnCall.args[0]).to.include('[PRODUCT-METATAGS] SKU meta tag found but regex did not match');
+    });
+
     it('should handle HTML without product tags', () => {
       const html = '<html><head><title>Test</title></head></html>';
       const result = extractProductTagsFromHTML(html, logStub);
@@ -3390,8 +3359,8 @@ describe('Product MetaTags', () => {
     );
   });
 
-  // Additional tests for 100% coverage
-  describe('Coverage Tests for Remaining Lines', () => {
+  // Additional integration and edge case tests
+  describe('Edge Cases and Integration Scenarios', () => {
     let mockContext;
     let mockSite;
     let pagesSet;
@@ -3424,9 +3393,9 @@ describe('Product MetaTags', () => {
       pagesSet = new Set(['scrapes/site123/page1/scrape.json']);
     });
 
-    // Test for lines 323-324: Null check in Promise.all processing
+    // Test null metadata returned from S3 during page processing
     it(
-      'should handle null metadata in Promise.all processing (lines 323-324)',
+      'should handle null metadata returned from fetchAndProcessPageObject',
       async () => {
         const mockS3Objects = ['scrapes/site123/page1/scrape.json'];
 
@@ -3469,8 +3438,8 @@ describe('Product MetaTags', () => {
       },
     );
 
-    // Test for lines 341-359: Processing loop scenarios
-    it('should handle processing loop with mixed product and non-product pages (lines 341-359)', async () => {
+    // Test processing loop with mix of valid product pages and non-product pages
+    it('should correctly process and distinguish between product and non-product pages', async () => {
       const mockS3Objects = [
         'scrapes/site123/product1/scrape.json',
         'scrapes/site123/regular1/scrape.json',
@@ -3527,8 +3496,8 @@ describe('Product MetaTags', () => {
       expect(Object.keys(await mockedFunction(mockSite, localPagesSet, testContext))).to.include('detectedTags');
     });
 
-    // Test for product-metatags-auto-suggest.js line 82: Branch coverage
-    it('should handle error in presigned URL generation (line 82 branch coverage)', () => {
+    // Test environment variable fallback for Genvar API endpoint
+    it('should use default endpoint when GENVAR_PRODUCT_METATAGS_API_ENDPOINT is not set', () => {
       // Test the ternary operator on line 82 directly
       const mockEnv1 = {
         GENVAR_PRODUCT_METATAGS_API_ENDPOINT: 'https://custom.endpoint/api',
@@ -3550,8 +3519,8 @@ describe('Product MetaTags', () => {
       expect(endpoint1).to.not.equal(endpoint2);
     });
 
-    // Test for seo-checks.js line 211: Branch coverage
-    it('should handle branch coverage in seo-checks.js (line 211)', () => {
+    // Test tag content handling for both array and string values
+    it('should correctly join array tag content and preserve string tag content', () => {
       // Test both branches of the ternary operator on line 211
       // First test: Array case (left side of ternary)
       const arrayPageTags = {
@@ -3581,9 +3550,8 @@ describe('Product MetaTags', () => {
       expect(arrayTagContent).to.not.equal(stringTagContent);
     });
 
-    // Test for handler.js lines 460-461:
-    // Branch coverage for projectedTrafficLost and projectedTrafficValue
-    it('should handle branch coverage for projected traffic values (lines 460-461)', async () => {
+    // Test audit completion with falsy projected traffic values
+    it('should complete audit successfully when projected traffic values are zero or null', async () => {
       const mockAutoDetectResult = {
         seoChecks: { getFewHealthyTags: sinon.stub().returns({}) },
         detectedTags: { '/page1': { title: { issue: 'Title too short' } } },
@@ -3662,8 +3630,8 @@ describe('Product MetaTags', () => {
       );
     });
 
-    // Test to cover line 181 debug log when tags is undefined
-    it('should cover line 181 debug log when tags is undefined', async () => {
+    // Test debug logging when scrape result has empty tags object
+    it('should log empty keys array when scrape result tags object is empty', async () => {
       // Create a mock scrape result where tags exists as an empty object
       // This will pass the check on line 163 but trigger the debug log on line 181
       const mockScrapeResult = {
@@ -3712,10 +3680,9 @@ describe('Product MetaTags', () => {
       );
     });
 
-    // Test for product-metatags-auto-suggest.js line 82:
-    // Branch coverage for GENVAR_PRODUCT_METATAGS_API_ENDPOINT
+    // Test Genvar API endpoint configuration with missing environment variable
     it(
-      'should handle branch coverage for GENVAR_PRODUCT_METATAGS_API_ENDPOINT (line 82)',
+      'should use default Genvar API endpoint when environment variable is undefined',
       async () => {
         const testLogStub = {
           info: sinon.stub(),
@@ -3767,8 +3734,8 @@ describe('Product MetaTags', () => {
       },
     );
 
-    // Test to cover lines 465-466 conditional spread operators
-    it('should include projectedTrafficLost and projectedTrafficValue when they are truthy (lines 465-466)', async () => {
+    // Test opportunity data includes projected traffic values when available
+    it('should include projected traffic data in opportunity when values are truthy', async () => {
       // This test verifies that the audit completes successfully when traffic data is available
       // The actual conditional spread logic (lines 561-562) is tested via the "exclude" test below
       const site = {
@@ -3828,7 +3795,7 @@ describe('Product MetaTags', () => {
       expect(result).to.deep.equal({ status: 'complete' });
     });
 
-    it('should exclude projectedTrafficLost and projectedTrafficValue when they are falsy (lines 465-466)', async () => {
+    it('should exclude projected traffic data from opportunity when values are falsy', async () => {
       const { runAuditAndGenerateSuggestions } = await esmock('../../src/product-metatags/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: sinon.stub().resolves([{ url: 'https://example.com/' }]),
@@ -3891,7 +3858,7 @@ describe('Product MetaTags', () => {
       expect(result).to.deep.equal({ status: 'complete' });
     });
 
-    it('should handle auto-suggest returning undefined and use empty detectedTags (lines 465-468)', async () => {
+    it('should handle auto-suggest returning undefined and fallback to original detected tags', async () => {
       const stubOpportunityAndSuggestions = sinon.stub().resolves();
 
       const mockAutoDetectResult = {
@@ -3967,7 +3934,7 @@ describe('Product MetaTags', () => {
     });
 
 
-    it('should cover line 181 debug log when tags is undefined', async () => {
+    it('should return null and log error when scrape result tags property is undefined', async () => {
       // Create a mock scrape result where tags is undefined to trigger line 181 debug log
       const mockScrapeResult = {
         finalUrl: 'http://example.com/no-tags',
@@ -4003,7 +3970,7 @@ describe('Product MetaTags', () => {
       );
     });
 
-    it('should cover line 82 environment variable fallback in product-metatags-auto-suggest.js', async () => {
+    it('should create GenvarClient with default API endpoint when environment variable is missing', async () => {
       // Test the environment variable fallback on line 82
       // eslint-disable-next-line no-shadow, no-unused-vars
       const mockContext = {
@@ -4058,7 +4025,7 @@ describe('Product MetaTags', () => {
       );
     });
 
-    it('should use custom endpoint when GENVAR_PRODUCT_METATAGS_API_ENDPOINT is set (line 82)', async () => {
+    it('should use custom endpoint from environment variable when configured', async () => {
       // Test the environment variable when it IS set
       const customEndpoint = '/custom/endpoint';
       // eslint-disable-next-line no-shadow
@@ -4103,8 +4070,8 @@ describe('Product MetaTags', () => {
       );
     });
 
-    // Test to cover lines 155-156: Error handling in extractProductTagsFromHTML
-    it('should handle error during extractProductTagsFromHTML and log warning (lines 155-156)', async () => {
+    // Test error handling during HTML parsing in extractProductTagsFromHTML
+    it('should return empty object and log warning when HTML parsing fails', async () => {
       const mockRawBody = `${'<html><head><title>Test</title></head><body>'.repeat(50)}</body></html>`;
 
       // Monkey-patch String.prototype.match to throw to simulate HTML parse error
@@ -4127,8 +4094,8 @@ describe('Product MetaTags', () => {
       }
     });
 
-    // Test to cover line 229: Ternary operator branch in storeAllTags
-    it('should cover ternary operator branch for array vs string handling (line 229)', async () => {
+    // Test tag storage handling for both array and string tag values
+    it('should correctly store array tags as joined strings and string tags as-is', async () => {
       // eslint-disable-next-line no-shadow
       const ProductSeoChecks = (await import('../../src/product-metatags/seo-checks.js')).default;
       const seoChecks = new ProductSeoChecks();
@@ -4162,8 +4129,8 @@ describe('Product MetaTags', () => {
       expect(seoChecks.allTags.h1['single h1']).to.exist;
     });
 
-    // Test to cover line 181: Debug logging when tags is undefined
-    it('should cover line 181 debug log when tags is undefined', async () => {
+    // Test debug logging when tags property is undefined in scrape result
+    it('should log error when fetchAndProcessPageObject receives undefined tags', async () => {
       // Create a simple test that directly calls fetchAndProcessPageObject with undefined tags
 
       // Import the fetchAndProcessPageObject function directly
@@ -4196,8 +4163,8 @@ describe('Product MetaTags', () => {
       );
     });
 
-    // Test to cover line 82: Environment variable fallback in product-metatags-auto-suggest.js
-    it('should cover line 82 environment variable fallback', async () => {
+    // Test Genvar API endpoint with environment variable fallback
+    it('should use fallback API endpoint path when environment variable not set', async () => {
       // Create a test context without GENVAR_PRODUCT_METATAGS_API_ENDPOINT to trigger fallback
 
       // Mock the GenvarClient to avoid actual API calls
@@ -4240,7 +4207,7 @@ describe('Product MetaTags', () => {
       );
     });
 
-    it('should cover line 513 branch when scrapeResultPaths is undefined', async () => {
+    it('should log zero scrape result paths size when context has no scrapeResultPaths', async () => {
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
         '../../src/product-metatags/handler.js': {
           productMetatagsAutoDetect: sinon.stub().resolves({
@@ -4292,7 +4259,7 @@ describe('Product MetaTags', () => {
       expect(logStub.info.getCalls().some((call) => call.args[1]?.scrapeResultPathsSize === 0)).to.be.true;
     });
 
-    it('should cover line 513 branch when scrapeResultPaths has a size', async () => {
+    it('should log actual scrape result paths size when context provides valid paths', async () => {
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
         '../../src/product-metatags/handler.js': {
           productMetatagsAutoDetect: sinon.stub().resolves({
@@ -4345,7 +4312,7 @@ describe('Product MetaTags', () => {
       expect(logStub.info.getCalls().some((call) => call.args[1]?.scrapeResultPathsSize === 2)).to.be.true;
     });
 
-    it('should cover lines 561-562 branch when projected traffic values are falsy', async () => {
+    it('should omit projected traffic properties from opportunity data when values are falsy', async () => {
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: sinon.stub().resolves([]),
@@ -4429,7 +4396,7 @@ describe('Product MetaTags', () => {
       expect(logStub.info).to.have.been.called;
     });
 
-    it('should cover lines 561-562 branch when projected traffic values are truthy', async () => {
+    it('should include projected traffic properties in opportunity data when values are truthy', async () => {
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: sinon.stub().resolves([{ url: 'https://example.com/' }]),
@@ -4526,7 +4493,7 @@ describe('Product MetaTags', () => {
       expect(logStub.info).to.have.been.called;
     });
 
-    it('should cover lines 561-562 branch when only projectedTrafficLost is truthy', async () => {
+    it('should include only projectedTrafficLost when projectedTrafficValue is zero', async () => {
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
         '../../src/canonical/handler.js': {
           getTopPagesForSiteId: sinon.stub().resolves([{ url: 'https://example.com/' }]),
@@ -4623,7 +4590,7 @@ describe('Product MetaTags', () => {
       expect(logStub.info).to.have.been.called;
     });
 
-    it('should cover lines 561-562 branch when projectedTrafficValue is undefined', async () => {
+    it('should handle missing projected traffic data gracefully in opportunity creation', async () => {
       // This test ensures we cover the edge case where calculateProjectedTraffic
       // returns an object with only projectedTrafficLost (no projectedTrafficValue)
       const mockRunAudit = esmock('../../src/product-metatags/handler.js', {
