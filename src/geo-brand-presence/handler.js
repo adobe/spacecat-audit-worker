@@ -305,11 +305,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
         calendarWeek: dateContext,
         url,
         webSearchProvider,
-        // @todo remove after mystique supports webSearchProvider
-        web_search_provider: webSearchProvider,
         configVersion: /* c8 ignore next */ configExists ? configVersion : null,
-        // @todo remove after mystique supports configVersion
-        config_version: /* c8 ignore next */ configExists ? configVersion : null,
         ...(isDaily && { date: dateContext.date }), // Add date only for daily cadence
       });
 
@@ -446,6 +442,7 @@ export function createMystiqueMessage({
   const data = {
     url,
     configVersion,
+    config_version: configVersion, // @todo remove after mystique supports configVersion
     web_search_provider: webSearchProvider,
   };
 

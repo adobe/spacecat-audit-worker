@@ -196,6 +196,7 @@ describe('Geo Brand Presence Handler', () => {
     expect(brandPresenceMessage.data).deep.equal({
       configVersion: '1.0.0',
       web_search_provider: 'chatgpt',
+      config_version: '1.0.0',
       url: 'https://example.com/presigned-url',
     });
   });
@@ -250,6 +251,7 @@ describe('Geo Brand Presence Handler', () => {
         deliveryType: site.getDeliveryType(),
       });
       expect(message.data).deep.equal({
+        config_version: '1.0.0',
         configVersion: '1.0.0',
         web_search_provider: provider,
         url: 'https://example.com/presigned-url',
