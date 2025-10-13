@@ -650,10 +650,22 @@ describe('LLM Error Pages Utils', () => {
       expect(result).to.equal('(REGEXP_LIKE(url, \'(?i)(test)\') AND NOT REGEXP_LIKE(domain, \'(?i)(example)\'))');
     });
 
-    it('should return empty string for empty filters', () => {
-      expect(buildSiteFilters([])).to.equal('');
-      expect(buildSiteFilters(null)).to.equal('');
-      expect(buildSiteFilters(undefined)).to.equal('');
+    it('should use site host when no filters provided', () => {
+      const site = {
+        getBaseURL: () => 'https://example.com',
+      };
+
+      const result = buildSiteFilters(null, site);
+      expect(result).to.equal('REGEXP_LIKE(host, \'(?i)(example.com)\')');
+    });
+
+    it('should use site host when empty filters array provided', () => {
+      const site = {
+        getBaseURL: () => 'https://test.example.com',
+      };
+
+      const result = buildSiteFilters([], site);
+      expect(result).to.equal('REGEXP_LIKE(host, \'(?i)(test.example.com)\')');
     });
   });
 
@@ -1064,17 +1076,6 @@ describe('LLM Error Pages Utils', () => {
       expect(result).to.include("REGEXP_LIKE(host, '(?i)(example.com)')");
       expect(result).to.include("NOT REGEXP_LIKE(url, '(?i)(/page1)')");
       expect(result).to.include(' AND ');
-    });
-
-    it('should return empty string for empty filters', () => {
-      const result = buildSiteFilters([]);
-      expect(result).to.equal('');
-    });
-
-    it('should handle filters with empty values by generating empty pattern', () => {
-      const filters = [{ key: 'host', value: [] }];
-      const result = buildSiteFilters(filters);
-      expect(result).to.include("REGEXP_LIKE(host, '(?i)()')");
     });
   });
 

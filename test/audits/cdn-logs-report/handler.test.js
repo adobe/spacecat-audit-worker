@@ -195,6 +195,7 @@ describe('CDN Logs Report Handler', function test() {
     nock.cleanAll();
 
     site = {
+      getSiteId: () => 'test-site',
       getId: () => 'test-site',
       getBaseURL: () => 'https://example.com',
       getConfig: () => createSiteConfig(),

@@ -162,6 +162,14 @@ export function compareConfigs(oldConfig, newConfig) {
     };
   }
 
+  const cdnBucketConfigChanges = compareRecords(
+    oldConfig.cdnBucketConfig || {},
+    newConfig.cdnBucketConfig || {},
+  );
+  if (cdnBucketConfigChanges) {
+    changes.cdnBucketConfig = cdnBucketConfigChanges;
+  }
+
   return changes;
 }
 /* c8 ignore end */

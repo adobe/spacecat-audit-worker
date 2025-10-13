@@ -20,105 +20,98 @@ async function derivePageTypesForPaths(domain, paths, context) {
 ## OBJECTIVE
 Classify each provided URL path into one of the predefined page types and return results in strict JSON format.
 
-## PAGE TYPE DEFINITIONS
+## ANALYTICAL THINKING PROCESS
 
-### **homepage**
-- Root path "/"
-- Main landing pages (e.g., "/home", "/index")
-- Domain homepage variants
+Think like you're analyzing a spreadsheet of URLs - follow these steps systematically:
 
-### **product**
-- Individual product/item detail pages
-- Patterns: /products/[id], /items/[slug], /shop/[product-name]
-- Contains product IDs, SKUs, or product slugs
-- Examples: /products/123, /shop/nike-air-max, /items/ABC123
+### STEP 1: DOMAIN CONTEXT ANALYSIS
+- What type of website is this? (E-commerce, SaaS, content/publishing, corporate, community)
+- What pages would this type of site typically have?
+- What URL conventions does this domain appear to follow?
 
-### **category**
-- Product category/collection listing pages
-- Patterns: /products, /shop, /categories/[name], /collections/[name]
-- Browse/filter pages for multiple products
-- Examples: /products, /shop/shoes, /categories/electronics, /collections/sale
+### STEP 2: URL STRUCTURE DECOMPOSITION
+For each URL path, break it down:
+- **Path segments**: Identify /segment1/segment2/segment3
+- **Keyword indicators**: Look for standard web keywords (blog, product, about, help, etc.)
+- **Depth analysis**: How many levels deep? First segment often indicates page type
+- **ID/Slug detection**: Does it contain identifiers (numbers, slugs, UUIDs)?
 
-### **blog**
-- Blog posts, articles, news content
-- Patterns: /blog/[slug], /news/[slug], /articles/[slug], /posts/[slug]
-- Editorial/content pages with publication dates
-- Examples: /blog/how-to-guide, /news/company-update, /articles/industry-trends
+### STEP 3: PAGE TYPE IDENTIFICATION LOGIC
+Ask yourself systematically (GROUP BY SECTION, not by function):
+1. "Is this the homepage?" → Check for /, /home, /index
+2. "What section does this belong to?" → Look for keywords in the URL
+   - Contains "product", "shop", "store", "item" → product
+   - Contains "blog", "article", "news", "post" → blog
+   - Contains "help", "support", "faq", "docs", "guide" → help
+   - Contains "about", "company", "team" → about
+   - Contains "contact", "reach" → contact
+3. "Is this a special page?" → Check for /cart, /checkout, /search
+4. "Is this legal/policy?" → Check for /legal, /privacy, /terms, /cookies
+5. "Cannot determine?" → Default to "other" (use this sparingly)
 
-### **about**
-- Company information pages
-- Patterns: /about, /about-us, /company, /team, /history, /mission
-- Corporate information and team pages
-- Examples: /about, /about-us, /company/team, /our-story
+### STEP 4: PATTERN MATCHING WITH EXAMPLES
+Examples of thinking process:
 
-### **help**
-- Support and assistance pages
-- Patterns: /help, /support, /faq, /docs, /documentation, /guides, /tutorials
-- Customer service and self-help content
-- Examples: /help/getting-started, /support/contact, /faq, /docs/api
+Example A: "/products/nike-air-max-270"
+- Thinking: "products" → e-commerce section, "nike-air-max-270" → specific product slug
+- ID/Slug: Has descriptive slug (specific item identifier)
+- Result: pageType = "product"
 
-### **legal**
-- Legal and policy documents
-- Patterns: /privacy, /terms, /legal, /cookies, /disclaimer
-- Compliance and legal information
-- Examples: /privacy-policy, /terms-of-service, /legal/copyright
+Example B: "/products"
+- Thinking: "products" → products section, listing page but still product-related
+- Pattern: Anything in /products/ is product content
+- Result: pageType = "product"
 
-### **search**
-- Search results and query pages
-- Patterns: /search, /results, /find
-- Contains search parameters or query strings
-- Examples: /search?q=shoes, /results, /find
+Example C: "/shop/electronics/laptops"
+- Thinking: URL contains "shop" keyword → product-related
+- Pattern: Keyword-based matching, any URL with "shop" = product type
+- Result: pageType = "product"
 
-### **contact**
-- Contact and communication pages
-- Patterns: /contact, /contact-us, /get-in-touch, /reach-us
-- Contact forms and information
-- Examples: /contact, /contact-us, /get-in-touch
+Example C2: "/en-us/products/photoshop/features"  
+- Thinking: URL contains "product" keyword → product page
+- Pattern: Keyword found in middle of URL, not just first segment
+- Result: pageType = "product"
 
-### **cart**
-- Shopping cart and basket pages
-- Patterns: /cart, /basket, /bag, /shopping-cart
-- Order review before checkout
-- Examples: /cart, /shopping-bag, /basket
+Example D: "/blog/how-to-improve-seo-2024"
+- Thinking: "blog" → content section, "how-to-improve-seo-2024" → article slug
+- Pattern: Follows /content-type/article-slug pattern
+- Result: pageType = "blog"
 
-### **checkout**
-- Payment and order completion flow
-- Patterns: /checkout, /payment, /order, /billing, /shipping
-- Transaction and fulfillment process
-- Examples: /checkout, /checkout/payment, /order/review
+Example E: "/help/getting-started"
+- Thinking: "help" → support section, "getting-started" → specific help topic
+- Pattern: Support/documentation structure
+- Result: pageType = "help"
 
-### **other**
-- Any page that doesn't match the above categories
-- User profiles, login/signup, dashboards, etc.
-- Use when no other category applies
+Example F: "/"
+- Thinking: Root path, entry point to site
+- Result: pageType = "homepage"
 
-## CLASSIFICATION RULES
+Example G: "/user/dashboard/settings"
+- Thinking: User-specific path, doesn't match standard public page types
+- Pattern: Application/admin interface
+- Result: pageType = "other"
 
-1. **Path Analysis Priority**:
-   - First segment typically indicates primary function
-   - Look for standard web conventions and keywords
-   - Consider the full path structure, not just individual segments
+### STEP 5: VALIDATION & OUTPUT RULES
+Ask yourself:
+- "Does this path have multiple possible classifications?" → Choose most specific
+- "Is this path ambiguous?" → Look for keywords in URL, not just first segment
+- "Could this be misclassified?" → Check against common patterns  
+- "What if it doesn't fit anywhere?" → Try harder to find keywords before defaulting to "other"
+- **IMPORTANT:** Minimize "other" usage - look for keywords anywhere in the URL path
 
-2. **ID/Slug Detection**:
-   - Numeric IDs (123, 456789) usually indicate individual items (product pages)
-   - Alphanumeric slugs (product-name, blog-post-title) also indicate individual items
-   - Pure category names indicate listing pages
+## VALID PAGE TYPES & KEYWORD-BASED CLASSIFICATION
+Use ONLY these page types: **homepage, product, category, blog, about, help, legal, search, contact, cart, checkout, other**
 
-3. **Specificity Principle**:
-   - Choose the most specific applicable category
-   - product > category for e-commerce paths
-   - blog > other for content paths
-
-4. **Edge Case Handling**:
-   - Multi-segment paths: classify by primary function
-   - Ambiguous paths: use context clues from domain and structure
-   - When genuinely uncertain: default to "other"
-
-5. **Common Patterns**:
-   - /[category]/[item] → product
-   - /[category] → category
-   - /[content-type]/[slug] → blog
-   - Administrative paths → other
+Primary rule: Look for keywords ANYWHERE in the URL, not just first segment
+- Contains "product", "shop", "store", "item" → product
+- Contains "blog", "article", "news", "post" → blog  
+- Contains "help", "support", "faq", "docs", "guide", "tutorial" → help
+- Contains "about", "company", "team", "mission" → about
+- Contains "contact", "reach-us", "get-in-touch" → contact
+- Contains "search", "find", "query" → search
+- Contains "cart", "basket", "bag" → cart
+- Contains "checkout", "payment", "billing" → checkout
+- Contains "privacy", "terms", "legal", "cookies" → legal
 
 ## RESPONSE FORMAT
 Return ONLY valid JSON with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only:
@@ -179,38 +172,81 @@ You will receive:
 - A domain name for context
 - Grouped paths organized by page type (only page types that were actually found)
 
+## ANALYTICAL THINKING PROCESS
+
+For each page type, follow this systematic analysis (think like you're analyzing URLs in Excel):
+
+### STEP 1: STRUCTURAL PATTERN RECOGNITION
+- Examine all URLs for this page type: What structure do they share?
+- Identify fixed segments: Which path parts are constant? (/blog/, /products/, /help/)
+- Identify variable segments: Which parts change? (article slugs, product IDs, dates)
+- Detect depth patterns: Are all paths the same depth? (/blog/[slug] vs /blog/[category]/[slug])
+
+### STEP 2: COMMONALITY EXTRACTION
+- Find the core path pattern: What makes this page type unique?
+- Identify common prefixes: Do all paths start the same? (^/blog/, ^/products/)
+- Identify common suffixes: Do paths end similarly? (.html, /index, query params)
+- Detect separators: How are segments separated? (hyphens, underscores, slashes)
+
+### STEP 3: VARIATION MAPPING
+Examples of what to look for:
+- **ID variations**: Numeric (123), alphanumeric (ABC123), UUIDs (a1b2c3d4)
+- **Slug variations**: hyphenated (article-title), underscored (article_title)
+- **Depth variations**: /blog/post vs /blog/2024/01/post vs /blog/category/post
+- **Optional segments**: With/without trailing slashes, with/without file extensions
+
+### STEP 4: REGEX CONSTRUCTION LOGIC
+Based on your analysis:
+
+Example A: Homepage paths: ["/", "/home", "/index"]
+- Thinking: Very short paths, root or single segment
+- Core pattern: Empty path or specific keywords
+- Regex: (?i)^/(home|index)?$
+
+Example B: Product paths: ["/products/123", "/PRODUCTS/ABC-456", "/Shop/item/789"]
+- Thinking: Multiple parent paths (products, shop), case variations possible
+- Pattern: /[parent]/optional-segment/[id-or-slug]
+- Regex: (?i)^/(products|shop)(/[^/]+)?/[^/]+$
+
+Example C: Blog paths: ["/blog/seo-tips", "/Blog/news/update", "/ARTICLES/guide"]
+- Thinking: Content sections with slugs, case variations
+- Pattern: /[content-type]/optional-category/[slug]
+- Regex: (?i)^/(blog|articles|news)(/[^/]+){1,2}$
+
+### STEP 5: VALIDATION THINKING
+Ask yourself:
+- "Does this regex match ALL provided example paths?" (Must be 100%)
+- "Is this specific enough to avoid false positives?" (e.g., /blog shouldn't match /blog-backup)
+- "Is this flexible enough for variations?" (new article slugs, new product IDs)
+- "Are my anchors correct?" (^ for start, $ for end, or no anchors if mid-path matching)
+- "Did I escape special regex characters?" (dots, dashes in literal matches)
+
+### STEP 6: POSIX COMPATIBILITY CHECK
+- **MANDATORY**: Use (?i) flag at the start for case-insensitive matching
+- No lookahead (?=) or lookbehind (?<=)
+- No non-capturing groups (?:) - use regular groups ()
+- Use \\d for digits, \\w for word chars, [^/] for any-except-slash
+- Properly escape: \\., \\-, \\+, \\?, \\*, \\(, \\), \\[, \\], \\{, \\}, \\^, \\$
+
 ## TASK REQUIREMENTS
-
-### 1. SCOPE RESTRICTION
-- Generate regex patterns ONLY for the page types that are present in the provided grouped paths data
-- Do NOT create patterns for page types that are not included in the input
-- If a page type is not in the grouped paths, do not include it in your response
-
-### 2. REGEX CONSTRAINTS
-- Must be POSIX-compatible for Amazon Athena SQL
-- Avoid lookahead (?=), lookbehind (?<=), and non-standard modifiers
-- Use standard regex syntax: ^, $, *, +, ?, [], (), |, \\d, \\w, etc.
-- Ensure patterns are specific enough to avoid false matches
+- Generate patterns ONLY for page types in the provided grouped paths data
+- Must be POSIX-compatible for Amazon Athena SQL (no lookahead/lookbehind, no (?:))
+- **MANDATORY**: Start every regex with (?i) for case-insensitive matching
+- Use standard regex syntax: ^, $, *, +, ?, [], (), |, \\d, \\w, [^/]
 - Use anchors (^ and $) where appropriate
-
-### 3. PATTERN QUALITY
-- Create precise patterns that match the actual path structures
-- Account for variations in the provided paths
-- Balance specificity with flexibility for similar future paths
-- Consider common URL patterns and conventions
+- Each regex MUST match ALL provided example paths for that page type
 
 ## OUTPUT FORMAT
 Return ONLY valid JSON with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags.Return raw JSON only:
 {
-  "pageType1": "^/pattern1$",
-  "pageType2": "^/pattern2$"
+  "pageType1": "(?i)^/pattern1$",
+  "pageType2": "(?i)^/pattern2$"
 }
 
 ## CRITICAL REQUIREMENTS
-- Include ONLY page types that exist in the provided grouped paths
-- Return valid JSON with NO additional text or explanations
-- Ensure proper JSON syntax and escaping
-- Each regex must be a string value`;
+- Base patterns on the ACTUAL input data provided (not the examples above)
+- ALL regexes MUST start with (?i) flag
+- Return valid JSON with NO additional text or explanations`;
 
   const userPrompt = `Domain: ${domain}
 
@@ -279,7 +315,16 @@ export async function analyzePageTypes(domain, paths, context) {
     }
 
     const groupedPaths = groupPathsByPageType(pathClassifications.paths);
-    const regexPatterns = await deriveRegexesForPageTypes(domain, groupedPaths, context);
+
+    // Filter out "other" and "unknown" page types before generating regexes
+    const filteredGroupedPaths = Object.entries(groupedPaths)
+      .filter(([pageType]) => pageType !== 'other' && pageType !== 'unknown')
+      .reduce((acc, [pageType, pathsForType]) => {
+        acc[pageType] = pathsForType;
+        return acc;
+      }, {});
+
+    const regexPatterns = await deriveRegexesForPageTypes(domain, filteredGroupedPaths, context);
 
     // Track token usage from regex generation
     if (regexPatterns.usage) {
@@ -293,14 +338,39 @@ export async function analyzePageTypes(domain, paths, context) {
 
     log.info(`Page type analysis complete for domain: ${domain}`);
 
-    // Add default patterns
+    // Filter out "other" and "unknown" page types
+    const filteredRegexes = Object.entries(regexPatterns.regexes)
+      .filter(([pageType]) => pageType !== 'other' && pageType !== 'unknown')
+      .reduce((acc, [pageType, regex]) => {
+        acc[pageType] = regex;
+        return acc;
+      }, {});
+
+    // Order page types: homepage first, then alphabetically
+    const pageTypeOrder = ['homepage', 'product', 'blog', 'help', 'about', 'contact', 'search', 'cart', 'checkout', 'legal', 'category'];
+    const orderedRegexes = {};
+
+    pageTypeOrder.forEach((pageType) => {
+      if (filteredRegexes[pageType]) {
+        orderedRegexes[pageType] = filteredRegexes[pageType];
+      }
+    });
+
+    // Add any remaining page types not in the order list
+    Object.keys(filteredRegexes).forEach((pageType) => {
+      if (!orderedRegexes[pageType]) {
+        orderedRegexes[pageType] = filteredRegexes[pageType];
+      }
+    });
+
+    // Add default patterns at the end
     const defaultPatterns = {
-      Robots: '.*/robots.txt$',
-      Sitemap: '.*/sitemap.*.xml$',
-      'Error Pages': '404|500|error|goodbye',
+      Robots: '(?i).*/robots.txt$',
+      Sitemap: '(?i).*/sitemap.*.xml$',
+      'Error Pages': '(?i)(404|500|error|goodbye)',
     };
 
-    return { ...defaultPatterns, ...regexPatterns.regexes };
+    return { ...orderedRegexes, ...defaultPatterns };
   } catch (error) {
     log.error(`Failed to complete page type analysis: ${error.message}`);
     throw error;
