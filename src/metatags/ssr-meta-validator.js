@@ -82,9 +82,7 @@ export async function validateDetectedIssues(detectedTags, baseUrl, log) {
   if (endpoints.length === 0) {
     return detectedTags;
   }
-
-  log.info(`Validating ${endpoints.length} endpoints with detected issues via SSR`);
-
+  log.debug(`Validating ${endpoints.length} endpoints with detected issues via SSR`);
   const updatedDetectedTags = { ...detectedTags };
   let falsePositivesRemoved = 0;
 

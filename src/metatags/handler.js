@@ -324,7 +324,6 @@ export async function submitForScraping(context) {
   if (finalUrls.length === 0) {
     throw new Error('No URLs found for site neither top pages nor included URLs');
   }
-  log.info(`Submitting for scraping ${finalUrls.length} with allowCache: false`);
 
   return {
     urls: finalUrls.map((url) => ({ url })),
