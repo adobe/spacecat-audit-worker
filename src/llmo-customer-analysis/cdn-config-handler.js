@@ -35,7 +35,8 @@ export async function enableCdnAnalysisPerService(serviceName, domains, context)
             if (!site) return null;
 
             const hasAnalysis = await LatestAudit?.findBySiteIdAndAuditType(site.getId(), 'cdn-analysis');
-            return { domain, site, enabled: hasAnalysis?.length > 0 };
+            const hasAnalysisFullAuditRef = hasAnalysis?.getFullAuditRef();
+            return { domain, site, enabled: hasAnalysisFullAuditRef?.length > 0 };
           } catch (error) {
             log.error(`Error processing domain ${domain}:`, error.message);
             return null;
@@ -118,6 +119,36 @@ export async function fetchCommerceFastlyService(domain, { log }) {
   }
 }
 
+/**
+ * Checks if any sites in the organization have cdn-analysis with fullAuditRef
+ */
+async function hasOrgCdnAnalysisWithResults(site, { dataAccess: { Site, LatestAudit }, log }) {
+  try {
+    const sitesInOrg = await Site.allByOrganizationId(site?.getOrganizationId());
+
+    for (const orgSite of sitesInOrg) {
+      // eslint-disable-next-line no-await-in-loop
+      const cdnAnalysis = await LatestAudit?.findBySiteIdAndAuditType(orgSite.getId(), 'cdn-analysis');
+      if (cdnAnalysis) {
+        const auditResult = cdnAnalysis.getAuditResult();
+        const fullAuditRef = cdnAnalysis.getFullAuditRef();
+
+        // Check if audit has meaningful results with fullAuditRef
+        if (auditResult?.providers?.length > 0 && fullAuditRef) {
+          log.info(`Found existing cdn-analysis with results for site ${orgSite.getId()} in organization`);
+          return true;
+        }
+      }
+    }
+
+    return false;
+    /* c8 ignore next 4 */
+  } catch (error) {
+    log.error(`Error checking org cdn-analysis: ${error.message}`);
+    return false;
+  }
+}
+
 // Enables cdn-analysis audit for first site in org only
 async function enableCdnAnalysisPerOrg(site, { dataAccess: { Configuration, Site } }) {
   const [config, sitesInOrg] = await Promise.all([
@@ -131,36 +162,50 @@ async function enableCdnAnalysisPerOrg(site, { dataAccess: { Configuration, Site
   }
 }
 
-async function handleAdobeFastly(siteId, { dataAccess: { Configuration, LatestAudit }, sqs }) {
-  // Skip if CDN logs report already exists
-  const existingAnalysis = await LatestAudit?.findBySiteIdAndAuditType(siteId, 'cdn-analysis');
-  if (existingAnalysis?.length > 0 && existingAnalysis[0]?.fullAuditRef?.length > 0) return;
-
+async function handleAdobeFastly(
+  siteId,
+  {
+    dataAccess: { Configuration, LatestAudit, Site },
+    sqs,
+    log,
+  },
+) {
   const config = await Configuration.findLatest();
   const auditQueue = config.getQueues().audits;
 
-  // Queue CDN analysis from last Monday until today
-  const lastMonday = startOfWeek(subWeeks(new Date(), 1), { weekStartsOn: 1 });
-  const today = new Date();
+  // Skip CDN analysis if any site in the org already has cdn-analysis with fullAuditRef
+  const site = await Site.findById(siteId);
+  const hasOrgCdnAnalysisExist = await hasOrgCdnAnalysisWithResults(
+    site,
+    { dataAccess: { Site, LatestAudit }, log },
+  );
 
-  const analysisPromises = [];
-  for (let date = new Date(lastMonday); !isAfter(date, today); date = addDays(date, 1)) {
-    analysisPromises.push(sqs.sendMessage(auditQueue, {
-      type: 'cdn-analysis',
-      siteId,
-      auditContext: {
-        year: date.getUTCFullYear(),
-        month: date.getUTCMonth() + 1,
-        day: date.getUTCDate(),
-        hour: 8,
-        processFullDay: true,
-      },
-    }));
+  if (hasOrgCdnAnalysisExist) {
+    log.info(`Skipping CDN analysis for site ${siteId} - organization already has cdn-analysis with results`);
+  } else {
+    // Queue CDN analysis from last Monday until today
+    const lastMonday = startOfWeek(subWeeks(new Date(), 1), { weekStartsOn: 1 });
+    const today = new Date();
+
+    const analysisPromises = [];
+    for (let date = new Date(lastMonday); !isAfter(date, today); date = addDays(date, 1)) {
+      analysisPromises.push(sqs.sendMessage(auditQueue, {
+        type: 'cdn-analysis',
+        siteId,
+        auditContext: {
+          year: date.getUTCFullYear(),
+          month: date.getUTCMonth() + 1,
+          day: date.getUTCDate(),
+          hour: 8,
+          processFullDay: true,
+        },
+      }));
+    }
+
+    await Promise.all(analysisPromises);
   }
 
-  await Promise.all(analysisPromises);
-
-  // Queue CDN logs report with delay
+  // Always queue CDN logs report with delay
   await sqs.sendMessage(auditQueue, {
     type: 'cdn-logs-report',
     siteId,

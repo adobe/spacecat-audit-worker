@@ -117,8 +117,8 @@ describe('CDN Config Handler', () => {
         .onSecondCall().resolves(mockSite2);
 
       context.dataAccess.LatestAudit.findBySiteIdAndAuditType
-        .onFirstCall().resolves(['audit1'])
-        .onSecondCall().resolves(['audit2']);
+        .onFirstCall().resolves({ getAuditResult: () => ({ providers: ['audit1'] }), getFullAuditRef: () => 'audit1' })
+        .onSecondCall().resolves({ getAuditResult: () => ({ providers: ['audit2'] }), getFullAuditRef: () => 'audit2' });
 
       const result = await cdnConfigHandler.enableCdnAnalysisPerService(
         'test-service',
@@ -138,7 +138,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should leave existing when exactly one domain is enabled', async () => {
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves(['existing-audit']);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({ providers: ['existing-audit'] }), getFullAuditRef: () => 'existing-audit' });
 
       const result = await cdnConfigHandler.enableCdnAnalysisPerService(
         'test-service',
@@ -156,7 +156,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should enable first available when none are enabled', async () => {
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves([]);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => '' });
 
       const result = await cdnConfigHandler.enableCdnAnalysisPerService(
         'test-service',
@@ -192,7 +192,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should filter out falsy domains', async () => {
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves([]);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => '' });
 
       const result = await cdnConfigHandler.enableCdnAnalysisPerService(
         'test-service',
@@ -206,7 +206,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should throw error when configuration fails', async () => {
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves([]);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => ''});
       mockConfig.save.rejects(new Error('Save failed'));
 
       await expect(cdnConfigHandler.enableCdnAnalysisPerService(
@@ -528,7 +528,7 @@ describe('CDN Config Handler', () => {
 
     it('should handle aem-cs-fastly provider', async () => {
       context.dataAccess.Site.allByOrganizationId.resolves([mockSite]);
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves([]);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => 'test' });
 
       const data = { cdnProvider: 'aem-cs-fastly' };
 
@@ -539,16 +539,18 @@ describe('CDN Config Handler', () => {
 
     it('should skip aem-cs-fastly processing when CDN analysis has fullAuditRef', async () => {
       context.dataAccess.Site.allByOrganizationId.resolves([mockSite]);
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves([{
-        fullAuditRef: ['some-audit-ref']
-      }]);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({ providers: ['fastly'] }), getFullAuditRef: () => 'some-audit-ref' });
 
       const data = { cdnProvider: 'aem-cs-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
-      // Should not send any SQS messages since analysis with fullAuditRef already exists
-      expect(context.sqs.sendMessage).to.not.have.been.called;
+      // Should only send CDN logs report, not CDN analysis since fullAuditRef already exists
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        sinon.match.any,
+        sinon.match({ type: 'cdn-logs-report' })
+      );
     });
 
     it('should handle byocdn provider', async () => {

@@ -293,13 +293,9 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   }
 
   if (hasCdnLogsChanges) {
-    const { LatestAudit } = context.dataAccess;
-    const existingReport = await LatestAudit?.findBySiteIdAndAuditType(siteId, 'cdn-logs-report');
-    if (existingReport?.length > 0) {
-      log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
-      await triggerCdnLogsReport(context, site);
-      triggeredSteps.push('cdn-logs-report');
-    }
+    log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
+    await triggerCdnLogsReport(context, site);
+    triggeredSteps.push('cdn-logs-report');
   }
 
   const hasBrandPresenceChanges = changes.brands
