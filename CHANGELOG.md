@@ -1,3 +1,10 @@
+## [1.208.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.1...v1.208.2) (2025-10-13)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** save the site config before proceeding ([#1397](https://github.com/adobe/spacecat-audit-worker/issues/1397)) ([53f8ff5](https://github.com/adobe/spacecat-audit-worker/commit/53f8ff56d676d523f3a6595b1f4b11da0822862a))
+
 ## [1.208.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.0...v1.208.1) (2025-10-13)
 
 
