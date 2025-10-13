@@ -221,7 +221,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
       });
 
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, msg);
-      log.info('%s: Sent sheet %s to Mystique for processing', AUDIT_NAME, sheetName, message);
+      log.info('%s: Sent sheet %s to Mystique for processing', AUDIT_NAME, sheetName, msg);
       return true;
     }));
 
