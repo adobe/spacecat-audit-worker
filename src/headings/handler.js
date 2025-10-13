@@ -149,7 +149,7 @@ function getScrapeJsonPath(url, siteId) {
   return `scrapes/${siteId}${pathname}/scrape.json`;
 }
 
-async function getH1HeadingASuggestion(url, log, pageTags, context, brandGuidelines) {
+export async function getH1HeadingASuggestion(url, log, pageTags, context, brandGuidelines) {
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const prompt = await getPrompt(
     {
