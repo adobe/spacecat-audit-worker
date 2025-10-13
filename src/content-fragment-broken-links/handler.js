@@ -19,7 +19,7 @@ import { AemAuthorClient } from './clients/aem-author-client.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-export async function fetchBrokenContentFragmentPaths(context) {
+export async function fetchBrokenContentFragmentLinks(context) {
   const { log, tenantUrl } = context;
 
   try {
@@ -47,11 +47,11 @@ export async function fetchBrokenContentFragmentPaths(context) {
   }
 }
 
-export async function analyzeBrokenContentFragmentPaths(context) {
+export async function analyzeBrokenContentFragmentLinks(context) {
   const { log, audit } = context;
 
-  const result = audit.getAuditResult();
-  if (!result.success) {
+  const auditResult = audit.getAuditResult();
+  if (!auditResult.success) {
     throw new Error('Audit failed, skipping analysis');
   }
 
@@ -59,40 +59,58 @@ export async function analyzeBrokenContentFragmentPaths(context) {
     const pathIndex = new PathIndex(context);
     const aemAuthorClient = AemAuthorClient.createFrom(context, pathIndex);
     const strategy = new AnalysisStrategy(context, aemAuthorClient, pathIndex);
-    const suggestions = await strategy.analyze(result.brokenPaths);
+    const suggestions = await strategy.analyze(auditResult.brokenPaths);
 
     log.info(`Found ${suggestions.length} suggestions for broken content paths`);
 
-    return { suggestions, success: true };
+    // Persist suggestions back to the audit in DynamoDB
+    const updatedAuditResult = {
+      ...auditResult,
+      analyzedAt: new Date().toISOString(),
+      suggestions: suggestions.map((suggestion) => suggestion.toJSON()),
+    };
+    audit.setAuditResult(updatedAuditResult);
+    await audit.save();
+
+    return { status: 'analyzed' };
   } catch (error) {
     log.error(`Failed to analyze broken content paths: ${error.message}`);
-    return {
+    audit.setAuditResult({
+      ...auditResult,
       error: error.message,
       success: false,
-    };
+    });
+    await audit.save();
+    throw error;
   }
 }
 
 export function provideSuggestions(context) {
-  const { audit, tenantUrl } = context;
+  const { log, audit, tenantUrl } = context;
 
-  const result = audit.getAuditResult();
-  if (!result.success) {
+  const auditResult = audit.getAuditResult();
+  if (!auditResult.success) {
     throw new Error('Audit failed, skipping suggestions generation');
   }
+
+  const { suggestions = [] } = auditResult;
+
+  log.info(`Providing ${suggestions.length} suggestions`);
 
   return {
     fullAuditRef: tenantUrl,
     auditResult: {
       tenantUrl,
-      brokenContentPaths: result.suggestions,
+      totalBrokenPaths: auditResult.brokenPaths?.length || 0,
+      totalSuggestions: suggestions.length,
+      brokenContentPaths: suggestions,
       success: true,
     },
   };
 }
 
 export default new AuditBuilder()
-  .addStep('fetch-broken-content-fragment-links', fetchBrokenContentFragmentPaths, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('analyze-broken-content-fragment-links', analyzeBrokenContentFragmentPaths, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('fetch-broken-content-fragment-links', fetchBrokenContentFragmentLinks, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('analyze-broken-content-fragment-links', analyzeBrokenContentFragmentLinks, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('provide-suggestions', provideSuggestions)
   .build();
