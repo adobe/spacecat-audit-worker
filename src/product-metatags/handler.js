@@ -170,11 +170,14 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
           log.error(`[PRODUCT-METATAGS] Invalid rank in mapNewSuggestion: ${suggestion.rank}`, { url: suggestion.url, issue: suggestion.issue });
         }
 
+        // Destructure rank out to avoid duplicate in data field
+        const { rank, ...suggestionData } = suggestion;
+
         return {
           opportunityId: opportunity.getId(),
-          type: 'PRODUCT_METADATA_UPDATE',
-          rank: suggestion.rank,
-          data: { ...suggestion },
+          type: 'METADATA_UPDATE',
+          rank,
+          data: suggestionData,
         };
       },
     });

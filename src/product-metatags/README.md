@@ -205,5 +205,5 @@ Tests cover:
 1. **Opportunity Type**: Creates `product-metatags` opportunities (not `meta-tags`)
 2. **Page Filtering**: Only processes pages with SKU or image meta tags
 3. **Product Context**: Forwards SKU and image data to each suggestion
-4. **Suggestion Type**: Uses `PRODUCT_METADATA_UPDATE` instead of `METADATA_UPDATE`
+4. **Suggestion Type**: Uses `METADATA_UPDATE` type like regular metatags, but includes product-specific data
 5. **Enhanced Ranking**: Includes SKU and image in issue ranking system

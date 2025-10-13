@@ -68,7 +68,7 @@ const productTestData = {
   expectedSuggestions: [
     {
       opportunityId: 'opportunity-id',
-      type: 'PRODUCT_METADATA_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 5,
       data: {
         tagContent: 'Amazing Product - Buy Now',
@@ -87,7 +87,7 @@ const productTestData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'PRODUCT_METADATA_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 9,
       data: {
         tagContent: 'Short desc',
@@ -102,7 +102,7 @@ const productTestData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'PRODUCT_METADATA_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 4,
       data: {
         seoRecommendation: 'Should be present',
@@ -120,7 +120,7 @@ const productTestData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'PRODUCT_METADATA_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 2,
       data: {
         seoRecommendation: '40-60 characters long',
@@ -134,7 +134,7 @@ const productTestData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'PRODUCT_METADATA_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 11,
       data: {
         tagContent: '["Product Header 1","Product Header 2"]',
@@ -152,7 +152,7 @@ const productTestData = {
   existingSuggestions: [
     {
       opportunityId: 'opportunity-id',
-      type: 'PRODUCT_METADATA_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 5,
       data: {
         tagContent: 'Amazing Product - Buy Now',
@@ -188,7 +188,7 @@ const productTestData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'PRODUCT_METADATA_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 9,
       data: {
         tagContent: 'Modified short desc',
@@ -218,7 +218,7 @@ const productTestData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'PRODUCT_METADATA_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 4,
       data: {
         seoRecommendation: 'Should be present',
@@ -252,7 +252,7 @@ const productTestData = {
     },
     {
       opportunityId: 'opportunity-id',
-      type: 'PRODUCT_METADATA_UPDATE',
+      type: 'METADATA_UPDATE',
       rank: 11,
       data: {
         tagContent: '["Product Header 1","Product Header 2"]',
