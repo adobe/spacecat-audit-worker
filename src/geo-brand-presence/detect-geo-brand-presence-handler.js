@@ -26,6 +26,7 @@ import {
   refreshMetadataFileS3Key,
   refreshMetadataSchema,
   refreshSheetResultFileName,
+  refreshSheetResultSchema,
   writeSheetRefreshResultFailed,
   writeSheetRefreshResultSuccess,
 } from './util.js';
@@ -165,20 +166,33 @@ async function handleRefresh(
 
   // 4. Check whether all sheets exist and upload when ready
   const { files } = refreshMeta.value;
-  const sheets = await allSheetsUploaded(s3Client, s3Bucket, refreshDir, files);
-  if (!sheets) {
+  const resultFiles = await allSheetsUploaded(s3Client, s3Bucket, refreshDir, files);
+  if (!resultFiles) {
     return ok();
   }
 
   try {
     const sharepointClient = await createLLMOSharepointClient(context);
     await Promise.all(
-      sheets.flatMap(async (s, i) => {
-        throw new Error("HAVE TO UPLOAD THE XLSX, BUT IT'S THE METADATA FILE");
+      resultFiles.flatMap(async (s, i) => {
         const { name } = files[i];
-        const sheet = await s.Body.transformToByteArray();
+        const resultFile = await s.Body.transformToString();
+        const result = refreshSheetResultSchema.parse(JSON.parse(resultFile));
+        if (result.status !== 'success') {
+          throw new Error(`Sheet ${name} did not complete successfully: ${result.message || 'unknown reason'}`);
+        }
+
+        const xlsxKey = `${refreshDir}/${result.sheetName}.xlsx`;
+        const xlsxObj = await s3Client.send(new GetObjectCommand({
+          Bucket: s3Bucket,
+          Key: xlsxKey,
+        }));
+        if (!xlsxObj.Body) {
+          throw new Error(`Missing XLSX file for sheet ${name}`);
+        }
+        const xlsxBuffer = await xlsxObj.Body.transformToByteArray();
         return outputLocations.map(
-          (outDir) => uploadAndPublishFile(sheet.buffer, name, outDir, sharepointClient, log),
+          (outDir) => uploadAndPublishFile(xlsxBuffer.buffer, name, outDir, sharepointClient, log),
         );
       }),
     );
