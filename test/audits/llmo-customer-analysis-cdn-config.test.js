@@ -537,16 +537,17 @@ describe('CDN Config Handler', () => {
       expect(context.sqs.sendMessage).to.have.been.called;
     });
 
-    it('should skip aem-cs-fastly processing when CDN logs report already exists', async () => {
+    it('should skip aem-cs-fastly processing when CDN analysis has fullAuditRef', async () => {
       context.dataAccess.Site.allByOrganizationId.resolves([mockSite]);
-      // Mock existing CDN logs report
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves(['existing-report']);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves([{
+        fullAuditRef: ['some-audit-ref']
+      }]);
 
       const data = { cdnProvider: 'aem-cs-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
-      // Should not send any SQS messages since report already exists
+      // Should not send any SQS messages since analysis with fullAuditRef already exists
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 

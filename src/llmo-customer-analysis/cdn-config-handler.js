@@ -133,8 +133,8 @@ async function enableCdnAnalysisPerOrg(site, { dataAccess: { Configuration, Site
 
 async function handleAdobeFastly(siteId, { dataAccess: { Configuration, LatestAudit }, sqs }) {
   // Skip if CDN logs report already exists
-  const existingReport = await LatestAudit?.findBySiteIdAndAuditType(siteId, 'cdn-logs-report');
-  if (existingReport?.length > 0) return;
+  const existingAnalysis = await LatestAudit?.findBySiteIdAndAuditType(siteId, 'cdn-analysis');
+  if (existingAnalysis?.length > 0 && existingAnalysis[0]?.fullAuditRef?.length > 0) return;
 
   const config = await Configuration.findLatest();
   const auditQueue = config.getQueues().audits;
