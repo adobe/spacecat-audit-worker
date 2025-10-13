@@ -13,6 +13,18 @@
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
 
+/**
+ * Checks if any suggestions in the array were manually modified (updatedBy !== 'system')
+ * @param {Array} suggestions - Array of suggestion objects
+ * @returns {boolean} - True if any suggestion was manually modified
+ */
+function hasManuallyModifiedSuggestions(suggestions) {
+  return suggestions.some((suggestion) => {
+    const suggestionUpdatedBy = suggestion.getUpdatedBy();
+    return suggestionUpdatedBy && suggestionUpdatedBy !== 'system';
+  });
+}
+
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Opportunity, Suggestion } = dataAccess;
@@ -48,6 +60,12 @@ export default async function handler(message, context) {
     log.info(`No existing Opportunity found for page: ${url}. Creating a new one.`);
     opportunity = await Opportunity.create(entity);
   } else {
+    const existingSuggestions = await opportunity.getSuggestions();
+    // Manual protection check: any manual suggestions found, skip all updates
+    if (existingSuggestions.length > 0 && hasManuallyModifiedSuggestions(existingSuggestions)) {
+      log.info(`Existing suggestions for page: ${url} were manually modified. Skipping all updates to preserve data consistency.`);
+      return ok();
+    }
     log.info(`Existing Opportunity found for page: ${url}. Updating it with new data.`);
     opportunity.setAuditId(auditId);
     opportunity.setData({
@@ -57,12 +75,9 @@ export default async function handler(message, context) {
     opportunity.setGuidance(entity.guidance);
     opportunity.setUpdatedBy('system');
     opportunity = await opportunity.save();
+    // Delete previous suggestions if any exist
+    await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
   }
-
-  const existingSuggestions = await opportunity.getSuggestions();
-
-  // delete previous suggestions if any
-  await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
 
   // map the suggestions received from M to PSS
   const suggestionData = {

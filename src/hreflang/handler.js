@@ -16,9 +16,9 @@ import { isLangCode } from 'is-language-code';
 import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
-import { syncSuggestions } from '../utils/data-access.js';
+import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData } from './opportunity-data-mapper.js';
+import { createOpportunityData, createOpportunityDataForElmo } from './opportunity-data-mapper.js';
 import { getTopPagesForSiteId } from '../canonical/handler.js';
 
 const auditType = Audit.AUDIT_TYPES.HREFLANG;
@@ -26,18 +26,22 @@ const auditType = Audit.AUDIT_TYPES.HREFLANG;
 export const HREFLANG_CHECKS = Object.freeze({
   HREFLANG_INVALID_LANGUAGE_TAG: {
     check: 'hreflang-invalid-language-tag',
+    title: 'Invalid Language Tag',
     explanation: 'Invalid language tag found in hreflang attribute. Language tags must follow IANA standards.',
   },
   HREFLANG_X_DEFAULT_MISSING: {
     check: 'hreflang-x-default-missing',
+    title: 'Missing X-Default Tag',
     explanation: 'Missing x-default hreflang tag for international fallback.',
   },
   HREFLANG_OUTSIDE_HEAD: {
     check: 'hreflang-outside-head',
+    title: 'Hreflang Outside Head',
     explanation: 'Hreflang tags found outside the head section. Hreflang tags should be placed in the HTML head.',
   },
   TOPPAGES: {
     check: 'top-pages',
+    title: 'Top Pages',
     explanation: 'No top pages found',
   },
 
@@ -254,27 +258,63 @@ export function generateSuggestions(auditUrl, auditData, context) {
     return { ...auditData };
   }
 
-  // transform audit results into suggestions
-  const suggestions = [];
+  // Get the order from HREFLANG_CHECKS object
+  const auditTypeOrder = [
+    ...Object.keys(HREFLANG_CHECKS),
+  ];
 
+  // Group suggestions by audit type
+  const suggestionsByType = {};
+  const allSuggestions = [];
+
+  // transform audit results into suggestions
   // Iterate through each check type in the audit results
   Object.entries(auditData.auditResult).forEach(([checkType, checkResult]) => {
     if (checkResult.success === false && Array.isArray(checkResult.urls)) {
+      if (!suggestionsByType[checkType]) {
+        suggestionsByType[checkType] = [];
+      }
+
       checkResult.urls.forEach((url) => {
-        suggestions.push({
+        const suggestion = {
           type: 'CODE_CHANGE',
           checkType,
           explanation: checkResult.explanation,
           url,
           // eslint-disable-next-line no-use-before-define
           recommendedAction: generateRecommendedAction(checkType),
-        });
+        };
+        suggestionsByType[checkType].push(suggestion);
+        allSuggestions.push(suggestion);
       });
     }
   });
 
+  // Build markdown table for Elmo
+  let mdTable = '';
+  auditTypeOrder.forEach((currentAuditType) => {
+    const checkType = HREFLANG_CHECKS[currentAuditType].check;
+    if (suggestionsByType[checkType] && suggestionsByType[checkType].length > 0) {
+      mdTable += `## ${HREFLANG_CHECKS[currentAuditType].title}\n\n`;
+      mdTable += '| Page Url | Explanation | Suggestion |\n';
+      mdTable += '|-------|-------|-------|\n';
+      suggestionsByType[checkType].forEach((suggestion) => {
+        mdTable += `| ${suggestion.url} | ${suggestion.explanation} | ${suggestion.recommendedAction} |\n`;
+      });
+      mdTable += '\n';
+    }
+  });
+
+  const elmoSuggestions = [];
+  elmoSuggestions.push({
+    type: 'CODE_CHANGE',
+    recommendedAction: mdTable,
+  });
+
+  const suggestions = [...allSuggestions];
+
   log.info(`Generated ${suggestions.length} hreflang suggestions for ${auditUrl}`);
-  return { ...auditData, suggestions };
+  return { ...auditData, suggestions, elmoSuggestions };
 }
 
 /**
@@ -349,8 +389,74 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   return { ...auditData };
 }
 
+/**
+ * Creates opportunities and syncs suggestions for hreflang issues for Elmo.
+ *
+ * @param {string} auditUrl - The URL that was audited.
+ * @param {Object} auditData - The audit data containing results and suggestions.
+ * @param {Object} context - The context object containing log, dataAccess, etc.
+ * @returns {Object} The audit data unchanged (opportunities created as side effect).
+ */
+export async function opportunityAndSuggestionsForElmo(auditUrl, auditData, context) {
+  const { log } = context;
+  if (!auditData.elmoSuggestions?.length) {
+    log.info('Hreflang audit has no issues, skipping opportunity creation for Elmo');
+    return { ...auditData };
+  }
+
+  const elmoOpportunityType = 'generic-opportunity';
+  const comparisonFn = (oppty) => {
+    const opptyData = oppty.getData();
+    const opptyAdditionalMetrics = opptyData?.additionalMetrics;
+    if (!opptyAdditionalMetrics || !Array.isArray(opptyAdditionalMetrics)) {
+      return false;
+    }
+    const hasHreflangSubtype = opptyAdditionalMetrics.some(
+      (metric) => metric.key === 'subtype' && metric.value === 'hreflang',
+    );
+    return hasHreflangSubtype;
+  };
+
+  const opportunity = await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityDataForElmo,
+    elmoOpportunityType,
+    {},
+    comparisonFn,
+  );
+
+  log.info(`Hreflang opportunity created for Elmo with oppty id ${opportunity.getId()}`);
+
+  const buildKey = (suggestion) => `${suggestion.type}`;
+  await syncSuggestions({
+    opportunity,
+    newData: auditData.elmoSuggestions,
+    context,
+    buildKey,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: suggestion.type,
+      rank: 0,
+      data: {
+        suggestionValue: suggestion.recommendedAction,
+      },
+    }),
+    keepLatestMergeDataFunction,
+    log,
+  });
+
+  log.info(`Hreflang opportunity created for Elmo and ${auditData.elmoSuggestions.length} suggestions synced for ${auditUrl}`);
+  return { ...auditData };
+}
+
 export default new AuditBuilder()
   .withUrlResolver(noopUrlResolver)
   .withRunner(hreflangAuditRunner)
-  .withPostProcessors([generateSuggestions, opportunityAndSuggestions])
+  .withPostProcessors([
+    generateSuggestions,
+    opportunityAndSuggestions,
+    opportunityAndSuggestionsForElmo,
+  ])
   .build();

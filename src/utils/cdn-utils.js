@@ -30,9 +30,9 @@ export const SERVICE_PROVIDER_TYPES = {
   BYOCDN_AKAMAI: 'byocdn-akamai',
   BYOCDN_CLOUDFLARE: 'byocdn-cloudflare',
   BYOCDN_CLOUDFRONT: 'byocdn-cloudfront',
-  BYOCDN_FRONTDOOR: 'byocdn-azure-frontdoor',
+  BYOCDN_FRONTDOOR: 'byocdn-frontdoor',
   AMS_CLOUDFRONT: 'ams-cloudfront',
-  AMS_AZURE_FRONTDOOR: 'ams-azure-frontdoor',
+  AMS_FRONTDOOR: 'ams-frontdoor',
 };
 
 // Maps service providers to underlying CDN providers
@@ -45,7 +45,7 @@ export const SERVICE_TO_CDN_MAPPING = {
   [SERVICE_PROVIDER_TYPES.BYOCDN_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
   [SERVICE_PROVIDER_TYPES.BYOCDN_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
   [SERVICE_PROVIDER_TYPES.AMS_CLOUDFRONT]: CDN_TYPES.CLOUDFRONT,
-  [SERVICE_PROVIDER_TYPES.AMS_AZURE_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
+  [SERVICE_PROVIDER_TYPES.AMS_FRONTDOOR]: CDN_TYPES.FRONTDOOR,
 };
 
 /**
@@ -74,13 +74,26 @@ export function generateStandardBucketName(env = 'prod') {
 }
 
 /**
- * Validates if a bucket name is a standard Adobe CDN bucket for allowed environments
+ * Validates if a bucket name is a standard CDN logs bucket
  * @param {string} bucketName - The bucket name to validate
- * @returns {boolean} True if it's a valid Adobe CDN bucket for prod/dev/stage
+ * @returns {boolean} True if it matches allowed patterns
  */
 export function isStandardAdobeCdnBucket(bucketName) {
-  const allowedEnvironments = ['prod', 'dev', 'stage'];
-  return allowedEnvironments.some((env) => bucketName === `cdn-logs-adobe-${env}`);
+  // Match cdn-logs-adobe-(prod|dev|stage) exactly
+  if (/^cdn-logs-adobe-(prod|dev|stage)$/.test(bucketName)) {
+    return true;
+  }
+
+  // Match cdn-logs-{mixed alphanumeric} - must contain both letters and numbers
+  if (/^cdn-logs-[a-zA-Z0-9-]+$/.test(bucketName)) {
+    // Extract the part after 'cdn-logs-' to check for mixed content
+    const suffix = bucketName.substring('cdn-logs-'.length);
+    if (/[a-zA-Z]/.test(suffix) && /[0-9]/.test(suffix)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -165,7 +178,9 @@ export function buildCdnPaths(bucketName, serviceProvider, timeParts, imsOrgId =
   if (isStandardAdobeCdnBucket(bucketName) && imsOrgId) {
     return {
       rawLocation: `s3://${bucketName}/${imsOrgId}/raw/${serviceProvider}/`,
+      aggregatedLocation: `s3://${bucketName}/${imsOrgId}/aggregated/`,
       aggregatedOutput: `s3://${bucketName}/${imsOrgId}/aggregated/${year}/${month}/${day}/${hour}/`,
+      aggregatedReferralLocation: `s3://${bucketName}/${imsOrgId}/aggregated-referral/`,
       aggregatedReferralOutput: `s3://${bucketName}/${imsOrgId}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
       tempLocation: `s3://${bucketName}/temp/athena-results/`,
     };
@@ -173,6 +188,8 @@ export function buildCdnPaths(bucketName, serviceProvider, timeParts, imsOrgId =
 
   return {
     rawLocation: `s3://${bucketName}/raw/`,
+    aggregatedLocation: `s3://${bucketName}/aggregated/`,
+    aggregatedReferralLocation: `s3://${bucketName}/aggregated-referral/`,
     aggregatedOutput: `s3://${bucketName}/aggregated/${year}/${month}/${day}/${hour}/`,
     aggregatedReferralOutput: `s3://${bucketName}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
     tempLocation: `s3://${bucketName}/temp/athena-results/`,

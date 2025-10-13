@@ -54,6 +54,8 @@ import preflight from './preflight/handler.js';
 import llmBlocked from './llm-blocked/handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
 import detectGeoBrandPresence from './geo-brand-presence/detect-geo-brand-presence-handler.js';
+import geoBrandPresenceDaily from './geo-brand-presence-daily/handler.js';
+import detectGeoBrandPresenceDaily from './geo-brand-presence-daily/detect-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
 import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
@@ -75,7 +77,10 @@ import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
 import contentFragmentBrokenLinks from './content-fragment-broken-links/handler.js';
 import cdnContentFragment404 from './cdn-content-fragment-404/handler.js';
+import vulnerabilities from './vulnerabilities/handler.js';
 import prerender from './prerender/handler.js';
+import summarization from './summarization/handler.js';
+import summarizationGuidance from './summarization/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -112,6 +117,8 @@ const HANDLERS = {
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
   'detect:geo-brand-presence': detectGeoBrandPresence,
+  'geo-brand-presence-daily': geoBrandPresenceDaily,
+  'detect:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
@@ -132,11 +139,14 @@ const HANDLERS = {
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
   'llmo-customer-analysis': llmoCustomerAnalysis,
+  summarization,
+  'guidance:summarization': summarizationGuidance,
   hreflang,
   headings,
   'content-fragment-broken-links': contentFragmentBrokenLinks,
   'cdn-content-fragment-404': cdnContentFragment404,
   prerender,
+  'security-vulnerabilities': vulnerabilities,
   dummy: (message) => ok(message),
 };
 
