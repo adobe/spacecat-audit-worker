@@ -64,6 +64,7 @@ Pages are processed **only if** they contain:
 - **SKU**: Extracted from standard e-commerce patterns used by major retailers (e.g., bulk.com)
   - Meta tags: `<meta name="sku" content="...">`, `<meta property="product:sku" content="...">`
   - JSON-LD structured data: Product schema `sku`, `productID`, or `mpn` fields
+  - **Important**: SKU extraction requires server-side rendered HTML with meta tags in the `<head>` section. Client-side rendered content (SPA/JavaScript-heavy sites) may not be detected.
   - Note: Data attributes are intentionally NOT supported to avoid false positives on non-product pages
 - **Thumbnail (Product Image)**: All product images are consolidated under a single `thumbnail` property
   - Priority order (first available source is used):

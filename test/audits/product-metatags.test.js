@@ -786,7 +786,7 @@ describe('Product MetaTags', () => {
 
         expect(result).to.be.null;
         expect(logStub.error).to.have.been.calledWith(
-          '[PRODUCT-METATAGS] Scrape result is empty for scrapes/site-id/404/scrape.json',
+          sinon.match('[PRODUCT-METATAGS] Scrape result is empty for scrapes/site-id/404/scrape.json'),
         );
       });
 
@@ -2574,6 +2574,23 @@ describe('Product MetaTags', () => {
       expect(result).to.deep.equal({});
       // Verify that the debug log was called for the JSON parse error on image extraction (lines 251-253)
       expect(logStub.debug).to.have.been.calledWith(sinon.match(/Failed to parse JSON-LD block for image:/));
+    });
+
+    it('should log debug message when no head tag is found on non-first page (lines 214-215)', () => {
+      // First, call with HTML that has a head tag to set the hasLoggedSample flag
+      const htmlWithHead = '<html><head><meta name="sku" content="TEST-123"></head></html>';
+      extractProductTagsFromHTML(htmlWithHead, logStub);
+      
+      // Reset the stubs to clear previous calls
+      logStub.debug.resetHistory();
+      
+      // Now call with HTML that has NO head tag - this should trigger lines 214-215
+      const htmlWithoutHead = '<html><body>No head tag here</body></html>';
+      const result = extractProductTagsFromHTML(htmlWithoutHead, logStub);
+      
+      expect(result).to.deep.equal({});
+      // Verify that the debug log was called for missing head tag on non-first page
+      expect(logStub.debug).to.have.been.calledWith('[PRODUCT-METATAGS] No <head> tag found in this page');
     });
   });
 
@@ -4674,6 +4691,88 @@ describe('Product MetaTags', () => {
 
       // Verify the function executed successfully
       expect(logStub.info).to.have.been.called;
+    });
+
+    it('should handle rawBody being undefined (line 396 branch coverage)', async () => {
+      // Test the fallback to 0 when rawBody.length is undefined
+      const getObjectFromKeyStub = sinon.stub().resolves({
+        finalUrl: 'https://example.com/page',
+        scrapeResult: {
+          tags: { title: 'Test' },
+          rawBody: undefined, // This will trigger the || 0 fallback on line 396
+        },
+      });
+
+      const { fetchAndProcessPageObject: mockedFetch } = await esmock(
+        '../../src/product-metatags/handler.js',
+        {
+          '../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        },
+      );
+
+      const result = await mockedFetch(
+        mockS3Client,
+        'test-bucket',
+        'https://example.com/page',
+        'scrapes/site123/page/scrape.json',
+        logStub,
+      );
+
+      expect(result).to.be.null;
+      expect(logStub.error).to.have.been.calledWith(
+        sinon.match('[PRODUCT-METATAGS] Scrape result is empty'),
+      );
+    });
+
+    it('should log warning when no product pages are detected with and without titles (line 634)', async () => {
+      // Mock pages without SKUs to trigger the "no product pages detected" warning
+      const getObjectFromKeyStub = sinon.stub();
+      // First page with title
+      getObjectFromKeyStub.onCall(0).resolves({
+        finalUrl: 'https://example.com/page1',
+        scrapeResult: {
+          tags: { title: 'Page with title' },
+          rawBody: '<html><body>' + 'x'.repeat(400) + '</body></html>',
+        },
+      });
+      // Second page without title (to test the || 'none' fallback)
+      getObjectFromKeyStub.onCall(1).resolves({
+        finalUrl: 'https://example.com/page2',
+        scrapeResult: {
+          tags: {}, // No title
+          rawBody: '<html><body>' + 'x'.repeat(400) + '</body></html>',
+        },
+      });
+
+      const { productMetatagsAutoDetect: mockedAutoDetect } = await esmock(
+        '../../src/product-metatags/handler.js',
+        {
+          '../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        },
+      );
+
+      const pagesMap = new Map([
+        ['https://example.com/page1', 'scrapes/site123/page1/scrape.json'],
+        ['https://example.com/page2', 'scrapes/site123/page2/scrape.json'],
+      ]);
+
+      await mockedAutoDetect(
+        mockSite,
+        pagesMap,
+        mockContext,
+      );
+
+      // Should log the warning about no product pages detected
+      expect(logStub.warn).to.have.been.calledWith('[PRODUCT-METATAGS] No product pages detected! Sample of pages checked:');
+      // Should log pages - one with title, one with 'none'
+      expect(logStub.warn).to.have.been.calledWith(sinon.match(/title=Page with title/));
+      expect(logStub.warn).to.have.been.calledWith(sinon.match(/title=none/));
+    });
+
   describe('buildSuggestionKey', () => {
     it('uses fallbacks when fields are missing', () => {
       expect(buildSuggestionKey(undefined)).to.equal('unknown-url|unknown-issue|');
@@ -4687,7 +4786,6 @@ describe('Product MetaTags', () => {
       expect(key).to.equal('https://x|Title too long|foo');
     });
   });
-    });
   });
 });
 

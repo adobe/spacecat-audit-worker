@@ -196,7 +196,24 @@ export function extractProductTagsFromHTML(rawBody, log) {
     return productTags;
   }
 
+  // Track if this is the first page being processed (for detailed logging)
+  const isFirstPage = !extractProductTagsFromHTML.hasLoggedSample;
+
   try {
+    // Log HTML sample for debugging (first 500 chars of head section if available)
+    const headMatch = rawBody.match(/<head[^>]*>([\s\S]{0,500})/i);
+    if (isFirstPage) {
+      if (headMatch) {
+        log.info(`[PRODUCT-METATAGS] SAMPLE HTML HEAD: ${headMatch[1].substring(0, 400)}...`);
+      } else {
+        log.warn(`[PRODUCT-METATAGS] SAMPLE PAGE: No <head> tag found. HTML starts: ${rawBody.substring(0, 400)}...`);
+      }
+      extractProductTagsFromHTML.hasLoggedSample = true;
+    }
+    if (!headMatch && !isFirstPage) {
+      log.debug('[PRODUCT-METATAGS] No <head> tag found in this page');
+    }
+
     // Extract SKU meta tag (standard format)
     let skuMatch = rawBody.match(/<meta\s+name=["']sku["']\s+content=["']([^"']+)["']/i);
     if (skuMatch) {
@@ -207,6 +224,8 @@ export function extractProductTagsFromHTML(rawBody, log) {
       const skuMetaExists = rawBody.includes('name="sku"') || rawBody.includes("name='sku'");
       if (skuMetaExists) {
         log.warn('[PRODUCT-METATAGS] SKU meta tag found but regex did not match. Sample:', rawBody.substring(rawBody.indexOf('sku') - 50, rawBody.indexOf('sku') + 100));
+      } else {
+        log.debug('[PRODUCT-METATAGS] No SKU meta tag found in HTML');
       }
     }
 
@@ -223,10 +242,12 @@ export function extractProductTagsFromHTML(rawBody, log) {
     if (!productTags.sku) {
       const jsonLdMatch = rawBody.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
       if (jsonLdMatch) {
+        log.debug(`[PRODUCT-METATAGS] Found ${jsonLdMatch.length} JSON-LD script(s)`);
         for (const jsonLdScript of jsonLdMatch) {
           try {
             const jsonContent = jsonLdScript.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
             const data = JSON.parse(jsonContent);
+            log.debug(`[PRODUCT-METATAGS] Parsed JSON-LD with @type: ${data['@type'] || data['@graph']?.[0]?.['@type'] || 'unknown'}`);
 
             // Handle @graph structures (e.g., bulk.com), single objects, and arrays
             let items = [];
@@ -348,9 +369,13 @@ export function extractProductTagsFromHTML(rawBody, log) {
     }
 
     if (Object.keys(productTags).length === 0) {
-      log.debug('[PRODUCT-METATAGS] No product tags extracted. HTML length:', rawBody.length, 'HTML sample (first 500 chars):', rawBody.substring(0, 500));
+      log.info('[PRODUCT-METATAGS] No product tags extracted. HTML length:', rawBody.length, 'Has meta tags:', rawBody.includes('<meta'), 'Has JSON-LD:', rawBody.includes('application/ld+json'));
     } else {
-      log.debug('[PRODUCT-METATAGS] Extracted product tags from HTML:', Object.keys(productTags), 'Values:', productTags);
+      log.info('[PRODUCT-METATAGS] Successfully extracted product tags:', {
+        hasSku: !!productTags.sku,
+        skuValue: productTags.sku,
+        hasThumbnail: !!productTags.thumbnail,
+      });
     }
   } catch (error) {
     log.warn(`[PRODUCT-METATAGS] Error extracting product tags from HTML: ${error.message}`);
@@ -360,14 +385,19 @@ export function extractProductTagsFromHTML(rawBody, log) {
 }
 
 export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, log) {
+  log.debug(`[PRODUCT-METATAGS] Fetching from S3: ${key}`);
+
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
     log.error(`[PRODUCT-METATAGS] No Scraped tags found in S3 ${key} object`);
     return null;
   }
+
+  const rawBodyLength = object?.scrapeResult?.rawBody?.length || 0;
+
   // if the scrape result is empty, skip the page for product-metatags audit
-  if (object?.scrapeResult?.rawBody?.length < 300) {
-    log.error(`[PRODUCT-METATAGS] Scrape result is empty for ${key}`);
+  if (rawBodyLength < 300) {
+    log.error(`[PRODUCT-METATAGS] Scrape result is empty for ${key} (length: ${rawBodyLength})`);
     return null;
   }
 
@@ -399,6 +429,7 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
 
   // Extract product-specific meta tags
   // from raw HTML since scraper doesn't support custom extraction
+  log.debug(`[PRODUCT-METATAGS] Extracting product tags from rawBody for ${pageUrl}...`);
   const productTags = extractProductTagsFromHTML(object.scrapeResult.rawBody, log);
 
   const result = {
@@ -413,7 +444,11 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
     },
   };
 
-  log.debug(`[PRODUCT-METATAGS] Processed page ${pageUrl}: hasSku=${!!productTags.sku}, hasThumbnail=${!!productTags.thumbnail}, rawBodyLength=${object.scrapeResult.rawBody.length}`);
+  if (productTags.sku) {
+    log.info(`[PRODUCT-METATAGS] Product page detected: ${pageUrl} (SKU: ${productTags.sku})`);
+  } else {
+    log.debug(`[PRODUCT-METATAGS] No SKU found for ${pageUrl} (rawBodyLength=${object.scrapeResult.rawBody.length})`);
+  }
 
   return result;
 }
@@ -539,8 +574,13 @@ export async function productMetatagsAutoDetect(site, pagesMap, context) {
     };
   }
 
+  log.info(`[PRODUCT-METATAGS] Fetching ${pagesMap.size} pages from S3...`);
   const pageMetadataResults = await Promise.all([...pagesMap]
     .map(([url, path]) => fetchAndProcessPageObject(s3Client, bucketName, url, path, log)));
+
+  const nullResults = pageMetadataResults.filter((r) => r === null).length;
+  const validResults = pageMetadataResults.filter((r) => r !== null).length;
+  log.info(`[PRODUCT-METATAGS] S3 fetch results: ${validResults} valid, ${nullResults} null/empty`);
 
   pageMetadataResults.forEach((pageMetadata) => {
     if (pageMetadata) {
@@ -585,6 +625,15 @@ export async function productMetatagsAutoDetect(site, pagesMap, context) {
   }
 
   log.info(`[PRODUCT-METATAGS] Product pages processed: ${productPagesProcessed} out of ${totalPagesSet.size} total pages`);
+
+  // Log sample of product vs non-product pages for debugging
+  if (productPagesProcessed === 0 && extractedTagsCount > 0) {
+    const samplePages = Object.entries(extractedTags).slice(0, 3);
+    log.warn('[PRODUCT-METATAGS] No product pages detected! Sample of pages checked:');
+    samplePages.forEach(([url, tags]) => {
+      log.warn(`  - ${url}: hasSku=${!!tags.sku}, title=${tags.title?.substring(0, 50) || 'none'}`);
+    });
+  }
 
   seoChecks.finalChecks();
   const detectedTags = seoChecks.getDetectedTags();
