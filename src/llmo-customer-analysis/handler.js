@@ -321,7 +321,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     && (changes.brands || changes.competitors);
 
   if (hasBrandPresenceChanges) {
-    log.info('LLMO config changes detected in brands, competitors, topics, categories, or entities; triggering geo-brand-presence audit');
+    log.info('LLMO config changes detected in topics, categories, or entities; triggering geo-brand-presence audit');
     await triggerGeoBrandPresence(context, site, auditContext);
     triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
   }
