@@ -413,7 +413,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
     });
 
-    it('should trigger refresh:geo-brand-presence when brands change', async () => {
+    it('should trigger geo-brand-presence-trigger-refresh when brands change', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -449,11 +449,11 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(sqs.sendMessage).to.have.been.calledOnce;
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'refresh:geo-brand-presence' }),
+        sinon.match({ type: 'geo-brand-presence-trigger-refresh' }),
       );
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('refresh-geo-brand-presence');
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-refresh');
     });
 
     it('should trigger all audits when no config version provided', async () => {
@@ -559,7 +559,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
     });
 
-    it('should trigger refresh:geo-brand-presence when competitors change', async () => {
+    it('should trigger geo-brand-presence-trigger-refresh when competitors change', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -595,11 +595,11 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(sqs.sendMessage).to.have.been.calledOnce;
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'refresh:geo-brand-presence' }),
+        sinon.match({ type: 'geo-brand-presence-trigger-refresh' }),
       );
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('refresh-geo-brand-presence');
+      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence-refresh');
     });
 
     it('should trigger both cdn-logs-report and geo-brand-presence when only categories change', async () => {

@@ -172,11 +172,11 @@ export async function triggerGeoBrandPresence(context, site, auditContext = {}) 
   log.info(`Successfully triggered ${auditType} audit`);
 }
 
-export async function triggerRefreshGeoBrandPresence(context, site, configVersion) {
+export async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
   const { sqs, dataAccess, log } = context;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
-  const auditType = 'refresh:geo-brand-presence';
+  const auditType = 'geo-brand-presence-trigger-refresh';
   const siteId = site.getSiteId();
 
   log.info('Triggering %s audit for site: %s', auditType, siteId);
@@ -325,9 +325,9 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
   }
   if (needsBrandPresenceRefresh) {
-    log.info('LLMO config changes detected in brand or competitor aliases; triggering geo-brand-presence refresh');
-    await triggerRefreshGeoBrandPresence(context, site, configVersion);
-    triggeredSteps.push('refresh-geo-brand-presence');
+    log.info('LLMO config changes detected in brand or competitor aliases; triggering geo-brand-presence-refresh');
+    await triggerGeoBrandPresenceRefresh(context, site, configVersion);
+    triggeredSteps.push('geo-brand-presence-refresh');
   }
 
   if (triggeredSteps.length > 0) {
