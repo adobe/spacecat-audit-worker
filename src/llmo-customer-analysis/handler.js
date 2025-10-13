@@ -14,6 +14,7 @@ import {
   getLastNumberOfWeeks, llmoConfig,
 } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
+import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { isAuditEnabledForSite } from '../common/audit-utils.js';
@@ -46,6 +47,8 @@ async function enableImports(site, imports = []) {
       siteConfig.enableImport(type, options);
     }
   });
+
+  site.setConfig(Config.toDynamoItem(siteConfig));
 
   await site.save();
 }
@@ -290,13 +293,9 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   }
 
   if (hasCdnLogsChanges) {
-    const { LatestAudit } = context.dataAccess;
-    const existingReport = await LatestAudit?.findBySiteIdAndAuditType(siteId, 'cdn-logs-report');
-    if (existingReport?.length > 0) {
-      log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
-      await triggerCdnLogsReport(context, site);
-      triggeredSteps.push('cdn-logs-report');
-    }
+    log.info('LLMO config changes detected in categories; triggering cdn-logs-report audit');
+    await triggerCdnLogsReport(context, site);
+    triggeredSteps.push('cdn-logs-report');
   }
 
   const hasBrandPresenceChanges = changes.brands
