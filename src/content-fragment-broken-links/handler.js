@@ -63,25 +63,16 @@ export async function analyzeBrokenContentFragmentLinks(context) {
 
     log.info(`Found ${suggestions.length} suggestions for broken content paths`);
 
-    // Persist suggestions back to the audit in DynamoDB
-    const updatedAuditResult = {
-      ...auditResult,
-      analyzedAt: new Date().toISOString(),
+    return {
       suggestions: suggestions.map((suggestion) => suggestion.toJSON()),
+      success: true,
     };
-    audit.setAuditResult(updatedAuditResult);
-    await audit.save();
-
-    return { status: 'analyzed' };
   } catch (error) {
     log.error(`Failed to analyze broken content paths: ${error.message}`);
-    audit.setAuditResult({
-      ...auditResult,
+    return {
       error: error.message,
       success: false,
-    });
-    await audit.save();
-    throw error;
+    };
   }
 }
 

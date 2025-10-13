@@ -42,8 +42,8 @@ describe('Broken Content Path Handler', () => {
     aemAuthorClientStub = sandbox.stub();
     analysisStrategyStub = {
       analyze: sandbox.stub().resolves([
-        { requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' },
-        { requestedPath: '/content/dam/test/broken2.pdf', suggestedPath: null, type: 'PUBLISH' },
+        { toJSON: () => ({ requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' }) },
+        { toJSON: () => ({ requestedPath: '/content/dam/test/broken2.pdf', suggestedPath: null, type: 'PUBLISH' }) },
       ]),
     };
 
@@ -98,9 +98,9 @@ describe('Broken Content Path Handler', () => {
     sandbox.restore();
   });
 
-  describe('fetchBrokenContentFragmentPaths', () => {
+  describe('fetchBrokenContentFragmentLinks', () => {
     it('should successfully fetch broken content paths', async () => {
-      const result = await handlerModule.fetchBrokenContentFragmentPaths(context);
+      const result = await handlerModule.fetchBrokenContentFragmentLinks(context);
 
       expect(athenaCollectorStub.fetchBrokenPaths).to.have.been.calledOnce;
       expect(context.log.info).to.have.been.calledWith('Found 2 broken content paths from AthenaCollector');
@@ -118,7 +118,7 @@ describe('Broken Content Path Handler', () => {
       const error = new Error('Athena connection failed');
       athenaCollectorStub.fetchBrokenPaths.rejects(error);
 
-      const result = await handlerModule.fetchBrokenContentFragmentPaths(context);
+      const result = await handlerModule.fetchBrokenContentFragmentLinks(context);
 
       expect(context.log.error).to.have.been.calledWith('Failed to fetch broken content paths: Athena connection failed');
       expect(result).to.deep.equal({
@@ -133,7 +133,7 @@ describe('Broken Content Path Handler', () => {
     it('should handle empty results from collector', async () => {
       athenaCollectorStub.fetchBrokenPaths.resolves([]);
 
-      const result = await handlerModule.fetchBrokenContentFragmentPaths(context);
+      const result = await handlerModule.fetchBrokenContentFragmentLinks(context);
 
       expect(context.log.info).to.have.been.calledWith('Found 0 broken content paths from AthenaCollector');
       expect(result.auditResult.brokenPaths).to.deep.equal([]);
@@ -147,15 +147,15 @@ describe('Broken Content Path Handler', () => {
         log: context.log,
       };
 
-      const result = await handlerModule.fetchBrokenContentFragmentPaths(customContext);
+      const result = await handlerModule.fetchBrokenContentFragmentLinks(customContext);
 
       expect(result.fullAuditRef).to.equal('https://custom-tenant.adobe.com');
     });
   });
 
-  describe('analyzeBrokenContentFragmentPaths', () => {
+  describe('analyzeBrokenContentFragmentLinks', () => {
     it('should successfully analyze broken content paths', async () => {
-      const result = await handlerModule.analyzeBrokenContentFragmentPaths(context);
+      const result = await handlerModule.analyzeBrokenContentFragmentLinks(context);
 
       expect(analysisStrategyStub.analyze).to.have.been.calledWith(['/content/dam/test/broken1.jpg', '/content/dam/test/broken2.pdf']);
       expect(context.log.info).to.have.been.calledWith('Found 2 suggestions for broken content paths');
@@ -172,7 +172,7 @@ describe('Broken Content Path Handler', () => {
     it('should throw error when audit result is unsuccessful', async () => {
       context.audit.getAuditResult.returns({ success: false, error: 'Previous step failed' });
 
-      await expect(handlerModule.analyzeBrokenContentFragmentPaths(context))
+      await expect(handlerModule.analyzeBrokenContentFragmentLinks(context))
         .to.be.rejectedWith('Audit failed, skipping analysis');
     });
 
@@ -180,7 +180,7 @@ describe('Broken Content Path Handler', () => {
       const error = new Error('Analysis strategy failed');
       analysisStrategyStub.analyze.rejects(error);
 
-      const result = await handlerModule.analyzeBrokenContentFragmentPaths(context);
+      const result = await handlerModule.analyzeBrokenContentFragmentLinks(context);
 
       expect(context.log.error).to.have.been.calledWith('Failed to analyze broken content paths: Analysis strategy failed');
       expect(result).to.deep.equal({
@@ -196,16 +196,18 @@ describe('Broken Content Path Handler', () => {
       });
       analysisStrategyStub.analyze.resolves([]);
 
-      const result = await handlerModule.analyzeBrokenContentFragmentPaths(context);
+      const result = await handlerModule.analyzeBrokenContentFragmentLinks(context);
 
       expect(analysisStrategyStub.analyze).to.have.been.calledWith([]);
       expect(context.log.info).to.have.been.calledWith('Found 0 suggestions for broken content paths');
-      expect(result.suggestions).to.deep.equal([]);
-      expect(result.success).to.be.true;
+      expect(result).to.deep.equal({
+        suggestions: [],
+        success: true,
+      });
     });
 
     it('should create PathIndex and AemAuthorClient correctly', async () => {
-      await handlerModule.analyzeBrokenContentFragmentPaths(context);
+      await handlerModule.analyzeBrokenContentFragmentLinks(context);
 
       expect(pathIndexStub).to.exist;
       expect(handlerModule.AemAuthorClient?.createFrom || (() => {})).to.exist;
@@ -237,11 +239,13 @@ describe('Broken Content Path Handler', () => {
         },
       });
 
-      const result = await errorHandlerModule.analyzeBrokenContentFragmentPaths(context);
+      const result = await errorHandlerModule.analyzeBrokenContentFragmentLinks(context);
 
       expect(context.log.error).to.have.been.calledWith('Failed to analyze broken content paths: AEM client initialization failed');
-      expect(result.success).to.be.false;
-      expect(result.error).to.equal('AEM client initialization failed');
+      expect(result).to.deep.equal({
+        error: 'AEM client initialization failed',
+        success: false,
+      });
     });
   });
 
@@ -253,6 +257,8 @@ describe('Broken Content Path Handler', () => {
         fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
           tenantUrl: 'https://test-tenant.adobe.com',
+          totalBrokenPaths: 2,
+          totalSuggestions: 2,
           brokenContentPaths: [
             { requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' },
             { requestedPath: '/content/dam/test/broken2.pdf', suggestedPath: null, type: 'PUBLISH' },
@@ -272,12 +278,15 @@ describe('Broken Content Path Handler', () => {
     it('should handle empty suggestions array', () => {
       context.audit.getAuditResult.returns({
         success: true,
+        brokenPaths: [],
         suggestions: [],
       });
 
       const result = handlerModule.provideSuggestions(context);
 
       expect(result.auditResult.brokenContentPaths).to.deep.equal([]);
+      expect(result.auditResult.totalBrokenPaths).to.equal(0);
+      expect(result.auditResult.totalSuggestions).to.equal(0);
       expect(result.auditResult.success).to.be.true;
     });
 
@@ -292,17 +301,21 @@ describe('Broken Content Path Handler', () => {
 
       expect(result.fullAuditRef).to.equal('https://custom-tenant.adobe.com');
       expect(result.auditResult.tenantUrl).to.equal('https://custom-tenant.adobe.com');
+      expect(result.auditResult.totalBrokenPaths).to.equal(2);
+      expect(result.auditResult.totalSuggestions).to.equal(2);
     });
 
-    it('should handle null suggestions gracefully', () => {
+    it('should handle missing suggestions gracefully', () => {
       context.audit.getAuditResult.returns({
         success: true,
-        suggestions: null,
+        brokenPaths: ['/content/dam/test/broken1.jpg'],
       });
 
       const result = handlerModule.provideSuggestions(context);
 
-      expect(result.auditResult.brokenContentPaths).to.be.null;
+      expect(result.auditResult.brokenContentPaths).to.deep.equal([]);
+      expect(result.auditResult.totalBrokenPaths).to.equal(1);
+      expect(result.auditResult.totalSuggestions).to.equal(0);
       expect(result.auditResult.success).to.be.true;
     });
   });
