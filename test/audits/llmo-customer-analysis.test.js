@@ -407,7 +407,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
     });
 
-    it('should trigger geo-brand-presence when brands change', async () => {
+    it('should trigger refresh:geo-brand-presence when brands change', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -443,11 +443,11 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(sqs.sendMessage).to.have.been.calledOnce;
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'geo-brand-presence' }),
+        sinon.match({ type: 'refresh:geo-brand-presence' }),
       );
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
+      expect(result.auditResult.triggeredSteps).to.include('refresh-geo-brand-presence');
     });
 
     it('should trigger all audits when no config version provided', async () => {
@@ -503,7 +503,7 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(sqs.sendMessage).to.have.callCount(5);
+      expect(sqs.sendMessage).to.have.callCount(6);
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.triggeredSteps).to.include('cdn-logs-report');
@@ -553,7 +553,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
     });
 
-    it('should trigger geo-brand-presence when competitors change', async () => {
+    it('should trigger refresh:geo-brand-presence when competitors change', async () => {
       const auditContext = {
         configVersion: 'v2',
         previousConfigVersion: 'v1',
@@ -589,11 +589,11 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(sqs.sendMessage).to.have.been.calledOnce;
       expect(sqs.sendMessage).to.have.been.calledWith(
         'https://sqs.us-east-1.amazonaws.com/123456789/audits-queue',
-        sinon.match({ type: 'geo-brand-presence' }),
+        sinon.match({ type: 'refresh:geo-brand-presence' }),
       );
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
-      expect(result.auditResult.triggeredSteps).to.include('geo-brand-presence');
+      expect(result.auditResult.triggeredSteps).to.include('refresh-geo-brand-presence');
     });
 
     it('should trigger both cdn-logs-report and geo-brand-presence when only categories change', async () => {
@@ -877,9 +877,14 @@ describe('LLMO Customer Analysis Handler', () => {
       mockLlmoConfig.readConfig.onFirstCall().resolves({
         config: {
           entities: {},
-          categories: {},
+          categories: {
+            "96922bc8-8da7-4fb7-961a-0bf1574560a1": {
+              name: "Category A",
+              region: "ch",
+            },
+          },
           topics: {},
-          brands: { aliases: ['brand1'] },
+          brands: { aliases: [] },
           competitors: { competitors: [] },
         },
       });
@@ -929,7 +934,7 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
     });
 
-    it('should skip geo-brand-presence when audit is not enabled (covering lines 150-152)', async () => {
+    it('should skip geo-brand-presence when audit is not enabled', async () => {
       // Create a mock where isAuditEnabledForSite returns false
       const mockIsAuditDisabled = sandbox.stub().resolves(false);
       
@@ -966,9 +971,14 @@ describe('LLMO Customer Analysis Handler', () => {
       mockLlmoConfig.readConfig.onFirstCall().resolves({
         config: {
           entities: {},
-          categories: {},
+          categories: {
+            "96922bc8-8da7-4fb7-961a-0bf1574560a1": {
+              name: "Category A",
+              region: "ch",
+            },
+          },
           topics: {},
-          brands: { aliases: ['brand1'] },
+          brands: {},
           competitors: { competitors: [] },
         },
       });
