@@ -33,6 +33,7 @@ const BASIC_AUDITS = [
   'llm-blocked',
   'canonical',
   'hreflang',
+  'summarization',
 ];
 
 async function enableAudits(site, context, audits = []) {
