@@ -32,7 +32,7 @@ import {
  * @import { RefreshMetadata } from './util.js';
  */
 
-const AUDIT_NAME = 'REFRESH_GEO_BRAND_PRESENCE';
+const AUDIT_NAME = 'GEO_BRAND_PRESENCE_REFRESH';
 /* c8 ignore start */
 
 /**
@@ -130,9 +130,9 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
       paths: sheets,
     } = await fetchQueryIndexPaths(site, context, sharepointClient));
   } catch (cause) {
-    const errorMsg = `Failed to read query-index from SharePoint: ${cause instanceof Error ? cause.message : String(cause)}`;
-    log.error(errorMsg);
-    throw new Error(errorMsg, { cause });
+    const msg = `Failed to read query-index from SharePoint: ${errorMsg(cause)}`;
+    log.error(msg);
+    throw new Error(msg, { cause });
   }
   log.info(`Source folder: ${sourceFolder}, Sheets to refresh: ${sheets.join(', ')}`);
   // save metadata for S3 to track progress
@@ -221,6 +221,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
       });
 
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, msg);
+      log.info('%s: Sent sheet %s to Mystique for processing', AUDIT_NAME, sheetName, message);
       return true;
     }));
 
@@ -242,8 +243,9 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
             });
           }
         } else if (result.status === 'rejected') {
+          log.error('%s:Failed to process sheet %s: %s', AUDIT_NAME, sheetName, errorMsg(result.reason));
           await writeSheetRefreshResultFailed({
-            message: result.reason instanceof Error ? result.reason.message : String(result.reason),
+            message: errorMsg(result.reason),
             outputDir: folderKey,
             s3Client,
             s3Bucket: bucketName,
@@ -266,12 +268,12 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
     if (errors.length > 0) {
       logLevel = 'error';
       logMsg += '. Errors: %s';
-      logArgs.push(errors.map((e) => (e instanceof Error ? e.message : String(e))).join('; '));
+      logArgs.push(errors.map((e) => errorMsg(e)).join('; '));
     }
 
     log[logLevel](logMsg, ...logArgs);
   } catch (error) {
-    log.error('%s:Failed to create S3 folder for audit %s: %s', AUDIT_NAME, auditId, error instanceof Error ? error.message : String(error));
+    log.error('%s:Failed to create S3 folder for audit %s: %s', AUDIT_NAME, auditId, errorMsg(error));
     errMsg = `${AUDIT_NAME}:Failed to create S3 folder for audit ${auditId}`;
     throw new Error(errMsg);
   }
@@ -279,6 +281,14 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   log.info('Site: %s, Audit: %s, Context:', site, {}, auditContext);
 
   return ok();
+}
+
+/**
+ * @param {unknown} error
+ * @returns {string}
+ */
+function errorMsg(error) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})$/;
