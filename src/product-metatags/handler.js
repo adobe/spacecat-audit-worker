@@ -221,8 +221,15 @@ export function extractProductTagsFromHTML(rawBody, log) {
             const jsonContent = jsonLdScript.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
             const data = JSON.parse(jsonContent);
 
-            // Handle both single objects and arrays
-            const items = Array.isArray(data) ? data : [data];
+            // Handle @graph structures (e.g., bulk.com), single objects, and arrays
+            let items = [];
+            if (data['@graph'] && Array.isArray(data['@graph'])) {
+              items = data['@graph'];
+            } else if (Array.isArray(data)) {
+              items = data;
+            } else {
+              items = [data];
+            }
 
             for (const item of items) {
               // Check for Product schema
@@ -251,40 +258,41 @@ export function extractProductTagsFromHTML(rawBody, log) {
       }
     }
 
-    // Try to extract SKU from common data attributes
-    if (!productTags.sku) {
-      const dataSkuMatch = rawBody.match(/data-(?:product-)?(?:sku|id|code)=["']([^"']+)["']/i);
-      if (dataSkuMatch) {
-        [, productTags.sku] = dataSkuMatch;
+    // Extract image and store under 'thumbnail' property
+    // Priority: generic image -> product:image -> og:image -> twitter:image -> JSON-LD fallback
+
+    // 1. Try generic image meta tag first
+    const imageMatch = rawBody.match(/<meta\s+name=["']image["']\s+content=["']([^"']+)["']/i);
+    if (imageMatch) {
+      [, productTags.thumbnail] = imageMatch;
+    }
+
+    // 2. Try product:image meta tag
+    if (!productTags.thumbnail) {
+      const productImageMatch = rawBody.match(/<meta\s+(?:name|property)=["']product:image["']\s+content=["']([^"']+)["']/i);
+      if (productImageMatch) {
+        [, productTags.thumbnail] = productImageMatch;
       }
     }
 
-    // Extract og:image meta tag
-    const ogImageMatch = rawBody.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
-    if (ogImageMatch) {
-      [, productTags['og:image']] = ogImageMatch;
+    // 3. Try og:image meta tag
+    if (!productTags.thumbnail) {
+      const ogImageMatch = rawBody.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
+      if (ogImageMatch) {
+        [, productTags.thumbnail] = ogImageMatch;
+      }
     }
 
-    // Extract twitter:image meta tag
-    const twitterImageMatch = rawBody.match(/<meta\s+name=["']twitter:image["']\s+content=["']([^"']+)["']/i);
-    if (twitterImageMatch) {
-      [, productTags['twitter:image']] = twitterImageMatch;
+    // 4. Try twitter:image meta tag
+    if (!productTags.thumbnail) {
+      const twitterImageMatch = rawBody.match(/<meta\s+name=["']twitter:image["']\s+content=["']([^"']+)["']/i);
+      if (twitterImageMatch) {
+        [, productTags.thumbnail] = twitterImageMatch;
+      }
     }
 
-    // Extract product:image meta tag
-    const productImageMatch = rawBody.match(/<meta\s+(?:name|property)=["']product:image["']\s+content=["']([^"']+)["']/i);
-    if (productImageMatch) {
-      [, productTags['product:image']] = productImageMatch;
-    }
-
-    // Extract generic image meta tag
-    const imageMatch = rawBody.match(/<meta\s+name=["']image["']\s+content=["']([^"']+)["']/i);
-    if (imageMatch) {
-      [, productTags.image] = imageMatch;
-    }
-
-    // Try to extract image from JSON-LD structured data as fallback
-    if (!productTags['og:image'] && !productTags['twitter:image'] && !productTags['product:image'] && !productTags.image) {
+    // 5. Try to extract image from JSON-LD structured data as fallback
+    if (!productTags.thumbnail) {
       const jsonLdMatch = rawBody.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
       if (jsonLdMatch) {
         for (const jsonLdScript of jsonLdMatch) {
@@ -292,8 +300,15 @@ export function extractProductTagsFromHTML(rawBody, log) {
             const jsonContent = jsonLdScript.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
             const data = JSON.parse(jsonContent);
 
-            // Handle both single objects and arrays
-            const items = Array.isArray(data) ? data : [data];
+            // Handle @graph structures (e.g., bulk.com), single objects, and arrays
+            let items = [];
+            if (data['@graph'] && Array.isArray(data['@graph'])) {
+              items = data['@graph'];
+            } else if (Array.isArray(data)) {
+              items = data;
+            } else {
+              items = [data];
+            }
 
             for (const item of items) {
               // Check for Product schema
@@ -302,21 +317,21 @@ export function extractProductTagsFromHTML(rawBody, log) {
                 if (item.image) {
                   // image can be a string, object with url property, or array
                   if (typeof item.image === 'string') {
-                    productTags['og:image'] = item.image;
+                    productTags.thumbnail = item.image;
                     break;
                   } else if (typeof item.image === 'object' && item.image.url) {
-                    productTags['og:image'] = item.image.url;
+                    productTags.thumbnail = item.image.url;
                     break;
                   } else if (Array.isArray(item.image) && item.image.length > 0) {
                     const firstImage = item.image[0];
-                    productTags['og:image'] = typeof firstImage === 'string' ? firstImage : firstImage.url;
+                    productTags.thumbnail = typeof firstImage === 'string' ? firstImage : firstImage.url;
                     break;
                   }
                 }
               }
             }
 
-            if (productTags['og:image']) break;
+            if (productTags.thumbnail) break;
           } catch (jsonError) {
             // Continue to next JSON-LD block if parsing fails
             log.debug(`[PRODUCT-METATAGS] Failed to parse JSON-LD block for image: ${jsonError.message}`);
@@ -382,10 +397,7 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
       h1: object.scrapeResult.tags.h1 || [],
       // Use client-side extracted product tags
       sku: productTags.sku,
-      'og:image': productTags['og:image'],
-      'twitter:image': productTags['twitter:image'],
-      'product:image': productTags['product:image'],
-      image: productTags.image,
+      thumbnail: productTags.thumbnail,
       s3key: key,
     },
   };

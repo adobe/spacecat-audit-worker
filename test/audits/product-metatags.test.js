@@ -727,10 +727,7 @@ describe('Product MetaTags', () => {
             description: 'Product Description',
             h1: ['Product H1'],
             sku: 'PROD-123',
-            'og:image': 'https://example.com/product.jpg',
-            'twitter:image': 'https://example.com/product-twitter.jpg',
-            'product:image': undefined,
-            image: undefined,
+            thumbnail: 'https://example.com/product.jpg',
             s3key: 'scrapes/site-id/product1/scrape.json',
           },
         });
@@ -780,10 +777,7 @@ describe('Product MetaTags', () => {
             description: 'Home Product Description',
             h1: ['Home Product H1'],
             sku: 'HOME-PROD-456',
-            'og:image': undefined,
-            'twitter:image': undefined,
-            'product:image': undefined,
-            image: undefined,
+            thumbnail: undefined,
             s3key: 'scrapes/site-id/scrape.json',
           },
         });
@@ -889,10 +883,7 @@ describe('Product MetaTags', () => {
             description: 'This is a valid product page with sufficient content length to pass the minimum threshold check',
             h1: ['Valid Product Heading'],
             sku: 'VALID-PROD-789',
-            'og:image': undefined,
-            'twitter:image': undefined,
-            'product:image': undefined,
-            image: undefined,
+            thumbnail: undefined,
             s3key: 'scrapes/site-id/valid-product/scrape.json',
           },
         });
@@ -947,10 +938,7 @@ describe('Product MetaTags', () => {
             description: 'Product with multiple image tags',
             h1: ['Multi Image Product'],
             sku: 'MULTI-IMG-123',
-            'og:image': 'https://example.com/og-image.jpg',
-            'twitter:image': 'https://example.com/twitter-image.jpg',
-            'product:image': 'https://example.com/product-image.jpg',
-            image: 'https://example.com/generic-image.jpg',
+            thumbnail: 'https://example.com/generic-image.jpg',
             s3key: 'scrapes/site-id/multi-image-product/scrape.json',
           },
         });
@@ -2135,9 +2123,7 @@ describe('Product MetaTags', () => {
 
       expect(result).to.deep.equal({
         sku: 'PROD-123',
-        'og:image': 'https://example.com/image.jpg',
-        'twitter:image': 'https://example.com/twitter.jpg',
-        'product:image': 'https://example.com/product.jpg',
+        thumbnail: 'https://example.com/product.jpg', // product:image has priority
       });
     });
 
@@ -2284,17 +2270,100 @@ describe('Product MetaTags', () => {
       expect(result).to.have.property('sku', 'ARRAY-SKU-999');
     });
 
-    it('should extract SKU from data attributes', () => {
+    it('should extract SKU and image from bulk.com-style product page with @graph (real-world pattern)', () => {
       const html = `
         <html>
           <head>
-            <div data-sku="DATA-SKU-111"></div>
+            <meta name="sku" content="BPB-CMON-0000">
+            <meta property="og:image" content="https://www.bulk.com/ie/products/creatine-monohydrate/media_image.webp?width=1200&format=pjpg">
+            <script type="application/ld+json">{
+              "@graph": [
+                {
+                  "@type": "WebPage",
+                  "name": "Creatine Monohydrate Powder",
+                  "url": "https://www.bulk.com/ie/products/creatine-monohydrate/bpb-cmon-0000"
+                },
+                {
+                  "@type": "Product",
+                  "sku": "BPB-CMON-0000",
+                  "name": "Creatine Monohydrate Powder",
+                  "image": "https://www.bulk.com/media/catalog/product/image.jpg",
+                  "brand": {
+                    "@type": "Brand",
+                    "name": "Bulk"
+                  },
+                  "offers": [
+                    {
+                      "@type": "Offer",
+                      "sku": "BPB-CMON-0000-0100-EU",
+                      "price": 4.99,
+                      "priceCurrency": "EUR"
+                    }
+                  ]
+                }
+              ],
+              "@context": "https://schema.org"
+            }</script>
           </head>
         </html>
       `;
 
       const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('sku', 'DATA-SKU-111');
+      expect(result).to.have.property('sku', 'BPB-CMON-0000');
+      expect(result).to.have.property('thumbnail', 'https://www.bulk.com/ie/products/creatine-monohydrate/media_image.webp?width=1200&format=pjpg');
+    });
+
+    it('should extract SKU from JSON-LD @graph when no meta tag present', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">{
+              "@graph": [
+                {
+                  "@type": "WebPage",
+                  "name": "Product Page"
+                },
+                {
+                  "@type": "Product",
+                  "sku": "GRAPH-SKU-123",
+                  "name": "Test Product"
+                }
+              ],
+              "@context": "https://schema.org"
+            }</script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('sku', 'GRAPH-SKU-123');
+    });
+
+    it('should extract image from JSON-LD @graph when no meta tag present', () => {
+      const html = `
+        <html>
+          <head>
+            <script type="application/ld+json">{
+              "@graph": [
+                {
+                  "@type": "WebPage",
+                  "name": "Product Page"
+                },
+                {
+                  "@type": "Product",
+                  "sku": "TEST-SKU",
+                  "name": "Test Product",
+                  "image": "https://example.com/product-image-from-graph.jpg"
+                }
+              ],
+              "@context": "https://schema.org"
+            }</script>
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('thumbnail', 'https://example.com/product-image-from-graph.jpg');
     });
 
     it('should extract image from JSON-LD when no meta tags present', () => {
@@ -2314,7 +2383,7 @@ describe('Product MetaTags', () => {
       `;
 
       const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('og:image', 'https://example.com/jsonld-image.jpg');
+      expect(result).to.have.property('thumbnail', 'https://example.com/jsonld-image.jpg');
     });
 
     it('should extract image from JSON-LD with object format', () => {
@@ -2336,7 +2405,7 @@ describe('Product MetaTags', () => {
       `;
 
       const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('og:image', 'https://example.com/jsonld-object-image.jpg');
+      expect(result).to.have.property('thumbnail', 'https://example.com/jsonld-object-image.jpg');
     });
 
     it('should extract image from JSON-LD with array format', () => {
@@ -2356,7 +2425,7 @@ describe('Product MetaTags', () => {
       `;
 
       const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('og:image', 'https://example.com/jsonld-array-image1.jpg');
+      expect(result).to.have.property('thumbnail', 'https://example.com/jsonld-array-image1.jpg');
     });
 
     it('should extract image from JSON-LD with array of objects', () => {
@@ -2378,7 +2447,7 @@ describe('Product MetaTags', () => {
       `;
 
       const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('og:image', 'https://example.com/jsonld-array-object-image.jpg');
+      expect(result).to.have.property('thumbnail', 'https://example.com/jsonld-array-object-image.jpg');
     });
 
     it('should not extract image from JSON-LD when og:image meta tag exists', () => {
@@ -2399,7 +2468,65 @@ describe('Product MetaTags', () => {
       `;
 
       const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('og:image', 'https://example.com/meta-image.jpg');
+      expect(result).to.have.property('thumbnail', 'https://example.com/meta-image.jpg');
+    });
+
+    it('should prioritize generic image meta tag over all other image sources', () => {
+      const html = `
+        <html>
+          <head>
+            <meta name="image" content="https://example.com/generic-image.jpg">
+            <meta property="product:image" content="https://example.com/product-image.jpg">
+            <meta property="og:image" content="https://example.com/og-image.jpg">
+            <meta name="twitter:image" content="https://example.com/twitter-image.jpg">
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('thumbnail', 'https://example.com/generic-image.jpg');
+    });
+
+    it('should use product:image when generic image is not available', () => {
+      const html = `
+        <html>
+          <head>
+            <meta property="product:image" content="https://example.com/product-image.jpg">
+            <meta property="og:image" content="https://example.com/og-image.jpg">
+            <meta name="twitter:image" content="https://example.com/twitter-image.jpg">
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('thumbnail', 'https://example.com/product-image.jpg');
+    });
+
+    it('should use og:image when generic image and product:image are not available', () => {
+      const html = `
+        <html>
+          <head>
+            <meta property="og:image" content="https://example.com/og-image.jpg">
+            <meta name="twitter:image" content="https://example.com/twitter-image.jpg">
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('thumbnail', 'https://example.com/og-image.jpg');
+    });
+
+    it('should use twitter:image when no other image meta tags are available', () => {
+      const html = `
+        <html>
+          <head>
+            <meta name="twitter:image" content="https://example.com/twitter-image.jpg">
+          </head>
+        </html>
+      `;
+
+      const result = extractProductTagsFromHTML(html, logStub);
+      expect(result).to.have.property('thumbnail', 'https://example.com/twitter-image.jpg');
     });
 
     it('should handle JSON-LD with @type array including Product', () => {

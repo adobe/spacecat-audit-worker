@@ -61,8 +61,18 @@ Pages are processed **only if** they contain:
 - **H1**: Count validation, length validation, uniqueness
 
 ### Product-Specific Tags
-- **SKU**: Extracted and forwarded to suggestions
-- **Image**: Extracted and forwarded to suggestions (priority: og:image → twitter:image → product:image → image)
+- **SKU**: Extracted from standard e-commerce patterns used by major retailers (e.g., bulk.com)
+  - Meta tags: `<meta name="sku" content="...">`, `<meta property="product:sku" content="...">`
+  - JSON-LD structured data: Product schema `sku`, `productID`, or `mpn` fields
+  - Note: Data attributes are intentionally NOT supported to avoid false positives on non-product pages
+- **Thumbnail (Product Image)**: All product images are consolidated under a single `thumbnail` property
+  - Priority order (first available source is used):
+    1. Generic image meta tag: `<meta name="image" content="...">`
+    2. Product-specific image: `<meta property="product:image" content="...">`
+    3. Open Graph image: `<meta property="og:image" content="...">`
+    4. Twitter image: `<meta name="twitter:image" content="...">`
+    5. JSON-LD Product schema `image` field (supports string, object with `url`, or array formats)
+  - Only the highest-priority available image source is extracted
 
 ## Suggestion Data Structure
 
