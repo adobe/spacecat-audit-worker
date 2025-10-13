@@ -15,6 +15,7 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { Audit as AuditModel, Site as SiteModel } from '@adobe/spacecat-shared-data-access';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import sinon from 'sinon';
 import nock from 'nock';
 import { MockContextBuilder } from '../shared.js';
@@ -54,7 +55,11 @@ describe('Job-based Step-Audit Tests', () => {
 
     configuration = {
       isHandlerEnabledForSite: sandbox.stub().returns(true),
-      getHandlers: sandbox.stub().returns({}),
+      getHandlers: sandbox.stub().returns({
+        'content-audit': {
+          productCodes: ['ASO', 'LLMO'],
+        },
+      }),
     };
 
     context = new MockContextBuilder()
@@ -62,6 +67,12 @@ describe('Job-based Step-Audit Tests', () => {
       .build();
     context.dataAccess.Site.findById.resolves(site);
     context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+    // Mock TierClient for entitlement checks
+    const mockTierClient = {
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+    };
+    sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
     context.env = {
       CONTENT_SCRAPER_QUEUE_URL: 'https://space.cat/content-scraper',

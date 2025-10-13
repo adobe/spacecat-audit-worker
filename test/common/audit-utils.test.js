@@ -57,7 +57,19 @@ describe('Audit Utils Tests', () => {
 
   describe('isAuditEnabledForSite', () => {
     it('returns true when audit is enabled for site', async () => {
+      configuration.getHandlers = () => ({
+        'content-audit': {
+          enabledByDefault: true,
+          productCodes: ['ASO', 'LLMO'],
+        },
+      });
       configuration.isHandlerEnabledForSite.returns(true);
+
+      // Mock TierClient to return entitlement
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       const result = await isAuditEnabledForSite('content-audit', site, context);
       expect(result).to.be.true;
@@ -65,7 +77,19 @@ describe('Audit Utils Tests', () => {
     });
 
     it('returns false when audit is disabled for site', async () => {
+      configuration.getHandlers = () => ({
+        'content-audit': {
+          enabledByDefault: true,
+          productCodes: ['ASO', 'LLMO'],
+        },
+      });
       configuration.isHandlerEnabledForSite.returns(false);
+
+      // Mock TierClient to return entitlement
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       const result = await isAuditEnabledForSite('content-audit', site, context);
       expect(result).to.be.false;
@@ -79,11 +103,11 @@ describe('Audit Utils Tests', () => {
         .to.be.rejectedWith('DB error');
     });
 
-    it('returns false when handler has no PROD_CODES', async () => {
+    it('returns false when handler has no productCodes', async () => {
       configuration.getHandlers = () => ({
         'test-handler': {
           enabledByDefault: true,
-          // No PROD_CODES
+          // No productCodes
         },
       });
 
@@ -92,11 +116,11 @@ describe('Audit Utils Tests', () => {
       expect(context.log.error).to.have.been.calledWith('Handler test-handler has no product codes');
     });
 
-    it('returns false when handler has PROD_CODES but no entitlement', async () => {
+    it('returns false when handler has productCodes but no entitlement', async () => {
       configuration.getHandlers = () => ({
         'test-handler': {
           enabledByDefault: true,
-          PROD_CODES: ['ASO', 'LLMO'],
+          productCodes: ['ASO', 'LLMO'],
         },
       });
       configuration.isHandlerEnabledForSite.returns(true);
@@ -111,11 +135,11 @@ describe('Audit Utils Tests', () => {
       expect(result).to.be.false;
     });
 
-    it('returns true when handler has PROD_CODES and entitlement', async () => {
+    it('returns true when handler has productCodes and entitlement', async () => {
       configuration.getHandlers = () => ({
         'test-handler': {
           enabledByDefault: true,
-          PROD_CODES: ['ASO', 'LLMO'],
+          productCodes: ['ASO', 'LLMO'],
         },
       });
       configuration.isHandlerEnabledForSite.returns(true);

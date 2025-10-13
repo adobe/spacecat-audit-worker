@@ -52,16 +52,16 @@ export async function isAuditEnabledForSite(type, site, context) {
   const { Configuration } = context.dataAccess;
   const configuration = await Configuration.findLatest();
   const handler = configuration.getHandlers()?.[type];
-  // Check if handler has PROD_CODES and verify entitlements
-  if (handler?.productCode && Array.isArray(handler.productCode)) {
+  // Check if handler has productCodes and verify entitlements
+  if (handler?.productCodes && Array.isArray(handler.productCodes)) {
     const hasValidEntitlement = await checkProductCodeEntitlements(
-      handler.productCode,
+      handler.productCodes,
       site,
       context,
     );
     if (!hasValidEntitlement) {
       context.log.error(`No valid entitlement for handler ${type} with product codes 
-        ${handler.productCode} for site ${site.getId()}`);
+        ${handler.productCodes} for site ${site.getId()}`);
       return false;
     }
   } else {
