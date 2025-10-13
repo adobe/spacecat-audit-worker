@@ -18,6 +18,7 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import * as cdnConfigHandler from '../../src/llmo-customer-analysis/cdn-config-handler.js';
+import * as dataAccessUtils from '../../src/utils/data-access.js';
 
 use(sinonChai);
 
@@ -30,6 +31,9 @@ describe('CDN Config Handler', () => {
     
     // Mock environment variable
     process.env.LLMO_HLX_API_KEY = 'test-api-key';
+    
+    // Mock getImsOrgId function
+    sandbox.stub(dataAccessUtils, 'getImsOrgId');
 
     context = {
       log: {
@@ -575,6 +579,35 @@ describe('CDN Config Handler', () => {
 
       expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.not.have.been.called;
       expect(mockSite.save).to.not.have.been.called;
+    });
+
+    describe('AMS provider handling', () => {
+      beforeEach(() => {
+        context.dataAccess.Site.allByOrganizationId.resolves([mockSite]);
+      });
+
+      it('should handle ams-cloudfront provider and remove @ from IMS org ID', async () => {
+        dataAccessUtils.getImsOrgId.resolves('TestOrg123@AdobeOrg');
+        
+        const data = { cdnProvider: 'ams-cloudfront' };
+
+        await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+        expect(dataAccessUtils.getImsOrgId).to.have.been.calledWith(mockSite, context.dataAccess, context.log);
+        expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ 
+          orgId: 'TestOrg123AdobeOrg' 
+        });
+        expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-analysis', mockSite);
+      });
+
+      it('should handle ams providers without IMS org ID when not cloudfront', async () => {
+        const data = { cdnProvider: 'ams-other' };
+
+        await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+        expect(dataAccessUtils.getImsOrgId).to.not.have.been.called;
+        expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-analysis', mockSite);
+      });
     });
   });
 });

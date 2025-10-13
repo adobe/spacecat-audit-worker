@@ -14,6 +14,8 @@ import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/confi
 import {
   startOfWeek, subWeeks, addDays, isAfter,
 } from 'date-fns';
+import { getImsOrgId } from '../utils/data-access.js';
+import { SERVICE_PROVIDER_TYPES } from '../utils/cdn-utils.js';
 
 /**
  * Enables CDN analysis for one domain per service
@@ -185,7 +187,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
   /* c8 ignore next */
   const { siteId } = context.params || {};
   const { cdnProvider, allowedPaths, bucketName } = data;
-  const { dataAccess: { Configuration } } = context;
+  const { dataAccess: { Configuration }, log } = context;
 
   if (!siteId) throw new Error('Site ID is required for CDN configuration');
 
@@ -199,12 +201,22 @@ export async function handleCdnBucketConfigChanges(context, data) {
     [pathId] = firstPath.split('/');
   }
 
-  if (cdnProvider === 'commerce-fastly') {
+  if (cdnProvider === SERVICE_PROVIDER_TYPES.COMMERCE_FASTLY) {
     const service = await fetchCommerceFastlyService(site.getBaseURL(), context);
     if (service) {
       pathId = service.serviceName;
       await enableCdnAnalysisPerService(service.serviceName, service.matchedDomains, context);
     }
+  }
+
+  if (cdnProvider.includes('ams')) {
+    if (cdnProvider === SERVICE_PROVIDER_TYPES.AMS_CLOUDFRONT) {
+      const imsOrgId = await getImsOrgId(site, context.dataAccess, log);
+      if (imsOrgId) {
+        pathId = imsOrgId.replace('@', ''); // Remove @ for filesystem-safe path
+      }
+    }
+    await enableCdnAnalysisPerOrg(site, context);
   }
 
   // Set bucket configuration
@@ -213,7 +225,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
   }
 
   // Enable audits and run analysis
-  if (cdnProvider === 'aem-cs-fastly') {
+  if (cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY) {
     await Promise.all([
       enableCdnAnalysisPerOrg(site, context),
       handleAdobeFastly(siteId, context),
