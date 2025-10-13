@@ -74,6 +74,7 @@ describe('LLMO Customer Analysis Handler', () => {
       getBaseURL: sandbox.stub().returns('https://example.com'),
       getOrganizationId: sandbox.stub().returns('org-123'),
       getConfig: sandbox.stub().returns(siteConfig),
+      save: sandbox.stub().resolves(),
     };
 
     context = {
@@ -1005,6 +1006,7 @@ describe('LLMO Customer Analysis Handler', () => {
           isImportEnabled: sandbox.stub().returns(false),
           getBrandPresenceCadence: () => 'daily',
         }),
+        save: sandbox.stub().resolves(),
       };
 
       const auditContext = {}; // No brandPresenceCadence in auditContext
