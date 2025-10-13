@@ -56,7 +56,9 @@ describe('Broken Content Path Handler', () => {
           warn: sandbox.spy(),
           error: sandbox.spy(),
         },
-        tenantUrl: 'https://test-tenant.adobe.com',
+        site: {
+          getBaseURL: () => 'https://test-tenant.adobe.com',
+        },
         audit: {
           getAuditResult: sandbox.stub().returns({
             success: true,
@@ -72,8 +74,8 @@ describe('Broken Content Path Handler', () => {
 
     handlerModule = await esmock('../../../src/content-fragment-broken-links/handler.js', {
       '../../../src/content-fragment-broken-links/collectors/athena-collector.js': {
-        AthenaCollector: function MockAthenaCollector() {
-          return athenaCollectorStub;
+        AthenaCollector: {
+          createFrom: sandbox.stub().resolves(athenaCollectorStub),
         },
       },
       '../../../src/content-fragment-broken-links/domain/index/path-index.js': {
@@ -103,7 +105,7 @@ describe('Broken Content Path Handler', () => {
       const result = await handlerModule.fetchBrokenContentFragmentLinks(context);
 
       expect(athenaCollectorStub.fetchBrokenPaths).to.have.been.calledOnce;
-      expect(context.log.info).to.have.been.calledWith('Found 2 broken content paths from AthenaCollector');
+      expect(context.log.info).to.have.been.calledWith('Found 2 broken content fragment paths from AthenaCollector');
 
       expect(result).to.deep.equal({
         fullAuditRef: 'https://test-tenant.adobe.com',
@@ -120,7 +122,7 @@ describe('Broken Content Path Handler', () => {
 
       const result = await handlerModule.fetchBrokenContentFragmentLinks(context);
 
-      expect(context.log.error).to.have.been.calledWith('Failed to fetch broken content paths: Athena connection failed');
+      expect(context.log.error).to.have.been.calledWith('Failed to fetch broken content fragment paths: Athena connection failed');
       expect(result).to.deep.equal({
         fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
@@ -135,7 +137,7 @@ describe('Broken Content Path Handler', () => {
 
       const result = await handlerModule.fetchBrokenContentFragmentLinks(context);
 
-      expect(context.log.info).to.have.been.calledWith('Found 0 broken content paths from AthenaCollector');
+      expect(context.log.info).to.have.been.calledWith('Found 0 broken content fragment paths from AthenaCollector');
       expect(result.auditResult.brokenPaths).to.deep.equal([]);
       expect(result.auditResult.success).to.be.true;
     });
@@ -143,7 +145,9 @@ describe('Broken Content Path Handler', () => {
     it('should use correct tenant URL in response', async () => {
       const customContext = {
         ...context,
-        tenantUrl: 'https://custom-tenant.adobe.com',
+        site: {
+          getBaseURL: () => 'https://custom-tenant.adobe.com',
+        },
         log: context.log,
       };
 
@@ -158,14 +162,16 @@ describe('Broken Content Path Handler', () => {
       const result = await handlerModule.analyzeBrokenContentFragmentLinks(context);
 
       expect(analysisStrategyStub.analyze).to.have.been.calledWith(['/content/dam/test/broken1.jpg', '/content/dam/test/broken2.pdf']);
-      expect(context.log.info).to.have.been.calledWith('Found 2 suggestions for broken content paths');
+      expect(context.log.info).to.have.been.calledWith('Found 2 suggestions for broken content fragment paths');
 
       expect(result).to.deep.equal({
-        suggestions: [
-          { requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' },
-          { requestedPath: '/content/dam/test/broken2.pdf', suggestedPath: null, type: 'PUBLISH' },
-        ],
-        success: true,
+        auditResult: {
+          suggestions: [
+            { requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' },
+            { requestedPath: '/content/dam/test/broken2.pdf', suggestedPath: null, type: 'PUBLISH' },
+          ],
+          success: true,
+        },
       });
     });
 
@@ -173,7 +179,7 @@ describe('Broken Content Path Handler', () => {
       context.audit.getAuditResult.returns({ success: false, error: 'Previous step failed' });
 
       await expect(handlerModule.analyzeBrokenContentFragmentLinks(context))
-        .to.be.rejectedWith('Audit failed, skipping analysis');
+        .to.be.rejectedWith('Audit failed, skipping content fragment path analysis');
     });
 
     it('should handle analysis strategy errors gracefully', async () => {
@@ -182,10 +188,12 @@ describe('Broken Content Path Handler', () => {
 
       const result = await handlerModule.analyzeBrokenContentFragmentLinks(context);
 
-      expect(context.log.error).to.have.been.calledWith('Failed to analyze broken content paths: Analysis strategy failed');
+      expect(context.log.error).to.have.been.calledWith('Failed to analyze broken content fragment paths: Analysis strategy failed');
       expect(result).to.deep.equal({
-        error: 'Analysis strategy failed',
-        success: false,
+        auditResult: {
+          error: 'Analysis strategy failed',
+          success: false,
+        },
       });
     });
 
@@ -199,10 +207,12 @@ describe('Broken Content Path Handler', () => {
       const result = await handlerModule.analyzeBrokenContentFragmentLinks(context);
 
       expect(analysisStrategyStub.analyze).to.have.been.calledWith([]);
-      expect(context.log.info).to.have.been.calledWith('Found 0 suggestions for broken content paths');
+      expect(context.log.info).to.have.been.calledWith('Found 0 suggestions for broken content fragment paths');
       expect(result).to.deep.equal({
-        suggestions: [],
-        success: true,
+        auditResult: {
+          suggestions: [],
+          success: true,
+        },
       });
     });
 
@@ -241,25 +251,24 @@ describe('Broken Content Path Handler', () => {
 
       const result = await errorHandlerModule.analyzeBrokenContentFragmentLinks(context);
 
-      expect(context.log.error).to.have.been.calledWith('Failed to analyze broken content paths: AEM client initialization failed');
+      expect(context.log.error).to.have.been.calledWith('Failed to analyze broken content fragment paths: AEM client initialization failed');
       expect(result).to.deep.equal({
-        error: 'AEM client initialization failed',
-        success: false,
+        auditResult: {
+          error: 'AEM client initialization failed',
+          success: false,
+        },
       });
     });
   });
 
-  describe('provideSuggestions', () => {
+  describe('provideContentFragmentLinkSuggestions', () => {
     it('should provide suggestions for successful analysis', () => {
-      const result = handlerModule.provideSuggestions(context);
+      const result = handlerModule.provideContentFragmentLinkSuggestions(context);
 
+      expect(context.log.info).to.have.been.calledWith('Providing 2 content fragment path suggestions');
       expect(result).to.deep.equal({
-        fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
-          tenantUrl: 'https://test-tenant.adobe.com',
-          totalBrokenPaths: 2,
-          totalSuggestions: 2,
-          brokenContentPaths: [
+          suggestions: [
             { requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' },
             { requestedPath: '/content/dam/test/broken2.pdf', suggestedPath: null, type: 'PUBLISH' },
           ],
@@ -271,51 +280,32 @@ describe('Broken Content Path Handler', () => {
     it('should throw error when audit result is unsuccessful', () => {
       context.audit.getAuditResult.returns({ success: false, error: 'Analysis failed' });
 
-      expect(() => handlerModule.provideSuggestions(context))
-        .to.throw('Audit failed, skipping suggestions generation');
+      expect(() => handlerModule.provideContentFragmentLinkSuggestions(context))
+        .to.throw('Audit failed, skipping content fragment path suggestions generation');
     });
 
     it('should handle empty suggestions array', () => {
       context.audit.getAuditResult.returns({
         success: true,
-        brokenPaths: [],
         suggestions: [],
       });
 
-      const result = handlerModule.provideSuggestions(context);
+      const result = handlerModule.provideContentFragmentLinkSuggestions(context);
 
-      expect(result.auditResult.brokenContentPaths).to.deep.equal([]);
-      expect(result.auditResult.totalBrokenPaths).to.equal(0);
-      expect(result.auditResult.totalSuggestions).to.equal(0);
+      expect(context.log.info).to.have.been.calledWith('Providing 0 content fragment path suggestions');
+      expect(result.auditResult.suggestions).to.deep.equal([]);
       expect(result.auditResult.success).to.be.true;
-    });
-
-    it('should use correct tenant URL in both fullAuditRef and auditResult', () => {
-      const customContext = {
-        ...context,
-        tenantUrl: 'https://custom-tenant.adobe.com',
-        audit: context.audit,
-      };
-
-      const result = handlerModule.provideSuggestions(customContext);
-
-      expect(result.fullAuditRef).to.equal('https://custom-tenant.adobe.com');
-      expect(result.auditResult.tenantUrl).to.equal('https://custom-tenant.adobe.com');
-      expect(result.auditResult.totalBrokenPaths).to.equal(2);
-      expect(result.auditResult.totalSuggestions).to.equal(2);
     });
 
     it('should handle missing suggestions gracefully', () => {
       context.audit.getAuditResult.returns({
         success: true,
-        brokenPaths: ['/content/dam/test/broken1.jpg'],
       });
 
-      const result = handlerModule.provideSuggestions(context);
+      const result = handlerModule.provideContentFragmentLinkSuggestions(context);
 
-      expect(result.auditResult.brokenContentPaths).to.deep.equal([]);
-      expect(result.auditResult.totalBrokenPaths).to.equal(1);
-      expect(result.auditResult.totalSuggestions).to.equal(0);
+      expect(context.log.info).to.have.been.calledWith('Providing 0 content fragment path suggestions');
+      expect(result.auditResult.suggestions).to.deep.equal([]);
       expect(result.auditResult.success).to.be.true;
     });
   });

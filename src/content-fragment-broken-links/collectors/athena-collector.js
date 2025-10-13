@@ -12,32 +12,60 @@
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
+import { getImsOrgId } from '../../utils/data-access.js';
 
 export class AthenaCollector {
+  // TODO: Change to a dynamic database name
   static DATABASE_NAME = 'broken_content_paths_db';
 
+  // TODO: Change to a dynamic table name
   static TABLE_NAME = 'broken_content_paths_test';
 
   constructor(context) {
     this.context = context;
-    this.config = this.getAthenaConfig();
-    this.athenaClient = AWSAthenaClient.fromContext(context, this.config.tempLocation);
   }
 
-  static createFrom(context) {
-    return new AthenaCollector(context);
+  static async createFrom(context) {
+    const { site, dataAccess, log } = context;
+
+    const imsOrg = await getImsOrgId(site, dataAccess, log);
+    if (!imsOrg) {
+      throw new Error('Unable to retrieve IMS organization ID');
+    }
+
+    const collector = new AthenaCollector(context);
+    collector.imsOrg = imsOrg;
+    collector.initialize();
+    return collector;
+  }
+
+  validate() {
+    const { env } = this.context;
+
+    if (!env.S3_BUCKET) {
+      throw new Error('Raw bucket is required');
+    }
+
+    if (!this.imsOrg) {
+      throw new Error('IMS organization is required');
+    }
+  }
+
+  initialize() {
+    this.validate();
+    this.config = this.getAthenaConfig();
+    this.athenaClient = AWSAthenaClient.fromContext(this.context, this.config.tempLocation);
   }
 
   getAthenaConfig() {
-    const { rawBucket, imsOrg, tenant } = this.context;
-    const bucket = `${rawBucket}/${imsOrg}`;
+    const { env } = this.context;
+    const bucket = `${env.S3_BUCKET}/${this.imsOrg}`;
 
     return {
       database: AthenaCollector.DATABASE_NAME,
       tableName: AthenaCollector.TABLE_NAME,
       location: `s3://${bucket}/aggregated-404`,
-      tempLocation: `s3://${rawBucket}/temp/athena-results/`,
-      tenant,
+      tempLocation: `s3://${env.S3_BUCKET}/temp/athena-results/`,
     };
   }
 
@@ -106,7 +134,6 @@ export class AthenaCollector {
       year,
       month,
       day,
-      tenant: this.config.tenant,
     });
 
     const sqlQueryDescription = `[Athena Query] Fetch broken content paths for ${year}-${month}-${day}`;

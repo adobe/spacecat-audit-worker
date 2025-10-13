@@ -20,25 +20,27 @@ import { AemAuthorClient } from './clients/aem-author-client.js';
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 export async function fetchBrokenContentFragmentLinks(context) {
-  const { log, tenantUrl } = context;
+  const { log, site } = context;
+
+  const baseUrl = site.getBaseURL();
 
   try {
-    const collector = new AthenaCollector(context);
+    const collector = await AthenaCollector.createFrom(context);
     const brokenPaths = await collector.fetchBrokenPaths();
 
-    log.info(`Found ${brokenPaths.length} broken content paths from ${collector.constructor.name}`);
+    log.info(`Found ${brokenPaths.length} broken content fragment paths from ${collector.constructor.name}`);
 
     return {
-      fullAuditRef: tenantUrl,
+      fullAuditRef: baseUrl,
       auditResult: {
         brokenPaths,
         success: true,
       },
     };
   } catch (error) {
-    log.error(`Failed to fetch broken content paths: ${error.message}`);
+    log.error(`Failed to fetch broken content fragment paths: ${error.message}`);
     return {
-      fullAuditRef: tenantUrl,
+      fullAuditRef: baseUrl,
       auditResult: {
         error: error.message,
         success: false,
@@ -52,7 +54,7 @@ export async function analyzeBrokenContentFragmentLinks(context) {
 
   const auditResult = audit.getAuditResult();
   if (!auditResult.success) {
-    throw new Error('Audit failed, skipping analysis');
+    throw new Error('Audit failed, skipping content fragment path analysis');
   }
 
   try {
@@ -61,40 +63,40 @@ export async function analyzeBrokenContentFragmentLinks(context) {
     const strategy = new AnalysisStrategy(context, aemAuthorClient, pathIndex);
     const suggestions = await strategy.analyze(auditResult.brokenPaths);
 
-    log.info(`Found ${suggestions.length} suggestions for broken content paths`);
+    log.info(`Found ${suggestions.length} suggestions for broken content fragment paths`);
 
     return {
-      suggestions: suggestions.map((suggestion) => suggestion.toJSON()),
-      success: true,
+      auditResult: {
+        suggestions: suggestions.map((suggestion) => suggestion.toJSON()),
+        success: true,
+      },
     };
   } catch (error) {
-    log.error(`Failed to analyze broken content paths: ${error.message}`);
+    log.error(`Failed to analyze broken content fragment paths: ${error.message}`);
     return {
-      error: error.message,
-      success: false,
+      auditResult: {
+        error: error.message,
+        success: false,
+      },
     };
   }
 }
 
-export function provideSuggestions(context) {
-  const { log, audit, tenantUrl } = context;
+export function provideContentFragmentLinkSuggestions(context) {
+  const { log, audit } = context;
 
   const auditResult = audit.getAuditResult();
   if (!auditResult.success) {
-    throw new Error('Audit failed, skipping suggestions generation');
+    throw new Error('Audit failed, skipping content fragment path suggestions generation');
   }
 
   const { suggestions = [] } = auditResult;
 
-  log.info(`Providing ${suggestions.length} suggestions`);
+  log.info(`Providing ${suggestions.length} content fragment path suggestions`);
 
   return {
-    fullAuditRef: tenantUrl,
     auditResult: {
-      tenantUrl,
-      totalBrokenPaths: auditResult.brokenPaths?.length || 0,
-      totalSuggestions: suggestions.length,
-      brokenContentPaths: suggestions,
+      suggestions,
       success: true,
     },
   };
@@ -103,5 +105,5 @@ export function provideSuggestions(context) {
 export default new AuditBuilder()
   .addStep('fetch-broken-content-fragment-links', fetchBrokenContentFragmentLinks, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('analyze-broken-content-fragment-links', analyzeBrokenContentFragmentLinks, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('provide-suggestions', provideSuggestions)
+  .addStep('provide-content-fragment-link-suggestions', provideContentFragmentLinkSuggestions)
   .build();
