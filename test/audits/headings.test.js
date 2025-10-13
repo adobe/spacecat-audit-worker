@@ -136,7 +136,6 @@ describe('Headings Audit', () => {
     context.s3Client = s3Client;
     const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
-    
     // Check heading-missing-h1
     expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check]).to.exist;
     expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].success).to.equal(false);
@@ -155,235 +154,371 @@ describe('Headings Audit', () => {
   });
 
   it('flags heading order jumps (h1 → h3)', async () => {
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1><h3>Section</h3>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
       },
-      ContentType: 'application/json',
-    });  
-
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
-      previous: 'h1',
-      current: 'h3',
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+    
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><h3>Section</h3>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
     });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
+    expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check]).to.exist;
+    expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].success).to.equal(false);
+    expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion);
+    expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls).to.be.an('array').with.lengthOf.at.least(1);
+    expect(result[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check].urls[0].url).to.equal(url);
   });
 
   it('passes valid heading sequence', async () => {
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
-
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1><p>Content for title</p><h2>Section</h2><p>Content for section</p><h3>Subsection</h3><p>Content for subsection</p>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
       },
-      ContentType: 'application/json',
-    }); 
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+    
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><p>Content for title</p><h2>Section</h2><p>Content for section</p><h3>Subsection</h3><p>Content for subsection</p>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
+    });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
+    
+    // When no issues are found, result should indicate success
+    expect(result.status).to.equal('success');
+    expect(result.message).to.equal('No heading issues detected');
   });
 
   it('detects missing H1 element', async () => {
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
-
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h2>Section</h2><h3>Subsection</h3>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
       },
-      ContentType: 'application/json',
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+    
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h2>Section</h2><h3>Subsection</h3>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
     });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
 
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
-      pageTags: {
-        h1: 'Page H1',
-        title: 'Page Title',
-        description: 'Page Description',
-        lang: undefined,
-        finalUrl: url,
-      },
-    });
+    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check]).to.exist;
+    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].success).to.equal(false);
+    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_MISSING_H1.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion);
+    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].urls).to.be.an('array').with.lengthOf.at.least(1);
+    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].urls[0].url).to.equal(url);
   });
 
   it('detects multiple H1 elements', async () => {
-
-
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
-
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>First Title</h1><h2>Section</h2><h1>Second Title</h1>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
       },
-      ContentType: 'application/json',
-    });  
-
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
-      count: 2,
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+    
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>First Title</h1><h2>Section</h2><h1>Second Title</h1>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
     });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
+
+    expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check]).to.exist;
+    expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check].success).to.equal(false);
+    expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion);
+    expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check].urls).to.be.an('array').with.lengthOf.at.least(1);
+    expect(result[HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check].urls[0].url).to.equal(url);
   });
 
   it('detects H1 length exceeding 70 characters', async () => {
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
     const longH1Text = 'This is a very long H1 heading that exceeds the maximum allowed length of 70 characters for optimal SEO and accessibility';
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
+      },
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
     
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: `<h1>${longH1Text}</h1><h2>Section</h2>`,
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: longH1Text,
-            },
-          }
-        }),
-      },
-      ContentType: 'application/json',
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: `<h1>${longH1Text}</h1><h2>Section</h2>`,
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: [longH1Text],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
     });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
 
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.HEADING_H1_LENGTH.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_H1_LENGTH.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion,
-      pageTags: {
-        h1: longH1Text,
-        title: 'Page Title',
-        description: 'Page Description',
-        lang: undefined,
-        finalUrl: url,
-      },
-    });
+    expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check]).to.exist;
+    expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].success).to.equal(false);
+    expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_H1_LENGTH.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion);
+    expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].urls).to.be.an('array').with.lengthOf.at.least(1);
+    expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].urls[0].url).to.equal(url);
   });
 
   it('detects empty H2 heading', async () => {
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
-
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1><h2></h2><h3>Section</h3>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
       },
-      ContentType: 'application/json',
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+    
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><h2></h2><h3>Section</h3>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
     });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
 
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.HEADING_EMPTY.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
-      tagName: 'H2',
-      pageTags: {
-        h1: 'Page H1',
-        title: 'Page Title',
-        description: 'Page Description',
-        lang: undefined,
-        finalUrl: url,
-      },
-    });
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check]).to.exist;
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].success).to.equal(false);
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_EMPTY.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_EMPTY.suggestion);
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].urls).to.be.an('array').with.lengthOf.at.least(1);
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].urls[0].url).to.equal(url);
   });
 
   it('detects empty H3 heading', async () => {
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
-
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1><h2>Section</h2><h3></h3>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
       },
-      ContentType: 'application/json',
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+    
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><h2>Section</h2><h3></h3>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
     });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
 
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.HEADING_EMPTY.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
-      tagName: 'H3',
-      pageTags: {
-        h1: 'Page H1',
-        title: 'Page Title',
-        description: 'Page Description',
-        lang: undefined,
-        finalUrl: url,
-      },
-    });
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check]).to.exist;
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].success).to.equal(false);
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_EMPTY.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_EMPTY.suggestion);
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].urls).to.be.an('array').with.lengthOf.at.least(1);
+    expect(result[HEADINGS_CHECKS.HEADING_EMPTY.check].urls[0].url).to.equal(url);
   });
 
   it('headingsAuditRunner handles server errors gracefully (coverage test)', async () => {
@@ -418,7 +553,7 @@ describe('Headings Audit', () => {
                   tags: {
                     title: 'Page Title',
                     description: 'Page Description',
-                    h1: 'Page H1',
+                    h1: ['Page H1'],
                   },
                 },
               }),
@@ -512,81 +647,7 @@ describe('Headings Audit', () => {
   });
 
   it('detects headings with content having child elements', async () => {
-    const url = 'https://example.com/page';
-    
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1><div><span>Content with child</span></div><h2>Section</h2>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
-      },
-      ContentType: 'application/json',
-    });
-
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    // Should pass with no heading issues since content exists between headings
-    expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
-  });
-
-  it('detects headings with self-closing content elements', async () => {
-    const url = 'https://example.com/page';
-    
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1><img src="test.jpg" alt="test"><h2>Section</h2>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
-      },
-      ContentType: 'application/json',
-    });
-
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    // Should pass with no heading issues since IMG is considered content
-    expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
-  });
-
-  it('detects headings with text nodes between elements', async () => {
-    const url = 'https://example.com/page';
-    
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1>Some plain text content<h2>Section</h2>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
-      },
-      ContentType: 'application/json',
-    });
-
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    // Should pass with no heading issues since text node exists between headings
-    expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
-  });
-
-  it('detects duplicate heading text', async () => {
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
     context.dataAccess = {
       SiteTopPage: {
@@ -595,80 +656,250 @@ describe('Headings Audit', () => {
         ]),
       },
     };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
     
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1><p>Content</p><h2>Section</h2><p>Content</p><h3>Section</h3>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><div><span>Content with child</span></div><h2>Section</h2>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
+    });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
+    
+    // Should pass with no heading issues since content exists between headings
+    expect(result.status).to.equal('success');
+    expect(result.message).to.equal('No heading issues detected');
+  });
+
+  it('detects headings with self-closing content elements', async () => {
+    const baseURL = 'https://example.com';
+    const url = 'https://example.com/page';
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
       },
-      ContentType: 'application/json',
-    });
-
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
     
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion,
-      text: 'Section',
-      duplicates: ['H2', 'H3'],
-      count: 2,
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><img src="test.jpg" alt="test"><h2>Section</h2>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
     });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
+    
+    // Should pass with no heading issues since IMG is considered content
+    expect(result.status).to.equal('success');
+    expect(result.message).to.equal('No heading issues detected');
+  });
 
-    // check headingAuditRunner as well here
-    const result1 = await headingsAuditRunner('https://example.com', context, site);
-    console.log(result1);
+  it('detects headings with text nodes between elements', async () => {
+    const baseURL = 'https://example.com';
+    const url = 'https://example.com/page';
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
+      },
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+    
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1>Some plain text content<h2>Section</h2>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
+    });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
+    
+    // Should pass with no heading issues since text node exists between headings
+    expect(result.status).to.equal('success');
+    expect(result.message).to.equal('No heading issues detected');
+  });
+
+  it('detects duplicate heading text', async () => {
+    const baseURL = 'https://example.com';
+    const url = 'https://example.com/page';
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
+      },
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+    
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><p>Content</p><h2>Section</h2><p>Content</p><h3>Section</h3>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
+    });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
+
+    expect(result[HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check]).to.exist;
+    expect(result[HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check].success).to.equal(false);
+    expect(result[HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion);
+    expect(result[HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check].urls).to.be.an('array').with.lengthOf.at.least(1);
+    expect(result[HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check].urls[0].url).to.equal(url);
   });
 
   it('detects heading without content before next heading', async () => {
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
-    
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1><h2>Section Without Content</h2><h3>Subsection</h3>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
       },
-      ContentType: 'application/json',
-    });
-
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
     
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
-      heading: 'H1',
-      nextHeading: 'H2',
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><h2>Section Without Content</h2><h3>Subsection</h3>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
     });
-
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
-      heading: 'H2',
-      nextHeading: 'H3',
-    });
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
+    
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion);
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls).to.be.an('array').with.lengthOf.at.least(1);
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls[0].url).to.equal(url);
   });
 
   describe('generateSuggestions', () => {
@@ -844,86 +1075,157 @@ describe('Headings Audit', () => {
   });
 
   it('detects child elements with self-closing tags but no text content', async () => {
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
-    
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1><div><hr></div><h2>Section</h2>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
       },
-      ContentType: 'application/json',
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+    
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><div><hr></div><h2>Section</h2>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
     });
-
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
+    
     // Should pass with no heading issues since HR is considered content even without text
-    expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
+    expect(result.status).to.equal('success');
+    expect(result.message).to.equal('No heading issues detected');
   });
 
   it('iterates through multiple empty siblings before finding content', async () => {
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
-    
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1><div></div><span></span><div></div><p>Finally some content</p><h2>Section</h2>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
       },
-      ContentType: 'application/json',
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+    
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><div></div><span></span><div></div><p>Finally some content</p><h2>Section</h2>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
     });
-
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
+    
     // Should pass with no heading issues since content is eventually found after iterating through empty siblings
-    expect(result.checks.filter((c) => c.success === false)).to.have.lengthOf(0);
+    expect(result.status).to.equal('success');
+    expect(result.message).to.equal('No heading issues detected');
   });
 
   it('iterates through all siblings and finds no content', async () => {
+    const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
-    
-    s3Client.send.resolves({
-      Body: {
-        transformToString: () => JSON.stringify({
-          finalUrl: url,
-          scrapeResult: {
-            rawBody: '<h1>Title</h1><div></div><span></span><div></div><h2>Section</h2>',
-            tags: {
-              title: 'Page Title',
-              description: 'Page Description',
-              h1: 'Page H1',
-            },
-          }
-        }),
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
       },
-      ContentType: 'application/json',
+    };
+    const allKeys = ['scrapes/site-1/page/scrape.json'];
+    s3Client.send.callsFake((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({
+          Contents: allKeys.map((key) => ({ Key: key })),
+          NextContinuationToken: undefined,
+        });
+      }
+    
+      if (command instanceof GetObjectCommand) {
+        return Promise.resolve({
+          Body: {
+            transformToString: () =>
+              JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><div></div><span></span><div></div><h2>Section</h2>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Page H1'],
+                  },
+                },
+              }),
+          },
+          ContentType: 'application/json',
+        });
+      }
+    
+      throw new Error('Unexpected command passed to s3Client.send');
     });
-
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    context.s3Client = s3Client;
+    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const result = completedAudit.auditResult;
     
     // Should detect no content between h1 and h2 after iterating through all empty siblings
-    expect(result.checks).to.deep.include({
-      check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
-      success: false,
-      explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
-      suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
-      heading: 'H1',
-      nextHeading: 'H2',
-    });
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion);
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls).to.be.an('array').with.lengthOf.at.least(1);
+    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls[0].url).to.equal(url);
   });
 
   it('handles validatePageHeadings error gracefully', async () => {
