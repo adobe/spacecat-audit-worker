@@ -341,9 +341,9 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
   const customerPrompts = Object.values(config.topics).flatMap((x) => {
     const category = config.categories[x.category];
-    return x.prompts.map((p) => ({
+    return x.prompts.flatMap((p) => p.regions.map((region) => ({
       prompt: p.prompt,
-      region: p.regions.join(','),
+      region,
       category: category.name,
       topic: x.name,
       url: '',
@@ -354,7 +354,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       source: 'human',
       market: p.regions.join(','),
       origin: 'human',
-    }));
+    })));
   });
   // Apply 200 limit with customer prompt priority (FIXED LOGIC)
   let prompts;

@@ -253,7 +253,9 @@ export function generateSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
   // if audit succeeded or failed with no specific issues, skip suggestions generation
-  if (auditData.auditResult?.status === 'success' || auditData.auditResult?.error) {
+  if (auditData.auditResult?.status === 'success'
+      || auditData.auditResult?.error
+      || auditData.auditResult?.check === HREFLANG_CHECKS.TOPPAGES.check) {
     log.info(`Hreflang audit for ${auditUrl} has no issues or failed, skipping suggestions generation`);
     return { ...auditData };
   }
