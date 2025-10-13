@@ -311,7 +311,7 @@ describe('Meta Tags', () => {
           siteId: 'site-id',
           type: 'meta-tags',
           allowCache: false,
-          maxScrapeAge: 0.001,
+          maxScrapeAge: 0,
           options: {
             waitTimeoutForMetaTags: 5000,
           },
@@ -343,7 +343,7 @@ describe('Meta Tags', () => {
           siteId: 'site-id',
           type: 'meta-tags',
           allowCache: false,
-          maxScrapeAge: 0.001,
+          maxScrapeAge: 0,
           options: {
             waitTimeoutForMetaTags: 5000,
           },
@@ -1136,6 +1136,8 @@ describe('Meta Tags', () => {
           .resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub()
           .resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': {
             getRUMDomainkey: mockGetRUMDomainkey,
@@ -1158,6 +1160,9 @@ describe('Meta Tags', () => {
                 },
               },
             }),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
         });
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
@@ -1174,6 +1179,8 @@ describe('Meta Tags', () => {
           .resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub()
           .resolves(2);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': {
             getRUMDomainkey: mockGetRUMDomainkey,
@@ -1183,6 +1190,9 @@ describe('Meta Tags', () => {
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
           '../../src/metatags/metatags-auto-suggest.js': sinon.stub()
             .resolves({}),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
         });
 
         // Override all S3 responses to have null tags
@@ -1223,6 +1233,8 @@ describe('Meta Tags', () => {
           .resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub()
           .resolves(2);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': {
             getRUMDomainkey:
@@ -1233,6 +1245,9 @@ describe('Meta Tags', () => {
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
           '../../src/metatags/metatags-auto-suggest.js': sinon.stub()
             .resolves({}),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
         });
         // Override RUM API response to simulate error
         RUMAPIClientStub.createFrom()
@@ -1255,6 +1270,8 @@ describe('Meta Tags', () => {
       it('should submit top pages for scraping when getIncludedURLs returns null', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
         const getConfigStub = sinon.stub().returns({
           getIncludedURLs: sinon.stub().returns(null),
         });
@@ -1268,6 +1285,9 @@ describe('Meta Tags', () => {
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
           '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
         });
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
         expect(result).to.deep.equal({ status: 'complete' });

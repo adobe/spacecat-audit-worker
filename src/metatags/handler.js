@@ -28,6 +28,7 @@ import {
 } from './constants.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import { validateDetectedIssues } from './ssr-meta-validator.js';
 
 const auditType = Audit.AUDIT_TYPES.META_TAGS;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -246,6 +247,14 @@ export async function runAuditAndGenerateSuggestions(context) {
     extractedTags,
   } = await metatagsAutoDetect(site, scrapeResultPaths, context);
 
+  // Validate detected issues using SSR fallback to eliminate false positives
+  log.debug('Validating detected issues via SSR to remove false positives...');
+  const validatedDetectedTags = await validateDetectedIssues(
+    detectedTags,
+    site.getBaseURL(),
+    log,
+  );
+
   // Calculate projected traffic lost
   const {
     projectedTrafficLost,
@@ -253,13 +262,13 @@ export async function runAuditAndGenerateSuggestions(context) {
   } = await calculateProjectedTraffic(
     context,
     site,
-    detectedTags,
+    validatedDetectedTags,
     log,
   );
 
   // Generate AI suggestions for detected tags if auto-suggest enabled for site
   const allTags = {
-    detectedTags: seoChecks.getDetectedTags(),
+    detectedTags: validatedDetectedTags,
     healthyTags: seoChecks.getFewHealthyTags(),
     extractedTags,
   };
@@ -322,7 +331,7 @@ export async function submitForScraping(context) {
     siteId: site.getId(),
     type: 'meta-tags',
     allowCache: false,
-    maxScrapeAge: 0.001,
+    maxScrapeAge: 0,
     options: {
       waitTimeoutForMetaTags: 5000,
     },
