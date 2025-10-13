@@ -111,7 +111,9 @@ describe('Headings Audit', () => {
       ContentType: 'application/json',
     });
     const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    console.log(result);
     expect(result.url).to.equal(url);
+    console.log(JSON.stringify(HEADINGS_CHECKS));
     expect(result.checks).to.deep.include({
       check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
       success: false,
@@ -570,6 +572,13 @@ describe('Headings Audit', () => {
 
   it('detects duplicate heading text', async () => {
     const url = 'https://example.com/page';
+    context.dataAccess = {
+      SiteTopPage: {
+        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+          { getUrl: () => url },
+        ]),
+      },
+    };
     
     s3Client.send.resolves({
       Body: {
@@ -599,6 +608,10 @@ describe('Headings Audit', () => {
       duplicates: ['H2', 'H3'],
       count: 2,
     });
+
+    // check headingAuditRunner as well here
+    const result1 = await headingsAuditRunner('https://example.com', context, site);
+    console.log(result1);
   });
 
   it('detects heading without content before next heading', async () => {

@@ -343,8 +343,6 @@ export async function validatePageHeadings(
         log.info(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`);
       }
     }
-
-    // Check for headings without content before the next heading
     for (let i = 0; i < headings.length - 1; i += 1) {
       const currentHeading = headings[i];
       const nextHeading = headings[i + 1];
