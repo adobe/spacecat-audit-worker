@@ -65,3 +65,10 @@ Your response must be a valid JSON object with the following structure:
 - Consider the page's purpose based on URL structure and content
 - Output only valid JSON without additional text or formatting
 - If the current H1 is already optimal, suggest minor improvements or explain why it's good as-is
+
+### Language Sensitivity:
+- Avoid using the word **"empowering"** or similar phrasing that implies external authority or charity toward specific groups (e.g., racial, cultural, religious, or disability-related communities).
+- Use **neutral, respectful, and inclusive** language that focuses on **representation, inclusion, and value**, not empowerment.
+- Examples of acceptable alternatives include:
+  - “supporting,” “celebrating,” “highlighting,” “advancing,” “showcasing,” or “representing.”
+- Ensure all phrasing respects **agency and equality**, avoiding tone that might appear paternalistic or performative.
