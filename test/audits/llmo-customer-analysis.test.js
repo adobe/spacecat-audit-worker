@@ -50,6 +50,7 @@ describe('LLMO Customer Analysis Handler', () => {
       enableHandlerForSite: sandbox.stub(),
       isHandlerEnabledForSite: sandbox.stub().returns(false),
       save: sandbox.stub().resolves(),
+      setConfig: sandbox.stub().resolves(),
     };
 
     dataAccess = {
@@ -60,7 +61,7 @@ describe('LLMO Customer Analysis Handler', () => {
         allByOrganizationId: sandbox.stub().resolves([]),
       },
       LatestAudit: {
-        findBySiteIdAndAuditType: sandbox.stub().resolves(['test']),
+        findBySiteIdAndAuditType: sandbox.stub().resolves({ getAuditResult: () => ({}) }),
       },
     };
 
@@ -74,6 +75,8 @@ describe('LLMO Customer Analysis Handler', () => {
       getBaseURL: sandbox.stub().returns('https://example.com'),
       getOrganizationId: sandbox.stub().returns('org-123'),
       getConfig: sandbox.stub().returns(siteConfig),
+      save: sandbox.stub().resolves(),
+      setConfig: sandbox.stub().returns(),
     };
 
     context = {
@@ -147,6 +150,9 @@ describe('LLMO Customer Analysis Handler', () => {
             // Resolve normally for other providers
             return Promise.resolve();
           }),
+        },
+        '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
+          Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
         },
       });
     });
@@ -916,6 +922,9 @@ describe('LLMO Customer Analysis Handler', () => {
         '../../src/common/audit-utils.js': {
           isAuditEnabledForSite: sandbox.stub().resolves(true),
         },
+        '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
+          Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
+        },
       });
 
       const result = await mockBothEnabled.runLlmoCustomerAnalysis(
@@ -955,6 +964,9 @@ describe('LLMO Customer Analysis Handler', () => {
         },
         '../../src/common/audit-utils.js': {
           isAuditEnabledForSite: mockIsAuditDisabled,
+        },
+        '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
+          Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
         },
       });
 
@@ -1005,6 +1017,8 @@ describe('LLMO Customer Analysis Handler', () => {
           isImportEnabled: sandbox.stub().returns(false),
           getBrandPresenceCadence: () => 'daily',
         }),
+        save: sandbox.stub().resolves(),
+        setConfig: sandbox.stub().resolves(),
       };
 
       const auditContext = {}; // No brandPresenceCadence in auditContext
