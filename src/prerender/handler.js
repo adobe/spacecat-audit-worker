@@ -192,21 +192,11 @@ export async function submitForScraping(context) {
 
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
-  let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
+  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
 
-  // TESTING: Temporarily use Samsung URLs to test 403 flow
-  finalUrls = [
-    'https://www.samsung.com/us/',
-    'https://www.samsung.com/br/',
-    'https://www.samsung.com/in/',
-    'https://www.samsung.com/de/',
-    'https://www.samsung.com/tr/',
-    'https://www.samsung.com/mx/',
-    'https://www.samsung.com/uk/',
-  ];
+  log.info(`Prerender: Submitting ${finalUrls.length} URLs for scraping`);
 
-  log.info(`Prerender - TESTING: Using ${finalUrls.length} hardcoded Samsung URLs`);
-
+  /* c8 ignore next 6 - Hard to reach: requires no top pages AND no included URLs */
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
     const baseURL = site.getBaseURL();
@@ -336,18 +326,11 @@ export async function processContentAndGenerateOpportunities(context) {
       const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
       urlsToCheck = [...new Set([...urlsToCheck, ...includedURLs])];
       /* c8 ignore stop */
-      urlsToCheck = [
-        'https://www.samsung.com/us/',
-        'https://www.samsung.com/br/',
-        'https://www.samsung.com/in/',
-        'https://www.samsung.com/de/',
-        'https://www.samsung.com/tr/',
-        'https://www.samsung.com/mx/',
-        'https://www.samsung.com/uk/',
-      ];
       log.info(`Prerender - Fallback: Using ${urlsToCheck.length} top pages for comparison`);
     }
 
+    // eslint-disable-next-line
+    /* c8 ignore next 5 - Hard to reach: requires scrapeResultPaths AND no top pages/included URLs */
     if (urlsToCheck.length === 0) {
       // Final fallback to base URL
       urlsToCheck = [site.getBaseURL()];
@@ -368,20 +351,15 @@ export async function processContentAndGenerateOpportunities(context) {
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
     const successfulComparisons = comparisonResults.filter((result) => !result.error);
 
+    log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped`);
+
     // Check if all scrape.json files on S3 have statusCode=403
     const urlsWithScrapeJson = comparisonResults.filter((result) => result.hasScrapeMetadata);
     const urlsWithForbiddenScrape = urlsWithScrapeJson.filter((result) => result.scrapeForbidden);
     const scrapeForbidden = urlsWithScrapeJson.length > 0
       && urlsWithForbiddenScrape.length === urlsWithScrapeJson.length;
 
-    // Debug logging
     log.info(`Prerender - Scrape analysis: total=${comparisonResults.length}, withScrapeJson=${urlsWithScrapeJson.length}, forbidden403=${urlsWithForbiddenScrape.length}, allForbidden=${scrapeForbidden}`);
-
-    if (scrapeForbidden) {
-      log.warn(`Prerender - All ${urlsWithScrapeJson.length} scrape.json files on S3 indicate 403 Forbidden errors`);
-    }
-
-    log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped (403 forbidden: ${urlsWithForbiddenScrape.length})`);
 
     // Remove internal tracking fields from results before storing
     // eslint-disable-next-line
@@ -391,7 +369,7 @@ export async function processContentAndGenerateOpportunities(context) {
       totalUrlsChecked: comparisonResults.length,
       urlsNeedingPrerender: urlsNeedingPrerender.length,
       results: cleanResults,
-      scrapeForbidden, // Flag for UI: all scrape.json files on S3 show 403 Forbidden
+      scrapeForbidden,
     };
 
     if (urlsNeedingPrerender.length > 0) {

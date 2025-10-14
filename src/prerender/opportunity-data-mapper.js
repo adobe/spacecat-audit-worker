@@ -47,8 +47,7 @@ export function createOpportunityData(auditData) {
         'Improved LLM visibility and brand presence',
         'Better LLM indexing and search results',
       ],
-      // Include scrapeForbidden flag for UI to display warning about blocked scraping
-      ...(scrapeForbidden && { scrapeForbidden: true }),
+      scrapeForbidden: (scrapeForbidden === true),
     },
   };
 }

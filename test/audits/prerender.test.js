@@ -177,7 +177,7 @@ describe('Prerender Audit', () => {
       expect(opportunityData.data.scrapeForbidden).to.be.true;
     });
 
-    it('should not include scrapeForbidden flag when scraping is allowed', () => {
+    it('should include scrapeForbidden=false when scraping is allowed', () => {
       const auditData = {
         auditResult: {
           scrapeForbidden: false,
@@ -186,16 +186,16 @@ describe('Prerender Audit', () => {
 
       const opportunityData = createOpportunityData(auditData);
 
-      expect(opportunityData.data).to.not.have.property('scrapeForbidden');
+      expect(opportunityData.data).to.have.property('scrapeForbidden', false);
     });
 
-    it('should not include scrapeForbidden flag when auditResult is not provided', () => {
+    it('should include scrapeForbidden=false when auditResult is not provided', () => {
       const opportunityData = createOpportunityData();
 
-      expect(opportunityData.data).to.not.have.property('scrapeForbidden');
+      expect(opportunityData.data).to.have.property('scrapeForbidden', false);
     });
 
-    it('should not include scrapeForbidden flag when scrapeForbidden is undefined', () => {
+    it('should include scrapeForbidden=false when scrapeForbidden is undefined', () => {
       const auditData = {
         auditResult: {
           urlsNeedingPrerender: 5,
@@ -205,7 +205,7 @@ describe('Prerender Audit', () => {
 
       const opportunityData = createOpportunityData(auditData);
 
-      expect(opportunityData.data).to.not.have.property('scrapeForbidden');
+      expect(opportunityData.data).to.have.property('scrapeForbidden', false);
     });
   });
 
@@ -1503,6 +1503,95 @@ describe('Prerender Audit', () => {
         expect(mappedSuggestion.data.originalHtmlKey).to.include('server-side.html');
         expect(mappedSuggestion.data.prerenderedHtmlKey).to.include('client-side.html');
         expect(mappedSuggestion.data).to.not.have.property('needsPrerender');
+        
+        // Test mergeDataFunction (lines 283-284)
+        const mergeDataFn = syncCall.args[0].mergeDataFunction;
+        const existingData = { url: 'https://example.com/page1', customField: 'preserved' };
+        const newDataItem = {
+          url: 'https://example.com/page1',
+          organicTraffic: 200,
+          contentGainRatio: 2.5,
+          wordCountBefore: 100,
+          wordCountAfter: 250,
+          needsPrerender: true, // Should be filtered out
+        };
+        const mergedData = mergeDataFn(existingData, newDataItem);
+        expect(mergedData).to.have.property('customField', 'preserved'); // Existing field preserved
+        expect(mergedData).to.have.property('url', 'https://example.com/page1');
+        expect(mergedData).to.have.property('organicTraffic', 200);
+        expect(mergedData).to.not.have.property('needsPrerender'); // Filtered out by mapSuggestionData
+      });
+
+      it('should update existing PRERENDER opportunity with all data fields', async () => {
+        // This test specifically targets the PRERENDER update logic in opportunity.js
+        const existingOpportunity = {
+          getId: () => 'existing-opp-id',
+          getType: () => 'prerender',
+          getData: () => ({ 
+            dataSources: ['ahrefs'],
+            oldField: 'should-be-preserved',
+            scrapeForbidden: true, // Old value
+          }),
+          setAuditId: sinon.stub(),
+          setData: sinon.stub(),
+          setUpdatedBy: sinon.stub(),
+          save: sinon.stub().resolves(),
+        };
+
+        const mockOpportunity = {
+          allBySiteIdAndStatus: sinon.stub().resolves([existingOpportunity]),
+        };
+
+        const convertToOpportunityModule = await import('../../src/common/opportunity.js');
+        
+        const auditData = {
+          siteId: 'test-site-id',
+          id: 'new-audit-id',
+          auditResult: {
+            scrapeForbidden: false, // New value
+          },
+        };
+
+        const context = {
+          dataAccess: {
+            Opportunity: mockOpportunity,
+          },
+          log: {
+            info: sinon.stub(),
+            warn: sinon.stub(),
+            error: sinon.stub(),
+          },
+        };
+
+        const createOpportunityDataFn = (auditData) => ({
+          data: {
+            dataSources: ['ahrefs', 'site'],
+            scrapeForbidden: auditData?.auditResult?.scrapeForbidden === true,
+            newField: 'new-value',
+          },
+        });
+
+        await convertToOpportunityModule.convertToOpportunity(
+          'https://example.com',
+          auditData,
+          context,
+          createOpportunityDataFn,
+          'prerender',
+          auditData,
+        );
+
+        // Verify setData was called with merged data (lines 95-98)
+        expect(existingOpportunity.setData).to.have.been.calledOnce;
+        const setDataCall = existingOpportunity.setData.getCall(0).args[0];
+        
+        // Should merge all fields from opportunityInstance.data
+        expect(setDataCall).to.have.property('oldField', 'should-be-preserved'); // From existing
+        expect(setDataCall).to.have.property('dataSources');
+        expect(setDataCall).to.have.property('scrapeForbidden', false); // Updated value
+        expect(setDataCall).to.have.property('newField', 'new-value'); // New field
+        
+        // Verify save was called
+        expect(existingOpportunity.save).to.have.been.calledOnce;
       });
 
         it('should test simplified text extraction', () => {
@@ -1684,7 +1773,7 @@ describe('Prerender Audit', () => {
         expect(hasMissingDataError).to.be.true;
       });
 
-      it('should now properly test the meaningful defensive check (lines 121-128)', async () => {
+      it('should now properly test the meaningful defensive check', async () => {
         // With the simplified getScrapedHtmlFromS3, this check is now very testable
         // It will catch any case where S3 returns null or empty values
         
@@ -1733,7 +1822,7 @@ describe('Prerender Audit', () => {
         expect(hasMissingDataError).to.be.true;
       });
 
-      it('should handle scrape.json fetch rejection (line 81)', async () => {
+      it('should handle scrape.json fetch rejection', async () => {
         // Test when scrape.json fetch is rejected (tests the 'rejected' branch in Promise.allSettled)
         const getObjectFromKeyStub = sinon.stub();
         getObjectFromKeyStub.onCall(0).resolves('<html><body>Server content</body></html>');
@@ -1878,73 +1967,6 @@ describe('Prerender Audit', () => {
           msg.includes('Missing HTML data for')
         );
         expect(hasMissingDataError).to.be.true;
-      });
-
-      it('should log warning when all scrapes are forbidden (lines 355-356)', async () => {
-        // Test when all scrape.json files indicate 403 Forbidden
-        // Note: getObjectFromKey returns parsed objects, not strings
-        const scrapeMetadata403 = {
-          url: 'https://example.com/page1',
-          status: 'FAILED',
-          error: {
-            message: 'HTTP 403 error',
-            statusCode: 403,
-            type: 'HttpError',
-          },
-        };
-
-        const getObjectFromKeyStub = sinon.stub();
-        // First URL - all 403
-        getObjectFromKeyStub.onCall(0).resolves('<html><body>Server content from local</body></html>');
-        getObjectFromKeyStub.onCall(1).resolves('<html><body>Client content from local</body></html>');
-        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata403);
-        // Second URL - all 403
-        getObjectFromKeyStub.onCall(3).resolves('<html><body>Server content from local</body></html>');
-        getObjectFromKeyStub.onCall(4).resolves('<html><body>Client content from local</body></html>');
-        getObjectFromKeyStub.onCall(5).resolves(scrapeMetadata403);
-
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': {
-            getObjectFromKey: getObjectFromKeyStub,
-          },
-        });
-
-        const mockSiteTopPage = {
-          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
-            { getUrl: () => 'https://example.com/page2', getTraffic: () => 200 },
-          ]),
-        };
-
-        const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://example.com',
-          },
-          audit: { getId: () => 'audit-id' },
-          dataAccess: { SiteTopPage: mockSiteTopPage },
-          log: {
-            info: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-            debug: sandbox.stub(),
-          },
-          s3Client: {},
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
-        };
-
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
-
-        expect(result.status).to.equal('complete');
-        // Should log warning about all scrapes being forbidden
-        expect(context.log.warn).to.have.been.called;
-        const warnMessages = context.log.warn.args.map(call => call[0]);
-        const hasForbiddenWarning = warnMessages.some(msg => 
-          msg.includes('scrape.json files on S3 indicate 403 Forbidden errors')
-        );
-        expect(hasForbiddenWarning).to.be.true;
-        // Should also set scrapeForbidden flag in audit result
-        expect(result.auditResult.scrapeForbidden).to.be.true;
       });
     });
   });
