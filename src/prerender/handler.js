@@ -261,6 +261,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     context,
     createOpportunityData,
     AUDIT_TYPE,
+    auditData, // Pass auditData as props so createOpportunityData receives it
   );
 
   const buildKey = (data) => `${data.url}|${AUDIT_TYPE}`;
