@@ -336,6 +336,15 @@ export async function processContentAndGenerateOpportunities(context) {
       const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
       urlsToCheck = [...new Set([...urlsToCheck, ...includedURLs])];
       /* c8 ignore stop */
+      urlsToCheck = [
+        'https://www.samsung.com/us/',
+        'https://www.samsung.com/br/',
+        'https://www.samsung.com/in/',
+        'https://www.samsung.com/de/',
+        'https://www.samsung.com/tr/',
+        'https://www.samsung.com/mx/',
+        'https://www.samsung.com/uk/',
+      ];
       log.info(`Prerender - Fallback: Using ${urlsToCheck.length} top pages for comparison`);
     }
 
@@ -366,8 +375,7 @@ export async function processContentAndGenerateOpportunities(context) {
       && urlsWithForbiddenScrape.length === urlsWithScrapeJson.length;
 
     // Debug logging
-    // eslint-disable-next-line
-    // log.info(`Prerender - Scrape analysis: total=${comparisonResults.length}, withScrapeJson=${urlsWithScrapeJson.length}, forbidden403=${urlsWithForbiddenScrape.length}, allForbidden=${scrapeForbidden}`);
+    log.info(`Prerender - Scrape analysis: total=${comparisonResults.length}, withScrapeJson=${urlsWithScrapeJson.length}, forbidden403=${urlsWithForbiddenScrape.length}, allForbidden=${scrapeForbidden}`);
 
     if (scrapeForbidden) {
       log.warn(`Prerender - All ${urlsWithScrapeJson.length} scrape.json files on S3 indicate 403 Forbidden errors`);
