@@ -3098,8 +3098,8 @@ describe('Headings Audit', () => {
 
       expect(opportunityData).to.have.property('tags');
       expect(opportunityData.tags).to.be.an('array');
-      expect(opportunityData.tags).to.have.lengthOf(4);
-      expect(opportunityData.tags).to.deep.equal(['Accessibility', 'SEO', 'llm', 'isElmo']);
+      expect(opportunityData.tags).to.have.lengthOf(5);
+      expect(opportunityData.tags).to.deep.equal(['Accessibility', 'SEO', 'llm', 'isElmo', 'headings']);
     });
 
     it('includes proper guidance recommendations for Elmo', () => {
@@ -3207,7 +3207,7 @@ describe('Headings Audit', () => {
       expect(baseData.data).to.not.have.property('additionalMetrics');
 
       // Elmo data should have extended properties
-      expect(elmoData.tags).to.have.lengthOf(4);
+      expect(elmoData.tags).to.have.lengthOf(5);
       expect(elmoData.data).to.have.property('additionalMetrics');
     });
 
