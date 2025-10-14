@@ -388,8 +388,8 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
   log.debug(`[PRODUCT-METATAGS] Fetching from S3: ${key}`);
 
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
-  log.debug(`[PRODUCT-METATAGS] scrape result props: ${Object.keys(object.scrapeResult)}`);
-  log.debug(`[PRODUCT-METATAGS] scrape result tags: ${Object.entries(object.scrapeResult.tags)}`);
+  log.debug(`[PRODUCT-METATAGS] scrape result props: ${Object.keys(object?.scrapeResult || {})}`);
+  log.debug(`[PRODUCT-METATAGS] scrape result tags: ${Object.entries(object?.scrapeResult?.tags || {})}`);
 
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
     log.error(`[PRODUCT-METATAGS] No Scraped tags found in S3 ${key} object`);
@@ -428,7 +428,7 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
   }
 
   // Debug: Log available tags to understand what scraper extracted
-  log.debug(`[PRODUCT-METATAGS] Available tags in ${key}:`, Object.keys(object.scrapeResult.tags || {}));
+  log.debug(`[PRODUCT-METATAGS] Available tags in ${key}:`, Object.keys(object.scrapeResult.tags));
 
   // Extract product-specific meta tags
   // from raw HTML since scraper doesn't support custom extraction
