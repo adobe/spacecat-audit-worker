@@ -1,3 +1,10 @@
+## [1.208.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.9...v1.208.10) (2025-10-14)
+
+
+### Bug Fixes
+
+* adding additional tags ([#1403](https://github.com/adobe/spacecat-audit-worker/issues/1403)) ([4d96d88](https://github.com/adobe/spacecat-audit-worker/commit/4d96d88a366435c4b2c346eb1be2699a310d05f6))
+
 ## [1.208.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.8...v1.208.9) (2025-10-14)
 
 
