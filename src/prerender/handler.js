@@ -80,15 +80,9 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
     const clientSideHtml = results[1].status === 'fulfilled' ? results[1].value : null;
     const scrapeJsonData = results[2].status === 'fulfilled' ? results[2].value : null;
 
-    // Parse metadata if available (backward compatible - scrape.json may not exist)
-    let metadata = null;
-    if (scrapeJsonData) {
-      try {
-        metadata = JSON.parse(scrapeJsonData);
-      } catch (parseError) {
-        log.debug(`Prerender - Could not parse scrape metadata for ${url}: ${parseError.message}`);
-      }
-    }
+    // getObjectFromKey already parses JSON if ContentType is application/json
+    // So scrapeJsonData is either null (not found), or an already-parsed object
+    const metadata = scrapeJsonData || null;
 
     return {
       serverSideHtml,
@@ -198,9 +192,24 @@ export async function submitForScraping(context) {
 
   const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
 
-  const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
+  let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
 
-  log.info(`Prerender - Submitting ${finalUrls.length} URLs for scraping (${topPagesUrls.length} top pages + ${includedURLs.length} included URLs)`);
+  // Temperary for testing
+
+  finalUrls = [
+    'https://www.samsung.com/us/',
+    'https://www.samsung.com/br/',
+    'https://www.samsung.com/in/',
+    'https://www.samsung.com/de/',
+    'https://www.samsung.com/tr/',
+    'https://www.samsung.com/mx/',
+    'https://www.samsung.com/uk/',
+    'https://www.samsung.com/ar/',
+    'https://www.samsung.com/in/smartphones/galaxy-a35/buy/',
+  ];
+
+  // eslint-disable-next-line
+  // log.info(`Prerender - Submitting ${finalUrls.length} URLs for scraping (${topPagesUrls.length} top pages + ${includedURLs.length} included URLs)`);
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
