@@ -1,3 +1,31 @@
+## [1.208.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.8...v1.208.9) (2025-10-14)
+
+
+### Bug Fixes
+
+* headings prompt ([#1375](https://github.com/adobe/spacecat-audit-worker/issues/1375)) ([23c94aa](https://github.com/adobe/spacecat-audit-worker/commit/23c94aa559371a6de2b85b18f0f0f19c6e39e9ea))
+
+## [1.208.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.7...v1.208.8) (2025-10-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.71.1 ([#1402](https://github.com/adobe/spacecat-audit-worker/issues/1402)) ([848b66d](https://github.com/adobe/spacecat-audit-worker/commit/848b66dcc5a755598bfeae0e07730f85647a5b33))
+
+## [1.208.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.6...v1.208.7) (2025-10-13)
+
+
+### Bug Fixes
+
+* align form accessibility suggestion creation with sites ([#1201](https://github.com/adobe/spacecat-audit-worker/issues/1201)) ([25d24dd](https://github.com/adobe/spacecat-audit-worker/commit/25d24ddcb8d4adae04aca4042868b836fbb87fe5))
+
+## [1.208.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.5...v1.208.6) (2025-10-13)
+
+
+### Bug Fixes
+
+* skip canonical checks on pdf pages ([#1400](https://github.com/adobe/spacecat-audit-worker/issues/1400)) ([7139508](https://github.com/adobe/spacecat-audit-worker/commit/7139508b539ea0d3c5e54b55b4f4a1f4a21b5fa8))
+
 ## [1.208.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.4...v1.208.5) (2025-10-13)
 
 

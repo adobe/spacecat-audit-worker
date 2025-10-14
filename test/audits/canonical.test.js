@@ -763,6 +763,72 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.calledWith('Skipping canonical checks for auth/login page: https://example.com/oauth/callback');
       expect(log.info).to.have.been.calledWith('Skipping canonical checks for auth/login page: https://example.com/sso');
     });
+
+    it('should skip PDF files from canonical checks', async () => {
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/page1';
+      const html = `<html lang="en"><head><link rel="canonical" href="${pageURL}"><title>test</title></head><body></body></html>`;
+
+      nock('https://example.com').get('/page1').twice().reply(200, html);
+
+      const getTopPagesForSiteStub = sinon.stub().resolves([
+        { getUrl: () => 'https://example.com/document.pdf' },
+        { getUrl: () => 'https://example.com/guide.PDF' },
+        { getUrl: () => 'https://example.com/files/report.pdf' },
+        { getUrl: () => pageURL },
+      ]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('fullAuditRef', baseURL);
+      expect(result).to.have.property('auditResult');
+      expect(result.auditResult).to.deep.equal({
+        status: 'success',
+        message: 'No canonical issues detected',
+      });
+
+      // Verify log entries for skipped PDF files
+      expect(log.info).to.have.been.calledWith('Skipping canonical checks for PDF file: https://example.com/document.pdf');
+      expect(log.info).to.have.been.calledWith('Skipping canonical checks for PDF file: https://example.com/guide.PDF');
+      expect(log.info).to.have.been.calledWith('Skipping canonical checks for PDF file: https://example.com/files/report.pdf');
+    });
+
+    it('should handle malformed URLs in shouldSkipAuthPage and isPdfUrl catch blocks gracefully', async () => {
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/page1';
+      const html = `<html lang="en"><head><link rel="canonical" href="${pageURL}"><title>test</title></head><body></body></html>`;
+
+      nock('https://example.com').get('/page1').twice().reply(200, html);
+
+      const getTopPagesForSiteStub = sinon.stub().resolves([
+        { getUrl: () => '://invalid' },
+        { getUrl: () => 'ht!tp://bad-protocol.com' },
+        { getUrl: () => pageURL },
+      ]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('fullAuditRef', baseURL);
+      expect(result).to.have.property('auditResult');
+    });
   });
 
   describe('generateCanonicalSuggestion', () => {
