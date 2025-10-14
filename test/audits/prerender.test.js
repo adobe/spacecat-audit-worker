@@ -163,6 +163,50 @@ describe('Prerender Audit', () => {
       expect(opportunityData.data.thresholds).to.be.an('object');
       expect(opportunityData.data.benefits).to.be.an('array');
     });
+
+    it('should include scrapeForbidden flag when all scrapes are forbidden', () => {
+      const auditData = {
+        auditResult: {
+          scrapeForbidden: true,
+        },
+      };
+
+      const opportunityData = createOpportunityData(auditData);
+
+      expect(opportunityData.data).to.have.property('scrapeForbidden');
+      expect(opportunityData.data.scrapeForbidden).to.be.true;
+    });
+
+    it('should include scrapeForbidden=false when scraping is allowed', () => {
+      const auditData = {
+        auditResult: {
+          scrapeForbidden: false,
+        },
+      };
+
+      const opportunityData = createOpportunityData(auditData);
+
+      expect(opportunityData.data).to.have.property('scrapeForbidden', false);
+    });
+
+    it('should include scrapeForbidden=false when auditResult is not provided', () => {
+      const opportunityData = createOpportunityData();
+
+      expect(opportunityData.data).to.have.property('scrapeForbidden', false);
+    });
+
+    it('should include scrapeForbidden=false when scrapeForbidden is undefined', () => {
+      const auditData = {
+        auditResult: {
+          urlsNeedingPrerender: 5,
+          // scrapeForbidden not provided
+        },
+      };
+
+      const opportunityData = createOpportunityData(auditData);
+
+      expect(opportunityData.data).to.have.property('scrapeForbidden', false);
+    });
   });
 
   describe('Step Functions', () => {
@@ -1459,6 +1503,95 @@ describe('Prerender Audit', () => {
         expect(mappedSuggestion.data.originalHtmlKey).to.include('server-side.html');
         expect(mappedSuggestion.data.prerenderedHtmlKey).to.include('client-side.html');
         expect(mappedSuggestion.data).to.not.have.property('needsPrerender');
+        
+        // Test mergeDataFunction (lines 283-284)
+        const mergeDataFn = syncCall.args[0].mergeDataFunction;
+        const existingData = { url: 'https://example.com/page1', customField: 'preserved' };
+        const newDataItem = {
+          url: 'https://example.com/page1',
+          organicTraffic: 200,
+          contentGainRatio: 2.5,
+          wordCountBefore: 100,
+          wordCountAfter: 250,
+          needsPrerender: true, // Should be filtered out
+        };
+        const mergedData = mergeDataFn(existingData, newDataItem);
+        expect(mergedData).to.have.property('customField', 'preserved'); // Existing field preserved
+        expect(mergedData).to.have.property('url', 'https://example.com/page1');
+        expect(mergedData).to.have.property('organicTraffic', 200);
+        expect(mergedData).to.not.have.property('needsPrerender'); // Filtered out by mapSuggestionData
+      });
+
+      it('should update existing PRERENDER opportunity with all data fields', async () => {
+        // This test specifically targets the PRERENDER update logic in opportunity.js
+        const existingOpportunity = {
+          getId: () => 'existing-opp-id',
+          getType: () => 'prerender',
+          getData: () => ({ 
+            dataSources: ['ahrefs'],
+            oldField: 'should-be-preserved',
+            scrapeForbidden: true, // Old value
+          }),
+          setAuditId: sinon.stub(),
+          setData: sinon.stub(),
+          setUpdatedBy: sinon.stub(),
+          save: sinon.stub().resolves(),
+        };
+
+        const mockOpportunity = {
+          allBySiteIdAndStatus: sinon.stub().resolves([existingOpportunity]),
+        };
+
+        const convertToOpportunityModule = await import('../../src/common/opportunity.js');
+        
+        const auditData = {
+          siteId: 'test-site-id',
+          id: 'new-audit-id',
+          auditResult: {
+            scrapeForbidden: false, // New value
+          },
+        };
+
+        const context = {
+          dataAccess: {
+            Opportunity: mockOpportunity,
+          },
+          log: {
+            info: sinon.stub(),
+            warn: sinon.stub(),
+            error: sinon.stub(),
+          },
+        };
+
+        const createOpportunityDataFn = (auditData) => ({
+          data: {
+            dataSources: ['ahrefs', 'site'],
+            scrapeForbidden: auditData?.auditResult?.scrapeForbidden === true,
+            newField: 'new-value',
+          },
+        });
+
+        await convertToOpportunityModule.convertToOpportunity(
+          'https://example.com',
+          auditData,
+          context,
+          createOpportunityDataFn,
+          'prerender',
+          auditData,
+        );
+
+        // Verify setData was called with merged data (lines 95-98)
+        expect(existingOpportunity.setData).to.have.been.calledOnce;
+        const setDataCall = existingOpportunity.setData.getCall(0).args[0];
+        
+        // Should merge all fields from opportunityInstance.data
+        expect(setDataCall).to.have.property('oldField', 'should-be-preserved'); // From existing
+        expect(setDataCall).to.have.property('dataSources');
+        expect(setDataCall).to.have.property('scrapeForbidden', false); // Updated value
+        expect(setDataCall).to.have.property('newField', 'new-value'); // New field
+        
+        // Verify save was called
+        expect(existingOpportunity.save).to.have.been.calledOnce;
       });
 
         it('should test simplified text extraction', () => {
@@ -1640,7 +1773,7 @@ describe('Prerender Audit', () => {
         expect(hasMissingDataError).to.be.true;
       });
 
-      it('should now properly test the meaningful defensive check (lines 121-128)', async () => {
+      it('should now properly test the meaningful defensive check', async () => {
         // With the simplified getScrapedHtmlFromS3, this check is now very testable
         // It will catch any case where S3 returns null or empty values
         
@@ -1685,6 +1818,153 @@ describe('Prerender Audit', () => {
         const errorMessages = context.log.error.args.map(call => call[0]);
         const hasMissingDataError = errorMessages.some(msg => 
           msg.includes('Missing HTML data for') && msg.includes('client-side: false')
+        );
+        expect(hasMissingDataError).to.be.true;
+      });
+
+      it('should handle scrape.json fetch rejection', async () => {
+        // Test when scrape.json fetch is rejected (tests the 'rejected' branch in Promise.allSettled)
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>Server content</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>Client content</body></html>');
+        getObjectFromKeyStub.onCall(2).rejects(new Error('S3 GetObject failed for scrape.json'));
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        });
+
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+          ]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: {
+            info: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        // Should complete successfully even if scrape.json is missing (backward compatible)
+        expect(result.auditResult).to.be.an('object');
+      });
+
+      it('should handle invalid JSON in scrape.json metadata (lines 83-85)', async () => {
+        // Test when scrape.json contains invalid JSON
+        // Note: getObjectFromKey returns null when JSON parsing fails (handled in s3-utils.js)
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>Server content</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>Client content</body></html>');
+        getObjectFromKeyStub.onCall(2).resolves(null); // getObjectFromKey returns null on parse failure
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        });
+
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+          ]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: {
+            info: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        // Should complete successfully with HTML analysis, even if metadata is null
+        expect(result.auditResult).to.be.an('object');
+        expect(result.auditResult.results).to.be.an('array');
+      });
+
+      it('should handle metadata with error information', async () => {
+        // Test when metadata contains error information (missing HTML data)
+        // Note: getObjectFromKey returns parsed objects, not strings
+        const scrapeMetadata = {
+          url: 'https://example.com/page1',
+          status: 'FAILED',
+          error: {
+            message: 'HTTP 403 error for URL: https://example.com/page1',
+            statusCode: 403,
+            type: 'HttpError',
+          },
+        };
+
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves(null); // No server HTML
+        getObjectFromKeyStub.onCall(1).resolves(null); // No client HTML
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata); // scrape.json with error
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        });
+
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+          ]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: {
+            info: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        // Should log error about missing HTML data
+        expect(context.log.error).to.have.been.called;
+        const errorMessages = context.log.error.args.map(call => call[0]);
+        const hasMissingDataError = errorMessages.some(msg => 
+          msg.includes('Missing HTML data for')
         );
         expect(hasMissingDataError).to.be.true;
       });
