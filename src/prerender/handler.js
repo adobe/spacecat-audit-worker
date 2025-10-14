@@ -196,7 +196,6 @@ export async function submitForScraping(context) {
 
   log.info(`Prerender: Submitting ${finalUrls.length} URLs for scraping`);
 
-  /* c8 ignore next 6 - Hard to reach: requires no top pages AND no included URLs */
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
     const baseURL = site.getBaseURL();
@@ -329,8 +328,6 @@ export async function processContentAndGenerateOpportunities(context) {
       log.info(`Prerender - Fallback: Using ${urlsToCheck.length} top pages for comparison`);
     }
 
-    // eslint-disable-next-line
-    /* c8 ignore next 5 - Hard to reach: requires scrapeResultPaths AND no top pages/included URLs */
     if (urlsToCheck.length === 0) {
       // Final fallback to base URL
       urlsToCheck = [site.getBaseURL()];

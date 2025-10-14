@@ -266,7 +266,7 @@ describe('Prerender Audit', () => {
         expect(result.allowCache).to.equal(false);
       });
 
-      it.skip('should fallback to base URL when no URLs found', async () => {
+      it('should fallback to base URL when no URLs found', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
         };
@@ -307,7 +307,7 @@ describe('Prerender Audit', () => {
         });
       });
 
-      it.skip('should include includedURLs from site config', async () => {
+      it('should include includedURLs from site config', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
             { getUrl: () => 'https://example.com/page1' },
@@ -333,7 +333,7 @@ describe('Prerender Audit', () => {
     });
 
     describe('processContentAndGenerateOpportunities', () => {
-      it.skip('should process URLs and generate opportunities when prerender is needed', async function testProcessContentAndGenerateOpportunities() {
+      it('should process URLs and generate opportunities when prerender is needed', async function testProcessContentAndGenerateOpportunities() {
         this.timeout(5000); // Increase timeout to 5 seconds
 
         const mockSiteTopPage = {
@@ -430,7 +430,7 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
       });
 
-      it.skip('should fallback to base URL when no URLs found anywhere', async () => {
+      it('should fallback to base URL when no URLs found anywhere', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]), // No top pages
         };
@@ -784,7 +784,7 @@ describe('Prerender Audit', () => {
     });
 
     describe('S3 Integration and Error Handling', () => {
-      it.skip('should handle missing S3 data gracefully', async () => {
+      it('should handle missing S3 data gracefully', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
             { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
@@ -1070,7 +1070,7 @@ describe('Prerender Audit', () => {
     });
 
     describe('Site Config Edge Cases', () => {
-      it.skip('should handle missing site config gracefully', async () => {
+      it('should handle missing site config gracefully', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
         };
@@ -1091,7 +1091,7 @@ describe('Prerender Audit', () => {
         expect(result.urls[0].url).to.equal('https://example.com');
       });
 
-      it.skip('should handle undefined getIncludedURLs', async () => {
+      it('should handle undefined getIncludedURLs', async () => {
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([]),
         };
