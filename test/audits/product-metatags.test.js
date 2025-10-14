@@ -1434,6 +1434,25 @@ describe('Product MetaTags', () => {
       it('should throw error if suggestions fail to create', async () => {
         sinon.stub(GoogleClient, 'createFrom').resolves({});
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
+        dataAccessStub.Site.findById = sinon.stub().resolves({
+          getId: () => 'site-id',
+          getDeliveryConfig: () => ({ useHostnameOnly: false }),
+          getConfig: () => ({
+            getHandlers: () => ({
+              'product-metatags': {
+                config: {
+                  'commerce-customer-group': 'test-group',
+                  'commerce-environment-id': 'test-env',
+                  'commerce-store-code': 'test-store',
+                  'commerce-store-view-code': 'test-view',
+                  'commerce-website-code': 'test-website',
+                  'commerce-x-api-key': 'test-key',
+                  'commerce-endpoint': 'https://test.com/graphql',
+                },
+              },
+            }),
+          }),
+        });
         opportunity.getSiteId = () => 'site-id';
         opportunity.addSuggestions = sinon.stub().returns({ errorItems: [{ item: 1, error: 'some-error' }], createdItems: [] });
         try {
