@@ -101,6 +101,12 @@ export async function scrapeAccessibilityData(context) {
   const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
   log.info(`[A11yAudit] Remaining URLs to scrape for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(remainingUrls, null, 2)}`);
 
+  // get scraping config from site
+  const scrapingConfig = await site.getConfig();
+  // eslint-disable-next-line max-len
+  const accessibilityScrapingParams = scrapingConfig?.state?.handlers?.accessibility?.scrapingParams || null;
+  log.info(`[A11yAudit] Accessibility scraping params for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(accessibilityScrapingParams, null, 2)}`);
+
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
   return {
@@ -115,6 +121,9 @@ export async function scrapeAccessibilityData(context) {
     siteId,
     jobId: siteId,
     processingType: AUDIT_TYPE_ACCESSIBILITY,
+    options: {
+      accessibilityScrapingParams,
+    },
   };
 }
 
