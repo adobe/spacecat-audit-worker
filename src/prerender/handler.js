@@ -131,7 +131,7 @@ async function compareHtmlContent(url, siteId, context) {
     };
   }
 
-  // Analyze HTML (even if original scrape was forbidden, we might have HTML from local scraping)
+  // Even if original scrape was forbidden, we might have HTML uploaded from local scraping
   // eslint-disable-next-line
   const analysis = analyzeHtmlForPrerender(serverSideHtml, clientSideHtml, CONTENT_GAIN_THRESHOLD);
 
