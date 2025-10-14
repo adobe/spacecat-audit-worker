@@ -71,13 +71,9 @@ class ProductSeoChecks {
       productTags[SKU] = pageTags[SKU];
     }
 
-    // Extract image (priority order)
-    const imageSelectors = ['og:image', 'twitter:image', 'product:image', 'image'];
-    for (const selector of imageSelectors) {
-      if (hasText(pageTags[selector])) {
-        productTags[IMAGE] = pageTags[selector];
-        break;
-      }
+    // Extract thumbnail image
+    if (hasText(pageTags.thumbnail)) {
+      productTags[IMAGE] = pageTags.thumbnail;
     }
 
     return productTags;

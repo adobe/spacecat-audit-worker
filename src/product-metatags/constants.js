@@ -15,7 +15,7 @@ export const TITLE = 'title';
 export const DESCRIPTION = 'description';
 export const H1 = 'h1';
 export const SKU = 'sku';
-export const IMAGE = 'image';
+export const IMAGE = 'thumbnail'; // Consolidated image property
 
 // SEO impact category
 export const HIGH = 'High';
