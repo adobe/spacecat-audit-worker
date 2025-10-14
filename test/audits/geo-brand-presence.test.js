@@ -194,8 +194,9 @@ describe('Geo Brand Presence Handler', () => {
       deliveryType: site.getDeliveryType(),
     });
     expect(brandPresenceMessage.data).deep.equal({
-      configVersion: null,
+      configVersion: '1.0.0',
       web_search_provider: 'chatgpt',
+      config_version: '1.0.0',
       url: 'https://example.com/presigned-url',
     });
   });
@@ -250,7 +251,8 @@ describe('Geo Brand Presence Handler', () => {
         deliveryType: site.getDeliveryType(),
       });
       expect(message.data).deep.equal({
-        configVersion: null,
+        config_version: '1.0.0',
+        configVersion: '1.0.0',
         web_search_provider: provider,
         url: 'https://example.com/presigned-url',
       });
@@ -337,10 +339,7 @@ describe('Geo Brand Presence Handler', () => {
             return true;
           })
         })
-    );
-
-
-    console.log(...s3Client.send.args)
+      );
   });
 
   it('should split customer prompts with multiple regions into separate items', async () => {
@@ -1148,6 +1147,7 @@ describe('Geo Brand Presence Handler', () => {
           return JSON.stringify(config);
         },
       },
+      VersionId: '1.0.0', // This is where the version comes from in llmoConfig.readConfig()
     });
   }
 

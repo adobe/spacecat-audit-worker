@@ -172,6 +172,23 @@ export async function triggerGeoBrandPresence(context, site, auditContext = {}) 
   log.info(`Successfully triggered ${auditType} audit`);
 }
 
+export async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const auditType = 'geo-brand-presence-trigger-refresh';
+  const siteId = site.getSiteId();
+
+  log.info('Triggering %s audit for site: %s', auditType, siteId);
+
+  await sqs.sendMessage(configuration.getQueues().audits, {
+    type: auditType,
+    siteId,
+    auditContext: { configVersion },
+  });
+  log.info(`Successfully triggered ${auditType} audit`);
+}
+
 async function triggerAllSteps(context, site, log, triggeredSteps, auditContext = {}) {
   log.info('Triggering all relevant audits (no config version provided or first-time setup)');
 
@@ -298,13 +315,19 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     triggeredSteps.push('cdn-logs-report');
   }
 
-  const hasBrandPresenceChanges = changes.brands
-    || changes.competitors || changes.topics || changes.categories || changes.entities;
+  const hasBrandPresenceChanges = changes.topics || changes.categories || changes.entities;
+  const needsBrandPresenceRefresh = previousConfigVersion
+    && (changes.brands || changes.competitors);
 
   if (hasBrandPresenceChanges) {
-    log.info('LLMO config changes detected in brands, competitors, topics, categories, or entities; triggering geo-brand-presence audit');
+    log.info('LLMO config changes detected in topics, categories, or entities; triggering geo-brand-presence audit');
     await triggerGeoBrandPresence(context, site, auditContext);
     triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
+  }
+  if (needsBrandPresenceRefresh) {
+    log.info('LLMO config changes detected in brand or competitor aliases; triggering geo-brand-presence-refresh');
+    await triggerGeoBrandPresenceRefresh(context, site, configVersion);
+    triggeredSteps.push('geo-brand-presence-refresh');
   }
 
   if (triggeredSteps.length > 0) {
