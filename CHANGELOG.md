@@ -1,3 +1,17 @@
+## [1.208.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.9...v1.208.10) (2025-10-14)
+
+
+### Bug Fixes
+
+* adding additional tags ([#1403](https://github.com/adobe/spacecat-audit-worker/issues/1403)) ([4d96d88](https://github.com/adobe/spacecat-audit-worker/commit/4d96d88a366435c4b2c346eb1be2699a310d05f6))
+
+## [1.208.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.8...v1.208.9) (2025-10-14)
+
+
+### Bug Fixes
+
+* headings prompt ([#1375](https://github.com/adobe/spacecat-audit-worker/issues/1375)) ([23c94aa](https://github.com/adobe/spacecat-audit-worker/commit/23c94aa559371a6de2b85b18f0f0f19c6e39e9ea))
+
 ## [1.208.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.7...v1.208.8) (2025-10-13)
 
 
