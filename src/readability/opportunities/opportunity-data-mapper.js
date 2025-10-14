@@ -16,7 +16,7 @@ export function createOpportunityData() {
   return {
     runbook: '',
     origin: 'AUTOMATION',
-    title: 'Content readability issues affecting user experience and SEO',
+    title: 'Content readability issues affecting user experience and accessibility',
     description: 'Poor readability makes content difficult for users to understand. Content with low readability scores may drive away visitors and reduce engagement metrics.',
     guidance: {
       steps: [
