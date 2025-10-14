@@ -163,6 +163,50 @@ describe('Prerender Audit', () => {
       expect(opportunityData.data.thresholds).to.be.an('object');
       expect(opportunityData.data.benefits).to.be.an('array');
     });
+
+    it('should include scrapeForbidden flag when all scrapes are forbidden', () => {
+      const auditData = {
+        auditResult: {
+          scrapeForbidden: true,
+        },
+      };
+
+      const opportunityData = createOpportunityData(auditData);
+
+      expect(opportunityData.data).to.have.property('scrapeForbidden');
+      expect(opportunityData.data.scrapeForbidden).to.be.true;
+    });
+
+    it('should not include scrapeForbidden flag when scraping is allowed', () => {
+      const auditData = {
+        auditResult: {
+          scrapeForbidden: false,
+        },
+      };
+
+      const opportunityData = createOpportunityData(auditData);
+
+      expect(opportunityData.data).to.not.have.property('scrapeForbidden');
+    });
+
+    it('should not include scrapeForbidden flag when auditResult is not provided', () => {
+      const opportunityData = createOpportunityData();
+
+      expect(opportunityData.data).to.not.have.property('scrapeForbidden');
+    });
+
+    it('should not include scrapeForbidden flag when scrapeForbidden is undefined', () => {
+      const auditData = {
+        auditResult: {
+          urlsNeedingPrerender: 5,
+          // scrapeForbidden not provided
+        },
+      };
+
+      const opportunityData = createOpportunityData(auditData);
+
+      expect(opportunityData.data).to.not.have.property('scrapeForbidden');
+    });
   });
 
   describe('Step Functions', () => {
@@ -1687,6 +1731,221 @@ describe('Prerender Audit', () => {
           msg.includes('Missing HTML data for') && msg.includes('client-side: false')
         );
         expect(hasMissingDataError).to.be.true;
+      });
+
+      it('should handle scrape.json fetch rejection (line 81)', async () => {
+        // Test when scrape.json fetch is rejected (tests the 'rejected' branch in Promise.allSettled)
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>Server content</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>Client content</body></html>');
+        getObjectFromKeyStub.onCall(2).rejects(new Error('S3 GetObject failed for scrape.json'));
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        });
+
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+          ]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: {
+            info: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        // Should complete successfully even if scrape.json is missing (backward compatible)
+        expect(result.auditResult).to.be.an('object');
+      });
+
+      it('should handle invalid JSON in scrape.json metadata (lines 86-91)', async () => {
+        // Test when scrape.json contains invalid JSON that causes JSON.parse to fail
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>Server content</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>Client content</body></html>');
+        getObjectFromKeyStub.onCall(2).resolves('{ invalid json here }'); // Invalid JSON for scrape.json
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        });
+
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+          ]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: {
+            info: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        // Should log debug message about parsing failure
+        expect(context.log.debug).to.have.been.called;
+        const debugMessages = context.log.debug.args.map(call => call[0]);
+        const hasParseError = debugMessages.some(msg => 
+          msg.includes('Could not parse scrape metadata for')
+        );
+        expect(hasParseError).to.be.true;
+      });
+
+      it('should handle metadata with error information', async () => {
+        // Test when metadata contains error information (missing HTML data)
+        const scrapeMetadata = JSON.stringify({
+          url: 'https://example.com/page1',
+          status: 'FAILED',
+          error: {
+            message: 'HTTP 403 error for URL: https://example.com/page1',
+            statusCode: 403,
+            type: 'HttpError',
+          },
+        });
+
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves(null); // No server HTML
+        getObjectFromKeyStub.onCall(1).resolves(null); // No client HTML
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata); // scrape.json with error
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        });
+
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+          ]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: {
+            info: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        // Should log error about missing HTML data
+        expect(context.log.error).to.have.been.called;
+        const errorMessages = context.log.error.args.map(call => call[0]);
+        const hasMissingDataError = errorMessages.some(msg => 
+          msg.includes('Missing HTML data for')
+        );
+        expect(hasMissingDataError).to.be.true;
+      });
+
+      it('should log warning when all scrapes are forbidden (lines 359-360)', async () => {
+        // Test when all scrape.json files indicate 403 Forbidden
+        const scrapeMetadata403 = JSON.stringify({
+          url: 'https://example.com/page1',
+          status: 'FAILED',
+          error: {
+            message: 'HTTP 403 error',
+            statusCode: 403,
+            type: 'HttpError',
+          },
+        });
+
+        const getObjectFromKeyStub = sinon.stub();
+        // First URL - all 403
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>Server content from local</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>Client content from local</body></html>');
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata403);
+        // Second URL - all 403
+        getObjectFromKeyStub.onCall(3).resolves('<html><body>Server content from local</body></html>');
+        getObjectFromKeyStub.onCall(4).resolves('<html><body>Client content from local</body></html>');
+        getObjectFromKeyStub.onCall(5).resolves(scrapeMetadata403);
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        });
+
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+            { getUrl: () => 'https://example.com/page2', getTraffic: () => 200 },
+          ]),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: { SiteTopPage: mockSiteTopPage },
+          log: {
+            info: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+          s3Client: {},
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        };
+
+        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        // Should log warning about all scrapes being forbidden
+        expect(context.log.warn).to.have.been.called;
+        const warnMessages = context.log.warn.args.map(call => call[0]);
+        const hasForbiddenWarning = warnMessages.some(msg => 
+          msg.includes('scrape.json files on S3 indicate 403 Forbidden errors')
+        );
+        expect(hasForbiddenWarning).to.be.true;
+        // Should also set scrapeForbidden flag in audit result
+        expect(result.auditResult.scrapeForbidden).to.be.true;
       });
     });
   });

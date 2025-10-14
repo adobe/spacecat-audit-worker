@@ -52,11 +52,11 @@ function getS3Path(url, siteId, fileName) {
 }
 
 /**
- * Gets scraped HTML content from S3 for a specific URL
+ * Gets scraped HTML content and metadata from S3 for a specific URL
  * @param {string} url - Full URL
  * @param {string} siteId - Site ID
  * @param {Object} context - Audit context
- * @returns {Promise<Object>} - Object with serverSideHtml and clientSideHtml (may be null)
+ * @returns {Promise<Object>} - Object with serverSideHtml, clientSideHtml, and metadata
  */
 async function getScrapedHtmlFromS3(url, siteId, context) {
   const { log, s3Client, env } = context;
@@ -65,23 +65,42 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
     const serverSideKey = getS3Path(url, siteId, 'server-side.html');
     const clientSideKey = getS3Path(url, siteId, 'client-side.html');
+    const scrapeJsonKey = getS3Path(url, siteId, 'scrape.json');
 
     log.info(`Prerender - Getting scraped content for URL: ${url}`);
 
-    const [serverSideHtml, clientSideHtml] = await Promise.all([
+    const results = await Promise.allSettled([
       getObjectFromKey(s3Client, bucketName, serverSideKey, log),
       getObjectFromKey(s3Client, bucketName, clientSideKey, log),
+      getObjectFromKey(s3Client, bucketName, scrapeJsonKey, log),
     ]);
+
+    // Extract values from settled promises
+    const serverSideHtml = results[0].status === 'fulfilled' ? results[0].value : null;
+    const clientSideHtml = results[1].status === 'fulfilled' ? results[1].value : null;
+    const scrapeJsonData = results[2].status === 'fulfilled' ? results[2].value : null;
+
+    // Parse metadata if available (backward compatible - scrape.json may not exist)
+    let metadata = null;
+    if (scrapeJsonData) {
+      try {
+        metadata = JSON.parse(scrapeJsonData);
+      } catch (parseError) {
+        log.debug(`Prerender - Could not parse scrape metadata for ${url}: ${parseError.message}`);
+      }
+    }
 
     return {
       serverSideHtml,
       clientSideHtml,
+      metadata,
     };
   } catch (error) {
     log.warn(`Prerender - Could not get scraped content for ${url}: ${error.message}`);
     return {
       serverSideHtml: null,
       clientSideHtml: null,
+      metadata: null,
     };
   }
 }
@@ -100,17 +119,25 @@ async function compareHtmlContent(url, siteId, context) {
 
   const scrapedData = await getScrapedHtmlFromS3(url, siteId, context);
 
-  const { serverSideHtml, clientSideHtml } = scrapedData;
+  const { serverSideHtml, clientSideHtml, metadata } = scrapedData;
+
+  // Track if scrape.json exists and if it indicates 403
+  const hasScrapeMetadata = metadata !== null;
+  const scrapeForbidden = metadata?.error?.statusCode === 403;
 
   if (!serverSideHtml || !clientSideHtml) {
     log.error(`Prerender - Missing HTML data for ${url} (server-side: ${!!serverSideHtml}, client-side: ${!!clientSideHtml})`);
+
     return {
       url,
-      error: 'Missing HTML data for comparison',
+      error: true,
       needsPrerender: false,
+      hasScrapeMetadata,
+      scrapeForbidden,
     };
   }
 
+  // Analyze HTML (even if original scrape was forbidden, we might have HTML from local scraping)
   // eslint-disable-next-line
   const analysis = analyzeHtmlForPrerender(serverSideHtml, clientSideHtml, CONTENT_GAIN_THRESHOLD);
 
@@ -118,8 +145,9 @@ async function compareHtmlContent(url, siteId, context) {
     log.error(`Prerender - HTML analysis failed for ${url}: ${analysis.error}`);
     return {
       url,
-      error: analysis.error,
+      error: true,
       needsPrerender: false,
+      scrapeForbidden,
     };
   }
 
@@ -128,6 +156,8 @@ async function compareHtmlContent(url, siteId, context) {
   return {
     url,
     ...analysis,
+    hasScrapeMetadata, // Track if scrape.json exists on S3
+    scrapeForbidden, // Track if original scrape was forbidden (403)
   };
 }
 
@@ -202,12 +232,15 @@ export async function submitForScraping(context) {
 export async function processOpportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
-  if (auditData.auditResult.urlsNeedingPrerender === 0) {
+  const { auditResult } = auditData;
+  const { urlsNeedingPrerender } = auditResult;
+
+  if (urlsNeedingPrerender === 0) {
     log.info('Prerender - No prerender opportunities found, skipping opportunity creation');
     return;
   }
 
-  const preRenderSuggestions = auditData.auditResult.results
+  const preRenderSuggestions = auditResult.results
     .filter((result) => result.needsPrerender);
 
   if (preRenderSuggestions.length === 0) {
@@ -312,12 +345,23 @@ export async function processContentAndGenerateOpportunities(context) {
     const urlsNeedingPrerender = comparisonResults.filter((result) => result.needsPrerender);
     const successfulComparisons = comparisonResults.filter((result) => !result.error);
 
-    log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped`);
+    // Check if all scrape.json files on S3 have statusCode=403
+    const urlsWithScrapeJson = comparisonResults.filter((result) => result.hasScrapeMetadata);
+    const urlsWithForbiddenScrape = urlsWithScrapeJson.filter((result) => result.scrapeForbidden);
+    const scrapeForbidden = urlsWithScrapeJson.length > 0
+      && urlsWithForbiddenScrape.length === urlsWithScrapeJson.length;
+
+    if (scrapeForbidden) {
+      log.warn(`Prerender - All ${urlsWithScrapeJson.length} scrape.json files on S3 indicate 403 Forbidden errors`);
+    }
+
+    log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped (403 forbidden: ${urlsWithForbiddenScrape.length})`);
 
     const auditResult = {
       totalUrlsChecked: comparisonResults.length,
       urlsNeedingPrerender: urlsNeedingPrerender.length,
       results: comparisonResults,
+      scrapeForbidden, // Flag for UI: all scrape.json files on S3 show 403 Forbidden
     };
 
     if (urlsNeedingPrerender.length > 0) {

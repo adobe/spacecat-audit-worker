@@ -14,9 +14,13 @@ import { DATA_SOURCES } from '../common/constants.js';
 
 /**
  * Creates opportunity data for prerender audit results
+ * @param {Object} auditData - Audit data with results
  * @returns {Object} - Opportunity data structure
  */
-export function createOpportunityData() {
+export function createOpportunityData(auditData) {
+  const { auditResult } = auditData || {};
+  const { scrapeForbidden } = auditResult || {};
+
   return {
     runbook: '',
     origin: 'AUTOMATION',
@@ -43,6 +47,8 @@ export function createOpportunityData() {
         'Improved LLM visibility and brand presence',
         'Better LLM indexing and search results',
       ],
+      // Include scrapeForbidden flag for UI to display warning about blocked scraping
+      ...(scrapeForbidden && { scrapeForbidden: true }),
     },
   };
 }
