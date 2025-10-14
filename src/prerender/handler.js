@@ -21,7 +21,7 @@ import { analyzeHtmlForPrerender } from './html-comparator-utils.js';
 const AUDIT_TYPE = Audit.AUDIT_TYPES.PRERENDER;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-const CONTENT_GAIN_THRESHOLD = 1.2;
+const CONTENT_GAIN_THRESHOLD = 1.1;
 
 /**
  * Sanitizes the import path by replacing special characters with hyphens

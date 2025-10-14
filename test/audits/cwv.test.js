@@ -30,7 +30,6 @@ use(chaiAsPromised);
 
 const sandbox = sinon.createSandbox();
 
-const auditType = Audit.AUDIT_TYPES.CWV;
 const baseURL = 'https://spacecat.com';
 const auditUrl = 'www.spacecat.com';
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {
@@ -70,10 +69,10 @@ describe('CWVRunner Tests', () => {
   it('cwv audit runs rum api client cwv query', async () => {
     const result = await CWVRunner(auditUrl, context, site);
 
-    expect(siteConfig.getGroupedURLs.calledWith(auditType)).to.be.true;
+    expect(siteConfig.getGroupedURLs.calledWith(Audit.AUDIT_TYPES.CWV)).to.be.true;
     expect(
       context.rumApiClient.query.calledWith(
-        auditType,
+        Audit.AUDIT_TYPES.CWV,
         {
           ...DOMAIN_REQUEST_DEFAULT_PARAMS,
           groupedURLs,
@@ -115,13 +114,21 @@ describe('CWVRunner Tests', () => {
         bulkUpdateStatus: sandbox.stub(),
       };
 
+      context.sqs = {
+        sendMessage: sandbox.stub().resolves(),
+      };
+
+      context.env = {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+      };
+
       addSuggestionsResponse = {
         createdItems: [],
         errorItems: [],
       };
 
       oppty = {
-        getType: () => auditType,
+        getType: () => Audit.AUDIT_TYPES.CWV,
         getId: () => 'oppty-id',
         getSiteId: () => 'site-id',
         addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
@@ -131,6 +138,9 @@ describe('CWVRunner Tests', () => {
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
         setUpdatedBy: sandbox.stub().returnsThis(),
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        opportunityId: 'oppty-id',
       };
 
       auditData = {
@@ -138,7 +148,7 @@ describe('CWVRunner Tests', () => {
         id: 'audit-id',
         isLive: true,
         auditedAt: new Date().toISOString(),
-        auditType,
+        auditType: Audit.AUDIT_TYPES.CWV,
         auditResult: {
           cwv: rumData.filter((data) => data.pageviews >= 7000),
           auditContext: {
@@ -160,7 +170,7 @@ describe('CWVRunner Tests', () => {
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(auditType);
+      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(Audit.AUDIT_TYPES.CWV);
 
       expect(GoogleClient.createFrom).to.have.been.calledWith(context, auditUrl);
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
@@ -201,7 +211,7 @@ describe('CWVRunner Tests', () => {
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(auditType);
+      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(Audit.AUDIT_TYPES.CWV);
 
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(oppty.setAuditId).to.have.been.calledOnceWith('audit-id');
@@ -256,6 +266,87 @@ describe('CWVRunner Tests', () => {
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+    });
+
+    it('calls sendSQSMessageForGuidance when suggestions have no guidance', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      // Mock suggestions without guidance (empty issues array)
+      const mockSuggestions = [
+        { getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
+        { getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
+      ];
+      oppty.getSuggestions.resolves(mockSuggestions);
+
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+
+      // Verify that SQS sendMessage was called
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const message = context.sqs.sendMessage.firstCall.args[1];
+      expect(message.type).to.equal('guidance:cwv-analysis');
+      expect(message.siteId).to.equal('site-id');
+    });
+
+    it('does not call sendSQSMessageForGuidance when all suggestions have guidance', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      // Mock suggestions with existing guidance
+      const mockSuggestions = [
+        { 
+          getData: () => ({ 
+            type: 'url', 
+            url: 'test1',
+            issues: [
+              { type: 'lcp', value: '# LCP Optimization\n\nYour LCP is too slow...' }
+            ]
+          }),
+          getStatus: () => 'NEW'
+        }
+      ];
+      oppty.getSuggestions.resolves(mockSuggestions);
+
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+
+      // Verify that SQS sendMessage was NOT called
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('calls sendSQSMessageForGuidance when some suggestions have guidance and some do not', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      // Mock mixed suggestions - some with guidance, some without
+      const mockSuggestions = [
+        { 
+          getData: () => ({ 
+            type: 'url', 
+            url: 'test1',
+            issues: [
+              { type: 'lcp', value: '# LCP Optimization...' }
+            ]
+          }),
+          getStatus: () => 'NEW'
+        },
+        { 
+          getData: () => ({ 
+            type: 'url', 
+            url: 'test2',
+            issues: [] // No guidance (empty issues array)
+          }),
+          getStatus: () => 'NEW'
+        }
+      ];
+      oppty.getSuggestions.resolves(mockSuggestions);
+
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+
+      // Verify that SQS sendMessage was called (because at least one suggestion needs guidance)
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
   });
 });

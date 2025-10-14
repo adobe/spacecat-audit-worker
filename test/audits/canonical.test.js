@@ -22,9 +22,10 @@ import {
   getTopPagesForSiteId, validateCanonicalTag, validateCanonicalFormat,
   validateCanonicalRecursively, canonicalAuditRunner,
   generateCanonicalSuggestion, generateSuggestions, opportunityAndSuggestions,
+  opportunityAndSuggestionsForElmo,
 } from '../../src/canonical/handler.js';
 import { CANONICAL_CHECKS } from '../../src/canonical/constants.js';
-import { createOpportunityData } from '../../src/canonical/opportunity-data-mapper.js';
+import { createOpportunityData, createOpportunityDataForElmo } from '../../src/canonical/opportunity-data-mapper.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -762,6 +763,72 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.calledWith('Skipping canonical checks for auth/login page: https://example.com/oauth/callback');
       expect(log.info).to.have.been.calledWith('Skipping canonical checks for auth/login page: https://example.com/sso');
     });
+
+    it('should skip PDF files from canonical checks', async () => {
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/page1';
+      const html = `<html lang="en"><head><link rel="canonical" href="${pageURL}"><title>test</title></head><body></body></html>`;
+
+      nock('https://example.com').get('/page1').twice().reply(200, html);
+
+      const getTopPagesForSiteStub = sinon.stub().resolves([
+        { getUrl: () => 'https://example.com/document.pdf' },
+        { getUrl: () => 'https://example.com/guide.PDF' },
+        { getUrl: () => 'https://example.com/files/report.pdf' },
+        { getUrl: () => pageURL },
+      ]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('fullAuditRef', baseURL);
+      expect(result).to.have.property('auditResult');
+      expect(result.auditResult).to.deep.equal({
+        status: 'success',
+        message: 'No canonical issues detected',
+      });
+
+      // Verify log entries for skipped PDF files
+      expect(log.info).to.have.been.calledWith('Skipping canonical checks for PDF file: https://example.com/document.pdf');
+      expect(log.info).to.have.been.calledWith('Skipping canonical checks for PDF file: https://example.com/guide.PDF');
+      expect(log.info).to.have.been.calledWith('Skipping canonical checks for PDF file: https://example.com/files/report.pdf');
+    });
+
+    it('should handle malformed URLs in shouldSkipAuthPage and isPdfUrl catch blocks gracefully', async () => {
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/page1';
+      const html = `<html lang="en"><head><link rel="canonical" href="${pageURL}"><title>test</title></head><body></body></html>`;
+
+      nock('https://example.com').get('/page1').twice().reply(200, html);
+
+      const getTopPagesForSiteStub = sinon.stub().resolves([
+        { getUrl: () => '://invalid' },
+        { getUrl: () => 'ht!tp://bad-protocol.com' },
+        { getUrl: () => pageURL },
+      ]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('fullAuditRef', baseURL);
+      expect(result).to.have.property('auditResult');
+    });
   });
 
   describe('generateCanonicalSuggestion', () => {
@@ -893,6 +960,37 @@ describe('Canonical URL Tests', () => {
       expect(result.tags).to.include('SEO');
       expect(result).to.have.property('data').that.is.an('object');
       expect(result.data).to.have.property('dataSources').that.is.an('array');
+    });
+  });
+
+  describe('createOpportunityDataForElmo', () => {
+    it('should return canonical opportunity data for Elmo with correct structure', () => {
+      const result = createOpportunityDataForElmo();
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('runbook', '');
+      expect(result).to.have.property('origin', 'AUTOMATION');
+      expect(result).to.have.property('title', 'Canonical URL issues affecting SEO');
+      expect(result).to.have.property('description').that.is.a('string');
+      expect(result).to.have.property('guidance').that.is.an('object');
+      expect(result.guidance).to.have.property('recommendations').that.is.an('array');
+      expect(result.guidance.recommendations).to.have.length.above(0);
+      expect(result.guidance.recommendations[0]).to.have.property('insight');
+      expect(result.guidance.recommendations[0]).to.have.property('recommendation');
+      expect(result.guidance.recommendations[0]).to.have.property('type', 'CONTENT');
+      expect(result.guidance.recommendations[0]).to.have.property('rationale');
+      expect(result).to.have.property('tags').that.is.an('array');
+      expect(result.tags).to.include('Traffic Acquisition');
+      expect(result.tags).to.include('SEO');
+      expect(result.tags).to.include('llm');
+      expect(result.tags).to.include('isElmo');
+      expect(result).to.have.property('data').that.is.an('object');
+      expect(result.data).to.have.property('dataSources').that.is.an('array');
+      expect(result.data).to.have.property('additionalMetrics').that.is.an('array');
+      expect(result.data.additionalMetrics).to.deep.include({
+        value: 'canonical',
+        key: 'subtype',
+      });
     });
   });
 
@@ -1118,6 +1216,266 @@ describe('Canonical URL Tests', () => {
       expect(mockContext.log.info).to.have.been.calledWith(
         'Canonical opportunity created and 1 suggestions synced for https://example.com',
       );
+    });
+  });
+
+  describe('opportunityAndSuggestionsForElmo', () => {
+    const auditUrl = 'https://example.com';
+    const mockContext = {
+      log: {
+        debug: sinon.stub(),
+        info: sinon.stub(),
+        error: sinon.stub(),
+        warn: sinon.stub(),
+      },
+      dataAccess: {
+        Opportunity: {
+          allBySiteIdAndStatus: sinon.stub(),
+          create: sinon.stub(),
+          getId: sinon.stub().returns('elmo-opportunity-123'),
+          getSuggestions: sinon.stub(),
+          addSuggestions: sinon.stub(),
+        },
+        Suggestion: {
+          create: sinon.stub(),
+        },
+      },
+    };
+
+    beforeEach(() => {
+      mockContext.log.info.reset();
+      mockContext.log.error.reset();
+      mockContext.dataAccess.Opportunity.allBySiteIdAndStatus.reset();
+      mockContext.dataAccess.Opportunity.create.reset();
+      mockContext.dataAccess.Opportunity.getSuggestions.reset();
+      mockContext.dataAccess.Opportunity.addSuggestions.reset();
+      mockContext.dataAccess.Suggestion.create.reset();
+    });
+
+    it('should skip opportunity creation when no elmoSuggestions', async () => {
+      const auditData = {
+        auditResult: [
+          {
+            type: 'canonical-self-referenced',
+            explanation: 'The canonical URL should point to itself',
+            affectedUrls: [
+              {
+                url: 'https://example.com/page1',
+                suggestion: 'Update canonical URL to point to itself',
+              },
+            ],
+          },
+        ],
+        elmoSuggestions: [],
+      };
+
+      const result = await opportunityAndSuggestionsForElmo(auditUrl, auditData, mockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(mockContext.log.info).to.have.been.calledWith(
+        'Canonical audit has no issues, skipping opportunity creation for Elmo',
+      );
+    });
+
+    it('should create Elmo opportunity and sync suggestions when elmoSuggestions exist', async () => {
+      const auditData = {
+        siteId: 'site-123',
+        id: 'audit-123',
+        auditResult: [
+          {
+            type: 'canonical-self-referenced',
+            explanation: 'The canonical URL should point to itself',
+            affectedUrls: [
+              {
+                url: 'https://example.com/page1',
+                suggestion: 'Update canonical URL',
+              },
+            ],
+          },
+        ],
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: '## Canonical Self-Referenced\n\n| Page Url | Explanation | Suggestion |\n|-------|-------|-------|\n| https://example.com/page1 | The canonical URL should point to itself | Update canonical URL |\n',
+          },
+        ],
+      };
+
+      const mockOpportunity = {
+        getId: sinon.stub().returns('elmo-opportunity-123'),
+        getSuggestions: sinon.stub().resolves([]),
+        addSuggestions: sinon.stub().resolves({ createdItems: [], errors: [] }),
+        save: sinon.stub().resolves(),
+        getType: sinon.stub().returns('generic-opportunity'),
+        getStatus: sinon.stub().returns('NEW'),
+        getData: sinon.stub().returns({
+          additionalMetrics: [
+            { key: 'subtype', value: 'canonical' },
+          ],
+        }),
+        setData: sinon.stub(),
+        setStatus: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        setAuditId: sinon.stub(),
+      };
+
+      const fullMockContext = {
+        ...mockContext,
+        siteId: 'site-123',
+        dataAccess: {
+          Site: {
+            findById: sinon.stub().resolves({ getId: () => 'site-123' }),
+          },
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([]),
+            create: sinon.stub().resolves(mockOpportunity),
+          },
+          Suggestion: {
+            allByOpportunityId: sinon.stub().resolves([]),
+            bulkCreate: sinon.stub().resolves({ createdItems: [], errors: [] }),
+          },
+        },
+      };
+
+      const result = await opportunityAndSuggestionsForElmo(auditUrl, auditData, fullMockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(fullMockContext.log.info).to.have.been.calledWith(
+        'Canonical opportunity created for Elmo with oppty id elmo-opportunity-123',
+      );
+      expect(fullMockContext.log.info).to.have.been.calledWith(
+        'Canonical opportunity created for Elmo and 1 suggestions synced for https://example.com',
+      );
+    });
+
+    it('should use comparisonFn to find existing opportunities with matching subtype', async () => {
+      const auditData = {
+        siteId: 'site-123',
+        id: 'audit-123',
+        auditResult: [
+          {
+            type: 'canonical-self-referenced',
+            explanation: 'Test',
+            affectedUrls: [{ url: 'https://example.com/page1' }],
+          },
+        ],
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: '## Test\n',
+          },
+        ],
+      };
+
+      // Create existing opportunities - one matching, one not
+      const matchingOpportunity = {
+        getId: sinon.stub().returns('existing-match-123'),
+        getType: sinon.stub().returns('generic-opportunity'),
+        getData: sinon.stub().returns({
+          additionalMetrics: [
+            { key: 'subtype', value: 'canonical' },
+          ],
+        }),
+        getStatus: sinon.stub().returns('NEW'),
+        setData: sinon.stub(),
+        setAuditId: sinon.stub(),
+        setUpdatedBy: sinon.stub(),
+        save: sinon.stub().resolves(),
+        getSuggestions: sinon.stub().resolves([]),
+        addSuggestions: sinon.stub().resolves({ createdItems: [], errors: [] }),
+      };
+
+      const nonMatchingOpportunity = {
+        getId: sinon.stub().returns('non-match-456'),
+        getType: sinon.stub().returns('generic-opportunity'),
+        getData: sinon.stub().returns({
+          additionalMetrics: [
+            { key: 'subtype', value: 'other' },
+          ],
+        }),
+      };
+
+      const fullMockContext = {
+        ...mockContext,
+        siteId: 'site-123',
+        dataAccess: {
+          Site: {
+            findById: sinon.stub().resolves({ getId: () => 'site-123' }),
+          },
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([matchingOpportunity, nonMatchingOpportunity]),
+          },
+          Suggestion: {
+            allByOpportunityId: sinon.stub().resolves([]),
+            bulkCreate: sinon.stub().resolves({ createdItems: [], errors: [] }),
+          },
+        },
+      };
+
+      const result = await opportunityAndSuggestionsForElmo(auditUrl, auditData, fullMockContext);
+
+      expect(result).to.deep.equal(auditData);
+      expect(matchingOpportunity.setAuditId).to.have.been.calledWith('audit-123');
+      expect(matchingOpportunity.save).to.have.been.called;
+    });
+
+    it('should handle comparisonFn with opportunity lacking additionalMetrics', async () => {
+      const auditData = {
+        siteId: 'site-123',
+        id: 'audit-123',
+        elmoSuggestions: [
+          {
+            type: 'CODE_CHANGE',
+            recommendedAction: '## Test\n',
+          },
+        ],
+      };
+
+      // Opportunity without additionalMetrics
+      const opportunityNoMetrics = {
+        getId: sinon.stub().returns('no-metrics-123'),
+        getType: sinon.stub().returns('generic-opportunity'),
+        getData: sinon.stub().returns({}),
+      };
+
+      // Opportunity with null additionalMetrics
+      const opportunityNullMetrics = {
+        getId: sinon.stub().returns('null-metrics-456'),
+        getType: sinon.stub().returns('generic-opportunity'),
+        getData: sinon.stub().returns({ additionalMetrics: null }),
+      };
+
+      const mockOpportunity = {
+        getId: sinon.stub().returns('new-oppty-789'),
+        getSuggestions: sinon.stub().resolves([]),
+        setAuditId: sinon.stub(),
+        save: sinon.stub().resolves(),
+        addSuggestions: sinon.stub().resolves({ createdItems: [], errors: [] }),
+      };
+
+      const fullMockContext = {
+        ...mockContext,
+        siteId: 'site-123',
+        dataAccess: {
+          Site: {
+            findById: sinon.stub().resolves({ getId: () => 'site-123' }),
+          },
+          Opportunity: {
+            allBySiteIdAndStatus: sinon.stub().resolves([opportunityNoMetrics, opportunityNullMetrics]),
+            create: sinon.stub().resolves(mockOpportunity),
+          },
+          Suggestion: {
+            allByOpportunityId: sinon.stub().resolves([]),
+            bulkCreate: sinon.stub().resolves({ createdItems: [], errors: [] }),
+          },
+        },
+      };
+
+      const result = await opportunityAndSuggestionsForElmo(auditUrl, auditData, fullMockContext);
+
+      expect(result).to.deep.equal(auditData);
+      // Should have created a new opportunity since existing ones don't match
+      expect(fullMockContext.dataAccess.Opportunity.create).to.have.been.called;
     });
   });
 });

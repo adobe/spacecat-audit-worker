@@ -9,7 +9,12 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import {
+  Audit,
+  Opportunity as Oppty,
+  Site,
+  Suggestion as SuggestionDataAccess,
+} from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
@@ -117,7 +122,7 @@ export async function cspOpportunityAndSuggestions(auditUrl, auditData, context,
   }
 
   // this opportunity is only relevant for aem_edge delivery type at the moment
-  if (site.getDeliveryType() !== 'aem_edge') {
+  if (site.getDeliveryType() !== Site.DELIVERY_TYPES.AEM_EDGE) {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping CSP opportunity as it is of delivery type ${site.getDeliveryType()}`);
     return { ...auditData };
   }

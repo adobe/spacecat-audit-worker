@@ -20,6 +20,17 @@ import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
+// DJB2 hash
+function hash(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i += 1) {
+    // eslint-disable-next-line no-bitwise
+    h = ((h << 5) + h) ^ str.charCodeAt(i); // h * 33 ^ c
+  }
+  // eslint-disable-next-line no-bitwise
+  return (`00000000${(h >>> 0).toString(16)}`).slice(-8);
+}
+
 export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
 
@@ -43,10 +54,10 @@ export async function getRobotsTxt(context) {
 
     const robots = robotsParser(`https://${finalUrl}`, robotsTxtContent);
 
-    return robots;
+    return { robots, plainRobotsTxt: robotsTxtContent };
   } catch (error) {
     context.log.error(`Error getting robots.txt: ${error}`);
-    return null;
+    return { robots: null, plainRobotsTxt: null };
   }
 }
 
@@ -66,18 +77,16 @@ export async function checkLLMBlocked(context) {
 
   log.debug(`Checking top URLs for blocked AI bots, finalUrl: ${finalUrl}`);
 
-  const agentsWithRationale = {
-    'ClaudeBot/1.0': 'Unblock ClaudeBot/1.0 to allow Anthropic’s Claude to access your site when assisting users.',
-    'Perplexity-User/1.0': 'Unblock Perplexity-User/1.0 to let Perplexity AI directly browse and reference your website in users\' queries.',
-    'PerplexityBot/1.0': 'Unblock PerplexityBot/1.0 to enable Perplexity AI to index your content.',
-    'ChatGPT-User/1.0': 'Unblock ChatGPT-User/1.0 to allow ChatGPT to visit your website while answering a user’s question in browsing-enabled mode.',
-    'GPTBot/1.0': 'Unblock GPTBot/1.0 to permit OpenAI’s GPT models to access and learn from your content for improved future responses.',
-    'OAI-SearchBot/1.0': 'Unblock OAI-SearchBot/1.0 to let OpenAI’s search infrastructure retrieve your website content for ChatGPT search results.',
-  };
+  const agents = [
+    'ClaudeBot/1.0',
+    'Perplexity-User/1.0',
+    'PerplexityBot/1.0',
+    'ChatGPT-User/1.0',
+    'GPTBot/1.0',
+    'OAI-SearchBot/1.0',
+  ];
 
-  const agents = [...Object.keys(agentsWithRationale)];
-
-  const robots = await getRobotsTxt(context);
+  const { robots, plainRobotsTxt } = await getRobotsTxt(context);
   if (!robots) {
     log.warn('No robots.txt found. Aborting robots.txt check.');
     return {
@@ -86,32 +95,29 @@ export async function checkLLMBlocked(context) {
     };
   }
 
-  const suggestionsArray = [];
+  // line number -> affected URL / user agent
+  const resultsMap = {};
+
+  const robotsTxtHash = hash(plainRobotsTxt);
 
   agents.forEach((agent) => {
-    const agentResult = {
-      agent,
-      rationale: agentsWithRationale[agent],
-      affectedUrls: [],
-    };
-
     topPages.forEach((page) => {
       const isAllowedGenerally = robots.isAllowed(page.getUrl());
       const isAllowedForRobot = robots.isAllowed(page.getUrl(), agent);
       if (isAllowedGenerally && !isAllowedForRobot) {
-        agentResult.affectedUrls.push({
-          url: page.getUrl(),
-          line: robots.getMatchingLineNumber(page.getUrl(), agent),
-        });
+        const line = robots.getMatchingLineNumber(page.getUrl(), agent);
+        const url = page.getUrl();
+
+        if (resultsMap[line]) {
+          resultsMap[line].items.push({ url, agent });
+        } else {
+          resultsMap[line] = { lineNumber: line, robotsTxtHash, items: [{ url, agent }] };
+        }
       }
     });
-
-    if (agentResult.affectedUrls.length > 0) {
-      suggestionsArray.push(agentResult);
-    }
   });
 
-  if (suggestionsArray.length <= 0) {
+  if (Object.keys(resultsMap).length <= 0) {
     return {
       auditResult: JSON.stringify([]),
       fullAuditRef: `llm-blocked::${finalUrl}`,
@@ -129,13 +135,14 @@ export async function checkLLMBlocked(context) {
     context,
     createOpportunityData,
     'llm-blocked',
+    { fullRobots: plainRobotsTxt, numProcessedUrls: topPages.length },
   );
 
   // Create the suggestions
   await syncSuggestions({
     opportunity,
-    newData: suggestionsArray,
-    buildKey: (data) => data.agent,
+    newData: Object.values(resultsMap),
+    buildKey: (data) => `${data.lineNumber}-${data.robotsTxtHash}`,
     context,
     log,
     mapNewSuggestion: (entry) => ({
@@ -143,13 +150,16 @@ export async function checkLLMBlocked(context) {
       type: 'CODE_CHANGE',
       rank: 10,
       data: {
-        ...entry,
+        lineNumber: entry.lineNumber,
+        items: entry.items,
+        affectedUserAgents: [...new Set(entry.items.map((item) => item.agent))],
+        robotsTxtHash,
       },
     }),
   });
 
   return {
-    auditResult: JSON.stringify(suggestionsArray),
+    auditResult: JSON.stringify(resultsMap),
     fullAuditRef: `llm-blocked::${finalUrl}`,
   };
 }

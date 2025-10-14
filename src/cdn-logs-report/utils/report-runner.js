@@ -19,6 +19,7 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
     site,
     sharepointClient,
     weekOffset,
+    context,
   } = options;
 
   const referenceDate = new Date();
@@ -38,6 +39,9 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
       databaseName,
       tableName,
       site,
+      context,
+      athenaClient,
+      s3Config,
     };
 
     const query = await reportConfig.queryFunction(queryOptions);
@@ -88,6 +92,7 @@ export async function runWeeklyReport({
   site,
   sharepointClient,
   weekOffset,
+  context,
 }) {
   try {
     log.debug(`Starting ${reportConfig.name} report for week offset: ${weekOffset}...`);
@@ -95,6 +100,7 @@ export async function runWeeklyReport({
       site,
       sharepointClient,
       weekOffset,
+      context,
     });
     log.debug(`Successfully completed ${reportConfig.name} report`);
   } catch (error) {

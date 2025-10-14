@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { getStaticContent, llmoConfig } from '@adobe/spacecat-shared-utils';
 import {
   getWeek,
   getYear,
@@ -128,8 +128,12 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
   };
 }
 
-export function buildSiteFilters(filters = []) {
-  if (!filters || filters.length === 0) return '';
+export function buildSiteFilters(filters, site) {
+  if (!filters || filters.length === 0) {
+    const baseURL = site.getBaseURL();
+    const { host } = new URL(baseURL);
+    return `REGEXP_LIKE(host, '(?i)(${host})')`;
+  }
 
   const clauses = filters.map(({ key, value, type }) => {
     const regexPattern = value.join('|');
@@ -164,7 +168,7 @@ export async function fetchRemotePatterns(site) {
     });
 
     if (!res.ok) {
-      throw new Error(`Failed to fetch pattern data from ${url}: ${res.status} ${res.statusText}`);
+      return null;
     }
 
     const data = await res.json();
@@ -175,5 +179,31 @@ export async function fetchRemotePatterns(site) {
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Fetches config categories from the latest LLMO config
+ */
+export async function getConfigCategories(site, context) {
+  const { log, s3Client, env } = context;
+  const siteId = site.getSiteId();
+  const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
+
+  try {
+    const { config } = await llmoConfig.readConfig(
+      siteId,
+      s3Client,
+      { s3Bucket },
+    );
+
+    if (!config?.categories) {
+      return [];
+    }
+
+    return Object.values(config.categories).map((category) => category.name);
+  } catch (error) {
+    log.warn(`Failed to fetch config categories: ${error.message}`);
+    return [];
   }
 }

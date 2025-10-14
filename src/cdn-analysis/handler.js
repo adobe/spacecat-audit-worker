@@ -88,7 +88,12 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
   log.debug(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
 
   const database = `cdn_logs_${customerDomain}`;
+  const aggregatedTable = `aggregated_logs_${customerDomain}`;
+  const aggregatedReferralTable = `aggregated_referral_logs_${customerDomain}`;
   const results = [];
+
+  // Create database and aggregated tables once
+  let tablesCreated = false;
 
   // eslint-disable-next-line no-await-in-loop
   for (const serviceProvider of serviceProviders) {
@@ -111,13 +116,36 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
         maxPollAttempts: 500,
       });
 
-      if (results.length === 0) {
+      if (!tablesCreated) {
         // eslint-disable-next-line no-await-in-loop
         const sqlDb = await loadSql(cdnType, 'create-database', { database });
         // eslint-disable-next-line no-await-in-loop
         await athenaClient.execute(sqlDb, database, `[Athena Query] Create database ${database}`);
+
+        // Create aggregated table
+        // eslint-disable-next-line no-await-in-loop
+        const sqlAggregatedTable = await loadSql('', 'create-aggregated-table', {
+          databaseName: database,
+          tableName: aggregatedTable,
+          aggregatedLocation: paths.aggregatedLocation,
+        });
+        // eslint-disable-next-line no-await-in-loop
+        await athenaClient.execute(sqlAggregatedTable, database, `[Athena Query] Create aggregated table ${database}.${aggregatedTable}`);
+
+        // Create aggregated referral table
+        // eslint-disable-next-line no-await-in-loop
+        const sqlAggregatedReferralTable = await loadSql('', 'create-aggregated-referral-table', {
+          databaseName: database,
+          tableName: aggregatedReferralTable,
+          aggregatedLocation: paths.aggregatedReferralLocation,
+        });
+        // eslint-disable-next-line no-await-in-loop
+        await athenaClient.execute(sqlAggregatedReferralTable, database, `[Athena Query] Create aggregated referral table ${database}.${aggregatedReferralTable}`);
+
+        tablesCreated = true;
       }
 
+      // Create raw table for this provider
       // eslint-disable-next-line no-await-in-loop
       const sqlRaw = await loadSql(cdnType, 'create-raw-table', {
         database,
@@ -127,41 +155,49 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlRaw, database, `[Athena Query] Create raw logs table ${database}.${rawTable}`);
 
+      // Generate hour filter based on processing mode
+      const hourFilter = auditContext?.processFullDay ? '' : `AND hour = '${hour}'`;
+
       // eslint-disable-next-line no-await-in-loop
-      const sqlUnload = await loadSql(cdnType, 'unload-aggregated', {
+      const sqlInsert = await loadSql(cdnType, 'insert-aggregated', {
         database,
         rawTable,
+        aggregatedTable,
         year,
         month,
         day,
         hour,
+        hourFilter,
         bucket: bucketName,
         host,
         serviceProvider,
-        aggregatedOutput: paths.aggregatedOutput,
       });
       // eslint-disable-next-line no-await-in-loop
-      await athenaClient.execute(sqlUnload, database, `[Athena Query] Filter and unload ${serviceProvider} to ${paths.aggregatedOutput}`);
+      await athenaClient.execute(sqlInsert, database, `[Athena Query] Insert aggregated data for ${serviceProvider} into ${database}.${aggregatedTable}`);
 
+      // Insert aggregated referral data
       // eslint-disable-next-line no-await-in-loop
-      const sqlUnloadReferral = await loadSql(cdnType, 'unload-aggregated-referral', {
+      const sqlInsertReferral = await loadSql(cdnType, 'insert-aggregated-referral', {
         database,
         rawTable,
+        aggregatedTable: aggregatedReferralTable,
         year,
         month,
         day,
         hour,
+        hourFilter,
         bucket: bucketName,
         serviceProvider,
-        aggregatedReferralOutput: paths.aggregatedReferralOutput,
       });
       // eslint-disable-next-line no-await-in-loop
-      await athenaClient.execute(sqlUnloadReferral, database, `[Athena Query] (Referral) Filter and unload ${cdnType} to ${paths.aggregatedReferralOutput}`);
+      await athenaClient.execute(sqlInsertReferral, database, `[Athena Query] Insert aggregated referral data for ${serviceProvider} into ${database}.${aggregatedReferralTable}`);
 
       results.push({
         serviceProvider,
         cdnType,
         rawTable,
+        aggregatedTable,
+        aggregatedReferralTable,
         output: paths.aggregatedOutput,
         outputReferral: paths.aggregatedReferralOutput,
       });

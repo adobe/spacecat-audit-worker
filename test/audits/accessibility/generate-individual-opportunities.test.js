@@ -126,8 +126,14 @@ describe('formatIssue', () => {
     sandbox = sinon.createSandbox();
     originalSuccessCriteriaLinks = JSON.parse(JSON.stringify(constants.successCriteriaLinks));
     // Add some test WCAG rules
-    constants.successCriteriaLinks['412'] = { name: 'Name, Role, Value' };
-    constants.successCriteriaLinks['111'] = { name: 'Non-text Content' };
+    constants.successCriteriaLinks['412'] = {
+      name: 'Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
+    };
+    constants.successCriteriaLinks['111'] = {
+      name: 'Non-text Content',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html',
+    };
   });
 
   afterEach(() => {
@@ -158,6 +164,7 @@ describe('formatIssue', () => {
       type: 'color-contrast',
       description: 'Test description',
       wcagRule: '4.1.2 Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
       wcagLevel: 'AA',
       severity: 'critical',
       occurrences: 5,
@@ -333,6 +340,7 @@ describe('formatIssue', () => {
       type: 'aria-allowed-attr',
       description: 'Test description',
       wcagRule: '4.1.2 Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
       wcagLevel: '',
       severity: 'critical',
       occurrences: 0,
@@ -362,6 +370,7 @@ describe('formatIssue', () => {
       type: 'aria-allowed-attr',
       description: 'Test description',
       wcagRule: '4.1.2 Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
       wcagLevel: '',
       severity: 'critical',
       occurrences: 0,
@@ -391,6 +400,7 @@ describe('formatIssue', () => {
       type: 'aria-allowed-attr',
       description: 'Test description',
       wcagRule: '4.1.2 Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
       wcagLevel: '',
       severity: 'critical',
       occurrences: 0,
@@ -420,6 +430,7 @@ describe('formatIssue', () => {
       type: 'aria-allowed-attr',
       description: '', // Should default to empty string
       wcagRule: '4.1.2 Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
       wcagLevel: '', // Should default to empty string
       severity: 'critical',
       occurrences: 1, // Length of htmlWithIssues array
@@ -448,6 +459,7 @@ describe('formatIssue', () => {
       type: 'aria-allowed-attr',
       description: '', // Should default to empty string
       wcagRule: '4.1.2 Name, Role, Value',
+      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/name-role-value.html',
       wcagLevel: '', // Should default to empty string
       severity: 'critical',
       occurrences: 1, // Length of htmlWithIssues array
@@ -1131,6 +1143,30 @@ describe('aggregateAccessibilityIssues', () => {
     expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].target_selector)
       .to.equal('p[aria-made-up]');
   });
+
+  it('should return original url if URL parsing fails', () => {
+    const input = {
+      'https://example.com:port': {
+        violations: {
+          critical: {
+            items: {
+              'aria-allowed-attr': {
+                description: 'Multiple elements with invalid ARIA',
+                successCriteriaTags: ['wcag412'],
+                count: 3,
+                htmlWithIssues: ['<div aria-fake="true">Content 1</div>'],
+                target: ['div[aria-fake]'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.have.lengthOf(1);
+    expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com:port');
+  });
 });
 
 describe('createIndividualOpportunity', () => {
@@ -1631,30 +1667,43 @@ describe('createIndividualOpportunitySuggestions', () => {
     expect(result).to.equal('https://example.com/page5|label|');
   });
 
-  it('should handle suggestions with no issues in debug logging', async () => {
-    // Override getSuggestions to return data with no issues (falsy)
-    mockOpportunity.getSuggestions = sandbox.stub().resolves([
-      {
-        getData: () => ({
-          url: 'https://example.com/page1',
-          issues: null, // This will trigger the else branch in the ternary operator
-        }),
-        getStatus: () => 'NEW',
-        getId: () => 'suggestion-1',
-      },
-      {
-        getData: () => ({
-          url: 'https://example.com/page2',
-          // no issues property at all - should be undefined
-        }),
-        getStatus: () => 'NEW',
-        getId: () => 'suggestion-2',
-      },
-    ]);
-
+  it('should successfully create suggestions', async () => {
     const aggregatedData = {
       data: [
         { url: 'https://example.com', type: 'url', issues: [] },
+      ],
+    };
+
+    const result = await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedData,
+      mockContext,
+      mockLog,
+    );
+
+    expect(result).to.deep.equal({ success: true });
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+  });
+
+  it('should handle source parameter in url', async () => {
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          source: '#contact-form',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 1,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
+            },
+          ],
+        },
       ],
     };
 
@@ -1665,68 +1714,34 @@ describe('createIndividualOpportunitySuggestions', () => {
       mockLog,
     );
 
-    // The function should complete without errors when handling suggestions with no issues
-    expect(mockLog.info).to.have.been.calledWith(
-      '[A11yIndividual] No messages to send to Mystique - no matching issue types found',
-    );
-  });
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { mapNewSuggestion } = mockSyncSuggestions.firstCall.args[0];
 
-  it('should handle SQS sendMessage errors in sendMystiqueMessage', async () => {
-    // Override getSuggestions to return data that will trigger message sending
-    mockOpportunity.getSuggestions = sandbox.stub().resolves([]);
+    // Test the mapNewSuggestion function
+    const result = mapNewSuggestion(aggregatedData.data[0]);
 
-    // Mock sendMessage to throw an error
-    const sendMessageStub = sandbox.stub().rejects(new Error('SQS connection failed'));
-    mockContext.sqs.sendMessage = sendMessageStub;
-
-    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-      },
-      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
-        processSuggestionsForMystique: sandbox.stub().returns([
+    expect(result).to.deep.equal({
+      opportunityId: 'test-id',
+      type: 'CODE_CHANGE',
+      rank: 1,
+      data: {
+        url: 'https://example.com/page1',
+        type: 'url',
+        source: '#contact-form',
+        issues: [
           {
-            url: 'https://example.com',
-            issuesList: [{ issue_name: 'aria-allowed-attr' }],
+            type: 'color-contrast',
+            occurrences: 1,
+            htmlWithIssues: [
+              {
+                target_selector: 'div[aria-fake]',
+              },
+            ],
           },
-        ]),
-      },
-      '../../../src/common/audit-utils.js': {
-        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+        ],
+        jiraLink: '',
       },
     });
-
-    const testFunction = module.createIndividualOpportunitySuggestions;
-
-    const aggregatedData = {
-      data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
-      ],
-    };
-
-    await testFunction(
-      mockOpportunity,
-      aggregatedData,
-      mockContext,
-      mockLog,
-    );
-
-    // Should log the completion summary with failed messages
-    expect(mockLog.debug).to.have.been.calledWithMatch(
-      /Message sending completed: 0 successful, 1 failed, 0 rejected/,
-    );
-  });
-
-  it('should skip mystique suggestions and log when feature toggle is disabled', async () => {
-    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(false);
-    const result = await createIndividualOpportunitySuggestions(
-      mockOpportunity,
-      { data: [] }, // aggregatedData cu proprietatea data
-      mockContext,
-      mockLog,
-    );
-    expect(result).to.deep.equal({ success: true });
-    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
   });
 });
 
@@ -2717,19 +2732,20 @@ describe('sendMystiqueMessage error path (coverage)', () => {
   });
 });
 
-describe('createIndividualOpportunitySuggestions fallback logic (branch coverage)', () => {
+describe('sendMessageToMystiqueForRemediation', () => {
   let sandbox;
   let mockOpportunity;
   let mockContext;
   let mockLog;
   let mockIsAuditEnabledForSite;
-  let createIndividualOpportunitySuggestions;
+  let sendMessageToMystiqueForRemediation;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
     mockOpportunity = {
       getId: sandbox.stub().returns('oppty-1'),
-      // No getSiteId method - this will trigger fallback
+      getSiteId: sandbox.stub().returns('site-1'),
+      getAuditId: sandbox.stub().returns('audit-1'),
       getSuggestions: sandbox.stub().resolves([]),
     };
     mockLog = {
@@ -2743,14 +2759,10 @@ describe('createIndividualOpportunitySuggestions fallback logic (branch coverage
         getId: sandbox.stub().returns('site-1'),
         getDeliveryType: sandbox.stub().returns('aem_edge'),
       },
-      auditId: undefined, // This will trigger fallback
-      audit: {
-        getId: sandbox.stub().returns('audit-1'),
-      },
+      auditId: 'audit-1',
       log: mockLog,
       dataAccess: {
         Opportunity: {
-          create: sandbox.stub().resolves(mockOpportunity),
           findById: sandbox.stub().resolves(mockOpportunity),
         },
         Configuration: {
@@ -2767,9 +2779,6 @@ describe('createIndividualOpportunitySuggestions fallback logic (branch coverage
       },
     };
     const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-      },
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([]),
       },
@@ -2777,83 +2786,49 @@ describe('createIndividualOpportunitySuggestions fallback logic (branch coverage
         isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
-    createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
+    sendMessageToMystiqueForRemediation = module.sendMessageToMystiqueForRemediation;
   });
 
   afterEach(() => {
     sandbox.restore();
   });
 
-  it('should use fallback logic for siteId and auditId', async () => {
-    const aggregatedData = {
-      data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
-      ],
-    };
+  it('should handle suggestions with no issues in debug logging', async () => {
+    // Override getSuggestions to return data with no issues (falsy)
+    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+      {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          issues: null,
+        }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-1',
+      },
+      {
+        getData: () => ({
+          url: 'https://example.com/page2',
+        }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-2',
+      },
+    ]);
 
-    await createIndividualOpportunitySuggestions(
+    await sendMessageToMystiqueForRemediation(
       mockOpportunity,
-      aggregatedData,
       mockContext,
       mockLog,
     );
 
-    // Should not throw and should use fallback values
-    // Since processSuggestionsForMystique returns empty array, no messages are sent
     expect(mockLog.info).to.have.been.calledWith(
       '[A11yIndividual] No messages to send to Mystique - no matching issue types found',
     );
   });
-});
 
-describe('createIndividualOpportunitySuggestions missing SQS context coverage', () => {
-  let sandbox;
-  let mockOpportunity;
-  let mockContext;
-  let mockLog;
-  let mockIsAuditEnabledForSite;
-  let createIndividualOpportunitySuggestions;
-
-  beforeEach(async () => {
-    sandbox = sinon.createSandbox();
-    mockOpportunity = {
-      getId: sandbox.stub().returns('oppty-1'),
-      getSiteId: sandbox.stub().returns('site-1'),
-      getAuditId: sandbox.stub().returns('audit-1'),
-      getSuggestions: sandbox.stub().resolves([]),
-    };
-    mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-    mockIsAuditEnabledForSite = sandbox.stub().returns(true);
-    mockContext = {
-      site: {
-        getId: sandbox.stub().returns('site-1'),
-        getDeliveryType: sandbox.stub().returns('aem_edge'),
-      },
-      auditId: 'audit-1',
-      log: mockLog,
-      dataAccess: {
-        Opportunity: {
-          create: sandbox.stub().resolves(mockOpportunity),
-          findById: sandbox.stub().resolves(mockOpportunity),
-        },
-        Configuration: {
-          findLatest: sandbox.stub().resolves({
-            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
-          }),
-        },
-      },
-      sqs: null, // Missing SQS
-      env: null, // Missing env
-    };
+  it('should handle SQS sendMessage errors', async () => {
+    const sendMessageStub = sandbox.stub().rejects(new Error('SQS connection failed'));
+    mockContext.sqs.sendMessage = sendMessageStub;
 
     const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
-      },
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
@@ -2866,138 +2841,61 @@ describe('createIndividualOpportunitySuggestions missing SQS context coverage', 
         isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
-    createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
-  });
 
-  afterEach(() => {
-    sandbox.restore();
-  });
-
-  it('should handle missing SQS context gracefully', async () => {
-    const aggregatedData = {
-      data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
-      ],
-    };
-
-    const result = await createIndividualOpportunitySuggestions(
+    await module.sendMessageToMystiqueForRemediation(
       mockOpportunity,
-      aggregatedData,
       mockContext,
       mockLog,
     );
 
-    // Should return failure due to missing SQS context
-    expect(result.success).to.be.false;
-    expect(result.error).to.equal('Missing SQS context or queue configuration');
-    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Missing required context');
+    expect(mockLog.debug).to.have.been.calledWithMatch(
+      /Message sending completed: 0 successful, 1 failed, 0 rejected/,
+    );
   });
 
-  it('should handle missing env.QUEUE_SPACECAT_TO_MYSTIQUE', async () => {
-    // Add SQS but missing queue name
-    mockContext.sqs = { sendMessage: sandbox.stub().resolves() };
-    mockContext.env = {}; // Missing QUEUE_SPACECAT_TO_MYSTIQUE
+  it('should skip when feature toggle is disabled', async () => {
+    mockIsAuditEnabledForSite.withArgs('a11y-mystique-auto-suggest', sinon.match.any, sinon.match.any).resolves(false);
 
-    const aggregatedData = {
-      data: [
-        { url: 'https://example.com', type: 'url', issues: [] },
-      ],
-    };
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
 
-    const result = await createIndividualOpportunitySuggestions(
+    const result = await module.sendMessageToMystiqueForRemediation(
       mockOpportunity,
-      aggregatedData,
       mockContext,
       mockLog,
     );
 
-    // Should return failure due to missing queue name
-    expect(result.success).to.be.false;
-    expect(result.error).to.equal('Missing SQS context or queue configuration');
-    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Missing required context');
+    expect(result).to.deep.equal({ success: true });
+    expect(mockLog.info).to.have.been.calledWith('[A11yIndividual] Mystique suggestions are disabled for site, skipping message sending');
   });
-});
 
-describe('createIndividualOpportunitySuggestions debug logging coverage', () => {
-  let sandbox;
-  let mockOpportunity;
-  let mockContext;
-  let mockLog;
-  let mockIsAuditEnabledForSite;
-  let createIndividualOpportunitySuggestions;
-
-  beforeEach(async () => {
-    sandbox = sinon.createSandbox();
-    mockOpportunity = {
+  it('should use fallback logic for siteId and auditId', async () => {
+    // Create opportunity without getSiteId/getAuditId methods
+    const opportunityWithoutMethods = {
       getId: sandbox.stub().returns('oppty-1'),
-      getSiteId: sandbox.stub().returns('site-1'),
-      getAuditId: sandbox.stub().returns('audit-1'),
-      getSuggestions: sandbox.stub().resolves([
-        {
-          getData: () => ({
-            url: 'https://example.com/page1',
-            type: 'url',
-            issues: [
-              {
-                type: 'color-contrast',
-                occurrences: 5,
-                htmlWithIssues: [
-                  {
-                    target_selector: 'div[aria-fake]',
-                  },
-                ],
-              },
-            ],
-          }),
-          getStatus: () => 'NEW',
-          getId: () => 'suggestion-1',
-        },
-        {
-          getData: () => ({
-            url: 'https://example.com/page2',
-            type: 'url',
-            issues: [
-              {
-                type: 'aria-allowed-attr',
-                occurrences: 2,
-                htmlWithIssues: [
-                  {
-                    target_selector: 'button[aria-label="test"]',
-                  },
-                ],
-              },
-            ],
-          }),
-          getStatus: () => 'NEW',
-          getId: () => 'suggestion-2',
-        },
-      ]),
+      getSuggestions: sandbox.stub().resolves([]),
     };
-    mockLog = {
-      info: sandbox.stub(),
-      debug: sandbox.stub(),
-      error: sandbox.stub(),
-    };
-    mockIsAuditEnabledForSite = sandbox.stub().returns(true);
-    mockContext = {
+
+    // Create context with fallback values
+    const contextWithFallbacks = {
       site: {
         getId: sandbox.stub().returns('site-1'),
         getDeliveryType: sandbox.stub().returns('aem_edge'),
       },
-      auditId: 'audit-1',
+      auditId: undefined,
+      audit: {
+        getId: sandbox.stub().returns('audit-1'),
+      },
       log: mockLog,
       dataAccess: {
         Opportunity: {
-          create: sandbox.stub().resolves(mockOpportunity),
-          findById: sandbox.stub().resolves(mockOpportunity),
-        },
-        Suggestion: {
-          bulkUpdateStatus: sandbox.stub().resolves(),
-        },
-        Configuration: {
-          findLatest: sandbox.stub().resolves({
-            isHandlerEnabledForSite: mockIsAuditEnabledForSite,
-          }),
+          findById: sandbox.stub().resolves(opportunityWithoutMethods),
         },
       },
       sqs: {
@@ -3009,9 +2907,30 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
     };
 
     const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
-      '../../../src/utils/data-access.js': {
-        syncSuggestions: sandbox.stub().resolves(),
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([]),
       },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    await module.sendMessageToMystiqueForRemediation(
+      opportunityWithoutMethods,
+      contextWithFallbacks,
+      mockLog,
+    );
+
+    expect(mockLog.info).to.have.been.calledWith(
+      '[A11yIndividual] No messages to send to Mystique - no matching issue types found',
+    );
+  });
+
+  it('should handle missing SQS context gracefully', async () => {
+    mockContext.sqs = null;
+    mockContext.env = null;
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
       '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
@@ -3024,17 +2943,51 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
         isAuditEnabledForSite: mockIsAuditEnabledForSite,
       },
     });
-    createIndividualOpportunitySuggestions = module.createIndividualOpportunitySuggestions;
+
+    const result = await module.sendMessageToMystiqueForRemediation(
+      mockOpportunity,
+      mockContext,
+      mockLog,
+    );
+
+    expect(result.success).to.be.false;
+    expect(result.error).to.equal('Missing SQS context or queue configuration');
+    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Missing required context');
   });
 
-  afterEach(() => {
-    sandbox.restore();
+  it('should handle missing env.QUEUE_SPACECAT_TO_MYSTIQUE', async () => {
+    mockContext.sqs = { sendMessage: sandbox.stub().resolves() };
+    mockContext.env = {};
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com',
+            issuesList: [{ issue_name: 'aria-allowed-attr' }],
+          },
+        ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    const result = await module.sendMessageToMystiqueForRemediation(
+      mockOpportunity,
+      mockContext,
+      mockLog,
+    );
+
+    expect(result.success).to.be.false;
+    expect(result.error).to.equal('Missing SQS context or queue configuration');
+    expect(mockLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Missing required context');
   });
 
   it('should process suggestions and send messages to Mystique', async () => {
-    const aggregatedData = {
-      data: [
-        {
+    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+      {
+        getData: () => ({
           url: 'https://example.com/page1',
           type: 'url',
           issues: [
@@ -3048,18 +3001,32 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
               ],
             },
           ],
-        },
-      ],
-    };
+        }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-1',
+      },
+    ]);
 
-    await createIndividualOpportunitySuggestions(
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com',
+            issuesList: [{ issue_name: 'aria-allowed-attr' }],
+          },
+        ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    await module.sendMessageToMystiqueForRemediation(
       mockOpportunity,
-      aggregatedData,
       mockContext,
       mockLog,
     );
 
-    // Should send messages to Mystique
     expect(mockLog.debug).to.have.been.calledWithMatch(
       '[A11yIndividual] Sending 1 messages to Mystique queue: test-queue',
     );
@@ -3067,7 +3034,36 @@ describe('createIndividualOpportunitySuggestions debug logging coverage', () => 
       '[A11yIndividual] Message sending completed: 1 successful, 0 failed, 0 rejected',
     );
   });
+
+  it('should handle errors in main try block and throw with proper logging', async () => {
+    // Make Opportunity.findById throw an error to trigger the catch block (lines 544-546)
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().rejects(new Error('Database connection lost'));
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    try {
+      await module.sendMessageToMystiqueForRemediation(
+        mockOpportunity,
+        mockContext,
+        mockLog,
+      );
+      expect.fail('Should have thrown an error');
+    } catch (error) {
+      expect(error.message).to.equal('Database connection lost');
+      expect(mockLog.error).to.have.been.calledWith(
+        '[A11yProcessingError] Failed to send messages to Mystique for opportunity oppty-1: Database connection lost',
+      );
+    }
+  });
 });
+
 
 describe('sendMystiqueMessage error handling', () => {
   let testModule;

@@ -28,7 +28,7 @@ function buildMystiqueMessage(site, auditId, baseUrl, auditResult) {
     data: {
       year: auditResult.year,
       month: auditResult.month,
-      week: auditResult.week,
+      week: auditResult.period === 'weekly' ? auditResult.week : 0,
       temporalCondition: auditResult.temporalCondition,
     },
   };
@@ -58,6 +58,7 @@ export async function prepareTrafficAnalysisRequest(auditUrl, context, site, per
       month,
       siteId,
       temporalCondition,
+      period,
     };
   } else {
     const {
@@ -70,13 +71,13 @@ export async function prepareTrafficAnalysisRequest(auditUrl, context, site, per
       month,
       siteId,
       temporalCondition,
+      period,
     };
   }
   log.debug(`[traffic-analysis-audit-${period}] Request parameters: ${JSON.stringify(auditResult)} set for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
   return {
     auditResult,
     fullAuditRef: auditUrl,
-    period,
   };
 }
 
@@ -124,8 +125,15 @@ async function importDataStep(context, period) {
   const allowCache = true;
   log.debug(`[traffic-analysis-import-${period}] Starting import data step for siteId: ${siteId}, url: ${finalUrl}`);
 
+  const analysisResult = await prepareTrafficAnalysisRequest(
+    finalUrl,
+    context,
+    site,
+    period,
+  );
+
   if (period === 'monthly') {
-    const { month, year } = getMonthInfo();
+    const { month, year, temporalCondition } = analysisResult.auditResult;
     const { Configuration } = dataAccess;
     const configuration = await Configuration.findLatest();
 
@@ -139,11 +147,8 @@ async function importDataStep(context, period) {
     const lastWeek = weeksInMonth[weeksInMonth.length - 1];
 
     log.debug(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Sending import messages for ${weeksToImport.length} weeks: [${weeksToImport.map((w) => `${w.week}/${w.year}`).join(', ')}],  allowCache: ${allowCache}`);
-    log.debug(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Reserving last week ${lastWeek.week}/${lastWeek.year} for main audit flow`);
 
     for (const weekInfo of weeksToImport) {
-      const { temporalCondition } = getWeekInfo(weekInfo.week, weekInfo.year);
-
       const message = {
         type: 'traffic-analysis',
         siteId,
@@ -158,43 +163,18 @@ async function importDataStep(context, period) {
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(configuration.getQueues().imports, message);
     }
-
-    // Return the last week for the main audit flow
-    const { temporalCondition } = getWeekInfo(lastWeek.week, lastWeek.year);
-
+    log.debug(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Reserving last week ${lastWeek.week}/${lastWeek.year} for main audit flow`);
     log.debug(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Returning main audit flow data for week ${lastWeek.week}/${lastWeek.year} with allowCache: ${allowCache}, temporalCondition: ${temporalCondition}`);
-
-    return {
-      auditResult: {
-        year,
-        month,
-        week: lastWeek.week,
-        siteId,
-        temporalCondition,
-      },
-      fullAuditRef: finalUrl,
-      type: 'traffic-analysis',
-      siteId,
-      allowCache,
-    };
-  } else {
-    const analysisResult = await prepareTrafficAnalysisRequest(
-      finalUrl,
-      context,
-      site,
-      period,
-    );
-
-    log.debug(`[traffic-analysis-import-${period}] [siteId: ${siteId}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowCache: ${allowCache}`);
-
-    return {
-      auditResult: analysisResult.auditResult,
-      fullAuditRef: finalUrl,
-      type: 'traffic-analysis',
-      siteId,
-      allowCache,
-    };
   }
+  log.debug(`[traffic-analysis-import-${period}] [siteId: ${siteId}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowCache: ${allowCache}`);
+
+  return {
+    auditResult: analysisResult.auditResult,
+    fullAuditRef: finalUrl,
+    type: 'traffic-analysis',
+    siteId,
+    allowCache,
+  };
 }
 
 async function processAnalysisStep(context, period) {
@@ -203,7 +183,7 @@ async function processAnalysisStep(context, period) {
   const siteId = site.getId();
   const auditId = audit.getId();
 
-  log.debug(`[traffic-analysis-process-${period}] Starting process analysis step for siteId: ${siteId}, auditId: ${auditId}, url: ${finalUrl}`);
+  log.debug(`[traffic-analysis-process-${period}] Starting process analysis step for siteId: ${siteId}, auditId: ${auditId}, url: ${finalUrl}, and period: ${period}`);
 
   // Use the audit result that was already saved in the import step
   await sendRequestToMystique(
