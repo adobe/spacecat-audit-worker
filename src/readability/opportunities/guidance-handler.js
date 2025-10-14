@@ -119,12 +119,12 @@ export default async function handler(message, context) {
 
   // Prepare update operations
   const updateOperations = mappedSuggestions.map((mystiquesuggestion) => {
-    // Find matching suggestion by original text content
+    // Find matching suggestion by text preview (first 500 chars)
     const matchingSuggestion = existingSuggestions.find(
       (existing) => {
         const existingData = existing.getData();
-        return existingData?.originalText === mystiquesuggestion.originalText
-          || existingData?.textContent === mystiquesuggestion.originalText;
+        const mystiqueTextTruncated = mystiquesuggestion.originalText?.substring(0, 500);
+        return existingData?.textPreview === mystiqueTextTruncated;
       },
     );
 

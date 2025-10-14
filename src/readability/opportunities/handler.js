@@ -148,18 +148,27 @@ export async function processReadabilityOpportunities(context) {
     );
 
     // Prepare suggestions data for database
-    const suggestions = readabilityIssues.map((issue, index) => ({
-      opportunityId: opportunity.getId(),
-      type: READABILITY_OPPORTUNITY_TYPE,
-      rank: issue.rank, // Use the rank already calculated in analysis
-      data: {
-        ...issue,
-        id: `readability-${siteId}-${index}`,
-      },
-    }));
+    const suggestions = readabilityIssues.map((issue, index) => {
+      // Extract only the fields needed for display (exclude full textContent)
+      const {
+        textContent,
+        ...issueWithoutFullText
+      } = issue;
+
+      return {
+        opportunityId: opportunity.getId(),
+        type: READABILITY_OPPORTUNITY_TYPE,
+        rank: issue.rank, // Use the rank already calculated in analysis
+        data: {
+          ...issueWithoutFullText,
+          id: `readability-${siteId}-${index}`,
+          textPreview: textContent?.substring(0, 500),
+        },
+      };
+    });
 
     // Sync suggestions with existing ones (preserve ignored/fixed suggestions)
-    const buildKey = (data) => `${data.pageUrl}|${data.textContent?.substring(0, 100)}`;
+    const buildKey = (data) => `${data.pageUrl}|${data.textPreview?.substring(0, 500)}`;
 
     await syncSuggestions({
       opportunity,
