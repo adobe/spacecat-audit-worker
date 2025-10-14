@@ -238,13 +238,15 @@ class ProductSeoChecks {
    * @param {object} pageTags - An object containing the tags of the page.
    */
   performChecks(urlPath, pageTags) {
+    // TEMPORARILY DISABLED: SKU filtering - process all pages for now
     // Skip pages that don't have product tags (SKU or image)
-    if (!ProductSeoChecks.hasProductTags(pageTags)) {
-      this.log.info(`[PRODUCT-METATAGS] Skipping page ${urlPath} - no product tags found`);
-      return;
-    }
+    // if (!ProductSeoChecks.hasProductTags(pageTags)) {
+    //   this.log.info(`[PRODUCT-METATAGS] Skipping page ${urlPath} - no product tags found`);
+    //   return;
+    // }
 
-    this.log.info(`[PRODUCT-METATAGS] Processing product page ${urlPath} - has product tags`);
+    const hasProductTags = ProductSeoChecks.hasProductTags(pageTags);
+    this.log.info(`[PRODUCT-METATAGS] Processing page ${urlPath} - has product tags: ${hasProductTags}`);
 
     this.checkForMissingTags(urlPath, pageTags);
     this.checkForTagsLength(urlPath, pageTags);

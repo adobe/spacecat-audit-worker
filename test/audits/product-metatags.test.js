@@ -376,23 +376,24 @@ describe('Product MetaTags', () => {
         expect(detectedTags[url][TITLE][ISSUE]).to.equal('Missing Title');
         expect(detectedTags[url]).to.have.property(DESCRIPTION);
         expect(detectedTags[url][DESCRIPTION][ISSUE]).to.equal('Description too short');
-        expect(logStub.info).to.have.been.calledWith(`[PRODUCT-METATAGS] Processing product page ${url} - has product tags`);
+        expect(logStub.info).to.have.been.calledWith(`[PRODUCT-METATAGS] Processing page ${url} - has product tags: true`);
       });
 
-      it('should skip pages without product tags', () => {
+      it('should process pages even without product tags (SKU filtering disabled)', () => {
         const url = 'https://example.com/regular-page';
         const pageTags = {
           [TITLE]: 'Regular Page Title',
           [DESCRIPTION]: 'Regular page description.',
           [H1]: ['Regular Heading'],
-          // No SKU - not a product page
+          // No SKU - but still processed with SKU filtering disabled
         };
 
         productSeoChecks.performChecks(url, pageTags);
 
         const detectedTags = productSeoChecks.getDetectedTags();
-        expect(detectedTags).to.deep.equal({});
-        expect(logStub.info).to.have.been.calledWith(`[PRODUCT-METATAGS] Skipping page ${url} - no product tags found`);
+        // Page is now processed and tags are stored even without SKU
+        expect(detectedTags).to.have.property(url);
+        expect(logStub.info).to.have.been.calledWith(sinon.match(/Processing page.*has product tags: false/));
       });
 
       it('should process null url as a valid path', () => {
@@ -2511,6 +2512,19 @@ describe('Product MetaTags', () => {
       expect(logStub.debug).to.have.been.calledWith(sinon.match(/Failed to parse JSON-LD block for image:/));
     });
 
+    it('should log warn message when no head tag is found on first page (lines 209-210)', () => {
+      // Call with HTML that has NO head tag on FIRST page
+      // Need to reset the hasLoggedSample flag first
+      delete extractProductTagsFromHTML.hasLoggedSample;
+      
+      const htmlWithoutHead = '<html><body>No head tag here, this is the body content.</body></html>';
+      const result = extractProductTagsFromHTML(htmlWithoutHead, logStub);
+      
+      expect(result).to.deep.equal({});
+      // Verify that the warn log was called for missing head tag on first page
+      expect(logStub.warn).to.have.been.calledWith(sinon.match(/SAMPLE PAGE: No <head> tag found/));
+    });
+
     it('should log debug message when no head tag is found on non-first page (lines 214-215)', () => {
       // First, call with HTML that has a head tag to set the hasLoggedSample flag
       const htmlWithHead = '<html><head><meta name="sku" content="TEST-123"></head></html>';
@@ -2974,8 +2988,9 @@ describe('Product MetaTags', () => {
 
       await mockedFunction(mockSite, pagesSet, mockContext);
 
-      expect(logStub.debug).to.have.been.calledWith(sinon.match(/Skipping non-product page: \/.*\(no SKU found\)/));
-      expect(logStub.info.getCalls().some((call) => call.args[0].includes('Product pages processed: 0 out of 1 total pages'))).to.be.true;
+      // With SKU filtering disabled, all pages are processed
+      expect(logStub.info).to.have.been.calledWith(sinon.match(/Processing page.*hasSku=false/));
+      expect(logStub.info.getCalls().some((call) => call.args[0].includes('Product pages processed: 1 out of 1 total pages'))).to.be.true;
     });
 
     it('should handle pages with product tags and store them', async () => {
@@ -3003,7 +3018,7 @@ describe('Product MetaTags', () => {
 
       await mockedFunction(mockSite, pagesSet, mockContext);
 
-      expect(logStub.info.getCalls().some((call) => call.args[0].includes('Processing product page:'))).to.be.true;
+      expect(logStub.info.getCalls().some((call) => call.args[0].includes('Processing page:') && call.args[0].includes('hasSku=true'))).to.be.true;
       expect(logStub.debug.getCalls().some((call) => call.args[0].includes('Extracted product tags for'))).to.be.true;
       expect(logStub.info.getCalls().some((call) => call.args[0].includes('Product pages processed: 1 out of 1 total pages'))).to.be.true;
     });
@@ -4659,53 +4674,6 @@ describe('Product MetaTags', () => {
       expect(logStub.error).to.have.been.calledWith(
         sinon.match('[PRODUCT-METATAGS] Scrape result is empty'),
       );
-    });
-
-    it('should log warning when no product pages are detected with and without titles (line 634)', async () => {
-      // Mock pages without SKUs to trigger the "no product pages detected" warning
-      const getObjectFromKeyStub = sinon.stub();
-      // First page with title
-      getObjectFromKeyStub.onCall(0).resolves({
-        finalUrl: 'https://example.com/page1',
-        scrapeResult: {
-          tags: { title: 'Page with title' },
-          rawBody: '<html><body>' + 'x'.repeat(400) + '</body></html>',
-        },
-      });
-      // Second page without title (to test the || 'none' fallback)
-      getObjectFromKeyStub.onCall(1).resolves({
-        finalUrl: 'https://example.com/page2',
-        scrapeResult: {
-          tags: {}, // No title
-          rawBody: '<html><body>' + 'x'.repeat(400) + '</body></html>',
-        },
-      });
-
-      const { productMetatagsAutoDetect: mockedAutoDetect } = await esmock(
-        '../../src/product-metatags/handler.js',
-        {
-          '../../src/utils/s3-utils.js': {
-            getObjectFromKey: getObjectFromKeyStub,
-          },
-        },
-      );
-
-      const pagesMap = new Map([
-        ['https://example.com/page1', 'scrapes/site123/page1/scrape.json'],
-        ['https://example.com/page2', 'scrapes/site123/page2/scrape.json'],
-      ]);
-
-      await mockedAutoDetect(
-        mockSite,
-        pagesMap,
-        mockContext,
-      );
-
-      // Should log the warning about no product pages detected
-      expect(logStub.warn).to.have.been.calledWith('[PRODUCT-METATAGS] No product pages detected! Sample of pages checked:');
-      // Should log pages - one with title, one with 'none'
-      expect(logStub.warn).to.have.been.calledWith(sinon.match(/title=Page with title/));
-      expect(logStub.warn).to.have.been.calledWith(sinon.match(/title=none/));
     });
 
   describe('buildSuggestionKey', () => {

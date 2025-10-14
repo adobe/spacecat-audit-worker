@@ -610,33 +610,36 @@ export async function productMetatagsAutoDetect(site, pagesMap, context) {
 
     log.debug(`[PRODUCT-METATAGS] Checking page ${pageUrl}: hasProductTags=${hasProductTags}, sku=${pageTags.sku || 'none'}`);
 
-    if (hasProductTags) {
-      log.info(`[PRODUCT-METATAGS] Processing product page: ${pageUrl}`);
-      seoChecks.performChecks(pageUrl, pageTags);
-      productPagesProcessed += 1;
+    // TEMPORARILY DISABLED: SKU filtering - process all pages for now
+    // if (hasProductTags) {
+    log.info(`[PRODUCT-METATAGS] Processing page: ${pageUrl} (hasSku=${hasProductTags})`);
+    seoChecks.performChecks(pageUrl, pageTags);
+    productPagesProcessed += 1;
 
-      // Store product tags in detected tags for forwarding to suggestions
-      const productTags = ProductSeoChecks.extractProductTags(pageTags);
-      if (Object.keys(productTags).length > 0) {
-        seoChecks.detectedTags[pageUrl] ??= {};
-        seoChecks.detectedTags[pageUrl].productTags = productTags;
-        log.debug(`[PRODUCT-METATAGS] Extracted product tags for ${pageUrl}:`, Object.keys(productTags));
-      }
-    } else {
-      log.debug(`[PRODUCT-METATAGS] Skipping non-product page: ${pageUrl} (no SKU found)`);
+    // Store product tags in detected tags for forwarding to suggestions
+    const productTags = ProductSeoChecks.extractProductTags(pageTags);
+    if (Object.keys(productTags).length > 0) {
+      seoChecks.detectedTags[pageUrl] ??= {};
+      seoChecks.detectedTags[pageUrl].productTags = productTags;
+      log.debug(`[PRODUCT-METATAGS] Extracted product tags for ${pageUrl}:`, Object.keys(productTags));
     }
+    // } else {
+    //   log.debug(`[PRODUCT-METATAGS] Skipping non-product page: ${pageUrl} (no SKU found)`);
+    // }
   }
 
   log.info(`[PRODUCT-METATAGS] Product pages processed: ${productPagesProcessed} out of ${totalPagesSet.size} total pages`);
 
+  // TEMPORARILY DISABLED: This warning is unreachable when SKU filtering is disabled
   // Log sample of product vs non-product pages for debugging
-  if (productPagesProcessed === 0 && extractedTagsCount > 0) {
-    const samplePages = Object.entries(extractedTags).slice(0, 3);
-    log.warn('[PRODUCT-METATAGS] No product pages detected! Sample of pages checked:');
-    samplePages.forEach(([url, tags]) => {
-      log.warn(`  - ${url}: hasSku=${!!tags.sku}, title=${tags.title?.substring(0, 50) || 'none'}`);
-    });
-  }
+  // if (productPagesProcessed === 0 && extractedTagsCount > 0) {
+  //   const samplePages = Object.entries(extractedTags).slice(0, 3);
+  //   log.warn('[PRODUCT-METATAGS] No product pages detected! Sample of pages checked:');
+  //   samplePages.forEach(([url, tags]) => {
+  //     log.warn(`  - ${url}:
+  // hasSku=${!!tags.sku}, title=${tags.title?.substring(0, 50) || 'none'}`);
+  //   });
+  // }
 
   seoChecks.finalChecks();
   const detectedTags = seoChecks.getDetectedTags();
