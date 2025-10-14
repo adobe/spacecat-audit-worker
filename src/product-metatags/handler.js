@@ -188,155 +188,42 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   }
 }
 
-// Extract product-specific meta tags from raw HTML
-export function extractProductTagsFromHTML(rawBody, log) {
+// Extract product-specific meta tags from JSON-LD structured data
+export function extractProductTagsFromStructuredData(structuredData, log) {
   const productTags = {};
 
-  if (!rawBody || typeof rawBody !== 'string') {
+  if (!structuredData?.jsonld) {
     return productTags;
   }
 
   try {
-    // Extract SKU meta tag (standard format)
-    let skuMatch = rawBody.match(/<meta\s+name=["']sku["']\s+content=["']([^"']+)["']/i);
-    if (skuMatch) {
-      [, productTags.sku] = skuMatch;
-    }
+    const { Product } = structuredData.jsonld;
 
-    // Try alternative SKU meta tag formats if not found
-    if (!productTags.sku) {
-      // Try product:sku property
-      skuMatch = rawBody.match(/<meta\s+property=["']product:sku["']\s+content=["']([^"']+)["']/i);
-      if (skuMatch) {
-        [, productTags.sku] = skuMatch;
+    // Extract from the first Product in the array
+    if (Array.isArray(Product) && Product.length > 0) {
+      const product = Product[0];
+
+      // Extract SKU
+      if (product.sku) {
+        productTags.sku = product.sku;
       }
-    }
 
-    // Try to extract SKU from JSON-LD structured data
-    if (!productTags.sku) {
-      const jsonLdMatch = rawBody.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
-      if (jsonLdMatch) {
-        for (const jsonLdScript of jsonLdMatch) {
-          try {
-            const jsonContent = jsonLdScript.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
-            const data = JSON.parse(jsonContent);
-
-            // Handle both single objects and arrays
-            const items = Array.isArray(data) ? data : [data];
-
-            for (const item of items) {
-              // Check for Product schema
-              if (item['@type'] === 'Product' || (Array.isArray(item['@type']) && item['@type'].includes('Product'))) {
-                if (item.sku) {
-                  productTags.sku = item.sku;
-                  break;
-                }
-                if (item.productID) {
-                  productTags.sku = item.productID;
-                  break;
-                }
-                if (item.mpn) {
-                  productTags.sku = item.mpn;
-                  break;
-                }
-              }
-            }
-
-            if (productTags.sku) break;
-          } catch (jsonError) {
-            // Continue to next JSON-LD block if parsing fails
-            log.debug(`[PRODUCT-METATAGS] Failed to parse JSON-LD block: ${jsonError.message}`);
-          }
+      // Extract image (handle different formats: string, object, or array)
+      if (product.image) {
+        if (typeof product.image === 'string') {
+          productTags.thumbnail = product.image;
+        } else if (typeof product.image === 'object' && product.image.url) {
+          productTags.thumbnail = product.image.url;
+        } else if (Array.isArray(product.image) && product.image.length > 0) {
+          const firstImage = product.image[0];
+          productTags.thumbnail = typeof firstImage === 'string' ? firstImage : firstImage.url;
         }
       }
+
+      log.debug('[PRODUCT-METATAGS] Extracted from structured data:', Object.keys(productTags));
     }
-
-    // Try to extract SKU from common data attributes
-    if (!productTags.sku) {
-      const dataSkuMatch = rawBody.match(/data-(?:product-)?(?:sku|id|code)=["']([^"']+)["']/i);
-      if (dataSkuMatch) {
-        [, productTags.sku] = dataSkuMatch;
-      }
-    }
-
-    // Extract thumbnail image with priority order (only check next if previous fails)
-    // Priority: 1. generic image, 2. product:image, 3. og:image, 4. twitter:image, 5. JSON-LD
-
-    // 1. Extract generic image meta tag (highest priority)
-    const imageMatch = rawBody.match(/<meta\s+name=["']image["']\s+content=["']([^"']+)["']/i);
-    if (imageMatch) {
-      [, productTags.thumbnail] = imageMatch;
-    }
-
-    // 2. Extract product:image meta tag (if no generic image found)
-    if (!productTags.thumbnail) {
-      const productImageMatch = rawBody.match(/<meta\s+(?:name|property)=["']product:image["']\s+content=["']([^"']+)["']/i);
-      if (productImageMatch) {
-        [, productTags.thumbnail] = productImageMatch;
-      }
-    }
-
-    // 3. Extract og:image meta tag (if no product:image found)
-    if (!productTags.thumbnail) {
-      const ogImageMatch = rawBody.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
-      if (ogImageMatch) {
-        [, productTags.thumbnail] = ogImageMatch;
-      }
-    }
-
-    // 4. Extract twitter:image meta tag (if no og:image found)
-    if (!productTags.thumbnail) {
-      const twitterImageMatch = rawBody.match(/<meta\s+name=["']twitter:image["']\s+content=["']([^"']+)["']/i);
-      if (twitterImageMatch) {
-        [, productTags.thumbnail] = twitterImageMatch;
-      }
-    }
-
-    // 5. Try to extract image from JSON-LD structured data as final fallback
-    if (!productTags.thumbnail) {
-      const jsonLdMatch = rawBody.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
-      if (jsonLdMatch) {
-        for (const jsonLdScript of jsonLdMatch) {
-          try {
-            const jsonContent = jsonLdScript.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
-            const data = JSON.parse(jsonContent);
-
-            // Handle both single objects and arrays
-            const items = Array.isArray(data) ? data : [data];
-
-            for (const item of items) {
-              // Check for Product schema
-              if (item['@type'] === 'Product' || (Array.isArray(item['@type']) && item['@type'].includes('Product'))) {
-                // Try to get image from various possible fields
-                if (item.image) {
-                  // image can be a string, object with url property, or array
-                  if (typeof item.image === 'string') {
-                    productTags.thumbnail = item.image;
-                    break;
-                  } else if (typeof item.image === 'object' && item.image.url) {
-                    productTags.thumbnail = item.image.url;
-                    break;
-                  } else if (Array.isArray(item.image) && item.image.length > 0) {
-                    const firstImage = item.image[0];
-                    productTags.thumbnail = typeof firstImage === 'string' ? firstImage : firstImage.url;
-                    break;
-                  }
-                }
-              }
-            }
-
-            if (productTags.thumbnail) break;
-          } catch (jsonError) {
-            // Continue to next JSON-LD block if parsing fails
-            log.debug(`[PRODUCT-METATAGS] Failed to parse JSON-LD block for image: ${jsonError.message}`);
-          }
-        }
-      }
-    }
-
-    log.debug('[PRODUCT-METATAGS] Extracted product tags from HTML:', Object.keys(productTags));
   } catch (error) {
-    log.warn(`[PRODUCT-METATAGS] Error extracting product tags from HTML: ${error.message}`);
+    log.warn(`[PRODUCT-METATAGS] Error extracting from structured data: ${error.message}`);
   }
 
   return productTags;
@@ -380,9 +267,16 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
   // Debug: Log available tags to understand what scraper extracted
   log.debug(`[PRODUCT-METATAGS] Available tags in ${key}:`, Object.keys(object.scrapeResult.tags || {}));
 
-  // Extract product-specific meta tags
-  // from raw HTML since scraper doesn't support custom extraction
-  const productTags = extractProductTagsFromHTML(object.scrapeResult.rawBody, log);
+  // Extract product-specific meta tags from structured data
+  const productTags = extractProductTagsFromStructuredData(object.scrapeResult.structuredData, log);
+
+  // Filter out pages without SKU - only process product pages
+  if (!productTags.sku) {
+    log.debug(`[PRODUCT-METATAGS] Skipping page ${pageUrl} - no SKU found`);
+    return null;
+  }
+
+  log.debug(`[PRODUCT-METATAGS] Product page detected: ${pageUrl} (SKU: ${productTags.sku})`);
 
   return {
     [pageUrl]: {
@@ -726,6 +620,7 @@ export async function submitForScraping(context) {
   log.info(`[PRODUCT-METATAGS] Retrieved ${topPages.length} top pages from database`);
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
+  log.info(`[PRODUCT-METATAGS] reading site config: ${JSON.stringify(site?.getConfig())}`);
   // Combine includedURLs and topPages URLs to scrape
   const includedURLs = await site?.getConfig()?.getIncludedURLs(auditType) || [];
   log.info(`[PRODUCT-METATAGS] Retrieved ${includedURLs.length} included URLs from site config`);

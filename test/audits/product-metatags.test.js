@@ -42,12 +42,12 @@ import {
   submitForScraping,
   fetchAndProcessPageObject,
   opportunityAndSuggestions,
-  extractProductTagsFromHTML,
   extractEndpoint,
   preprocessRumData,
   getOrganicTrafficForEndpoint,
   productMetatagsAutoDetect,
   buildSuggestionKey,
+  extractProductTagsFromStructuredData,
 } from '../../src/product-metatags/handler.js';
 // Unused import - keeping for potential future use
 // import productMetatagsAutoSuggest from
@@ -643,19 +643,16 @@ describe('Product MetaTags', () => {
               description: 'Product Description',
               h1: ['Product H1'],
             },
-            rawBody: `
-              <html>
-                <head>
-                  <meta name="sku" content="PROD-123">
-                  <meta property="og:image" content="https://example.com/product.jpg">
-                  <meta name="twitter:image" content="https://example.com/product-twitter.jpg">
-                </head>
-                <body>
-                  <h1>Product H1</h1>
-                  <p>Product content with sufficient length to pass the minimum threshold check for processing</p>
-                </body>
-              </html>
-            `,
+            structuredData: {
+              jsonld: {
+                Product: [
+                  {
+                    sku: 'PROD-123',
+                    image: 'https://example.com/product.jpg',
+                  },
+                ],
+              },
+            },
           },
         };
 
@@ -695,17 +692,15 @@ describe('Product MetaTags', () => {
               description: 'Home Product Description',
               h1: ['Home Product H1'],
             },
-            rawBody: `
-              <html>
-                <head>
-                  <meta name="sku" content="HOME-PROD-456">
-                </head>
-                <body>
-                  <h1>Home Product H1</h1>
-                  <p>Home product content with sufficient length to pass the minimum threshold check for processing</p>
-                </body>
-              </html>
-            `,
+            structuredData: {
+              jsonld: {
+                Product: [
+                  {
+                    sku: 'HOME-PROD-456',
+                  },
+                ],
+              },
+            },
           },
         };
 
@@ -801,17 +796,16 @@ describe('Product MetaTags', () => {
               description: 'This is a valid product page with sufficient content length to pass the minimum threshold check',
               h1: ['Valid Product Heading'],
             },
-            rawBody: `
-              <html>
-                <head>
-                  <meta name="sku" content="VALID-PROD-789">
-                </head>
-                <body>
-                  <h1>Valid Product Heading</h1>
-                  <p>${'A'.repeat(300)}</p>
-                </body>
-              </html>
-            `, // More than 300 characters
+            rawBody: `${'A'.repeat(300)}`, // More than 300 characters
+            structuredData: {
+              jsonld: {
+                Product: [
+                  {
+                    sku: 'VALID-PROD-789',
+                  },
+                ],
+              },
+            },
           },
         };
 
@@ -852,21 +846,16 @@ describe('Product MetaTags', () => {
               description: 'Product with multiple image tags',
               h1: ['Multi Image Product'],
             },
-            rawBody: `
-              <html>
-                <head>
-                  <meta name="sku" content="MULTI-IMG-123">
-                  <meta property="og:image" content="https://example.com/og-image.jpg">
-                  <meta name="twitter:image" content="https://example.com/twitter-image.jpg">
-                  <meta name="product:image" content="https://example.com/product-image.jpg">
-                  <meta name="image" content="https://example.com/generic-image.jpg">
-                </head>
-                <body>
-                  <h1>Multi Image Product</h1>
-                  <p>Product with multiple image tags and sufficient content length to pass the minimum threshold check for processing</p>
-                </body>
-              </html>
-            `,
+            structuredData: {
+              jsonld: {
+                Product: [
+                  {
+                    sku: 'MULTI-IMG-123',
+                    image: 'https://example.com/generic-image.jpg',
+                  },
+                ],
+              },
+            },
           },
         };
 
@@ -905,7 +894,16 @@ describe('Product MetaTags', () => {
               title: 'Product Title',
               description: 'Product Description',
             },
-            rawBody: `<html><head><meta name="sku" content="NO-TAGS-123"></head><body>${'x'.repeat(300)}</body></html>`,
+            rawBody: `${'x'.repeat(300)}`,
+            structuredData: {
+              jsonld: {
+                Product: [
+                  {
+                    sku: 'NO-TAGS-123',
+                  },
+                ],
+              },
+            },
           },
         };
 
@@ -973,7 +971,16 @@ describe('Product MetaTags', () => {
           scrapeResult: {
             // tags property is empty object - this will trigger line 181 debug log with empty array
             tags: {},
-            rawBody: `<html><head><meta name="sku" content="DEBUG-123"></head><body>${'x'.repeat(300)}</body></html>`,
+            rawBody: `${'x'.repeat(300)}`,
+            structuredData: {
+              jsonld: {
+                Product: [
+                  {
+                    sku: 'DEBUG-123',
+                  },
+                ],
+              },
+            },
           },
         };
 
@@ -1003,65 +1010,6 @@ describe('Product MetaTags', () => {
         );
       });
 
-      it('should handle error during extractProductTagsFromHTML and log warning (lines 155-156)', async () => {
-        // Create a mock scrape result with a rawBody that will cause regex operations to fail
-        const mockScrapeResult = {
-          finalUrl: 'http://example.com/product-error',
-          scrapeResult: {
-            tags: {
-              title: 'Product Title',
-              description: 'Product Description',
-            },
-            // Create a rawBody that's long enough but will cause regex to throw
-            rawBody: 'x'.repeat(400), // Long enough to pass length check
-          },
-        };
-
-        // eslint-disable-next-line no-shadow
-        const s3ClientStub = {
-          send: sinon.stub().resolves({
-            Body: {
-              transformToString: () => JSON.stringify(mockScrapeResult),
-            },
-            ContentType: 'application/json',
-          }),
-        };
-
-        // Mock String.prototype.match to throw an error during regex processing
-        const originalMatch = String.prototype.match;
-        // eslint-disable-next-line no-extend-native, func-names
-        String.prototype.match = function (regex) {
-          if (this.includes('x'.repeat(400))) {
-            throw new Error('HTML parsing error');
-          }
-          return originalMatch.call(this, regex);
-        };
-
-        try {
-          // eslint-disable-next-line no-shadow
-          const { fetchAndProcessPageObject } = await import('../../src/product-metatags/handler.js');
-          const result = await fetchAndProcessPageObject(
-            s3ClientStub,
-            'test-bucket',
-            'http://example.com/product-error',
-            'scrapes/site-id/product-error/scrape.json',
-            logStub,
-          );
-
-          // Should return the page object even when extractProductTagsFromHTML throws an error
-          expect(result).to.not.be.null;
-          expect(result).to.have.property('/product-error');
-
-          // Verify that the warning was logged (lines 155-156)
-          expect(logStub.warn).to.have.been.calledWith(
-            '[PRODUCT-METATAGS] Error extracting product tags from HTML: HTML parsing error',
-          );
-        } finally {
-          // Restore the original method
-          // eslint-disable-next-line no-extend-native
-          String.prototype.match = originalMatch;
-        }
-      });
       it('should trigger || {} fallback at line 181 when tags getter returns undefined on second access', async () => {
         // Craft an object whose scrapeResult.tags is a getter that returns:
         // 1st access (guard): an object -> pass the guard
@@ -1073,7 +1021,18 @@ describe('Product MetaTags', () => {
           h1: ['Fallback H1'],
         };
         let accessCount = 0;
-        const scrapeResult = { rawBody: 'x'.repeat(400) };
+        const scrapeResult = {
+          rawBody: 'x'.repeat(400),
+          structuredData: {
+            jsonld: {
+              Product: [
+                {
+                  sku: 'FALLBACK-SKU',
+                },
+              ],
+            },
+          },
+        };
         Object.defineProperty(scrapeResult, 'tags', {
           configurable: true,
           enumerable: true,
@@ -1134,7 +1093,16 @@ describe('Product MetaTags', () => {
             tags: {
               title: 'Test Product',
             },
-            rawBody: `<html><head><title>Test Product</title>${'x'.repeat(300)}</head><body></body></html>`,
+            rawBody: `${'x'.repeat(300)}`,
+            structuredData: {
+              jsonld: {
+                Product: [
+                  {
+                    sku: 'TEST-SKU',
+                  },
+                ],
+              },
+            },
           },
         };
 
@@ -1170,7 +1138,16 @@ describe('Product MetaTags', () => {
             tags: {
               title: 'Test Product',
             },
-            rawBody: `<html><head><title>Test Product</title>${'x'.repeat(300)}</head><body></body></html>`,
+            rawBody: `${'x'.repeat(300)}`,
+            structuredData: {
+              jsonld: {
+                Product: [
+                  {
+                    sku: 'TEST-SKU-2',
+                  },
+                ],
+              },
+            },
           },
         };
 
@@ -1205,7 +1182,16 @@ describe('Product MetaTags', () => {
             tags: {
               title: 'Test Product',
             },
-            rawBody: `<html><head><title>Test Product</title>${'x'.repeat(300)}</head><body></body></html>`,
+            rawBody: `${'x'.repeat(300)}`,
+            structuredData: {
+              jsonld: {
+                Product: [
+                  {
+                    sku: 'TEST-SKU-3',
+                  },
+                ],
+              },
+            },
           },
         };
 
@@ -2048,7 +2034,7 @@ describe('Product MetaTags', () => {
     });
   });
 
-  describe('extractProductTagsFromHTML', () => {
+  describe('extractProductTagsFromStructuredData', () => {
     let logStub;
 
     beforeEach(() => {
@@ -2060,363 +2046,150 @@ describe('Product MetaTags', () => {
       };
     });
 
-    it('should extract product tags from HTML', () => {
-      const html = `
-        <html>
-          <head>
-            <meta name="sku" content="PROD-123">
-            <meta property="og:image" content="https://example.com/image.jpg">
-            <meta name="twitter:image" content="https://example.com/twitter.jpg">
-            <meta property="product:image" content="https://example.com/product.jpg">
-          </head>
-        </html>
-      `;
+    it('should extract SKU and image from structured data', () => {
+      const structuredData = {
+        jsonld: {
+          Product: [
+            {
+              sku: 'PROD-123',
+              image: 'https://example.com/image.jpg',
+            },
+          ],
+        },
+      };
 
-      const result = extractProductTagsFromHTML(html, logStub);
+      const result = extractProductTagsFromStructuredData(structuredData, logStub);
 
       expect(result).to.deep.equal({
         sku: 'PROD-123',
-        thumbnail: 'https://example.com/product.jpg',
+        thumbnail: 'https://example.com/image.jpg',
       });
     });
 
-    it('should handle empty or invalid HTML', () => {
-      expect(extractProductTagsFromHTML('', logStub)).to.deep.equal({});
-      expect(extractProductTagsFromHTML(null, logStub)).to.deep.equal({});
-      expect(extractProductTagsFromHTML(undefined, logStub)).to.deep.equal({});
-      expect(extractProductTagsFromHTML(123, logStub)).to.deep.equal({});
+    it('should return empty object when structured data is missing', () => {
+      expect(extractProductTagsFromStructuredData({}, logStub)).to.deep.equal({});
+      expect(extractProductTagsFromStructuredData(null, logStub)).to.deep.equal({});
+      expect(extractProductTagsFromStructuredData(undefined, logStub)).to.deep.equal({});
     });
 
-    it('should handle HTML without product tags', () => {
-      const html = '<html><head><title>Test</title></head></html>';
-      const result = extractProductTagsFromHTML(html, logStub);
+    it('should return empty object when jsonld is missing', () => {
+      const structuredData = { other: 'data' };
+      const result = extractProductTagsFromStructuredData(structuredData, logStub);
       expect(result).to.deep.equal({});
     });
 
-    it('should handle malformed HTML gracefully', () => {
-      const html = '<html><head><meta name="sku" content="PROD-123"><meta invalid></head>';
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.deep.equal({ sku: 'PROD-123' });
-    });
-
-    it('should handle errors during HTML parsing and log warning', () => {
-      const errorLogStub = {
-        info: sinon.stub(),
-        warn: sinon.stub(),
-        error: sinon.stub(),
-        debug: sinon.stub(),
+    it('should handle image as object with url property', () => {
+      const structuredData = {
+        jsonld: {
+          Product: [
+            {
+              sku: 'PROD-456',
+              image: {
+                url: 'https://example.com/object-image.jpg',
+              },
+            },
+          ],
+        },
       };
 
-      // Mock String.prototype.match to throw an error during regex processing
-      const originalMatch = String.prototype.match;
-      // eslint-disable-next-line no-extend-native, func-names
-      String.prototype.match = function () {
-        throw new Error('Regex processing failed');
+      const result = extractProductTagsFromStructuredData(structuredData, logStub);
+      expect(result.thumbnail).to.equal('https://example.com/object-image.jpg');
+    });
+
+    it('should handle image as array of strings', () => {
+      const structuredData = {
+        jsonld: {
+          Product: [
+            {
+              sku: 'PROD-789',
+              image: [
+                'https://example.com/image1.jpg',
+                'https://example.com/image2.jpg',
+              ],
+            },
+          ],
+        },
       };
 
-      const html = '<html><head><meta name="sku" content="PROD-123"></head></html>';
-
-      try {
-        const result = extractProductTagsFromHTML(html, errorLogStub);
-        expect(result).to.deep.equal({});
-        expect(errorLogStub.warn).to.have.been.calledWith('[PRODUCT-METATAGS] Error extracting product tags from HTML: Regex processing failed');
-      } finally {
-        // eslint-disable-next-line no-extend-native
-        // Restore the original method
-        // eslint-disable-next-line no-extend-native
-        String.prototype.match = originalMatch;
-      }
+      const result = extractProductTagsFromStructuredData(structuredData, logStub);
+      expect(result.thumbnail).to.equal('https://example.com/image1.jpg');
     });
 
-    it('should extract SKU from product:sku meta tag', () => {
-      const html = `
-        <html>
-          <head>
-            <meta property="product:sku" content="BULK-SKU-456">
-          </head>
-        </html>
-      `;
-
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('sku', 'BULK-SKU-456');
-    });
-
-    it('should extract SKU from JSON-LD structured data', () => {
-      const html = `
-        <html>
-          <head>
-            <script type="application/ld+json">
+    it('should handle image as array of objects', () => {
+      const structuredData = {
+        jsonld: {
+          Product: [
             {
-              "@context": "https://schema.org",
-              "@type": "Product",
-              "name": "Test Product",
-              "sku": "JSON-LD-SKU-789"
-            }
-            </script>
-          </head>
-        </html>
-      `;
+              sku: 'PROD-ABC',
+              image: [
+                { url: 'https://example.com/array-object-image.jpg' },
+              ],
+            },
+          ],
+        },
+      };
 
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('sku', 'JSON-LD-SKU-789');
+      const result = extractProductTagsFromStructuredData(structuredData, logStub);
+      expect(result.thumbnail).to.equal('https://example.com/array-object-image.jpg');
     });
 
-    it('should extract SKU from JSON-LD with productID', () => {
-      const html = `
-        <html>
-          <head>
-            <script type="application/ld+json">
+    it('should handle missing SKU', () => {
+      const structuredData = {
+        jsonld: {
+          Product: [
             {
-              "@context": "https://schema.org",
-              "@type": "Product",
-              "name": "Test Product",
-              "productID": "PRODUCT-ID-123"
-            }
-            </script>
-          </head>
-        </html>
-      `;
+              image: 'https://example.com/image.jpg',
+            },
+          ],
+        },
+      };
 
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('sku', 'PRODUCT-ID-123');
+      const result = extractProductTagsFromStructuredData(structuredData, logStub);
+      expect(result).to.deep.equal({
+        thumbnail: 'https://example.com/image.jpg',
+      });
     });
 
-    it('should extract SKU from JSON-LD with mpn', () => {
-      const html = `
-        <html>
-          <head>
-            <script type="application/ld+json">
+    it('should handle missing image', () => {
+      const structuredData = {
+        jsonld: {
+          Product: [
             {
-              "@context": "https://schema.org",
-              "@type": "Product",
-              "name": "Test Product",
-              "mpn": "MPN-456"
-            }
-            </script>
-          </head>
-        </html>
-      `;
+              sku: 'PROD-123',
+            },
+          ],
+        },
+      };
 
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('sku', 'MPN-456');
+      const result = extractProductTagsFromStructuredData(structuredData, logStub);
+      expect(result).to.deep.equal({
+        sku: 'PROD-123',
+      });
     });
 
-    it('should extract SKU from JSON-LD array', () => {
-      const html = `
-        <html>
-          <head>
-            <script type="application/ld+json">
-            [
-              {
-                "@context": "https://schema.org",
-                "@type": "Product",
-                "name": "Test Product",
-                "sku": "ARRAY-SKU-999"
-              }
-            ]
-            </script>
-          </head>
-        </html>
-      `;
+    it('should handle empty Product array', () => {
+      const structuredData = {
+        jsonld: {
+          Product: [],
+        },
+      };
 
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('sku', 'ARRAY-SKU-999');
-    });
-
-    it('should extract SKU from data attributes', () => {
-      const html = `
-        <html>
-          <head>
-            <div data-sku="DATA-SKU-111"></div>
-          </head>
-        </html>
-      `;
-
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('sku', 'DATA-SKU-111');
-    });
-
-    it('should extract image from JSON-LD when no meta tags present', () => {
-      const html = `
-        <html>
-          <head>
-            <script type="application/ld+json">
-            {
-              "@context": "https://schema.org",
-              "@type": "Product",
-              "name": "Test Product",
-              "image": "https://example.com/jsonld-image.jpg"
-            }
-            </script>
-          </head>
-        </html>
-      `;
-
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('thumbnail', 'https://example.com/jsonld-image.jpg');
-    });
-
-    it('should extract image from JSON-LD with object format', () => {
-      const html = `
-        <html>
-          <head>
-            <script type="application/ld+json">
-            {
-              "@context": "https://schema.org",
-              "@type": "Product",
-              "name": "Test Product",
-              "image": {
-                "url": "https://example.com/jsonld-object-image.jpg"
-              }
-            }
-            </script>
-          </head>
-        </html>
-      `;
-
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('thumbnail', 'https://example.com/jsonld-object-image.jpg');
-    });
-
-    it('should extract image from JSON-LD with array format', () => {
-      const html = `
-        <html>
-          <head>
-            <script type="application/ld+json">
-            {
-              "@context": "https://schema.org",
-              "@type": "Product",
-              "name": "Test Product",
-              "image": ["https://example.com/jsonld-array-image1.jpg", "https://example.com/jsonld-array-image2.jpg"]
-            }
-            </script>
-          </head>
-        </html>
-      `;
-
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('thumbnail', 'https://example.com/jsonld-array-image1.jpg');
-    });
-
-    it('should extract image from JSON-LD with array of objects', () => {
-      const html = `
-        <html>
-          <head>
-            <script type="application/ld+json">
-            {
-              "@context": "https://schema.org",
-              "@type": "Product",
-              "name": "Test Product",
-              "image": [
-                {"url": "https://example.com/jsonld-array-object-image.jpg"}
-              ]
-            }
-            </script>
-          </head>
-        </html>
-      `;
-
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('thumbnail', 'https://example.com/jsonld-array-object-image.jpg');
-    });
-
-    it('should not extract image from JSON-LD when og:image meta tag exists', () => {
-      const html = `
-        <html>
-          <head>
-            <meta property="og:image" content="https://example.com/meta-image.jpg">
-            <script type="application/ld+json">
-            {
-              "@context": "https://schema.org",
-              "@type": "Product",
-              "name": "Test Product",
-              "image": "https://example.com/jsonld-image.jpg"
-            }
-            </script>
-          </head>
-        </html>
-      `;
-
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('thumbnail', 'https://example.com/meta-image.jpg');
-    });
-
-    it('should handle JSON-LD with @type array including Product', () => {
-      const html = `
-        <html>
-          <head>
-            <script type="application/ld+json">
-            {
-              "@context": "https://schema.org",
-              "@type": ["Product", "Offer"],
-              "name": "Test Product",
-              "sku": "MULTI-TYPE-SKU-123"
-            }
-            </script>
-          </head>
-        </html>
-      `;
-
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('sku', 'MULTI-TYPE-SKU-123');
-    });
-
-    it('should handle malformed JSON-LD gracefully', () => {
-      const html = `
-        <html>
-          <head>
-            <meta name="sku" content="FALLBACK-SKU">
-            <script type="application/ld+json">
-            {
-              "invalid json",
-              "missing closing brace"
-            </script>
-          </head>
-        </html>
-      `;
-
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('sku', 'FALLBACK-SKU');
-      // Verify that the debug log was called for the JSON parse error (lines 177-179 and 251-253)
-      expect(logStub.debug).to.have.been.calledWith(sinon.match(/Failed to parse JSON-LD block/));
-    });
-
-    it('should handle malformed JSON-LD when extracting SKU and log debug (lines 177-179)', () => {
-      const html = `
-        <html>
-          <head>
-            <script type="application/ld+json">
-            {
-              "invalid": "json without closing
-            </script>
-            <meta name="sku" content="FALLBACK-SKU">
-          </head>
-        </html>
-      `;
-
-      const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('sku', 'FALLBACK-SKU');
-      // Verify that the debug log was called for the JSON parse error (lines 177-179 or 251-253)
-      expect(logStub.debug).to.have.been.calledWith(sinon.match(/Failed to parse JSON-LD block/));
-    });
-
-    it('should handle malformed JSON-LD when extracting image and log debug (lines 251-253)', () => {
-      const html = `
-        <html>
-          <head>
-            <script type="application/ld+json">
-            {
-              "@type": "Product",
-              "image": "malformed
-            </script>
-          </head>
-        </html>
-      `;
-
-      const result = extractProductTagsFromHTML(html, logStub);
+      const result = extractProductTagsFromStructuredData(structuredData, logStub);
       expect(result).to.deep.equal({});
-      // Verify that the debug log was called for the JSON parse error on image extraction (lines 251-253)
-      expect(logStub.debug).to.have.been.calledWith(sinon.match(/Failed to parse JSON-LD block for image:/));
+    });
+
+    it('should log warning on error', () => {
+      const structuredData = {
+        jsonld: {
+          get Product() {
+            throw new Error('Test error');
+          },
+        },
+      };
+
+      const result = extractProductTagsFromStructuredData(structuredData, logStub);
+      expect(result).to.deep.equal({});
+      expect(logStub.warn).to.have.been.calledWith('[PRODUCT-METATAGS] Error extracting from structured data: Test error');
     });
   });
 
@@ -2765,7 +2538,15 @@ describe('Product MetaTags', () => {
             description: 'Product 1 description',
             h1: ['Product 1 Heading'],
           },
-          rawBody: '<meta name="sku" content="PROD-123">',
+          structuredData: {
+            jsonld: {
+              Product: [
+                {
+                  sku: 'PROD-123',
+                },
+              ],
+            },
+          },
         },
       };
 
@@ -2776,7 +2557,15 @@ describe('Product MetaTags', () => {
             description: 'Product 2 description',
             h1: ['Product 2 Heading'],
           },
-          rawBody: '<meta name="sku" content="PROD-456">',
+          structuredData: {
+            jsonld: {
+              Product: [
+                {
+                  sku: 'PROD-456',
+                },
+              ],
+            },
+          },
         },
       };
 
@@ -2819,7 +2608,15 @@ describe('Product MetaTags', () => {
             title: 'Product 1',
             description: 'Product 1 description',
           },
-          rawBody: '<meta name="sku" content="PROD-123">',
+          structuredData: {
+            jsonld: {
+              Product: [
+                {
+                  sku: 'PROD-123',
+                },
+              ],
+            },
+          },
         },
       };
 
@@ -2865,8 +2662,8 @@ describe('Product MetaTags', () => {
 
       await mockedFunction(mockSite, pagesSet, mockContext);
 
-      expect(logStub.debug).to.have.been.calledWith(sinon.match(/Skipping non-product page: \/.*\(no SKU found\)/));
-      expect(logStub.info.getCalls().some((call) => call.args[0].includes('Product pages processed: 0 out of 1 total pages'))).to.be.true;
+      expect(logStub.debug).to.have.been.calledWith(sinon.match(/Skipping page .* - no SKU found/));
+      expect(logStub.info.getCalls().some((call) => call.args[0].includes('Product pages processed: 0 out of'))).to.be.true;
     });
 
     it('should handle pages with product tags and store them', async () => {
@@ -2878,7 +2675,17 @@ describe('Product MetaTags', () => {
             title: 'Product Page',
             description: 'Product description',
           },
-          rawBody: '<html><head><title>Product Page</title><meta name="sku" content="PROD-123"><meta property="og:image" content="https://example.com/image.jpg"><meta name="description" content="This is a product page with SKU and image meta tags. This content is long enough to pass the 300 character minimum length requirement for processing."></head><body><h1>Product Page</h1><p>Product content goes here</p></body></html>',
+          rawBody: `${'A'.repeat(300)}`,
+          structuredData: {
+            jsonld: {
+              Product: [
+                {
+                  sku: 'PROD-123',
+                  image: 'https://example.com/image.jpg',
+                },
+              ],
+            },
+          },
         },
       };
 
@@ -3292,14 +3099,24 @@ describe('Product MetaTags', () => {
       const mockProductPageData = {
         scrapeResult: {
           tags: { title: 'Product Page', description: 'Product description' },
-          rawBody: '<html><head><title>Product Page</title><meta name="sku" content="PROD-123"><meta property="og:image" content="https://example.com/image.jpg"><meta name="description" content="This is a product page with SKU and image meta tags. This content is long enough to pass the 300 character minimum length requirement for processing."></head><body><h1>Product Page</h1><p>Product content goes here</p></body></html>',
+          rawBody: `${'A'.repeat(300)}`,
+          structuredData: {
+            jsonld: {
+              Product: [
+                {
+                  sku: 'PROD-123',
+                  image: 'https://example.com/image.jpg',
+                },
+              ],
+            },
+          },
         },
       };
 
       const mockRegularPageData = {
         scrapeResult: {
           tags: { title: 'Regular Page', description: 'Regular page description' },
-          rawBody: '<html><head><title>Regular Page</title><meta name="description" content="This is a regular page without any product-specific meta tags like SKU. This content is long enough to pass the 300 character minimum length requirement for processing."></head><body><h1>Regular Page</h1><p>Content goes here</p></body></html>',
+          rawBody: `${'A'.repeat(300)}`,
         },
       };
 
@@ -3482,7 +3299,16 @@ describe('Product MetaTags', () => {
         finalUrl: 'http://example.com/product-debug',
         scrapeResult: {
           tags: {}, // Empty tags object - passes line 163 check, triggers debug log on line 181
-          rawBody: `<html><head><meta name="sku" content="DEBUG-123"></head><body>${'x'.repeat(300)}</body></html>`,
+          rawBody: `${'x'.repeat(300)}`,
+          structuredData: {
+            jsonld: {
+              Product: [
+                {
+                  sku: 'DEBUG-123',
+                },
+              ],
+            },
+          },
         },
       };
 
@@ -3913,30 +3739,6 @@ describe('Product MetaTags', () => {
         sinon.match.string,
         customEndpoint,
       );
-    });
-
-    // Test to cover lines 155-156: Error handling in extractProductTagsFromHTML
-    it('should handle error during extractProductTagsFromHTML and log warning (lines 155-156)', async () => {
-      const mockRawBody = `${'<html><head><title>Test</title></head><body>'.repeat(50)}</body></html>`;
-
-      // Monkey-patch String.prototype.match to throw to simulate HTML parse error
-      const originalMatch2 = String.prototype.match;
-      // eslint-disable-next-line no-extend-native, func-names, no-unused-vars
-      String.prototype.match = function (regex) {
-        throw new Error('HTML parsing failed');
-      };
-      try {
-        // eslint-disable-next-line no-shadow
-        const { extractProductTagsFromHTML } = await import('../../src/product-metatags/handler.js');
-        const result = extractProductTagsFromHTML(mockRawBody, logStub);
-        // Should return empty object on error
-        expect(result).to.deep.equal({});
-        // Verify warning was logged (lines 155-156)
-        expect(logStub.warn).to.have.been.calledWith(sinon.match(/\[PRODUCT-METATAGS\] Error extracting product tags from HTML/));
-      } finally {
-        // eslint-disable-next-line no-extend-native
-        String.prototype.match = originalMatch2;
-      }
     });
 
     // Test to cover line 229: Ternary operator branch in storeAllTags
