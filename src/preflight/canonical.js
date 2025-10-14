@@ -11,6 +11,7 @@
  */
 import { validateCanonicalFormat, validateCanonicalTag } from '../canonical/handler.js';
 import { saveIntermediateResults } from './utils.js';
+import { isAuditEnabledForSite } from '../common/index.js';
 
 export const PREFLIGHT_CANONICAL = 'canonical';
 
@@ -19,7 +20,6 @@ export default async function canonical(context, auditContext) {
     site, job, log,
   } = context;
   const {
-    checks,
     authHeader,
     previewBaseURL,
     previewUrls,
@@ -28,7 +28,9 @@ export default async function canonical(context, auditContext) {
     auditsResult,
     timeExecutionBreakdown,
   } = auditContext;
-  if (!checks || checks.includes(PREFLIGHT_CANONICAL)) {
+
+  const canonicalEnabled = await isAuditEnabledForSite(`${PREFLIGHT_CANONICAL}-preflight`, site, context);
+  if (canonicalEnabled) {
     const canonicalStartTime = Date.now();
     const canonicalStartTimestamp = new Date().toISOString();
     // Create canonical audit entries for all pages

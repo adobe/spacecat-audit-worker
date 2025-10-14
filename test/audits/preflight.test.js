@@ -724,7 +724,6 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
         },
       });
 
@@ -738,8 +737,7 @@ describe('Preflight Audit', () => {
         }],
       });
 
-      configuration.isHandlerEnabledForSite.onCall(0).returns(true);
-      configuration.isHandlerEnabledForSite.onCall(1).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
       genvarClient.generateSuggestions.resolves({
         '/page1': {
           h1: {
@@ -841,8 +839,12 @@ describe('Preflight Audit', () => {
         }],
       });
 
-      configuration.isHandlerEnabledForSite.onCall(0).returns(true);
-      configuration.isHandlerEnabledForSite.onCall(1).returns(false);
+      // Mock metatags-preflight audit as enabled
+      configuration.isHandlerEnabledForSite.withArgs('metatags-preflight', site).returns(true);
+      // Mock readability-preflight audit as disabled
+      configuration.isHandlerEnabledForSite.withArgs('readability-preflight', site).returns(false);
+      // All other audits should be enabled by default
+      configuration.isHandlerEnabledForSite.returns(true);
       genvarClient.generateSuggestions.resolves({
         '/': {
           h1: {
@@ -881,10 +883,12 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page'],
-          checks: ['metatags'],
         },
       });
-      configuration.isHandlerEnabledForSite.returns(true);
+
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(true);
+      configuration.isHandlerEnabledForSite.withArgs('metatags-preflight', site).returns(true);
+      configuration.isHandlerEnabledForSite.returns(false);
       await preflightAuditFunction(context);
       expect(genvarClient.generateSuggestions).to.have.been.called;
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
@@ -930,12 +934,11 @@ describe('Preflight Audit', () => {
           step: PREFLIGHT_STEP_IDENTIFY,
           // Input URL has trailing slash, will get normalized to remove it
           urls: ['https://main--example--page.aem.page/'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links'],
           enableAuthentication: false,
         },
       });
 
-      configuration.isHandlerEnabledForSite.returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
 
       await preflightAuditFunction(context);
 
@@ -1014,15 +1017,16 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
           enableAuthentication: false,
         },
       });
-      configuration.isHandlerEnabledForSite.returns(false);
+
+      configuration.isHandlerEnabledForSite.returns(true);
 
       await preflightAuditFunction(context);
 
-      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
+      // isHandlerEnabledForSite is now called through isAuditEnabledForSite
+      expect(configuration.isHandlerEnabledForSite).to.have.been.called;
       expect(genvarClient.generateSuggestions).not.to.have.been.called;
 
       // Verify that AsyncJob.findById was called for the final save
@@ -1090,11 +1094,10 @@ describe('Preflight Audit', () => {
           enableAuthentication: false,
         },
       });
-      configuration.isHandlerEnabledForSite.returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
 
       await preflightAuditFunction(context);
 
-      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
       expect(genvarClient.generateSuggestions).not.to.have.been.called;
 
       // Verify that AsyncJob.findById was called for the final save
@@ -1158,6 +1161,7 @@ describe('Preflight Audit', () => {
     });
 
     it('logs timing information for each sub-audit', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
       await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for the final save
@@ -1196,6 +1200,7 @@ describe('Preflight Audit', () => {
     });
 
     it('saves intermediate results after each audit step', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
       await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for each intermediate save and final save
@@ -1225,6 +1230,7 @@ describe('Preflight Audit', () => {
           }),
         });
       });
+      configuration.isHandlerEnabledForSite.returns(true);
 
       await preflightAuditFunction(context);
 
@@ -1239,7 +1245,6 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: [AUDIT_BODY_SIZE], // Only test body size check
         },
       });
 
@@ -1266,6 +1271,8 @@ describe('Preflight Audit', () => {
           });
         }
       });
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_BODY_SIZE}-preflight`, site).returns(true);
+      configuration.isHandlerEnabledForSite.returns(false);
 
       await preflightAuditFunction(context);
 
@@ -1293,7 +1300,6 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: [AUDIT_LOREM_IPSUM], // Only test lorem ipsum check
         },
       });
 
@@ -1321,6 +1327,8 @@ describe('Preflight Audit', () => {
         }
       });
 
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_LOREM_IPSUM}-preflight`, site).returns(true);
+
       await preflightAuditFunction(context);
 
       // Get the final result
@@ -1347,7 +1355,6 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: [AUDIT_H1_COUNT], // Only test h1 count check
         },
       });
 
@@ -1374,6 +1381,8 @@ describe('Preflight Audit', () => {
           });
         }
       });
+
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_H1_COUNT}-preflight`, site).returns(true);
 
       await preflightAuditFunction(context);
 
@@ -1435,6 +1444,12 @@ describe('Preflight Audit', () => {
         setError: sinon.stub(),
         save: sinon.stub().resolves(),
       }));
+
+      // Setup Configuration mock for isAuditEnabledForSite
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+      };
+      mockContext.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
 
       // Mock the preflight audit with readability handler returning processing: true
       const { preflightAudit: testPreflightAudit } = await esmock('../../src/preflight/handler.js', {
@@ -1500,6 +1515,12 @@ describe('Preflight Audit', () => {
         setError: sinon.stub(),
         save: sinon.stub().resolves(),
       }));
+
+      // Setup Configuration mock for isAuditEnabledForSite
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+      };
+      mockContext.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
 
       // Create a simple test that just executes with empty handlers
       // to see if we can hit the edge case
@@ -1653,6 +1674,7 @@ describe('Preflight Audit', () => {
     let s3Client;
     let sqs;
     let log;
+    let configuration;
 
     beforeEach(() => {
       s3Client = {
@@ -1666,6 +1688,10 @@ describe('Preflight Audit', () => {
         warn: sinon.stub(),
         error: sinon.stub(),
         debug: sinon.stub(),
+      };
+
+      configuration = {
+        isHandlerEnabledForSite: sinon.stub().returns(true),
       };
 
       context = {
@@ -1700,6 +1726,9 @@ describe('Preflight Audit', () => {
               setError: sinon.stub(),
               save: sinon.stub().resolves(),
             }),
+          },
+          Configuration: {
+            findLatest: sinon.stub().resolves(configuration),
           },
         },
       };
@@ -2772,6 +2801,7 @@ describe('Preflight Audit', () => {
 
     describe('accessibility handler polling', () => {
       let pollingContext;
+      let configuration;
       let pollingAuditContext;
       let pollingS3Client;
       let pollingLog;
@@ -2797,6 +2827,10 @@ describe('Preflight Audit', () => {
           debug: sinon.stub(),
         };
 
+        configuration = {
+          isHandlerEnabledForSite: sinon.stub(),
+        }
+
         pollingContext = {
           site: {
             getId: () => 'site-123',
@@ -2818,12 +2852,19 @@ describe('Preflight Audit', () => {
             sendMessage: sinon.stub().resolves(),
           },
           log: pollingLog,
+          dataAccess: {
+            Configuration: {
+              findLatest: sinon.stub().resolves(configuration),
+            },
+          },
         };
+
+        configuration.isHandlerEnabledForSite.withArgs('preflight', pollingContext.site).resolves(true);
+        configuration.isHandlerEnabledForSite.withArgs('accessibility-preflight', pollingContext.site).resolves(true);
 
         pollingAuditContext = {
           previewUrls: ['https://example.com/page1', 'https://example.com/page2'],
           step: 'identify',
-          checks: ['accessibility'],
           audits: new Map([
             ['https://example.com/page1', { audits: [{ name: 'accessibility', type: 'a11y', opportunities: [] }] }],
             ['https://example.com/page2', { audits: [{ name: 'accessibility', type: 'a11y', opportunities: [] }] }],
@@ -2842,6 +2883,7 @@ describe('Preflight Audit', () => {
 
       it('should skip accessibility when not in checks', async () => {
         pollingAuditContext.checks = ['other-check']; // Not including accessibility
+        configuration.isHandlerEnabledForSite.withArgs('accessibility-preflight', pollingContext.site).resolves(false);
 
         await accessibility(pollingContext, pollingAuditContext);
 
@@ -3020,6 +3062,7 @@ describe('Preflight Audit', () => {
     let log;
     let accessibility;
     let sandbox;
+    let configuration;
 
     beforeEach(async () => {
       sandbox = sinon.createSandbox();
@@ -3041,6 +3084,10 @@ describe('Preflight Audit', () => {
 
       s3Client = {
         send: sinon.stub(),
+      };
+
+      configuration = {
+        isHandlerEnabledForSite: sinon.stub().returns(true),
       };
 
       context = {
@@ -3067,6 +3114,9 @@ describe('Preflight Audit', () => {
         dataAccess: {
           AsyncJob: {
             update: sinon.stub().resolves(),
+          },
+          Configuration: {
+            findLatest: sinon.stub().resolves(configuration),
           },
         },
       };
@@ -3291,17 +3341,6 @@ describe('Preflight Audit', () => {
       expect(log.warn).to.have.been.calledWith(
         '[preflight-audit] No accessibility data found for https://example.com/page2 at key: accessibility-preflight/site-123/example_com_page2.json',
       );
-    });
-
-    it('should skip accessibility when checks is provided but does not include accessibility', async () => {
-      // Set checks to an array that doesn't include 'accessibility'
-      auditContext.checks = ['other-check', 'another-check'];
-
-      await accessibility(context, auditContext);
-
-      // Verify that no accessibility processing was done
-      expect(s3Client.send).to.not.have.been.called;
-      expect(log.info).to.not.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
     });
 
     it('should handle polling loop in accessibility function', async () => {

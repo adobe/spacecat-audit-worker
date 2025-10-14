@@ -23,6 +23,7 @@ use(sinonChai);
 
 describe('Preflight Readability Audit', () => {
   let context;
+  let configuration;
   let auditContext;
   let log;
   let audits;
@@ -35,6 +36,10 @@ describe('Preflight Readability Audit', () => {
       error: sinon.stub(),
       debug: sinon.stub(),
     };
+
+    configuration = {
+      isHandlerEnabledForSite: sinon.stub(),
+    }
 
     context = {
       site: {
@@ -52,6 +57,9 @@ describe('Preflight Readability Audit', () => {
             save: sinon.stub().resolves(),
           }),
         },
+        Configuration: {
+          findLatest: sinon.stub().resolves(configuration),
+        }
       },
       job: {
         getMetadata: () => ({
@@ -81,7 +89,6 @@ describe('Preflight Readability Audit', () => {
     audits.set('https://example.com/page1', auditsResult[0]);
 
     auditContext = {
-      checks: ['readability'],
       previewUrls: ['https://example.com/page1'],
       step: 'identify',
       audits,
@@ -89,6 +96,8 @@ describe('Preflight Readability Audit', () => {
       scrapedObjects: [],
       timeExecutionBreakdown: [],
     };
+
+    configuration.isHandlerEnabledForSite.resolves(true);
   });
 
   describe('PREFLIGHT_READABILITY constant', () => {
@@ -99,7 +108,7 @@ describe('Preflight Readability Audit', () => {
 
   describe('readability audit', () => {
     it('should skip when check is not included', async () => {
-      auditContext.checks = ['canonical']; // Different check
+      configuration.isHandlerEnabledForSite.resolves(false);
       await readability(context, auditContext);
 
       expect(auditsResult[0].audits).to.have.lengthOf(0);
@@ -1999,6 +2008,110 @@ describe('Preflight Readability Audit', () => {
 
       // This tests the scenario where opportunities arrays exist and are used directly
       // (left side of the || operator on line 326)
+    });
+
+    it('should handle Mystique error and update opportunities with error status', async () => {
+      // This test covers lines 392-424 in readability/handler.js
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
+        + `words and intricate grammatical constructions, making it extremely difficult for ${
+          'the average reader to comprehend without considerable effort and concentration.'.repeat(3)}`;
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      auditContext.step = 'suggest';
+
+      // Create opportunities that will trigger Mystique sending
+      auditsResult[0].audits = [{
+        name: 'readability',
+        type: 'seo',
+        opportunities: [{
+          check: 'poor-readability',
+          textContent: poorText,
+          fleschReadingEase: 20,
+          suggestionStatus: 'processing',
+        }],
+      }];
+
+      // Add another page with readability issues
+      auditsResult.push({
+        pageUrl: 'https://example.com/page2',
+        audits: [{
+          name: 'readability',
+          type: 'seo',
+          opportunities: [{
+            check: 'poor-readability',
+            textContent: 'Another complex text',
+            fleschReadingEase: 25,
+            suggestionStatus: 'processing',
+          }],
+        }],
+      });
+
+      // Mock checkForExistingSuggestions to return no existing suggestions
+      context.dataAccess.AsyncJob.findById.resolves({
+        getMetadata: () => null,
+        setResult: sinon.stub(),
+        save: sinon.stub().resolves(),
+      });
+      context.dataAccess.Opportunity = {
+        allBySiteId: sinon.stub().resolves([]),
+      };
+
+      // Mock sendReadabilityToMystique to throw an error
+      const readabilityModuleFailing = await esmock('../../../src/readability/handler.js', {
+        '../../../src/readability/async-mystique.js': {
+          sendReadabilityToMystique: sinon.stub().rejects(new TypeError('Network error connecting to Mystique')),
+        },
+      });
+
+      // Add environment and sqs to context for error message details
+      context.env = {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.test.com/mystique-queue',
+      };
+      context.sqs = {
+        sendMessage: sinon.stub(),
+      };
+
+      const result = await readabilityModuleFailing.default(context, auditContext);
+
+      // Verify error was logged with detailed information
+      expect(log.error).to.have.been.calledWithMatch('[readability-suggest handler] readability: Error sending issues to Mystique:');
+
+      // Verify all opportunities were updated with error status and debugging info
+      const page1Audit = auditsResult[0].audits.find(a => a.name === 'readability');
+      expect(page1Audit.opportunities[0]).to.include({
+        suggestionStatus: 'error',
+      });
+      expect(page1Audit.opportunities[0].suggestionMessage).to.include('Mystique integration failed: Network error connecting to Mystique');
+      expect(page1Audit.opportunities[0].debugInfo).to.deep.include({
+        errorType: 'TypeError',
+        errorMessage: 'Network error connecting to Mystique',
+        mystiqueQueueConfigured: true,
+        sqsClientAvailable: true,
+      });
+      expect(page1Audit.opportunities[0].debugInfo.timestamp).to.exist;
+
+      const page2Audit = auditsResult[1].audits.find(a => a.name === 'readability');
+      expect(page2Audit.opportunities[0]).to.include({
+        suggestionStatus: 'error',
+      });
+      expect(page2Audit.opportunities[0].suggestionMessage).to.include('Mystique integration failed: Network error connecting to Mystique');
+      expect(page2Audit.opportunities[0].debugInfo).to.deep.include({
+        errorType: 'TypeError',
+        errorMessage: 'Network error connecting to Mystique',
+        mystiqueQueueConfigured: true,
+        sqsClientAvailable: true,
+      });
+
+      // Test should not be marked as processing since error occurred
+      expect(result.processing).to.be.false;
     });
   });
 });
