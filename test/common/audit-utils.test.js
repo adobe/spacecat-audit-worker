@@ -159,14 +159,14 @@ describe('Audit Utils Tests', () => {
   });
 
   describe('checkProductCodeEntitlements', () => {
-    it('returns true when no product codes provided', async () => {
+    it('returns false when no product codes provided', async () => {
       const result = await checkProductCodeEntitlements([], site, context);
-      expect(result).to.be.true;
+      expect(result).to.be.false;
     });
 
-    it('returns true when productCodes is null', async () => {
+    it('returns false when productCodes is null', async () => {
       const result = await checkProductCodeEntitlements(null, site, context);
-      expect(result).to.be.true;
+      expect(result).to.be.false;
     });
 
     it('returns true when site has entitlement for any product code (OR logic)', async () => {

@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { isValidUUID } from '@adobe/spacecat-shared-utils';
+import { isValidUUID, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { retrieveAuditById } from '../utils/data-access.js';
 
@@ -22,8 +22,8 @@ import { retrieveAuditById } from '../utils/data-access.js';
  * @returns {Promise<boolean>} - True if site has entitlement for any product code
  */
 export async function checkProductCodeEntitlements(productCodes, site, context) {
-  if (!productCodes || !Array.isArray(productCodes) || productCodes.length === 0) {
-    return true; // No product codes to check, allow by default
+  if (!isNonEmptyArray(productCodes)) {
+    return false; // No product codes to check, deny by default
   }
 
   try {
@@ -53,7 +53,7 @@ export async function isAuditEnabledForSite(type, site, context) {
   const configuration = await Configuration.findLatest();
   const handler = configuration.getHandlers()?.[type];
   // Check if handler has productCodes and verify entitlements
-  if (handler?.productCodes && Array.isArray(handler.productCodes)) {
+  if (isNonEmptyArray(handler?.productCodes)) {
     const hasValidEntitlement = await checkProductCodeEntitlements(
       handler.productCodes,
       site,
