@@ -126,7 +126,7 @@ describe('CDN Logs Query Builder', () => {
     const query = await weeklyBreakdownQueries.createAgenticReportQuery(customOptions);
 
     expect(query).to.be.a('string');
-    expect(query).to.include('Uncategorized');
+    expect(query).to.include('Other');
   });
 
   it('handles topic patterns with mixed named and extract patterns', async () => {
