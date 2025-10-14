@@ -388,6 +388,9 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
   log.debug(`[PRODUCT-METATAGS] Fetching from S3: ${key}`);
 
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
+  log.debug(`[PRODUCT-METATAGS] scrape result props: ${Object.keys(object.scrapeResult)}`);
+  log.debug(`[PRODUCT-METATAGS] scrape result tags: ${Object.entries(object.scrapeResult.tags)}`);
+
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
     log.error(`[PRODUCT-METATAGS] No Scraped tags found in S3 ${key} object`);
     return null;
@@ -430,8 +433,6 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
   // Extract product-specific meta tags
   // from raw HTML since scraper doesn't support custom extraction
   log.debug(`[PRODUCT-METATAGS] Extracting product tags from rawBody for ${pageUrl}...`);
-  log.debug(`[PRODUCT-METATAGS] scrape result props: ${Object.keys(object.scrapeResult)}`);
-  log.debug(`[PRODUCT-METATAGS] scrape result tags: ${Object.entries(object.scrapeResult.tags)}`);
   const productTags = extractProductTagsFromHTML(object.scrapeResult.rawBody, log);
 
   const result = {
@@ -591,7 +592,7 @@ export async function productMetatagsAutoDetect(site, pagesMap, context) {
   });
 
   const extractedTagsCount = Object.entries(extractedTags).length;
-  log.info(`[PRODUCT-METATAGS] Extracted tags from ${extractedTagsCount} pages`);
+  log.info(`[PRODUCT-METATAGS] Extracted tags from ${extractedTagsCount} pages: ${Object.entries(extractedTags)}`);
 
   if (extractedTagsCount === 0) {
     log.error(`[PRODUCT-METATAGS] Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
