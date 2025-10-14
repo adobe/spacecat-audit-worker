@@ -11,11 +11,15 @@
  */
 
 import { Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
-import { DELIVERY_TYPES, hasText, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
+import {
+  DELIVERY_TYPES,
+  hasText,
+  isNonEmptyArray,
+  tracingFetch as fetch,
+} from '@adobe/spacecat-shared-utils';
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { createHash } from 'node:crypto';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { wwwUrlResolver } from '../common/index.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import {
   createTooStrongOpportunityData,
@@ -50,7 +54,6 @@ export async function fetchPermissionsReport(baseURL, context, site) {
   } else if (imsOrg === 'default') {
     log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] site is configured with default IMS org`);
   }
-
   const { programId, environmentId } = site.getDeliveryConfig();
   if (!programId || !environmentId) {
     throw new Error('Invalid delivery config for AEM_CS');
@@ -75,13 +78,13 @@ export async function fetchPermissionsReport(baseURL, context, site) {
   }
 
   // Fetch permissions report
+  const headers = {
+    Authorization: `Bearer ${token.access_token}`,
+    'x-api-key': env.IMS_CLIENT_ID,
+    'x-gw-ims-org-id': imsOrg,
+  };
   let resp;
   try {
-    const headers = {
-      Authorization: `Bearer ${token.access_token}`,
-      'x-api-key': env.IMS_CLIENT_ID,
-      'x-gw-ims-org-id': imsOrg,
-    };
     resp = await fetch(
       `${env.STARFISH_API_BASE_URL}/reports/${programId}/${environmentId}/permissions`,
       { headers },
@@ -89,17 +92,15 @@ export async function fetchPermissionsReport(baseURL, context, site) {
   } catch (error) {
     throw new Error(`Failed to fetch permissions report ${error.message}`);
   }
-
+  if (resp.status === 404) {
+    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] permissions report not found`);
+    return null;
+  }
   if (!resp.ok) {
-    if (resp.status === 404) {
-      log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] permissions report not found`);
-      return null;
-    }
     throw new Error(`Failed to fetch permissions report: HTTP ${resp.status}`);
   }
-
-  log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] successfully fetched permissions report`);
   const json = await resp.json();
+  log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] successfully fetched permissions report`);
   return json.data;
 }
 
@@ -134,7 +135,7 @@ export async function permissionsAuditRunner(baseURL, context, site) {
     const allPermissionsCnt = permissionsReport?.allPermissions?.length || 0;
     const adminChecksCnt = permissionsReport?.adminChecks?.length || 0;
 
-    log.info(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] identified: ${allPermissionsCnt} jcr:all permissions, ${adminChecksCnt} admin checks`);
+    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] identified: ${allPermissionsCnt} jcr:all permissions, ${adminChecksCnt} admin checks`);
 
     // Build and return audit result
     return {
@@ -165,7 +166,7 @@ async function markOpportunityAsFixed(auditType, opportunity, site, context) {
   const { log, dataContext } = context;
   const { Suggestion } = dataContext;
 
-  log.info(`[${auditType}] [Site: ${site.getId()}] no permissions issues found, but found opportunity, updating status to RESOLVED`);
+  log.debug(`[${auditType}] [Site: ${site.getId()}] no permissions issues found, but found opportunity, updating status to RESOLVED`);
   opportunity.setStatus(Oppty.STATUSES.RESOLVED);
 
   // We also need to update all suggestions inside this opportunity
@@ -198,20 +199,14 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
   // Check whether the audit is enabled for the site
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('security-permissions', site)) {
-    log.info(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
-    return { status: 'complete' };
-  }
-
-  // This opportunity is only relevant for aem_cs delivery-type at the moment
-  if (site.getDeliveryType() !== 'aem_cs') {
-    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] skipping opportunity as it is of delivery type ${site.getDeliveryType()}`);
+    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
     return { status: 'complete' };
   }
 
   const { permissionsReport, success } = auditData.auditResult;
 
   if (!success) {
-    log.info(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
+    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
     return { status: 'complete' };
   }
 
@@ -223,7 +218,7 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
 
   // If no too strong permissions issues found in the report, resolve existing opportunities
   if (!isNonEmptyArray(permissionsReport?.allPermissions)) {
-    log.info(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] no jcr:all permissions found, resolving existing opportunities (${strongOpportunities.length})`);
+    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] no jcr:all permissions found, resolving existing opportunities (${strongOpportunities.length})`);
     await Promise.all(strongOpportunities.map(
       (o) => markOpportunityAsFixed(TOO_STRONG_AUDIT_TYPE, o, site, context),
     ));
@@ -286,20 +281,14 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
   // Check whether the audit is enabled for the site
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('security-permissions', site)) {
-    log.info(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
-    return { status: 'complete' };
-  }
-
-  // This opportunity is only relevant for aem_cs delivery-type at the moment
-  if (site.getDeliveryType() !== 'aem_cs') {
-    log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] skipping opportunity as it is of delivery type ${site.getDeliveryType()}`);
+    log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
     return { status: 'complete' };
   }
 
   const { permissionsReport, success } = auditData.auditResult;
 
   if (!success) {
-    log.info(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
+    log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
     return { status: 'complete' };
   }
 
@@ -311,7 +300,7 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
   // Process admin opportunities
   // If no admin issues found, resolve existing admin opportunities
   if (!isNonEmptyArray(permissionsReport?.adminChecks)) {
-    log.info(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] no admin checks found, resolving existing admin opportunities (${adminOpportunities.length})`);
+    log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] no admin checks found, resolving existing admin opportunities (${adminOpportunities.length})`);
     await Promise.all(
       adminOpportunities.map((o) => markOpportunityAsFixed(REDUNDANT_AUDIT_TYPE, o, site, context)),
     );
@@ -358,7 +347,6 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
 };
 
 export default new AuditBuilder()
-  .withUrlResolver(wwwUrlResolver)
   .withRunner(permissionsAuditRunner)
   .withPostProcessors([tooStrongOpportunityStep, redundantPermissionsOpportunityStep])
   .build();
