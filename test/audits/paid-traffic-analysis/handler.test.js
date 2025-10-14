@@ -22,6 +22,7 @@ import {
   weeklyImportDataStep,
   monthlyImportDataStep,
   weeklyProcessAnalysisStep,
+  monthlyProcessAnalysisStep,
 } from '../../../src/paid-traffic-analysis/handler.js';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 use(sinonChai);
@@ -288,6 +289,35 @@ describe('Paid Traffic Analysis Handler', () => {
         context.audit = mockAudit;
 
         const result = await weeklyProcessAnalysisStep(context);
+
+        expect(result).to.deep.equal({
+          status: 'complete',
+          findings: ['Traffic analysis completed and sent to Mystique'],
+        });
+
+        // Verify SQS message was sent
+        expect(mockSqs.sendMessage).to.have.been.called;
+      });
+    });
+
+    describe('monthlyProcessAnalysisStep', () => {
+      it('should send audit result to Mystique and return completion status', async () => {
+        const mockAuditResult = {
+          year: 2024,
+          month: 12,
+          siteId,
+          temporalCondition: '(year=2024 AND month=12)',
+        };
+
+        const mockAudit = {
+          getId: sandbox.stub().returns(auditId),
+          getAuditResult: sandbox.stub().returns(mockAuditResult),
+        };
+
+        context.site = site;
+        context.audit = mockAudit;
+
+        const result = await monthlyProcessAnalysisStep(context);
 
         expect(result).to.deep.equal({
           status: 'complete',

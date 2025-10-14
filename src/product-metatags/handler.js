@@ -441,8 +441,8 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
       description: object.scrapeResult.tags.description,
       h1: object.scrapeResult.tags.h1 || [],
       // Use client-side extracted product tags
-      sku: productTags.sku,
-      thumbnail: productTags.thumbnail,
+      sku: productTags.sku ?? object.scrapeResult.tags.sku ?? object.scrapeResult.tags['product:sku'],
+      thumbnail: productTags.thumbnail ?? object.scrapeResult.tags.thumbnail ?? object.scrapeResult.tags['og:image'] ?? object.scrapeResult.tags['twitter:image'],
       s3key: key,
     },
   };
@@ -578,8 +578,13 @@ export async function productMetatagsAutoDetect(site, pagesMap, context) {
   }
 
   log.info(`[PRODUCT-METATAGS] Fetching ${pagesMap.size} pages from S3...`);
-  const pageMetadataResults = await Promise.all([...pagesMap]
-    .map(([url, path]) => fetchAndProcessPageObject(s3Client, bucketName, url, path, log)));
+  const pageMetadataResults = [];
+  for (const [url, path] of pagesMap) {
+    // eslint-disable-next-line no-await-in-loop
+    const pageMetadata = await fetchAndProcessPageObject(s3Client, bucketName, url, path, log);
+    pageMetadataResults.push(pageMetadata);
+    log.info(`[PRODUCT-METATAGS] Fetched page metadata for ${url}: ${JSON.stringify(pageMetadata)}`);
+  }
 
   const nullResults = pageMetadataResults.filter((r) => r === null).length;
   const validResults = pageMetadataResults.filter((r) => r !== null).length;
