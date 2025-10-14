@@ -421,67 +421,20 @@ describe('Product MetaTags', () => {
     });
 
     describe('extractProductTags', () => {
-      it('should extract product tags with image priority', () => {
+      it('should extract product tags with thumbnail', () => {
         const pageTags = {
           [SKU]: 'PROD-123',
-          'og:image': 'https://example.com/og.jpg',
-          'twitter:image': 'https://example.com/twitter.jpg',
-          'product:image': 'https://example.com/product.jpg',
-          image: 'https://example.com/image.jpg',
+          thumbnail: 'https://example.com/generic.jpg',
         };
 
         const result = ProductSeoChecks.extractProductTags(pageTags);
 
         expect(result).to.deep.equal({
           [SKU]: 'PROD-123',
-          image: 'https://example.com/og.jpg', // og:image has priority
+          thumbnail: 'https://example.com/generic.jpg',
         });
       });
 
-      it('should use twitter:image when og:image not available', () => {
-        const pageTags = {
-          [SKU]: 'PROD-123',
-          'twitter:image': 'https://example.com/twitter.jpg',
-          'product:image': 'https://example.com/product.jpg',
-          image: 'https://example.com/image.jpg',
-        };
-
-        const result = ProductSeoChecks.extractProductTags(pageTags);
-
-        expect(result).to.deep.equal({
-          [SKU]: 'PROD-123',
-          image: 'https://example.com/twitter.jpg', // twitter:image has second priority
-        });
-      });
-
-      it('should use product:image when og:image and twitter:image not available', () => {
-        const pageTags = {
-          [SKU]: 'PROD-123',
-          'product:image': 'https://example.com/product.jpg',
-          image: 'https://example.com/image.jpg',
-        };
-
-        const result = ProductSeoChecks.extractProductTags(pageTags);
-
-        expect(result).to.deep.equal({
-          [SKU]: 'PROD-123',
-          image: 'https://example.com/product.jpg', // product:image has third priority
-        });
-      });
-
-      it('should use image when other image types not available', () => {
-        const pageTags = {
-          [SKU]: 'PROD-123',
-          image: 'https://example.com/image.jpg',
-        };
-
-        const result = ProductSeoChecks.extractProductTags(pageTags);
-
-        expect(result).to.deep.equal({
-          [SKU]: 'PROD-123',
-          image: 'https://example.com/image.jpg', // image has lowest priority
-        });
-      });
 
       it('should return only SKU when no images available', () => {
         const pageTags = {
@@ -500,7 +453,7 @@ describe('Product MetaTags', () => {
       it('should return empty object when no SKU', () => {
         const pageTags = {
           [TITLE]: 'Product Title',
-          'og:image': 'https://example.com/og.jpg',
+          thumbnail: 'https://example.com/generic.jpg',
         };
 
         const result = ProductSeoChecks.extractProductTags(pageTags);
@@ -508,7 +461,7 @@ describe('Product MetaTags', () => {
         // The function actually extracts the image even without SKU,
         // so let's test the actual behavior
         expect(result).to.deep.equal({
-          image: 'https://example.com/og.jpg',
+          thumbnail: 'https://example.com/generic.jpg',
         });
       });
     });
@@ -727,10 +680,7 @@ describe('Product MetaTags', () => {
             description: 'Product Description',
             h1: ['Product H1'],
             sku: 'PROD-123',
-            'og:image': 'https://example.com/product.jpg',
-            'twitter:image': 'https://example.com/product-twitter.jpg',
-            'product:image': undefined,
-            image: undefined,
+            thumbnail: 'https://example.com/product.jpg',
             s3key: 'scrapes/site-id/product1/scrape.json',
           },
         });
@@ -780,10 +730,7 @@ describe('Product MetaTags', () => {
             description: 'Home Product Description',
             h1: ['Home Product H1'],
             sku: 'HOME-PROD-456',
-            'og:image': undefined,
-            'twitter:image': undefined,
-            'product:image': undefined,
-            image: undefined,
+            thumbnail: undefined,
             s3key: 'scrapes/site-id/scrape.json',
           },
         });
@@ -889,10 +836,7 @@ describe('Product MetaTags', () => {
             description: 'This is a valid product page with sufficient content length to pass the minimum threshold check',
             h1: ['Valid Product Heading'],
             sku: 'VALID-PROD-789',
-            'og:image': undefined,
-            'twitter:image': undefined,
-            'product:image': undefined,
-            image: undefined,
+            thumbnail: undefined,
             s3key: 'scrapes/site-id/valid-product/scrape.json',
           },
         });
@@ -947,10 +891,7 @@ describe('Product MetaTags', () => {
             description: 'Product with multiple image tags',
             h1: ['Multi Image Product'],
             sku: 'MULTI-IMG-123',
-            'og:image': 'https://example.com/og-image.jpg',
-            'twitter:image': 'https://example.com/twitter-image.jpg',
-            'product:image': 'https://example.com/product-image.jpg',
-            image: 'https://example.com/generic-image.jpg',
+            thumbnail: 'https://example.com/generic-image.jpg',
             s3key: 'scrapes/site-id/multi-image-product/scrape.json',
           },
         });
@@ -2135,9 +2076,7 @@ describe('Product MetaTags', () => {
 
       expect(result).to.deep.equal({
         sku: 'PROD-123',
-        'og:image': 'https://example.com/image.jpg',
-        'twitter:image': 'https://example.com/twitter.jpg',
-        'product:image': 'https://example.com/product.jpg',
+        thumbnail: 'https://example.com/product.jpg',
       });
     });
 
@@ -2314,7 +2253,7 @@ describe('Product MetaTags', () => {
       `;
 
       const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('og:image', 'https://example.com/jsonld-image.jpg');
+      expect(result).to.have.property('thumbnail', 'https://example.com/jsonld-image.jpg');
     });
 
     it('should extract image from JSON-LD with object format', () => {
@@ -2336,7 +2275,7 @@ describe('Product MetaTags', () => {
       `;
 
       const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('og:image', 'https://example.com/jsonld-object-image.jpg');
+      expect(result).to.have.property('thumbnail', 'https://example.com/jsonld-object-image.jpg');
     });
 
     it('should extract image from JSON-LD with array format', () => {
@@ -2356,7 +2295,7 @@ describe('Product MetaTags', () => {
       `;
 
       const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('og:image', 'https://example.com/jsonld-array-image1.jpg');
+      expect(result).to.have.property('thumbnail', 'https://example.com/jsonld-array-image1.jpg');
     });
 
     it('should extract image from JSON-LD with array of objects', () => {
@@ -2378,7 +2317,7 @@ describe('Product MetaTags', () => {
       `;
 
       const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('og:image', 'https://example.com/jsonld-array-object-image.jpg');
+      expect(result).to.have.property('thumbnail', 'https://example.com/jsonld-array-object-image.jpg');
     });
 
     it('should not extract image from JSON-LD when og:image meta tag exists', () => {
@@ -2399,7 +2338,7 @@ describe('Product MetaTags', () => {
       `;
 
       const result = extractProductTagsFromHTML(html, logStub);
-      expect(result).to.have.property('og:image', 'https://example.com/meta-image.jpg');
+      expect(result).to.have.property('thumbnail', 'https://example.com/meta-image.jpg');
     });
 
     it('should handle JSON-LD with @type array including Product', () => {
