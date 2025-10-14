@@ -194,8 +194,7 @@ export async function submitForScraping(context) {
 
   let finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
 
-  // Temperary for testing
-
+  // TESTING: Temporarily use Samsung URLs to test 403 flow
   finalUrls = [
     'https://www.samsung.com/us/',
     'https://www.samsung.com/br/',
@@ -204,12 +203,9 @@ export async function submitForScraping(context) {
     'https://www.samsung.com/tr/',
     'https://www.samsung.com/mx/',
     'https://www.samsung.com/uk/',
-    'https://www.samsung.com/ar/',
-    'https://www.samsung.com/in/smartphones/galaxy-a35/buy/',
   ];
 
-  // eslint-disable-next-line
-  // log.info(`Prerender - Submitting ${finalUrls.length} URLs for scraping (${topPagesUrls.length} top pages + ${includedURLs.length} included URLs)`);
+  log.info(`Prerender - TESTING: Using ${finalUrls.length} hardcoded Samsung URLs`);
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
@@ -269,6 +265,18 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
 
   const buildKey = (data) => `${data.url}|${AUDIT_TYPE}`;
 
+  // Helper function to extract only the fields we want in suggestions
+  const mapSuggestionData = (suggestion) => ({
+    url: suggestion.url,
+    organicTraffic: suggestion.organicTraffic,
+    contentGainRatio: suggestion.contentGainRatio,
+    wordCountBefore: suggestion.wordCountBefore,
+    wordCountAfter: suggestion.wordCountAfter,
+    // S3 references to stored HTML content for comparison
+    originalHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'server-side.html'),
+    prerenderedHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'client-side.html'),
+  });
+
   await syncSuggestions({
     opportunity,
     newData: preRenderSuggestions,
@@ -278,16 +286,12 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
       opportunityId: opportunity.getId(),
       type: Suggestion.TYPES.CONFIG_UPDATE,
       rank: suggestion.organicTraffic,
-      data: {
-        url: suggestion.url,
-        organicTraffic: suggestion.organicTraffic,
-        contentGainRatio: suggestion.contentGainRatio,
-        wordCountBefore: suggestion.wordCountBefore,
-        wordCountAfter: suggestion.wordCountAfter,
-        // S3 references to stored HTML content for comparison
-        originalHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'server-side.html'),
-        prerenderedHtmlKey: getS3Path(suggestion.url, auditData.siteId, 'client-side.html'),
-      },
+      data: mapSuggestionData(suggestion),
+    }),
+    // Custom merge function: preserve existing fields, update with clean new data
+    mergeDataFunction: (existingData, newDataItem) => ({
+      ...existingData,
+      ...mapSuggestionData(newDataItem),
     }),
   });
 
@@ -360,16 +364,24 @@ export async function processContentAndGenerateOpportunities(context) {
     const scrapeForbidden = urlsWithScrapeJson.length > 0
       && urlsWithForbiddenScrape.length === urlsWithScrapeJson.length;
 
+    // Debug logging
+    // eslint-disable-next-line
+    // log.info(`Prerender - Scrape analysis: total=${comparisonResults.length}, withScrapeJson=${urlsWithScrapeJson.length}, forbidden403=${urlsWithForbiddenScrape.length}, allForbidden=${scrapeForbidden}`);
+
     if (scrapeForbidden) {
       log.warn(`Prerender - All ${urlsWithScrapeJson.length} scrape.json files on S3 indicate 403 Forbidden errors`);
     }
 
     log.info(`Prerender - Found ${urlsNeedingPrerender.length}/${successfulComparisons.length} URLs needing prerender from total ${urlsToCheck.length} URLs scraped (403 forbidden: ${urlsWithForbiddenScrape.length})`);
 
+    // Remove internal tracking fields from results before storing
+    // eslint-disable-next-line
+    const cleanResults = comparisonResults.map(({ hasScrapeMetadata, scrapeForbidden, ...result }) => result);
+
     const auditResult = {
       totalUrlsChecked: comparisonResults.length,
       urlsNeedingPrerender: urlsNeedingPrerender.length,
-      results: comparisonResults,
+      results: cleanResults,
       scrapeForbidden, // Flag for UI: all scrape.json files on S3 show 403 Forbidden
     };
 
