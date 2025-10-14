@@ -197,3 +197,51 @@ export async function requestSaaS(query, operationName, variables, params, log) 
 
   return response;
 }
+
+/**
+ * Retrieves commerce configuration for a site from handler config or remote config.
+ * @param {Object} site - The site object with configuration.
+ * @param {string} auditType - The audit type to get handler config for.
+ * @param {string} finalUrl - The site URL.
+ * @param {Object} log - Logger instance.
+ * @param {string} locale - Optional locale (defaults to empty string for 'default').
+ * @returns {Promise<Object>} Commerce configuration with environment-id,
+ * store-view-code, website-code.
+ */
+export async function getCommerceConfig(site, auditType, finalUrl, log, locale = '') {
+  try {
+    // Get custom config from site configuration (similar to sitemap-product-coverage)
+    const customConfig = site.getConfig()?.getHandlers()?.[auditType];
+
+    // Build params object for getConfig
+    const params = {
+      storeUrl: finalUrl,
+      locale: locale === 'default' ? '' : locale,
+      configName: customConfig?.configName,
+      configSection: customConfig?.configSection,
+      configSheet: customConfig?.configSheet,
+      config: customConfig?.config?.[locale] || customConfig?.config,
+    };
+
+    log.info(`Fetching commerce config for site: ${site.getId()}, locale: ${locale || 'default'}`);
+
+    // Get and validate config - this will have all commerce-* fields
+    const config = await getConfig(params, log);
+
+    log.info('Successfully retrieved commerce config');
+    log.debug('Commerce config keys:', Object.keys(config));
+
+    return {
+      environmentId: config['commerce-environment-id'],
+      storeViewCode: config['commerce-store-view-code'],
+      websiteCode: config['commerce-website-code'],
+      storeCode: config['commerce-store-code'],
+      customerGroup: config['commerce-customer-group'],
+      apiKey: config['commerce-x-api-key'],
+      endpoint: config['commerce-endpoint'],
+    };
+  } catch (error) {
+    log.error(`Error fetching commerce config for site ${site.getId()}:`, error);
+    throw error;
+  }
+}

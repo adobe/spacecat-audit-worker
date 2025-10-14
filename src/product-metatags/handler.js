@@ -28,6 +28,7 @@ import {
 } from './constants.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
+import { getCommerceConfig } from '../utils/saas.js';
 
 const auditType = Audit.AUDIT_TYPES.PRODUCT_METATAGS;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -76,10 +77,23 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
     return;
   }
   let useHostnameOnly = false;
+  let commerceConfig = null;
   try {
     const siteId = opportunity.getSiteId();
     const site = await context.dataAccess.Site.findById(siteId);
     useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+
+    // Get commerce configuration for product pages
+    try {
+      commerceConfig = await getCommerceConfig(site, auditType, finalUrl, log);
+      log.info('[PRODUCT-METATAGS] Commerce configuration retrieved:', {
+        environmentId: commerceConfig.environmentId,
+        storeViewCode: commerceConfig.storeViewCode,
+        websiteCode: commerceConfig.websiteCode,
+      });
+    } catch (configError) {
+      log.warn('[PRODUCT-METATAGS] Commerce config not available:', configError.message);
+    }
   } catch (error) {
     log.error('[PRODUCT-METATAGS] Error in product-metatags configuration:', error);
   }
@@ -129,6 +143,11 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
             // Add product-specific data (SKU and image) to each suggestion
             if (detectedTags[endpoint]?.productTags) {
               suggestion.productTags = detectedTags[endpoint].productTags;
+            }
+
+            // Add commerce configuration to each suggestion
+            if (commerceConfig) {
+              suggestion.commerceConfig = commerceConfig;
             }
 
             // Log suggestion details for debugging
