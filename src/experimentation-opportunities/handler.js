@@ -225,10 +225,8 @@ async function toggleImport(site, importType, enable, log) {
   }
 }
 
-async function getLangFromScrape(s3Client, bucketName, s3BucketPrefix, pathname, log) {
+async function getLangFromScrape(s3Client, bucketName, key, log) {
   // remove the trailing slash from the pathname
-  const pathnameWithoutTrailingSlash = pathname.replace(/\/$/, '');
-  const key = `${s3BucketPrefix}${pathnameWithoutTrailingSlash}/scrape.json`;
   const pageScrapeJson = await getObjectFromKey(s3Client, bucketName, key, log) || {};
   return pageScrapeJson.scrapeResult?.tags?.lang;
 }
@@ -239,16 +237,12 @@ function isImportEnabled(importType, imports) {
 
 export async function organicKeywordsStep(context) {
   const {
-    site, log, finalUrl, audit, s3Client,
+    site, log, finalUrl, s3Client, scrapeResultPaths,
   } = context;
   log.info(`Organic keywords step started for ${finalUrl}`);
   let organicKeywordsImportEnabled = false;
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
-  const s3BucketPrefix = `scrapes/${site.getId()}`;
-  const auditResult = audit.getAuditResult();
-  const urls = getHighOrganicLowCtrOpportunity(auditResult.experimentationOpportunities)
-    .map((oppty) => oppty.page);
-  log.info(`Organic keywords step for ${finalUrl}, found ${urls.length} urls`);
+  log.info(`Organic keywords step for ${finalUrl}, found ${scrapeResultPaths.length} urls`);
   const siteConfig = site.getConfig();
   const imports = siteConfig?.getImports() || [];
   log.info(`Site config exists: ${!!siteConfig}, imports count: ${imports.length}`);
@@ -257,24 +251,19 @@ export async function organicKeywordsStep(context) {
     await toggleImport(site, IMPORT_ORGANIC_KEYWORDS, true, log);
     organicKeywordsImportEnabled = true;
   }
-  let urlConfigs = await Promise.all(urls.map(async (url) => {
-    let urlObj;
-    try {
-      urlObj = new URL(url);
-    } catch (error) {
-      log.error(`Invalid url ${url}: ${error.message}`);
-      return null;
-    }
+  let urlConfigs = await Promise.all([...scrapeResultPaths].map(async ([url, key]) => {
     const lang = await getLangFromScrape(
       s3Client,
       bucketName,
-      s3BucketPrefix,
-      urlObj.pathname,
+      key,
       log,
     );
     log.info(`Lang for ${url} is ${lang}`);
     const geo = getCountryCodeFromLang(lang);
-    return { url, geo };
+    return {
+      url,
+      geo,
+    };
   }));
   urlConfigs = urlConfigs.filter(Boolean);
   log.info(`Url configs: ${JSON.stringify(urlConfigs, null, 2)}`);
@@ -303,7 +292,7 @@ export function importAllTrafficStep(context) {
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('runAuditAndScrapeStep', runAuditAndScrapeStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('runAuditAndScrapeStep', runAuditAndScrapeStep, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('organicKeywordsStep', organicKeywordsStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('importAllTrafficStep', importAllTrafficStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('generateOpportunityAndSuggestions', generateOpportunityAndSuggestions)
