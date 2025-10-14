@@ -430,6 +430,8 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
   // Extract product-specific meta tags
   // from raw HTML since scraper doesn't support custom extraction
   log.debug(`[PRODUCT-METATAGS] Extracting product tags from rawBody for ${pageUrl}...`);
+  log.debug(`[PRODUCT-METATAGS] scrape result props: ${Object.keys(object.scrapeResult)}`);
+  log.debug(`[PRODUCT-METATAGS] scrape result tags: ${Object.entries(object.scrapeResult.tags)}`);
   const productTags = extractProductTagsFromHTML(object.scrapeResult.rawBody, log);
 
   const result = {
@@ -814,7 +816,7 @@ export async function submitForScraping(context) {
     type: 'product-metatags',
   };
 
-  log.info(`[PRODUCT-METATAGS] Step 2: submitForScraping completed, returning ${result.urls.length} URLs for scraping`);
+  log.info(`[PRODUCT-METATAGS] Step 2: submitForScraping completed, returning ${result.urls.length} URLs with enableJavascript=true, hideConsentBanners=true`);
   return result;
 }
 
