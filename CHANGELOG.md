@@ -1,3 +1,10 @@
+# [1.209.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.11...v1.209.0) (2025-10-14)
+
+
+### Features
+
+* **geo-brand-presence:** Support sheet refreshes on config changes ([#1387](https://github.com/adobe/spacecat-audit-worker/issues/1387)) ([3126949](https://github.com/adobe/spacecat-audit-worker/commit/3126949399f4f9d53ffd33aad6347357df676b23))
+
 ## [1.208.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.10...v1.208.11) (2025-10-14)
 
 
