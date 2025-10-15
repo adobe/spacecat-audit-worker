@@ -237,5 +237,51 @@ describe('Patterns Uploader', () => {
 
     clock.restore();
   });
+
+  it('merges new and existing patterns', async () => {
+    const clock = sandbox.useFakeTimers();
+    mockAnalyzeProducts.resolves({ 'new-product': 'regex-new' });
+    mockAnalyzePageTypes.resolves({ 'new-page': 'regex-new' });
+
+    const existingPatterns = {
+      topicPatterns: [{ name: 'old-product', regex: 'regex-old' }],
+      pagePatterns: [{ name: 'old-page', regex: 'regex-old' }],
+    };
+
+    const options = createMockOptions({ existingPatterns });
+    const promise = generatePatternsWorkbook(options);
+    await clock.tickAsync(3000);
+    const result = await promise;
+
+    expect(result).to.be.true;
+    const callArgs = mockCreateExcelReport.getCall(0).args[0];
+    expect(callArgs['shared-products']).to.have.length(2);
+    expect(callArgs['shared-pagetype']).to.have.length(2);
+
+    clock.restore();
+  });
+
+  it('keeps existing patterns when LLM generates nothing', async () => {
+    const clock = sandbox.useFakeTimers();
+    mockAnalyzeProducts.resolves({});
+    mockAnalyzePageTypes.resolves({});
+
+    const existingPatterns = {
+      topicPatterns: [{ name: 'old-product', regex: 'regex-old' }],
+      pagePatterns: [{ name: 'old-page', regex: 'regex-old' }],
+    };
+
+    const options = createMockOptions({ existingPatterns });
+    const promise = generatePatternsWorkbook(options);
+    await clock.tickAsync(3000);
+    const result = await promise;
+
+    expect(result).to.be.true;
+    const callArgs = mockCreateExcelReport.getCall(0).args[0];
+    expect(callArgs['shared-products']).to.have.length(1);
+    expect(callArgs['shared-pagetype']).to.have.length(1);
+
+    clock.restore();
+  });
 });
 

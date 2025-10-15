@@ -17,12 +17,19 @@ import { saveExcelReport } from '../../utils/report-uploader.js';
 
 export async function generatePatternsWorkbook(options) {
   const {
-    site, context, athenaClient, s3Config, periods, sharepointClient, configCategories = [],
+    site,
+    context,
+    athenaClient,
+    s3Config,
+    periods,
+    sharepointClient,
+    configCategories = [],
+    existingPatterns = null,
   } = options;
   const { log } = context;
 
   try {
-    log.info('patterns.json not found, generating patterns.xlsx...');
+    log.info(existingPatterns ? 'Generating patterns.xlsx with merge of existing patterns...' : 'patterns.json not found, generating patterns.xlsx...');
 
     const query = await weeklyBreakdownQueries.createTopUrlsQuery({
       periods,
@@ -49,17 +56,47 @@ export async function generatePatternsWorkbook(options) {
     const productRegexes = await analyzeProducts(domain, paths, context, configCategories);
     const pagetypeRegexes = await analyzePageTypes(domain, paths, context);
 
+    // Merge with existing patterns
+    const mergedProductRegexes = { ...productRegexes };
+    const mergedPagetypeRegexes = { ...pagetypeRegexes };
+
+    if (existingPatterns) {
+      log.info('Merging with existing patterns...');
+
+      // Merge existing product patterns
+      if (existingPatterns.topicPatterns && Array.isArray(existingPatterns.topicPatterns)) {
+        const existingProductCount = existingPatterns.topicPatterns.length;
+        existingPatterns.topicPatterns.forEach((pattern) => {
+          if (pattern.name && pattern.regex) {
+            mergedProductRegexes[pattern.name] = pattern.regex;
+          }
+        });
+        log.info(`Preserved ${existingProductCount} existing product patterns`);
+      }
+
+      // Merge existing page type patterns
+      if (existingPatterns.pagePatterns && Array.isArray(existingPatterns.pagePatterns)) {
+        const existingPageTypeCount = existingPatterns.pagePatterns.length;
+        existingPatterns.pagePatterns.forEach((pattern) => {
+          if (pattern.name && pattern.regex) {
+            mergedPagetypeRegexes[pattern.name] = pattern.regex;
+          }
+        });
+        log.info(`Preserved ${existingPageTypeCount} existing page type patterns`);
+      }
+    }
+
     // Prepare data for workbook
     const productData = [];
-    if (productRegexes && Object.keys(productRegexes).length > 0) {
-      for (const [name, regex] of Object.entries(productRegexes)) {
+    if (mergedProductRegexes && Object.keys(mergedProductRegexes).length > 0) {
+      for (const [name, regex] of Object.entries(mergedProductRegexes)) {
         productData.push({ name, regex });
       }
     }
 
     const pagetypeData = [];
-    if (pagetypeRegexes && Object.keys(pagetypeRegexes).length > 0) {
-      for (const [name, regex] of Object.entries(pagetypeRegexes)) {
+    if (mergedPagetypeRegexes && Object.keys(mergedPagetypeRegexes).length > 0) {
+      for (const [name, regex] of Object.entries(mergedPagetypeRegexes)) {
         pagetypeData.push({ name, regex });
       }
     }
