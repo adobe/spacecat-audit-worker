@@ -1,3 +1,10 @@
+## [1.209.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.2...v1.209.3) (2025-10-15)
+
+
+### Bug Fixes
+
+* implement CWV SQS integration for Mystique guidance ([#1409](https://github.com/adobe/spacecat-audit-worker/issues/1409)) ([1ff326b](https://github.com/adobe/spacecat-audit-worker/commit/1ff326b600d8df400a760bf52d85a7e0247256c0))
+
 ## [1.209.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.1...v1.209.2) (2025-10-15)
 
 
