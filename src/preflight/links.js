@@ -151,7 +151,7 @@ export default async function links(context, auditContext) {
     const linksEndTime = Date.now();
     const linksEndTimestamp = new Date().toISOString();
     const linksElapsed = ((linksEndTime - linksStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Links audit completed in ${linksElapsed} seconds`);
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Links audit completed in ${linksElapsed} seconds`);
 
     timeExecutionBreakdown.push({
       name: 'links',

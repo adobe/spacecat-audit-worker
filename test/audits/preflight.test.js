@@ -186,8 +186,8 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      // Verify only one page was processed (now logs total links, internal and external links)
-      expect(context.log.info).to.have.been.calledThrice;
+      // Verify only one page was processed (now logs total links, internal and external links, and broken links)
+      expect(context.log.debug.callCount).to.equal(5);
     });
 
     it('returns empty array when no scrapedObjects match urls', async () => {
@@ -237,8 +237,8 @@ describe('Preflight Audit', () => {
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
       // Verify only two pages were processed
-      // (now logs total links, internal and external links for each page)
-      expect(context.log.info.callCount).to.equal(6);
+      // (now logs total links, internal and external links for each page, plus broken links summary)
+      expect(context.log.debug.callCount).to.equal(8);
     });
 
     it('skips invalid hrefs', async () => {
@@ -256,7 +256,7 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      expect(context.log.info).to.have.been.calledWithMatch('[preflight-audit] Found internal links:');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] Found internal links:');
     });
 
     it('includes auth token in requests', async () => {
@@ -430,7 +430,7 @@ describe('Preflight Audit', () => {
       // Only the body link should be considered internal
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
       // Check that only the body link is logged as internal
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[preflight-audit] Found internal links:',
         new Set(['https://main--example--page.aem.page/body-link']),
       );
@@ -1577,6 +1577,7 @@ describe('Preflight Audit', () => {
         log: {
           info: sinon.stub(),
           warn: sinon.stub(),
+          debug: sinon.stub(),
         },
       };
     });
@@ -1590,7 +1591,7 @@ describe('Preflight Audit', () => {
       expect(mockDataAccess.AsyncJob.findById).to.have.been.calledWith('job-456');
       expect(mockJobEntity.setResult).to.have.been.calledWith(result);
       expect(mockJobEntity.save).to.have.been.calledOnce;
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[preflight-audit] site: site-123, job: job-456, step: test-step. test-audit: Intermediate results saved successfully',
       );
     });
@@ -1829,7 +1830,7 @@ describe('Preflight Audit', () => {
           promiseToken: 'test-token',
         });
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Sent accessibility scraping request to content scraper for 2 URLs',
         );
       });
@@ -1954,7 +1955,7 @@ describe('Preflight Audit', () => {
         expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Completion queue: https://sqs.test.com/audit',
         );
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Sending to queue: https://sqs.test.com/scraper',
         );
       });
@@ -2001,7 +2002,7 @@ describe('Preflight Audit', () => {
         expect(message.urls).to.deep.equal([
           { url: 'https://example.com/single-page' },
         ]);
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Sent accessibility scraping request to content scraper for 1 URLs',
         );
       });
@@ -2022,7 +2023,7 @@ describe('Preflight Audit', () => {
         expect(sqs.sendMessage).to.have.been.calledOnce;
         const message = sqs.sendMessage.getCall(0).args[1];
         expect(message.urls).to.have.lengthOf(50);
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Sent accessibility scraping request to content scraper for 50 URLs',
         );
       });
@@ -2086,7 +2087,7 @@ describe('Preflight Audit', () => {
 
         await scrapeAccessibilityData(context, auditContext);
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] site: site-123, job: job-123, step: custom-step. Step 1: Preparing accessibility scrape',
         );
       });
@@ -2098,7 +2099,7 @@ describe('Preflight Audit', () => {
 
         await scrapeAccessibilityData(context, auditContext);
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] site: site-123, job: job-123, step: undefined. Step 1: Preparing accessibility scrape',
         );
       });
@@ -2130,7 +2131,7 @@ describe('Preflight Audit', () => {
 
         await scrapeAccessibilityData(context, auditContext);
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Using preview URLs for accessibility audit: [\n  {\n    "url": "https://example.com/page1"\n  },\n  {\n    "url": "https://example.com/page2"\n  }\n]',
         );
       });
@@ -2140,7 +2141,7 @@ describe('Preflight Audit', () => {
 
         await scrapeAccessibilityData(context, auditContext);
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Force re-scraping all 2 URLs for accessibility audit',
         );
       });
@@ -2150,7 +2151,7 @@ describe('Preflight Audit', () => {
 
         await scrapeAccessibilityData(context, auditContext);
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Sending 2 URLs to content scraper for accessibility audit',
         );
       });
@@ -2922,10 +2923,10 @@ describe('Preflight Audit', () => {
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Site ID: site-123');
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Job ID: job-123');
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Looking for data in path: accessibility-preflight/site-123/');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Expected files: ["example_com_page1.json","example_com_page2.json"]');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Expected files: ["example_com_page1.json","example_com_page2.json"]');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
       });
 
       it('should handle polling with files that do not match expected pattern', async () => {
@@ -2965,9 +2966,9 @@ describe('Preflight Audit', () => {
         await mockedAccessibility(pollingContext, pollingAuditContext);
 
         // Verify that it found 0 files due to filtering logic on first attempt
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected accessibility files, continuing to wait...');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected accessibility files, continuing to wait...');
         // Verify that it eventually found the files and proceeded
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
       });
 
       it('should handle polling timeout scenario', async () => {
@@ -3370,9 +3371,9 @@ describe('Preflight Audit', () => {
 
       // Verify that polling was attempted and succeeded
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
     });
 
     it('should call processAccessibilityOpportunities after successful polling', async () => {
@@ -3412,13 +3413,13 @@ describe('Preflight Audit', () => {
       await accessibility(context, auditContext);
 
       // Verify that the function completed successfully
-      expect(log.info).to.have.been.calledWith(
+      expect(log.debug).to.have.been.calledWith(
         '[preflight-audit] Polling completed, proceeding to process accessibility data',
       );
 
       // Verify that the function completed without throwing an error
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
     });
 
     it('should complete accessibility function with processAccessibilityOpportunities call', async () => {
@@ -3458,13 +3459,13 @@ describe('Preflight Audit', () => {
       await accessibility(context, auditContext);
 
       // Verify that the function completed successfully
-      expect(log.info).to.have.been.calledWith(
+      expect(log.debug).to.have.been.calledWith(
         '[preflight-audit] Polling completed, proceeding to process accessibility data',
       );
 
       // Verify that the function completed without throwing an error
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
     });
 
     it('should execute complete accessibility workflow', async () => {
@@ -3505,13 +3506,13 @@ describe('Preflight Audit', () => {
       await accessibility(context, auditContext);
 
       // Verify that the function completed successfully
-      expect(log.info).to.have.been.calledWith(
+      expect(log.debug).to.have.been.calledWith(
         '[preflight-audit] Polling completed, proceeding to process accessibility data',
       );
 
       // Verify that the function completed without throwing an error
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
     });
 
     it('should ensure processAccessibilityOpportunities is called', async () => {
@@ -3552,13 +3553,13 @@ describe('Preflight Audit', () => {
       await accessibility(context, auditContext);
 
       // Verify that the function completed successfully
-      expect(log.info).to.have.been.calledWith(
+      expect(log.debug).to.have.been.calledWith(
         '[preflight-audit] Polling completed, proceeding to process accessibility data',
       );
 
       // Verify that the function completed without throwing an error
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
     });
 
     it('should have empty urlsToScrape after mapping', async () => {
@@ -3679,8 +3680,8 @@ describe('Preflight Audit', () => {
       // Verify that the polling error was logged
       expect(log.error).to.have.been.calledWith('[preflight-audit] Error polling for accessibility data: S3 ListObjectsV2 failed');
       // Verify that polling continued and eventually succeeded
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
       // Verify that both polling attempts were made
       expect(pollCallCount).to.equal(2);
     });
@@ -3724,10 +3725,10 @@ describe('Preflight Audit', () => {
 
       // Verify that the foundCount = foundFiles ? foundFiles.length : 0 branch was hit
       // This should log "Found 0 out of 2 expected..." when foundFiles is falsy
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected accessibility files, continuing to wait...');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected accessibility files, continuing to wait...');
       // Verify that polling continued and eventually succeeded
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
       // Verify that both polling attempts were made
       expect(pollCallCount).to.equal(2);
     });

@@ -458,19 +458,38 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 
     // Exclude login/authentication-related pages from canonical checks
     const shouldSkipAuthPage = (u) => {
-      const pathname = new URL(u).pathname.toLowerCase();
-      return pathname.includes('/login')
-        || pathname.includes('/signin')
-        || pathname.includes('/authenticate')
-        || pathname.includes('/oauth')
-        || pathname.includes('/sso')
-        || pathname === '/auth'
-        || pathname.startsWith('/auth/');
+      try {
+        const pathname = new URL(u).pathname.toLowerCase();
+        return pathname.includes('/login')
+          || pathname.includes('/signin')
+          || pathname.includes('/authenticate')
+          || pathname.includes('/oauth')
+          || pathname.includes('/sso')
+          || pathname === '/auth'
+          || pathname.startsWith('/auth/');
+      } catch {
+        // If URL is malformed, don't skip it (return false)
+        return false;
+      }
+    };
+
+    // Exclude PDF files from canonical checks
+    const isPdfUrl = (u) => {
+      try {
+        const pathname = new URL(u).pathname.toLowerCase();
+        return pathname.endsWith('.pdf');
+      } catch {
+        return false;
+      }
     };
 
     const filteredTopPages = topPages.filter(({ url }) => {
       if (shouldSkipAuthPage(url)) {
         log.info(`Skipping canonical checks for auth/login page: ${url}`);
+        return false;
+      }
+      if (isPdfUrl(url)) {
+        log.info(`Skipping canonical checks for PDF file: ${url}`);
         return false;
       }
       return true;

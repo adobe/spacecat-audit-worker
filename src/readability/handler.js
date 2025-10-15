@@ -172,7 +172,7 @@ export default async function readability(context, auditContext) {
       const pageResult = audits.get(normalizedFinalUrl);
 
       if (!pageResult) {
-        log.warn(`[readability-suggest handler] readability: No page result found for ${normalizedFinalUrl}`);
+        log.debug(`[readability-suggest handler] readability: No page result found for ${normalizedFinalUrl}`);
         return;
       }
 
@@ -316,7 +316,7 @@ export default async function readability(context, auditContext) {
         ? Array.from(detectedLanguages).join(', ')
         : 'none detected';
 
-      log.info(
+      log.debug(
         `[readability-suggest handler] readability: Processed ${processedElements} text element(s) on `
         + `${normalizedFinalUrl}, found ${poorReadabilityCount} with poor readability (detected languages: ${detectedLanguagesList})`,
       );
@@ -359,7 +359,7 @@ export default async function readability(context, auditContext) {
             .filter((opp) => opp.suggestionStatus === 'processing').length;
 
           if (stillProcessing > 0) {
-            log.info(
+            log.debug(
               `[readability-suggest handler] readability: Sending ${stillProcessing} readability issues `
               + 'to Mystique for async processing...',
             );
@@ -373,7 +373,7 @@ export default async function readability(context, auditContext) {
               context,
             );
 
-            log.info(`[readability-suggest handler] readability: Successfully sent ${allReadabilityIssues.length} `
+            log.debug(`[readability-suggest handler] readability: Successfully sent ${allReadabilityIssues.length} `
               + 'readability issues to Mystique for processing');
             // Indicate to preflight runner that we are still processing
             isProcessing = true;
@@ -423,7 +423,7 @@ export default async function readability(context, auditContext) {
           }
         }
       } else {
-        log.info('[readability-suggest handler] readability: No readability issues found to send to Mystique');
+        log.debug('[readability-suggest handler] readability: No readability issues found to send to Mystique');
       }
     }
 
@@ -431,7 +431,8 @@ export default async function readability(context, auditContext) {
     const readabilityEndTimestamp = new Date().toISOString();
     const readabilityElapsed = ((readabilityEndTime - readabilityStartTime) / 1000).toFixed(2);
     const auditStepName = step === 'suggest' ? 'readability-suggestions' : 'readability';
-    log.info(
+
+    log.debug(
       `[readability-suggest handler] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. `
       + `Readability audit completed in ${readabilityElapsed} seconds`,
     );

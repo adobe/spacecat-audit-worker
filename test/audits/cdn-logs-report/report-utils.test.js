@@ -212,15 +212,15 @@ describe('CDN Logs Report Utils', () => {
         aggregatedLocation: 's3://test-bucket/data/',
       };
       const mockLog = {
-        info: sandbox.stub(),
+        debug: sandbox.stub(),
         error: sandbox.stub(),
       };
 
       await reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, referralConfig, mockLog);
 
       expect(mockAthenaClient.execute).to.have.been.calledOnce;
-      expect(mockLog.info).to.have.been.calledWith('Creating or checking table: aggregated_referral_logs_example_com');
-      expect(mockLog.info).to.have.been.calledWith('Table aggregated_referral_logs_example_com is ready');
+      expect(mockLog.debug).to.have.been.calledWith('Creating or checking table: aggregated_referral_logs_example_com');
+      expect(mockLog.debug).to.have.been.calledWith('Table aggregated_referral_logs_example_com is ready');
     });
 
     it('handles table creation errors', async () => {
@@ -235,6 +235,7 @@ describe('CDN Logs Report Utils', () => {
       const mockLog = {
         info: sandbox.stub(),
         error: sandbox.stub(),
+        debug: sandbox.stub(),
       };
 
       await expect(

@@ -46,7 +46,7 @@ export default async function metatags(context, auditContext) {
       const s3Key = `scrapes/${site.getId()}${new URL(url).pathname.replace(/\/$/, '')}/scrape.json`;
       return [url, s3Key];
     }));
-    log.info('[preflight-audit] Starting meta tags audit with new scraper data format');
+    log.debug('[preflight-audit] Starting meta tags audit with new scraper data format');
 
     const {
       seoChecks,
@@ -81,7 +81,7 @@ export default async function metatags(context, auditContext) {
     const metatagsEndTime = Date.now();
     const metatagsEndTimestamp = new Date().toISOString();
     const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds`);
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds`);
 
     timeExecutionBreakdown.push({
       name: 'metatags',

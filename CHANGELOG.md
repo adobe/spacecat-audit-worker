@@ -1,3 +1,108 @@
+## [1.209.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.1...v1.209.2) (2025-10-15)
+
+
+### Bug Fixes
+
+* set logs to debug or remove ([#1295](https://github.com/adobe/spacecat-audit-worker/issues/1295)) ([b1cc5f5](https://github.com/adobe/spacecat-audit-worker/commit/b1cc5f5d43516dba351104a52cccd27ef1951239))
+
+## [1.209.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.0...v1.209.1) (2025-10-14)
+
+
+### Bug Fixes
+
+* trivial update to release last commit ([#1408](https://github.com/adobe/spacecat-audit-worker/issues/1408)) ([835e2fe](https://github.com/adobe/spacecat-audit-worker/commit/835e2fed537e3b7151177a97f6b0e1061db8fbad))
+
+# [1.209.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.11...v1.209.0) (2025-10-14)
+
+
+### Features
+
+* **geo-brand-presence:** Support sheet refreshes on config changes ([#1387](https://github.com/adobe/spacecat-audit-worker/issues/1387)) ([3126949](https://github.com/adobe/spacecat-audit-worker/commit/3126949399f4f9d53ffd33aad6347357df676b23))
+
+## [1.208.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.10...v1.208.11) (2025-10-14)
+
+
+### Bug Fixes
+
+* improve patterns for agentic ([#1404](https://github.com/adobe/spacecat-audit-worker/issues/1404)) ([586f572](https://github.com/adobe/spacecat-audit-worker/commit/586f5726726b3ae49d61908735ed1caa80c817ba))
+
+## [1.208.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.9...v1.208.10) (2025-10-14)
+
+
+### Bug Fixes
+
+* adding additional tags ([#1403](https://github.com/adobe/spacecat-audit-worker/issues/1403)) ([4d96d88](https://github.com/adobe/spacecat-audit-worker/commit/4d96d88a366435c4b2c346eb1be2699a310d05f6))
+
+## [1.208.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.8...v1.208.9) (2025-10-14)
+
+
+### Bug Fixes
+
+* headings prompt ([#1375](https://github.com/adobe/spacecat-audit-worker/issues/1375)) ([23c94aa](https://github.com/adobe/spacecat-audit-worker/commit/23c94aa559371a6de2b85b18f0f0f19c6e39e9ea))
+
+## [1.208.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.7...v1.208.8) (2025-10-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.71.1 ([#1402](https://github.com/adobe/spacecat-audit-worker/issues/1402)) ([848b66d](https://github.com/adobe/spacecat-audit-worker/commit/848b66dcc5a755598bfeae0e07730f85647a5b33))
+
+## [1.208.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.6...v1.208.7) (2025-10-13)
+
+
+### Bug Fixes
+
+* align form accessibility suggestion creation with sites ([#1201](https://github.com/adobe/spacecat-audit-worker/issues/1201)) ([25d24dd](https://github.com/adobe/spacecat-audit-worker/commit/25d24ddcb8d4adae04aca4042868b836fbb87fe5))
+
+## [1.208.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.5...v1.208.6) (2025-10-13)
+
+
+### Bug Fixes
+
+* skip canonical checks on pdf pages ([#1400](https://github.com/adobe/spacecat-audit-worker/issues/1400)) ([7139508](https://github.com/adobe/spacecat-audit-worker/commit/7139508b539ea0d3c5e54b55b4f4a1f4a21b5fa8))
+
+## [1.208.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.4...v1.208.5) (2025-10-13)
+
+
+### Bug Fixes
+
+* skip generic-oppty creation when no top-pages are available ([#1398](https://github.com/adobe/spacecat-audit-worker/issues/1398)) ([0814486](https://github.com/adobe/spacecat-audit-worker/commit/08144860c75aa9504ba23b6b2b2622cc58db7b66))
+
+## [1.208.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.3...v1.208.4) (2025-10-13)
+
+
+### Bug Fixes
+
+* minor audit result issues ([#1396](https://github.com/adobe/spacecat-audit-worker/issues/1396)) ([95a0de9](https://github.com/adobe/spacecat-audit-worker/commit/95a0de9bff6f062f69fc7737b3ded1f73ceeac6c))
+
+## [1.208.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.2...v1.208.3) (2025-10-13)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** correctly store the site config before p… ([#1399](https://github.com/adobe/spacecat-audit-worker/issues/1399)) ([1f76e94](https://github.com/adobe/spacecat-audit-worker/commit/1f76e949da3bfc6ebf363d5646ee54f41692115d))
+
+## [1.208.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.1...v1.208.2) (2025-10-13)
+
+
+### Bug Fixes
+
+* **llmo-customer-analysis:** save the site config before proceeding ([#1397](https://github.com/adobe/spacecat-audit-worker/issues/1397)) ([53f8ff5](https://github.com/adobe/spacecat-audit-worker/commit/53f8ff56d676d523f3a6595b1f4b11da0822862a))
+
+## [1.208.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.0...v1.208.1) (2025-10-13)
+
+
+### Bug Fixes
+
+* updating h1 length check ([#1341](https://github.com/adobe/spacecat-audit-worker/issues/1341)) ([61cb31a](https://github.com/adobe/spacecat-audit-worker/commit/61cb31ae54f47e122754d3255fe000cf0c00b0d7))
+
+# [1.208.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.207.2...v1.208.0) (2025-10-13)
+
+
+### Features
+
+* add support for ams customers ([#1392](https://github.com/adobe/spacecat-audit-worker/issues/1392)) ([cb10fe3](https://github.com/adobe/spacecat-audit-worker/commit/cb10fe3819ac5eaa43d6e0888db4cab9b97e5055))
+
 ## [1.207.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.207.1...v1.207.2) (2025-10-13)
 
 
