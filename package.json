@@ -1,6 +1,6 @@
 {
   "name": "@adobe/spacecat-audit-worker",
-  "version": "1.208.10",
+  "version": "1.209.1",
   "description": "SpaceCat Audit Worker",
   "main": "src/index.js",
   "type": "module",
@@ -113,7 +113,8 @@
     "robots-parser": "3.0.1",
     "syllable": "5.0.1",
     "text-readability": "1.1.1",
-    "urijs": "1.19.11"
+    "urijs": "1.19.11",
+    "zod": "4.1.11"
   },
   "devDependencies": {
     "@adobe/eslint-config-helix": "3.0.11",

@@ -201,6 +201,7 @@ describe('Geo Brand Presence Daily Handler', () => {
     expect(message.week).to.be.a('number');
     expect(message.year).to.be.a('number');
     expect(message.data).to.deep.equal({
+      config_version: null,
       configVersion: null,
       web_search_provider: 'chatgpt',
       url: 'https://example.com/presigned-url',
@@ -333,6 +334,7 @@ describe('Geo Brand Presence Daily Handler', () => {
     expect(message.data).to.deep.equal({
       configVersion: null,
       web_search_provider: 'chatgpt',
+      config_version: null,
       url: 'https://example.com/presigned-url',
       date: '2025-10-01',
     });

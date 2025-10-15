@@ -1,3 +1,24 @@
+## [1.209.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.0...v1.209.1) (2025-10-14)
+
+
+### Bug Fixes
+
+* trivial update to release last commit ([#1408](https://github.com/adobe/spacecat-audit-worker/issues/1408)) ([835e2fe](https://github.com/adobe/spacecat-audit-worker/commit/835e2fed537e3b7151177a97f6b0e1061db8fbad))
+
+# [1.209.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.11...v1.209.0) (2025-10-14)
+
+
+### Features
+
+* **geo-brand-presence:** Support sheet refreshes on config changes ([#1387](https://github.com/adobe/spacecat-audit-worker/issues/1387)) ([3126949](https://github.com/adobe/spacecat-audit-worker/commit/3126949399f4f9d53ffd33aad6347357df676b23))
+
+## [1.208.11](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.10...v1.208.11) (2025-10-14)
+
+
+### Bug Fixes
+
+* improve patterns for agentic ([#1404](https://github.com/adobe/spacecat-audit-worker/issues/1404)) ([586f572](https://github.com/adobe/spacecat-audit-worker/commit/586f5726726b3ae49d61908735ed1caa80c817ba))
+
 ## [1.208.10](https://github.com/adobe/spacecat-audit-worker/compare/v1.208.9...v1.208.10) (2025-10-14)
 
 
