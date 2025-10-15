@@ -1,3 +1,10 @@
+## [1.209.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.1...v1.209.2) (2025-10-15)
+
+
+### Bug Fixes
+
+* set logs to debug or remove ([#1295](https://github.com/adobe/spacecat-audit-worker/issues/1295)) ([b1cc5f5](https://github.com/adobe/spacecat-audit-worker/commit/b1cc5f5d43516dba351104a52cccd27ef1951239))
+
 ## [1.209.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.0...v1.209.1) (2025-10-14)
 
 
