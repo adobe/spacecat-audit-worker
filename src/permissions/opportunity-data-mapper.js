@@ -56,6 +56,7 @@ export function createTooStrongOpportunityData(props) {
         + 'For service users, evaluate their usage in your application code and evaluate what access they actually need and to what paths in the repository. Consider creating multiple service users with restricted permissions on child paths, if the service user is used in multiple places. Delete any unused service user or remove their permissions.',
       dataSources: [DATA_SOURCES.SITE],
       securityType: 'CS-ACL-ALL',
+      securityScoreImpact: 4,
       ...props,
     },
   };
@@ -96,6 +97,7 @@ export function createAdminOpportunityData(props) {
         + 'Review all suggested fixes below before applying.',
       dataSources: [DATA_SOURCES.SITE],
       securityType: 'CS-ACL-ADMIN',
+      securityScoreImpact: 2,
       ...props,
     },
   };

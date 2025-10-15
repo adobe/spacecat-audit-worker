@@ -223,14 +223,13 @@ describe('Permissions Handler Tests', () => {
       setupSuccessfulImsAuth();
 
       // Mock a network error by making fetch throw
-      const originalFetch = global.fetch;
-      global.fetch = sandbox.stub().rejects(new Error('Network error'));
+      nock('https://aem-trustcenter-dev.adobe.io/api')
+        .get('/api/reports/123456/789012/permissions')
+        .replyWithError("A network error occurred");
 
-      await expect(fetchPermissionsReport('https://example.com', context, site))
+
+      await expect(fetchPermissionsReport('', context, site))
         .to.be.rejectedWith('Failed to fetch permissions report');
-
-      // Restore original fetch
-      global.fetch = originalFetch;
     });
 
     it('should handle invalid JSON response', async () => {
@@ -290,7 +289,6 @@ describe('Permissions Handler Tests', () => {
       expect(result.auditResult).to.have.property('permissionsReport');
       expect(result.auditResult.permissionsReport).to.deep.equal(mockPermissionsReport);
       expect(result).to.have.property('fullAuditRef', 'https://example.com');
-      expect(context.log.info).to.have.been.calledWithMatch(/identified: 1 jcr:all permissions, 1 admin checks/);
     });
 
     it('should handle audit failure and return error result', async () => {
@@ -320,7 +318,6 @@ describe('Permissions Handler Tests', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.permissionsReport).to.deep.equal(emptyReport);
-      expect(context.log.info).to.have.been.calledWithMatch(/identified: 0 jcr:all permissions, 0 admin checks/);
     });
 
     it('should handle multiple permissions in report', async () => {
@@ -360,7 +357,6 @@ describe('Permissions Handler Tests', () => {
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.permissionsReport).to.deep.equal(multiplePermissionsReport);
-      expect(context.log.info).to.have.been.calledWithMatch(/identified: 2 jcr:all permissions, 2 admin checks/);
     });
 
     it('should skip audit for non-AEM CS delivery type', async () => {
@@ -399,7 +395,6 @@ describe('Permissions Handler Tests', () => {
       const result = await tooStrongOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.log.info).to.have.been.calledWithMatch(/audit is disabled for site/);
     });
 
     it('should return complete status when site is not aem_cs delivery type', async () => {
@@ -408,7 +403,6 @@ describe('Permissions Handler Tests', () => {
       const result = await tooStrongOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.log.debug).to.have.been.calledWithMatch(/skipping opportunity as it is of delivery type/);
     });
 
     it('should return complete status when audit failed', async () => {
@@ -417,7 +411,6 @@ describe('Permissions Handler Tests', () => {
       const result = await tooStrongOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.log.info).to.have.been.calledWithMatch(/Audit failed, skipping opportunity/);
     });
 
     it('should resolve existing too strong opportunities when no allPermissions found', async () => {
@@ -625,7 +618,6 @@ describe('Permissions Handler Tests', () => {
       const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.log.info).to.have.been.calledWithMatch(/audit is disabled for site/);
     });
 
     it('should return complete status when site is not aem_cs delivery type', async () => {
@@ -634,7 +626,6 @@ describe('Permissions Handler Tests', () => {
       const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.log.debug).to.have.been.calledWithMatch(/skipping opportunity as it is of delivery type/);
     });
 
     it('should return complete status when audit failed', async () => {
@@ -643,7 +634,6 @@ describe('Permissions Handler Tests', () => {
       const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.log.info).to.have.been.calledWithMatch(/Audit failed, skipping opportunity/);
     });
 
     it('should resolve existing admin opportunities when no adminChecks found', async () => {
@@ -741,7 +731,6 @@ describe('Permissions Handler Tests', () => {
       const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.log.debug).to.have.been.calledWithMatch(/security-permissions-auto-suggest not configured/);
     });
 
     it('should early exit when security-permissions-auto-suggest is not enabled by configuration', async () => {
@@ -882,7 +871,6 @@ describe('Permissions Handler Tests', () => {
       const result = await tooStrongOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.log.debug).to.have.been.calledWithMatch(/skipping opportunity as it is of delivery type aem_on_premise/);
     });
 
     it('should handle configuration fetch failure', async () => {

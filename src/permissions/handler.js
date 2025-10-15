@@ -203,12 +203,19 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
     return { status: 'complete' };
   }
 
-  const { permissionsReport, success } = auditData.auditResult;
-
+  const { success } = auditData.auditResult;
   if (!success) {
     log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
     return { status: 'complete' };
   }
+
+  const generateSuggestions = configuration.isHandlerEnabledForSite('security-permissions-auto-suggest', site);
+  if (!generateSuggestions) {
+    log.info(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] security-permissions-auto-suggest not configured, skipping permission suggestion`);
+    return { status: 'complete' };
+  }
+
+  const { permissionsReport } = auditData.auditResult;
 
   const { Opportunity } = dataAccess;
   // Process too strong opportunities
@@ -233,12 +240,6 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
     TOO_STRONG_AUDIT_TYPE,
     createTooStrongMetrics(permissionsReport.allPermissions),
   );
-
-  const generateSuggestions = configuration.isHandlerEnabledForSite('security-permissions-auto-suggest', site);
-  if (!generateSuggestions) {
-    log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] security-permissions-auto-suggest not configured, skipping permission suggestion`);
-    return { status: 'complete' };
-  }
 
   // Flatten allPermission arrays by path and principal
   const flattenedPermissions = permissionsReport.allPermissions
@@ -285,12 +286,19 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
     return { status: 'complete' };
   }
 
-  const { permissionsReport, success } = auditData.auditResult;
-
+  const { success } = auditData.auditResult;
   if (!success) {
     log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
     return { status: 'complete' };
   }
+
+  const generateSuggestions = configuration.isHandlerEnabledForSite('security-permissions-auto-suggest', site);
+  if (!generateSuggestions) {
+    log.info(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] security-permissions-auto-suggest not configured, skipping permission suggestion`);
+    return { status: 'complete' };
+  }
+
+  const { permissionsReport } = auditData.auditResult;
 
   const { Opportunity } = dataAccess;
   // eslint-disable-next-line max-len
@@ -314,12 +322,6 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
     REDUNDANT_AUDIT_TYPE,
     createAdminMetrics(permissionsReport.adminChecks),
   );
-
-  const generateSuggestions = configuration.isHandlerEnabledForSite('security-permissions-auto-suggest', site);
-  if (!generateSuggestions) {
-    log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] security-permissions-auto-suggest not configured, skipping permission suggestion`);
-    return { status: 'complete' };
-  }
 
   // Flatten adminChecks arrays by principal and path and privileges
   const flattenedPermissions = permissionsReport.adminChecks
