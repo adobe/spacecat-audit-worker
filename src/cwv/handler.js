@@ -84,7 +84,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
 
   // Send SQS message for Mystique processing if opportunity needs guidance
   if (await needsGuidance(opportunity)) {
-    await sendSQSMessageForGuidance(context, opportunity);
+    await sendSQSMessageForGuidance(context, opportunity, site);
   }
 }
 

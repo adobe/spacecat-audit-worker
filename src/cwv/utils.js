@@ -58,13 +58,14 @@ export async function needsGuidance(opportunity) {
 /**
  * Sends a message to Mystique for CWV guidance processing
  *
- * @param {Object} context - Context object containing log, sqs, env, and site
+ * @param {Object} context - Context object containing log, sqs, env
  * @param {Object} opportunity - Opportunity object with siteId, auditId, opportunityId, and data
+ * @param {Object} site - Site object with getBaseURL() and getDeliveryType() methods
  * @throws {Error} When SQS message sending fails
  */
-export async function sendSQSMessageForGuidance(context, opportunity) {
+export async function sendSQSMessageForGuidance(context, opportunity, site) {
   const {
-    log, sqs, env, site,
+    log, sqs, env,
   } = context;
 
   try {
