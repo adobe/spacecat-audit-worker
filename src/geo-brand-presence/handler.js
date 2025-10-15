@@ -257,10 +257,12 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     if (customerPrompts.length >= 200) {
       // Only use first 200 customer prompts
       prompts = customerPrompts.slice(0, 200);
+      log.warn('GEO BRAND PRESENCE: Customer prompts exceed or meet 200 limit, using only first 200 for site id %s (%s)', siteId, baseURL);
     } else if (parquetPrompts.length + customerPrompts.length > 200) {
       // Use ALL customer prompts + fill remaining slots with parquet prompts
       const remainingSlots = 200 - customerPrompts.length;
       prompts = parquetPrompts.slice(0, remainingSlots).concat(customerPrompts);
+      log.warn('GEO BRAND PRESENCE: Total prompts exceed 200 limit, using all %d customer prompts + first %d parquet prompts for site id %s (%s)', customerPrompts.length, remainingSlots, siteId, baseURL);
     } else {
       // Total is <= 200, use all prompts
       prompts = parquetPrompts.concat(customerPrompts);

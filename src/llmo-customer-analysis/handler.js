@@ -315,6 +315,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     triggeredSteps.push('cdn-logs-report');
   }
 
+  const brandPresenceCadence = auditContext?.brandPresenceCadence || 'weekly';
   const hasBrandPresenceChanges = changes.topics || changes.categories || changes.entities;
   const needsBrandPresenceRefresh = previousConfigVersion
     && (changes.brands || changes.competitors);
@@ -322,9 +323,9 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   if (hasBrandPresenceChanges) {
     log.info('LLMO config changes detected in topics, categories, or entities; triggering geo-brand-presence audit');
     await triggerGeoBrandPresence(context, site, auditContext);
-    triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
+    triggeredSteps.push(brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
   }
-  if (needsBrandPresenceRefresh) {
+  if (brandPresenceCadence !== 'daily' && needsBrandPresenceRefresh) {
     log.info('LLMO config changes detected in brand or competitor aliases; triggering geo-brand-presence-refresh');
     await triggerGeoBrandPresenceRefresh(context, site, configVersion);
     triggeredSteps.push('geo-brand-presence-refresh');
