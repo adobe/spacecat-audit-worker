@@ -187,9 +187,11 @@ describe('sendSQSMessageForAutoSuggest', () => {
 
     expect(context.log.info.calledTwice).to.be.true;
     expect(context.log.info.firstCall.args[0]).to.include('Received CWV opportunity for auto-suggest');
-    expect(context.log.info.firstCall.args[0]).to.include('site-123');
+    expect(context.log.info.firstCall.args[0]).to.include('siteId: site-123');
+    expect(context.log.info.firstCall.args[0]).to.include('opportunityId: oppty-789');
     expect(context.log.info.secondCall.args[0]).to.include('CWV opportunity sent to Mystique for auto-suggest');
-    expect(context.log.info.secondCall.args[0]).to.include('site-123');
+    expect(context.log.info.secondCall.args[0]).to.include('siteId: site-123');
+    expect(context.log.info.secondCall.args[0]).to.include('opportunityId: oppty-789');
   });
 
   it('should handle missing opportunityId', async () => {
@@ -229,7 +231,32 @@ describe('sendSQSMessageForAutoSuggest', () => {
       expect(thrownError.message).to.equal('SQS send failed');
       expect(context.log.error.calledOnce).to.be.true;
       expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
-      expect(context.log.error.firstCall.args[0]).to.include('site-123');
+      expect(context.log.error.firstCall.args[0]).to.include('siteId: site-123');
+      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-789');
+    }
+  });
+
+  it('should handle SQS sendMessage error with missing opportunityId', async () => {
+    const error = new Error('SQS send failed');
+    context.sqs.sendMessage.rejects(error);
+
+    const opportunity = {
+      siteId: 'site-456',
+      auditId: 'audit-789',
+      // opportunityId is missing
+      data: {
+      },
+    };
+
+    try {
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('SQS send failed');
+      expect(context.log.error.calledOnce).to.be.true;
+      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('siteId: site-456');
+      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: ');
     }
   });
 });

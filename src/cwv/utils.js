@@ -89,8 +89,9 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
     if (opportunity) {
       const opptyData = JSON.parse(JSON.stringify(opportunity));
       const { siteId } = opptyData;
+      const opportunityId = opptyData.opportunityId || '';
 
-      log.info(`Received CWV opportunity for auto-suggest (siteId: ${siteId}): ${JSON.stringify(opportunity)}`);
+      log.info(`Received CWV opportunity for auto-suggest - siteId: ${siteId}, opportunityId: ${opportunityId}`);
 
       const sqsMessage = {
         type: CWV_AUTO_SUGGEST_MESSAGE_TYPE,
@@ -100,17 +101,18 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
         time: new Date().toISOString(),
         data: {
           page: site ? site.getBaseURL() : '',
-          opportunityId: opptyData.opportunityId || '',
+          opportunityId,
         },
       };
 
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
-      log.info(`CWV opportunity sent to Mystique for auto-suggest (siteId: ${siteId}): ${JSON.stringify(sqsMessage)}`);
+      log.info(`CWV opportunity sent to Mystique for auto-suggest - siteId: ${siteId}, opportunityId: ${opportunityId}`);
     }
   } catch (error) {
     const siteId = opportunity?.siteId || 'unknown';
-    log.error(`[CWV] Failed to send auto-suggest message to Mystique (siteId: ${siteId}) for opportunity ${opportunity?.getId()}: ${error.message}`);
+    const opportunityId = opportunity?.opportunityId || opportunity?.getId?.() || '';
+    log.error(`[CWV] Failed to send auto-suggest message to Mystique - siteId: ${siteId}, opportunityId: ${opportunityId}, error: ${error.message}`);
     throw new Error(error.message);
   }
 }
