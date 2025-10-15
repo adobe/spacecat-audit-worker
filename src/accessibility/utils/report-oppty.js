@@ -10,13 +10,14 @@
  * governing permissions and limitations under the License.
  */
 
-export function createInDepthReportOpportunity(week, year) {
+export function createInDepthReportOpportunity(week, year, deviceType = 'Desktop') {
+  const capitalizedDevice = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
   return {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
     origin: 'AUTOMATION',
     type: 'generic-opportunity',
-    title: `Accessibility report - Desktop - Week ${week} - ${year} - in-depth`,
-    description: 'This report provides an in-depth overview of various accessibility issues identified across different web pages. It categorizes issues based on their severity and impact, offering detailed descriptions and recommended fixes. The report covers critical aspects such as ARIA attributes, keyboard navigation, and screen reader compatibility to ensure a more inclusive and accessible web experience for all users.',
+    title: `Accessibility report - ${capitalizedDevice} - Week ${week} - ${year} - in-depth`,
+    description: `This report provides an in-depth overview of various accessibility issues identified across different web pages on ${deviceType} devices. It categorizes issues based on their severity and impact, offering detailed descriptions and recommended fixes. The report covers critical aspects such as ARIA attributes, keyboard navigation, and screen reader compatibility to ensure a more inclusive and accessible web experience for all users.`,
     tags: [
       'a11y',
     ],
@@ -24,13 +25,14 @@ export function createInDepthReportOpportunity(week, year) {
   };
 }
 
-export function createEnhancedReportOpportunity(week, year) {
+export function createEnhancedReportOpportunity(week, year, deviceType = 'Desktop') {
+  const capitalizedDevice = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
   return {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
     origin: 'AUTOMATION',
     type: 'generic-opportunity',
-    title: `Enhancing accessibility for the top 10 most-visited pages - Desktop - Week ${week} - ${year}`,
-    description: 'Here are some optimization suggestions that could help solve the accessibility issues found on the top 10 most-visited pages.',
+    title: `Enhancing accessibility for the top 10 most-visited pages - ${capitalizedDevice} - Week ${week} - ${year}`,
+    description: `Here are some optimization suggestions that could help solve the accessibility issues found on the top 10 most-visited pages on ${deviceType} devices.`,
     tags: [
       'a11y',
     ],
@@ -38,13 +40,14 @@ export function createEnhancedReportOpportunity(week, year) {
   };
 }
 
-export function createFixedVsNewReportOpportunity(week, year) {
+export function createFixedVsNewReportOpportunity(week, year, deviceType = 'Desktop') {
+  const capitalizedDevice = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
   return {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
     origin: 'AUTOMATION',
     type: 'generic-opportunity',
-    title: `Accessibility report Fixed vs New Issues - Desktop - Week ${week} - ${year}`,
-    description: 'This report provides a comprehensive analysis of accessibility issues, highlighting both resolved and newly identified problems. It aims to track progress in improving accessibility and identify areas requiring further attention.',
+    title: `Accessibility report Fixed vs New Issues - ${capitalizedDevice} - Week ${week} - ${year}`,
+    description: `This report provides a comprehensive analysis of accessibility issues on ${deviceType} devices, highlighting both resolved and newly identified problems. It aims to track progress in improving accessibility and identify areas requiring further attention.`,
     tags: [
       'a11y',
     ],
@@ -52,13 +55,14 @@ export function createFixedVsNewReportOpportunity(week, year) {
   };
 }
 
-export function createBaseReportOpportunity(week, year) {
+export function createBaseReportOpportunity(week, year, deviceType = 'Desktop') {
+  const capitalizedDevice = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
   return {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Runbook_Template.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
     origin: 'AUTOMATION',
     type: 'generic-opportunity',
-    title: `Accessibility report - Desktop - Week ${week} - ${year}`,
-    description: 'A web accessibility audit is an assessment of how well your website and digital assets conform to the needs of people with disabilities and if they follow the Web Content Accessibility Guidelines (WCAG). Desktop only.',
+    title: `Accessibility report - ${capitalizedDevice} - Week ${week} - ${year}`,
+    description: `A web accessibility audit is an assessment of how well your website and digital assets conform to the needs of people with disabilities and if they follow the Web Content Accessibility Guidelines (WCAG). ${capitalizedDevice} only.`,
     tags: [
       'a11y',
     ],
@@ -77,6 +81,41 @@ export function createReportOpportunitySuggestionInstance(suggestionValue) {
       },
     },
   ];
+}
+
+/**
+ * Creates or updates suggestion instance with device-specific markdown
+ * @param {string|Object} suggestionValue - Either existing object or new markdown string
+ * @param {string} deviceType - 'desktop' or 'mobile'
+ * @param {string} markdownContent - The markdown content for this device
+ * @returns {Array} Suggestion instance array
+ */
+export function createOrUpdateDeviceSpecificSuggestion(
+  suggestionValue,
+  deviceType,
+  markdownContent,
+) {
+  let updatedSuggestionValue;
+
+  if (typeof suggestionValue === 'string') {
+    // First device creating the suggestion (legacy case or when no existing suggestion)
+    updatedSuggestionValue = {};
+    if (deviceType === 'desktop') {
+      updatedSuggestionValue['accessibility-desktop'] = suggestionValue;
+    } else {
+      updatedSuggestionValue['accessibility-mobile'] = suggestionValue;
+    }
+  } else if (typeof suggestionValue === 'object' && suggestionValue !== null) {
+    // Existing object - update with new device content
+    updatedSuggestionValue = { ...suggestionValue };
+    updatedSuggestionValue[`accessibility-${deviceType}`] = markdownContent;
+  } else {
+    // New object structure
+    updatedSuggestionValue = {};
+    updatedSuggestionValue[`accessibility-${deviceType}`] = markdownContent;
+  }
+
+  return createReportOpportunitySuggestionInstance(updatedSuggestionValue);
 }
 
 export function createAccessibilityAssistiveOpportunity() {
