@@ -236,14 +236,15 @@ describe('sendSQSMessageForAutoSuggest', () => {
     }
   });
 
-  it('should handle SQS sendMessage error with missing opportunityId', async () => {
+  it('should handle SQS sendMessage error with missing opportunityId but with getId method', async () => {
     const error = new Error('SQS send failed');
     context.sqs.sendMessage.rejects(error);
 
     const opportunity = {
       siteId: 'site-456',
       auditId: 'audit-789',
-      // opportunityId is missing
+      // opportunityId is missing, but getId is available
+      getId: () => 'oppty-from-getId',
       data: {
       },
     };
@@ -256,7 +257,55 @@ describe('sendSQSMessageForAutoSuggest', () => {
       expect(context.log.error.calledOnce).to.be.true;
       expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
       expect(context.log.error.firstCall.args[0]).to.include('siteId: site-456');
+      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-from-getId');
+    }
+  });
+
+  it('should handle SQS sendMessage error with missing opportunityId and no getId method', async () => {
+    const error = new Error('SQS send failed');
+    context.sqs.sendMessage.rejects(error);
+
+    const opportunity = {
+      siteId: 'site-999',
+      auditId: 'audit-888',
+      // opportunityId is missing and no getId method
+      data: {
+      },
+    };
+
+    try {
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('SQS send failed');
+      expect(context.log.error.calledOnce).to.be.true;
+      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('siteId: site-999');
       expect(context.log.error.firstCall.args[0]).to.include('opportunityId: ');
+    }
+  });
+
+  it('should handle SQS sendMessage error with missing siteId', async () => {
+    const error = new Error('SQS send failed');
+    context.sqs.sendMessage.rejects(error);
+
+    const opportunity = {
+      // siteId is missing
+      auditId: 'audit-111',
+      opportunityId: 'oppty-222',
+      data: {
+      },
+    };
+
+    try {
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('SQS send failed');
+      expect(context.log.error.calledOnce).to.be.true;
+      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('siteId: unknown');
+      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-222');
     }
   });
 });
