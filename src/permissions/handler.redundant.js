@@ -19,12 +19,11 @@ import { createHash } from 'node:crypto';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import {
-  createTooStrongOpportunityData,
-  createTooStrongMetrics,
+  createAdminOpportunityData, createAdminMetrics,
 } from './opportunity-data-mapper.js';
-import { syncSuggestions } from '../utils/data-access.js';
-import { mapTooStrongSuggestion } from './suggestion-data-mapper.js';
+import { mapAdminSuggestion } from './suggestion-data-mapper.js';
 import { fetchPermissionsReport, markOpportunityAsFixed } from './common.js';
+import { syncSuggestions } from '../utils/data-access.js';
 
 const INTERVAL = 7; // days
 const TOO_STRONG_AUDIT_TYPE = 'security-permissions'; // Audit.AUDIT_TYPES.SECURITY_PERMISSIONS;
@@ -44,7 +43,7 @@ const REDUNDANT_AUDIT_TYPE = 'security-permissions-redundant'; // Audit.AUDIT_TY
  * @param {Object} site - The site object
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
-export async function permissionsAuditRunner(baseURL, context, site) {
+export async function redundantAuditRunner(baseURL, context, site) {
   const { log } = context;
 
   // This opportunity is only relevant for aem_cs delivery-type at the moment
@@ -93,9 +92,7 @@ export async function permissionsAuditRunner(baseURL, context, site) {
 }
 
 /**
- * Creates opportunities and syncs suggestions for security-permissions audit type.
- *
- * This step focuses on identifying "too strong" permissions issues (e.g., jcr:all permissions)
+ * Creates opportunities and syncs suggestions.
  *
  * @param {string} auditUrl - The URL that was audited.
  * @param {Object} auditData - The audit data containing results and suggestions.
@@ -103,20 +100,20 @@ export async function permissionsAuditRunner(baseURL, context, site) {
  * @param {Object} site - The site object
  * @returns {Object} The audit data unchanged (opportunities created as side effect).
  */
-export const tooStrongOpportunityStep = async (auditUrl, auditData, context, site) => {
+export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, context, site) => {
   const { log, dataAccess } = context;
   const { Configuration } = dataAccess;
 
   // Check whether the audit is enabled for the site
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('security-permissions', site)) {
-    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
+    log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
     return { status: 'complete' };
   }
 
   const { success } = auditData.auditResult;
   if (!success) {
-    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
+    log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
     return { status: 'complete' };
   }
 
@@ -129,55 +126,54 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
   const { permissionsReport } = auditData.auditResult;
 
   const { Opportunity } = dataAccess;
-  // Process too strong opportunities
   // eslint-disable-next-line max-len
-  const strongOpportunities = (await Opportunity.allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW))
-    .filter((o) => o.getType() === TOO_STRONG_AUDIT_TYPE);
+  const adminOpportunities = (await Opportunity.allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW))
+    .filter((o) => o.getType() === REDUNDANT_AUDIT_TYPE);
 
-  // If no too strong permissions issues found in the report, resolve existing opportunities
-  if (!isNonEmptyArray(permissionsReport?.allPermissions)) {
-    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] no jcr:all permissions found, resolving existing opportunities (${strongOpportunities.length})`);
-    await Promise.all(strongOpportunities.map(
-      (o) => markOpportunityAsFixed(TOO_STRONG_AUDIT_TYPE, o, site, context),
-    ));
+  // Process admin opportunities
+  // If no admin issues found, resolve existing admin opportunities
+  if (!isNonEmptyArray(permissionsReport?.adminChecks)) {
+    log.debug(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] no admin checks found, resolving existing admin opportunities (${adminOpportunities.length})`);
+    await Promise.all(
+      adminOpportunities.map((o) => markOpportunityAsFixed(REDUNDANT_AUDIT_TYPE, o, site, context)),
+    );
     return { status: 'complete' };
   }
-
-  const tooStrongOpt = await convertToOpportunity(
+  const adminOpt = await convertToOpportunity(
     auditUrl,
     { siteId: auditData.siteId, id: auditData.auditId },
     context,
-    createTooStrongOpportunityData,
-    TOO_STRONG_AUDIT_TYPE,
-    createTooStrongMetrics(permissionsReport.allPermissions),
+    createAdminOpportunityData,
+    REDUNDANT_AUDIT_TYPE,
+    createAdminMetrics(permissionsReport.adminChecks),
   );
 
-  // Flatten allPermission arrays by path and principal
-  const flattenedPermissions = permissionsReport.allPermissions
-    // eslint-disable-next-line max-len
-    .flatMap(({ path, details }) => details.map(() => ({ path, ...details })));
+  // Flatten adminChecks arrays by principal and path and privileges
+  const flattenedPermissions = permissionsReport.adminChecks
+  // eslint-disable-next-line max-len
+    .flatMap(({ principal, details }) => details.map((d) => ({ principal, path: d.path, ...d })));
 
-  const buildTooStrongSuggestionKey = (data) => {
+  const buildAdminSuggestionKey = (data) => {
     const s = JSON.stringify(data);
     const hash = createHash('sha256').update(s).digest('hex').slice(0, 8);
-    return `${data.path}@${data.principal}#${hash}`;
+    return `${data.principal}@${data.path}#${hash}`;
   };
 
   await syncSuggestions({
     context,
-    opportunity: tooStrongOpt,
+    opportunity: adminOpt,
     newData: flattenedPermissions,
-    buildKey: buildTooStrongSuggestionKey,
-    mapNewSuggestion: (entry) => mapTooStrongSuggestion(tooStrongOpt, entry),
+    buildKey: buildAdminSuggestionKey,
+    mapNewSuggestion: (entry) => mapAdminSuggestion(adminOpt, entry),
   });
 
-  tooStrongOpt.setUpdatedBy('system');
-  await tooStrongOpt.save();
+  adminOpt.setUpdatedBy('system');
+  await adminOpt.save();
 
   return { status: 'complete' };
 };
 
 export default new AuditBuilder()
-  .withRunner(permissionsAuditRunner)
-  .withPostProcessors([tooStrongOpportunityStep])
+  .withRunner(redundantAuditRunner)
+  .withPostProcessors([redundantPermissionsOpportunityStep])
   .build();

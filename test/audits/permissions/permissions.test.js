@@ -19,11 +19,13 @@ import nock from 'nock';
 import { Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { MockContextBuilder } from '../../shared.js';
 import {
-  fetchPermissionsReport,
   permissionsAuditRunner,
   tooStrongOpportunityStep,
-  redundantPermissionsOpportunityStep,
 } from '../../../src/permissions/handler.js';
+import {
+  redundantAuditRunner,
+  redundantPermissionsOpportunityStep,
+} from '../../../src/permissions/handler.redundant.js';
 import {
   createTooStrongMetrics,
   createTooStrongOpportunityData,
@@ -34,6 +36,7 @@ import {
   mapTooStrongSuggestion,
   mapAdminSuggestion,
 } from '../../../src/permissions/suggestion-data-mapper.js';
+import { fetchPermissionsReport } from '../../../src/permissions/common.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -373,6 +376,116 @@ describe('Permissions Handler Tests', () => {
     });
   });
 
+  describe('redundantAuditRunner', () => {
+    it('should successfully run redundant permissions audit and return audit result', async () => {
+      setupSuccessfulImsAuth();
+      setupSuccessfulPermissionsApi();
+
+      const result = await redundantAuditRunner('https://example.com', context, site);
+
+      expect(result).to.have.property('auditResult');
+      expect(result.auditResult).to.have.property('success', true);
+      expect(result.auditResult).to.have.property('finalUrl', 'https://example.com');
+      expect(result.auditResult).to.have.property('permissionsReport');
+      expect(result.auditResult.permissionsReport).to.deep.equal(mockPermissionsReport);
+      expect(result).to.have.property('fullAuditRef', 'https://example.com');
+    });
+
+    it('should handle audit failure and return error result', async () => {
+      site.getDeliveryConfig = () => {
+        throw new Error('Test error');
+      };
+
+      const result = await redundantAuditRunner('https://example.com', context, site);
+
+      expect(result).to.have.property('auditResult');
+      expect(result.auditResult).to.have.property('success', false);
+      expect(result.auditResult).to.have.property('finalUrl', 'https://example.com');
+      expect(result.auditResult).to.have.property('error');
+      expect(result.auditResult.error).to.include('[security-permissions] [Site: a1b2c3d4-e5f6-7890-abcd-ef1234567890] permissions audit failed with error: Test error');
+      expect(result).to.have.property('fullAuditRef', 'https://example.com');
+    });
+
+    it('should handle empty permissions report', async () => {
+      setupSuccessfulImsAuth();
+
+      const emptyReport = { allPermissions: [], adminChecks: [] };
+      nock('https://aem-trustcenter-dev.adobe.io')
+        .get('/api/reports/123456/789012/permissions')
+        .reply(200, { data: emptyReport });
+
+      const result = await redundantAuditRunner('https://example.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.permissionsReport).to.deep.equal(emptyReport);
+    });
+
+    it('should handle multiple permissions in report', async () => {
+      setupSuccessfulImsAuth();
+
+      const multiplePermissionsReport = {
+        allPermissions: [
+          {
+            path: '/content/page1',
+            details: [{ principal: 'everyone', acl: ['jcr:all'], otherPermissions: [] }],
+          },
+          {
+            path: '/content/page2',
+            details: [
+              { principal: 'everyone', acl: ['jcr:all'], otherPermissions: [] },
+              { principal: 'anonymous', acl: ['jcr:all'], otherPermissions: [] },
+            ],
+          },
+        ],
+        adminChecks: [
+          {
+            principal: 'admin1',
+            details: [{ path: '/content/admin1', allow: true, privileges: ['jcr:all'] }],
+          },
+          {
+            principal: 'admin2',
+            details: [{ path: '/content/admin2', allow: true, privileges: ['jcr:all'] }],
+          },
+        ],
+      };
+
+      nock('https://aem-trustcenter-dev.adobe.io')
+        .get('/api/reports/123456/789012/permissions')
+        .reply(200, { data: multiplePermissionsReport });
+
+      const result = await redundantAuditRunner('https://example.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.permissionsReport).to.deep.equal(multiplePermissionsReport);
+    });
+
+    it('should skip audit for non-AEM CS delivery type', async () => {
+      site.getDeliveryType = () => 'aem_on_premise';
+
+      const result = await redundantAuditRunner('https://example.com', context, site);
+
+      expect(result).to.have.property('auditResult');
+      expect(result.auditResult).to.have.property('success', false);
+      expect(result.auditResult).to.have.property('finalUrl', 'https://example.com');
+      expect(result.auditResult).to.have.property('error', 'Unsupported delivery type aem_on_premise');
+      expect(result).to.have.property('fullAuditRef', 'https://example.com');
+      expect(context.log.debug).to.have.been.calledWithMatch(/skipping permissions audit as site is of delivery type aem_on_premise/);
+    });
+
+    it('should handle null permissions report', async () => {
+      setupSuccessfulImsAuth();
+
+      nock('https://aem-trustcenter-dev.adobe.io')
+        .get('/api/reports/123456/789012/permissions')
+        .reply(200, { data: null });
+
+      const result = await redundantAuditRunner('https://example.com', context, site);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.permissionsReport).to.be.null;
+    });
+  });
+
   describe('opportunityAndSuggestionsStep', () => {
     let auditData;
 
@@ -620,14 +733,6 @@ describe('Permissions Handler Tests', () => {
       expect(result).to.deep.equal({ status: 'complete' });
     });
 
-    it('should return complete status when site is not aem_cs delivery type', async () => {
-      site.getDeliveryType = () => 'aem_on_premise';
-
-      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
-
-      expect(result).to.deep.equal({ status: 'complete' });
-    });
-
     it('should return complete status when audit failed', async () => {
       auditData.auditResult.success = false;
 
@@ -752,6 +857,154 @@ describe('Permissions Handler Tests', () => {
       };
       const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
       expect(result).to.deep.equal({ status: 'complete' });
+    });
+
+    it('should handle opportunity creation failure', async () => {
+      const auditData = {
+        auditResult: {
+          permissionsReport: {
+            allPermissions: [],
+            adminChecks: [
+              {
+                principal: 'admin1',
+                details: [{ path: '/content/admin1', allow: true, privileges: ['jcr:all'] }],
+              },
+            ],
+          },
+          success: true,
+        },
+        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        auditId: 'audit-123',
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.rejects(new Error('Opportunity creation failed'));
+
+      await expect(redundantPermissionsOpportunityStep('https://example.com', auditData, context, site))
+        .to.be.rejectedWith('Opportunity creation failed');
+    });
+
+    it('should handle syncSuggestions failure', async () => {
+      const auditData = {
+        auditResult: {
+          permissionsReport: {
+            allPermissions: [],
+            adminChecks: [
+              {
+                principal: 'admin1',
+                details: [{ path: '/content/admin1', allow: true, privileges: ['jcr:all'] }],
+              },
+            ],
+          },
+          success: true,
+        },
+        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        auditId: 'audit-123',
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves({
+        getId: () => 'opp-123',
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub(),
+        addSuggestions: sandbox.stub().rejects(new Error('Sync suggestions failed')),
+        getSuggestions: sandbox.stub().resolves([]),
+      });
+
+      await expect(redundantPermissionsOpportunityStep('https://example.com', auditData, context, site))
+        .to.be.rejectedWith('Sync suggestions failed');
+    });
+
+    it('should handle configuration fetch failure', async () => {
+      const auditData = {
+        auditResult: {
+          permissionsReport: mockPermissionsReport,
+          success: true,
+        },
+        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        auditId: 'audit-123',
+      };
+
+      context.dataAccess.Configuration.findLatest.rejects(new Error('Configuration fetch failed'));
+
+      await expect(redundantPermissionsOpportunityStep('https://example.com', auditData, context, site))
+        .to.be.rejectedWith('Configuration fetch failed');
+    });
+
+    it('should handle opportunity fetch failure', async () => {
+      const auditData = {
+        auditResult: {
+          permissionsReport: mockPermissionsReport,
+          success: true,
+        },
+        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        auditId: 'audit-123',
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.rejects(new Error('Opportunity fetch failed'));
+
+      await expect(redundantPermissionsOpportunityStep('https://example.com', auditData, context, site))
+        .to.be.rejectedWith('Opportunity fetch failed');
+    });
+
+    it('should handle empty opportunities array', async () => {
+      const auditData = {
+        auditResult: {
+          permissionsReport: {
+            allPermissions: [],
+            adminChecks: [],
+          },
+          success: true,
+        },
+        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        auditId: 'audit-123',
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+
+      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+    });
+
+    it('should handle multiple admin opportunities', async () => {
+      const auditData = {
+        auditResult: {
+          permissionsReport: {
+            allPermissions: [],
+            adminChecks: [
+              {
+                principal: 'admin1',
+                details: [{ path: '/content/admin1', allow: true, privileges: ['jcr:all'] }],
+              },
+              {
+                principal: 'admin2',
+                details: [
+                  { path: '/content/admin2', allow: true, privileges: ['jcr:all'] },
+                  { path: '/content/admin3', allow: true, privileges: ['jcr:read'] },
+                ],
+              },
+            ],
+          },
+          success: true,
+        },
+        siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        auditId: 'audit-123',
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves({
+        getId: () => 'opp-123',
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub(),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        getSuggestions: sandbox.stub().resolves([]),
+      });
+
+      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.dataAccess.Opportunity.create).to.have.been.called;
     });
   });
 

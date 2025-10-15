@@ -78,6 +78,7 @@ import prerender from './prerender/handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
 import permissions from './permissions/handler.js';
+import permissionsRedundant from './permissions/handler.redundant.js';
 
 const HANDLERS = {
   accessibility,
@@ -141,6 +142,7 @@ const HANDLERS = {
   prerender,
   'security-vulnerabilities': vulnerabilities,
   'security-permissions': permissions,
+  'security-permissions-redundant': permissionsRedundant,
   dummy: (message) => ok(message),
 };
 
