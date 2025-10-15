@@ -137,7 +137,7 @@ describe('Geo Brand Presence Handler', () => {
       auditResult: { keywordQuestions: [], aiPlatform: 'gemini' },
       fullAuditRef: finalUrl,
     });
-    expect(log.info).to.have.been.calledWith(
+    expect(log.debug).to.have.been.calledWith(
         'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
         finalUrl,
         '2025-09-15',
@@ -161,7 +161,7 @@ describe('Geo Brand Presence Handler', () => {
         'GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s',
         invalidJson,
     );
-    expect(log.info).to.have.been.calledWith(
+    expect(log.debug).to.have.been.calledWith(
         'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
         finalUrl,
         undefined,

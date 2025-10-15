@@ -85,7 +85,7 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
     ? await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour })
     : providers;
 
-  log.info(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
+  log.debug(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
 
   const database = `cdn_logs_${customerDomain}`;
   const aggregatedTable = `aggregated_logs_${customerDomain}`;

@@ -244,7 +244,7 @@ describe('Prerender Audit', () => {
             getConfig: () => ({ getIncludedURLs: () => [] }),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
-          log: { info: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub() },
           env: {
             S3_SCRAPER_BUCKET_NAME: 'test-bucket',
             AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
@@ -278,7 +278,7 @@ describe('Prerender Audit', () => {
             getConfig: () => ({ getIncludedURLs: () => [] }),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
-          log: { info: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub() },
           env: {
             S3_SCRAPER_BUCKET_NAME: 'test-bucket',
             AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
@@ -321,7 +321,7 @@ describe('Prerender Audit', () => {
             getConfig: () => ({ getIncludedURLs: (auditType) => auditType === 'prerender' ? ['https://example.com/special'] : [] }),
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
-          log: { info: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
 
         const result = await submitForScraping(context);
@@ -382,7 +382,7 @@ describe('Prerender Audit', () => {
           },
           audit: { getId: () => 'audit-id' },
           dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().rejects(new Error('Database error')) } },
-          log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
           scrapeResultPaths: new Map(),
           s3Client: {},
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
@@ -415,6 +415,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             error: sandbox.stub(),
             warn: sandbox.stub(),
           },
@@ -444,6 +445,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -463,7 +465,7 @@ describe('Prerender Audit', () => {
       it('should trigger opportunity processing path when prerender is detected', async () => {
         // This test covers line 341 by ensuring the full opportunity processing flow executes
         const mockOpportunity = { getId: () => 'test-opportunity-id' };
-        
+
         const mockHandler = await esmock('../../src/prerender/handler.js', {
           '../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
@@ -484,13 +486,13 @@ describe('Prerender Audit', () => {
 
         const mockS3Client = {
           send: sandbox.stub()
-            .onFirstCall().resolves({ 
+            .onFirstCall().resolves({
               ContentType: 'text/html',
-              Body: { transformToString: () => Promise.resolve(serverHtml) } 
+              Body: { transformToString: () => Promise.resolve(serverHtml) }
             })
-            .onSecondCall().resolves({ 
+            .onSecondCall().resolves({
               ContentType: 'text/html',
-              Body: { transformToString: () => Promise.resolve(clientHtml) } 
+              Body: { transformToString: () => Promise.resolve(clientHtml) }
             }),
         };
 
@@ -500,11 +502,12 @@ describe('Prerender Audit', () => {
             getBaseURL: () => 'https://example.com',
           },
           audit: { getId: () => 'audit-id' },
-          dataAccess: { 
+          dataAccess: {
             SiteTopPage: mockSiteTopPage,
           },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -514,7 +517,7 @@ describe('Prerender Audit', () => {
 
         // This should fully execute the opportunity processing path including line 341
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
-        
+
         expect(result.status).to.equal('complete');
         expect(result.auditResult.urlsNeedingPrerender).to.be.greaterThan(0);
         expect(context.log.info).to.have.been.called;
@@ -533,7 +536,7 @@ describe('Prerender Audit', () => {
 
         const logStub = sandbox.stub();
         const context = {
-          log: { info: logStub },
+          log: { info: logStub, debug: logStub },
         };
 
         await processOpportunityAndSuggestions('https://example.com', auditData, context);
@@ -553,7 +556,7 @@ describe('Prerender Audit', () => {
 
         const logStub = sandbox.stub();
         const context = {
-          log: { info: logStub },
+          log: { info: logStub, debug: logStub },
         };
 
         await processOpportunityAndSuggestions('https://example.com', auditData, context);
@@ -580,7 +583,7 @@ describe('Prerender Audit', () => {
 
         const logStub = sandbox.stub();
         const context = {
-          log: { info: logStub },
+          log: { info: logStub, debug: logStub },
         };
 
         // This will fail due to missing mocks, but we test the early logging
@@ -624,7 +627,7 @@ describe('Prerender Audit', () => {
 
         const logStub = sandbox.stub();
         const context = {
-          log: { info: logStub },
+          log: { info: logStub, debug: logStub },
           dataAccess: {
             Opportunity: {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
@@ -658,14 +661,14 @@ describe('Prerender Audit', () => {
         // Mock all required dependencies for the full opportunity creation flow
         const mockConvertToOpportunity = sandbox.stub().resolves(mockOpportunity);
         const mockSyncSuggestions = sandbox.stub().resolves();
-        
+
         // Mock the dependencies - need to use dynamic import to mock ES modules
         const originalConvertToOpportunity = await import('../../src/common/opportunity.js');
         const originalSyncSuggestions = await import('../../src/utils/data-access.js');
-        
+
         // Since we can't easily stub ES modules, we'll test the logic indirectly
         // by testing what would happen if the dependencies were available
-        
+
         const auditData = {
           siteId: 'test-site-id',
           auditId: 'test-audit-id',
@@ -684,7 +687,7 @@ describe('Prerender Audit', () => {
 
         const logStub = sandbox.stub();
         const context = {
-          log: { info: logStub },
+          log: { info: logStub, debug: logStub },
         };
 
         try {
@@ -760,16 +763,16 @@ describe('Prerender Audit', () => {
       it('should handle error conditions during stats calculation', () => {
         // Force an error by mocking a problematic scenario during calculateStats
         const htmlContent = '<html><body>Test content</body></html>';
-        
+
         // Test with a scenario that might trigger the catch block in analyzeHtmlForPrerender
         try {
-          // Since analyzeHtmlForPrerender wraps calculateStats in try-catch, 
+          // Since analyzeHtmlForPrerender wraps calculateStats in try-catch,
           // we need to simulate an error that could occur during processing
           const originalCheerio = require.cache[require.resolve('cheerio')];
-          
+
           // Create a result that exercises the error handling path
           const result = analyzeHtmlForPrerender(htmlContent, htmlContent, NaN);
-          
+
           // Should handle the error gracefully
           expect(result).to.be.an('object');
           if (result.error) {
@@ -804,6 +807,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -828,6 +832,7 @@ describe('Prerender Audit', () => {
         const context = {
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -870,9 +875,9 @@ describe('Prerender Audit', () => {
         // Mock S3 to return only server-side HTML but not client-side
         const mockS3Client = {
           send: sandbox.stub()
-            .onFirstCall().resolves({ 
+            .onFirstCall().resolves({
               ContentType: 'text/html',
-              Body: { transformToString: () => Promise.resolve('<html><body>Server content</body></html>') } 
+              Body: { transformToString: () => Promise.resolve('<html><body>Server content</body></html>') }
             })
             .onSecondCall().rejects(new Error('Client-side HTML not found')),
         };
@@ -886,6 +891,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -899,7 +905,7 @@ describe('Prerender Audit', () => {
         expect(context.log.error).to.have.been.called;
         // Should log about missing HTML data (simplified error handling)
         const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg => 
+        const hasMissingDataError = errorMessages.some(msg =>
           msg.includes('Missing HTML data for')
         );
         expect(hasMissingDataError).to.be.true;
@@ -916,13 +922,13 @@ describe('Prerender Audit', () => {
         // Mock S3 to return empty strings for both server-side and client-side HTML
         const mockS3Client = {
           send: sandbox.stub()
-            .onFirstCall().resolves({ 
+            .onFirstCall().resolves({
               ContentType: 'text/html',
-              Body: { transformToString: () => Promise.resolve('') } 
+              Body: { transformToString: () => Promise.resolve('') }
             })
-            .onSecondCall().resolves({ 
+            .onSecondCall().resolves({
               ContentType: 'text/html',
-              Body: { transformToString: () => Promise.resolve('') } 
+              Body: { transformToString: () => Promise.resolve('') }
             }),
         };
 
@@ -935,6 +941,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -948,7 +955,7 @@ describe('Prerender Audit', () => {
         expect(context.log.error).to.have.been.called;
         // Should log error about missing HTML data (simplified error handling)
         const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg => 
+        const hasMissingDataError = errorMessages.some(msg =>
           msg.includes('Missing HTML data for')
         );
         expect(hasMissingDataError).to.be.true;
@@ -956,13 +963,13 @@ describe('Prerender Audit', () => {
 
       it('should test compareHtmlContent with empty HTML strings directly', () => {
         // Test empty HTML handling through analyzeHtmlForPrerender
-        
+
         // Test with empty server-side HTML
         const result1 = analyzeHtmlForPrerender('', '<html><body><p>Client content</p></body></html>', 1.2);
         expect(result1.error).to.equal('Missing HTML content for comparison');
         expect(result1.needsPrerender).to.be.false;
 
-        // Test with empty client-side HTML  
+        // Test with empty client-side HTML
         const result2 = analyzeHtmlForPrerender('<html><body><p>Server content</p></body></html>', '', 1.2);
         expect(result2.error).to.equal('Missing HTML content for comparison');
         expect(result2.needsPrerender).to.be.false;
@@ -987,13 +994,13 @@ describe('Prerender Audit', () => {
 
         const mockS3Client = {
           send: sandbox.stub()
-            .onFirstCall().resolves({ 
+            .onFirstCall().resolves({
               ContentType: 'text/html',
-              Body: { transformToString: () => Promise.resolve(serverHtml) } 
+              Body: { transformToString: () => Promise.resolve(serverHtml) }
             })
-            .onSecondCall().resolves({ 
+            .onSecondCall().resolves({
               ContentType: 'text/html',
-              Body: { transformToString: () => Promise.resolve(clientHtml) } 
+              Body: { transformToString: () => Promise.resolve(clientHtml) }
             }),
         };
 
@@ -1006,6 +1013,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -1035,13 +1043,13 @@ describe('Prerender Audit', () => {
         const malformedHtml = '<html><body>Server content</body></html>';
         const mockS3Client = {
           send: sandbox.stub()
-            .onFirstCall().resolves({ 
+            .onFirstCall().resolves({
               ContentType: 'text/html',
-              Body: { transformToString: () => Promise.resolve(malformedHtml) } 
+              Body: { transformToString: () => Promise.resolve(malformedHtml) }
             })
-            .onSecondCall().resolves({ 
+            .onSecondCall().resolves({
               ContentType: 'text/html',
-              Body: { transformToString: () => Promise.resolve(malformedHtml) } 
+              Body: { transformToString: () => Promise.resolve(malformedHtml) }
             }),
         };
 
@@ -1054,6 +1062,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -1082,7 +1091,7 @@ describe('Prerender Audit', () => {
             getConfig: () => null, // No config
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
-          log: { info: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
 
         const result = await submitForScraping(context);
@@ -1103,7 +1112,7 @@ describe('Prerender Audit', () => {
             getConfig: () => ({}), // Config without getIncludedURLs
           },
           dataAccess: { SiteTopPage: mockSiteTopPage },
-          log: { info: sandbox.stub() },
+          log: { info: sandbox.stub(), debug: sandbox.stub() },
         };
 
         const result = await submitForScraping(context);
@@ -1118,9 +1127,9 @@ describe('Prerender Audit', () => {
         // Test the HTML content filtering functionality
         const htmlContent = '<html><body><p>Test content</p><script>console.log("test");</script></body></html>';
         const moreContent = '<html><body><p>Test content</p><div>Additional content</div></body></html>';
-        
+
         const result = analyzeHtmlForPrerender(htmlContent, moreContent, 1.2);
-        
+
         expect(result).to.be.an('object');
         expect(result.needsPrerender).to.be.a('boolean');
         expect(result.wordCountBefore).to.be.greaterThan(0);
@@ -1130,13 +1139,13 @@ describe('Prerender Audit', () => {
       it('should handle tokenization with URL preservation', () => {
         // Test URL preservation in tokenization
         const textWithUrls = 'Visit https://example.com for more info, or email test@domain.com for support';
-        
+
         // We need to access the tokenize function - since it's not exported, we'll test through analyzeHtmlForPrerender
         const htmlWithUrls = `<html><body><p>${textWithUrls}</p></body></html>`;
         const htmlWithMoreUrls = `<html><body><p>${textWithUrls} and check www.test.org</p></body></html>`;
-        
+
         const result = analyzeHtmlForPrerender(htmlWithUrls, htmlWithMoreUrls, 1.2);
-        
+
         expect(result).to.be.an('object');
         expect(result.wordCountBefore).to.be.greaterThan(0);
         expect(result.wordCountAfter).to.be.greaterThan(result.wordCountBefore);
@@ -1153,9 +1162,9 @@ describe('Prerender Audit', () => {
         \r
         Windows line ending above
         </body></html>`;
-        
+
         const result = analyzeHtmlForPrerender(htmlWithComplexLineBreaks, htmlWithComplexLineBreaks, 1.2);
-        
+
         expect(result.contentGainRatio).to.equal(1);
         expect(result.wordCountBefore).to.equal(result.wordCountAfter);
       });
@@ -1163,7 +1172,7 @@ describe('Prerender Audit', () => {
       it('should handle empty content scenarios', () => {
         // Test empty content handling
         const result = analyzeHtmlForPrerender('', '', 1.2);
-        
+
         expect(result.error).to.equal('Missing HTML content for comparison');
         expect(result.needsPrerender).to.be.false;
       });
@@ -1171,9 +1180,9 @@ describe('Prerender Audit', () => {
       it('should handle HTML content processing', () => {
         // Test HTML content processing
         const htmlContent = '<html><body><script>console.log("test");</script><p>Content</p></body></html>';
-        
+
         const result = analyzeHtmlForPrerender(htmlContent, htmlContent, 1.2);
-        
+
         expect(result.contentGainRatio).to.equal(1);
         expect(result.wordCountBefore).to.equal(result.wordCountAfter);
       });
@@ -1181,9 +1190,9 @@ describe('Prerender Audit', () => {
       it('should handle edge case inputs gracefully', () => {
         // Test edge case inputs that might cause processing errors
         const malformedHtml = '<html><body><p>Test content</p>';
-        
+
         const result = analyzeHtmlForPrerender(malformedHtml, malformedHtml, NaN);
-        
+
         // Should either work normally or handle errors gracefully
         expect(result).to.be.an('object');
         if (result.error) {
@@ -1199,12 +1208,12 @@ describe('Prerender Audit', () => {
         const complexText = `Check out https://example.com, www.test.org, and admin@company.edu.
         Multiple     spaces   between    words , and ; punctuation : everywhere !
         Visit test.com/path?query=value for more   details    .`;
-        
+
         const htmlBefore = `<html><body><p>${complexText}</p></body></html>`;
         const htmlAfter = `<html><body><p>${complexText}</p><div>Additional content here</div></body></html>`;
-        
+
         const result = analyzeHtmlForPrerender(htmlBefore, htmlAfter, 1.2);
-        
+
         expect(result).to.be.an('object');
         expect(result.wordCountBefore).to.be.greaterThan(0);
         expect(result.wordCountAfter).to.be.greaterThan(result.wordCountBefore);
@@ -1220,7 +1229,7 @@ describe('Prerender Audit', () => {
           // Test same content
           { before: '<html><body></body></html>', after: '<html><body></body></html>' }
         ];
-        
+
         scenarios.forEach((scenario, index) => {
           const result = analyzeHtmlForPrerender(scenario.before, scenario.after, 1.2);
           expect(result).to.be.an('object', `Scenario ${index} failed`);
@@ -1232,7 +1241,7 @@ describe('Prerender Audit', () => {
         // Test browser environment simulation
         const originalDocument = global.document;
         const originalGlobalThis = global.globalThis;
-        
+
         try {
           // Set up browser-like environment
           global.document = {};
@@ -1260,14 +1269,14 @@ describe('Prerender Audit', () => {
               }
             }
           };
-          
+
           // Test browser environment behavior
           const result1 = analyzeHtmlForPrerender('<html><body><p>Test</p></body></html>', '<html><body><p>Test content</p></body></html>', 1.2);
           expect(result1).to.be.an('object');
-          
+
           const result2 = analyzeHtmlForPrerender('<html><body><p>Test</p></body></html>', '<html><body><p>Test content</p></body></html>', 1.2);
           expect(result2).to.be.an('object');
-          
+
         } finally {
           // Restore environment
           global.document = originalDocument;
@@ -1278,9 +1287,9 @@ describe('Prerender Audit', () => {
       it('should handle Node.js environment processing', () => {
         // Test Node.js environment HTML processing
         const htmlContent = '<html><body><p>Some content</p><script>alert("test");</script></body></html>';
-        
+
         const result = analyzeHtmlForPrerender(htmlContent, htmlContent, 1.2);
-        
+
         expect(result).to.be.an('object');
         expect(result.contentGainRatio).to.equal(1);
       });
@@ -1294,9 +1303,9 @@ describe('Prerender Audit', () => {
         \r\n
         Line three with carriage return
         </body></html>`;
-        
+
         const result = analyzeHtmlForPrerender(htmlWithLines, htmlWithLines, 1.2);
-        
+
         expect(result).to.be.an('object');
         expect(result.wordCountBefore).to.be.greaterThan(0);
       });
@@ -1304,10 +1313,10 @@ describe('Prerender Audit', () => {
       it('should handle malformed input gracefully', () => {
         // Test handling of malformed input
         const maliciousHtml = '<html><body><script>throw new Error("Simulated parsing error");</script></body></html>';
-        
+
         // Try to trigger the catch block by causing an internal error
         const result = analyzeHtmlForPrerender(null, maliciousHtml, 1.2);
-        
+
         expect(result).to.be.an('object');
         expect(result.error).to.equal('Missing HTML content for comparison');
         expect(result.needsPrerender).to.be.false;
@@ -1339,6 +1348,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -1381,6 +1391,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -1391,13 +1402,13 @@ describe('Prerender Audit', () => {
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
 
         expect(result.status).to.equal('complete');
-        
+
         // Verify the simplified error handling for missing data
         const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg => 
+        const hasMissingDataError = errorMessages.some(msg =>
           msg.includes('Missing HTML data for')
         );
-        
+
         expect(hasMissingDataError).to.be.true;
       });
 
@@ -1432,6 +1443,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -1451,7 +1463,7 @@ describe('Prerender Audit', () => {
         // Test the full opportunity creation and suggestion sync flow including S3 key generation
         const mockOpportunity = { getId: () => 'test-opportunity-id' };
         const syncSuggestionsStub = sinon.stub().resolves();
-        
+
         const mockHandler = await esmock('../../src/prerender/handler.js', {
           '../../src/common/opportunity.js': {
             convertToOpportunity: sinon.stub().resolves(mockOpportunity),
@@ -1481,6 +1493,7 @@ describe('Prerender Audit', () => {
         const context = {
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -1493,7 +1506,7 @@ describe('Prerender Audit', () => {
         expect(syncSuggestionsStub).to.have.been.calledOnce;
         // Verify that suggestion syncing was logged
         expect(context.log.info.args.some(call => call[0].includes('Successfully synced opportunity and suggestions'))).to.be.true;
-        
+
         // Verify the syncSuggestions was called with the correct structure including S3 keys
         const syncCall = syncSuggestionsStub.getCall(0);
         expect(syncCall.args[0]).to.have.property('mapNewSuggestion');
@@ -1597,9 +1610,9 @@ describe('Prerender Audit', () => {
         it('should test simplified text extraction', () => {
         // Test that the simplified stripTagsToText function works correctly
         const htmlContent = '<html><body><p>Test content with <script>alert("evil")</script> scripts</p></body></html>';
-        
+
         const result = analyzeHtmlForPrerender(htmlContent, htmlContent, 1.2);
-        
+
         expect(result).to.be.an('object');
         expect(result.contentGainRatio).to.equal(1);
         expect(result.wordCountBefore).to.equal(4); // "Test content with scripts"
@@ -1613,14 +1626,14 @@ describe('Prerender Audit', () => {
             load: sinon.stub().throws(new Error('Cheerio processing failed')),
           },
         });
-        
+
         try {
           const result = mockAnalyze.analyzeHtmlForPrerender(
             '<html><body>content</body></html>',
             '<html><body>content</body></html>',
             1.2
           );
-          
+
           expect(result).to.be.an('object');
           expect(result.error).to.include('HTML analysis failed');
           expect(result.needsPrerender).to.be.false;
@@ -1659,6 +1672,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -1670,10 +1684,10 @@ describe('Prerender Audit', () => {
 
         expect(result.status).to.equal('complete');
         expect(context.log.error).to.have.been.called;
-        
+
         // The defensive check should now catch the empty server HTML
         const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg => 
+        const hasMissingDataError = errorMessages.some(msg =>
           msg.includes('Missing HTML data for')
         );
         expect(hasMissingDataError).to.be.true;
@@ -1706,6 +1720,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -1717,10 +1732,10 @@ describe('Prerender Audit', () => {
 
         expect(result.status).to.equal('complete');
         expect(context.log.error).to.have.been.called;
-        
+
         // Should get Missing HTML data error for both null values
         const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg => 
+        const hasMissingDataError = errorMessages.some(msg =>
           msg.includes('Missing HTML data for')
         );
         expect(hasMissingDataError).to.be.true;
@@ -1753,6 +1768,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -1764,10 +1780,10 @@ describe('Prerender Audit', () => {
 
         expect(result.status).to.equal('complete');
         expect(context.log.error).to.have.been.called;
-        
+
         // Should handle both null values properly
         const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg => 
+        const hasMissingDataError = errorMessages.some(msg =>
           msg.includes('Missing HTML data for')
         );
         expect(hasMissingDataError).to.be.true;
@@ -1776,7 +1792,7 @@ describe('Prerender Audit', () => {
       it('should now properly test the meaningful defensive check', async () => {
         // With the simplified getScrapedHtmlFromS3, this check is now very testable
         // It will catch any case where S3 returns null or empty values
-        
+
         const getObjectFromKeyStub = sinon.stub();
         getObjectFromKeyStub.onCall(0).resolves('<html><body>Valid server content</body></html>');
         getObjectFromKeyStub.onCall(1).resolves(null); // Null client HTML
@@ -1802,6 +1818,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
           log: {
             info: sandbox.stub(),
+            debug: sandbox.stub(),
             warn: sandbox.stub(),
             error: sandbox.stub(),
           },
@@ -1813,10 +1830,10 @@ describe('Prerender Audit', () => {
 
         expect(result.status).to.equal('complete');
         expect(context.log.error).to.have.been.called;
-        
+
         // This should trigger the defensive check and log the missing data error
         const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg => 
+        const hasMissingDataError = errorMessages.some(msg =>
           msg.includes('Missing HTML data for') && msg.includes('client-side: false')
         );
         expect(hasMissingDataError).to.be.true;

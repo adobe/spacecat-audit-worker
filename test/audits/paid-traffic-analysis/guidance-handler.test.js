@@ -84,6 +84,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
     context = {
       log: {
         info: sandbox.stub(),
+        debug: sandbox.stub(),
         warn: sandbox.stub(),
         error: sandbox.stub(),
       },

@@ -420,7 +420,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     // Verify SQS messages were sent
     expect(context.sqs.sendMessage).to.have.been.called;
-    expect(context.log.info).to.have.been.calledWith(
+    expect(context.log.debug).to.have.been.calledWith(
       sinon.match('Message sent to Mystique:'),
     );
   }).timeout(5000);

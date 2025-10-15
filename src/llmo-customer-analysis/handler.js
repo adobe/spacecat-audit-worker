@@ -65,7 +65,7 @@ async function checkOptelData(domain, context) {
     const { pageviews } = await rumAPIClient.query('pageviews', options);
     return pageviews > 0;
   } catch (error) {
-    log.info(`Failed to check OpTel data for domain ${domain}: ${error.message}`);
+    log.error(`Failed to check OpTel data for domain ${domain}: ${error.message}`);
     return false;
   }
 }

@@ -201,7 +201,7 @@ export async function syncSuggestions({
     statusToSetForOutdated,
   });
 
-  log.debug(`Existing suggestions = ${existingSuggestions.length}`);
+  log.debug(`Existing suggestions = ${existingSuggestions.length}: ${JSON.stringify(existingSuggestions, null, 2)}`);
 
   // Update existing suggestions
   await Promise.all(
@@ -221,7 +221,7 @@ export async function syncSuggestions({
         return existing.save();
       }),
   );
-  log.debug(`Updated existing suggestions = ${existingSuggestions.length}`);
+  log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${JSON.stringify(existingSuggestions, null, 2)}`);
 
   // Prepare new suggestions
   const newSuggestions = newData
@@ -233,7 +233,7 @@ export async function syncSuggestions({
   // Add new suggestions if any
   if (newSuggestions.length > 0) {
     const suggestions = await opportunity.addSuggestions(newSuggestions);
-    log.debug(`New suggestions = ${suggestions.length}`);
+    log.debug(`New suggestions = ${suggestions.length}: ${JSON.stringify(suggestions, null, 2)}`);
 
     if (suggestions.errorItems?.length > 0) {
       log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);
