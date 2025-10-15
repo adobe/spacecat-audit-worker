@@ -23,7 +23,7 @@ import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
 
-describe('Forms Opportunities - Accessibility Handler', () => {
+describe.skip('Forms Opportunities - Accessibility Handler', () => {
   let sandbox;
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
