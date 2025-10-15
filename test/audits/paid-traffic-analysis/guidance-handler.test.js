@@ -129,7 +129,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
     const createdArg = Opportunity.create.getCall(0).args[0];
     expect(createdArg).to.include({ siteId, type: 'paid-traffic' });
     expect(createdArg.data).to.include({ year: 2025, week: 2 });
-    expect(createdArg.title).to.equal('Paid Traffic Analysis Week 2 / 2025');
+    expect(createdArg.title).to.equal('Paid Traffic Weekly Report 2 / 2025');
 
     // Suggestions created for each section
     expect(Suggestion.create.callCount).to.equal(2);
@@ -166,7 +166,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
     const createdArg = Opportunity.create.getCall(0).args[0];
     expect(createdArg.data).to.include({ year: 2024, month: 12 });
     expect(createdArg.data).to.not.have.property('week');
-    expect(createdArg.title).to.equal('Paid Traffic Analysis Month 12 / 2024');
+    expect(createdArg.title).to.equal('Paid Traffic Monthly Report 12 / 2024');
   });
 
   it('prefers week in title when both week and month are provided', async () => {
@@ -185,7 +185,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
     await handler(message, context);
 
     const createdArg = Opportunity.create.getCall(0).args[0];
-    expect(createdArg.title).to.equal('Paid Traffic Analysis Week 2 / 2025');
+    expect(createdArg.title).to.equal('Paid Traffic Weekly Report 2 / 2025');
     // Data retains both if present
     expect(createdArg.data).to.include({ week: 2, month: 1 });
   });
@@ -269,7 +269,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
     await handler(message, context);
 
     const createdArg = Opportunity.create.getCall(0).args[0];
-    expect(createdArg.title).to.equal('Paid Traffic Analysis Week 7 / 2025');
+    expect(createdArg.title).to.equal('Paid Traffic Weekly Report 7 / 2025');
     expect(createdArg.data).to.include({ year: 2025, week: 7 });
     expect(createdArg.data).to.not.have.property('month');
   });
