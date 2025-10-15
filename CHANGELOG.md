@@ -1,3 +1,10 @@
+## [1.209.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.3...v1.209.4) (2025-10-15)
+
+
+### Bug Fixes
+
+* **geo-brand-presence:** no refresh for daily, logs ([#1415](https://github.com/adobe/spacecat-audit-worker/issues/1415)) ([098daaf](https://github.com/adobe/spacecat-audit-worker/commit/098daaf0fbf9cca73b567858a1c8fc9ffa167c7e))
+
 ## [1.209.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.2...v1.209.3) (2025-10-15)
 
 
