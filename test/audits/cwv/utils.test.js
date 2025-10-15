@@ -146,7 +146,6 @@ describe('sendSQSMessageForGuidance', () => {
   });
 
   it('should send message with default deliveryType when site is not available', async () => {
-    delete context.site;
     const opportunity = {
       siteId: 'site-123',
       auditId: 'audit-456',
@@ -155,7 +154,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity, site);
+    await sendSQSMessageForGuidance(context, opportunity, null);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
