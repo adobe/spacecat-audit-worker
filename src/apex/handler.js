@@ -28,7 +28,7 @@ async function probeUrlConnection(baseUrl, log) {
   try {
     resp = await fetch(baseUrl, { redirect: 'manual' });
   } catch (e) {
-    log.info(`Request to ${baseUrl} fails for an unknown reason. Code: ${e.code}`, e);
+    log.error(`Request to ${baseUrl} fails for an unknown reason. Code: ${e.code}`, e);
     return {
       url: baseUrl,
       success: false,

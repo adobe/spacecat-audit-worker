@@ -67,7 +67,7 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
     const clientSideKey = getS3Path(url, siteId, 'client-side.html');
     const scrapeJsonKey = getS3Path(url, siteId, 'scrape.json');
 
-    log.info(`Prerender - Getting scraped content for URL: ${url}`);
+    log.debug(`Prerender - Getting scraped content for URL: ${url}`);
 
     const results = await Promise.allSettled([
       getObjectFromKey(s3Client, bucketName, serverSideKey, log),
@@ -109,7 +109,7 @@ async function getScrapedHtmlFromS3(url, siteId, context) {
 async function compareHtmlContent(url, siteId, context) {
   const { log } = context;
 
-  log.info(`Prerender - Comparing HTML content for: ${url}`);
+  log.debug(`Prerender - Comparing HTML content for: ${url}`);
 
   const scrapedData = await getScrapedHtmlFromS3(url, siteId, context);
 
@@ -194,7 +194,7 @@ export async function submitForScraping(context) {
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
 
-  log.info(`Prerender: Submitting ${finalUrls.length} URLs for scraping`);
+  log.debug(`Prerender: Submitting ${finalUrls.length} URLs for scraping`);
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
@@ -242,7 +242,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     return;
   }
 
-  log.info(`Prerender - Generated ${preRenderSuggestions.length} prerender suggestions for ${auditUrl}`);
+  log.debug(`Prerender - Generated ${preRenderSuggestions.length} prerender suggestions for ${auditUrl}`);
 
   const opportunity = await convertToOpportunity(
     auditUrl,

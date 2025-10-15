@@ -157,7 +157,7 @@ describe('Preflight Readability Audit', () => {
 
       const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
       expect(audit.opportunities).to.have.lengthOf(0);
-      expect(log.info).to.have.been.calledWithMatch('Processed 0 text element(s)');
+      expect(log.debug).to.have.been.calledWithMatch('Processed 0 text element(s)');
     });
 
     it('should process both paragraphs and divs', async () => {
@@ -177,7 +177,7 @@ describe('Preflight Readability Audit', () => {
 
       const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
       expect(audit.opportunities).to.have.lengthOf(1); // Only the poor text should be flagged
-      expect(log.info).to.have.been.calledWithMatch('Processed 2 text element(s)');
+      expect(log.debug).to.have.been.calledWithMatch('Processed 2 text element(s)');
     });
 
     it('should handle DOM parsing errors gracefully', async () => {
@@ -310,7 +310,7 @@ describe('Preflight Readability Audit', () => {
       await readability(context, auditContext);
 
       // Should log a warning and return early
-      expect(log.warn).to.have.been.calledWithMatch('No page result found for');
+      expect(log.debug).to.have.been.calledWithMatch('No page result found for');
     });
 
     it('should handle case when audit entry is missing for a page', async () => {
@@ -328,7 +328,7 @@ describe('Preflight Readability Audit', () => {
       await readability(context, auditContext);
 
       // Should log a warning because no page result exists for this URL
-      expect(log.warn).to.have.been.calledWithMatch('No page result found for');
+      expect(log.debug).to.have.been.calledWithMatch('No page result found for');
     });
 
     it('should handle readability calculation error for individual elements', async () => {
@@ -387,8 +387,8 @@ describe('Preflight Readability Audit', () => {
       expect(audit.opportunities).to.have.lengthOf(0);
 
       // Should log that content was processed but no poor readability found
-      expect(log.info).to.have.been.calledWithMatch('Processed 1 text element(s)');
-      expect(log.info).to.have.been.calledWithMatch('found 0 with poor readability');
+      expect(log.debug).to.have.been.calledWithMatch('Processed 1 text element(s)');
+      expect(log.debug).to.have.been.calledWithMatch('found 0 with poor readability');
     });
 
     it('should process supported multilingual content (e.g. German)', async () => {
@@ -414,8 +414,8 @@ describe('Preflight Readability Audit', () => {
       expect(audit.opportunities[0].fleschReadingEase).to.be.below(30);
 
       // Should log that German content was detected and processed
-      expect(log.info).to.have.been.calledWithMatch('detected languages: german');
-      expect(log.info).to.have.been.calledWithMatch('found 1 with poor readability');
+      expect(log.debug).to.have.been.calledWithMatch('detected languages: german');
+      expect(log.debug).to.have.been.calledWithMatch('found 1 with poor readability');
     });
 
     it('should skip elements with block-level children to avoid duplicate analysis', async () => {
@@ -473,7 +473,7 @@ describe('Preflight Readability Audit', () => {
       expect(audit.opportunities).to.have.lengthOf(1);
 
       // Should log that elements were processed
-      expect(log.info).to.have.been.calledWithMatch('Processed 1 text element(s)');
+      expect(log.debug).to.have.been.calledWithMatch('Processed 1 text element(s)');
     });
 
     it('should properly handle text with <br> tags by splitting into paragraphs', async () => {
@@ -503,7 +503,7 @@ describe('Preflight Readability Audit', () => {
       expect(audit.opportunities).to.have.lengthOf(2);
 
       // Should log that 2 elements were processed (one for each paragraph)
-      expect(log.info).to.have.been.calledWithMatch('Processed 2 text element(s)');
+      expect(log.debug).to.have.been.calledWithMatch('Processed 2 text element(s)');
     });
 
     it('should not truncate text when it is shorter than MAX_CHARACTERS_DISPLAY', async () => {
@@ -567,7 +567,7 @@ describe('Preflight Readability Audit', () => {
 
       const result = await readabilityMocked.default(context, auditContext);
 
-      expect(log.info).to.have.been.calledWithMatch('No readability issues found to send to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('No readability issues found to send to Mystique');
       expect(mockSendReadabilityToMystique).not.to.have.been.called;
       expect(result.processing).to.be.false;
     });
@@ -597,7 +597,7 @@ describe('Preflight Readability Audit', () => {
       const result = await readabilityMocked.default(context, auditContext);
 
       expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
-      expect(log.info).to.have.been.calledWithMatch('Sending 1 readability issues to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('Sending 1 readability issues to Mystique');
       expect(result.processing).to.be.true;
     });
 
@@ -1399,7 +1399,7 @@ describe('Preflight Readability Audit', () => {
       const result = await readabilityMocked.default(context, auditContext);
 
       expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
-      expect(log.info).to.have.been.calledWithMatch('Sending 1 readability issues to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('Sending 1 readability issues to Mystique');
       expect(result.processing).to.be.true;
 
       // Check that opportunities were cleared from response while processing
@@ -1737,7 +1737,7 @@ describe('Preflight Readability Audit', () => {
 
       const result = await readabilityMocked.default(context, auditContext);
 
-      expect(log.info).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
       expect(result.processing).to.be.true;
       expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
     });
@@ -1772,7 +1772,7 @@ describe('Preflight Readability Audit', () => {
 
       const result = await readabilityMocked.default(context, auditContext);
 
-      expect(log.info).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
       expect(result.processing).to.be.true;
       expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
     });

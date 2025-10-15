@@ -210,7 +210,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     return;
   }
 
-  log.info('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s), calendarWeek: %j', siteId, baseURL, calendarWeek);
+  log.debug('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s), calendarWeek: %j', siteId, baseURL, calendarWeek);
 
   const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
   const recordSets = await Promise.all(
@@ -223,7 +223,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
   }
 
-  log.info('GEO BRAND PRESENCE: Loaded %d raw parquet prompts for site id %s (%s)', parquetPrompts.length, siteId, baseURL);
+  log.debug('GEO BRAND PRESENCE: Loaded %d raw parquet prompts for site id %s (%s)', parquetPrompts.length, siteId, baseURL);
 
   // Remove duplicates from AI-generated prompts
   parquetPrompts = deduplicatePrompts(parquetPrompts, log);
@@ -282,7 +282,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     }
     : { ...context, getPresignedUrl };
   const url = await asPresignedJsonUrl(prompts, bucket, s3Context);
-  log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
+  log.debug('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
 
   if (!isNonEmptyArray(providersToUse)) {
     log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
@@ -312,7 +312,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
 
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
       const cadenceLabel = isDaily ? ' DAILY' : '';
-      log.info('GEO BRAND PRESENCE%s: %s message sent to Mystique for site id %s (%s) with provider %s', cadenceLabel, opptyType, siteId, baseURL, webSearchProvider);
+      log.debug('GEO BRAND PRESENCE%s: %s message sent to Mystique for site id %s (%s) with provider %s', cadenceLabel, opptyType, siteId, baseURL, webSearchProvider);
     })),
   );
   /* c8 ignore end */
@@ -394,8 +394,7 @@ export async function keywordPromptsImportStep(context) {
     }
   }
 
-  log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
-
+  log.debug('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
   const result = {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,

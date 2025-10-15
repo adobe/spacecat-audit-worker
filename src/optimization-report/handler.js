@@ -22,7 +22,7 @@ async function optimizationReportCallback(message, context) {
   const { data } = message;
   const { siteId, reportId } = data;
 
-  log.info(`Processing optimization report callback for site: ${siteId} with report id: ${reportId}`);
+  log.debug(`Processing optimization report callback for site: ${siteId} with report id: ${reportId}`);
 
   try {
     // Get the report jobs queue URL from environment variables
@@ -35,7 +35,7 @@ async function optimizationReportCallback(message, context) {
     // Send the message to the report jobs queue without modification
     await sqs.sendMessage(reportJobsQueueUrl, message);
 
-    log.info(`Successfully sent message to report jobs queue for site: ${siteId} and report id: ${reportId}`);
+    log.debug(`Successfully sent message to report jobs queue for site: ${siteId} and report id: ${reportId}`);
   } catch (error) {
     log.error(`Failed to send message to report jobs queue for site: ${siteId} and report id: ${reportId}`, error);
     throw error;

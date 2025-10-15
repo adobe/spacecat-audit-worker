@@ -51,6 +51,7 @@ describe('site-detection runner tests', () => {
     },
     log: {
       info: sandbox.stub(),
+      debug: sandbox.stub(),
       warn: sandbox.stub(),
       error: sandbox.stub(),
     },

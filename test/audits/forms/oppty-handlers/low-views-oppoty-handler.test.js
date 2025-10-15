@@ -180,7 +180,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
 
     const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
     expect(actualCall).to.deep.equal(expectedOpportunityData);
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
   });
 
   it('should not create low views opportunity if another opportunity already exists', async () => {
@@ -208,7 +208,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         ],
       },
     );
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
   });
 
   it('should use existing high page views low form view opportunity with existing forms details', async () => {
@@ -244,7 +244,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         ],
       },
     );
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
   });
 
   it('should not process opportunities with origin ESS_OPS', async () => {
@@ -284,6 +284,6 @@ describe('createLowFormViewsOpportunities handler method', () => {
     await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
     expect(dataAccessStub.Opportunity.create).to.not.be.called;
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
   });
 });

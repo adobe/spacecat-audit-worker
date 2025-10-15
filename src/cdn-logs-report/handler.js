@@ -44,7 +44,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     };
   }
 
-  log.info(`Starting CDN logs report audit for ${url}`);
+  log.debug(`Starting CDN logs report audit for ${url}`);
 
   const sharepointClient = await createLLMOSharepointClient(
     context,
@@ -114,7 +114,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
       }
     }
 
-    log.info(`Running weekly report: ${reportConfig.name}...`);
+    log.debug(`Running weekly report: ${reportConfig.name}...`);
 
     for (const weekOffset of weekOffsets) {
       // eslint-disable-next-line no-await-in-loop
