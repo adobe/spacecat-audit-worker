@@ -86,20 +86,20 @@ export async function generatePatternsWorkbook(options) {
       }
     }
 
-    // Prepare data for workbook
-    const productData = [];
-    if (mergedProductRegexes && Object.keys(mergedProductRegexes).length > 0) {
-      for (const [name, regex] of Object.entries(mergedProductRegexes)) {
-        productData.push({ name, regex });
-      }
-    }
+    // Prepare data for workbook with unique lowercase names
+    const productData = Array.from(
+      new Map(Object.entries(mergedProductRegexes).map(([name, regex]) => [
+        name.toLowerCase(),
+        { name: name.toLowerCase(), regex },
+      ])).values(),
+    );
 
-    const pagetypeData = [];
-    if (mergedPagetypeRegexes && Object.keys(mergedPagetypeRegexes).length > 0) {
-      for (const [name, regex] of Object.entries(mergedPagetypeRegexes)) {
-        pagetypeData.push({ name, regex });
-      }
-    }
+    const pagetypeData = Array.from(
+      new Map(Object.entries(mergedPagetypeRegexes).map(([name, regex]) => [
+        name.toLowerCase(),
+        { name: name.toLowerCase(), regex },
+      ])).values(),
+    );
 
     // Return early if both arrays are empty
     if (productData.length === 0 && pagetypeData.length === 0) {
