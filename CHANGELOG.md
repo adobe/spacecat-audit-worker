@@ -1,3 +1,10 @@
+# [1.210.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.5...v1.210.0) (2025-10-15)
+
+
+### Features
+
+* add CWV auto-suggest feature toggle ([#1417](https://github.com/adobe/spacecat-audit-worker/issues/1417)) ([02963cf](https://github.com/adobe/spacecat-audit-worker/commit/02963cf7ee7557f961e18700b1667f0c94d9454c))
+
 ## [1.209.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.4...v1.209.5) (2025-10-15)
 
 
