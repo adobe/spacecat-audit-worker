@@ -58,10 +58,11 @@ export const WEB_SEARCH_PROVIDERS = [
 /**
  * Removes duplicate prompts from AI-generated prompts based on region, topic, and prompt text.
  * @param {Array<Object>} prompts - Array of prompt objects
+ * @param {string} siteId - Site id
  * @param {Object} log - Logger instance
  * @returns {Array<Object>} Deduplicated array of prompts
  */
-function deduplicatePrompts(prompts, log) {
+function deduplicatePrompts(prompts, siteId, log) {
   /* c8 ignore start */
   if (!Array.isArray(prompts) || prompts.length === 0) {
     return prompts;
@@ -133,15 +134,19 @@ function deduplicatePrompts(prompts, log) {
   const totalSkipped = totalDuplicatesRemoved + totalEmptyPromptsSkipped + totalInvalidItemsSkipped;
   const skipRate = originalCount > 0 ? ((totalSkipped / originalCount) * 100).toFixed(1) : 0;
 
-  log.info(`GEO BRAND PRESENCE: [DEDUP] Processed ${originalCount} prompts across `
-    + `${regionTopicGroups.size} region/topic groups`);
-  log.info(`GEO BRAND PRESENCE: [DEDUP] Skipped ${totalSkipped} items (${skipRate}%): `
-    + `${totalDuplicatesRemoved} duplicates, ${totalEmptyPromptsSkipped} empty, ${totalInvalidItemsSkipped} invalid`);
-  if (totalErrorsRecovered > 0) {
-    log.info(`GEO BRAND PRESENCE: [DEDUP] Recovered from ${totalErrorsRecovered} processing errors `
-      + '(items included despite errors)');
-  }
-  log.info(`GEO BRAND PRESENCE: [DEDUP] Kept ${finalCount} unique prompts`);
+  log.info(
+    'GEO BRAND PRESENCE: [DEDUP] Site %s: Processed %d prompts across %d region/topic groups. Skipped %d items (%s%%): %d duplicates, %d empty, %d invalid. Recovered from %d errors. Kept %d unique prompts.',
+    siteId,
+    originalCount,
+    regionTopicGroups.size,
+    totalSkipped,
+    skipRate,
+    totalDuplicatesRemoved,
+    totalEmptyPromptsSkipped,
+    totalInvalidItemsSkipped,
+    totalErrorsRecovered,
+    finalCount,
+  );
 
   // Log group statistics if debug enabled
   if (log.debug) {
@@ -226,7 +231,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   log.debug('GEO BRAND PRESENCE: Loaded %d raw parquet prompts for site id %s (%s)', parquetPrompts.length, siteId, baseURL);
 
   // Remove duplicates from AI-generated prompts
-  parquetPrompts = deduplicatePrompts(parquetPrompts, log);
+  parquetPrompts = deduplicatePrompts(parquetPrompts, siteId, log);
 
   // Load customer-defined prompts from customer config
   const {
