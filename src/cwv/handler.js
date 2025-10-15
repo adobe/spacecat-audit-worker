@@ -62,25 +62,31 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
   const maxOrganicForUrls = Math.max(...auditData.auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews));
 
-  await syncSuggestions({
-    opportunity,
-    newData: auditData.auditResult.cwv,
-    context,
-    buildKey,
-    mapNewSuggestion: (entry) => ({
-      opportunityId: opportunity.getId(),
-      type: 'CODE_CHANGE',
-      // the rank logic for CWV is as follows:
-      // 1. if the entry is a group, then the rank is the max organic for URLs
-      //   plus the organic for the group
-      // 2. if the entry is a URL, then the rank is the max organic for URLs
-      // Reason is because UI first shows groups and then URLs
-      rank: entry.type === 'group' ? maxOrganicForUrls + entry.organic : entry.organic,
-      data: {
-        ...entry,
-      },
-    }),
-  });
+  // TEMPORARY: Skip sync for specific opportunityId for testing
+  const skipOpportunityId = '1e8cbc44-c746-4a7f-8c0c-38d5edadb1c8';
+  if (opportunity.getId() === skipOpportunityId) {
+    context.log.info(`[CWV] Skipping syncSuggestions for test opportunityId: ${skipOpportunityId}`);
+  } else {
+    await syncSuggestions({
+      opportunity,
+      newData: auditData.auditResult.cwv,
+      context,
+      buildKey,
+      mapNewSuggestion: (entry) => ({
+        opportunityId: opportunity.getId(),
+        type: 'CODE_CHANGE',
+        // the rank logic for CWV is as follows:
+        // 1. if the entry is a group, then the rank is the max organic for URLs
+        //   plus the organic for the group
+        // 2. if the entry is a URL, then the rank is the max organic for URLs
+        // Reason is because UI first shows groups and then URLs
+        rank: entry.type === 'group' ? maxOrganicForUrls + entry.organic : entry.organic,
+        data: {
+          ...entry,
+        },
+      }),
+    });
+  }
 
   // Send SQS message for Mystique auto-suggest if enabled and opportunity needs suggestions
   if (await needsAutoSuggest(context, opportunity, site)) {
