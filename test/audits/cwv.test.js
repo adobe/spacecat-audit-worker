@@ -46,6 +46,7 @@ describe('CWVRunner Tests', () => {
   const site = {
     getBaseURL: sandbox.stub().returns(baseURL),
     getConfig: () => siteConfig,
+    getDeliveryType: sandbox.stub().returns('aem_cs'),
   };
 
   const context = {
