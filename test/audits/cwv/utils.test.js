@@ -187,7 +187,9 @@ describe('sendSQSMessageForAutoSuggest', () => {
 
     expect(context.log.info.calledTwice).to.be.true;
     expect(context.log.info.firstCall.args[0]).to.include('Received CWV opportunity for auto-suggest');
+    expect(context.log.info.firstCall.args[0]).to.include('site-123');
     expect(context.log.info.secondCall.args[0]).to.include('CWV opportunity sent to Mystique for auto-suggest');
+    expect(context.log.info.secondCall.args[0]).to.include('site-123');
   });
 
   it('should handle missing opportunityId', async () => {
@@ -227,6 +229,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       expect(thrownError.message).to.equal('SQS send failed');
       expect(context.log.error.calledOnce).to.be.true;
       expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('site-123');
     }
   });
 });
@@ -236,8 +239,9 @@ describe('needsAutoSuggest', () => {
   let site;
   const sandbox = sinon.createSandbox();
 
-  beforeEach(async () => {
+  beforeEach(() => {
     site = {
+      getId: sandbox.stub().returns('test-site-id'),
       getBaseURL: sandbox.stub().returns('https://example.com'),
       getDeliveryType: sandbox.stub().returns('aem_cs'),
     };
@@ -369,6 +373,6 @@ describe('needsAutoSuggest', () => {
 
     const result = await needsAutoSuggest(context, opportunity, site);
     expect(result).to.be.false;
-    expect(context.log.info).to.have.been.calledWith('CWV auto-suggest is disabled for site, skipping');
+    expect(context.log.info).to.have.been.calledWith('CWV auto-suggest is disabled for site test-site-id, skipping');
   });
 });

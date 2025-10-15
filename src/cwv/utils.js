@@ -14,7 +14,7 @@ import { isAuditEnabledForSite } from '../common/index.js';
 
 const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv-analysis';
 
-const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-mystique-auto-suggest';
+const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
 
 /**
  * Checks if opportunity needs auto-suggest from Mystique
@@ -47,7 +47,7 @@ export async function needsAutoSuggest(context, opportunity, site) {
   const isEnabled = await isAuditEnabledForSite(CWV_AUTO_SUGGEST_FEATURE_TOGGLE, site, context);
 
   if (!isEnabled) {
-    context.log.info('CWV auto-suggest is disabled for site, skipping');
+    context.log.info(`CWV auto-suggest is disabled for site ${site?.getId?.()}, skipping`);
     return false;
   }
 
@@ -87,8 +87,10 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
 
   try {
     if (opportunity) {
-      log.info(`Received CWV opportunity for auto-suggest: ${JSON.stringify(opportunity)}`);
       const opptyData = JSON.parse(JSON.stringify(opportunity));
+      const { siteId } = opptyData;
+
+      log.info(`Received CWV opportunity for auto-suggest (siteId: ${siteId}): ${JSON.stringify(opportunity)}`);
 
       const sqsMessage = {
         type: CWV_AUTO_SUGGEST_MESSAGE_TYPE,
@@ -104,10 +106,11 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
 
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
-      log.info(`CWV opportunity sent to Mystique for auto-suggest: ${JSON.stringify(sqsMessage)}`);
+      log.info(`CWV opportunity sent to Mystique for auto-suggest (siteId: ${siteId}): ${JSON.stringify(sqsMessage)}`);
     }
   } catch (error) {
-    log.error(`[CWV] Failed to send auto-suggest message to Mystique for opportunity ${opportunity?.getId()}: ${error.message}`);
+    const siteId = opportunity?.siteId || 'unknown';
+    log.error(`[CWV] Failed to send auto-suggest message to Mystique (siteId: ${siteId}) for opportunity ${opportunity?.getId()}: ${error.message}`);
     throw new Error(error.message);
   }
 }
