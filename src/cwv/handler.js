@@ -25,19 +25,29 @@ const INTERVAL = 7; // days
 const auditType = Audit.AUDIT_TYPES.CWV;
 
 export async function CWVRunner(auditUrl, context, site) {
+  const { log } = context;
+  const deliveryConfig = site.getDeliveryConfig() || {};
+
+  // Get thresholds from deliveryConfig, with fallbacks to defaults
+  const dailyThreshold = deliveryConfig.cwvDailyThreshold ?? DAILY_THRESHOLD;
+  const interval = deliveryConfig.cwvInterval ?? INTERVAL;
+  const minPageviews = dailyThreshold * interval;
+
+  log.info(`[CWV] Using thresholds: ${minPageviews} pageviews (${dailyThreshold}/day × ${interval} days)`);
+
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const groupedURLs = site.getConfig().getGroupedURLs(auditType);
   const options = {
     domain: auditUrl,
-    interval: INTERVAL,
+    interval,
     granularity: 'hourly',
     groupedURLs,
   };
   const cwvData = await rumAPIClient.query(auditType, options);
   const auditResult = {
-    cwv: cwvData.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL),
+    cwv: cwvData.filter((data) => data.pageviews >= minPageviews),
     auditContext: {
-      interval: INTERVAL,
+      interval,
     },
   };
 
