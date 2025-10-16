@@ -19,9 +19,9 @@ const ORIGIN = 'ESS_OPS';
 
 function buildPaidTrafficTitle({ year, week, month }) {
   if (week != null) {
-    return `Paid Traffic Analysis Week ${String(week)} / ${year}`;
+    return `Paid Traffic Weekly Report – Week ${String(week)} / ${year}`;
   }
-  return `Paid Traffic Analysis Month ${String(month)} / ${year}`;
+  return `Paid Traffic Monthly Report – Month ${String(month)} / ${year}`;
 }
 
 function mapToPaidOpportunity(siteId, audit, { year, month, week }) {
