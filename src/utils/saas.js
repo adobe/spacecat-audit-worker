@@ -211,6 +211,34 @@ export async function requestSaaS(query, operationName, variables, params, log) 
 export async function getCommerceConfig(site, auditType, finalUrl, log, locale = '') {
   try {
     // Get custom config from site configuration (similar to sitemap-product-coverage)
+    // Examples:
+    // {
+    //   "handlers": {
+    //     "product-metatags": {
+    //       // Option 1: Direct config (inline)
+    //       "config": {
+    //         "commerce-environment-id": "your-env-id",
+    //         "commerce-store-view-code": "default",
+    //         "commerce-website-code": "base",
+    //         "commerce-store-code": "default",
+    //         "commerce-customer-group": "0",
+    //         "commerce-x-api-key": "your-api-key",
+    //         "commerce-endpoint": "https://commerce.adobe.io/graphql"
+    //       }
+    //     }
+    //   }
+    // }
+
+    // {
+    //   "handlers": {
+    //     "product-metatags": {
+    //       // Option 2: Remote config (like sitemap-product-coverage)
+    //       "configSection": "stage", // Section within that JSON (you're using "prod")
+    //       "configName": "configs", // Name of the JSON file (defaults to configs)
+    //       "configSheet": "commerce" // Optional - for Google Sheets tabs/sheets
+    //     }
+    //   }
+    // }
     const customConfig = site.getConfig()?.getHandlers()?.[auditType];
 
     // Build params object for getConfig
