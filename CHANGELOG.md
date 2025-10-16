@@ -1,3 +1,11 @@
+## [1.210.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.5...v1.210.6) (2025-10-16)
+
+
+### Bug Fixes
+
+* Audit tier integration ([#1395](https://github.com/adobe/spacecat-audit-worker/issues/1395)) ([84b0ff7](https://github.com/adobe/spacecat-audit-worker/commit/84b0ff7c19b6510336094339ca141508558a05aa))
+* fix CWV unit tests ([#1428](https://github.com/adobe/spacecat-audit-worker/issues/1428)) ([17b7be9](https://github.com/adobe/spacecat-audit-worker/commit/17b7be9f1899280f91d377881e73a48ea0538328))
+
 ## [1.210.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.4...v1.210.5) (2025-10-16)
 
 
