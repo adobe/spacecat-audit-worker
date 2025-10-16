@@ -754,3 +754,88 @@ export async function sendRunImportMessage(
     ...(data && { data }),
   });
 }
+
+/**
+ * Groups suggestions by URL, source, and issue type, then sends messages
+ * to the importer worker for code-fix generation
+ *
+ * @param {Object} opportunity - The opportunity object containing suggestions
+ * @param {string} auditId - The audit ID
+ * @param {Object} context - The context object containing log, sqs, env, and site
+ * @returns {Promise<void>}
+ */
+export async function sendCodeFixMessagesToImporter(opportunity, auditId, context) {
+  const {
+    log, sqs, env, site,
+  } = context;
+
+  const siteId = opportunity.getSiteId();
+  const baseUrl = site.getBaseURL();
+  const opportunityType = opportunity.getType();
+
+  try {
+    // Get all suggestions from the opportunity
+    const suggestions = await opportunity.getSuggestions();
+    if (!suggestions || suggestions.length === 0) {
+      log.info(`[${opportunityType}] [Site Id: ${siteId}] No suggestions found for code-fix generation`);
+      return;
+    }
+
+    // Group suggestions by URL, source, and issueType
+    const groupedSuggestions = new Map();
+
+    suggestions.forEach((suggestion) => {
+      const suggestionData = suggestion.getData();
+      const { url, source = 'default', issues } = suggestionData;
+
+      // By design, data.issues will always have length 1
+      if (issues && issues.length > 0) {
+        const issueType = issues[0].type;
+        const groupKey = `${url}|${source}|${issueType}`;
+        if (!groupedSuggestions.has(groupKey)) {
+          groupedSuggestions.set(groupKey, {
+            url,
+            source,
+            issueType,
+            suggestionIds: [],
+          });
+        }
+
+        // Add the suggestion ID to the group
+        groupedSuggestions.get(groupKey).suggestionIds.push(suggestion.getId());
+      }
+    });
+
+    log.info(`[${opportunityType}] [Site Id: ${siteId}] Grouped suggestions into ${groupedSuggestions.size} groups for code-fix generation`);
+
+    const messagePromises = Array.from(groupedSuggestions.values()).map(async (group) => {
+      const message = {
+        type: 'code',
+        siteId,
+        forward: {
+          queue: env.QUEUE_SPACECAT_TO_MYSTIQUE,
+          type: `codefix:${opportunityType}`,
+          siteId,
+          auditId,
+          url: baseUrl,
+          data: {
+            opportunityId: opportunity.getId(),
+            suggestionIds: group.suggestionIds,
+          },
+        },
+      };
+
+      try {
+        await sqs.sendMessage(env.IMPORT_WORKER_QUEUE_URL, message);
+        log.info(`[${opportunityType}] [Site Id: ${siteId}] Sent code-fix message to importer for URL: ${group.url}, source: ${group.source}, issueType: ${group.issueType}, suggestions: ${group.suggestionIds.length}`);
+      } catch (error) {
+        log.error(`[${opportunityType}] [Site Id: ${siteId}] Failed to send code-fix message for URL: ${group.url}, error: ${error.message}`);
+      }
+    });
+
+    await Promise.all(messagePromises);
+    log.info(`[${opportunityType}] [Site Id: ${siteId}] Completed sending ${messagePromises.length} code-fix messages to importer`);
+  } catch (error) {
+    log.error(`[${opportunityType}] [Site Id: ${siteId}] Error in sendCodeFixMessagesToImporter: ${error.message}`);
+  }
+}

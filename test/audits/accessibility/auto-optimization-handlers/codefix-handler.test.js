@@ -108,7 +108,7 @@ describe('AccessibilityCodeFixHandler', () => {
       mockSuggestion.getData.returns(suggestionData);
       getObjectFromKeyStub.resolves(mockReportData);
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -126,7 +126,7 @@ describe('AccessibilityCodeFixHandler', () => {
     });
 
     it('should return badRequest when no data provided', async () => {
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -142,7 +142,7 @@ describe('AccessibilityCodeFixHandler', () => {
     });
 
     it('should return badRequest when no opportunityId provided', async () => {
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -161,7 +161,7 @@ describe('AccessibilityCodeFixHandler', () => {
     });
 
     it('should return badRequest when no updates provided', async () => {
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -179,7 +179,7 @@ describe('AccessibilityCodeFixHandler', () => {
     it('should return notFound when opportunity not found', async () => {
       mockDataAccess.Opportunity.findById.resolves(null);
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -196,7 +196,7 @@ describe('AccessibilityCodeFixHandler', () => {
     it('should return badRequest when site ID mismatch', async () => {
       mockOpportunity.getSiteId.returns('different-site-id');
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -210,7 +210,7 @@ describe('AccessibilityCodeFixHandler', () => {
     it('should return ok when no suggestions found', async () => {
       mockOpportunity.getSuggestions.resolves([]);
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -224,7 +224,7 @@ describe('AccessibilityCodeFixHandler', () => {
     it('should return internalServerError when S3 bucket not configured', async () => {
       context.env.S3_MYSTIQUE_BUCKET_NAME = undefined;
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -238,7 +238,7 @@ describe('AccessibilityCodeFixHandler', () => {
     it('should handle missing S3 reports gracefully', async () => {
       getObjectFromKeyStub.resolves(null);
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -255,7 +255,7 @@ describe('AccessibilityCodeFixHandler', () => {
     it('should handle S3 errors gracefully', async () => {
       getObjectFromKeyStub.rejects(new Error('S3 access denied'));
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -283,7 +283,7 @@ describe('AccessibilityCodeFixHandler', () => {
       mockSuggestion.getData.returns(suggestionData);
       getObjectFromKeyStub.resolves(mockReportData);
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -312,7 +312,7 @@ describe('AccessibilityCodeFixHandler', () => {
       mockSuggestion.getData.returns(suggestionData);
       getObjectFromKeyStub.resolves(mockReportData);
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -339,7 +339,7 @@ describe('AccessibilityCodeFixHandler', () => {
       mockSuggestion.save.rejects(new Error('Save failed'));
       getObjectFromKeyStub.resolves(mockReportData);
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -356,7 +356,7 @@ describe('AccessibilityCodeFixHandler', () => {
     it('should handle processing errors gracefully', async () => {
       mockDataAccess.Opportunity.findById.rejects(new Error('Database error'));
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -400,7 +400,7 @@ describe('AccessibilityCodeFixHandler', () => {
       getObjectFromKeyStub.onFirstCall().resolves(mockReportData1);
       getObjectFromKeyStub.onSecondCall().resolves(mockReportData2);
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -427,7 +427,7 @@ describe('AccessibilityCodeFixHandler', () => {
     });
 
     it('should skip updates without URL or types', async () => {
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+        const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },
@@ -476,7 +476,7 @@ describe('AccessibilityCodeFixHandler', () => {
       mockSuggestion.getData.returns(suggestionData);
       getObjectFromKeyStub.resolves(mockReportData);
 
-      const handler = await esmock('../../../../src/forms-opportunities/auto-optimization-handlers/codefix-handler.js', {
+      const handler = await esmock('../../../../src/accessibility/auto-optimization-handlers/codefix-handler.js', {
         '../../../../src/utils/s3-utils.js': {
           getObjectFromKey: getObjectFromKeyStub,
         },

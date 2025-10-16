@@ -34,6 +34,7 @@ import {
   aggregateAccessibilityData,
   getAuditPrefixes,
   sendRunImportMessage,
+  sendCodeFixMessagesToImporter,
 } from '../../../src/accessibility/utils/data-processing.js';
 
 use(sinonChai);
@@ -5107,6 +5108,386 @@ describe('data-processing utility functions', () => {
         urlSourceSeparator: '|',
         totalChecks: 10,
         options: {},
+      });
+    });
+  });
+
+  describe('sendCodeFixMessagesToImporter', () => {
+    let sandbox;
+    let context;
+    let mockOpportunity;
+    let mockSuggestion1;
+    let mockSuggestion2;
+    let mockSuggestion3;
+    let mockSite;
+
+    beforeEach(() => {
+      sandbox = sinon.createSandbox();
+
+      // Create mock suggestions
+      mockSuggestion1 = {
+        getId: sandbox.stub().returns('suggestion-123'),
+        getData: sandbox.stub().returns({
+          url: 'https://example.com/form1',
+          source: 'form',
+          issues: [{ type: 'color-contrast' }],
+        }),
+      };
+
+      mockSuggestion2 = {
+        getId: sandbox.stub().returns('suggestion-456'),
+        getData: sandbox.stub().returns({
+          url: 'https://example.com/form1',
+          source: 'form',
+          issues: [{ type: 'color-contrast' }],
+        }),
+      };
+
+      mockSuggestion3 = {
+        getId: sandbox.stub().returns('suggestion-789'),
+        getData: sandbox.stub().returns({
+          url: 'https://example.com/form2',
+          source: 'form2',
+          issues: [{ type: 'select-name' }],
+        }),
+      };
+
+      // Create mock opportunity
+      mockOpportunity = {
+        getId: sandbox.stub().returns('opportunity-123'),
+        getSiteId: sandbox.stub().returns('site-123'),
+        getType: sandbox.stub().returns('accessibility'),
+        getSuggestions: sandbox.stub().resolves([mockSuggestion1, mockSuggestion2, mockSuggestion3]),
+      };
+
+      // Create mock site
+      mockSite = {
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+      };
+
+      // Create context with stubs
+      context = {
+        log: {
+          info: sandbox.spy(),
+          debug: sandbox.spy(),
+          warn: sandbox.spy(),
+          error: sandbox.spy(),
+        },
+        sqs: {
+          sendMessage: sandbox.stub().resolves(),
+        },
+        env: {
+          IMPORT_WORKER_QUEUE_URL: 'test-import-worker-queue-url',
+          QUEUE_SPACECAT_TO_MYSTIQUE: 'test-mystique-queue',
+        },
+        site: mockSite,
+      };
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    describe('No suggestions', () => {
+      it('should skip code-fix generation when no suggestions exist', async () => {
+        mockOpportunity.getSuggestions.resolves([]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] No suggestions found for code-fix generation',
+        );
+        expect(context.sqs.sendMessage).not.to.have.been.called;
+      });
+
+      it('should skip code-fix generation when suggestions is null', async () => {
+        mockOpportunity.getSuggestions.resolves(null);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] No suggestions found for code-fix generation',
+        );
+        expect(context.sqs.sendMessage).not.to.have.been.called;
+      });
+    });
+
+    describe('Successful message sending', () => {
+      it('should group suggestions by URL, source, and issueType and send messages', async () => {
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
+        );
+
+        // Should send 2 messages (2 groups)
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+
+        // Verify first message (color-contrast group)
+        const firstCall = context.sqs.sendMessage.firstCall;
+        expect(firstCall.args[0]).to.equal('test-import-worker-queue-url');
+        const firstMessage = firstCall.args[1];
+        expect(firstMessage.type).to.equal('code');
+        expect(firstMessage.siteId).to.equal('site-123');
+        expect(firstMessage.forward.queue).to.equal('test-mystique-queue');
+        expect(firstMessage.forward.type).to.equal('codefix:accessibility');
+        expect(firstMessage.forward.siteId).to.equal('site-123');
+        expect(firstMessage.forward.auditId).to.equal('audit-123');
+        expect(firstMessage.forward.url).to.equal('https://example.com');
+        expect(firstMessage.forward.data.opportunityId).to.equal('opportunity-123');
+        expect(firstMessage.forward.data.suggestionIds).to.have.lengthOf(2);
+        expect(firstMessage.forward.data.suggestionIds).to.include('suggestion-123');
+        expect(firstMessage.forward.data.suggestionIds).to.include('suggestion-456');
+
+        // Verify second message (select-name group)
+        const secondCall = context.sqs.sendMessage.secondCall;
+        expect(secondCall.args[0]).to.equal('test-import-worker-queue-url');
+        const secondMessage = secondCall.args[1];
+        expect(secondMessage.forward.data.suggestionIds).to.have.lengthOf(1);
+        expect(secondMessage.forward.data.suggestionIds).to.include('suggestion-789');
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Completed sending 2 code-fix messages to importer',
+        );
+      });
+
+      it('should use dynamic opportunityType from opportunity.getType()', async () => {
+        mockOpportunity.getType.returns('forms');
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-456', context);
+
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+        const firstMessage = context.sqs.sendMessage.firstCall.args[1];
+        expect(firstMessage.forward.type).to.equal('codefix:forms');
+      });
+
+      it('should handle suggestion with default source when source is undefined', async () => {
+        const mockSuggestionNoSource = {
+          getId: sandbox.stub().returns('suggestion-no-source'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/form3',
+            // No source property
+            issues: [{ type: 'label-missing' }],
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([mockSuggestionNoSource]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.sqs.sendMessage).to.have.been.calledOnce;
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/Sent code-fix message to importer for URL: https:\/\/example\.com\/form3, source: default/),
+        );
+      });
+
+      it('should skip suggestions without issues', async () => {
+        const mockSuggestionNoIssues = {
+          getId: sandbox.stub().returns('suggestion-no-issues'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/form4',
+            source: 'form',
+            issues: [],
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([mockSuggestionNoIssues]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.sqs.sendMessage).not.to.have.been.called;
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Grouped suggestions into 0 groups for code-fix generation',
+        );
+      });
+
+      it('should skip suggestions without issues property', async () => {
+        const mockSuggestionNoIssuesProperty = {
+          getId: sandbox.stub().returns('suggestion-no-issues-property'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/form5',
+            source: 'form',
+            // No issues property
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([mockSuggestionNoIssuesProperty]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.sqs.sendMessage).not.to.have.been.called;
+      });
+
+      it('should log individual message sending for each group', async () => {
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/Sent code-fix message to importer for URL: https:\/\/example\.com\/form1, source: form, issueType: color-contrast, suggestions: 2/),
+        );
+
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/Sent code-fix message to importer for URL: https:\/\/example\.com\/form2, source: form2, issueType: select-name, suggestions: 1/),
+        );
+      });
+    });
+
+    describe('Failed message sending', () => {
+      it('should handle individual message sending failures gracefully', async () => {
+        const sendError = new Error('SQS send failed');
+        context.sqs.sendMessage
+          .onFirstCall().rejects(sendError)
+          .onSecondCall().resolves();
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/Failed to send code-fix message for URL: https:\/\/example\.com\/form1, error: SQS send failed/),
+        );
+
+        // Should still complete and log completion
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Completed sending 2 code-fix messages to importer',
+        );
+      });
+
+      it('should handle all message sending failures', async () => {
+        const sendError = new Error('SQS connection failed');
+        context.sqs.sendMessage.rejects(sendError);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+        expect(context.log.error).to.have.been.calledTwice;
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/Failed to send code-fix message for URL.*error: SQS connection failed/),
+        );
+      });
+    });
+
+    describe('Error handling', () => {
+      it('should handle errors in getSuggestions', async () => {
+        const error = new Error('Database error');
+        mockOpportunity.getSuggestions.rejects(error);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.error).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Error in sendCodeFixMessagesToImporter: Database error',
+        );
+        expect(context.sqs.sendMessage).not.to.have.been.called;
+      });
+
+      it('should handle errors during grouping suggestions', async () => {
+        // Make getData throw an error
+        mockSuggestion1.getData.throws(new Error('getData failed'));
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.error).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Error in sendCodeFixMessagesToImporter: getData failed',
+        );
+        expect(context.sqs.sendMessage).not.to.have.been.called;
+      });
+    });
+
+    describe('Complex grouping scenarios', () => {
+      it('should group multiple suggestions with same URL, source, and issueType', async () => {
+        const mockSuggestion4 = {
+          getId: sandbox.stub().returns('suggestion-999'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/form1',
+            source: 'form',
+            issues: [{ type: 'color-contrast' }],
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([
+          mockSuggestion1,
+          mockSuggestion2,
+          mockSuggestion4,
+        ]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Grouped suggestions into 1 groups for code-fix generation',
+        );
+
+        expect(context.sqs.sendMessage).to.have.been.calledOnce;
+        const message = context.sqs.sendMessage.firstCall.args[1];
+        expect(message.forward.data.suggestionIds).to.have.lengthOf(3);
+        expect(message.forward.data.suggestionIds).to.include('suggestion-123');
+        expect(message.forward.data.suggestionIds).to.include('suggestion-456');
+        expect(message.forward.data.suggestionIds).to.include('suggestion-999');
+      });
+
+      it('should create separate groups for different URLs', async () => {
+        const mockSuggestionDifferentUrl = {
+          getId: sandbox.stub().returns('suggestion-url-diff'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/different-url',
+            source: 'form',
+            issues: [{ type: 'color-contrast' }],
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([
+          mockSuggestion1,
+          mockSuggestionDifferentUrl,
+        ]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
+        );
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      });
+
+      it('should create separate groups for different sources', async () => {
+        const mockSuggestionDifferentSource = {
+          getId: sandbox.stub().returns('suggestion-source-diff'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/form1',
+            source: 'different-source',
+            issues: [{ type: 'color-contrast' }],
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([
+          mockSuggestion1,
+          mockSuggestionDifferentSource,
+        ]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
+        );
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      });
+
+      it('should create separate groups for different issue types', async () => {
+        const mockSuggestionDifferentIssue = {
+          getId: sandbox.stub().returns('suggestion-issue-diff'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/form1',
+            source: 'form',
+            issues: [{ type: 'button-name' }],
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([
+          mockSuggestion1,
+          mockSuggestionDifferentIssue,
+        ]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
+        );
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
       });
     });
   });
