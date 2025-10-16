@@ -28,7 +28,7 @@ import {
 import { createAccessibilityIndividualOpportunities } from './utils/generate-individual-opportunities.js';
 import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from './utils/constants.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
+// const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
 
 export async function processImportStep(context) {
@@ -244,6 +244,7 @@ export async function processAccessibilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
+  /*
   .addStep(
     'processImport',
     processImportStep,
@@ -254,5 +255,6 @@ export default new AuditBuilder()
     scrapeAccessibilityData,
     AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER,
   )
+  */
   .addStep('processAccessibilityOpportunities', processAccessibilityOpportunities)
   .build();
