@@ -19,6 +19,7 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import expectedOpptyWithoutGSC from '../fixtures/cwv/opptyWithoutGSC.json' with { type: 'json' };
@@ -48,6 +49,7 @@ describe('CWVRunner Tests', () => {
     getBaseURL: sandbox.stub().returns(baseURL),
     getConfig: () => siteConfig,
     getDeliveryType: sandbox.stub().returns('aem_cs'),
+    hasProductEntitlement: sandbox.stub().resolves(true),
   };
 
   const context = {
@@ -58,7 +60,14 @@ describe('CWVRunner Tests', () => {
     },
     dataAccess: {
       Configuration: {
-        findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: () => true }),
+        findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({
+            'cwv-auto-suggest': {
+              productCodes: ['aem-sites'],
+            },
+          }),
+          isHandlerEnabledForSite: () => true,
+        }),
       },
     },
     env: {},
@@ -128,6 +137,12 @@ describe('CWVRunner Tests', () => {
       context.env = {
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       };
+      
+      // Mock TierClient for entitlement checks
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       addSuggestionsResponse = {
         createdItems: [],
@@ -276,16 +291,18 @@ describe('CWVRunner Tests', () => {
     });
 
     it('calls sendSQSMessageForAutoSuggest when suggestions have no guidance', async () => {
-      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-      context.dataAccess.Opportunity.create.resolves(oppty);
-      sinon.stub(GoogleClient, 'createFrom').resolves({});
-
       // Mock suggestions without guidance (empty issues array)
       const mockSuggestions = [
         { getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
         { getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
       ];
-      oppty.getSuggestions.resolves(mockSuggestions);
+      
+      // Setup opportunity with mock suggestions before the function call
+      oppty.getSuggestions = sandbox.stub().resolves(mockSuggestions);
+      
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
@@ -297,10 +314,6 @@ describe('CWVRunner Tests', () => {
     });
 
     it('does not call sendSQSMessageForAutoSuggest when all suggestions have guidance', async () => {
-      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-      context.dataAccess.Opportunity.create.resolves(oppty);
-      sinon.stub(GoogleClient, 'createFrom').resolves({});
-
       // Mock suggestions with existing guidance
       const mockSuggestions = [
         { 
@@ -314,7 +327,13 @@ describe('CWVRunner Tests', () => {
           getStatus: () => 'NEW'
         }
       ];
-      oppty.getSuggestions.resolves(mockSuggestions);
+      
+      // Setup opportunity with mock suggestions before the function call
+      oppty.getSuggestions = sandbox.stub().resolves(mockSuggestions);
+      
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
@@ -323,10 +342,6 @@ describe('CWVRunner Tests', () => {
     });
 
     it('calls sendSQSMessageForAutoSuggest when some suggestions have guidance and some do not', async () => {
-      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-      context.dataAccess.Opportunity.create.resolves(oppty);
-      sinon.stub(GoogleClient, 'createFrom').resolves({});
-
       // Mock mixed suggestions - some with guidance, some without
       const mockSuggestions = [
         { 
@@ -348,7 +363,13 @@ describe('CWVRunner Tests', () => {
           getStatus: () => 'NEW'
         }
       ];
-      oppty.getSuggestions.resolves(mockSuggestions);
+      
+      // Setup opportunity with mock suggestions before the function call
+      oppty.getSuggestions = sandbox.stub().resolves(mockSuggestions);
+      
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
