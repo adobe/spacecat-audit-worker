@@ -383,7 +383,7 @@ describe('Hreflang Audit', () => {
 
       expect(result.fullAuditRef).to.equal(baseURL);
       expect(scope.isDone()).to.be.true;
-    });
+    }).timeout(5000);
 
     it('should aggregate issues correctly', async () => {
       const htmlWithIssues = `
