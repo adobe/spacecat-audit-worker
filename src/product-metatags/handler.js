@@ -40,6 +40,85 @@ export function buildSuggestionKey(data) {
   return `${url}|${issue}|${tagContent}`;
 }
 
+/**
+ * Extracts locale from URL based on product URL template pattern.
+ * @param {string} url - The full URL to extract locale from
+ * @param {string} productUrlTemplate - Template like "%baseUrl/%locale/products/%urlKey"
+ * @param {Object} log - Logger instance
+ * @returns {string} Extracted locale or empty string if not found
+ */
+export function extractLocaleFromUrl(url, productUrlTemplate, log) {
+  if (!productUrlTemplate || !url) {
+    log.debug(`[PRODUCT-METATAGS] No product URL template or URL provided, using empty locale for url: ${url}`);
+    return '';
+  }
+
+  try {
+    // Parse the URL to get pathname
+    const { pathname } = new URL(url);
+
+    // Split template and pathname by '/'
+    const templateParts = productUrlTemplate.split('/').filter((part) => part);
+    const pathParts = pathname.split('/').filter((part) => part);
+
+    // Find the index of %locale in the template
+    const localeIndex = templateParts.findIndex((part) => part === '%locale');
+
+    if (localeIndex === -1) {
+      log.debug('[PRODUCT-METATAGS] No %locale found in product URL template, using empty locale');
+      return '';
+    }
+
+    // Account for %baseUrl which doesn't appear in pathname
+    const baseUrlIndex = templateParts.findIndex((part) => part === '%baseUrl');
+    const offset = baseUrlIndex !== -1 && baseUrlIndex < localeIndex ? 1 : 0;
+    const actualLocaleIndex = localeIndex - offset;
+
+    // Extract locale from the corresponding position in the pathname
+    if (actualLocaleIndex >= 0 && actualLocaleIndex < pathParts.length) {
+      const locale = pathParts[actualLocaleIndex];
+      log.debug(`[PRODUCT-METATAGS] Extracted locale "${locale}" from URL ${url} using template ${productUrlTemplate}`);
+      return locale;
+    }
+
+    log.debug(`[PRODUCT-METATAGS] Could not extract locale from URL ${url}, using empty locale`);
+    return '';
+  } catch (error) {
+    log.warn(`[PRODUCT-METATAGS] Error extracting locale from URL ${url}: ${error.message}`);
+    return '';
+  }
+}
+
+/**
+ * Creates a memoized version of getCommerceConfig to avoid redundant fetches.
+ * @param {Function} getCommerceConfigFn - The original getCommerceConfig function
+ * @returns {Function} Memoized version of the function
+ */
+export function createMemoizedCommerceConfig(getCommerceConfigFn) {
+  const cache = new Map();
+
+  return async function memoizedGetCommerceConfig(site, auditTypeParam, finalUrlParam, log, locale = '') {
+    // Create cache key from all parameters
+    const cacheKey = `${site.getId()}|${auditTypeParam}|${finalUrlParam}|${locale}`;
+
+    if (cache.has(cacheKey)) {
+      log.debug(`[PRODUCT-METATAGS] Using cached commerce config for site "${site.getId()}", url "${finalUrlParam}", locale "${locale}"`);
+      return cache.get(cacheKey);
+    }
+
+    try {
+      const result = await getCommerceConfigFn(site, auditTypeParam, finalUrlParam, log, locale);
+      cache.set(cacheKey, result);
+      return result;
+    } catch (error) {
+      log.debug(`[PRODUCT-METATAGS] Failed to fetch commerce config for site "${site.getId()}", url "${finalUrlParam}", locale "${locale}": ${error.message}`);
+      // Cache empty object for failed fetches to avoid retrying
+      cache.set(cacheKey, {});
+      return {};
+    }
+  };
+}
+
 export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const { log } = context;
 
@@ -76,35 +155,43 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
     log.info(`[PRODUCT-METATAGS] Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
     return;
   }
+
+  // Fetch site configuration once for all suggestions
   let useHostnameOnly = false;
-  let commerceConfig = null;
+  let site = null;
+  let customConfig = null;
+  let productUrlTemplate = null;
+  let memoizedGetCommerceConfig = null;
+
   try {
     const siteId = opportunity.getSiteId();
-    const site = await context.dataAccess.Site.findById(siteId);
+    site = await context.dataAccess.Site.findById(siteId);
     useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
 
-    // Get commerce configuration for product pages
-    try {
-      commerceConfig = await getCommerceConfig(site, auditType, finalUrl, log);
-      log.info('[PRODUCT-METATAGS] Commerce configuration retrieved:', {
-        environmentId: commerceConfig.environmentId,
-        storeViewCode: commerceConfig.storeViewCode,
-        websiteCode: commerceConfig.websiteCode,
-      });
-    } catch (configError) {
-      log.warn('[PRODUCT-METATAGS] Commerce config not available:', configError.message);
-    }
+    // Get handler configuration for locale extraction and commerce config
+    customConfig = site?.getConfig?.()?.getHandlers?.()?.[auditType];
+    productUrlTemplate = customConfig?.product_url_template;
+
+    // Initialize memoized commerce config function
+    memoizedGetCommerceConfig = createMemoizedCommerceConfig(getCommerceConfig);
+
+    log.debug('[PRODUCT-METATAGS] Site configuration loaded:', {
+      hasCustomConfig: !!customConfig,
+      hasProductUrlTemplate: !!productUrlTemplate,
+    });
   } catch (error) {
-    log.error('[PRODUCT-METATAGS] Error in product-metatags configuration:', error);
+    log.error('[PRODUCT-METATAGS] Error loading site configuration:', error);
   }
+
   const suggestions = [];
   const invalidSuggestions = [];
 
   // Generate suggestions data to be inserted in product-metatags opportunity suggestions
-  Object.keys(detectedTags)
-    .forEach((endpoint) => {
-      [TITLE, DESCRIPTION, H1].forEach((tag) => {
-        if (detectedTags[endpoint]?.[tag]?.issue) {
+  const suggestionPromises = [];
+  Object.keys(detectedTags).forEach((endpoint) => {
+    [TITLE, DESCRIPTION, H1].forEach((tag) => {
+      if (detectedTags[endpoint]?.[tag]?.issue) {
+        suggestionPromises.push((async () => {
           try {
             const tagData = detectedTags[endpoint][tag];
             const baseUrl = getBaseUrl(auditData.auditResult.finalUrl, useHostnameOnly);
@@ -145,9 +232,34 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
               suggestion.productTags = detectedTags[endpoint].productTags;
             }
 
-            // Add commerce configuration to each suggestion
-            if (commerceConfig) {
-              suggestion.commerceConfig = commerceConfig;
+            // Add commerce configuration per URL (with locale extraction and memoization)
+            if (site && memoizedGetCommerceConfig) {
+              try {
+                const locale = extractLocaleFromUrl(fullUrl, productUrlTemplate, log);
+                const config = await memoizedGetCommerceConfig(
+                  site,
+                  auditType,
+                  finalUrl,
+                  log,
+                  locale,
+                );
+                suggestion.config = config || {};
+
+                // Log extracted config details
+                const configKeys = Object.keys(suggestion.config);
+                if (configKeys.length > 0) {
+                  log.debug(`[PRODUCT-METATAGS] Extracted config for ${fullUrl} (locale: "${locale}"): ${JSON.stringify(config)}`);
+                } else {
+                  log.debug(`[PRODUCT-METATAGS] Empty config for ${fullUrl} (locale: "${locale}")`);
+                }
+              } catch (configError) {
+                log.debug(`[PRODUCT-METATAGS] Failed to fetch config for ${fullUrl}: ${configError.message}`);
+                suggestion.config = {};
+              }
+            } else {
+              // Ensure config field always exists
+              log.debug(`[PRODUCT-METATAGS] No site or memoized config function available for ${fullUrl}`);
+              suggestion.config = {};
             }
 
             // Log suggestion details for debugging
@@ -158,9 +270,13 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
             log.error(`[PRODUCT-METATAGS] Error creating suggestion for endpoint ${endpoint}, tag ${tag}:`, error);
             invalidSuggestions.push({ endpoint, tag, reason: error.message });
           }
-        }
-      });
+        })());
+      }
     });
+  });
+
+  // Wait for all suggestion promises to complete
+  await Promise.all(suggestionPromises);
 
   log.info(`[PRODUCT-METATAGS] Generated ${suggestions.length} valid suggestions and ${invalidSuggestions.length} invalid suggestions`);
 

@@ -1631,7 +1631,7 @@ describe('Product MetaTags', () => {
 
         await opportunityAndSuggestions(auditUrl, auditDataWithPort, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.error).to.be.calledWith('[PRODUCT-METATAGS] Error in product-metatags configuration:', testError);
+        expect(logStub.error).to.be.calledWith('[PRODUCT-METATAGS] Error loading site configuration:', testError);
 
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
