@@ -260,13 +260,15 @@ export async function getCommerceConfig(site, auditType, finalUrl, log, locale =
     log.debug('Commerce config keys:', Object.keys(config));
 
     return {
-      environmentId: config['commerce-environment-id'],
-      storeViewCode: config['commerce-store-view-code'],
-      websiteCode: config['commerce-website-code'],
-      storeCode: config['commerce-store-code'],
-      customerGroup: config['commerce-customer-group'],
-      apiKey: config['commerce-x-api-key'],
-      endpoint: config['commerce-endpoint'],
+      url: config['commerce-endpoint'],
+      headers: {
+        'Magento-Customer-Group': config['commerce-customer-group'],
+        'Magento-Environment-Id': config['commerce-environment-id'],
+        'Magento-Store-Code': config['commerce-store-code'],
+        'Magento-Store-View-Code': config['commerce-store-view-code'],
+        'Magento-Website-Code': config['commerce-website-code'],
+        'x-api-key': config['commerce-x-api-key'],
+      },
     };
   } catch (error) {
     log.error(`Error fetching commerce config for site ${site.getId()}:`, error);
