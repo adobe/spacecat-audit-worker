@@ -10,10 +10,17 @@
  * governing permissions and limitations under the License.
  */
 
-const CWV_GUIDANCE_MESSAGE_TYPE = 'guidance:cwv-analysis';
+import { isAuditEnabledForSite } from '../common/index.js';
+
+const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv-analysis';
+
+const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
 
 /**
- * Checks if opportunity needs guidance from Mystique
+ * Checks if opportunity needs auto-suggest from Mystique
+ *
+ * First checks if auto-suggest feature is enabled for the site,
+ * then checks if opportunity has suggestions without CODE_CHANGE guidance.
  *
  * CWV suggestion structure:
  * {
@@ -21,7 +28,7 @@ const CWV_GUIDANCE_MESSAGE_TYPE = 'guidance:cwv-analysis';
  *   status: 'NEW' | 'APPROVED' | 'SKIPPED' | 'FIXED' | 'ERROR',
  *   ...
  *   data: {
- *     issues?: [              // Guidance stored here
+ *     issues?: [              // Auto-suggest guidance stored here
  *       {
  *         type: 'lcp' | 'cls' | 'inp',
  *         value: string       // Markdown text with guidance/patch
@@ -31,66 +38,81 @@ const CWV_GUIDANCE_MESSAGE_TYPE = 'guidance:cwv-analysis';
  *   ...
  * }
  *
+ * @param {Object} context - Context object containing log
  * @param {Object} opportunity - Opportunity object
- * @returns {Promise<boolean>} True if opportunity needs guidance (has suggestions without guidance)
+ * @param {Object} site - Site object
+ * @returns {Promise<boolean>} True if auto-suggest is enabled AND opportunity needs suggestions
  */
-export async function needsGuidance(opportunity) {
+export async function needsAutoSuggest(context, opportunity, site) {
+  const isEnabled = await isAuditEnabledForSite(CWV_AUTO_SUGGEST_FEATURE_TOGGLE, site, context);
+
+  if (!isEnabled) {
+    context.log.info(`CWV auto-suggest is disabled for site ${site?.getId?.()}, skipping`);
+    return false;
+  }
+
+  // Feature is enabled, now check if opportunity needs suggestions
   const suggestions = await opportunity.getSuggestions();
 
   if (suggestions.length === 0) {
-    return false; // No suggestions (no guidance needed)
+    return false; // No suggestions (no auto-suggest needed)
   }
 
   return suggestions.some((suggestion) => {
     const data = suggestion.getData();
     const issues = data?.issues || [];
 
-    // Check if suggestion has no issues at all (needs guidance)
+    // Check if suggestion has no issues at all (needs auto-suggest)
     if (issues.length === 0) {
       return true;
     }
 
-    // Check if any guidance is empty (needs guidance)
+    // Check if any auto-suggest guidance is empty (needs auto-suggest)
     return issues.some((issue) => !issue.value || !issue.value.trim());
   });
 }
 
 /**
- * Sends a message to Mystique for CWV guidance processing
+ * Sends a message to Mystique for CWV auto-suggest processing
  *
  * @param {Object} context - Context object containing log, sqs, env
  * @param {Object} opportunity - Opportunity object with siteId, auditId, opportunityId, and data
  * @param {Object} site - Site object with getBaseURL() and getDeliveryType() methods
  * @throws {Error} When SQS message sending fails
  */
-export async function sendSQSMessageForGuidance(context, opportunity, site) {
+export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
   const {
     log, sqs, env,
   } = context;
 
   try {
     if (opportunity) {
-      log.info(`Received CWV opportunity for guidance: ${JSON.stringify(opportunity)}`);
       const opptyData = JSON.parse(JSON.stringify(opportunity));
+      const { siteId } = opptyData;
+      const opportunityId = opptyData.opportunityId || '';
+
+      log.info(`Received CWV opportunity for auto-suggest - siteId: ${siteId}, opportunityId: ${opportunityId}`);
 
       const sqsMessage = {
-        type: CWV_GUIDANCE_MESSAGE_TYPE,
+        type: CWV_AUTO_SUGGEST_MESSAGE_TYPE,
         siteId: opptyData.siteId,
         auditId: opptyData.auditId,
         deliveryType: site ? site.getDeliveryType() : 'aem_cs',
         time: new Date().toISOString(),
         data: {
           page: site ? site.getBaseURL() : '',
-          opportunityId: opptyData.opportunityId || '',
+          opportunityId,
         },
       };
 
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
-      log.info(`CWV opportunity sent to mystique for guidance: ${JSON.stringify(sqsMessage)}`);
+      log.info(`CWV opportunity sent to Mystique for auto-suggest - siteId: ${siteId}, opportunityId: ${opportunityId}`);
     }
   } catch (error) {
-    log.error(`[CWV] Failed to send message to Mystique for opportunity ${opportunity?.getId()}: ${error.message}`);
+    const siteId = opportunity?.siteId || 'unknown';
+    const opportunityId = opportunity?.opportunityId || opportunity?.getId?.() || '';
+    log.error(`[CWV] Failed to send auto-suggest message to Mystique - siteId: ${siteId}, opportunityId: ${opportunityId}, error: ${error.message}`);
     throw new Error(error.message);
   }
 }

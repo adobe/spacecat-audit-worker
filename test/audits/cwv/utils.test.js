@@ -13,9 +13,9 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { sendSQSMessageForGuidance, needsGuidance } from '../../../src/cwv/utils.js';
+import { sendSQSMessageForAutoSuggest, needsAutoSuggest } from '../../../src/cwv/utils.js';
 
-describe('sendSQSMessageForGuidance', () => {
+describe('sendSQSMessageForAutoSuggest', () => {
   let context;
   let sqsStub;
   const sandbox = sinon.createSandbox();
@@ -47,7 +47,7 @@ describe('sendSQSMessageForGuidance', () => {
     sandbox.restore();
   });
 
-  it('should send CWV guidance message with correct structure', async () => {
+  it('should send CWV auto-suggest message with correct structure', async () => {
     const opportunity = {
       siteId: 'site-123',
       auditId: 'audit-456',
@@ -56,7 +56,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -79,7 +79,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -94,7 +94,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -109,7 +109,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -125,7 +125,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -140,7 +140,7 @@ describe('sendSQSMessageForGuidance', () => {
       opportunityId: 'oppty-789',
     };
 
-    await sendSQSMessageForGuidance(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site);
 
     expect(sqsStub.calledOnce).to.be.true;
   });
@@ -154,7 +154,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity, null);
+    await sendSQSMessageForAutoSuggest(context, opportunity, null);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -163,13 +163,13 @@ describe('sendSQSMessageForGuidance', () => {
   });
 
   it('should handle null opportunity gracefully', async () => {
-    await sendSQSMessageForGuidance(context, null);
+    await sendSQSMessageForAutoSuggest(context, null);
 
     expect(sqsStub.called).to.be.false;
   });
 
   it('should handle undefined opportunity gracefully', async () => {
-    await sendSQSMessageForGuidance(context, undefined);
+    await sendSQSMessageForAutoSuggest(context, undefined);
 
     expect(sqsStub.called).to.be.false;
   });
@@ -183,11 +183,15 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site);
 
     expect(context.log.info.calledTwice).to.be.true;
-    expect(context.log.info.firstCall.args[0]).to.include('Received CWV opportunity for guidance');
-    expect(context.log.info.secondCall.args[0]).to.include('CWV opportunity sent to mystique for guidance');
+    expect(context.log.info.firstCall.args[0]).to.include('Received CWV opportunity for auto-suggest');
+    expect(context.log.info.firstCall.args[0]).to.include('siteId: site-123');
+    expect(context.log.info.firstCall.args[0]).to.include('opportunityId: oppty-789');
+    expect(context.log.info.secondCall.args[0]).to.include('CWV opportunity sent to Mystique for auto-suggest');
+    expect(context.log.info.secondCall.args[0]).to.include('siteId: site-123');
+    expect(context.log.info.secondCall.args[0]).to.include('opportunityId: oppty-789');
   });
 
   it('should handle missing opportunityId', async () => {
@@ -200,7 +204,7 @@ describe('sendSQSMessageForGuidance', () => {
       },
     };
 
-    await sendSQSMessageForGuidance(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site);
 
     expect(context.sqs.sendMessage.calledOnce).to.be.true;
     const message = context.sqs.sendMessage.firstCall.args[1];
@@ -221,17 +225,120 @@ describe('sendSQSMessageForGuidance', () => {
     };
 
     try {
-      await sendSQSMessageForGuidance(context, opportunity, site);
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
       expect.fail('Should have thrown an error');
     } catch (thrownError) {
       expect(thrownError.message).to.equal('SQS send failed');
       expect(context.log.error.calledOnce).to.be.true;
-      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('siteId: site-123');
+      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-789');
+    }
+  });
+
+  it('should handle SQS sendMessage error with missing opportunityId but with getId method', async () => {
+    const error = new Error('SQS send failed');
+    context.sqs.sendMessage.rejects(error);
+
+    const opportunity = {
+      siteId: 'site-456',
+      auditId: 'audit-789',
+      // opportunityId is missing, but getId is available
+      getId: () => 'oppty-from-getId',
+      data: {
+      },
+    };
+
+    try {
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('SQS send failed');
+      expect(context.log.error.calledOnce).to.be.true;
+      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('siteId: site-456');
+      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-from-getId');
+    }
+  });
+
+  it('should handle SQS sendMessage error with missing opportunityId and no getId method', async () => {
+    const error = new Error('SQS send failed');
+    context.sqs.sendMessage.rejects(error);
+
+    const opportunity = {
+      siteId: 'site-999',
+      auditId: 'audit-888',
+      // opportunityId is missing and no getId method
+      data: {
+      },
+    };
+
+    try {
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('SQS send failed');
+      expect(context.log.error.calledOnce).to.be.true;
+      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('siteId: site-999');
+      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: ');
+    }
+  });
+
+  it('should handle SQS sendMessage error with missing siteId', async () => {
+    const error = new Error('SQS send failed');
+    context.sqs.sendMessage.rejects(error);
+
+    const opportunity = {
+      // siteId is missing
+      auditId: 'audit-111',
+      opportunityId: 'oppty-222',
+      data: {
+      },
+    };
+
+    try {
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('SQS send failed');
+      expect(context.log.error.calledOnce).to.be.true;
+      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('siteId: unknown');
+      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-222');
     }
   });
 });
 
-describe('needsGuidance', () => {
+describe('needsAutoSuggest', () => {
+  let context;
+  let site;
+  const sandbox = sinon.createSandbox();
+
+  beforeEach(() => {
+    site = {
+      getId: sandbox.stub().returns('test-site-id'),
+      getBaseURL: sandbox.stub().returns('https://example.com'),
+      getDeliveryType: sandbox.stub().returns('aem_cs'),
+    };
+
+    context = {
+      log: {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+      },
+      dataAccess: {
+        Configuration: {
+          findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: () => true }),
+        },
+      },
+    };
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
   it('returns true when suggestions have empty guidance values', async () => {
     const suggestions = [
       { getData: () => ({ issues: [{ type: 'lcp', value: '' }] }) }, // Empty string
@@ -242,7 +349,7 @@ describe('needsGuidance', () => {
       getSuggestions: () => Promise.resolve(suggestions),
     };
 
-    const result = await needsGuidance(opportunity);
+    const result = await needsAutoSuggest(context, opportunity, site);
     expect(result).to.be.true;
   });
 
@@ -256,7 +363,7 @@ describe('needsGuidance', () => {
       getSuggestions: () => Promise.resolve(suggestions),
     };
 
-    const result = await needsGuidance(opportunity);
+    const result = await needsAutoSuggest(context, opportunity, site);
     expect(result).to.be.true;
   });
 
@@ -271,7 +378,7 @@ describe('needsGuidance', () => {
       getSuggestions: () => Promise.resolve(suggestions),
     };
 
-    const result = await needsGuidance(opportunity);
+    const result = await needsAutoSuggest(context, opportunity, site);
     expect(result).to.be.true;
   });
 
@@ -280,7 +387,7 @@ describe('needsGuidance', () => {
       getSuggestions: () => Promise.resolve([]),
     };
 
-    const result = await needsGuidance(opportunity);
+    const result = await needsAutoSuggest(context, opportunity, site);
     expect(result).to.be.false;
   });
 
@@ -294,7 +401,7 @@ describe('needsGuidance', () => {
       getSuggestions: () => Promise.resolve(suggestions),
     };
 
-    const result = await needsGuidance(opportunity);
+    const result = await needsAutoSuggest(context, opportunity, site);
     expect(result).to.be.true;
   });
 
@@ -308,7 +415,7 @@ describe('needsGuidance', () => {
       getSuggestions: () => Promise.resolve(suggestions),
     };
 
-    const result = await needsGuidance(opportunity);
+    const result = await needsAutoSuggest(context, opportunity, site);
     expect(result).to.be.true;
   });
 
@@ -322,7 +429,26 @@ describe('needsGuidance', () => {
       getSuggestions: () => Promise.resolve(suggestions),
     };
 
-    const result = await needsGuidance(opportunity);
+    const result = await needsAutoSuggest(context, opportunity, site);
     expect(result).to.be.false;
+  });
+
+  it('returns false when CWV auto-suggest feature toggle is disabled', async () => {
+    // Mock feature toggle as disabled
+    context.dataAccess.Configuration.findLatest.resolves({
+      isHandlerEnabledForSite: () => false,
+    });
+
+    const suggestions = [
+      { getData: () => ({ issues: [{ type: 'lcp', value: '' }] }) },
+    ];
+
+    const opportunity = {
+      getSuggestions: () => Promise.resolve(suggestions),
+    };
+
+    const result = await needsAutoSuggest(context, opportunity, site);
+    expect(result).to.be.false;
+    expect(context.log.info).to.have.been.calledWith('CWV auto-suggest is disabled for site test-site-id, skipping');
   });
 });

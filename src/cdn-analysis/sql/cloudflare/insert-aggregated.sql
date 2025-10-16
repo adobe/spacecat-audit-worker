@@ -1,6 +1,6 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
 SELECT
-  ClientRequestURI AS url,
+  url_extract_path(ClientRequestURI) AS url,
   ClientRequestUserAgent AS user_agent,
   EdgeResponseStatus AS status,
   try(url_extract_host(ClientRequestReferer)) AS referer,
@@ -38,7 +38,7 @@ WHERE date = '{{year}}{{month}}{{day}}'
   AND NOT REGEXP_LIKE(COALESCE(ClientRequestReferer, ''), '{{host}}')
 
 GROUP BY
-  ClientRequestURI,
+  url_extract_path(ClientRequestURI),
   ClientRequestUserAgent,
   EdgeResponseStatus,
   try(url_extract_host(ClientRequestReferer)),

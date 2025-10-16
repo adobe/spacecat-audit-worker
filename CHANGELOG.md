@@ -1,3 +1,38 @@
+## [1.210.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.2...v1.210.3) (2025-10-16)
+
+
+### Bug Fixes
+
+* calculate week number from date in daily geo-brand-presence handler ([#1411](https://github.com/adobe/spacecat-audit-worker/issues/1411)) ([f9e968c](https://github.com/adobe/spacecat-audit-worker/commit/f9e968c60261417deba8502cd633052023758d0d))
+
+## [1.210.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.1...v1.210.2) (2025-10-16)
+
+
+### Bug Fixes
+
+* get only paths from urls for aggregated data ([#1413](https://github.com/adobe/spacecat-audit-worker/issues/1413)) ([2b409b7](https://github.com/adobe/spacecat-audit-worker/commit/2b409b75c6a5d60f7d33be5003a5ac3202c41a43))
+
+## [1.210.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.0...v1.210.1) (2025-10-15)
+
+
+### Bug Fixes
+
+* CWV auto-suggest feature toggle ([#1419](https://github.com/adobe/spacecat-audit-worker/issues/1419)) ([a7b3384](https://github.com/adobe/spacecat-audit-worker/commit/a7b3384dd3939849d0929baa67eb19a8710ab5f7))
+
+# [1.210.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.5...v1.210.0) (2025-10-15)
+
+
+### Features
+
+* add CWV auto-suggest feature toggle ([#1417](https://github.com/adobe/spacecat-audit-worker/issues/1417)) ([02963cf](https://github.com/adobe/spacecat-audit-worker/commit/02963cf7ee7557f961e18700b1667f0c94d9454c))
+
+## [1.209.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.4...v1.209.5) (2025-10-15)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1414](https://github.com/adobe/spacecat-audit-worker/issues/1414)) ([522682f](https://github.com/adobe/spacecat-audit-worker/commit/522682fd25d4e41ddda0c34d521fa8e94749b0a2))
+
 ## [1.209.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.209.3...v1.209.4) (2025-10-15)
 
 
