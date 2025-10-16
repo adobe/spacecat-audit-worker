@@ -71,6 +71,7 @@ describe('CWVRunner Tests', () => {
   afterEach(() => {
     nock.cleanAll();
     sandbox.restore();
+    sinon.restore();
   });
 
   it('cwv audit runs rum api client cwv query with default thresholds', async () => {
@@ -280,6 +281,7 @@ describe('CWVRunner Tests', () => {
 
     afterEach(() => {
       sandbox.restore();
+      sinon.restore();
     });
 
     it('creates a new opportunity object', async () => {
