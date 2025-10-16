@@ -355,5 +355,27 @@ describe('CWVRunner Tests', () => {
       // Verify that SQS sendMessage was called (because at least one suggestion needs guidance)
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
+
+    it('skips syncSuggestions for specific test opportunityId', async () => {
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      
+      // Mock opportunity with the skip ID
+      const skipOpptyId = '1e8cbc44-c746-4a7f-8c0c-38d5edadb1c8';
+      const skipOppty = {
+        ...oppty,
+        getId: () => skipOpptyId,
+        getSiteId: () => 'site-id',
+      };
+      
+      context.dataAccess.Opportunity.create.resolves(skipOppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+
+      // Verify that the skip log was called
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Skipping syncSuggestions for test opportunityId/)
+      );
+    });
   });
 });
