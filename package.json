@@ -88,6 +88,7 @@
     "@adobe/spacecat-shared-ims-client": "1.8.13",
     "@adobe/spacecat-shared-rum-api-client": "2.38.2",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
+    "@adobe/spacecat-shared-tier-client": "1.1.2",
     "@adobe/spacecat-shared-slack-client": "1.5.26",
     "@adobe/spacecat-shared-utils": "1.59.4",
     "@adobe/spacecat-shared-scrape-client": "2.1.5",
