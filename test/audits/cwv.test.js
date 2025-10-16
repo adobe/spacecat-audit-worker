@@ -48,6 +48,7 @@ describe('CWVRunner Tests', () => {
     getBaseURL: sandbox.stub().returns(baseURL),
     getConfig: () => siteConfig,
     getDeliveryType: sandbox.stub().returns('aem_cs'),
+    getDeliveryConfig: sandbox.stub().returns({}),
   };
 
   const context = {
@@ -71,9 +72,11 @@ describe('CWVRunner Tests', () => {
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
+    site.getDeliveryConfig.reset();
   });
 
   it('cwv audit runs rum api client cwv query', async () => {
+    site.getDeliveryConfig.returns({});
     const result = await CWVRunner(auditUrl, context, site);
 
     expect(siteConfig.getGroupedURLs.calledWith(Audit.AUDIT_TYPES.CWV)).to.be.true;
@@ -96,6 +99,47 @@ describe('CWVRunner Tests', () => {
       },
       fullAuditRef: auditUrl,
     });
+  });
+
+  it('uses custom delivery config if present', async () => {
+    const customConfig = { dailyThreshold: 500, interval: 14 };
+    site.getDeliveryConfig.returns(customConfig);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(context.rumApiClient.query).to.have.been.calledWith(
+      Audit.AUDIT_TYPES.CWV,
+      {
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        interval: customConfig.interval,
+        groupedURLs,
+      },
+    );
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= customConfig.dailyThreshold * customConfig.interval),
+    );
+    expect(result.auditResult.auditContext.interval).to.equal(customConfig.interval);
+  });
+
+  it('uses default values when delivery config is null', async () => {
+    site.getDeliveryConfig.returns(null);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(context.rumApiClient.query).to.have.been.calledWith(
+      Audit.AUDIT_TYPES.CWV,
+      {
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        interval: 7,
+        groupedURLs,
+      },
+    );
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= 1000 * 7),
+    );
+    expect(result.auditResult.auditContext.interval).to.equal(7);
   });
 
   describe('CWV audit to oppty conversion', () => {
