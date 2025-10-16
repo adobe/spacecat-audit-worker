@@ -69,6 +69,9 @@ export default async function handler(message, context) {
     : `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
   const outputLocations = [mainOutputLocation, `${mainOutputLocation}/config_${configVersion || 'absent'}`];
 
+  log.info(`GEO BRAND PRESENCE: Using output locations: ${outputLocations.join(', ')}`);
+  log.info(`GEO BRAND PRESENCE: Config version: ${configVersion || 'absent'}`);
+
   if (subType === 'refresh:geo-brand-presence') {
     return handleRefresh({ auditId, outputLocations, presignedURL }, context);
   }
@@ -79,16 +82,34 @@ export default async function handler(message, context) {
     return notFound();
   }
 
+  log.info(`GEO BRAND PRESENCE: Fetching Excel file from presigned URL: ${presignedURL.href}`);
+
   /** @type {Response} */
   const res = await fetch(presignedURL);
+  if (!res.ok) {
+    log.error(`GEO BRAND PRESENCE: Failed to fetch Excel file. Status: ${res.status} ${res.statusText}`);
+    return internalServerError(`Failed to fetch Excel file: ${res.status} ${res.statusText}`);
+  }
+
   const sheet = await res.arrayBuffer();
+  log.info(`GEO BRAND PRESENCE: Successfully downloaded Excel file (${sheet.byteLength} bytes)`);
 
   // upload to sharepoint & publish via hlx admin api
+  log.info('GEO BRAND PRESENCE: Creating SharePoint client');
   const sharepointClient = await createLLMOSharepointClient(context);
+  log.info('GEO BRAND PRESENCE: SharePoint client created successfully');
+
   const xlsxName = extractXlsxName(presignedURL);
-  await Promise.all(outputLocations.map(async (outputLocation) => {
+  log.info(`GEO BRAND PRESENCE: Extracted filename: ${xlsxName}`);
+  log.info(`GEO BRAND PRESENCE: Uploading to ${outputLocations.length} location(s)`);
+
+  await Promise.all(outputLocations.map(async (outputLocation, index) => {
+    log.info(`GEO BRAND PRESENCE: Uploading to location ${index + 1}/${outputLocations.length}: ${outputLocation}`);
     await uploadAndPublishFile(sheet, xlsxName, outputLocation, sharepointClient, log);
+    log.info(`GEO BRAND PRESENCE: Successfully uploaded to location ${index + 1}/${outputLocations.length}`);
   }));
+
+  log.info('GEO BRAND PRESENCE: All uploads completed successfully');
 
   return ok();
 }

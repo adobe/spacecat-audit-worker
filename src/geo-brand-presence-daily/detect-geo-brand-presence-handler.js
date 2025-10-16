@@ -19,6 +19,10 @@ import baseHandler from '../geo-brand-presence/detect-geo-brand-presence-handler
  * Extends the base handler with daily-specific path logic
  */
 export default async function handler(message, context) {
+  const { log } = context;
+
+  log.info('GEO BRAND PRESENCE DAILY: Handler invoked with message:', JSON.stringify(message));
+
   // Extract daily-specific information from the data object
   // Calculate week number from the date field since Mystique preserves date reliably
   let weekNumber = '01'; // fallback
@@ -26,15 +30,30 @@ export default async function handler(message, context) {
     const date = new Date(message.data.date);
     const { week } = isoCalendarWeek(date);
     weekNumber = String(week).padStart(2, '0');
+    log.info(`GEO BRAND PRESENCE DAILY: Calculated week ${weekNumber} from date ${message.data.date}`);
+  } else {
+    log.warn('GEO BRAND PRESENCE DAILY: No date found in message.data, using fallback week 01');
   }
 
   // Create a modified context with daily-specific path logic
   const dailyContext = {
     ...context,
     // Override the path construction for daily processing
-    getOutputLocation: (site) => `${site.getConfig().getLlmoDataFolder()}/brand-presence/w${weekNumber}`,
+    getOutputLocation: (site) => {
+      const path = `${site.getConfig().getLlmoDataFolder()}/brand-presence/w${weekNumber}`;
+      log.info(`GEO BRAND PRESENCE DAILY: Generated output location: ${path}`);
+      return path;
+    },
   };
 
-  // Call the base handler with modified context
-  return baseHandler(message, dailyContext);
+  log.info('GEO BRAND PRESENCE DAILY: Calling base handler');
+
+  try {
+    const result = await baseHandler(message, dailyContext);
+    log.info('GEO BRAND PRESENCE DAILY: Base handler completed successfully');
+    return result;
+  } catch (error) {
+    log.error('GEO BRAND PRESENCE DAILY: Base handler failed with error:', error);
+    throw error;
+  }
 }
