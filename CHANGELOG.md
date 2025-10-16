@@ -1,3 +1,10 @@
+## [1.210.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.4...v1.210.5) (2025-10-16)
+
+
+### Bug Fixes
+
+* update title to match grouping criteria ([#1410](https://github.com/adobe/spacecat-audit-worker/issues/1410)) ([722f601](https://github.com/adobe/spacecat-audit-worker/commit/722f601500288cafbf08bd534b371fbfe2633fcb))
+
 ## [1.210.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.3...v1.210.4) (2025-10-16)
 
 
