@@ -44,8 +44,10 @@ describe('CWVRunner Tests', () => {
     getGroupedURLs: sandbox.stub().returns(groupedURLs),
   };
   const site = {
+    getId: () => 'test-site-id',
     getBaseURL: sandbox.stub().returns(baseURL),
     getConfig: () => siteConfig,
+    getDeliveryType: sandbox.stub().returns('aem_cs'),
   };
 
   const context = {
@@ -54,10 +56,15 @@ describe('CWVRunner Tests', () => {
     rumApiClient: {
       query: sandbox.stub().resolves(rumData),
     },
-    dataAccess: {},
+    dataAccess: {
+      Configuration: {
+        findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: () => true }),
+      },
+    },
     env: {},
     log: {
       debug: sinon.stub(),
+      info: sinon.stub(),
     },
   };
 
@@ -268,7 +275,7 @@ describe('CWVRunner Tests', () => {
       expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
     });
 
-    it('calls sendSQSMessageForGuidance when suggestions have no guidance', async () => {
+    it('calls sendSQSMessageForAutoSuggest when suggestions have no guidance', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
@@ -289,7 +296,7 @@ describe('CWVRunner Tests', () => {
       expect(message.siteId).to.equal('site-id');
     });
 
-    it('does not call sendSQSMessageForGuidance when all suggestions have guidance', async () => {
+    it('does not call sendSQSMessageForAutoSuggest when all suggestions have guidance', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});
@@ -315,7 +322,7 @@ describe('CWVRunner Tests', () => {
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('calls sendSQSMessageForGuidance when some suggestions have guidance and some do not', async () => {
+    it('calls sendSQSMessageForAutoSuggest when some suggestions have guidance and some do not', async () => {
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
       context.dataAccess.Opportunity.create.resolves(oppty);
       sinon.stub(GoogleClient, 'createFrom').resolves({});

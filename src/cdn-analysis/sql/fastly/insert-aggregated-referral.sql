@@ -89,7 +89,7 @@ referrals_raw AS (
 )
 
 SELECT 
-  url,
+  url_extract_path(url) as url,
   host,
   referrer,
   utm_source,
