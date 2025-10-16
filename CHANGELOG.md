@@ -1,3 +1,10 @@
+## [1.210.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.3...v1.210.4) (2025-10-16)
+
+
+### Bug Fixes
+
+* merge existing patterns with new patterns ([#1416](https://github.com/adobe/spacecat-audit-worker/issues/1416)) ([f3fbd67](https://github.com/adobe/spacecat-audit-worker/commit/f3fbd678d8feb4915382683e184b34695348e7c2))
+
 ## [1.210.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.2...v1.210.3) (2025-10-16)
 
 
