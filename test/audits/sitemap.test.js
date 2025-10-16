@@ -1035,7 +1035,7 @@ describe('Sitemap Audit', () => {
         context,
       );
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         'Sitemap audit failed, skipping opportunity and suggestions creation',
       );
       // Check that the existing stubs weren't called
@@ -1363,17 +1363,22 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/broken-redirect')
       .reply(301, '', { Location: 'https://example.com/error' });
 
-    // Second request fails with network error
+    // Second request fails with network error (suggests invalid URL)
     nock('https://example.com')
       .head('/error')
       .replyWithError('Network error');
+
+    // Third request to validate homepage suggestion
+    nock('https://example.com')
+      .head('/')
+      .reply(200);
 
     const result = await filterValidUrls(urls);
 
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/broken-redirect',
-        urlsSuggested: 'https://example.com/error',
+        urlsSuggested: 'https://example.com',
         statusCode: 301,
       },
     ]);
@@ -1542,12 +1547,67 @@ describe('filterValidUrls with redirect handling', () => {
     nock('https://example.com')
       .head('/redirect-no-location')
       .reply(301, ''); // No location header
+
+    // Mock homepage validation
+    nock('https://example.com')
+      .head('/')
+      .reply(200);
+
     const result = await filterValidUrls(urls);
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/redirect-no-location',
         statusCode: 301,
         urlsSuggested: 'https://example.com',
+      },
+    ]);
+  });
+
+  it('should not suggest URL when homepage validation fails with network error', async () => {
+    const urls = ['https://example.com/redirect-no-location'];
+    nock('https://example.com')
+      .head('/redirect-no-location')
+      .reply(301, ''); // No location header
+
+    // Mock homepage validation failure
+    nock('https://example.com')
+      .head('/')
+      .replyWithError('Network error');
+
+    const result = await filterValidUrls(urls);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect-no-location',
+        statusCode: 301,
+        // No urlsSuggested since homepage validation failed
+      },
+    ]);
+  });
+
+  it('should fallback to homepage when redirect target validation fails', async () => {
+    const urls = ['https://example.com/broken-redirect'];
+
+    // Original redirect
+    nock('https://example.com')
+      .head('/broken-redirect')
+      .reply(301, '', { Location: 'https://example.com/invalid' });
+
+    // Redirect target validation fails
+    nock('https://example.com')
+      .head('/invalid')
+      .replyWithError('Network error');
+
+    // Homepage validation succeeds
+    nock('https://example.com')
+      .head('/')
+      .reply(200);
+
+    const result = await filterValidUrls(urls);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/broken-redirect',
+        statusCode: 301,
+        urlsSuggested: 'https://example.com', // Falls back to homepage
       },
     ]);
   });
@@ -1630,6 +1690,10 @@ describe('filterValidUrls with status code tracking', () => {
     nock('https://example.com').head('/server-error').reply(500);
     nock('https://example.com').head('/forbidden').reply(403);
 
+    // Mock validation of suggested URLs
+    nock('https://example.com').head('/new').reply(200);
+    nock('https://example.com').head('/temp').reply(200);
+
     const result = await filterValidUrls(urls);
 
     expect(result.ok).to.deep.equal(['https://example.com/ok']);
@@ -1682,6 +1746,15 @@ describe('filterValidUrls with status code tracking', () => {
     nock('https://example.com')
       .head('/normal-redirect')
       .reply(301, '', { Location: 'https://example.com/valid-page' });
+
+    // Mock validation requests for redirect targets
+    nock('https://example.com').head('/404.html').reply(404);
+    nock('https://example.com').head('/404/not-found').reply(404);
+    nock('https://example.com').head('/errors/404/page').reply(404);
+    nock('https://example.com').head('/valid-page').reply(200);
+
+    // Mock homepage validation for 404 pattern redirects
+    nock('https://example.com').head('/').times(3).reply(200);
 
     const result = await filterValidUrls(urls);
 

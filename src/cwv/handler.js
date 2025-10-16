@@ -18,6 +18,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit from './kpi-metrics.js';
+import { sendSQSMessageForAutoSuggest, needsAutoSuggest } from './utils.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
@@ -80,6 +81,11 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
       },
     }),
   });
+
+  // Send SQS message for Mystique auto-suggest if enabled and opportunity needs suggestions
+  if (await needsAutoSuggest(context, opportunity, site)) {
+    await sendSQSMessageForAutoSuggest(context, opportunity, site);
+  }
 }
 
 export default new AuditBuilder()

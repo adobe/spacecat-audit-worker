@@ -22,12 +22,15 @@ import { checkGoogleConnection } from './opportunity-utils.js';
   * @param {Function} createOpportunityData - The function to create the opportunity data object.
   * @param {Object} [props={}] - Either the KPI deltas for the cwv audit or opportunity properties
   * for the mapper.
+  * @param {Function} [comparisonFn] - Optional function to compare existing opportunity with
+  * new opportunity instance. Should return true if they are the same, false otherwise.
+  * Receives (oppty, opportunityInstance) as parameters.
   * @returns {Promise<Object>} The created or updated opportunity object.
   * @throws {Error} If fetching or creating the opportunity fails.
   */
 
 // eslint-disable-next-line max-len
-export async function convertToOpportunity(auditUrl, auditData, context, createOpportunityData, auditType, props = {}) {
+export async function convertToOpportunity(auditUrl, auditData, context, createOpportunityData, auditType, props = {}, comparisonFn = undefined) {
   const opportunityInstance = createOpportunityData(props);
   const { dataAccess, log } = context;
   const { Opportunity } = dataAccess;
@@ -37,7 +40,17 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
     try {
       // eslint-disable-next-line max-len
       const opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, Oppty.STATUSES.NEW);
-      opportunity = opportunities.find((oppty) => oppty.getType() === auditType);
+      opportunity = opportunities.find((oppty) => {
+        if (oppty.getType() === auditType) {
+          // If comparison function is provided, use it to determine if opportunities are the same
+          if (comparisonFn && typeof comparisonFn === 'function') {
+            return comparisonFn(oppty, opportunityInstance);
+          }
+          // Default behavior: just match by type
+          return true;
+        }
+        return false;
+      });
     } catch (e) {
       log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
       throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
@@ -71,11 +84,17 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
       opportunity.setAuditId(auditData.id);
       if (auditType === Audit.AUDIT_TYPES.CWV
           || auditType === Audit.AUDIT_TYPES.META_TAGS
-          || auditType === Audit.AUDIT_TYPES.SECURITY_CSP) {
+          || auditType === Audit.AUDIT_TYPES.SECURITY_CSP
+          || auditType === Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES) {
         opportunity.setData({
           ...opportunity.getData(),
           ...props, // kpiDeltas
           dataSources: opportunityInstance.data?.dataSources,
+        });
+      } else if (auditType === Audit.AUDIT_TYPES.PRERENDER) {
+        opportunity.setData({
+          ...opportunity.getData(),
+          ...opportunityInstance.data,
         });
       } else {
         opportunity.setData({

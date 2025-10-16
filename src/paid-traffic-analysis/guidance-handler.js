@@ -76,12 +76,12 @@ async function ignorePreviousOpportunitiesForPeriod(Opportunity, siteId, _period
     const weekVal = data?.week;
     const monthVal = data?.month;
     const id = oppty.getId();
-    log.info(`Setting existing paid-traffic opportunity id=${id} title="${title}" week=${weekVal} month=${monthVal} to IGNORED`);
+    log.debug(`Setting existing paid-traffic opportunity id=${id} title="${title}" week=${weekVal} month=${monthVal} to IGNORED`);
     oppty.setStatus('IGNORED');
     oppty.setUpdatedBy('system');
     await oppty.save();
   }));
-  log.info(`Ignored ${candidates.length} existing paid-traffic opportunities for siteId=${siteId}`);
+  log.debug(`Ignored ${candidates.length} existing paid-traffic opportunities for siteId=${siteId}`);
 }
 
 export default async function handler(message, context) {
@@ -92,7 +92,7 @@ export default async function handler(message, context) {
     url, guidance,
   } = data;
 
-  log.info(`Message received for ${GUIDANCE_TYPE} handler site: ${siteId} url: ${url} message: ${JSON.stringify(message)}`);
+  log.debug(`Message received for ${GUIDANCE_TYPE} handler site: ${siteId} url: ${url} message: ${JSON.stringify(message)}`);
   const audit = await Audit.findById(auditId);
   if (!audit) {
     log.warn(`No audit found for auditId: ${auditId}`);
@@ -127,6 +127,6 @@ export default async function handler(message, context) {
     opportunity.getId(),
   );
 
-  log.info(`Finished mapping [${GUIDANCE_TYPE}] -> OpportunityType [${TRAFFIC_OPP_TYPE}] for site: ${siteId} period: ${period.week != null ? `W${period.week}/Y${period.year}` : `M${period.month}/Y${period.year}`} opportunityId: ${opportunity.getId?.()}`);
+  log.debug(`Finished mapping [${GUIDANCE_TYPE}] -> OpportunityType [${TRAFFIC_OPP_TYPE}] for site: ${siteId} period: ${period.week != null ? `W${period.week}/Y${period.year}` : `M${period.month}/Y${period.year}`} opportunityId: ${opportunity.getId?.()}`);
   return ok();
 }
