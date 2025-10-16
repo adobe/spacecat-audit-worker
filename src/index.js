@@ -120,6 +120,7 @@ const HANDLERS = {
   'geo-brand-presence-daily': geoBrandPresenceDaily,
   'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
   'detect:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
+  'refresh:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
