@@ -43,30 +43,37 @@ describe('CWVRunner Tests', () => {
   const siteConfig = {
     getGroupedURLs: sandbox.stub().returns(groupedURLs),
   };
-  const site = {
-    getBaseURL: sandbox.stub().returns(baseURL),
-    getConfig: () => siteConfig,
-  };
+  let site;
+  let context;
 
-  const context = {
-    runtime: { name: 'aws-lambda', region: 'us-east-1' },
-    func: { package: 'spacecat-services', version: 'ci', name: 'test' },
-    rumApiClient: {
-      query: sandbox.stub().resolves(rumData),
-    },
-    dataAccess: {},
-    env: {},
-    log: {
-      debug: sinon.stub(),
-    },
-  };
+  beforeEach(() => {
+    site = {
+      getBaseURL: sandbox.stub().returns(baseURL),
+      getConfig: () => siteConfig,
+      getDeliveryConfig: sandbox.stub().returns({}),
+    };
+
+    context = {
+      runtime: { name: 'aws-lambda', region: 'us-east-1' },
+      func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+      rumApiClient: {
+        query: sandbox.stub().resolves(rumData),
+      },
+      dataAccess: {},
+      env: {},
+      log: {
+        debug: sandbox.stub(),
+        info: sandbox.stub(),
+      },
+    };
+  });
 
   afterEach(() => {
     nock.cleanAll();
-    sinon.restore();
+    sandbox.restore();
   });
 
-  it('cwv audit runs rum api client cwv query', async () => {
+  it('cwv audit runs rum api client cwv query with default thresholds', async () => {
     const result = await CWVRunner(auditUrl, context, site);
 
     expect(siteConfig.getGroupedURLs.calledWith(Audit.AUDIT_TYPES.CWV)).to.be.true;
@@ -89,6 +96,118 @@ describe('CWVRunner Tests', () => {
       },
       fullAuditRef: auditUrl,
     });
+    
+    // Verify default thresholds are logged
+    expect(context.log.info).to.have.been.calledWith(
+      '[CWV] Using thresholds: 7000 pageviews (1000/day × 7 days)',
+    );
+  });
+
+  it('cwv audit uses custom thresholds from deliveryConfig', async () => {
+    // Set custom thresholds in deliveryConfig
+    site.getDeliveryConfig.returns({
+      cwvDailyThreshold: 10,
+      cwvInterval: 1,
+    });
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(
+      context.rumApiClient.query.calledWith(
+        Audit.AUDIT_TYPES.CWV,
+        {
+          domain: auditUrl,
+          interval: 1, // Custom interval
+          granularity: 'hourly',
+          groupedURLs,
+        },
+      ),
+    ).to.be.true;
+
+    expect(result).to.deep.equal({
+      auditResult: {
+        cwv: rumData.filter((data) => data.pageviews >= 10), // 10 * 1 = 10
+        auditContext: {
+          interval: 1,
+        },
+      },
+      fullAuditRef: auditUrl,
+    });
+
+    // Verify custom thresholds are logged
+    expect(context.log.info).to.have.been.calledWith(
+      '[CWV] Using thresholds: 10 pageviews (10/day × 1 days)',
+    );
+  });
+
+  it('cwv audit uses defaults when deliveryConfig is null', async () => {
+    site.getDeliveryConfig.returns(null);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(
+      context.rumApiClient.query.calledWith(
+        Audit.AUDIT_TYPES.CWV,
+        {
+          ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+          groupedURLs,
+        },
+      ),
+    ).to.be.true;
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= 7000),
+    );
+
+    expect(context.log.info).to.have.been.calledWith(
+      '[CWV] Using thresholds: 7000 pageviews (1000/day × 7 days)',
+    );
+  });
+
+  it('cwv audit uses defaults when deliveryConfig is undefined', async () => {
+    site.getDeliveryConfig.returns(undefined);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= 7000),
+    );
+
+    expect(context.log.info).to.have.been.calledWith(
+      '[CWV] Using thresholds: 7000 pageviews (1000/day × 7 days)',
+    );
+  });
+
+  it('cwv audit falls back to default for missing cwvDailyThreshold', async () => {
+    site.getDeliveryConfig.returns({
+      cwvInterval: 2, // Only interval specified
+    });
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= 2000), // 1000 (default) * 2 = 2000
+    );
+
+    expect(context.log.info).to.have.been.calledWith(
+      '[CWV] Using thresholds: 2000 pageviews (1000/day × 2 days)',
+    );
+  });
+
+  it('cwv audit falls back to default for missing cwvInterval', async () => {
+    site.getDeliveryConfig.returns({
+      cwvDailyThreshold: 50, // Only threshold specified
+    });
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= 350), // 50 * 7 (default) = 350
+    );
+
+    expect(context.log.info).to.have.been.calledWith(
+      '[CWV] Using thresholds: 350 pageviews (50/day × 7 days)',
+    );
   });
 
   describe('CWV audit to oppty conversion', () => {
