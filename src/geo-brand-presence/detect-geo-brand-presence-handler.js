@@ -45,7 +45,7 @@ export default async function handler(message, context) {
 
   log.debug('GEO BRAND PRESENCE: Message received:', message);
 
-  if (!subType || ![...OPPTY_TYPES, 'refresh:geo-brand-presence'].includes(subType)) {
+  if (!subType || ![...OPPTY_TYPES, 'refresh:geo-brand-presence', 'refresh:geo-brand-presence-daily'].includes(subType)) {
     log.error(`GEO BRAND PRESENCE: Unsupported subtype: ${subType}`);
     return notFound();
   }
@@ -69,7 +69,7 @@ export default async function handler(message, context) {
     : `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
   const outputLocations = [mainOutputLocation, `${mainOutputLocation}/config_${configVersion || 'absent'}`];
 
-  if (subType === 'refresh:geo-brand-presence') {
+  if (subType === 'refresh:geo-brand-presence' || subType === 'refresh:geo-brand-presence-daily') {
     return handleRefresh({ auditId, outputLocations, presignedURL }, context);
   }
 
