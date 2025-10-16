@@ -96,8 +96,7 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site, c
 
       // Filter for URL-type entries only (skip groups) and ensure suggestions exist for them.
       const suggestions = await opportunity.getSuggestions();
-      const suggestionURLs = new Set(suggestions.map((s) => s.getData().url));
-      const urlEntries = cwvEntries.filter((entry) => entry.type === 'url' && suggestionURLs.has(entry.url));
+      const urlEntries = cwvEntries.filter((entry) => entry.type === 'url');
 
       if (urlEntries.length === 0) {
         log.info('No new URL entries to send for CWV auto-suggest');
@@ -108,21 +107,30 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site, c
 
       // Send one message per URL
       for (const entry of urlEntries) {
-        const sqsMessage = {
-          type: CWV_AUTO_SUGGEST_MESSAGE_TYPE,
-          siteId: opptyData.siteId,
-          auditId: opptyData.auditId,
-          deliveryType: site ? site.getDeliveryType() : 'aem_cs',
-          time: new Date().toISOString(),
-          data: {
-            page: entry.url,
-            opportunity_id: opportunityId,
-          },
-        };
+        // Find the corresponding suggestion for the current URL entry to check its status.
+        // This prevents re-sending analysis requests for suggestions that already have guidance
+        // or are not in a 'NEW' state.
+        const suggestion = suggestions.find((s) => s.getData().url === entry.url);
+        const suggestionData = suggestion?.getData();
+        const issues = suggestionData?.issues || [];
+        const hasGuidance = issues.some((issue) => issue.value && issue.value.trim());
 
-        // eslint-disable-next-line no-await-in-loop
-        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
-        log.info(`Sent URL to Mystique: ${entry.url}`);
+        if (suggestion?.getStatus() === 'NEW' && !hasGuidance) {
+          const sqsMessage = {
+            type: CWV_AUTO_SUGGEST_MESSAGE_TYPE,
+            siteId: opptyData.siteId,
+            auditId: opptyData.auditId,
+            deliveryType: site ? site.getDeliveryType() : 'aem_cs',
+            time: new Date().toISOString(),
+            data: {
+              page: entry.url,
+              opportunity_id: opportunityId,
+            },
+          };
+          // eslint-disable-next-line no-await-in-loop
+          await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
+          log.info(`Sent URL to Mystique: ${entry.url}`);
+        }
       }
 
       log.info(`CWV opportunity sent to Mystique for auto-suggest - siteId: ${siteId}, opportunityId: ${opportunityId}, URLs: ${urlEntries.length}`);

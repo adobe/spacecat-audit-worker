@@ -56,6 +56,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       },
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -82,6 +83,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       },
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -100,6 +102,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       },
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -118,6 +121,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       },
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -137,6 +141,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       },
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -155,6 +160,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       opportunityId: 'oppty-789',
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -172,6 +178,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       },
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -204,6 +211,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       },
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -228,6 +236,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       },
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -252,6 +261,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       },
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -280,6 +290,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       },
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -307,6 +318,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       },
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -334,6 +346,7 @@ describe('sendSQSMessageForAutoSuggest', () => {
       },
       getSuggestions: () => Promise.resolve([{
         getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
       }]),
     };
 
@@ -357,8 +370,8 @@ describe('sendSQSMessageForAutoSuggest', () => {
       data: {
       },
       getSuggestions: () => Promise.resolve([
-        { getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }) },
-        { getData: () => ({ type: 'url', url: 'https://example.com/page2', issues: [] }) },
+        { getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }), getStatus: () => 'NEW' },
+        { getData: () => ({ type: 'url', url: 'https://example.com/page2', issues: [] }), getStatus: () => 'NEW' },
       ]),
     };
     const cwvEntries = [
@@ -371,6 +384,51 @@ describe('sendSQSMessageForAutoSuggest', () => {
     expect(sqsStub.callCount).to.equal(2);
     expect(sqsStub.firstCall.args[1].data.page).to.equal('https://example.com/page1');
     expect(sqsStub.secondCall.args[1].data.page).to.equal('https://example.com/page2');
+  });
+
+  it('should not send SQS message when there are no url entries', async () => {
+    const opportunity = {
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      opportunityId: 'oppty-789',
+      data: {
+      },
+      getSuggestions: () => Promise.resolve([]),
+    };
+    const cwvEntries = [
+      { type: 'desktop', url: 'https://example.com/page1' },
+    ];
+
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, cwvEntries);
+
+    expect(sqsStub.callCount).to.equal(0);
+    expect(context.log.info).to.have.been.calledWith('No new URL entries to send for CWV auto-suggest');
+  });
+
+  it('should correctly determine hasGuidance with various issue values', async () => {
+    const opportunity = {
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      opportunityId: 'oppty-789',
+      data: {},
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({
+          url: 'https://example.com/page1',
+          issues: [
+            { type: 'lcp', value: null }, // null value
+            { type: 'cls' }, // missing value
+            { type: 'inp', value: '   ' }, // whitespace value
+          ],
+        }),
+        getStatus: () => 'NEW',
+      }]),
+    };
+    const cwvEntries = [{ type: 'url', url: 'https://example.com/page1' }];
+
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, cwvEntries);
+
+    // hasGuidance should be false because all issue values are invalid, so the message should be sent
+    expect(sqsStub.callCount).to.equal(1);
   });
 });
 

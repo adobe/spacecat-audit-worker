@@ -301,11 +301,18 @@ describe('CWVRunner Tests', () => {
 
     it('calls sendSQSMessageForAutoSuggest when suggestions have no guidance', async () => {
       const mockSuggestions = [
-        { getData: () => ({ type: 'url', url: 'https://spacecat.com/page1', issues: [] }), getStatus: () => 'NEW' },
-        { getData: () => ({ type: 'url', url: 'https://spacecat.com/page2', issues: [] }), getStatus: () => 'NEW' },
-        { getData: () => ({ type: 'url', url: 'https://spacecat.com/page3', issues: [] }), getStatus: () => 'NEW' },
+        {
+          getData: () => ({ type: 'url', url: 'https://www.aem.live/developer/block-collection', issues: [] }), getStatus: () => 'NEW', setData: sandbox.stub(), setStatus: sandbox.stub(), setUpdatedBy: sandbox.stub(), save: sandbox.stub(),
+        },
+        {
+          getData: () => ({ type: 'url', url: 'https://www.aem.live/docs/', issues: [] }), getStatus: () => 'NEW', setData: sandbox.stub(), setStatus: sandbox.stub(), setUpdatedBy: sandbox.stub(), save: sandbox.stub(),
+        },
+        {
+          getData: () => ({ type: 'url', url: 'https://www.aem.live/tools/rum/explorer.html', issues: [] }), getStatus: () => 'NEW', setData: sandbox.stub(), setStatus: sandbox.stub(), setUpdatedBy: sandbox.stub(), save: sandbox.stub(),
+        },
       ];
       oppty.getSuggestions.resolves(mockSuggestions);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
@@ -315,11 +322,18 @@ describe('CWVRunner Tests', () => {
 
     it('does not call sendSQSMessageForAutoSuggest when all suggestions have guidance', async () => {
       const mockSuggestions = [
-        { getData: () => ({ type: 'url', url: 'https://spacecat.com/page1', issues: ['issue1'] }), getStatus: () => 'EXISTING' },
-        { getData: () => ({ type: 'url', url: 'https://spacecat.com/page2', issues: ['issue2'] }), getStatus: () => 'EXISTING' },
-        { getData: () => ({ type: 'url', url: 'https://spacecat.com/page3', issues: ['issue3'] }), getStatus: () => 'EXISTING' },
+        {
+          getData: () => ({ type: 'url', url: 'https://www.aem.live/developer/block-collection', issues: ['issue1'] }), getStatus: () => 'EXISTING', setData: sandbox.stub(), setStatus: sandbox.stub(), setUpdatedBy: sandbox.stub(), save: sandbox.stub(),
+        },
+        {
+          getData: () => ({ type: 'url', url: 'https://www.aem.live/docs/', issues: ['issue2'] }), getStatus: () => 'EXISTING', setData: sandbox.stub(), setStatus: sandbox.stub(), setUpdatedBy: sandbox.stub(), save: sandbox.stub(),
+        },
+        {
+          getData: () => ({ type: 'url', url: 'https://www.aem.live/tools/rum/explorer.html', issues: ['issue3'] }), getStatus: () => 'EXISTING', setData: sandbox.stub(), setStatus: sandbox.stub(), setUpdatedBy: sandbox.stub(), save: sandbox.stub(),
+        },
       ];
       oppty.getSuggestions.resolves(mockSuggestions);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
@@ -328,11 +342,18 @@ describe('CWVRunner Tests', () => {
 
     it('calls sendSQSMessageForAutoSuggest when some suggestions have guidance and some do not', async () => {
       const mockSuggestions = [
-        { getData: () => ({ type: 'url', url: 'https://spacecat.com/page1', issues: ['issue1'] }), getStatus: () => 'EXISTING' },
-        { getData: () => ({ type: 'url', url: 'https://spacecat.com/page2', issues: [] }), getStatus: () => 'NEW' },
-        { getData: () => ({ type: 'url', url: 'https://spacecat.com/page3', issues: [] }), getStatus: () => 'NEW' },
+        {
+          getData: () => ({ type: 'url', url: 'https://www.aem.live/developer/block-collection', issues: ['issue1'] }), getStatus: () => 'NEW', setData: sandbox.stub(), setStatus: sandbox.stub(), setUpdatedBy: sandbox.stub(), save: sandbox.stub(),
+        },
+        {
+          getData: () => ({ type: 'url', url: 'https://www.aem.live/docs/', issues: [] }), getStatus: () => 'NEW', setData: sandbox.stub(), setStatus: sandbox.stub(), setUpdatedBy: sandbox.stub(), save: sandbox.stub(),
+        },
+        {
+          getData: () => ({ type: 'url', url: 'https://www.aem.live/tools/rum/explorer.html', issues: [] }), getStatus: () => 'NEW', setData: sandbox.stub(), setStatus: sandbox.stub(), setUpdatedBy: sandbox.stub(), save: sandbox.stub(),
+        },
       ];
       oppty.getSuggestions.resolves(mockSuggestions);
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
