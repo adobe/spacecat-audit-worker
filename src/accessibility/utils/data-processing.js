@@ -142,6 +142,157 @@ export function updateViolationData(aggregatedData, violations, level) {
 }
 
 /**
+ * Detects the format of scraped accessibility files
+ * @param {Object} fileData - Sample file data to analyze
+ * @returns {string} 'new' for htmlData format, 'old' for htmlWithIssues format
+ */
+export function detectFileFormat(fileData) {
+  // Check if any violation items have htmlData (new format) or nodes (raw axe format)
+  const checkItems = (items) => {
+    for (const [, itemData] of Object.entries(items || {})) {
+      if (itemData.htmlData) {
+        return 'new';
+      }
+      if (itemData.nodes) {
+        return 'raw'; // Raw axe format that needs processing
+      }
+      if (itemData.htmlWithIssues) {
+        return 'old';
+      }
+    }
+    return null;
+  };
+
+  if (fileData.violations) {
+    const criticalFormat = checkItems(fileData.violations.critical?.items);
+    const seriousFormat = checkItems(fileData.violations.serious?.items);
+
+    return criticalFormat || seriousFormat || 'old'; // Default to old format
+  }
+
+  return 'old'; // Default fallback
+}
+
+/**
+ * Separates object keys into desktop and mobile files
+ * @param {string[]} objectKeys - Array of S3 object keys
+ * @returns {{desktopFiles: string[], mobileFiles: string[]}} Separated file arrays
+ */
+export function separateDesktopAndMobileFiles(objectKeys) {
+  const desktopFiles = [];
+  const mobileFiles = [];
+
+  objectKeys.forEach((key) => {
+    if (key.endsWith('_mobile.json')) {
+      mobileFiles.push(key);
+    } else if (key.endsWith('.json')) {
+      desktopFiles.push(key);
+    }
+  });
+
+  return { desktopFiles, mobileFiles };
+}
+
+/**
+ * Converts old violation structure to new htmlData format
+ * TODO: Remove this function after Content-Scraper stops sending raw axe nodes format
+ * @param {Object} violationData - The violation data in old format
+ * @param {string} deviceType - The device type ('desktop' or 'mobile')
+ * @param {string} url - The URL this violation is from
+ * @returns {Object[]} Array of htmlData objects
+ */
+export function convertToHtmlDataFormat(violationData, deviceType, url) {
+  const htmlDataArray = [];
+
+  if (violationData.nodes && Array.isArray(violationData.nodes)) {
+    violationData.nodes.forEach((node) => {
+      htmlDataArray.push({
+        html: node.html,
+        target: Array.isArray(node.target) ? node.target[0] : node.target,
+        failureSummary: node.failureSummary || violationData.description,
+        deviceTypes: [deviceType],
+        url, // Keep URL for merging logic
+      });
+    });
+  }
+
+  return htmlDataArray;
+}
+
+/**
+ * Converts old format (htmlWithIssues) to new format (htmlData) for backwards compatibility
+ * TODO: Remove this function after Content-Scraper stops sending htmlWithIssues format
+ * @param {Object} violationData - Violation data in old format
+ * @param {string} deviceType - Device type ('desktop' or 'mobile')
+ * @returns {Object[]} Array of htmlData entries
+ */
+export function convertOldFormatToNew(violationData, deviceType) {
+  const htmlDataArray = [];
+
+  if (violationData.htmlWithIssues && Array.isArray(violationData.htmlWithIssues)) {
+    violationData.htmlWithIssues.forEach((html, index) => {
+      let target = '';
+      if (violationData.targets && violationData.targets[index]) {
+        target = Array.isArray(violationData.targets[index])
+          ? violationData.targets[index][0]
+          : violationData.targets[index];
+      } else if (violationData.target && violationData.target[index]) {
+        target = violationData.target[index];
+      }
+
+      htmlDataArray.push({
+        html,
+        target,
+        failureSummary: violationData.failureSummary || violationData.description || '',
+        deviceTypes: [deviceType],
+      });
+    });
+  }
+
+  return htmlDataArray;
+}
+
+/**
+ * Merges htmlData entries from desktop and mobile, identifying common issues
+ * @param {Object[]} desktopHtmlData - Desktop htmlData array
+ * @param {Object[]} mobileHtmlData - Mobile htmlData array
+ * @returns {Object[]} Merged htmlData array with deviceTypes
+ */
+export function mergeHtmlDataEntries(desktopHtmlData, mobileHtmlData) {
+  const mergedData = new Map();
+
+  // Add desktop entries
+  desktopHtmlData.forEach((entry) => {
+    const key = `${entry.html}|${entry.target}`; // Use html+target as unique key
+    mergedData.set(key, {
+      html: entry.html,
+      target: entry.target,
+      failureSummary: entry.failureSummary,
+      deviceTypes: ['desktop'],
+    });
+  });
+
+  // Add mobile entries, merging with existing desktop entries
+  mobileHtmlData.forEach((entry) => {
+    const key = `${entry.html}|${entry.target}`;
+    if (mergedData.has(key)) {
+      // Common issue - add mobile to deviceTypes
+      mergedData.get(key).deviceTypes.push('mobile');
+    } else {
+      // Mobile-only issue
+      mergedData.set(key, {
+        html: entry.html,
+        target: entry.target,
+        failureSummary: entry.failureSummary,
+        deviceTypes: ['mobile'],
+      });
+    }
+  });
+
+  return Array.from(mergedData.values());
+}
+
+/**
  * Gets object keys from subfolders for a specific site and version
  * @param {import('@aws-sdk/client-s3').S3Client} s3Client - an S3 client
  * @param {string} bucketName - the name of the S3 bucket
@@ -341,7 +492,7 @@ export async function aggregateAccessibilityData(
   }
 
   // Initialize aggregated data structure
-  let aggregatedData = {
+  const aggregatedData = {
     overall: {
       violations: {
         total: 0,
@@ -394,24 +545,319 @@ export async function aggregateAccessibilityData(
       return { success: false, aggregatedData: null, message };
     }
 
-    // Process the results
+    // Separate desktop and mobile files
+    const { desktopFiles, mobileFiles } = separateDesktopAndMobileFiles(objectKeys);
+    log.info(`[${logIdentifier}] Found ${desktopFiles.length} desktop files and ${mobileFiles.length} mobile files`);
+
+    // Detect file format from first result for backwards compatibility
+    let fileFormat = 'old'; // Default to old format
+    const hasMobileFiles = mobileFiles.length > 0;
+
+    if (results.length > 0) {
+      fileFormat = detectFileFormat(results[0].data);
+      log.info(`[${logIdentifier}] Detected file format: ${fileFormat}, Mobile files: ${hasMobileFiles}`);
+    }
+
     results.forEach((result) => {
-      const { data } = result;
+      const { key, data } = result;
       const {
         violations, traffic, url: siteUrl, source,
       } = data;
 
-      // Store the url specific data only for page-level data (no form level data yet)
-      const key = source ? `${siteUrl}${URL_SOURCE_SEPARATOR}${source}` : siteUrl;
-      aggregatedData[key] = { violations, traffic };
+      // Determine if this is a mobile file
+      const isMobileFile = key.endsWith('_mobile.json');
+      const deviceType = isMobileFile ? 'mobile' : 'desktop';
 
-      // Update overall data
-      aggregatedData = updateViolationData(aggregatedData, violations, 'critical');
-      aggregatedData = updateViolationData(aggregatedData, violations, 'serious');
-      if (violations.total) {
-        aggregatedData.overall.violations.total += violations.total;
+      // Store the url specific data
+      const urlKey = source ? `${siteUrl}${URL_SOURCE_SEPARATOR}${source}` : siteUrl;
+
+      if (!aggregatedData[urlKey]) {
+        aggregatedData[urlKey] = {
+          violations: {
+            total: 0,
+            critical: { count: 0, items: {} },
+            serious: { count: 0, items: {} },
+          },
+          traffic,
+        };
       }
+
+      // Process violations based on detected format
+      if (violations.critical && violations.critical.items) {
+        Object.entries(violations.critical.items).forEach(([ruleId, ruleData]) => {
+          if (!aggregatedData[urlKey].violations.critical.items[ruleId]) {
+            // Initialize structure based on format
+            if (fileFormat === 'old') {
+              // Old format - use original structure
+              aggregatedData[urlKey].violations.critical.items[ruleId] = {
+                count: 0,
+                description: ruleData.description,
+                level: ruleData.level,
+                htmlWithIssues: [],
+                targets: [],
+                failureSummary: '',
+                helpUrl: ruleData.helpUrl,
+                successCriteriaTags: ruleData.successCriteriaTags,
+                target: [],
+              };
+            } else {
+              // New format - use htmlData structure with mobile support
+              aggregatedData[urlKey].violations.critical.items[ruleId] = {
+                count: 0,
+                description: ruleData.description,
+                level: ruleData.level,
+                htmlData: [],
+                helpUrl: ruleData.helpUrl,
+                successCriteriaTags: ruleData.successCriteriaTags,
+                successCriteriaNumber: ruleData.successCriteriaNumber,
+                understandingUrl: ruleData.understandingUrl,
+              };
+            }
+          }
+
+          // Process based on detected format
+          if (fileFormat === 'old') {
+            // TODO: Remove this entire old format processing block after all legacy S3 files expire
+            if (ruleData.htmlWithIssues) {
+              const criticalItem = aggregatedData[urlKey].violations.critical.items[ruleId];
+              const existingHtml = criticalItem.htmlWithIssues;
+              const existingTargets = criticalItem.targets;
+              const existingTarget = criticalItem.target;
+
+              ruleData.htmlWithIssues.forEach((html, index) => {
+                if (!existingHtml.includes(html)) {
+                  existingHtml.push(html);
+                  if (ruleData.targets && ruleData.targets[index]) {
+                    existingTargets.push(ruleData.targets[index]);
+                  }
+                  if (ruleData.target && ruleData.target[index]) {
+                    existingTarget.push(ruleData.target[index]);
+                  }
+                }
+              });
+
+              criticalItem.count = existingHtml.length;
+              criticalItem.failureSummary = ruleData.failureSummary || '';
+            }
+          } else {
+          // New format processing
+            let htmlDataEntries = [];
+
+            if (ruleData.nodes) {
+            // TODO: Remove this branch after Content-Scraper stops sending raw axe nodes format
+            // Raw axe format - convert to htmlData
+              htmlDataEntries = convertToHtmlDataFormat(ruleData, deviceType, siteUrl);
+            } else if (ruleData.htmlData) {
+            // Already in new format
+              htmlDataEntries = ruleData.htmlData.map((item) => ({
+                ...item,
+                deviceTypes: [deviceType],
+              }));
+            } else if (ruleData.htmlWithIssues) {
+            // TODO: Remove this branch after Content-Scraper stops sending htmlWithIssues format
+            // Old format files but with mobile support - convert to new
+              htmlDataEntries = convertOldFormatToNew(ruleData, deviceType);
+            }
+
+            const criticalItem = aggregatedData[urlKey].violations.critical.items[ruleId];
+            const existingHtmlData = criticalItem.htmlData;
+
+            // Add new entries or update existing ones with device tracking
+            htmlDataEntries.forEach((newEntry) => {
+              const existingIndex = existingHtmlData.findIndex((existing) => (
+                existing.html === newEntry.html && existing.target === newEntry.target
+              ));
+
+              if (existingIndex >= 0) {
+                // Update existing entry to include new device type
+                if (!existingHtmlData[existingIndex].deviceTypes.includes(deviceType)) {
+                  existingHtmlData[existingIndex].deviceTypes.push(deviceType);
+                }
+              } else {
+                // Add new entry
+                existingHtmlData.push({
+                  html: newEntry.html,
+                  target: newEntry.target,
+                  failureSummary: newEntry.failureSummary,
+                  deviceTypes: [deviceType],
+                });
+              }
+            });
+
+            criticalItem.count = existingHtmlData.length;
+          }
+        });
+      }
+
+      // Process serious violations similarly
+      if (violations.serious && violations.serious.items) {
+        Object.entries(violations.serious.items).forEach(([ruleId, ruleData]) => {
+          if (!aggregatedData[urlKey].violations.serious.items[ruleId]) {
+            // Initialize structure based on format
+            if (fileFormat === 'old') {
+              // Old format - use original structure
+              aggregatedData[urlKey].violations.serious.items[ruleId] = {
+                count: 0,
+                description: ruleData.description,
+                level: ruleData.level,
+                htmlWithIssues: [],
+                targets: [],
+                failureSummary: '',
+                helpUrl: ruleData.helpUrl,
+                successCriteriaTags: ruleData.successCriteriaTags,
+                target: [],
+              };
+            } else {
+              // New format - use htmlData structure with mobile support
+              aggregatedData[urlKey].violations.serious.items[ruleId] = {
+                count: 0,
+                description: ruleData.description,
+                level: ruleData.level,
+                htmlData: [],
+                helpUrl: ruleData.helpUrl,
+                successCriteriaTags: ruleData.successCriteriaTags,
+                successCriteriaNumber: ruleData.successCriteriaNumber,
+                understandingUrl: ruleData.understandingUrl,
+              };
+            }
+          }
+
+          // Process based on detected format
+          if (fileFormat === 'old') {
+            // TODO: Remove this entire old format processing block after all legacy S3 files expire
+          // Old format processing - keep original logic unchanged
+            if (ruleData.htmlWithIssues) {
+              const seriousItem = aggregatedData[urlKey].violations.serious.items[ruleId];
+              const existingHtml = seriousItem.htmlWithIssues;
+              const existingTargets = seriousItem.targets;
+              const existingTarget = seriousItem.target;
+
+              ruleData.htmlWithIssues.forEach((html, index) => {
+                if (!existingHtml.includes(html)) {
+                  existingHtml.push(html);
+                  if (ruleData.targets && ruleData.targets[index]) {
+                    existingTargets.push(ruleData.targets[index]);
+                  }
+                  if (ruleData.target && ruleData.target[index]) {
+                    existingTarget.push(ruleData.target[index]);
+                  }
+                }
+              });
+
+              seriousItem.count = existingHtml.length;
+              seriousItem.failureSummary = ruleData.failureSummary || '';
+            }
+          } else {
+          // New format processing - with mobile support and device tracking
+            let htmlDataEntries = [];
+
+            if (ruleData.nodes) {
+            // TODO: Remove this branch after Content-Scraper stops sending raw axe nodes format
+            // Raw axe format - convert to htmlData
+              htmlDataEntries = convertToHtmlDataFormat(ruleData, deviceType, siteUrl);
+            } else if (ruleData.htmlData) {
+              htmlDataEntries = ruleData.htmlData.map((item) => ({
+                ...item,
+                deviceTypes: [deviceType],
+              }));
+            } else if (ruleData.htmlWithIssues) {
+            // TODO: Remove this branch after Content-Scraper stops sending htmlWithIssues format
+            // Old format files but with mobile support - convert to new
+              htmlDataEntries = convertOldFormatToNew(ruleData, deviceType);
+            }
+
+            const seriousItem = aggregatedData[urlKey].violations.serious.items[ruleId];
+            const existingHtmlData = seriousItem.htmlData;
+
+            htmlDataEntries.forEach((newEntry) => {
+              const existingIndex = existingHtmlData.findIndex((existing) => (
+                existing.html === newEntry.html && existing.target === newEntry.target
+              ));
+
+              if (existingIndex >= 0) {
+                // Update existing entry to include new device type
+                if (!existingHtmlData[existingIndex].deviceTypes.includes(deviceType)) {
+                  existingHtmlData[existingIndex].deviceTypes.push(deviceType);
+                }
+              } else {
+                existingHtmlData.push({
+                  html: newEntry.html,
+                  target: newEntry.target,
+                  failureSummary: newEntry.failureSummary,
+                  deviceTypes: [deviceType],
+                });
+              }
+            });
+
+            seriousItem.count = existingHtmlData.length;
+          }
+        });
+      }
+
+      // Update totals
+      let totalViolationsForUrl = 0;
+      Object.values(aggregatedData[urlKey].violations.critical.items).forEach((item) => {
+        totalViolationsForUrl += item.count;
+      });
+      Object.values(aggregatedData[urlKey].violations.serious.items).forEach((item) => {
+        totalViolationsForUrl += item.count;
+      });
+
+      aggregatedData[urlKey].violations.total = totalViolationsForUrl;
+      const criticalItems = Object.values(aggregatedData[urlKey].violations.critical.items);
+      const seriousItems = Object.values(aggregatedData[urlKey].violations.serious.items);
+      aggregatedData[urlKey].violations.critical.count = criticalItems.reduce(
+        (sum, item) => sum + item.count,
+        0,
+      );
+      aggregatedData[urlKey].violations.serious.count = seriousItems.reduce(
+        (sum, item) => sum + item.count,
+        0,
+      );
     });
+
+    // Update overall aggregated data with new structure
+    Object.entries(aggregatedData).forEach(([key, urlData]) => {
+      if (key === 'overall') return;
+
+      // Aggregate critical violations (summary only in overall)
+      Object.entries(urlData.violations.critical.items).forEach(([ruleId, ruleData]) => {
+        if (!aggregatedData.overall.violations.critical.items[ruleId]) {
+          aggregatedData.overall.violations.critical.items[ruleId] = {
+            count: 0,
+            description: ruleData.description,
+            level: ruleData.level,
+            successCriteriaNumber: ruleData.successCriteriaNumber,
+            understandingUrl: ruleData.understandingUrl,
+          };
+        }
+        aggregatedData.overall.violations.critical.items[ruleId].count += ruleData.count;
+      });
+
+      // Aggregate serious violations (summary only in overall)
+      Object.entries(urlData.violations.serious.items).forEach(([ruleId, ruleData]) => {
+        if (!aggregatedData.overall.violations.serious.items[ruleId]) {
+          aggregatedData.overall.violations.serious.items[ruleId] = {
+            count: 0,
+            description: ruleData.description,
+            level: ruleData.level,
+            successCriteriaNumber: ruleData.successCriteriaNumber,
+            understandingUrl: ruleData.understandingUrl,
+          };
+        }
+        aggregatedData.overall.violations.serious.items[ruleId].count += ruleData.count;
+      });
+
+      aggregatedData.overall.violations.total += urlData.violations.total;
+      aggregatedData.overall.violations.critical.count += urlData.violations.critical.count;
+      aggregatedData.overall.violations.serious.count += urlData.violations.serious.count;
+    });
+
+    // Log the final format being used
+    log.info(`[${logIdentifier}] Final output format: ${fileFormat === 'old' ? 'old (htmlWithIssues)' : 'new (htmlData)'}`);
+    if (hasMobileFiles) {
+      log.info(`[${logIdentifier}] Mobile files detected: ${mobileFiles.length}`);
+    }
 
     // Save aggregated data to S3
     await s3Client.send(new PutObjectCommand({
