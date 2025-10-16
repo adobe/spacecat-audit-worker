@@ -52,9 +52,30 @@ export async function generatePatternsWorkbook(options) {
     const baseURL = site.getBaseURL();
     const domain = new URL(baseURL).hostname;
 
-    // Analyze products and page types
-    const productRegexes = await analyzeProducts(domain, paths, context, configCategories);
-    const pagetypeRegexes = await analyzePageTypes(domain, paths, context);
+    // Skip page type analysis if patterns already exist
+    const pagetypeRegexes = existingPatterns?.pagePatterns?.length
+      ? (log.info('Reusing existing page type patterns'), {})
+      : await analyzePageTypes(domain, paths, context);
+
+    // Filter new categories and skip product analysis if all exist
+    const existingCategories = existingPatterns?.topicPatterns?.map(
+      (p) => p.name.toLowerCase(),
+    ) || [];
+    const newCategories = configCategories.filter(
+      (cat) => !existingCategories.includes(cat.toLowerCase()),
+    );
+    const categoriesToAnalyze = newCategories.length ? newCategories : configCategories;
+
+    let productRegexes;
+    if (!existingPatterns?.topicPatterns?.length || newCategories.length) {
+      if (newCategories.length) {
+        log.info(`Analyzing ${newCategories.length} new categories`);
+      }
+      productRegexes = await analyzeProducts(domain, paths, context, categoriesToAnalyze);
+    } else {
+      log.info('Reusing existing product patterns');
+      productRegexes = {};
+    }
 
     // Merge with existing patterns
     const mergedProductRegexes = { ...productRegexes };

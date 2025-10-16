@@ -241,14 +241,13 @@ describe('Patterns Uploader', () => {
   it('merges new and existing patterns', async () => {
     const clock = sandbox.useFakeTimers();
     mockAnalyzeProducts.resolves({ 'new-product': 'regex-new' });
-    mockAnalyzePageTypes.resolves({ 'new-page': 'regex-new' });
 
     const existingPatterns = {
       topicPatterns: [{ name: 'old-product', regex: 'regex-old' }],
       pagePatterns: [{ name: 'old-page', regex: 'regex-old' }],
     };
 
-    const options = createMockOptions({ existingPatterns });
+    const options = createMockOptions({ existingPatterns, configCategories: ['new-product'] });
     const promise = generatePatternsWorkbook(options);
     await clock.tickAsync(3000);
     const result = await promise;
@@ -256,7 +255,7 @@ describe('Patterns Uploader', () => {
     expect(result).to.be.true;
     const callArgs = mockCreateExcelReport.getCall(0).args[0];
     expect(callArgs['shared-products']).to.have.length(2);
-    expect(callArgs['shared-pagetype']).to.have.length(2);
+    expect(callArgs['shared-pagetype']).to.have.length(1);
 
     clock.restore();
   });
