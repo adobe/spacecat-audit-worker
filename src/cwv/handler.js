@@ -25,11 +25,9 @@ const INTERVAL = 7; // days
 const auditType = Audit.AUDIT_TYPES.CWV;
 
 export async function CWVRunner(auditUrl, context, site) {
-  const { log } = context;
   const deliveryConfig = site?.getDeliveryConfig() || {};
   const dailyThreshold = deliveryConfig.dailyThreshold || DAILY_THRESHOLD;
   const interval = deliveryConfig.interval || INTERVAL; // days
-  log.info('[CWV] fetching cwv data using rumAPI client');
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const groupedURLs = site.getConfig().getGroupedURLs(auditType);
   const options = {
