@@ -100,8 +100,8 @@ export async function fetchPermissionsReport(baseURL, context, site) {
  * @returns {Promise<void>}
  */
 export async function markOpportunityAsFixed(auditType, opportunity, site, context) {
-  const { log, dataContext } = context;
-  const { Suggestion } = dataContext;
+  const { log, dataAccess } = context;
+  const { Suggestion } = dataAccess;
 
   log.debug(`[${auditType}] [Site: ${site.getId()}] no permissions issues found, but found opportunity, updating status to RESOLVED`);
   opportunity.setStatus(Oppty.STATUSES.RESOLVED);

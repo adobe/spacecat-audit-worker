@@ -402,7 +402,7 @@ describe('Permissions Handler Tests', () => {
       expect(result.auditResult).to.have.property('success', false);
       expect(result.auditResult).to.have.property('finalUrl', 'https://example.com');
       expect(result.auditResult).to.have.property('error');
-      expect(result.auditResult.error).to.include('[security-permissions] [Site: a1b2c3d4-e5f6-7890-abcd-ef1234567890] permissions audit failed with error: Test error');
+      expect(result.auditResult.error).to.include('[security-permissions-redundant] [Site: a1b2c3d4-e5f6-7890-abcd-ef1234567890] permissions audit failed with error: Test error');
       expect(result).to.have.property('fullAuditRef', 'https://example.com');
     });
 
@@ -481,8 +481,8 @@ describe('Permissions Handler Tests', () => {
 
       const result = await redundantAuditRunner('https://example.com', context, site);
 
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.permissionsReport).to.be.null;
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Permission report not found');
     });
   });
 
@@ -593,6 +593,35 @@ describe('Permissions Handler Tests', () => {
       expect(context.dataAccess.Opportunity.create).to.have.been.called;
     });
 
+    it('should reuse existing too strong opportunity when allPermissions found', async () => {
+      // Mock existing opportunity
+      const existingOpportunity = {
+        getId: () => 'existing-opp-789',
+        getType: () => 'security-permissions',
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub(),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+
+      // Add allPermissions data to trigger opportunity processing
+      auditData.auditResult.permissionsReport.allPermissions = [
+        {
+          path: '/content/test',
+          details: [{ principal: 'everyone', acl: ['jcr:all'], otherPermissions: [] }],
+        },
+      ];
+
+      const result = await tooStrongOpportunityStep('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      expect(existingOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+      expect(existingOpportunity.save).to.have.been.called;
+    });
+
     it('should create new admin opportunity when adminChecks found', async () => {
       // Mock the data access methods to simulate opportunity creation
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
@@ -639,7 +668,7 @@ describe('Permissions Handler Tests', () => {
       const result = await tooStrongOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.dataContext.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
         mockSuggestions,
         SuggestionDataAccess.STATUSES.FIXED,
       );
@@ -787,6 +816,35 @@ describe('Permissions Handler Tests', () => {
       expect(context.dataAccess.Opportunity.create).to.have.been.called;
     });
 
+    it('should reuse existing admin opportunity when adminChecks found', async () => {
+      // Mock existing opportunity
+      const existingOpportunity = {
+        getId: () => 'existing-opp-456',
+        getType: () => 'security-permissions-redundant',
+        setUpdatedBy: sandbox.stub(),
+        save: sandbox.stub(),
+        addSuggestions: sandbox.stub().resolves({ errorItems: [], createdItems: [] }),
+        getSuggestions: sandbox.stub().resolves([]),
+      };
+
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([existingOpportunity]);
+
+      // Add adminChecks data to trigger opportunity processing
+      auditData.auditResult.permissionsReport.adminChecks = [
+        {
+          principal: 'admin1',
+          details: [{ path: '/content/admin1', allow: true, privileges: ['jcr:all'] }],
+        },
+      ];
+
+      const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
+      expect(existingOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+      expect(existingOpportunity.save).to.have.been.called;
+    });
+
     it('should handle opportunities with suggestions when resolving', async () => {
       const mockSuggestions = [
         { getId: () => 'suggestion-1', getStatus: () => 'NEW' },
@@ -808,7 +866,7 @@ describe('Permissions Handler Tests', () => {
       const result = await redundantPermissionsOpportunityStep('https://example.com', auditData, context, site);
 
       expect(result).to.deep.equal({ status: 'complete' });
-      expect(context.dataContext.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledWith(
         mockSuggestions,
         SuggestionDataAccess.STATUSES.FIXED,
       );
@@ -1018,8 +1076,8 @@ describe('Permissions Handler Tests', () => {
 
       const result = await permissionsAuditRunner('https://example.com', context, site);
 
-      expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.permissionsReport).to.be.null;
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Permission report not found');
     });
 
     it('should handle malformed permissions report structure', async () => {
@@ -1278,7 +1336,7 @@ describe('Permissions Handler Tests', () => {
         const tooStrongPermission = {
           principal: 'everyone',
           path: '/content/page',
-          acl: ['jcr:all'],
+          permissions: ['jcr:all'],
         };
 
         const result = mapTooStrongSuggestion(opportunity, tooStrongPermission);
@@ -1300,7 +1358,7 @@ describe('Permissions Handler Tests', () => {
         const adminPermission = {
           principal: 'admin-user',
           path: '/content/admin',
-          privileges: ['jcr:all'],
+          permissions: ['jcr:all'],
         };
 
         const result = mapAdminSuggestion(opportunity, adminPermission);
@@ -1308,6 +1366,7 @@ describe('Permissions Handler Tests', () => {
         expect(result).to.deep.equal({
           opportunityId: 'opp-456',
           type: 'CONTENT_UPDATE',
+          rank: 0,
           data: {
             issue: 'Redundant',
             path: '/content/admin',

@@ -25,17 +25,18 @@
  */
 export function mapTooStrongSuggestion(opportunity, tooStrongPermission) {
   const {
-    principal, path, acl,
+    principal, path, permissions,
   } = tooStrongPermission;
 
   return {
     opportunityId: opportunity.getId(),
     type: 'CONTENT_UPDATE',
+    rank: 0,
     data: {
       issue: 'Insecure',
       path,
       principal,
-      permissions: acl,
+      permissions,
       recommended_permissions: ['jcr:read', 'jcr:write '],
       rationale: 'Granting jcr:all permissions to a user in AEM is ill-advised, as it provides unrestricted access, thereby increasing the risk of accidental or malicious modifications that could jeopardize the system’s security, stability, and performance.',
     },
@@ -50,17 +51,18 @@ export function mapTooStrongSuggestion(opportunity, tooStrongPermission) {
  */
 export function mapAdminSuggestion(opportunity, adminPermission) {
   const {
-    principal, path, privileges,
+    principal, path, permissions,
   } = adminPermission;
 
   return {
     opportunityId: opportunity.getId(),
     type: 'CONTENT_UPDATE',
+    rank: 0,
     data: {
       issue: 'Redundant',
       path,
       principal,
-      permissions: privileges,
+      permissions,
       recommended_permissions: ['Remove'],
       rationale: 'Defining access control policies for the administrators group in AEM is redundant, as members inherently possess full privileges, rendering explicit permissions unnecessary and adding avoidable complexity to the authorization configuration.',
     },

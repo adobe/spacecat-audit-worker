@@ -27,8 +27,7 @@ import { mapTooStrongSuggestion } from './suggestion-data-mapper.js';
 import { fetchPermissionsReport, markOpportunityAsFixed } from './common.js';
 
 const INTERVAL = 7; // days
-const TOO_STRONG_AUDIT_TYPE = 'security-permissions'; // Audit.AUDIT_TYPES.SECURITY_PERMISSIONS;
-const REDUNDANT_AUDIT_TYPE = 'security-permissions-redundant'; // Audit.AUDIT_TYPES.SECURITY_PERMISSIONS_REDUNDANT;
+const AUDIT_TYPE = 'security-permissions'; // Audit.AUDIT_TYPES.SECURITY_PERMISSIONS;
 
 /**
  * @typedef {import('./permissions-report.d.ts').PermissionsReport} PermissionsReport
@@ -49,7 +48,7 @@ export async function permissionsAuditRunner(baseURL, context, site) {
 
   // This opportunity is only relevant for aem_cs delivery-type at the moment
   if (site.getDeliveryType() !== DELIVERY_TYPES.AEM_CS) {
-    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] skipping permissions audit as site is of delivery type ${site.getDeliveryType()}`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] skipping permissions audit as site is of delivery type ${site.getDeliveryType()}`);
     return {
       auditResult: {
         finalUrl: baseURL,
@@ -65,7 +64,19 @@ export async function permissionsAuditRunner(baseURL, context, site) {
     const allPermissionsCnt = permissionsReport?.allPermissions?.length || 0;
     const adminChecksCnt = permissionsReport?.adminChecks?.length || 0;
 
-    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] identified: ${allPermissionsCnt} jcr:all permissions, ${adminChecksCnt} admin checks`);
+    if (permissionsReport == null) {
+      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Found no permissions report`);
+      return {
+        auditResult: {
+          finalUrl: baseURL,
+          error: 'Permission report not found',
+          success: false,
+        },
+        fullAuditRef: baseURL,
+      };
+    }
+
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] identified: ${allPermissionsCnt} jcr:all permissions, ${adminChecksCnt} admin checks`);
 
     // Build and return audit result
     return {
@@ -79,7 +90,7 @@ export async function permissionsAuditRunner(baseURL, context, site) {
       fullAuditRef: baseURL,
     };
   } catch (error) {
-    const errorMessage = `[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] permissions audit failed with error: ${error.message}`;
+    const errorMessage = `[${AUDIT_TYPE}] [Site: ${site.getId()}] permissions audit failed with error: ${error.message}`;
     log.error(errorMessage);
     return {
       auditResult: {
@@ -110,19 +121,13 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
   // Check whether the audit is enabled for the site
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('security-permissions', site)) {
-    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
     return { status: 'complete' };
   }
 
   const { success } = auditData.auditResult;
   if (!success) {
-    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
-    return { status: 'complete' };
-  }
-
-  const generateSuggestions = configuration.isHandlerEnabledForSite('security-permissions-auto-suggest', site);
-  if (!generateSuggestions) {
-    log.info(`[${REDUNDANT_AUDIT_TYPE}] [Site: ${site.getId()}] security-permissions-auto-suggest not configured, skipping permission suggestion`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
     return { status: 'complete' };
   }
 
@@ -132,33 +137,34 @@ export const tooStrongOpportunityStep = async (auditUrl, auditData, context, sit
   // Process too strong opportunities
   // eslint-disable-next-line max-len
   const strongOpportunities = (await Opportunity.allBySiteIdAndStatus(site.getId(), Oppty.STATUSES.NEW))
-    .filter((o) => o.getType() === TOO_STRONG_AUDIT_TYPE);
+    .filter((o) => o.getType() === AUDIT_TYPE);
 
   // If no too strong permissions issues found in the report, resolve existing opportunities
   if (!isNonEmptyArray(permissionsReport?.allPermissions)) {
-    log.debug(`[${TOO_STRONG_AUDIT_TYPE}] [Site: ${site.getId()}] no jcr:all permissions found, resolving existing opportunities (${strongOpportunities.length})`);
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] no jcr:all permissions found, resolving existing opportunities (${strongOpportunities.length})`);
     await Promise.all(strongOpportunities.map(
-      (o) => markOpportunityAsFixed(TOO_STRONG_AUDIT_TYPE, o, site, context),
+      (o) => markOpportunityAsFixed(AUDIT_TYPE, o, site, context),
     ));
     return { status: 'complete' };
   }
 
-  const tooStrongOpt = await convertToOpportunity(
+  // eslint-disable-next-line max-len
+  const tooStrongOpt = strongOpportunities.length > 0 ? strongOpportunities[0] : await convertToOpportunity(
     auditUrl,
     { siteId: auditData.siteId, id: auditData.auditId },
     context,
     createTooStrongOpportunityData,
-    TOO_STRONG_AUDIT_TYPE,
+    AUDIT_TYPE,
     createTooStrongMetrics(permissionsReport.allPermissions),
   );
 
   // Flatten allPermission arrays by path and principal
   const flattenedPermissions = permissionsReport.allPermissions
     // eslint-disable-next-line max-len
-    .flatMap(({ path, details }) => details.map(() => ({ path, ...details })));
+    .flatMap(({ path, details }) => details.map((d) => ({ path, permissions: d.acl, ...d })));
 
   const buildTooStrongSuggestionKey = (data) => {
-    const s = JSON.stringify(data);
+    const s = JSON.stringify(data.permissions);
     const hash = createHash('sha256').update(s).digest('hex').slice(0, 8);
     return `${data.path}@${data.principal}#${hash}`;
   };
