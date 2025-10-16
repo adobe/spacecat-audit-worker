@@ -1,3 +1,10 @@
+## [1.210.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.2...v1.210.3) (2025-10-16)
+
+
+### Bug Fixes
+
+* calculate week number from date in daily geo-brand-presence handler ([#1411](https://github.com/adobe/spacecat-audit-worker/issues/1411)) ([f9e968c](https://github.com/adobe/spacecat-audit-worker/commit/f9e968c60261417deba8502cd633052023758d0d))
+
 ## [1.210.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.1...v1.210.2) (2025-10-16)
 
 
