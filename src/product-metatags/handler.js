@@ -187,38 +187,66 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const invalidSuggestions = [];
 
   // Generate suggestions data to be inserted in product-metatags opportunity suggestions
-  const suggestionPromises = [];
-  Object.keys(detectedTags).forEach((endpoint) => {
-    [TITLE, DESCRIPTION, H1].forEach((tag) => {
+  for (const endpoint of Object.keys(detectedTags)) {
+    // Construct full URL once per endpoint
+    const baseUrl = getBaseUrl(auditData.auditResult.finalUrl, useHostnameOnly);
+    const fullUrl = baseUrl + endpoint;
+
+    // Fetch commerce configuration once per endpoint (with locale extraction and memoization)
+    // eslint-disable-next-line no-await-in-loop
+    let endpointConfig = {};
+    if (site && memoizedGetCommerceConfig) {
+      try {
+        const locale = extractLocaleFromUrl(fullUrl, productUrlTemplate, log);
+        // eslint-disable-next-line no-await-in-loop
+        const config = await memoizedGetCommerceConfig(
+          site,
+          auditType,
+          finalUrl,
+          log,
+          locale,
+        );
+        endpointConfig = config || {};
+
+        // Log extracted config details
+        const configKeys = Object.keys(endpointConfig);
+        if (configKeys.length > 0) {
+          log.debug(`[PRODUCT-METATAGS] Extracted config for ${fullUrl} (locale: "${locale}"): ${JSON.stringify(config)}`);
+        } else {
+          log.debug(`[PRODUCT-METATAGS] Empty config for ${fullUrl} (locale: "${locale}")`);
+        }
+      } catch (configError) {
+        log.debug(`[PRODUCT-METATAGS] Failed to fetch config for ${fullUrl}: ${configError.message}`);
+        endpointConfig = {};
+      }
+    } else {
+      log.debug(`[PRODUCT-METATAGS] No site or memoized config function available for ${fullUrl}`);
+    }
+
+    for (const tag of [TITLE, DESCRIPTION, H1]) {
       if (detectedTags[endpoint]?.[tag]?.issue) {
-        suggestionPromises.push((async () => {
-          try {
-            const tagData = detectedTags[endpoint][tag];
-            const baseUrl = getBaseUrl(auditData.auditResult.finalUrl, useHostnameOnly);
-            const fullUrl = baseUrl + endpoint;
-            const rank = getIssueRanking(tag, tagData.issue);
+        try {
+          const tagData = detectedTags[endpoint][tag];
+          const rank = getIssueRanking(tag, tagData.issue);
 
-            // Validate required fields
-            /* c8 ignore next 5 */ // Unreachable due to outer guard
-            if (!tagData.issue) {
-              log.warn(`[PRODUCT-METATAGS] Missing issue for ${fullUrl}, tag: ${tag}`);
-              invalidSuggestions.push({ endpoint, tag, reason: 'missing issue' });
-              return;
-            }
+          // Validate required fields
+          let isValid = true;
+          if (!tagData.issue) {
+            log.warn(`[PRODUCT-METATAGS] Missing issue for ${fullUrl}, tag: ${tag}`);
+            invalidSuggestions.push({ endpoint, tag, reason: 'missing issue' });
+            isValid = false;
+          } else if (rank === undefined || rank === null || rank < 0) {
+            log.warn(`[PRODUCT-METATAGS] Invalid rank (${rank}) for ${fullUrl}, tag: ${tag}, issue: ${tagData.issue}`);
+            invalidSuggestions.push({ endpoint, tag, reason: `invalid rank: ${rank}` });
+            isValid = false;
+          } else if (!fullUrl || typeof fullUrl !== 'string') {
+            /* c8 ignore next 3 */ // fullUrl is constructed via concatenation and is a string
+            log.warn(`[PRODUCT-METATAGS] Invalid URL for endpoint: ${endpoint}, tag: ${tag}`);
+            invalidSuggestions.push({ endpoint, tag, reason: 'invalid URL' });
+            isValid = false;
+          }
 
-            if (rank === undefined || rank === null || rank < 0) {
-              log.warn(`[PRODUCT-METATAGS] Invalid rank (${rank}) for ${fullUrl}, tag: ${tag}, issue: ${tagData.issue}`);
-              invalidSuggestions.push({ endpoint, tag, reason: `invalid rank: ${rank}` });
-              return;
-            }
-
-            /* c8 ignore next 5 */ // fullUrl is constructed via concatenation and is a string
-            if (!fullUrl || typeof fullUrl !== 'string') {
-              log.warn(`[PRODUCT-METATAGS] Invalid URL for endpoint: ${endpoint}, tag: ${tag}`);
-              invalidSuggestions.push({ endpoint, tag, reason: 'invalid URL' });
-              return;
-            }
-
+          if (isValid) {
             // Build suggestion object with validated data
             const suggestion = {
               ...tagData,
@@ -232,51 +260,21 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
               suggestion.productTags = detectedTags[endpoint].productTags;
             }
 
-            // Add commerce configuration per URL (with locale extraction and memoization)
-            if (site && memoizedGetCommerceConfig) {
-              try {
-                const locale = extractLocaleFromUrl(fullUrl, productUrlTemplate, log);
-                const config = await memoizedGetCommerceConfig(
-                  site,
-                  auditType,
-                  finalUrl,
-                  log,
-                  locale,
-                );
-                suggestion.config = config || {};
-
-                // Log extracted config details
-                const configKeys = Object.keys(suggestion.config);
-                if (configKeys.length > 0) {
-                  log.debug(`[PRODUCT-METATAGS] Extracted config for ${fullUrl} (locale: "${locale}"): ${JSON.stringify(config)}`);
-                } else {
-                  log.debug(`[PRODUCT-METATAGS] Empty config for ${fullUrl} (locale: "${locale}")`);
-                }
-              } catch (configError) {
-                log.debug(`[PRODUCT-METATAGS] Failed to fetch config for ${fullUrl}: ${configError.message}`);
-                suggestion.config = {};
-              }
-            } else {
-              // Ensure config field always exists
-              log.debug(`[PRODUCT-METATAGS] No site or memoized config function available for ${fullUrl}`);
-              suggestion.config = {};
-            }
+            // Add commerce configuration (fetched once per endpoint)
+            suggestion.config = endpointConfig;
 
             // Log suggestion details for debugging
             log.debug(`[PRODUCT-METATAGS] Created suggestion for ${fullUrl}: issue="${tagData.issue}", rank=${rank}, tagName=${tag}`);
 
             suggestions.push(suggestion);
-          } catch (error) {
-            log.error(`[PRODUCT-METATAGS] Error creating suggestion for endpoint ${endpoint}, tag ${tag}:`, error);
-            invalidSuggestions.push({ endpoint, tag, reason: error.message });
           }
-        })());
+        } catch (error) {
+          log.error(`[PRODUCT-METATAGS] Error creating suggestion for endpoint ${endpoint}, tag ${tag}:`, error);
+          invalidSuggestions.push({ endpoint, tag, reason: error.message });
+        }
       }
-    });
-  });
-
-  // Wait for all suggestion promises to complete
-  await Promise.all(suggestionPromises);
+    }
+  }
 
   log.info(`[PRODUCT-METATAGS] Generated ${suggestions.length} valid suggestions and ${invalidSuggestions.length} invalid suggestions`);
 
