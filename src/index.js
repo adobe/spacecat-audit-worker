@@ -80,6 +80,7 @@ import prerender from './prerender/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
+import accessibilityCodeFixHandler from './accessibility/auto-optimization-handlers/codefix-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -146,6 +147,7 @@ const HANDLERS = {
   headings,
   prerender,
   'security-vulnerabilities': vulnerabilities,
+  'codefix:form-accessibility': accessibilityCodeFixHandler,
   dummy: (message) => ok(message),
 };
 
