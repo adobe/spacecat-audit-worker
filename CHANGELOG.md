@@ -1,3 +1,10 @@
+# [1.211.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.8...v1.211.0) (2025-10-17)
+
+
+### Features
+
+* added security permission audit ([#1371](https://github.com/adobe/spacecat-audit-worker/issues/1371)) Issue [#1425](https://github.com/adobe/spacecat-audit-worker/issues/1425)  ([9f7b0ac](https://github.com/adobe/spacecat-audit-worker/commit/9f7b0acbf932c0c0ff3928c53a328bf7f5dc7b1b))
+
 ## [1.210.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.7...v1.210.8) (2025-10-17)
 
 
