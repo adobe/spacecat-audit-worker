@@ -19,6 +19,7 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import expectedOpptyWithoutGSC from '../fixtures/cwv/opptyWithoutGSC.json' with { type: 'json' };
@@ -49,6 +50,7 @@ describe('CWVRunner Tests', () => {
     getConfig: () => siteConfig,
     getDeliveryType: sandbox.stub().returns('aem_cs'),
     isAutoSuggestEnabled: sandbox.stub().returns(true),
+    hasProductEntitlement: sandbox.stub().resolves(true),
   };
 
   const context = {
@@ -59,7 +61,14 @@ describe('CWVRunner Tests', () => {
     },
     dataAccess: {
       Configuration: {
-        findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: () => true }),
+        findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({
+            'cwv-auto-suggest': {
+              productCodes: ['aem-sites'],
+            },
+          }),
+          isHandlerEnabledForSite: () => true,
+        }),
       },
       Opportunity: {
         allBySiteIdAndStatus: sandbox.stub(),
@@ -151,6 +160,12 @@ describe('CWVRunner Tests', () => {
       context.env = {
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       };
+      
+      // Mock TierClient for entitlement checks
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       addSuggestionsResponse = {
         createdItems: [],
@@ -313,6 +328,8 @@ describe('CWVRunner Tests', () => {
       ];
       oppty.getSuggestions.resolves(mockSuggestions);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
@@ -335,12 +352,16 @@ describe('CWVRunner Tests', () => {
       oppty.getSuggestions.resolves(mockSuggestions);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
 
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
     it('calls sendSQSMessageForAutoSuggest when some suggestions have guidance and some do not', async () => {
+
       const mockSuggestions = [
         {
           getData: () => ({ type: 'url', url: 'https://www.aem.live/developer/block-collection', issues: ['issue1'] }), getStatus: () => 'NEW', setData: sandbox.stub(), setStatus: sandbox.stub(), setUpdatedBy: sandbox.stub(), save: sandbox.stub(),
@@ -354,6 +375,9 @@ describe('CWVRunner Tests', () => {
       ];
       oppty.getSuggestions.resolves(mockSuggestions);
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
+
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
