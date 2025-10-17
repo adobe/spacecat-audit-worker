@@ -52,6 +52,7 @@ describe('data-processing utility functions', () => {
       info: sandbox.stub(),
       error: sandbox.stub(),
       warn: sandbox.stub(),
+      debug: sandbox.stub(),
     };
   });
 
@@ -84,7 +85,7 @@ describe('data-processing utility functions', () => {
       expect(command).to.be.instanceOf(DeleteObjectCommand);
       expect(command.input.Bucket).to.equal('test-bucket');
       expect(command.input.Key).to.equal('file1.json');
-      expect(mockLog.info.calledWith('Deleted 1 original files after aggregation')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted 1 original files after aggregation')).to.be.true;
     });
 
     it('should use DeleteObjects for multiple files', async () => {
@@ -104,7 +105,7 @@ describe('data-processing utility functions', () => {
         { Key: 'file3.json' },
       ]);
       expect(command.input.Delete.Quiet).to.be.true;
-      expect(mockLog.info.calledWith('Deleted 3 original files after aggregation')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted 3 original files after aggregation')).to.be.true;
     });
 
     it('should handle errors gracefully and log them', async () => {
@@ -225,7 +226,7 @@ describe('data-processing utility functions', () => {
       expect(command.input.Prefix).to.equal('accessibility/site1/');
       expect(command.input.Delimiter).to.equal('/');
       expect(command.input.MaxKeys).to.equal(1000);
-      expect(mockLog.info.calledWith('Fetched 3 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
+      expect(mockLog.debug.calledWith('Fetched 3 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
     });
 
     it('should use custom maxKeys parameter', async () => {
@@ -283,7 +284,7 @@ describe('data-processing utility functions', () => {
       );
 
       expect(result).to.deep.equal([]);
-      expect(mockLog.info.calledWith('Fetched 0 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
+      expect(mockLog.debug.calledWith('Fetched 0 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
     });
   });
 
@@ -550,7 +551,7 @@ describe('data-processing utility functions', () => {
       expect(result.objectKeys).to.deep.equal([]);
       expect(result.message).to.include('No accessibility data found');
       // eslint-disable-next-line max-len
-      expect(mockLog.info.calledWith('No accessibility data found in bucket test-bucket at prefix accessibility/site123/ for site site123 with delimiter /')).to.be.true;
+      expect(mockLog.debug.calledWith('No accessibility data found in bucket test-bucket at prefix accessibility/site123/ for site site123 with delimiter /')).to.be.true;
     });
 
     it('should return success false when no current date subfolders found', async () => {
@@ -608,7 +609,7 @@ describe('data-processing utility functions', () => {
       expect(result.success).to.be.true;
       expect(result.objectKeys).to.deep.equal(['file1.json', 'file2.json']);
       expect(result.message).to.equal('Found 2 data files');
-      expect(mockLog.info.calledWith('Found 2 data files for site site123')).to.be.true;
+      expect(mockLog.debug.calledWith('Found 2 data files for site site123')).to.be.true;
     });
 
     it('should filter subfolders by exact date match', async () => {
@@ -734,9 +735,7 @@ describe('data-processing utility functions', () => {
         mockLog,
       );
 
-      expect(mockLog.info.calledWith('Fetching accessibility data for site site123 from bucket test-bucket')).to.be.true;
-      expect(mockLog.info.calledWith('Found 1 subfolders for site site123 in bucket test-bucket with delimiter / and value accessibility/site123/1705276800000/')).to.be.true;
-      expect(mockLog.info.calledWith('Found 1 data files for site site123')).to.be.true;
+      expect(mockLog.debug.calledWith('Found 1 data files for site site123')).to.be.true;
     });
 
     it('should handle complex subfolder filtering with multiple dates', async () => {
@@ -825,7 +824,7 @@ describe('data-processing utility functions', () => {
 
       // Should call delete twice: once for original files, once for oldest final result
       expect(mockS3Client.send.callCount).to.equal(2);
-      expect(mockLog.info.calledWith('Deleted 1 oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
 
     it('should only delete original files when 2 or fewer final result files exist', async () => {
@@ -855,7 +854,7 @@ describe('data-processing utility functions', () => {
 
       await cleanupS3Files(mockS3Client, 'test-bucket', objectKeys, lastWeekObjectKeys, mockLog);
 
-      expect(mockLog.info.calledWith('Deleted 1 oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
 
     it('should handle empty object keys array', async () => {
@@ -872,7 +871,7 @@ describe('data-processing utility functions', () => {
 
       // Should still delete oldest final result file even if no original files
       expect(mockS3Client.send.callCount).to.equal(1);
-      expect(mockLog.info.calledWith('Deleted 1 oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
 
     it('should handle single final result file', async () => {
@@ -903,7 +902,7 @@ describe('data-processing utility functions', () => {
       await cleanupS3Files(mockS3Client, 'test-bucket', objectKeys, lastWeekObjectKeys, mockLog);
 
       // Should delete the oldest file (2024-01-01)
-      expect(mockLog.info.calledWith('Deleted 1 oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
   });
 
@@ -1528,7 +1527,7 @@ describe('data-processing utility functions', () => {
       expect(result.finalResultFiles.current['https://example.com/page1'].violations.total).to.equal(5);
       expect(result.finalResultFiles.current['https://example.com/page1'].traffic).to.equal(100);
       expect(result.message).to.equal('Successfully aggregated 1 files into output-key');
-      expect(mockLog.info.calledWith('[A11yAudit] Saved aggregated accessibility data to output-key')).to.be.true;
+      expect(mockLog.debug.calledWith('[A11yAudit] Saved aggregated accessibility data to output-key')).to.be.true;
     });
 
     it('should handle multiple files and aggregate violations correctly', async () => {
@@ -1770,7 +1769,7 @@ describe('data-processing utility functions', () => {
       // const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey1}`;
       // The log message in the code actually uses lastWeekObjectKeys[1] for the key part.
       const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey2}`;
-      const logCall = mockLog.info.getCalls().find((call) => call.args[0].includes(expectedKeyInLog) && call.args[0].includes('with content:'));
+      const logCall = mockLog.debug.getCalls().find((call) => call.args[0].includes(expectedKeyInLog) && call.args[0].includes('with content:'));
       expect(logCall).to.not.be.undefined;
       // If more precise matching is needed, verify the full content:
       const logContentString = JSON.stringify(mockLastWeekContent, null, 2);
@@ -1911,7 +1910,7 @@ describe('data-processing utility functions', () => {
       expect(result.message).to.equal('Successfully aggregated 1 files into output-key');
 
       // Verify the correct log identifier is used
-      expect(mockLog.info.calledWith('[FormsA11yAudit] Saved aggregated accessibility data to output-key')).to.be.true;
+      expect(mockLog.debug.calledWith('[FormsA11yAudit] Saved aggregated accessibility data to output-key')).to.be.true;
     });
 
     it('should handle forms-opportunities audit type with form source data', async () => {
@@ -2219,7 +2218,7 @@ describe('data-processing utility functions', () => {
         expect(result.results[1]).to.deep.equal({ key: 'file2.json', data: mockData2 });
         expect(result.results[2]).to.deep.equal({ key: 'file3.json', data: mockData3 });
 
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 3 successful, 0 failed out of 3 total files',
         );
       });
@@ -2235,7 +2234,7 @@ describe('data-processing utility functions', () => {
 
         // Assert
         expect(result.results).to.have.length(0);
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 0 successful, 0 failed out of 0 total files',
         );
         expect(mockGetObjectFromKey).to.not.have.been.called;
@@ -2258,7 +2257,7 @@ describe('data-processing utility functions', () => {
         // Assert
         expect(result.results).to.have.length(1);
         expect(result.results[0]).to.deep.equal({ key: 'single-file.json', data: mockData });
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 1 successful, 0 failed out of 1 total files',
         );
       });
@@ -2296,7 +2295,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           'Retrying file retry-file.json (attempt 1/2): Temporary S3 error',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 1 successful, 0 failed out of 1 total files',
         );
       });
@@ -2333,7 +2332,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           '1 out of 1 files failed to process, continuing with 0 successful files',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 0 successful, 1 failed out of 1 total files',
         );
       });
@@ -2383,7 +2382,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           '1 out of 3 files failed to process, continuing with 2 successful files',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 2 successful, 1 failed out of 3 total files',
         );
       });
@@ -2440,7 +2439,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           '1 out of 2 files failed to process, continuing with 1 successful files',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 1 successful, 1 failed out of 2 total files',
         );
       });
@@ -2468,7 +2467,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           '2 out of 2 files failed to process, continuing with 0 successful files',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 0 successful, 2 failed out of 2 total files',
         );
       });

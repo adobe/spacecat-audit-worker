@@ -9,6 +9,9 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+
+import { accessibilityOpportunitiesMap } from '../accessibility/utils/constants.js';
+
 export const FORM_OPPORTUNITY_TYPES = {
   LOW_CONVERSION: 'high-form-views-low-conversions',
   LOW_NAVIGATION: 'high-page-views-low-form-nav',
@@ -544,3 +547,28 @@ export const successCriteriaLinks = {
     successCriterionUrl: 'https://www.w3.org/TR/WCAG/#status-messages',
   },
 };
+
+const getFormOpportunitiesMap = () => {
+  const issueTypes = [];
+  Object.values(accessibilityOpportunitiesMap).forEach((rules) => {
+    rules.forEach((issue) => {
+      issueTypes.push(issue);
+    });
+  });
+  return {
+    'form-accessibility': [
+      ...issueTypes,
+      'label',
+      'label-title-only',
+      'input-button-name',
+      'input-image-alt',
+      'form-field-multiple-labels',
+      'autocomplete-valid',
+      'color-contrast',
+      'target-size',
+      'aria-input-field-name',
+    ],
+  };
+};
+
+export const formOpportunitiesMap = getFormOpportunitiesMap();

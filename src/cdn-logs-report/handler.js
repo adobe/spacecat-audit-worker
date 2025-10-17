@@ -44,7 +44,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     };
   }
 
-  log.info(`Starting CDN logs report audit for ${url}`);
+  log.debug(`Starting CDN logs report audit for ${url}`);
 
   const sharepointClient = await createLLMOSharepointClient(
     context,
@@ -92,9 +92,9 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
 
     if (reportConfig.name === 'agentic') {
-      const patternsExist = await fetchRemotePatterns(site);
+      const existingPatterns = await fetchRemotePatterns(site);
 
-      if (!patternsExist || auditContext?.categoriesUpdated) {
+      if (!existingPatterns || auditContext?.categoriesUpdated) {
         log.info('Patterns not found, generating patterns workbook...');
         const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
         const configCategories = await getConfigCategories(site, context);
@@ -110,11 +110,12 @@ async function runCdnLogsReport(url, context, site, auditContext) {
           periods,
           sharepointClient,
           configCategories,
+          existingPatterns,
         });
       }
     }
 
-    log.info(`Running weekly report: ${reportConfig.name}...`);
+    log.debug(`Running weekly report: ${reportConfig.name}...`);
 
     for (const weekOffset of weekOffsets) {
       // eslint-disable-next-line no-await-in-loop

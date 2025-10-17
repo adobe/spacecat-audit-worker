@@ -137,7 +137,7 @@ describe('Geo Brand Presence Daily Handler', () => {
       auditResult: { keywordQuestions: [], aiPlatform: 'gemini', cadence: 'daily' },
       fullAuditRef: finalUrl,
     });
-    expect(log.info).to.have.been.calledWith(
+    expect(log.debug).to.have.been.calledWith(
       'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
       finalUrl,
       '2025-10-01',
@@ -161,7 +161,7 @@ describe('Geo Brand Presence Daily Handler', () => {
       'GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s',
       invalidJson,
     );
-    expect(log.info).to.have.been.calledWith(
+    expect(log.debug).to.have.been.calledWith(
       'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
       finalUrl,
       undefined,
@@ -201,6 +201,7 @@ describe('Geo Brand Presence Daily Handler', () => {
     expect(message.week).to.be.a('number');
     expect(message.year).to.be.a('number');
     expect(message.data).to.deep.equal({
+      config_version: null,
       configVersion: null,
       web_search_provider: 'chatgpt',
       url: 'https://example.com/presigned-url',
@@ -271,7 +272,7 @@ describe('Geo Brand Presence Daily Handler', () => {
   it('should send messages for all providers when aiPlatform is not specified', async () => {
     // Remove aiPlatform from audit result
     audit.getAuditResult = () => ({ cadence: 'daily' });
-    
+
     fakeParquetS3Response(fakeData());
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
@@ -288,10 +289,10 @@ describe('Geo Brand Presence Daily Handler', () => {
 
     // Import WEB_SEARCH_PROVIDERS to get the count
     const { WEB_SEARCH_PROVIDERS } = await import('../../src/geo-brand-presence/handler.js');
-    
+
     // Should send one message per provider
     expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length);
-    
+
     // Verify each message has the correct provider and daily-specific fields
     const providers = new Set();
     for (let i = 0; i < sqs.sendMessage.callCount; i += 1) {
@@ -303,7 +304,7 @@ describe('Geo Brand Presence Daily Handler', () => {
       expect(message.data.web_search_provider).to.be.a('string');
       providers.add(message.data.web_search_provider);
     }
-    
+
     // Verify all unique providers were used
     expect(providers.size).to.equal(WEB_SEARCH_PROVIDERS.length);
   });
@@ -326,13 +327,14 @@ describe('Geo Brand Presence Daily Handler', () => {
 
     // Should send only one message since aiPlatform is 'chatgpt'
     expect(sqs.sendMessage).to.have.been.calledOnce;
-    
+
     const [queue, message] = sqs.sendMessage.firstCall.args;
     expect(queue).to.equal('spacecat-to-mystique');
     expect(message.type).to.equal('detect:geo-brand-presence-daily');
     expect(message.data).to.deep.equal({
       configVersion: null,
       web_search_provider: 'chatgpt',
+      config_version: null,
       url: 'https://example.com/presigned-url',
       date: '2025-10-01',
     });

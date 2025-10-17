@@ -308,6 +308,7 @@ describe('CSP Post-processor', () => {
 
     configuration = {
       isHandlerEnabledForSite: sandbox.stub(),
+      getHandlers: sandbox.stub().returns({}),
     };
     context.dataAccess.Configuration.findLatest.resolves(configuration);
 

@@ -9,6 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+/* eslint-disable no-use-before-define */
 
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import {
@@ -22,6 +23,7 @@ import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
+import { transformWebSearchProviderForMystique } from './util.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
@@ -48,125 +50,19 @@ export const WEB_SEARCH_PROVIDERS = [
   // Add more providers here as needed
 ];
 
-const EXCLUDE_FROM_HARD_LIMIT = new Set([
-  '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
-  '63c38133-4991-4ed0-886b-2d0f440d81ab',
-  '1f582f10-41d3-4ff0-afaa-cd1a267ba58a',
-  'd8db1956-b24c-4ad7-bdb6-6f5a90d89edc',
-  '4b4ed67e-af44-49f7-ab24-3dda37609c9d',
-  '0f770626-6843-4fbd-897c-934a9c19f079',
-  'fdc7c65b-c0d0-40ff-ab26-fd0e16b75877',
-  '9a1cfdaf-3bb3-49a7-bbaa-995653f4c2f4',
-  '1398e8f1-90c9-4a5d-bfca-f585fa35fc69',
-  '1905ef6e-c112-477e-9fae-c22ebf21973a',
-]);
-
 /**
  * @import { S3Client } from '@aws-sdk/client-s3';
+ * @import { ISOCalendarWeek } from '@adobe/spacecat-shared-utils';
  */
-
-/**
- * Loads Parquet data from S3 and returns the parsed data.
- * @param {object} options - Options for loading Parquet data.
- * @param {string} options.key - The S3 object key for the Parquet file.
- * @param {string} options.bucket - The S3 bucket name.
- * @param {S3Client} options.s3Client - The S3 client instance.
- * @return {Promise<Array<Record<string, unknown>>>}
- */
-export async function loadParquetDataFromS3({ key, bucket, s3Client }) {
-  const res = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-  const body = await res.Body?.transformToByteArray();
-  /* c8 ignore start */
-  if (!body) {
-    throw new Error(`Failed to read Parquet file from s3://${bucket}/${key}`);
-  }
-  /* c8 ignore end */
-
-  return parquetReadObjects({ file: body.buffer });
-}
-
-export async function asPresignedJsonUrl(data, bucketName, context) {
-  const {
-    s3Client, log, getPresignedUrl, isDaily, dateContext,
-  } = context;
-
-  // Use daily-specific path if daily cadence
-  const basePath = isDaily ? 'temp/audit-geo-brand-presence-daily' : 'temp/audit-geo-brand-presence';
-  const dateStr = isDaily ? dateContext.date : new Date().toISOString().split('T')[0];
-  const key = `${basePath}/${dateStr}-${randomUUID()}.json`;
-  await s3Client.send(new PutObjectCommand({
-    Bucket: bucketName,
-    Key: key,
-    Body: JSON.stringify(data),
-    ContentType: 'application/json',
-  }));
-
-  log.info('GEO BRAND PRESENCE: Data uploaded to S3 at s3://%s/%s', bucketName, key);
-  return getPresignedUrl(
-    s3Client,
-    new GetObjectCommand({ Bucket: bucketName, Key: key }),
-    { expiresIn: 86_400 /* seconds, 24h */ },
-  );
-}
-
-/**
- * Creates a message object for sending to Mystique.
- * @param {object} params - Message parameters
- * @param {string} params.opptyType - The opportunity type
- * @param {string} params.siteId - The site ID
- * @param {string} params.baseURL - The base URL
- * @param {string} params.auditId - The audit ID
- * @param {string} params.deliveryType - The delivery type
- * @param {object} params.calendarWeek - The calendar week object
- * @param {string} params.url - The presigned URL for data
- * @param {string} params.webSearchProvider - The web search provider
- * @param {null | string} [params.configVersion] - The configuration version
- * @param {null | string} [params.date] - The date string (for daily cadence)
- * @returns {object} The message object
- */
-function createMystiqueMessage({
-  opptyType,
-  siteId,
-  baseURL,
-  auditId,
-  deliveryType,
-  calendarWeek,
-  url,
-  webSearchProvider,
-  configVersion = null,
-  date = null,
-}) {
-  const data = {
-    url,
-    configVersion,
-    web_search_provider: webSearchProvider,
-  };
-
-  // Add date if present (daily-specific)
-  if (date) {
-    data.date = date;
-  }
-
-  return {
-    type: opptyType,
-    siteId,
-    url: baseURL,
-    auditId,
-    deliveryType,
-    time: new Date().toISOString(),
-    week: calendarWeek.week,
-    year: calendarWeek.year,
-    data,
-  };
-}
 
 /**
  * Removes duplicate prompts from AI-generated prompts based on region, topic, and prompt text.
  * @param {Array<Object>} prompts - Array of prompt objects
+ * @param {string} siteId - Site id
  * @param {Object} log - Logger instance
  * @returns {Array<Object>} Deduplicated array of prompts
  */
-function deduplicatePrompts(prompts, log) {
+function deduplicatePrompts(prompts, siteId, log) {
   /* c8 ignore start */
   if (!Array.isArray(prompts) || prompts.length === 0) {
     return prompts;
@@ -238,15 +134,19 @@ function deduplicatePrompts(prompts, log) {
   const totalSkipped = totalDuplicatesRemoved + totalEmptyPromptsSkipped + totalInvalidItemsSkipped;
   const skipRate = originalCount > 0 ? ((totalSkipped / originalCount) * 100).toFixed(1) : 0;
 
-  log.info(`GEO BRAND PRESENCE: [DEDUP] Processed ${originalCount} prompts across `
-    + `${regionTopicGroups.size} region/topic groups`);
-  log.info(`GEO BRAND PRESENCE: [DEDUP] Skipped ${totalSkipped} items (${skipRate}%): `
-    + `${totalDuplicatesRemoved} duplicates, ${totalEmptyPromptsSkipped} empty, ${totalInvalidItemsSkipped} invalid`);
-  if (totalErrorsRecovered > 0) {
-    log.info(`GEO BRAND PRESENCE: [DEDUP] Recovered from ${totalErrorsRecovered} processing errors `
-      + '(items included despite errors)');
-  }
-  log.info(`GEO BRAND PRESENCE: [DEDUP] Kept ${finalCount} unique prompts`);
+  log.info(
+    'GEO BRAND PRESENCE: [DEDUP] Site %s: Processed %d prompts across %d region/topic groups. Skipped %d items (%s%%): %d duplicates, %d empty, %d invalid. Recovered from %d errors. Kept %d unique prompts.',
+    siteId,
+    originalCount,
+    regionTopicGroups.size,
+    totalSkipped,
+    skipRate,
+    totalDuplicatesRemoved,
+    totalEmptyPromptsSkipped,
+    totalInvalidItemsSkipped,
+    totalErrorsRecovered,
+    finalCount,
+  );
 
   // Log group statistics if debug enabled
   if (log.debug) {
@@ -315,7 +215,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     return;
   }
 
-  log.info('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s), calendarWeek: %j', siteId, baseURL, calendarWeek);
+  log.debug('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s), calendarWeek: %j', siteId, baseURL, calendarWeek);
 
   const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
   const recordSets = await Promise.all(
@@ -328,10 +228,10 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
   }
 
-  log.info('GEO BRAND PRESENCE: Loaded %d raw parquet prompts for site id %s (%s)', parquetPrompts.length, siteId, baseURL);
+  log.debug('GEO BRAND PRESENCE: Loaded %d raw parquet prompts for site id %s (%s)', parquetPrompts.length, siteId, baseURL);
 
   // Remove duplicates from AI-generated prompts
-  parquetPrompts = deduplicatePrompts(parquetPrompts, log);
+  parquetPrompts = deduplicatePrompts(parquetPrompts, siteId, log);
 
   // Load customer-defined prompts from customer config
   const {
@@ -362,10 +262,12 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     if (customerPrompts.length >= 200) {
       // Only use first 200 customer prompts
       prompts = customerPrompts.slice(0, 200);
+      log.warn('GEO BRAND PRESENCE: Customer prompts exceed or meet 200 limit, using only first 200 for site id %s (%s)', siteId, baseURL);
     } else if (parquetPrompts.length + customerPrompts.length > 200) {
       // Use ALL customer prompts + fill remaining slots with parquet prompts
       const remainingSlots = 200 - customerPrompts.length;
       prompts = parquetPrompts.slice(0, remainingSlots).concat(customerPrompts);
+      log.warn('GEO BRAND PRESENCE: Total prompts exceed 200 limit, using all %d customer prompts + first %d parquet prompts for site id %s (%s)', customerPrompts.length, remainingSlots, siteId, baseURL);
     } else {
       // Total is <= 200, use all prompts
       prompts = parquetPrompts.concat(customerPrompts);
@@ -387,7 +289,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     }
     : { ...context, getPresignedUrl };
   const url = await asPresignedJsonUrl(prompts, bucket, s3Context);
-  log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
+  log.debug('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
 
   if (!isNonEmptyArray(providersToUse)) {
     log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
@@ -403,24 +305,68 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   await Promise.all(
     opptyTypes.flatMap((opptyType) => providersToUse.map(async (webSearchProvider) => {
       const message = createMystiqueMessage({
-        opptyType,
+        type: opptyType,
         siteId,
         baseURL,
         auditId: audit.getId(),
         deliveryType: site.getDeliveryType(),
         calendarWeek: dateContext,
         url,
-        webSearchProvider,
+        webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
         configVersion: /* c8 ignore next */ configExists ? configVersion : null,
         ...(isDaily && { date: dateContext.date }), // Add date only for daily cadence
       });
 
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
       const cadenceLabel = isDaily ? ' DAILY' : '';
-      log.info('GEO BRAND PRESENCE%s: %s message sent to Mystique for site id %s (%s) with provider %s', cadenceLabel, opptyType, siteId, baseURL, webSearchProvider);
+      log.debug('GEO BRAND PRESENCE%s: %s message sent to Mystique for site id %s (%s) with provider %s', cadenceLabel, opptyType, siteId, baseURL, webSearchProvider);
     })),
   );
   /* c8 ignore end */
+}
+
+/**
+ * Loads Parquet data from S3 and returns the parsed data.
+ * @param {object} options - Options for loading Parquet data.
+ * @param {string} options.key - The S3 object key for the Parquet file.
+ * @param {string} options.bucket - The S3 bucket name.
+ * @param {S3Client} options.s3Client - The S3 client instance.
+ * @return {Promise<Array<Record<string, unknown>>>}
+ */
+export async function loadParquetDataFromS3({ key, bucket, s3Client }) {
+  const res = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  const body = await res.Body?.transformToByteArray();
+  /* c8 ignore start */
+  if (!body) {
+    throw new Error(`Failed to read Parquet file from s3://${bucket}/${key}`);
+  }
+  /* c8 ignore end */
+
+  return parquetReadObjects({ file: body.buffer });
+}
+
+export async function asPresignedJsonUrl(data, bucketName, context) {
+  const {
+    s3Client, log, getPresignedUrl, isDaily, dateContext,
+  } = context;
+
+  // Use daily-specific path if daily cadence
+  const basePath = isDaily ? 'temp/audit-geo-brand-presence-daily' : 'temp/audit-geo-brand-presence';
+  const dateStr = isDaily ? dateContext.date : new Date().toISOString().split('T')[0];
+  const key = `${basePath}/${dateStr}-${randomUUID()}.json`;
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    Body: JSON.stringify(data),
+    ContentType: 'application/json',
+  }));
+
+  log.info('GEO BRAND PRESENCE: Data uploaded to S3 at s3://%s/%s', bucketName, key);
+  return getPresignedUrl(
+    s3Client,
+    new GetObjectCommand({ Bucket: bucketName, Key: key }),
+    { expiresIn: 86_400 /* seconds, 24h */ },
+  );
 }
 
 export async function keywordPromptsImportStep(context) {
@@ -455,8 +401,7 @@ export async function keywordPromptsImportStep(context) {
     }
   }
 
-  log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
-
+  log.debug('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
   const result = {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,
@@ -473,6 +418,71 @@ export async function keywordPromptsImportStep(context) {
 
   return result;
 }
+
+/**
+ * Creates a message object for sending to Mystique.
+ * @param {object} params - Message parameters
+ * @param {string} params.type - The opportunity type
+ * @param {string} params.siteId - The site ID
+ * @param {string} params.baseURL - The base URL
+ * @param {string} params.auditId - The audit ID
+ * @param {string} params.deliveryType - The delivery type
+ * @param {ISOCalendarWeek} params.calendarWeek - The calendar week object
+ * @param {string} params.url - The presigned URL for data
+ * @param {string} params.webSearchProvider - The web search provider
+ * @param {null | string} [params.configVersion] - The configuration version
+ * @param {null | string} [params.date] - The date string (for daily cadence)
+ * @returns {object} The message object
+ */
+export function createMystiqueMessage({
+  type,
+  siteId,
+  baseURL,
+  auditId,
+  deliveryType,
+  calendarWeek,
+  url,
+  webSearchProvider,
+  configVersion = null,
+  date = null,
+}) {
+  const data = {
+    url,
+    configVersion,
+    config_version: configVersion, // @todo remove after mystique supports configVersion
+    web_search_provider: webSearchProvider,
+  };
+
+  // Add date if present (daily-specific)
+  if (date) {
+    data.date = date;
+  }
+
+  return {
+    type,
+    siteId,
+    url: baseURL,
+    auditId,
+    deliveryType,
+    time: new Date().toISOString(),
+    week: calendarWeek.week,
+    year: calendarWeek.year,
+    data,
+  };
+}
+
+const EXCLUDE_FROM_HARD_LIMIT = new Set([
+  '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+  '63c38133-4991-4ed0-886b-2d0f440d81ab',
+  '1f582f10-41d3-4ff0-afaa-cd1a267ba58a',
+  'd8db1956-b24c-4ad7-bdb6-6f5a90d89edc',
+  '4b4ed67e-af44-49f7-ab24-3dda37609c9d',
+  '0f770626-6843-4fbd-897c-934a9c19f079',
+  'fdc7c65b-c0d0-40ff-ab26-fd0e16b75877',
+  '9a1cfdaf-3bb3-49a7-bbaa-995653f4c2f4',
+  '1398e8f1-90c9-4a5d-bfca-f585fa35fc69',
+  '1905ef6e-c112-477e-9fae-c22ebf21973a',
+]);
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)

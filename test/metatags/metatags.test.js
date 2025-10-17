@@ -578,14 +578,14 @@ describe('Meta Tags', () => {
         dataAccessStub.Opportunity.create = sinon.stub().returns(opportunity);
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.OpportunityData);
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should use existing opportunity and add suggestions', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should throw error if fetching opportunity fails', async () => {
@@ -614,7 +614,7 @@ describe('Meta Tags', () => {
         opportunity.getSuggestions.returns(testData.existingSuggestions);
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should mark existing suggestions OUTDATED if not present in audit data', async () => {
@@ -667,7 +667,7 @@ describe('Meta Tags', () => {
         await opportunityAndSuggestions(auditUrl, auditDataModified, context);
         expect(dataAccessStub.Suggestion.bulkUpdateStatus).to.be.calledWith(testData.existingSuggestions.splice(0, 2), 'OUTDATED');
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should preserve existing AI suggestions and overrides when syncing', async () => {
@@ -761,7 +761,7 @@ describe('Meta Tags', () => {
         expectedSuggestionModified[0].rank = -1;
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle malformed URLs in audit data', async () => {
@@ -781,7 +781,7 @@ describe('Meta Tags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('malformed-url.com/path/page1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle URLs with port numbers', async () => {
@@ -805,7 +805,7 @@ describe('Meta Tags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('https://example.com:8080/page1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle URLs with query parameters', async () => {
@@ -829,7 +829,7 @@ describe('Meta Tags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('https://example.com/page1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle case when config.useHostnameOnly is undefined', async () => {
@@ -853,7 +853,7 @@ describe('Meta Tags', () => {
         const suggestions = addSuggestionsCall.args[0];
         // Should preserve full URL path since useHostnameOnly is undefined
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle case when getSite method returns undefined', async () => {
@@ -874,7 +874,7 @@ describe('Meta Tags', () => {
         const suggestions = addSuggestionsCall.args[0];
         // Should preserve full URL path since getSite returns undefined
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle case when getSite method returns null', async () => {
@@ -895,7 +895,7 @@ describe('Meta Tags', () => {
         const suggestions = addSuggestionsCall.args[0];
         // Should preserve full URL path since getSite returns null
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle error in site configuration', async () => {
@@ -1485,7 +1485,7 @@ describe('Meta Tags', () => {
         const response = await metatagsAutoSuggest(allTags, context, siteStub);
 
         expect(log.debug.calledWith('Generated presigned URLs')).to.be.true;
-        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+        expect(log.debug.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
         expect(response['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
         expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
         expect(response['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
@@ -1524,7 +1524,7 @@ describe('Meta Tags', () => {
           forceAutoSuggest,
         });
         expect(isHandlerEnabledForSite).not.to.have.been.called;
-        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+        expect(log.debug.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
       });
 
       it('should handle forceAutoSuggest option set to false', async () => {
@@ -1538,7 +1538,7 @@ describe('Meta Tags', () => {
           forceAutoSuggest,
         });
         expect(isHandlerEnabledForSite).to.have.been.called;
-        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+        expect(log.debug.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
       });
     });
   });

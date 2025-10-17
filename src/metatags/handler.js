@@ -47,7 +47,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   );
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
-  log.info(`started to audit metatags for site url: ${auditData.auditResult.finalUrl}`);
+  log.debug(`started to audit metatags for site url: ${auditData.auditResult.finalUrl}`);
   let useHostnameOnly = false;
   try {
     const siteId = opportunity.getSiteId();
@@ -87,7 +87,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
       data: { ...suggestion },
     }),
   });
-  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
+  log.debug(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
 }
 
 export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, log) {
@@ -148,9 +148,7 @@ function getOrganicTrafficForEndpoint(endpoint, rumDataMapMonthly, rumDataMapBiM
     log.warn(`No rum data found for ${endpoint}.`);
     return 0;
   }
-  const trafficSum = target.earned + target.paid;
-  log.info(`Found ${trafficSum} page views for ${endpoint}.`);
-  return trafficSum;
+  return target.earned + target.paid;
 }
 
 // Calculate the projected traffic lost for a site
@@ -191,7 +189,7 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
     });
 
     const cpcValue = await calculateCPCValue(context, site.getId());
-    log.info(`Calculated cpc value: ${cpcValue} for site: ${site.getId()}`);
+    log.debug(`Calculated cpc value: ${cpcValue} for site: ${site.getId()}`);
     const projectedTrafficValue = projectedTrafficLost * cpcValue;
 
     // Skip updating projected traffic data if lost traffic value is insignificant
@@ -221,14 +219,12 @@ export async function metatagsAutoDetect(site, pagesMap, context) {
   }
 
   // Perform SEO checks
-  log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
   const seoChecks = new SeoChecks(log);
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
     seoChecks.performChecks(pageUrl, pageTags);
   }
   seoChecks.finalChecks();
   const detectedTags = seoChecks.getDetectedTags();
-  log.info(`Found ${Object.keys(detectedTags).length} pages with issues out of ${extractedTagsCount} total pages`);
   return {
     seoChecks,
     detectedTags,
@@ -240,7 +236,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   const {
     site, audit, finalUrl, log, scrapeResultPaths,
   } = context;
-  log.info(scrapeResultPaths);
+  log.debug(`scrapeResultPaths: ${JSON.stringify(scrapeResultPaths)}`);
   const {
     seoChecks,
     detectedTags,
@@ -319,7 +315,7 @@ export async function submitForScraping(context) {
   const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  log.info(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
+  log.debug(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
 
   if (finalUrls.length === 0) {
     throw new Error('No URLs found for site neither top pages nor included URLs');

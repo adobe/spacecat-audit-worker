@@ -11,7 +11,7 @@ top_urls AS (
   SELECT url_norm AS url
   FROM counts
   ORDER BY hits DESC, url_norm
-  LIMIT 100
+  LIMIT 150
 ),
 tail_candidates AS (
   SELECT url_norm AS url
@@ -23,7 +23,7 @@ tail_sample AS (
   FROM tail_candidates
   -- deterministic ~1% sample; change 100 -> 50 (~2%), 20 (~5%), etc.
   WHERE MOD(from_big_endian_64(xxhash64(to_utf8(url))), 100) = 0
-  LIMIT 100
+  LIMIT 150
 )
 SELECT url FROM top_urls
 UNION ALL

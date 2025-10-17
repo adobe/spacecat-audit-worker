@@ -50,6 +50,9 @@ describe('CDN Config Handler', () => {
         Configuration: {
           findLatest: sandbox.stub(),
         },
+        Organization: {
+          findById: sandbox.stub(),
+        },
       },
       sqs: {
         sendMessage: sandbox.stub().resolves(),
@@ -114,8 +117,8 @@ describe('CDN Config Handler', () => {
         .onSecondCall().resolves(mockSite2);
 
       context.dataAccess.LatestAudit.findBySiteIdAndAuditType
-        .onFirstCall().resolves(['audit1'])
-        .onSecondCall().resolves(['audit2']);
+        .onFirstCall().resolves({ getAuditResult: () => ({ providers: ['audit1'] }), getFullAuditRef: () => 'audit1' })
+        .onSecondCall().resolves({ getAuditResult: () => ({ providers: ['audit2'] }), getFullAuditRef: () => 'audit2' });
 
       const result = await cdnConfigHandler.enableCdnAnalysisPerService(
         'test-service',
@@ -135,7 +138,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should leave existing when exactly one domain is enabled', async () => {
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves(['existing-audit']);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({ providers: ['existing-audit'] }), getFullAuditRef: () => 'existing-audit' });
 
       const result = await cdnConfigHandler.enableCdnAnalysisPerService(
         'test-service',
@@ -153,7 +156,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should enable first available when none are enabled', async () => {
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves([]);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => '' });
 
       const result = await cdnConfigHandler.enableCdnAnalysisPerService(
         'test-service',
@@ -189,7 +192,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should filter out falsy domains', async () => {
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves([]);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => '' });
 
       const result = await cdnConfigHandler.enableCdnAnalysisPerService(
         'test-service',
@@ -203,7 +206,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should throw error when configuration fails', async () => {
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves([]);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => ''});
       mockConfig.save.rejects(new Error('Save failed'));
 
       await expect(cdnConfigHandler.enableCdnAnalysisPerService(
@@ -466,8 +469,13 @@ describe('CDN Config Handler', () => {
     it('should throw error when site is not found', async () => {
       context.dataAccess.Site.findById.resolves(null);
 
-      await expect(cdnConfigHandler.handleCdnBucketConfigChanges(context, {}))
+      await expect(cdnConfigHandler.handleCdnBucketConfigChanges(context, { cdnProvider: 'test-provider' }))
         .to.be.rejectedWith('Site with ID site-123 not found');
+    });
+
+    it('should throw error when cdnProvider is not provided', async () => {
+      await expect(cdnConfigHandler.handleCdnBucketConfigChanges(context, {}))
+        .to.be.rejectedWith('CDN provider is required for CDN configuration');
     });
 
     it('should handle commerce-fastly provider with service found', async () => {
@@ -489,7 +497,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should handle bucket configuration when bucketName provided', async () => {
-      const data = { bucketName: 'test-bucket' };
+      const data = { bucketName: 'test-bucket', cdnProvider: 'commerce-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
@@ -498,7 +506,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should handle bucket configuration when allowedPaths provided', async () => {
-      const data = { allowedPaths: ['test-org/path1', 'test-org/path2'] };
+      const data = { allowedPaths: ['test-org/path1', 'test-org/path2'], cdnProvider: 'commerce-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
@@ -507,7 +515,7 @@ describe('CDN Config Handler', () => {
     });
 
     it('should handle bucket configuration when both bucketName and allowedPaths provided', async () => {
-      const data = { bucketName: 'test-bucket', allowedPaths: ['test-org/path1'] };
+      const data = { bucketName: 'test-bucket', allowedPaths: ['test-org/path1'], cdnProvider: 'commerce-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
@@ -520,7 +528,7 @@ describe('CDN Config Handler', () => {
 
     it('should handle aem-cs-fastly provider', async () => {
       context.dataAccess.Site.allByOrganizationId.resolves([mockSite]);
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves([]);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({}), getFullAuditRef: () => 'test' });
 
       const data = { cdnProvider: 'aem-cs-fastly' };
 
@@ -529,17 +537,20 @@ describe('CDN Config Handler', () => {
       expect(context.sqs.sendMessage).to.have.been.called;
     });
 
-    it('should skip aem-cs-fastly processing when CDN logs report already exists', async () => {
+    it('should skip aem-cs-fastly processing when CDN analysis has fullAuditRef', async () => {
       context.dataAccess.Site.allByOrganizationId.resolves([mockSite]);
-      // Mock existing CDN logs report
-      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves(['existing-report']);
+      context.dataAccess.LatestAudit.findBySiteIdAndAuditType.resolves({ getAuditResult: () => ({ providers: ['fastly'] }), getFullAuditRef: () => 'some-audit-ref' });
 
       const data = { cdnProvider: 'aem-cs-fastly' };
 
       await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
 
-      // Should not send any SQS messages since report already exists
-      expect(context.sqs.sendMessage).to.not.have.been.called;
+      // Should only send CDN logs report, not CDN analysis since fullAuditRef already exists
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      expect(context.sqs.sendMessage).to.have.been.calledWith(
+        sinon.match.any,
+        sinon.match({ type: 'cdn-logs-report' })
+      );
     });
 
     it('should handle byocdn provider', async () => {
@@ -575,6 +586,39 @@ describe('CDN Config Handler', () => {
 
       expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.not.have.been.called;
       expect(mockSite.save).to.not.have.been.called;
+    });
+
+    describe('AMS provider handling', () => {
+      beforeEach(() => {
+        context.dataAccess.Site.allByOrganizationId.resolves([mockSite]);
+      });
+
+      it('should handle ams-cloudfront provider and remove @ from IMS org ID', async () => {
+        // Mock organization with IMS org ID
+        const mockOrganization = {
+          getImsOrgId: sandbox.stub().returns('TestOrg123@AdobeOrg'),
+        };
+        context.dataAccess.Organization.findById.resolves(mockOrganization);
+        
+        const data = { cdnProvider: 'ams-cloudfront' };
+
+        await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+        expect(context.dataAccess.Organization.findById).to.have.been.calledWith(mockSite.getOrganizationId());
+        expect(mockSiteConfig.updateLlmoCdnBucketConfig).to.have.been.calledWith({ 
+          orgId: 'TestOrg123AdobeOrg' 
+        });
+        expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-analysis', mockSite);
+      });
+
+      it('should handle ams providers without IMS org ID when not cloudfront', async () => {
+        const data = { cdnProvider: 'ams-other' };
+
+        await cdnConfigHandler.handleCdnBucketConfigChanges(context, data);
+
+        expect(context.dataAccess.Organization.findById).to.not.have.been.called;
+        expect(mockConfiguration.enableHandlerForSite).to.have.been.calledWith('cdn-analysis', mockSite);
+      });
     });
   });
 });
