@@ -69,14 +69,16 @@ export default async function handler(message, context) {
     auditResult.error = 'No valid guidance body received';
     log.warn(`No valid guidance body received for site: ${siteId}`);
   } else {
-    const { patterns, validation, execution_metrics: executionMetrics } = pageTypesData;
+    const {
+      patterns, validation, execution_metrics: executionMetrics, accuracy_pct: accuracyPct,
+    } = pageTypesData;
 
     auditResult = {
       ...auditResult,
       success: true,
       patterns: patterns || [],
       patternsCount: patterns?.length || 0,
-      accuracy: validation?.accuracy_pct,
+      accuracy: accuracyPct,
       sampleSize: validation?.sample_size,
       executionMetrics,
     };
@@ -94,6 +96,7 @@ export default async function handler(message, context) {
         log.warn(`Page type detection accuracy ${accuracy}% is below threshold ${MIN_ACCURACY_THRESHOLD}% for site: ${siteId}. Skipping pattern storage.`);
       } else {
         try {
+          log.info(`Updating site page types for site: ${siteId} with patterns: ${JSON.stringify(patterns)}`);
           const existingPageTypes = site.getPageTypes();
           const hadExistingPageTypes = existingPageTypes && existingPageTypes.length > 0;
 
@@ -122,7 +125,7 @@ export default async function handler(message, context) {
   // Save audit result regardless of success/failure
   if (auditId) {
     try {
-      const audit = await Audit.gifindById(auditId);
+      const audit = await Audit.findById(auditId);
       if (audit) {
         audit.setAuditResult(auditResult);
         await audit.save();
