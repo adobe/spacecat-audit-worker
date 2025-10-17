@@ -84,7 +84,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
 
   // Send SQS message for Mystique auto-suggest if enabled and opportunity needs suggestions
   if (await needsAutoSuggest(context, opportunity, site)) {
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, auditData.auditResult.cwv);
   }
 }
 

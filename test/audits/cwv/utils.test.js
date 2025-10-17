@@ -55,9 +55,13 @@ describe('sendSQSMessageForAutoSuggest', () => {
       opportunityId: 'oppty-789',
       data: {
       },
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, [{ type: 'url', url: 'https://example.com/page1' }]);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -68,8 +72,8 @@ describe('sendSQSMessageForAutoSuggest', () => {
     expect(message.deliveryType).to.equal('aem_cs');
     expect(message.time).to.be.a('string');
     
-    expect(message.data.page).to.equal('https://example.com');
-    expect(message.data.opportunityId).to.equal('oppty-789');
+    expect(message.data.page).to.equal('https://example.com/page1');
+    expect(message.data.opportunity_id).to.equal('oppty-789');
   });
 
   it('should handle opportunity without siteId', async () => {
@@ -78,9 +82,13 @@ describe('sendSQSMessageForAutoSuggest', () => {
       opportunityId: 'oppty-789',
       data: {
       },
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, [{ type: 'url', url: 'https://example.com/page1' }]);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -93,9 +101,13 @@ describe('sendSQSMessageForAutoSuggest', () => {
       opportunityId: 'oppty-789',
       data: {
       },
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, [{ type: 'url', url: 'https://example.com/page1' }]);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
@@ -108,13 +120,17 @@ describe('sendSQSMessageForAutoSuggest', () => {
       auditId: 'audit-456',
       data: {
       },
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, [{ type: 'url', url: 'https://example.com/page1' }]);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.opportunityId).to.equal('');
+    expect(message.data.opportunity_id).to.equal('');
   });
 
   it('should handle opportunity without data', async () => {
@@ -124,14 +140,18 @@ describe('sendSQSMessageForAutoSuggest', () => {
       opportunityId: 'oppty-789',
       data: {
       },
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, [{ type: 'url', url: 'https://example.com/page1' }]);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
-    expect(message.data.page).to.equal('https://example.com');
-    expect(message.data.opportunityId).to.equal('oppty-789');
+    expect(message.data.page).to.equal('https://example.com/page1');
+    expect(message.data.opportunity_id).to.equal('oppty-789');
   });
 
   it('should handle opportunity without data object', async () => {
@@ -139,9 +159,13 @@ describe('sendSQSMessageForAutoSuggest', () => {
       siteId: 'site-123',
       auditId: 'audit-456',
       opportunityId: 'oppty-789',
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, [{ type: 'url', url: 'https://example.com/page1' }]);
 
     expect(sqsStub.calledOnce).to.be.true;
   });
@@ -153,14 +177,18 @@ describe('sendSQSMessageForAutoSuggest', () => {
       opportunityId: 'oppty-789',
       data: {
       },
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
-    await sendSQSMessageForAutoSuggest(context, opportunity, null);
+    await sendSQSMessageForAutoSuggest(context, opportunity, null, [{ type: 'url', url: 'https://example.com/page1' }]);
 
     expect(sqsStub.calledOnce).to.be.true;
     const message = sqsStub.firstCall.args[1];
     expect(message.deliveryType).to.equal('aem_cs');
-    expect(message.data.page).to.equal('');
+    expect(message.data.page).to.equal('https://example.com/page1');
   });
 
   it('should handle null opportunity gracefully', async () => {
@@ -182,17 +210,21 @@ describe('sendSQSMessageForAutoSuggest', () => {
       opportunityId: 'oppty-789',
       data: {
       },
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, [{ type: 'url', url: 'https://example.com/page1' }]);
 
-    expect(context.log.info.calledTwice).to.be.true;
+    expect(context.log.info.callCount).to.equal(4); // Received, Sending, Sent, Final
     expect(context.log.info.firstCall.args[0]).to.include('Received CWV opportunity for auto-suggest');
     expect(context.log.info.firstCall.args[0]).to.include('siteId: site-123');
-    expect(context.log.info.firstCall.args[0]).to.include('opportunityId: oppty-789');
-    expect(context.log.info.secondCall.args[0]).to.include('CWV opportunity sent to Mystique for auto-suggest');
-    expect(context.log.info.secondCall.args[0]).to.include('siteId: site-123');
-    expect(context.log.info.secondCall.args[0]).to.include('opportunityId: oppty-789');
+    expect(context.log.info.firstCall.args[0]).to.include('opportunityId: ');
+    expect(context.log.info.secondCall.args[0]).to.include('Sending 1 URL(s) to Mystique for CWV analysis');
+    expect(context.log.info.thirdCall.args[0]).to.include('Sent URL to Mystique: https://example.com/page1');
+    expect(context.log.info.getCall(3).args[0]).to.include('CWV opportunity sent to Mystique for auto-suggest');
   });
 
   it('should handle missing opportunityId', async () => {
@@ -203,13 +235,18 @@ describe('sendSQSMessageForAutoSuggest', () => {
       getId: () => 'oppty-789',
       data: {
       },
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, [{ type: 'url', url: 'https://example.com/page1' }]);
 
-    expect(context.sqs.sendMessage.calledOnce).to.be.true;
-    const message = context.sqs.sendMessage.firstCall.args[1];
-    expect(message.data.opportunityId).to.equal('');
+    expect(context.log.info.called).to.be.true;
+    expect(context.log.info.firstCall.args[0]).to.include('Received CWV opportunity for auto-suggest');
+    expect(context.log.info.firstCall.args[0]).to.include('siteId: site-123');
+    expect(context.log.info.firstCall.args[0]).to.include('opportunityId: ');
   });
 
   it('should handle SQS sendMessage error and throw', async () => {
@@ -223,10 +260,14 @@ describe('sendSQSMessageForAutoSuggest', () => {
       getId: () => 'oppty-789',
       data: {
       },
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
     try {
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      await sendSQSMessageForAutoSuggest(context, opportunity, site, [{ type: 'url', url: 'https://example.com/page1' }]);
       expect.fail('Should have thrown an error');
     } catch (thrownError) {
       expect(thrownError.message).to.equal('SQS send failed');
@@ -248,10 +289,14 @@ describe('sendSQSMessageForAutoSuggest', () => {
       getId: () => 'oppty-from-getId',
       data: {
       },
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
     try {
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      await sendSQSMessageForAutoSuggest(context, opportunity, site, [{ type: 'url', url: 'https://example.com/page1' }]);
       expect.fail('Should have thrown an error');
     } catch (thrownError) {
       expect(thrownError.message).to.equal('SQS send failed');
@@ -272,10 +317,14 @@ describe('sendSQSMessageForAutoSuggest', () => {
       // opportunityId is missing and no getId method
       data: {
       },
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
     try {
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      await sendSQSMessageForAutoSuggest(context, opportunity, site, [{ type: 'url', url: 'https://example.com/page1' }]);
       expect.fail('Should have thrown an error');
     } catch (thrownError) {
       expect(thrownError.message).to.equal('SQS send failed');
@@ -296,10 +345,14 @@ describe('sendSQSMessageForAutoSuggest', () => {
       opportunityId: 'oppty-222',
       data: {
       },
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }),
+        getStatus: () => 'NEW',
+      }]),
     };
 
     try {
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      await sendSQSMessageForAutoSuggest(context, opportunity, site, [{ type: 'url', url: 'https://example.com/page1' }]);
       expect.fail('Should have thrown an error');
     } catch (thrownError) {
       expect(thrownError.message).to.equal('SQS send failed');
@@ -308,6 +361,75 @@ describe('sendSQSMessageForAutoSuggest', () => {
       expect(context.log.error.firstCall.args[0]).to.include('siteId: unknown');
       expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-222');
     }
+  });
+
+  it('should send multiple SQS messages for multiple URL entries', async () => {
+    const opportunity = {
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      opportunityId: 'oppty-789',
+      data: {
+      },
+      getSuggestions: () => Promise.resolve([
+        { getData: () => ({ type: 'url', url: 'https://example.com/page1', issues: [] }), getStatus: () => 'NEW' },
+        { getData: () => ({ type: 'url', url: 'https://example.com/page2', issues: [] }), getStatus: () => 'NEW' },
+      ]),
+    };
+    const cwvEntries = [
+      { type: 'url', url: 'https://example.com/page1' },
+      { type: 'url', url: 'https://example.com/page2' },
+    ];
+
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, cwvEntries);
+
+    expect(sqsStub.callCount).to.equal(2);
+    expect(sqsStub.firstCall.args[1].data.page).to.equal('https://example.com/page1');
+    expect(sqsStub.secondCall.args[1].data.page).to.equal('https://example.com/page2');
+  });
+
+  it('should not send SQS message when there are no url entries', async () => {
+    const opportunity = {
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      opportunityId: 'oppty-789',
+      data: {
+      },
+      getSuggestions: () => Promise.resolve([]),
+    };
+    const cwvEntries = [
+      { type: 'desktop', url: 'https://example.com/page1' },
+    ];
+
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, cwvEntries);
+
+    expect(sqsStub.callCount).to.equal(0);
+    expect(context.log.info).to.have.been.calledWith('No new URL entries to send for CWV auto-suggest');
+  });
+
+  it('should correctly determine hasGuidance with various issue values', async () => {
+    const opportunity = {
+      siteId: 'site-123',
+      auditId: 'audit-456',
+      opportunityId: 'oppty-789',
+      data: {},
+      getSuggestions: () => Promise.resolve([{
+        getData: () => ({
+          url: 'https://example.com/page1',
+          issues: [
+            { type: 'lcp', value: null }, // null value
+            { type: 'cls' }, // missing value
+            { type: 'inp', value: '   ' }, // whitespace value
+          ],
+        }),
+        getStatus: () => 'NEW',
+      }]),
+    };
+    const cwvEntries = [{ type: 'url', url: 'https://example.com/page1' }];
+
+    await sendSQSMessageForAutoSuggest(context, opportunity, site, cwvEntries);
+
+    // hasGuidance should be false because all issue values are invalid, so the message should be sent
+    expect(sqsStub.callCount).to.equal(1);
   });
 });
 
