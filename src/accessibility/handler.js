@@ -256,7 +256,7 @@ export function createProcessAccessibilityOpportunitiesWithDevice(deviceType) {
     } = context;
     const siteId = site.getId();
     const version = new Date().toISOString().split('T')[0];
-    const outputKey = `accessibility/${siteId}/${version}-${deviceType}-final-result.json`;
+    const outputKey = deviceType === 'mobile' ? `accessibility-mobile/${siteId}/${version}-final-result.json` : `accessibility/${siteId}/${version}-final-result.json`;
 
     // Get the S3 bucket name from config or environment
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
