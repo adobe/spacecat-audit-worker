@@ -16,8 +16,8 @@ const MIN_ACCURACY_THRESHOLD = 75;
 
 function convertPatternsToPageTypes(patterns) {
   return patterns.map((item) => ({
-    name: item.label,
-    pattern: item.pattern_path,
+    name: item.pagetype,
+    pattern: item.regex,
   }));
 }
 
