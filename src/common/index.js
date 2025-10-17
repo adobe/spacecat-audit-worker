@@ -18,3 +18,6 @@ export { AsyncJobRunner } from './async-job-runner.js';
 
 // Export utility functions
 export * from './audit-utils.js';
+
+// Export code fix handler utilities
+export * from './codefix-handler.js';
