@@ -30,7 +30,6 @@ import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERI
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const AUDIT_TYPE_ACCESSIBILITY = Audit.AUDIT_TYPES.ACCESSIBILITY; // Defined audit type
-const AUDIT_CONCURRENCY = 10; // number of urls to scrape at a time
 
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
@@ -116,11 +115,10 @@ export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
     siteId,
     jobId: siteId,
     processingType: AUDIT_TYPE_ACCESSIBILITY,
-    device: deviceType,
     options: {
       storagePrefix,
+      deviceType,
     },
-    concurrency: AUDIT_CONCURRENCY,
   };
 }
 
