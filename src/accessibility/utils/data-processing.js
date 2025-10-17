@@ -532,8 +532,10 @@ export async function createOrUpdateDeviceSpecificSuggestion(
 
       suggestions = createSuggestionInstance(currentSuggestionValue, deviceType, reportMarkdown);
 
-      // Update the existing suggestion
-      existingSuggestion.setData(suggestions[0].data);
+      // Update the existing suggestion - remove updatedAt to avoid ElectroDB conflict
+      // eslint-disable-next-line no-unused-vars
+      const { updatedAt, createdAt, ...dataWithoutUpdatedAt } = suggestions[0].data;
+      existingSuggestion.setData(dataWithoutUpdatedAt);
       await existingSuggestion.save();
 
       return { suggestion: existingSuggestion };
