@@ -774,6 +774,10 @@ export const URL_SOURCE_SEPARATOR = '?source=';
  * Prefixes for different audit types
  */
 export const AUDIT_PREFIXES = {
+  'accessibility-mobile': {
+    logIdentifier: 'A11yAuditMobile',
+    storagePrefix: 'accessibility-mobile',
+  },
   [Audit.AUDIT_TYPES.ACCESSIBILITY]: {
     logIdentifier: 'A11yAudit',
     storagePrefix: 'accessibility',
