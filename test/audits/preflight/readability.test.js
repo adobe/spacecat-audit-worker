@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 import esmock from 'esmock';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import readability, { PREFLIGHT_READABILITY } from '../../../src/readability/handler.js';
 import { PREFLIGHT_STEP_IDENTIFY } from '../../../src/preflight/handler.js';
 
@@ -39,6 +40,9 @@ describe('Preflight Readability Audit', () => {
 
     configuration = {
       isHandlerEnabledForSite: sinon.stub(),
+      getHandlers: sinon.stub().returns({
+        'readability-preflight': { productCodes: ['aem-sites'] },
+      }),
     }
 
     context = {
@@ -98,6 +102,15 @@ describe('Preflight Readability Audit', () => {
     };
 
     configuration.isHandlerEnabledForSite.resolves(true);
+
+    // Ensure entitlement checks succeed; if already stubbed elsewhere, reset safely
+    if (TierClient.createForSite.restore) {
+      TierClient.createForSite.restore();
+    }
+    const mockTierClient = {
+      checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+    };
+    sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
   });
 
   describe('PREFLIGHT_READABILITY constant', () => {

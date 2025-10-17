@@ -21,6 +21,7 @@ import esmock from 'esmock';
 import AWSXray from 'aws-xray-sdk';
 import { AzureOpenAIClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import { Site } from '@adobe/spacecat-shared-data-access';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
   scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
   AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
@@ -654,9 +655,27 @@ describe('Preflight Audit', () => {
       }));
       configuration = {
         isHandlerEnabledForSite: sinon.stub(),
-        getHandlers: sinon.stub().returns({}),
+        getHandlers: sinon.stub().returns({
+          'readability-preflight': { productCodes: ['aem-sites'] },
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+          'metatags-preflight': { productCodes: ['aem-sites'] },
+          'canonical-preflight': { productCodes: ['aem-sites'] },
+          'links-preflight': { productCodes: ['aem-sites'] },
+          'body-size-preflight': { productCodes: ['aem-sites'] },
+          'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
+          'h1-count-preflight': { productCodes: ['aem-sites'] },
+        }),
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      // Ensure entitlement checks pass for tests; avoid double-stubbing across tests
+      if (TierClient.createForSite && TierClient.createForSite.restore) {
+        TierClient.createForSite.restore();
+      }
+      const mockTierClient = {
+        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      };
+      sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       nock('https://main--example--page.aem.page')
         .get('/page1')
@@ -1449,6 +1468,10 @@ describe('Preflight Audit', () => {
       // Setup Configuration mock for isAuditEnabledForSite
       const mockConfiguration = {
         isHandlerEnabledForSite: sinon.stub().returns(true),
+        getHandlers: () => ({
+          'readability-preflight': { productCodes: ['aem-sites'] },
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+        }),
       };
       mockContext.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
 
@@ -1520,6 +1543,13 @@ describe('Preflight Audit', () => {
       // Setup Configuration mock for isAuditEnabledForSite
       const mockConfiguration = {
         isHandlerEnabledForSite: sinon.stub().returns(true),
+        getHandlers: () => ({
+          'readability-preflight': { productCodes: ['aem-sites'] },
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+          'body-size-preflight': { productCodes: ['aem-sites'] },
+          'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
+          'h1-count-preflight': { productCodes: ['aem-sites'] },
+        }),
       };
       mockContext.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
 
@@ -1694,6 +1724,9 @@ describe('Preflight Audit', () => {
 
       configuration = {
         isHandlerEnabledForSite: sinon.stub().returns(true),
+        getHandlers: sinon.stub().returns({
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+        }),
       };
 
       context = {
@@ -1734,6 +1767,15 @@ describe('Preflight Audit', () => {
           },
         },
       };
+
+      // Ensure entitlement checks pass for accessibility
+      const mockTierClient = {
+        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      };
+      if (TierClient.createForSite && TierClient.createForSite.restore) {
+        TierClient.createForSite.restore();
+      }
+      sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       auditContext = {
         previewUrls: ['https://example.com/page1', 'https://example.com/page2'],
@@ -2831,6 +2873,9 @@ describe('Preflight Audit', () => {
 
         configuration = {
           isHandlerEnabledForSite: sinon.stub(),
+          getHandlers: sinon.stub().returns({
+            'accessibility-preflight': { productCodes: ['aem-sites'] },
+          }),
         }
 
         pollingContext = {
@@ -2860,6 +2905,15 @@ describe('Preflight Audit', () => {
             },
           },
         };
+
+        // Ensure entitlement checks pass for polling tests; avoid double-stubbing
+        const mockTierClient = {
+          checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        };
+        if (TierClient.createForSite && TierClient.createForSite.restore) {
+          TierClient.createForSite.restore();
+        }
+        sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
         configuration.isHandlerEnabledForSite.withArgs('preflight', pollingContext.site).resolves(true);
         configuration.isHandlerEnabledForSite.withArgs('accessibility-preflight', pollingContext.site).resolves(true);
@@ -3090,6 +3144,9 @@ describe('Preflight Audit', () => {
 
       configuration = {
         isHandlerEnabledForSite: sinon.stub().returns(true),
+        getHandlers: sinon.stub().returns({
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+        }),
       };
 
       context = {
@@ -3122,6 +3179,12 @@ describe('Preflight Audit', () => {
           },
         },
       };
+
+      // Ensure entitlement checks pass for coverage tests
+      const mockTierClient = {
+        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       auditContext = {
         previewUrls: ['https://example.com/page1', 'https://example.com/page2'],
