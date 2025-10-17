@@ -1301,6 +1301,7 @@ describe('createIndividualOpportunitySuggestions', () => {
         sendMessage: sandbox.stub().resolves(),
       },
       env: {
+        IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
@@ -1844,6 +1845,7 @@ describe('createAccessibilityIndividualOpportunities', () => {
         sendMessage: sandbox.stub().resolves(),
       },
       env: {
+        IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
@@ -2605,14 +2607,14 @@ describe('createAccessibilityIndividualOpportunities', () => {
   });
 });
 
-describe('createMystiqueMessage', () => {
+describe('createDirectMystiqueMessage', () => {
   it('should create a message object with all required fields', () => {
     const fakeOpportunity = { getId: () => 'oppty-123' };
     const issuesList = [{ type: 'color-contrast', description: 'desc' }];
     const siteId = 'site-789';
     const auditId = 'audit-101';
     const deliveryType = 'aem_edge';
-    const result = generateIndividualOpportunitiesModule.createMystiqueMessage({
+    const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
       url: 'https://example.com',
       issuesList,
       opportunity: fakeOpportunity,
@@ -2637,7 +2639,7 @@ describe('createMystiqueMessage', () => {
   it('should default siteId and auditId to empty string if not provided', () => {
     const fakeOpportunity = { getId: () => 'oppty-123' };
     const issuesList = [];
-    const result = generateIndividualOpportunitiesModule.createMystiqueMessage({
+    const result = generateIndividualOpportunitiesModule.createDirectMystiqueMessage({
       url: 'https://example.com',
       issuesList,
       opportunity: fakeOpportunity,
@@ -2672,7 +2674,7 @@ describe('sendMystiqueMessage', () => {
   it('should send a message and log info on success', async () => {
     const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
       url: 'https://example.com',
-      issuesList: [{ type: 'color-contrast' }],
+      issuesList: [{ issueName: 'color-contrast' }],
       opportunity: fakeOpportunity,
       siteId: 'site-1',
       auditId: 'audit-1',
@@ -2682,7 +2684,7 @@ describe('sendMystiqueMessage', () => {
       log: fakeLog,
     });
     expect(fakeSqs.sendMessage).to.have.been.calledOnce;
-    expect(fakeLog.info).to.have.been.calledWithMatch('[A11yIndividual] Sent message to Mystique');
+    expect(fakeLog.info).to.have.been.calledWithMatch('[A11yIndividual] Sent message directly to Mystique (legacy flow)');
     expect(result).to.deep.include({ success: true, url: 'https://example.com' });
   });
 
@@ -2690,7 +2692,7 @@ describe('sendMystiqueMessage', () => {
     fakeSqs.sendMessage.rejects(new Error('SQS error'));
     const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
       url: 'https://example.com',
-      issuesList: [{ type: 'color-contrast' }],
+      issuesList: [{ issueName: 'color-contrast' }],
       opportunity: fakeOpportunity,
       siteId: 'site-1',
       auditId: 'audit-1',
@@ -2700,7 +2702,7 @@ describe('sendMystiqueMessage', () => {
       log: fakeLog,
     });
     expect(fakeSqs.sendMessage).to.have.been.calledOnce;
-    expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Failed to send message to Mystique');
+    expect(fakeLog.error).to.have.been.calledWithMatch('[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url');
     expect(result).to.deep.include({ success: false, url: 'https://example.com' });
     expect(result.error).to.equal('SQS error');
   });
@@ -2709,12 +2711,12 @@ describe('sendMystiqueMessage', () => {
 describe('sendMystiqueMessage error path (coverage)', () => {
   it('should return failure object and log error if sqs.sendMessage rejects', async () => {
     const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('Simulated SQS failure')) };
-    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
+    const fakeEnv = { IMPORT_WORKER_QUEUE_URL: 'import-worker-queue', QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
     const fakeLog = { info: sinon.stub(), error: sinon.stub() };
     const fakeOpportunity = { getId: () => 'oppty-456' };
     const result = await generateIndividualOpportunitiesModule.sendMystiqueMessage({
       url: 'https://example.com',
-      issuesList: [{ issue_name: 'aria-allowed-attr' }],
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
       opportunity: fakeOpportunity,
       siteId: 'site-123',
       auditId: 'audit-456',
@@ -2727,7 +2729,7 @@ describe('sendMystiqueMessage error path (coverage)', () => {
     expect(result.url).to.equal('https://example.com');
     expect(result.error).to.equal('Simulated SQS failure');
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://example.com',
+      '[A11yIndividual][A11yProcessingError] Failed to send message to import worker for url https://example.com',
     );
   });
 });
@@ -2775,6 +2777,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
         sendMessage: sandbox.stub().resolves(),
       },
       env: {
+        IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
@@ -2833,7 +2836,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
             url: 'https://example.com',
-            issuesList: [{ issue_name: 'aria-allowed-attr' }],
+            issuesList: [{ issueName: 'aria-allowed-attr' }],
           },
         ]),
       },
@@ -2848,7 +2851,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
       mockLog,
     );
 
-    expect(mockLog.debug).to.have.been.calledWithMatch(
+    expect(mockLog.info).to.have.been.calledWithMatch(
       /Message sending completed: 0 successful, 1 failed, 0 rejected/,
     );
   });
@@ -2902,6 +2905,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
         sendMessage: sandbox.stub().resolves(),
       },
       env: {
+        IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
@@ -2935,7 +2939,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
             url: 'https://example.com',
-            issuesList: [{ issue_name: 'aria-allowed-attr' }],
+            issuesList: [{ issueName: 'aria-allowed-attr' }],
           },
         ]),
       },
@@ -2964,7 +2968,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
             url: 'https://example.com',
-            issuesList: [{ issue_name: 'aria-allowed-attr' }],
+            issuesList: [{ issueName: 'aria-allowed-attr' }],
           },
         ]),
       },
@@ -3012,7 +3016,7 @@ describe('sendMessageToMystiqueForRemediation', () => {
         processSuggestionsForMystique: sandbox.stub().returns([
           {
             url: 'https://example.com',
-            issuesList: [{ issue_name: 'aria-allowed-attr' }],
+            issuesList: [{ issueName: 'aria-allowed-attr' }],
           },
         ]),
       },
@@ -3027,12 +3031,158 @@ describe('sendMessageToMystiqueForRemediation', () => {
       mockLog,
     );
 
-    expect(mockLog.debug).to.have.been.calledWithMatch(
-      '[A11yIndividual] Sending 1 messages to Mystique queue: test-queue',
+    expect(mockLog.info).to.have.been.calledWithMatch(
+      '[A11yIndividual] Sending 1 messages to Mystique (via appropriate flow based on issue types)',
     );
-    expect(mockLog.debug).to.have.been.calledWithMatch(
+    expect(mockLog.info).to.have.been.calledWithMatch(
       '[A11yIndividual] Message sending completed: 1 successful, 0 failed, 0 rejected',
     );
+  });
+
+  it('should send messages to import worker with correct structure for code fix issues', async () => {
+    const sendMessageSpy = sandbox.spy();
+    mockContext.sqs.sendMessage = sendMessageSpy;
+    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+      {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'aria-allowed-attr',
+              occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
+            },
+          ],
+        }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-1',
+      },
+    ]);
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com',
+            issuesList: [{ issueName: 'aria-allowed-attr' }], // This is in issueTypesForCodeFix
+          },
+        ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    await module.sendMessageToMystiqueForRemediation(
+      mockOpportunity,
+      mockContext,
+      mockLog,
+    );
+
+    // Verify message sent to import worker (new flow)
+    expect(sendMessageSpy).to.have.been.calledOnce;
+    const [queueUrl, message] = sendMessageSpy.firstCall.args;
+    
+    // Verify correct queue URL (import worker for code fix)
+    expect(queueUrl).to.equal('import-worker-queue');
+    
+    // Verify message structure
+    expect(message).to.have.property('type', 'code');
+    expect(message).to.have.property('siteId', 'site-1');
+    expect(message).to.have.property('allowCache', true);
+    expect(message).to.have.property('data').that.is.an('object');
+    expect(message).to.have.property('forward');
+    
+    // Verify forward configuration
+    expect(message.forward).to.have.property('queue', 'test-queue');
+    expect(message.forward).to.have.property('payload');
+    
+    // Verify forward payload structure
+    const { payload } = message.forward;
+    expect(payload).to.have.property('type', 'guidance:accessibility-remediation');
+    expect(payload).to.have.property('siteId', 'site-1');
+    expect(payload).to.have.property('auditId', 'audit-1');
+    expect(payload).to.have.property('deliveryType', 'aem_edge');
+    expect(payload).to.have.property('data');
+    expect(payload.data).to.have.property('url', 'https://example.com');
+    expect(payload.data).to.have.property('opportunityId', 'oppty-1');
+    expect(payload.data).to.have.property('issuesList').that.is.an('array');
+    
+    // Note: codeBucket and codePath should NOT be in the payload
+    // They will be added by the import worker
+    expect(payload.data).to.not.have.property('codeBucket');
+    expect(payload.data).to.not.have.property('codePath');
+  });
+
+  it('should send messages directly to Mystique for non-code-fix issues', async () => {
+    const sendMessageSpy = sandbox.spy();
+    mockContext.sqs.sendMessage = sendMessageSpy;
+    mockOpportunity.getSuggestions = sandbox.stub().resolves([
+      {
+        getData: () => ({
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div',
+                },
+              ],
+            },
+          ],
+        }),
+        getStatus: () => 'NEW',
+        getId: () => 'suggestion-1',
+      },
+    ]);
+
+    const module = await esmock('../../../src/accessibility/utils/generate-individual-opportunities.js', {
+      '../../../src/accessibility/guidance-utils/mystique-data-processing.js': {
+        processSuggestionsForMystique: sandbox.stub().returns([
+          {
+            url: 'https://example.com',
+            issuesList: [{ issueName: 'color-contrast' }], // This is NOT in issueTypesForCodeFix
+          },
+        ]),
+      },
+      '../../../src/common/audit-utils.js': {
+        isAuditEnabledForSite: mockIsAuditEnabledForSite,
+      },
+    });
+
+    await module.sendMessageToMystiqueForRemediation(
+      mockOpportunity,
+      mockContext,
+      mockLog,
+    );
+
+    // Verify message sent directly to Mystique (legacy flow)
+    expect(sendMessageSpy).to.have.been.calledOnce;
+    const [queueUrl, message] = sendMessageSpy.firstCall.args;
+    
+    // Verify correct queue URL (directly to Mystique for legacy flow)
+    expect(queueUrl).to.equal('test-queue');
+    
+    // Verify message structure (direct Mystique message)
+    expect(message).to.have.property('type', 'guidance:accessibility-remediation');
+    expect(message).to.have.property('siteId', 'site-1');
+    expect(message).to.have.property('auditId', 'audit-1');
+    expect(message).to.have.property('deliveryType', 'aem_edge');
+    expect(message).to.have.property('data');
+    expect(message.data).to.have.property('url', 'https://example.com');
+    expect(message.data).to.have.property('opportunityId', 'oppty-1');
+    expect(message.data).to.have.property('issuesList').that.is.an('array');
+    
+    // In legacy flow, there's no forward configuration
+    expect(message).to.not.have.property('forward');
   });
 
   it('should handle errors in main try block and throw with proper logging', async () => {
@@ -3074,13 +3224,16 @@ describe('sendMystiqueMessage error handling', () => {
 
   it('should handle sendMessage errors and return failure object', async () => {
     const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('SQS connection failed')) };
-    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
+    const fakeEnv = { 
+      IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
+      QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+    };
     const fakeLog = { info: sinon.stub(), error: sinon.stub() };
     const fakeOpportunity = { getId: () => 'oppty-456' };
 
     const result = await testModule.sendMystiqueMessage({
       url: 'https://example.com',
-      issuesList: [{ issue_name: 'aria-allowed-attr' }],
+      issuesList: [{ issueName: 'aria-allowed-attr' }],
       opportunity: fakeOpportunity,
       siteId: 'site-123',
       auditId: 'audit-456',
@@ -3099,19 +3252,22 @@ describe('sendMystiqueMessage error handling', () => {
 
     // Should log the error
     expect(fakeLog.error).to.have.been.calledWithMatch(
-      '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://example.com',
+      '[A11yIndividual][A11yProcessingError] Failed to send message to import worker for url https://example.com',
     );
   });
 
   it('should handle sendMessage errors with different URL', async () => {
     const fakeSqs = { sendMessage: sinon.stub().rejects(new Error('Network error')) };
-    const fakeEnv = { QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue' };
+    const fakeEnv = { 
+      IMPORT_WORKER_QUEUE_URL: 'import-worker-queue',
+      QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+    };
     const fakeLog = { info: sinon.stub(), error: sinon.stub() };
     const fakeOpportunity = { getId: () => 'oppty-456' };
 
     const result = await testModule.sendMystiqueMessage({
       url: 'https://test.com',
-      issuesList: [{ issue_name: 'color-contrast' }],
+      issuesList: [{ issueName: 'color-contrast' }],
       opportunity: fakeOpportunity,
       siteId: 'site-123',
       auditId: 'audit-456',
@@ -3128,7 +3284,7 @@ describe('sendMystiqueMessage error handling', () => {
       error: 'Network error',
     });
 
-    // Should log the error
+    // Should log the error - color-contrast uses legacy flow (direct to Mystique)
     expect(fakeLog.error).to.have.been.calledWithMatch(
       '[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url https://test.com',
     );
@@ -3216,7 +3372,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
         pageUrl: 'https://example.com/page1',
         remediations: [
           {
-            issue_name: 'aria-allowed-attr',
+            issueName: 'aria-allowed-attr',
             general_suggestion: 'Remove disallowed ARIA attributes',
             update_to: '<div>Content</div>',
             user_impact: 'Improves screen reader accessibility',
@@ -3238,10 +3394,10 @@ describe('handleAccessibilityRemediationGuidance', () => {
       failedSuggestionIds: [],
     });
 
-    expect(mockLog.debug).to.have.been.calledWith(
+    expect(mockLog.info).to.have.been.calledWith(
       '[A11yRemediationGuidance] site site-456, audit audit-new-123, page https://example.com/page1, opportunity oppty-123: Received accessibility remediation guidance with 1 remediations and 1 total issues',
     );
-    expect(mockLog.debug).to.have.been.calledWith(
+    expect(mockLog.info).to.have.been.calledWith(
       '[A11yRemediationGuidance] site site-456, audit audit-new-123, page https://example.com/page1, opportunity oppty-123: Successfully processed 1 remediations',
     );
 
@@ -3356,7 +3512,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
         pageUrl: 'https://example.com/page1',
         remediations: [
           {
-            issue_name: 'aria-allowed-attr',
+            issueName: 'aria-allowed-attr',
             general_suggestion: 'Remove disallowed ARIA attributes',
             update_to: '<div>Content</div>',
             user_impact: 'Improves screen reader accessibility',
@@ -3441,7 +3597,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
         pageUrl: 'https://example.com/page1',
         remediations: [
           {
-            issue_name: 'some-other-issue',
+            issueName: 'some-other-issue',
             general_suggestion: 'Some suggestion',
             update_to: '<div>Fixed</div>',
             user_impact: 'Some impact',
@@ -3623,14 +3779,14 @@ describe('handleAccessibilityRemediationGuidance', () => {
         pageUrl: 'https://example.com/page1',
         remediations: [
           {
-            issue_name: 'aria-allowed-attr',
+            issueName: 'aria-allowed-attr',
             general_suggestion: 'Remove disallowed ARIA attributes',
             update_to: '<div>Content</div>',
             user_impact: 'Improves screen reader accessibility',
             suggestionId: 'sugg-789',
           },
           {
-            issue_name: 'color-contrast',
+            issueName: 'color-contrast',
             general_suggestion: 'Improve color contrast',
             update_to: '<div style="color: #000">Content</div>',
             user_impact: 'Improves readability',
@@ -3701,14 +3857,14 @@ describe('handleAccessibilityRemediationGuidance', () => {
         pageUrl: 'https://example.com/page1',
         remediations: [
           {
-            issue_name: 'aria-allowed-attr',
+            issueName: 'aria-allowed-attr',
             general_suggestion: 'Remove disallowed ARIA attributes',
             update_to: '<div>Content</div>',
             user_impact: 'Improves screen reader accessibility',
             suggestionId: 'sugg-789',
           },
           {
-            issue_name: 'color-contrast',
+            issueName: 'color-contrast',
             general_suggestion: 'Improve color contrast',
             update_to: '<div style="color: #000">Content</div>',
             user_impact: 'Improves readability',
@@ -3728,7 +3884,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
       notFoundSuggestionIds: [],
       invalidRemediations: [
         {
-          issue_name: 'color-contrast',
+          issueName: 'color-contrast',
           general_suggestion: 'Improve color contrast',
           update_to: '<div style="color: #000">Content</div>',
           user_impact: 'Improves readability',
@@ -3774,14 +3930,14 @@ describe('handleAccessibilityRemediationGuidance', () => {
         pageUrl: 'https://example.com/page1',
         remediations: [
           {
-            issue_name: 'aria-allowed-attr',
+            issueName: 'aria-allowed-attr',
             general_suggestion: 'Remove disallowed ARIA attributes',
             update_to: '<div>Content</div>',
             user_impact: 'Improves screen reader accessibility',
             suggestionId: 'sugg-789',
           },
           {
-            issue_name: 'color-contrast',
+            issueName: 'color-contrast',
             general_suggestion: 'Improve color contrast',
             update_to: '<div style="color: #000">Content</div>',
             user_impact: 'Improves readability',
@@ -3875,14 +4031,14 @@ describe('handleAccessibilityRemediationGuidance', () => {
         pageUrl: 'https://example.com/page1',
         remediations: [
           {
-            issue_name: 'aria-allowed-attr',
+            issueName: 'aria-allowed-attr',
             general_suggestion: 'Remove disallowed ARIA attributes',
             update_to: '<div>Content</div>',
             user_impact: 'Improves screen reader accessibility',
             suggestionId: 'sugg-789',
           },
           {
-            issue_name: 'color-contrast',
+            issueName: 'color-contrast',
             general_suggestion: 'Improve color contrast',
             update_to: '<div style="color: #000">Content</div>',
             user_impact: 'Improves readability',
@@ -3910,7 +4066,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     expect(mockLog.warn).to.have.been.calledWith(
       '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: 1 suggestions failed to save: sugg-789',
     );
-    expect(mockLog.debug).to.have.been.calledWith(
+    expect(mockLog.info).to.have.been.calledWith(
       '[A11yRemediationGuidance] site site-456, audit audit-123, page https://example.com/page1, opportunity oppty-123: Successfully processed 1 remediations',
     );
   });
@@ -3985,7 +4141,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
         pageUrl: 'https://example.com/page1',
         remediations: [
           {
-            issue_name: 'aria-allowed-attr',
+            issueName: 'aria-allowed-attr',
             general_suggestion: 'Remove disallowed ARIA attributes',
             update_to: '<div>Content</div>',
             user_impact: 'Improves screen reader accessibility',
@@ -4011,7 +4167,7 @@ describe('handleAccessibilityRemediationGuidance', () => {
     });
 
     // Verify that the success log message for metrics saving was called (line 889)
-    expect(mockLog.debug).to.have.been.calledWith(
+    expect(mockLog.info).to.have.been.calledWith(
       '[A11yRemediationGuidance] Saved complete Mystique validation metrics for opportunity oppty-123, page https://example.com/page1: sent=1, received=1',
     );
   });
