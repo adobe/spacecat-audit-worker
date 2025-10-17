@@ -818,6 +818,7 @@ export async function sendCodeFixMessagesToImporter(opportunity, auditId, contex
           siteId,
           auditId,
           url: baseUrl,
+          deliveryType: site.getDeliveryType(),
           data: {
             opportunityId: opportunity.getId(),
             suggestionIds: group.suggestionIds,
