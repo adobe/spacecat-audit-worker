@@ -13,6 +13,7 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { sendSQSMessageForAutoSuggest, needsAutoSuggest } from '../../../src/cwv/utils.js';
 
 describe('sendSQSMessageForAutoSuggest', () => {
@@ -316,12 +317,6 @@ describe('needsAutoSuggest', () => {
   const sandbox = sinon.createSandbox();
 
   beforeEach(() => {
-    site = {
-      getId: sandbox.stub().returns('test-site-id'),
-      getBaseURL: sandbox.stub().returns('https://example.com'),
-      getDeliveryType: sandbox.stub().returns('aem_cs'),
-    };
-
     context = {
       log: {
         info: sandbox.stub(),
@@ -329,10 +324,29 @@ describe('needsAutoSuggest', () => {
       },
       dataAccess: {
         Configuration: {
-          findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: () => true }),
+          findLatest: sandbox.stub().resolves({
+            getHandlers: () => ({
+              'cwv-auto-suggest': {
+                productCodes: ['aem-sites'],
+              },
+            }),
+            isHandlerEnabledForSite: () => true,
+          }),
         },
       },
     };
+    
+    site = {
+      getId: sandbox.stub().returns('test-site-id'),
+      getBaseURL: sandbox.stub().returns('https://example.com'),
+      getDeliveryType: sandbox.stub().returns('aem_cs'),
+    };
+    
+    // Mock TierClient for entitlement checks
+    const mockTierClient = {
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+    };
+    sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
   });
 
   afterEach(() => {
@@ -434,8 +448,13 @@ describe('needsAutoSuggest', () => {
   });
 
   it('returns false when CWV auto-suggest feature toggle is disabled', async () => {
-    // Mock feature toggle as disabled
+    // Mock feature toggle as disabled (handler returns false)
     context.dataAccess.Configuration.findLatest.resolves({
+      getHandlers: () => ({
+        'cwv-auto-suggest': {
+          productCodes: ['aem-sites'],
+        },
+      }),
       isHandlerEnabledForSite: () => false,
     });
 
