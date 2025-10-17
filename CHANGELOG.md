@@ -1,3 +1,32 @@
+# [1.211.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.8...v1.211.0) (2025-10-17)
+
+
+### Features
+
+* added security permission audit ([#1371](https://github.com/adobe/spacecat-audit-worker/issues/1371)) Issue [#1425](https://github.com/adobe/spacecat-audit-worker/issues/1425)  ([9f7b0ac](https://github.com/adobe/spacecat-audit-worker/commit/9f7b0acbf932c0c0ff3928c53a328bf7f5dc7b1b))
+
+## [1.210.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.7...v1.210.8) (2025-10-17)
+
+
+### Bug Fixes
+
+* remove api triggered checks to configuration based ([#1407](https://github.com/adobe/spacecat-audit-worker/issues/1407)) ([18d5bb3](https://github.com/adobe/spacecat-audit-worker/commit/18d5bb3d56d4ed6ce14890001fcb4c9f21c8d691))
+
+## [1.210.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.6...v1.210.7) (2025-10-17)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1422](https://github.com/adobe/spacecat-audit-worker/issues/1422)) ([3bd5ed9](https://github.com/adobe/spacecat-audit-worker/commit/3bd5ed9471032559aca1ddb3334eb907fadc365f))
+
+## [1.210.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.5...v1.210.6) (2025-10-16)
+
+
+### Bug Fixes
+
+* Audit tier integration ([#1395](https://github.com/adobe/spacecat-audit-worker/issues/1395)) ([84b0ff7](https://github.com/adobe/spacecat-audit-worker/commit/84b0ff7c19b6510336094339ca141508558a05aa))
+* fix CWV unit tests ([#1428](https://github.com/adobe/spacecat-audit-worker/issues/1428)) ([17b7be9](https://github.com/adobe/spacecat-audit-worker/commit/17b7be9f1899280f91d377881e73a48ea0538328))
+
 ## [1.210.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.4...v1.210.5) (2025-10-16)
 
 
