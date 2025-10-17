@@ -12,7 +12,7 @@
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 
 const GUIDANCE_TYPE = 'detect:page-types';
-const MIN_ACCURACY_THRESHOLD = 85;
+const MIN_ACCURACY_THRESHOLD = 75;
 
 function convertPatternsToPageTypes(patterns) {
   return patterns.map((item) => ({
