@@ -5163,6 +5163,7 @@ describe('data-processing utility functions', () => {
       // Create mock site
       mockSite = {
         getBaseURL: sandbox.stub().returns('https://example.com'),
+        getDeliveryType: sandbox.stub().returns('aem_cs'),
       };
 
       // Create context with stubs
