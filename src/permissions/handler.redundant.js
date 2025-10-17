@@ -118,7 +118,7 @@ export const redundantPermissionsOpportunityStep = async (auditUrl, auditData, c
   // Check whether the audit is enabled for the site
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite('security-permissions-redundant', site)) {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
+    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] audit is disabled for site`);
     return { status: 'complete' };
   }
 
