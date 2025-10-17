@@ -1,3 +1,10 @@
+## [1.210.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.7...v1.210.8) (2025-10-17)
+
+
+### Bug Fixes
+
+* remove api triggered checks to configuration based ([#1407](https://github.com/adobe/spacecat-audit-worker/issues/1407)) ([18d5bb3](https://github.com/adobe/spacecat-audit-worker/commit/18d5bb3d56d4ed6ce14890001fcb4c9f21c8d691))
+
 ## [1.210.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.6...v1.210.7) (2025-10-17)
 
 
