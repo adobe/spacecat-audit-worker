@@ -19,6 +19,8 @@ import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-u
 import sqs from './support/sqs.js';
 import s3Client from './support/s3-client.js';
 import accessibility from './accessibility/handler.js';
+import accessibilityDesktop from './accessibility/handler-desktop.js';
+import accessibilityMobile from './accessibility/handler-mobile.js';
 import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
@@ -85,6 +87,8 @@ import permissionsRedundant from './permissions/handler.redundant.js';
 
 const HANDLERS = {
   accessibility,
+  'accessibility-desktop': accessibilityDesktop,
+  'accessibility-mobile': accessibilityMobile,
   apex,
   cwv,
   'lhs-mobile': lhsMobile,
