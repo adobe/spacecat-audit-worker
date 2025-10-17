@@ -76,7 +76,7 @@ export default async function handler(message, context) {
     auditResult = {
       ...auditResult,
       success: true,
-      patterns: patterns || [],
+      patterns,
       patternsCount: patterns?.length || 0,
       accuracy: accuracyPct,
       sampleSize: validation?.sample_size,
