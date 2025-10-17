@@ -48,7 +48,7 @@ describe('Headings Audit', () => {
     nock.cleanAll();
     context = {
       log,
-      env: { 
+      env: {
         S3_SCRAPER_BUCKET_NAME: 'test-bucket',
         AZURE_OPENAI_ENDPOINT: 'https://test-endpoint.com',
         AZURE_OPENAI_KEY: 'test-key',
@@ -69,15 +69,15 @@ describe('Headings Audit', () => {
     const mockFetchChatCompletion = sinon.stub().resolves({
       choices: [{ message: { content: '{"h1":{"aiSuggestion":"Test Suggestion","aiRationale":"Test Rationale"}}' } }],
     });
-    
+
     const mockClient = {
       fetchChatCompletion: mockFetchChatCompletion,
     };
-    
+
     sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
 
     // Mock SeoChecks
-    seoChecks = { 
+    seoChecks = {
       performChecks: sinon.stub(),
       getFewHealthyTags: sinon.stub().returns({
         title: ['Test Title'],
@@ -111,7 +111,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -131,7 +131,7 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
@@ -144,7 +144,7 @@ describe('Headings Audit', () => {
     expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion);
     expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].urls).to.be.an('array').with.lengthOf.at.least(1);
     expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].urls[0].url).to.equal(url);
-    
+
     // Check heading-no-content
     expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
     expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
@@ -172,7 +172,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -192,7 +192,7 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
@@ -224,7 +224,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -244,13 +244,13 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
     const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
-    
+
     // When no issues are found, result should indicate success
     expect(result.status).to.equal('success');
     expect(result.message).to.equal('No heading issues detected');
@@ -274,7 +274,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -294,7 +294,7 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
@@ -327,7 +327,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -347,7 +347,7 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
@@ -381,7 +381,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -401,7 +401,7 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
@@ -434,7 +434,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -454,7 +454,7 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
@@ -487,7 +487,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -507,7 +507,7 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
@@ -542,7 +542,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -562,7 +562,7 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
@@ -571,11 +571,11 @@ describe('Headings Audit', () => {
     expect(result.auditResult.status).to.equal('success');
     expect(result.auditResult.message).to.equal('No heading issues detected');
 
-    expect(logSpy.info).to.have.been.calledWith(
+    expect(logSpy.debug).to.have.been.calledWith(
       sinon.match(/Found 0 issues across 0 check types/),
     );
   });
-  
+
   it('validates null/undefined URL in validatePageHeadings', async () => {
     const result = await validatePageHeadings(
       null,
@@ -587,7 +587,7 @@ describe('Headings Audit', () => {
       context,
       seoChecks,
     );
-    
+
     expect(result.url).to.be.null;
     expect(result.checks).to.deep.equal([]);
   });
@@ -603,7 +603,7 @@ describe('Headings Audit', () => {
       context,
       seoChecks,
     );
-    
+
     expect(result.url).to.equal('');
     expect(result.checks).to.deep.equal([]);
   });
@@ -612,7 +612,7 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/missing-page';
     // Mock empty allKeys to simulate missing scrape file
     const emptyKeys = [];
-    
+
     const result = await validatePageHeadings(
       url,
       log,
@@ -623,7 +623,7 @@ describe('Headings Audit', () => {
       context,
       seoChecks,
     );
-    
+
     expect(result).to.be.null;
   });
 
@@ -632,7 +632,7 @@ describe('Headings Audit', () => {
     s3Client.send.resolves({
       Body: null,
     });
-    
+
     const result = await validatePageHeadings(
       url,
       log,
@@ -643,7 +643,7 @@ describe('Headings Audit', () => {
       context,
       seoChecks,
     );
-    
+
     expect(result).to.be.null;
   });
 
@@ -665,7 +665,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -685,13 +685,13 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
     const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
-    
+
     // Should pass with no heading issues since content exists between headings
     expect(result.status).to.equal('success');
     expect(result.message).to.equal('No heading issues detected');
@@ -715,7 +715,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -735,13 +735,13 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
     const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
-    
+
     // Should pass with no heading issues since IMG is considered content
     expect(result.status).to.equal('success');
     expect(result.message).to.equal('No heading issues detected');
@@ -765,7 +765,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -785,13 +785,13 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
     const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
-    
+
     // Should pass with no heading issues since text node exists between headings
     expect(result.status).to.equal('success');
     expect(result.message).to.equal('No heading issues detected');
@@ -815,7 +815,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -835,7 +835,7 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
@@ -853,7 +853,7 @@ describe('Headings Audit', () => {
   it('logs duplicate heading text detection message', async () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
-    
+
     s3Client.send.resolves({
       Body: {
         transformToString: () => JSON.stringify({
@@ -872,11 +872,11 @@ describe('Headings Audit', () => {
     });
 
     const result = await validatePageHeadings(url, logSpy, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    
+
     // Verify the duplicate text check was added
     const duplicateChecks = result.checks.filter(c => c.check === HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check);
     expect(duplicateChecks.length).to.be.at.least(1);
-    
+
     // Verify the first duplicate check has correct properties
     expect(duplicateChecks[0]).to.include({
       check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
@@ -887,14 +887,14 @@ describe('Headings Audit', () => {
       count: 2,
     });
     expect(duplicateChecks[0].duplicates).to.deep.equal(['H2', 'H3']);
-    
+
     // Verify the log message was called with the correct format
-    expect(logSpy.info).to.have.been.calledWith(
+    expect(logSpy.debug).to.have.been.calledWith(
       sinon.match(/Duplicate heading text detected at.*"Duplicate Text" found in H2, H3/)
     );
-    
+
     // Verify second duplicate was also logged
-    expect(logSpy.info).to.have.been.calledWith(
+    expect(logSpy.debug).to.have.been.calledWith(
       sinon.match(/Duplicate heading text detected at.*"Another Duplicate Text" found in H4, H5/)
     );
   });
@@ -917,7 +917,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -937,13 +937,13 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
     const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
-    
+
     expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
     expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
     expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation);
@@ -958,7 +958,7 @@ describe('Headings Audit', () => {
       const auditData = {
         auditResult: { status: 'success', message: 'No issues found' }
       };
-      
+
       const result = generateSuggestions(auditUrl, auditData, context);
       expect(result).to.deep.equal(auditData);
     });
@@ -968,7 +968,7 @@ describe('Headings Audit', () => {
       const auditData = {
         auditResult: { error: 'Audit failed' }
       };
-      
+
       const result = generateSuggestions(auditUrl, auditData, context);
       expect(result).to.deep.equal(auditData);
     });
@@ -989,9 +989,9 @@ describe('Headings Audit', () => {
           }
         }
       };
-      
+
       const result = generateSuggestions(auditUrl, auditData, context);
-      
+
       expect(result.suggestions).to.have.lengthOf(3);
       expect(result.suggestions[0]).to.deep.include({
         type: 'CODE_CHANGE',
@@ -1013,9 +1013,9 @@ describe('Headings Audit', () => {
           }
         }
       };
-      
+
       const result = generateSuggestions(auditUrl, auditData, context);
-      
+
       expect(result.suggestions[0].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
     });
 
@@ -1050,9 +1050,9 @@ describe('Headings Audit', () => {
           }
         }
       };
-      
+
       const result = generateSuggestions(auditUrl, auditData, context);
-      
+
       expect(result.suggestions).to.have.lengthOf(5);
       expect(result.suggestions[0].recommendedAction).to.equal('Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).');
       expect(result.suggestions[1].recommendedAction).to.equal('Provide meaningful text content for the empty heading or remove the element.');
@@ -1072,7 +1072,7 @@ describe('Headings Audit', () => {
       convertToOpportunityStub = sinon.stub().resolves({
         getId: () => 'test-opportunity-id'
       });
-      
+
       syncSuggestionsStub = sinon.stub().resolves();
 
       // Mock the handler with stubbed dependencies
@@ -1091,7 +1091,7 @@ describe('Headings Audit', () => {
     it('skips opportunity creation when no suggestions', async () => {
       const auditUrl = 'https://example.com';
       const auditData = { suggestions: [] };
-      
+
       const result = await mockedOpportunityAndSuggestions(auditUrl, auditData, context);
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).not.to.have.been.called;
@@ -1110,13 +1110,13 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       const result = await mockedOpportunityAndSuggestions(auditUrl, auditData, context);
-      
+
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
-      
+
       const syncCall = syncSuggestionsStub.getCall(0);
       expect(syncCall.args[0]).to.have.property('opportunity');
       expect(syncCall.args[0]).to.have.property('newData', auditData.suggestions);
@@ -1142,7 +1142,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -1162,13 +1162,13 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
     const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
-    
+
     // Should pass with no heading issues since HR is considered content even without text
     expect(result.status).to.equal('success');
     expect(result.message).to.equal('No heading issues detected');
@@ -1192,7 +1192,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -1212,13 +1212,13 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
     const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
-    
+
     // Should pass with no heading issues since content is eventually found after iterating through empty siblings
     expect(result.status).to.equal('success');
     expect(result.message).to.equal('No heading issues detected');
@@ -1242,7 +1242,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -1262,13 +1262,13 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
     const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
-    
+
     // Should detect no content between h1 and h2 after iterating through all empty siblings
     expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
     expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
@@ -1280,19 +1280,19 @@ describe('Headings Audit', () => {
 
   it('handles validatePageHeadings error gracefully', async () => {
     const url = 'https://example.com/page';
-    
+
     // Mock s3Client to throw an error - this will cause getObjectFromKey to return null
     s3Client.send.rejects(new Error('S3 connection failed'));
-    
+
     const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    
+
     // When getObjectFromKey returns null due to S3 error, validatePageHeadings returns null
     expect(result).to.be.null;
   });
 
   it('handles DOM processing error in validatePageHeadings catch block', async () => {
     const url = 'https://example.com/page';
-    
+
     // Mock successful S3 response
     s3Client.send.resolves({
       Body: {
@@ -1328,9 +1328,9 @@ describe('Headings Audit', () => {
         }
       },
     });
-    
+
     const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    
+
     // This should trigger the catch block and return the error object with url and empty checks
     expect(result.url).to.equal(url);
     expect(result.checks).to.deep.equal([]);
@@ -1338,7 +1338,7 @@ describe('Headings Audit', () => {
 
   it('handles getH1HeadingASuggestion AI errors gracefully', async () => {
     const url = 'https://example.com/page';
-    
+
     // Mock AI client to throw an error
     const mockClient = {
       fetchChatCompletion: sinon.stub().rejects(new Error('AI service unavailable')),
@@ -1365,7 +1365,7 @@ describe('Headings Audit', () => {
 
     // validatePageHeadings should return normal checks (AI is called later in headingsAuditRunner)
     const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    
+
     // Should return normal checks since AI is not called during validatePageHeadings
     expect(result.url).to.equal(url);
     expect(result.checks).to.have.length.greaterThan(0);
@@ -1373,7 +1373,7 @@ describe('Headings Audit', () => {
 
   it('handles getH1HeadingASuggestion JSON parsing errors', async () => {
     const url = 'https://example.com/page';
-    
+
     // Mock AI client to return invalid JSON
     const mockClient = {
       fetchChatCompletion: sinon.stub().resolves({
@@ -1402,7 +1402,7 @@ describe('Headings Audit', () => {
 
     // validatePageHeadings should return normal checks (AI is called later in headingsAuditRunner)
     const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    
+
     // Should return normal checks since AI is not called during validatePageHeadings
     expect(result.url).to.equal(url);
     expect(result.checks).to.have.length.greaterThan(0);
@@ -1418,7 +1418,7 @@ describe('Headings Audit', () => {
       finalUrl: url,
     };
     const brandGuidelines = { guidelines: 'Test guidelines' };
-    
+
     // Mock AI client to return valid JSON with suggestion
     const mockClient = {
       fetchChatCompletion: sinon.stub().resolves({
@@ -1430,17 +1430,17 @@ describe('Headings Audit', () => {
 
     // Use esmock to access the internal function
     const mockedHandler = await esmock('../../src/headings/handler.js', {});
-    
+
     // Test the function through the headingsAuditRunner flow instead of direct access
     const baseURL = 'https://example.com';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock getTopPagesForSiteId to return pages
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -1455,7 +1455,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -1474,13 +1474,13 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
     const result = await mockedHandlerWithStubs.headingsAuditRunner(baseURL, context, site);
-    
+
     // Verify that AI suggestion was called (through the audit flow)
     expect(mockClient.fetchChatCompletion).to.have.been.called;
   });
@@ -1490,7 +1490,7 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock AI client to return valid JSON but without the expected h1.aiSuggestion structure
     const mockClient = {
       fetchChatCompletion: sinon.stub().resolves({
@@ -1504,7 +1504,7 @@ describe('Headings Audit', () => {
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -1527,7 +1527,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -1546,21 +1546,21 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
     const result = await mockedHandlerWithStubs.headingsAuditRunner(baseURL, context, site);
-    
+
     // Verify that the error was logged for invalid response structure
     expect(logSpy.error).to.have.been.calledWith(
       sinon.match(/Invalid response structure.*Expected h1.aiSuggestion/)
     );
-    
+
     // Verify that AI suggestion was attempted but returned null due to invalid structure
     expect(mockClient.fetchChatCompletion).to.have.been.called;
-    
+
     // The audit should still complete with the heading issue detected (but no AI suggestion)
     expect(result.auditResult['heading-missing-h1']).to.exist;
     expect(result.auditResult['heading-missing-h1'].urls[0].url).to.equal(url);
@@ -1573,7 +1573,7 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock AI client with different behavior for each call:
     // - First call (getBrandGuidelines): succeed
     // - Second call (getH1HeadingASuggestion): fail
@@ -1598,7 +1598,7 @@ describe('Headings Audit', () => {
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -1621,7 +1621,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -1640,21 +1640,21 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
     const result = await mockedHandlerWithStubs.headingsAuditRunner(baseURL, context, site);
-    
+
     // Verify that the error was logged in the catch block
     expect(logSpy.error).to.have.been.calledWith(
       sinon.match(/Error for empty heading suggestion/)
     );
-    
+
     // Verify that AI suggestion was attempted (called at least twice)
     expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(2);
-    
+
     // The audit should still complete with the heading issue detected (but no AI suggestion)
     expect(result.auditResult['heading-missing-h1']).to.exist;
     expect(result.auditResult['heading-missing-h1'].urls[0].url).to.equal(url);
@@ -1665,7 +1665,7 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock getPrompt with different behavior for each call:
     // - First call (getBrandGuidelines): succeed
     // - Second call (getH1HeadingASuggestion): fail
@@ -1679,7 +1679,7 @@ describe('Headings Audit', () => {
       // Second call for getH1HeadingASuggestion - fail
       return Promise.reject(new Error('Prompt template not found'));
     });
-    
+
     // Mock AI client for getBrandGuidelines
     const mockClient = {
       fetchChatCompletion: sinon.stub().resolves({
@@ -1693,7 +1693,7 @@ describe('Headings Audit', () => {
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -1719,7 +1719,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -1738,21 +1738,21 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
     const result = await mockedHandlerWithStubs.headingsAuditRunner(baseURL, context, site);
-    
+
     // Verify that the error was logged in the outer catch block (line 478)
     expect(logSpy.error).to.have.been.calledWith(
       sinon.match(/Error generating AI suggestion for.*Prompt template not found/)
     );
-    
+
     // Verify getPrompt was called at least twice
     expect(getPromptStub.callCount).to.be.at.least(2);
-    
+
     // The audit should still complete with the heading issue detected (but no AI suggestion)
     expect(result.auditResult['heading-missing-h1']).to.exist;
     expect(result.auditResult['heading-missing-h1'].urls[0].url).to.equal(url);
@@ -1763,7 +1763,7 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock AI client to return valid suggestions
     const mockClient = {
       fetchChatCompletion: sinon.stub().resolves({
@@ -1777,7 +1777,7 @@ describe('Headings Audit', () => {
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -1801,7 +1801,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -1823,17 +1823,17 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
     const result = await mockedHandlerWithStubs.headingsAuditRunner(baseURL, context, site);
-    
+
     // Verify the audit completed successfully despite missing pageTags
     expect(result.auditResult['heading-missing-h1']).to.exist;
     expect(result.auditResult['heading-missing-h1'].urls[0].url).to.equal(url);
-    
+
     // Verify AI suggestion was called (which means the fallback values were used)
     expect(mockClient.fetchChatCompletion).to.have.been.called;
   });
@@ -1843,7 +1843,7 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock AI client to succeed for both getBrandGuidelines and getH1HeadingASuggestion
     const mockClient = {
       fetchChatCompletion: sinon.stub()
@@ -1861,7 +1861,7 @@ describe('Headings Audit', () => {
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -1884,7 +1884,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -1903,17 +1903,17 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
     const result = await mockedHandlerWithStubs.headingsAuditRunner(baseURL, context, site);
-    
+
     // Verify the audit completed successfully with null/empty brandGuidelines (uses '' fallback)
     expect(result.auditResult['heading-missing-h1']).to.exist;
     expect(result.auditResult['heading-missing-h1'].urls[0].url).to.equal(url);
-    
+
     // Verify AI suggestion was called twice
     expect(mockClient.fetchChatCompletion.callCount).to.equal(2);
   });
@@ -1923,7 +1923,7 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock AI client to return valid suggestions
     const mockClient = {
       fetchChatCompletion: sinon.stub()
@@ -1941,7 +1941,7 @@ describe('Headings Audit', () => {
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -1965,7 +1965,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -1985,20 +1985,20 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
     const result = await mockedHandlerWithStubs.headingsAuditRunner(baseURL, context, site);
-    
+
     // Verify the audit completed successfully with all properties provided
     expect(result.auditResult['heading-missing-h1']).to.exist;
     expect(result.auditResult['heading-missing-h1'].urls[0].url).to.equal(url);
-    
+
     // Verify AI suggestion was called twice (once for brand guidelines, once for H1 suggestion)
     expect(mockClient.fetchChatCompletion.callCount).to.equal(2);
-    
+
     // This test ensures the truthy branches are taken:
     // - finalUrl uses actual value (not '')
     // - h1 uses actual array value (not '')
@@ -2011,7 +2011,7 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy(), warn: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock AI client to return valid suggestions
     const mockClient = {
       fetchChatCompletion: sinon.stub()
@@ -2029,7 +2029,7 @@ describe('Headings Audit', () => {
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandlerWithStubs = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -2053,7 +2053,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -2073,21 +2073,21 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
-    
+
     // To properly test pageTags being null/undefined, we need to mock getH1HeadingASuggestion
     // being called with null pageTags. We'll use esmock to intercept and test this.
     // For now, let's test through the existing flow and verify it handles undefined properties
     const result = await mockedHandlerWithStubs.headingsAuditRunner(baseURL, context, site);
-    
+
     // Verify the audit completed successfully even when pageTags properties are missing
     expect(result.auditResult['heading-missing-h1']).to.exist;
     expect(result.auditResult['heading-missing-h1'].urls[0].url).to.equal(url);
-    
+
     // Verify AI suggestion was called
     expect(mockClient.fetchChatCompletion.callCount).to.be.at.least(2);
   });
@@ -2095,7 +2095,7 @@ describe('Headings Audit', () => {
   it('handles getH1HeadingASuggestion with completely null pageTags object', async () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
-    
+
     // Test calling getH1HeadingASuggestion directly through validatePageHeadings
     // with a scenario where pageTags could be null
     s3Client.send.resolves({
@@ -2119,11 +2119,11 @@ describe('Headings Audit', () => {
     // This creates a scenario where pageTags properties are all null/empty
     // The optional chaining will safely return undefined for all properties
     const result = await validatePageHeadings(url, logSpy, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    
+
     // Verify the result still contains checks (HEADING_MISSING_H1)
     expect(result.url).to.equal(url);
     expect(result.checks).to.be.an('array');
-    
+
     // The pageTags object should be created with null/empty values as provided
     const missingH1Check = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_MISSING_H1.check);
     if (missingH1Check) {
@@ -2140,7 +2140,7 @@ describe('Headings Audit', () => {
 
   it('covers h1 fallback branch in validatePageHeadings (line 249)', async () => {
     const url = 'https://example.com/page';
-    
+
     s3Client.send.resolves({
       Body: {
         transformToString: () => JSON.stringify({
@@ -2159,7 +2159,7 @@ describe('Headings Audit', () => {
     });
 
     const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
-    
+
     // Verify that pageTags.h1 uses the fallback [] when h1 is null
     expect(result.checks).to.be.an('array');
     const missingH1Check = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_MISSING_H1.check);
@@ -2170,8 +2170,8 @@ describe('Headings Audit', () => {
 
   it('tests getH1HeadingASuggestion with null pageTags', async () => {
     const url = 'https://example.com/page';
-    const logSpy = { info: sinon.spy(), error: sinon.spy() };
-    
+    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+
     // Mock AI client
     const mockClient = {
       fetchChatCompletion: sinon.stub().resolves({
@@ -2180,7 +2180,7 @@ describe('Headings Audit', () => {
     };
     AzureOpenAIClient.createFrom.restore();
     sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-    
+
     // Call with null pageTags - this tests the optional chaining branches
     // pageTags?.finalUrl when pageTags is null → undefined → uses '' fallback
     // pageTags?.title when pageTags is null → undefined → uses '' fallback
@@ -2194,7 +2194,7 @@ describe('Headings Audit', () => {
       context,
       'Brand Guidelines'
     );
-    
+
     // Should still work with null pageTags
     expect(result).to.equal('Test Suggestion');
     expect(mockClient.fetchChatCompletion).to.have.been.called;
@@ -2202,8 +2202,8 @@ describe('Headings Audit', () => {
 
   it('tests getH1HeadingASuggestion with null brandGuidelines', async () => {
     const url = 'https://example.com/page';
-    const logSpy = { info: sinon.spy(), error: sinon.spy() };
-    
+    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+
     // Mock AI client
     const mockClient = {
       fetchChatCompletion: sinon.stub().resolves({
@@ -2212,7 +2212,7 @@ describe('Headings Audit', () => {
     };
     AzureOpenAIClient.createFrom.restore();
     sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-    
+
     const pageTags = {
       finalUrl: url,
       title: 'Test Title',
@@ -2220,7 +2220,7 @@ describe('Headings Audit', () => {
       description: 'Test Description',
       lang: 'en',
     };
-    
+
     // Call with null brandGuidelines - this tests the falsy branch of line 161
     // brandGuidelines || '' when brandGuidelines is null → uses '' fallback
     const result = await getH1HeadingASuggestion(
@@ -2230,7 +2230,7 @@ describe('Headings Audit', () => {
       context,
       null // brandGuidelines is null - tests the || '' fallback
     );
-    
+
     // Should still work with null brandGuidelines
     expect(result).to.equal('Test Suggestion with null guidelines');
     expect(mockClient.fetchChatCompletion).to.have.been.called;
@@ -2238,8 +2238,8 @@ describe('Headings Audit', () => {
 
   it('tests getH1HeadingASuggestion with undefined brandGuidelines', async () => {
     const url = 'https://example.com/page';
-    const logSpy = { info: sinon.spy(), error: sinon.spy() };
-    
+    const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
+
     // Mock AI client
     const mockClient = {
       fetchChatCompletion: sinon.stub().resolves({
@@ -2248,7 +2248,7 @@ describe('Headings Audit', () => {
     };
     AzureOpenAIClient.createFrom.restore();
     sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-    
+
     const pageTags = {
       finalUrl: url,
       title: 'Test Title',
@@ -2256,7 +2256,7 @@ describe('Headings Audit', () => {
       description: 'Test Description',
       lang: 'en',
     };
-    
+
     // Call with undefined brandGuidelines - this tests the falsy branch of line 161
     // brandGuidelines || '' when brandGuidelines is undefined → uses '' fallback
     const result = await getH1HeadingASuggestion(
@@ -2266,7 +2266,7 @@ describe('Headings Audit', () => {
       context,
       undefined // brandGuidelines is undefined - tests the || '' fallback
     );
-    
+
     // Should still work with undefined brandGuidelines
     expect(result).to.equal('Test Suggestion with undefined guidelines');
     expect(mockClient.fetchChatCompletion).to.have.been.called;
@@ -2278,7 +2278,7 @@ describe('Headings Audit', () => {
       description: 'Test Description 1, Test Description 2',
       h1: 'Test H1 1, Test H1 2',
     };
-    
+
     // Mock AI client to return valid brand guidelines
     const mockClient = {
       fetchChatCompletion: sinon.stub().resolves({
@@ -2293,12 +2293,12 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock getTopPagesForSiteId to return pages
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandler = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -2313,7 +2313,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -2332,13 +2332,13 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
     const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-    
+
     // Verify that brand guidelines generation was called (through the audit flow)
     expect(mockClient.fetchChatCompletion).to.have.been.called;
   });
@@ -2355,7 +2355,7 @@ describe('Headings Audit', () => {
 
     // Mock getTopPagesForSiteId to return empty array
     const getTopPagesForSiteIdStub = sinon.stub().resolves([]);
-    
+
     // Use esmock to replace the import
     const mockedHandler = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
@@ -2365,7 +2365,7 @@ describe('Headings Audit', () => {
 
     context.s3Client = s3Client;
     const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-    
+
     expect(result.auditResult).to.have.property('check', HEADINGS_CHECKS.TOPPAGES.check);
     expect(result.auditResult.success).to.be.false;
     expect(logSpy.warn).to.have.been.calledWith('[Headings Audit] No top pages found, ending audit.');
@@ -2375,10 +2375,10 @@ describe('Headings Audit', () => {
     const baseURL = 'https://example.com';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock getTopPagesForSiteId to throw an error
     const getTopPagesForSiteIdStub = sinon.stub().rejects(new Error('Database connection failed'));
-    
+
     const mockedHandler = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -2387,7 +2387,7 @@ describe('Headings Audit', () => {
 
     context.s3Client = s3Client;
     const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-    
+
     expect(result.auditResult.error).to.include('Database connection failed');
     expect(result.auditResult.success).to.be.false;
     expect(logSpy.error).to.have.been.calledWith(sinon.match(/Headings audit failed/));
@@ -2398,12 +2398,12 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock getTopPagesForSiteId to return pages with issues
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandler = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -2418,7 +2418,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -2437,18 +2437,18 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
     const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-    
+
     // The test is complex due to mocking issues, so let's test what we can verify
     // The main goal is to ensure the function runs without errors
     expect(result).to.have.property('fullAuditRef', baseURL);
     expect(result).to.have.property('auditResult');
-    
+
     // Verify that getTopPagesForSiteId was called
     expect(getTopPagesForSiteIdStub).to.have.been.calledOnce;
   });
@@ -2459,12 +2459,12 @@ describe('Headings Audit', () => {
     const longH1Text = 'This is a very long H1 heading that exceeds the maximum allowed length of 70 characters for optimal SEO and accessibility';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock getTopPagesForSiteId to return pages with H1 length issues
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandler = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -2479,7 +2479,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -2498,18 +2498,18 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
     const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-    
+
     // The test is complex due to mocking issues, so let's test what we can verify
     // The main goal is to ensure the function runs without errors
     expect(result).to.have.property('fullAuditRef', baseURL);
     expect(result).to.have.property('auditResult');
-    
+
     // Verify that getTopPagesForSiteId was called
     expect(getTopPagesForSiteIdStub).to.have.been.calledOnce;
   });
@@ -2519,7 +2519,7 @@ describe('Headings Audit', () => {
     const url = 'https://example.com/page';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock AI client to return valid JSON with suggestion
     const mockClient = {
       fetchChatCompletion: sinon.stub().resolves({
@@ -2528,12 +2528,12 @@ describe('Headings Audit', () => {
     };
     AzureOpenAIClient.createFrom.restore();
     sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-    
+
     // Mock getTopPagesForSiteId to return pages with empty heading issues
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandler = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -2548,7 +2548,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -2567,20 +2567,20 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
     const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-    
+
     // Verify that AI suggestion was called
     expect(mockClient.fetchChatCompletion).to.have.been.called;
-    
+
     // Verify the result structure
     expect(result).to.have.property('fullAuditRef', baseURL);
     expect(result).to.have.property('auditResult');
-    
+
     // Verify that getTopPagesForSiteId was called
     expect(getTopPagesForSiteIdStub).to.have.been.calledOnce;
   });
@@ -2591,7 +2591,7 @@ describe('Headings Audit', () => {
     const longH1Text = 'This is a very long H1 heading that exceeds the maximum allowed length of 70 characters for optimal SEO and accessibility';
     const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
     context.log = logSpy;
-    
+
     // Mock AI client to return valid JSON with suggestion
     const mockClient = {
       fetchChatCompletion: sinon.stub().resolves({
@@ -2600,12 +2600,12 @@ describe('Headings Audit', () => {
     };
     AzureOpenAIClient.createFrom.restore();
     sinon.stub(AzureOpenAIClient, 'createFrom').callsFake(() => mockClient);
-    
+
     // Mock getTopPagesForSiteId to return pages with H1 length issues
     const getTopPagesForSiteIdStub = sinon.stub().resolves([
       { url: url }
     ]);
-    
+
     const mockedHandler = await esmock('../../src/headings/handler.js', {
       '../../src/canonical/handler.js': {
         getTopPagesForSiteId: getTopPagesForSiteIdStub,
@@ -2620,7 +2620,7 @@ describe('Headings Audit', () => {
           NextContinuationToken: undefined,
         });
       }
-    
+
       if (command instanceof GetObjectCommand) {
         return Promise.resolve({
           Body: {
@@ -2639,31 +2639,31 @@ describe('Headings Audit', () => {
           ContentType: 'application/json',
         });
       }
-    
+
       throw new Error('Unexpected command passed to s3Client.send');
     });
 
     context.s3Client = s3Client;
     const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
-    
+
     // Verify that AI suggestion was called
     expect(mockClient.fetchChatCompletion).to.have.been.called;
-    
+
     // Verify the result structure
     expect(result).to.have.property('fullAuditRef', baseURL);
     expect(result).to.have.property('auditResult');
-    
+
     // Verify that getTopPagesForSiteId was called
     expect(getTopPagesForSiteIdStub).to.have.been.calledOnce;
   });
-  
+
   describe('generateSuggestions', () => {
     it('skips suggestions for successful audit', () => {
       const auditUrl = 'https://example.com';
       const auditData = {
         auditResult: { status: 'success', message: 'No issues found' }
       };
-      
+
       const result = generateSuggestions(auditUrl, auditData, context);
       expect(result).to.deep.equal(auditData);
     });
@@ -2673,7 +2673,7 @@ describe('Headings Audit', () => {
       const auditData = {
         auditResult: { error: 'Audit failed' }
       };
-      
+
       const result = generateSuggestions(auditUrl, auditData, context);
       expect(result).to.deep.equal(auditData);
     });
@@ -2694,9 +2694,9 @@ describe('Headings Audit', () => {
           }
         }
       };
-      
+
       const result = generateSuggestions(auditUrl, auditData, context);
-      
+
       expect(result.suggestions).to.have.lengthOf(3);
       expect(result.suggestions[0]).to.deep.include({
         type: 'CODE_CHANGE',
@@ -2718,9 +2718,9 @@ describe('Headings Audit', () => {
           }
         }
       };
-      
+
       const result = generateSuggestions(auditUrl, auditData, context);
-      
+
       expect(result.suggestions[0].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
     });
 
@@ -2735,9 +2735,9 @@ describe('Headings Audit', () => {
           }
         }
       };
-      
+
       const result = generateSuggestions(auditUrl, auditData, context);
-      
+
       expect(result.suggestions).to.have.lengthOf(1);
       expect(result.suggestions[0].recommendedAction).to.equal('Ensure each heading has unique, descriptive text content that clearly identifies its section.');
     });
@@ -2753,9 +2753,9 @@ describe('Headings Audit', () => {
           }
         }
       };
-      
+
       const result = generateSuggestions(auditUrl, auditData, context);
-      
+
       expect(result.suggestions).to.have.lengthOf(1);
       expect(result.suggestions[0].recommendedAction).to.equal('Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.');
     });
@@ -2768,13 +2768,13 @@ describe('Headings Audit', () => {
             success: false,
             explanation: 'Invalid order',
             urls: [
-              { 
-                url: 'https://example.com/page1', 
-                tagName: 'H3', 
-                suggestion: 'Change this H3 to H2 to maintain proper hierarchy' 
-              }, 
-              { 
-                url: 'https://example.com/page2', 
+              {
+                url: 'https://example.com/page1',
+                tagName: 'H3',
+                suggestion: 'Change this H3 to H2 to maintain proper hierarchy'
+              },
+              {
+                url: 'https://example.com/page2',
                 tagName: 'H4'
                 // No custom suggestion, should use default
               }
@@ -2783,19 +2783,19 @@ describe('Headings Audit', () => {
           'heading-empty': {
             success: false,
             explanation: 'Empty heading',
-            urls: [{ 
-              url: 'https://example.com/page3', 
-              tagName: 'H2', 
+            urls: [{
+              url: 'https://example.com/page3',
+              tagName: 'H2',
               suggestion: 'Add meaningful content to this heading'
             }]
           }
         }
       };
-      
+
       const result = generateSuggestions(auditUrl, auditData, context);
-      
+
       expect(result.suggestions).to.have.lengthOf(3);
-      
+
       // First suggestion with custom suggestion
       expect(result.suggestions[0]).to.deep.include({
         type: 'CODE_CHANGE',
@@ -2805,7 +2805,7 @@ describe('Headings Audit', () => {
         tagName: 'H3',
         recommendedAction: 'Change this H3 to H2 to maintain proper hierarchy', // Uses custom suggestion
       });
-      
+
       // Second suggestion without custom suggestion (uses default)
       expect(result.suggestions[1]).to.deep.include({
         type: 'CODE_CHANGE',
@@ -2815,7 +2815,7 @@ describe('Headings Audit', () => {
         tagName: 'H4',
         recommendedAction: 'Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).', // Uses default
       });
-      
+
       // Third suggestion with custom suggestion for empty heading
       expect(result.suggestions[2]).to.deep.include({
         type: 'CODE_CHANGE',
@@ -2838,7 +2838,7 @@ describe('Headings Audit', () => {
       convertToOpportunityStub = sinon.stub().resolves({
         getId: () => 'test-opportunity-id'
       });
-      
+
       syncSuggestionsStub = sinon.stub().resolves();
 
       // Mock the handler with stubbed dependencies
@@ -2857,7 +2857,7 @@ describe('Headings Audit', () => {
     it('skips opportunity creation when no suggestions', async () => {
       const auditUrl = 'https://example.com';
       const auditData = { suggestions: [] };
-      
+
       const result = await mockedOpportunityAndSuggestions(auditUrl, auditData, context);
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).not.to.have.been.called;
@@ -2876,13 +2876,13 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       const result = await mockedOpportunityAndSuggestions(auditUrl, auditData, context);
-      
+
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
-      
+
       const syncCall = syncSuggestionsStub.getCall(0);
       expect(syncCall.args[0]).to.have.property('opportunity');
       expect(syncCall.args[0]).to.have.property('newData', auditData.suggestions);
@@ -2894,9 +2894,9 @@ describe('Headings Audit', () => {
       const convertToOpportunityStub2 = sinon.stub().resolves({
         getId: () => 'test-opportunity-id'
       });
-      
+
       const syncSuggestionsStub2 = sinon.stub().resolves();
-      
+
       // Mock the dependencies
       const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
@@ -2919,16 +2919,16 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
-      
+
       expect(syncSuggestionsStub2).to.have.been.calledOnce;
-      
+
       // Check that mapNewSuggestion was called with the right structure
       const syncCall = syncSuggestionsStub2.getCall(0);
       const mapNewSuggestionFn = syncCall.args[0].mapNewSuggestion;
       expect(mapNewSuggestionFn).to.be.a('function');
-      
+
       // Test the mapNewSuggestion function directly
       const mappedSuggestion = mapNewSuggestionFn(auditData.suggestions[0]);
       expect(mappedSuggestion).to.deep.include({
@@ -2950,9 +2950,9 @@ describe('Headings Audit', () => {
       const convertToOpportunityStub3 = sinon.stub().resolves({
         getId: () => 'test-opportunity-id'
       });
-      
+
       const syncSuggestionsStub3 = sinon.stub().resolves();
-      
+
       // Mock the dependencies
       const mockedHandler = await esmock('../../src/headings/handler.js', {
         '../../src/common/opportunity.js': {
@@ -2982,21 +2982,21 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
-      
+
       expect(syncSuggestionsStub3).to.have.been.calledOnce;
-      
+
       // Check that buildKey was called with the right structure
       const syncCall = syncSuggestionsStub3.getCall(0);
       const buildKeyFn = syncCall.args[0].buildKey;
       expect(buildKeyFn).to.be.a('function');
-      
+
       // Test the buildKey function directly
       const suggestion1 = auditData.suggestions[0];
       const key1 = buildKeyFn(suggestion1);
       expect(key1).to.equal('heading-empty|https://example.com/page1');
-      
+
       const suggestion2 = auditData.suggestions[1];
       const key2 = buildKeyFn(suggestion2);
       expect(key2).to.equal('heading-order-invalid|https://example.com/page2');
@@ -3065,7 +3065,7 @@ describe('Headings Audit', () => {
       // Check all required fields exist
       expect(opportunityData).to.have.all.keys([
         'runbook',
-        'origin', 
+        'origin',
         'title',
         'description',
         'guidance',
@@ -3115,7 +3115,7 @@ describe('Headings Audit', () => {
       expect(recommendation).to.have.property('recommendation');
       expect(recommendation).to.have.property('type');
       expect(recommendation).to.have.property('rationale');
-      
+
       expect(recommendation.type).to.equal('CONTENT');
       expect(recommendation.insight).to.include('Headings analysis of page content');
       expect(recommendation.recommendation).to.include('heading elements (h1–h6)');
@@ -3157,7 +3157,7 @@ describe('Headings Audit', () => {
       // Check all required fields exist
       expect(opportunityData).to.have.all.keys([
         'runbook',
-        'origin', 
+        'origin',
         'title',
         'description',
         'guidance',
@@ -3180,7 +3180,7 @@ describe('Headings Audit', () => {
       expect(elmoData.origin).to.equal(baseData.origin);
       expect(elmoData.title).to.equal(baseData.title);
       expect(elmoData.description).to.equal(baseData.description);
-      
+
       // Guidance structure is different for Elmo (recommendations vs steps)
       expect(elmoData.guidance).to.have.property('recommendations');
       expect(baseData.guidance).to.have.property('steps');
@@ -3217,7 +3217,7 @@ describe('Headings Audit', () => {
       // This data structure should match what the comparisonFn in opportunityAndSuggestionsForElmo expects
       const additionalMetrics = opportunityData.data.additionalMetrics;
       expect(additionalMetrics).to.be.an('array');
-      
+
       const subtypeMetric = additionalMetrics.find(metric => metric.key === 'subtype');
       expect(subtypeMetric).to.exist;
       expect(subtypeMetric.value).to.equal('headings');
@@ -3239,7 +3239,7 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       const mockContext = {
         dataAccess: {
           Opportunity: {
@@ -3265,14 +3265,14 @@ describe('Headings Audit', () => {
         },
         log: { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() }
       };
-      
+
       // Use esmock to mock the opportunity-utils module
       const mockedOpportunity = await esmock('../../src/common/opportunity.js', {
         '../../src/common/opportunity-utils.js': {
           checkGoogleConnection: sinon.stub().resolves(true),
         },
       });
-      
+
       const comparisonFn = (oppty, opportunityInstance) => {
         const opptyData = oppty.getData();
         const opptyAdditionalMetrics = opptyData?.additionalMetrics;
@@ -3284,7 +3284,7 @@ describe('Headings Audit', () => {
         );
         return hasHeadingsSubtype;
       };
-      
+
       // This should execute lines 47-48 in opportunity.js
       const result = await mockedOpportunity.convertToOpportunity(
         auditUrl,
@@ -3295,7 +3295,7 @@ describe('Headings Audit', () => {
         {},
         comparisonFn
       );
-      
+
       expect(result).to.exist;
       expect(result.getId()).to.equal('test-existing-opportunity-id');
     });
@@ -3305,9 +3305,9 @@ describe('Headings Audit', () => {
     it('returns new data when existing data is empty', () => {
       const existingData = {};
       const newData = { type: 'CODE_CHANGE', url: 'https://example.com' };
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal(newData);
       expect(result).to.not.equal(newData); // Should be a new object
     });
@@ -3315,47 +3315,47 @@ describe('Headings Audit', () => {
     it('returns new data when existing data is null', () => {
       const existingData = null;
       const newData = { type: 'CODE_CHANGE', url: 'https://example.com' };
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal(newData);
     });
 
     it('returns new data when existing data is undefined', () => {
       const existingData = undefined;
       const newData = { type: 'CODE_CHANGE', url: 'https://example.com' };
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal(newData);
     });
 
     it('returns new data when new data is empty', () => {
       const existingData = { type: 'OLD', url: 'https://old.com' };
       const newData = {};
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal(newData);
     });
 
     it('handles null new data gracefully', () => {
       const existingData = { type: 'OLD', url: 'https://old.com' };
       const newData = null;
-      
+
       // The spread operator with null returns an empty object
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal({});
     });
 
     it('handles undefined new data gracefully', () => {
       const existingData = { type: 'OLD', url: 'https://old.com' };
       const newData = undefined;
-      
+
       // The spread operator with undefined returns an empty object
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal({});
     });
 
@@ -3372,9 +3372,9 @@ describe('Headings Audit', () => {
         newProperty: 'newValue',
         sharedProperty: 'newValue'
       };
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal(newData);
       expect(result).to.not.have.property('oldProperty');
       expect(result).to.have.property('newProperty', 'newValue');
@@ -3403,9 +3403,9 @@ describe('Headings Audit', () => {
           newProperty: 'newPropertyValue'
         }
       };
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal(newData);
       expect(result.data.nested).to.deep.equal(newData.data.nested);
       expect(result.data.array).to.deep.equal([4, 5, 6]);
@@ -3420,9 +3420,9 @@ describe('Headings Audit', () => {
         items: [4, 5, 6, 7],
         metadata: { count: 4, updated: true }
       };
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal(newData);
       expect(result.items).to.deep.equal([4, 5, 6, 7]);
       expect(result.metadata).to.deep.equal({ count: 4, updated: true });
@@ -3441,9 +3441,9 @@ describe('Headings Audit', () => {
         boolean: false,
         nullValue: 'notNull'
       };
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal(newData);
       expect(result.string).to.equal('new');
       expect(result.number).to.equal(100);
@@ -3454,13 +3454,13 @@ describe('Headings Audit', () => {
     it('creates a new object (does not mutate inputs)', () => {
       const existingData = { type: 'OLD', url: 'https://old.com' };
       const newData = { type: 'NEW', url: 'https://new.com' };
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       // Verify inputs are not mutated
       expect(existingData).to.deep.equal({ type: 'OLD', url: 'https://old.com' });
       expect(newData).to.deep.equal({ type: 'NEW', url: 'https://new.com' });
-      
+
       // Verify result is a new object
       expect(result).to.not.equal(existingData);
       expect(result).to.not.equal(newData);
@@ -3475,9 +3475,9 @@ describe('Headings Audit', () => {
         type: 'NEW',
         callback: () => 'new'
       };
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal(newData);
       expect(result.callback()).to.equal('new');
     });
@@ -3495,9 +3495,9 @@ describe('Headings Audit', () => {
         infinity: Infinity,
         negativeInfinity: -Infinity
       };
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal(newData);
       expect(result.normal).to.equal(100);
       expect(Number.isNaN(result.nan)).to.be.true;
@@ -3516,9 +3516,9 @@ describe('Headings Audit', () => {
         emptyArray: [],
         nonEmpty: 'newValue'
       };
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal(newData);
       expect(result.emptyObject).to.deep.equal({});
       expect(result.emptyArray).to.deep.equal([]);
@@ -3543,9 +3543,9 @@ describe('Headings Audit', () => {
         nullValue: 'notNull',
         undefinedValue: 'defined'
       };
-      
+
       const result = keepLatestMergeDataFunction(existingData, newData);
-      
+
       expect(result).to.deep.equal(newData);
     });
   });
@@ -3560,7 +3560,7 @@ describe('Headings Audit', () => {
       convertToOpportunityStub = sinon.stub().resolves({
         getId: () => 'test-elmo-opportunity-id'
       });
-      
+
       syncSuggestionsStub = sinon.stub().resolves();
 
       // Mock the handler with stubbed dependencies
@@ -3579,7 +3579,7 @@ describe('Headings Audit', () => {
     it('skips opportunity creation when no elmo suggestions', async () => {
       const auditUrl = 'https://example.com';
       const auditData = { elmoSuggestions: [] };
-      
+
       const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).not.to.have.been.called;
@@ -3588,7 +3588,7 @@ describe('Headings Audit', () => {
     it('skips opportunity creation when elmo suggestions is undefined', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {};
-      
+
       const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).not.to.have.been.called;
@@ -3604,13 +3604,13 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-      
+
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
-      
+
       const convertCall = convertToOpportunityStub.getCall(0);
       expect(convertCall.args[0]).to.equal(auditUrl);
       expect(convertCall.args[1]).to.deep.equal(auditData);
@@ -3619,7 +3619,7 @@ describe('Headings Audit', () => {
       expect(convertCall.args[4]).to.equal('generic-opportunity');
       expect(convertCall.args[5]).to.deep.equal({});
       expect(convertCall.args[6]).to.be.a('function'); // comparisonFn
-      
+
       const syncCall = syncSuggestionsStub.getCall(0);
       expect(syncCall.args[0]).to.have.property('opportunity');
       expect(syncCall.args[0]).to.have.property('newData', auditData.elmoSuggestions);
@@ -3639,12 +3639,12 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-      
+
       const syncCall = syncSuggestionsStub.getCall(0);
       const buildKeyFn = syncCall.args[0].buildKey;
-      
+
       // Test the buildKey function
       const suggestion = { type: 'CODE_CHANGE' };
       const key = buildKeyFn(suggestion);
@@ -3661,19 +3661,19 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-      
+
       const syncCall = syncSuggestionsStub.getCall(0);
       const mapNewSuggestionFn = syncCall.args[0].mapNewSuggestion;
-      
+
       // Test the mapNewSuggestion function
       const suggestion = {
         type: 'CODE_CHANGE',
         recommendedAction: 'Test suggestion'
       };
       const mappedSuggestion = mapNewSuggestionFn(suggestion);
-      
+
       expect(mappedSuggestion).to.deep.include({
         opportunityId: 'test-elmo-opportunity-id',
         type: 'CODE_CHANGE',
@@ -3694,12 +3694,12 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-      
+
       const convertCall = convertToOpportunityStub.getCall(0);
       const comparisonFn = convertCall.args[6];
-      
+
       // Test comparisonFn with opportunity that has headings subtype
       const opptyWithHeadings = {
         getData: () => ({
@@ -3709,7 +3709,7 @@ describe('Headings Audit', () => {
         })
       };
       expect(comparisonFn(opptyWithHeadings)).to.be.true;
-      
+
       // Test comparisonFn with opportunity that doesn't have headings subtype
       const opptyWithoutHeadings = {
         getData: () => ({
@@ -3719,13 +3719,13 @@ describe('Headings Audit', () => {
         })
       };
       expect(comparisonFn(opptyWithoutHeadings)).to.be.false;
-      
+
       // Test comparisonFn with opportunity that has no additionalMetrics
       const opptyNoMetrics = {
         getData: () => ({})
       };
       expect(comparisonFn(opptyNoMetrics)).to.be.false;
-      
+
       // Test comparisonFn with opportunity that has null additionalMetrics
       const opptyNullMetrics = {
         getData: () => ({ additionalMetrics: null })
@@ -3743,7 +3743,7 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       // Create a spy to track comparisonFn calls
       const comparisonFnSpy = sinon.spy((oppty, opportunityInstance) => {
         const opptyData = oppty.getData();
@@ -3756,7 +3756,7 @@ describe('Headings Audit', () => {
         );
         return hasHeadingsSubtype;
       });
-      
+
       // Mock convertToOpportunity to use the spy
       convertToOpportunityStub.callsFake((auditUrl, auditData, context, createOpportunityDataForElmo, elmoOpportunityType, options, comparisonFn) => {
         // Test that the comparisonFn is called with mock opportunities
@@ -3767,22 +3767,22 @@ describe('Headings Audit', () => {
             ]
           })
         };
-        
+
         const mockOpportunityInstance = {
           getData: () => ({})
         };
-        
+
         // This should execute line 47: return comparisonFn(oppty, opportunityInstance);
         const result = comparisonFn(mockOppty, mockOpportunityInstance);
         expect(result).to.be.true;
-        
+
         return Promise.resolve({
           getId: () => 'test-elmo-opportunity-id'
         });
       });
-      
+
       await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-      
+
       expect(convertToOpportunityStub).to.have.been.calledOnce;
     });
 
@@ -3800,13 +3800,13 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-      
+
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
       expect(syncSuggestionsStub).to.have.been.calledOnce;
-      
+
       const syncCall = syncSuggestionsStub.getCall(0);
       expect(syncCall.args[0].newData).to.deep.equal(auditData.elmoSuggestions);
     });
@@ -3821,12 +3821,12 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       const logSpy = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
       const contextWithLogSpy = { ...context, log: logSpy };
-      
+
       await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, contextWithLogSpy);
-      
+
       expect(logSpy.info).to.have.been.calledWith('Headings opportunity created for Elmo with oppty id test-elmo-opportunity-id');
       expect(logSpy.info).to.have.been.calledWith('Headings opportunity created for Elmo and 1 suggestions synced for https://example.com');
     });
@@ -3841,10 +3841,10 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       // Make convertToOpportunity throw an error
       convertToOpportunityStub.rejects(new Error('Database connection failed'));
-      
+
       try {
         await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
         expect.fail('Expected function to throw an error');
@@ -3863,10 +3863,10 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       // Make syncSuggestions throw an error
       syncSuggestionsStub.rejects(new Error('Sync failed'));
-      
+
       try {
         await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
         expect.fail('Expected function to throw an error');
@@ -3885,7 +3885,7 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       // Mock convertToOpportunity to be called with null comparisonFn
       convertToOpportunityStub.callsFake((auditUrl, auditData, context, createOpportunityDataForElmo, elmoOpportunityType, options, comparisonFn) => {
         // Verify that comparisonFn is provided and is a function
@@ -3894,12 +3894,12 @@ describe('Headings Audit', () => {
           getId: () => 'test-elmo-opportunity-id'
         });
       });
-      
+
       const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-      
+
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
-      
+
       // Verify the comparisonFn was passed correctly
       const convertCall = convertToOpportunityStub.getCall(0);
       expect(convertCall.args[6]).to.be.a('function'); // comparisonFn should be a function
@@ -3915,7 +3915,7 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       // Create a mock that simulates the opportunity.js behavior when comparisonFn is undefined
       convertToOpportunityStub.callsFake((auditUrl, auditData, context, createOpportunityDataForElmo, elmoOpportunityType, options, comparisonFn) => {
         // Test the condition from opportunity.js: if (comparisonFn && typeof comparisonFn === 'function')
@@ -3926,14 +3926,14 @@ describe('Headings Audit', () => {
           // This branch should not be taken in our case
           expect.fail('comparisonFn should be a function');
         }
-        
+
         return Promise.resolve({
           getId: () => 'test-elmo-opportunity-id'
         });
       });
-      
+
       const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-      
+
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
     });
@@ -3948,12 +3948,12 @@ describe('Headings Audit', () => {
           }
         ]
       };
-      
+
       // Mock convertToOpportunity to test the type checking logic
       convertToOpportunityStub.callsFake((auditUrl, auditData, context, createOpportunityDataForElmo, elmoOpportunityType, options, comparisonFn) => {
         // Simulate the exact condition from opportunity.js
         const shouldUseComparisonFn = comparisonFn && typeof comparisonFn === 'function';
-        
+
         if (shouldUseComparisonFn) {
           // Test that the comparisonFn works correctly
           const mockOppty = {
@@ -3963,20 +3963,20 @@ describe('Headings Audit', () => {
               ]
             })
           };
-          
+
           const result = comparisonFn(mockOppty);
           expect(result).to.be.true;
         } else {
           expect.fail('comparisonFn should be defined and be a function');
         }
-        
+
         return Promise.resolve({
           getId: () => 'test-elmo-opportunity-id'
         });
       });
-      
+
       const result = await mockedOpportunityAndSuggestionsForElmo(auditUrl, auditData, context);
-      
+
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
     });

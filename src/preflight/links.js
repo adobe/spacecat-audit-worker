@@ -14,6 +14,7 @@ import { JSDOM } from 'jsdom';
 import { saveIntermediateResults } from './utils.js';
 import { runLinksChecks } from './links-checks.js';
 import { generateSuggestionData } from '../internal-links/suggestions-generator.js';
+import { isAuditEnabledForSite } from '../common/index.js';
 
 export const PREFLIGHT_LINKS = 'links';
 
@@ -22,7 +23,6 @@ export default async function links(context, auditContext) {
     site, job, log,
   } = context;
   const {
-    checks,
     previewBaseURL,
     previewUrls,
     step,
@@ -33,7 +33,9 @@ export default async function links(context, auditContext) {
     pageAuthToken,
     timeExecutionBreakdown,
   } = auditContext;
-  if (!checks || checks.includes(PREFLIGHT_LINKS)) {
+
+  const isLinksEnabled = await isAuditEnabledForSite(`${PREFLIGHT_LINKS}-preflight`, site, context);
+  if (isLinksEnabled) {
     // Create links audit entries for all pages
     previewUrls.forEach((url) => {
       const pageResult = audits.get(url);
@@ -149,7 +151,7 @@ export default async function links(context, auditContext) {
     const linksEndTime = Date.now();
     const linksEndTimestamp = new Date().toISOString();
     const linksElapsed = ((linksEndTime - linksStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Links audit completed in ${linksElapsed} seconds`);
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Links audit completed in ${linksElapsed} seconds`);
 
     timeExecutionBreakdown.push({
       name: 'links',

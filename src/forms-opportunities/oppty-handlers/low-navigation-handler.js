@@ -36,7 +36,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
 
   // eslint-disable-next-line no-param-reassign
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
-  log.info(`Syncing high page views low form nav opportunity for ${auditData.siteId}`);
+  log.debug(`Syncing high page views low form nav opportunity for ${auditData.siteId}`);
   let opportunities;
 
   try {
@@ -64,7 +64,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
     excludeForms,
   );
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
-  log.info(`filtered opportunities: high-page-views-low-form-navigations:  ${JSON.stringify(filteredOpportunities, null, 2)}`);
+  log.debug(`filtered opportunities: high-page-views-low-form-navigations:  ${JSON.stringify(filteredOpportunities, null, 2)}`);
   try {
     for (const opptyData of filteredOpportunities) {
       let highPageViewsLowFormNavOppty = opportunities.find(
@@ -100,7 +100,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
         },
       };
 
-      log.info(`Forms Opportunity created high page views low form nav ${JSON.stringify(opportunityData, null, 2)}`);
+      log.debug(`Forms Opportunity created high page views low form nav ${JSON.stringify(opportunityData, null, 2)}`);
       let formsList = [];
 
       if (!highPageViewsLowFormNavOppty) {
@@ -119,9 +119,9 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
       } else {
         const data = highPageViewsLowFormNavOppty.getData();
         const { formDetails } = data;
-        log.info(`Form details available for data  ${JSON.stringify(data, null, 2)}`);
+        log.debug(`Form details available for data  ${JSON.stringify(data, null, 2)}`);
         formsList = (formDetails !== undefined && isNonEmptyObject(formDetails))
-          ? (log.info('Form details available for opportunity, not sending it to mystique'), [])
+          ? (log.debug('Form details available for opportunity, not sending it to mystique'), [])
           : [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
 
         highPageViewsLowFormNavOppty.setAuditId(auditData.auditId);
@@ -146,5 +146,5 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
   } catch (e) {
     log.error(`Creating Forms opportunity for high page views low form nav for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
   }
-  log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high page views low form nav audit type.`);
+  log.debug(`Successfully synced Opportunity for site: ${auditData.siteId} and high page views low form nav audit type.`);
 }

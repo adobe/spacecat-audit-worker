@@ -136,7 +136,7 @@ describe('Accessibility Audit Handler', () => {
 
       expect(getExistingUrlsFromFailedAuditsStub).to.have.been.calledOnce;
 
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         '[A11yAudit] Step 1: Preparing content scrape for accessibility audit for https://example.com with siteId test-site-id',
       );
 
@@ -285,7 +285,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         '[A11yAudit] Step 1: Preparing content scrape for accessibility audit for https://example.com with siteId test-site-id',
       );
     });
@@ -513,7 +513,7 @@ describe('Accessibility Audit Handler', () => {
           'global', // geo
         );
 
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         `[A11yAudit] Found ${mockTopPages.length} top pages for site https://example.com: ${JSON.stringify(mockTopPages, null, 2)}`,
       );
     });
@@ -536,7 +536,7 @@ describe('Accessibility Audit Handler', () => {
           'global', // geo
         );
 
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         '[A11yAudit] Found 0 top pages for site https://example.com: []',
       );
     });
@@ -640,7 +640,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert - Check that top 100 pages are logged in correct order
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         sinon.match(/Top 100 pages for site test-site-id \(https:\/\/example\.com\):.*page2.*page1.*page3/s),
       );
     });
@@ -663,7 +663,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert - Find the specific "Top 100 pages" log call
-      const logCalls = mockContext.log.info.getCalls();
+      const logCalls = mockContext.log.debug.getCalls();
       const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages for site'));
 
       expect(top100LogCall).to.exist;
@@ -704,7 +704,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert - Check order: high (5000) -> medium (1500) -> low (100)
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         sinon.match(/high.*medium.*low/s),
       );
     });
@@ -724,7 +724,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert - Verify only 100 pages are processed
-      const logCalls = mockContext.log.info.getCalls();
+      const logCalls = mockContext.log.debug.getCalls();
       const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages for site'));
 
       const loggedData = top100LogCall.args[0];
@@ -982,7 +982,7 @@ describe('Accessibility Audit Handler', () => {
         mockContext,
       );
 
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         '[A11yAudit] Step 2: Processing scraped data for site test-site-id (https://example.com)',
       );
 
@@ -1301,7 +1301,7 @@ describe('Accessibility Audit Handler', () => {
       await processAccessibilityOpportunities(mockContext);
 
       // Assert
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         '[A11yAudit] Step 2: Processing scraped data for site test-site-id (https://example.com)',
       );
     });

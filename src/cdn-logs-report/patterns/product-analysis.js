@@ -186,10 +186,10 @@ async function deriveProductsForPaths(domain, paths, context, configCategories =
   const { log } = context;
   const hasConfigCategories = configCategories.length > 0;
 
-  let systemPrompt = `You are an expert product classifier for URL path analysis. Your task is to analyze URL paths and identify BUSINESS PRODUCTS/SERVICES categories for Athena SQL analytics.
+  let systemPrompt = `You are an expert product classifier for URL path analysis. Your task is to analyze URL paths and map them to categories for Athena SQL analytics.
 
 ## OBJECTIVE
-Classify each URL path to identify BUSINESS PRODUCTS/SERVICES categories that are useful for business analytics and reporting.
+Classify each URL path by mapping it to the most relevant category${hasConfigCategories ? ' from the user-provided categories' : ''}.
 
 ## ANALYTICAL THINKING PROCESS
 
@@ -203,35 +203,56 @@ Think like you're analyzing a spreadsheet of URLs - follow these steps systemati
 ### STEP 2: URL STRUCTURE ANALYSIS
 For each URL path, examine:
 - **Path segments**: Break down /segment1/segment2/segment3
+- **Keywords**: Look for product names, category names, or related terms
 - **Hierarchy clues**: First segment often indicates section type (/products/, /solutions/, /services/)
-- **Business indicators**: Keywords that signal commercial offerings vs. informational content
 - **Naming patterns**: How does this domain structure their URLs?
 
-### STEP 3: PRODUCT/SERVICE IDENTIFICATION
-Ask yourself for each path:
-1. "Does this represent something the company sells or provides?" → Product/Service
-2. "Is this generic content (blog, about, careers, legal)?" → Unknown
-3. "What specific offering does this relate to?" → Extract the product name
-4. "What's the most specific identifier?" → Use the lowest-level meaningful category
+### STEP 3: CATEGORY MAPPING LOGIC
+For each URL, ask:
+1. "Does this URL contain keywords related to any category?" → Check for exact or partial matches
+2. "What section does this URL belong to?" → Look at path structure
+3. "Is this clearly related to a specific category?" → Map it to that category
+4. "If no clear match, is this business-relevant?" → Map to "other" or "unknown"
 
-### STEP 4: CATEGORY EXTRACTION LOGIC
-Examples of thinking process:
+### STEP 4: EXAMPLES
+Example A: "/products/analytics-platform/features" (categories: ["analytics", "cloud", "ai"])
+- Thinking: Contains "analytics" keyword → maps to "analytics"
+- Result: product = "analytics"
 
-Example A: "/products/analytics-platform/features"
-- Thinking: "products" → business offering, "analytics-platform" → specific product, "features" → content type
-- Result: product = "analytics-platform"
-
-Example B: "/solutions/cloud/pricing"
-- Thinking: "solutions" → business offering, "cloud" → product category, "pricing" → content type
+Example B: "/solutions/cloud/pricing" (categories: ["analytics", "cloud", "ai"])
+- Thinking: Contains "cloud" keyword → maps to "cloud"
 - Result: product = "cloud"
 
-Example C: "/blog/design-tips"
-- Thinking: "blog" → generic content, not a business offering
-- Result: product = "unknown"
+Example C: "/blog/design-tips" (categories: ["analytics", "cloud", "ai"])
+- Thinking: Generic content, no category match → maps to "other"
+- Result: product = "other"
 
-Example D: "/enterprise/marketing-automation/integrations"
-- Thinking: "enterprise" → customer segment, "marketing-automation" → specific product
-- Result: product = "marketing-automation"
+Example D: "/docs/machine-learning/guide" (categories: ["analytics", "cloud", "ai"])
+- Thinking: "machine-learning" related to "ai" → maps to "ai"
+- Result: product = "ai"`;
+
+  if (hasConfigCategories) {
+    systemPrompt += `
+
+## CRITICAL: USER-PROVIDED CATEGORIES (HIGHEST PRIORITY)
+The following categories MUST be used for classification. Try to map as many URLs as possible to these categories:
+${configCategories.map((cat) => `- ${cat}`).join('\n')}
+
+STRICT RULES:
+1. **First priority**: Look for EXACT keyword matches in the URL path (case-insensitive)
+2. **Second priority**: Look for RELATED terms or PARTIAL matches (e.g., "ai" matches "artificial-intelligence", "ml", "machine-learning")
+3. **Third priority**: Look at URL structure and context to infer the category
+4. **Fallback**: If a URL is completely unrelated to ANY provided category, use "other"
+5. **MAXIMIZE mapping**: Be generous in mapping URLs to provided categories - if there's any reasonable connection, use it
+6. **Keywords to look for**: Category name itself, related terms, synonyms, abbreviations, product variants
+7. **Do NOT invent new categories**: Only use the provided categories or "other"
+
+Example mapping strategies:
+- Category "photoshop" → matches "/products/photoshop", "/photoshop-features", "/ps-tools", "/photo-editing"
+- Category "analytics" → matches "/analytics", "/data-insights", "/reporting", "/metrics"
+- Category "cloud" → matches "/cloud", "/aws", "/hosting", "/infrastructure"`;
+  } else {
+    systemPrompt += `
 
 ### STEP 5: NAMING STANDARDIZATION & OUTPUT RULES
 - **Format**: Lowercase, hyphenated (e.g., "marketing-automation" not "Marketing_Automation")
@@ -241,16 +262,6 @@ Example D: "/enterprise/marketing-automation/integrations"
 - **Business focus**: Only classify business offerings (products/services/solutions)
 - **Exclusions**: Use "unknown" for generic content (blog, support, about, legal, careers, contact, press, investors)
 - **Domain-agnostic**: Work for any industry (tech, retail, healthcare, finance, etc.)`;
-
-  if (hasConfigCategories) {
-    systemPrompt += `
-
-## PRIORITY CATEGORIES
-The following categories are provided by the user and should be PRIORITIZED when classifying paths:
-${configCategories.map((cat) => `- ${cat}`).join('\n')}
-
-When a URL path could match one of these categories, prefer these over generic classifications.
-If none of these categories fit, then use your standard classification approach.`;
   }
 
   systemPrompt += `
@@ -266,6 +277,15 @@ Return ONLY valid JSON with this exact structure. Do NOT include markdown format
   ]
 }
 
+## JSON FORMATTING RULES (CRITICAL)
+- NO markdown formatting (no code blocks)
+- NO explanations or comments
+- NO line breaks inside strings
+- Properly escape special characters in strings (use backslashes for escaping)
+- Use double quotes, not single quotes
+- Ensure all strings are properly closed
+- Return ONLY the JSON object
+
 ## CRITICAL REQUIREMENTS
 - Include ALL provided paths in your response
 - Return valid JSON with NO additional text or explanations
@@ -277,20 +297,34 @@ ${hasConfigCategories ? `\nPriority Categories: ${JSON.stringify(configCategorie
 URL Paths:
 ${JSON.stringify(paths, null, 2)}`;
 
+  const createDefaultPaths = () => paths.map((path) => ({ path, product: 'unknown' }));
+
   try {
     log.info('Extracting products from URL paths');
     const promptResponse = await prompt(systemPrompt, userPrompt, context);
-    if (promptResponse && promptResponse.content) {
-      const { paths: parsedPaths } = JSON.parse(promptResponse.content);
-      log.info('Successfully extracted products from URL paths');
-      return { paths: parsedPaths, usage: promptResponse.usage };
-    } else {
+
+    if (!promptResponse?.content) {
       log.info('No content received; defaulting to unknown products');
-      return { paths: paths.map((path) => ({ path, product: 'unknown' })), usage: null };
+      return { paths: createDefaultPaths(), usage: null };
     }
+
+    // Clean up markdown formatting and parse
+    let content = promptResponse.content.trim();
+    if (content.startsWith('```')) {
+      content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    }
+
+    const parsed = JSON.parse(content);
+    if (parsed?.paths && Array.isArray(parsed.paths)) {
+      log.info('Successfully extracted products from URL paths');
+      return { paths: parsed.paths, usage: promptResponse.usage };
+    }
+
+    log.warn('Invalid response structure; defaulting to unknown products');
+    return { paths: createDefaultPaths(), usage: promptResponse.usage };
   } catch (error) {
-    log.error(`Failed to extract products from paths: ${error.message}`);
-    return { paths: paths.map((path) => ({ path, product: 'unknown' })), usage: null };
+    log.error(`Failed to extract products: ${error.message}`);
+    return { paths: createDefaultPaths(), usage: null };
   }
 }
 
@@ -305,139 +339,117 @@ function groupPathsByProduct(pathProductArray) {
 async function deriveRegexesForProducts(domain, groupedPaths, context) {
   const { log } = context;
 
-  const systemPrompt = `You are a regex pattern generation specialist for URL path analysis in Amazon Athena SQL environments.
+  const systemPrompt = `You are a regex pattern generator for URL categorization in Amazon Athena SQL.
 
-TASK: Analyze the actual input data provided and generate simple, practical regex patterns for each product/category that will match URL paths containing references to that specific product/category.
+TASK: Generate SIMPLE, GENERIC regex patterns that can identify which category a URL belongs to.
 
-INPUT STRUCTURE:
-You will receive a map/object where:
-- Each KEY is a product or category name
-- Each VALUE is an array of URL paths that have been assigned to that product/category
+INPUT: You receive categories with example URLs that belong to each category.
 
-## ANALYTICAL THINKING PROCESS
+## GOAL
+Create simple keyword-based patterns that:
+1. Match URLs belonging to that category
+2. Are easy to understand and maintain
+3. Work with future URLs in the same category
 
-For each product/category, follow this systematic analysis (think like you're analyzing URLs in Excel):
+## STRATEGY
+**IMPORTANT**: The category name is just a LABEL. Analyze the ACTUAL URLs to find patterns!
 
-### STEP 1: STRUCTURAL PATTERN RECOGNITION
-- Examine the URL structure: What sections appear? (/products/, /solutions/, /docs/)
-- Identify fixed vs. variable parts: What stays constant? What changes?
-- Detect hierarchy levels: Is there a consistent depth? (/level1/level2/level3)
-- Look for versioning patterns: Are there dates, versions, or generations? (2024, v2, pro, enterprise)
+For each category:
+1. **Look at the actual URLs** in that category
+2. **Find common keywords** that appear in those URLs
+3. **Identify common path segments** in those URLs
+4. **Create a pattern** based on what you see in the URLs, NOT the category name
+5. **Keep it SIMPLE**: Prefer broad matching over complex patterns
 
-### STEP 2: COMMONALITY EXTRACTION
-- Find the core identifier: What keyword consistently appears across all paths?
-- Identify separators: Do paths use hyphens, underscores, slashes, or mixed? (-_, /)
-- Detect variants: Are there plurals, abbreviations, or alternative spellings? (photo/photos, ai/artificial-intelligence)
-- Recognize suffixes/prefixes: Any consistent additions? (mobile-, -app, -pro, -enterprise)
+## EXAMPLES (Category name is just a LABEL - analyze the actual URLs!)
 
-### STEP 3: VARIATION MAPPING
-Examples of what to look for:
-- Path position: Does the identifier appear in different URL segments?
-- Case variations: PhotoShop vs photoshop vs PHOTOSHOP
-- Separators: photoshop-cc vs photoshop_cc vs photoshop/cc
-- Compound forms: photoshop, photoshop-2024, photoshop-pro, adobe-photoshop
-- Pluralization: product vs products, service vs services
+Example 1 - Category "Brand" with URLs: ["/sacs/lovesac", "/sectionals/design", "/accessories"]
+Pattern: (?i)/(sacs|sectionals|accessories)/
+Explanation: These URLs contain product category names, so match those keywords
 
-### STEP 4: REGEX CONSTRUCTION LOGIC
-Based on your analysis:
-1. Start with the core identifier (the consistent keyword)
-2. Add optional separators: [._-]? or [/_-] depending on what you observed
-3. Add optional version/variant patterns: ([._-]?(2024|2025|pro|enterprise))?
-4. Consider path boundaries: Should it match anywhere in URL or specific positions?
-5. Balance specificity vs flexibility: Too narrow = miss valid URLs; too broad = false positives
+Example 2 - Category "Product" with URLs: ["/products/item-123", "/shop/widget", "/store/catalog"]
+Pattern: (?i)/(products?|shop|store)/
+Explanation: These URLs have shopping-related paths
 
-### STEP 5: VALIDATION THINKING
-Ask yourself:
-- "Will this match ALL the example paths provided?" (Must match 100%)
-- "Will this match reasonable variations?" (Version updates, new releases)
-- "Could this create false positives?" (photoshop matching photography)
-- "Is this maintainable?" (Simple enough to understand and update)
+Example 3 - Category "photoshop" with URLs: ["/ps/features", "/creative-cloud/photoshop", "/imaging-software"]
+Pattern: (?i)/(ps|photoshop|imaging-software|creative-cloud)/
+Explanation: Look for keywords that appear in the actual URLs
 
-## AMAZON ATHENA SQL REGEX REQUIREMENTS
-- Use POSIX Extended Regular Expression (ERE) syntax only
-- NO lookahead (?=) or lookbehind (?<=) assertions
+Example 4 - Category "Support" with URLs: ["/help", "/faq", "/contact-us"]
+Pattern: (?i)/(help|faq|contact)/
+Explanation: Match the actual keywords found in support URLs
+
+CRITICAL: Do NOT use the category name in the pattern unless it actually appears in the URLs!
+
+## POSIX REGEX REQUIREMENTS (for Amazon Athena)
+- Start with (?i) for case-insensitive matching
+- NO lookahead (?=) or lookbehind (?<=)
 - NO non-capturing groups (?:)
-- Use case-insensitive matching with (?i) flag at the start
-- Escape special characters: \\., \\-, \\+, \\?, \\*, \\(, \\), \\[, \\], \\{, \\}, \\^, \\$
-
-## PATTERN EXAMPLES (To guide your thinking)
-
-Example 1 - Simple product:
-Paths: ["/products/photoshop", "/docs/photoshop", "/photoshop-features"]
-Thinking: Core = "photoshop", appears in various positions, no complex variants
-Regex: (?i)photoshop
-
-Example 2 - Versioned product:
-Paths: ["/products/iphone-15", "/iphone-15-pro", "/store/iphone-15-pro-max"]
-Thinking: Core = "iphone-15", has variants (pro, max), uses hyphens
-Regex: (?i)iphone[._-]?15([._-]?(pro|max))*
-
-Example 3 - Category with variations:
-Paths: ["/sports/tennis", "/tennis-equipment", "/products/tennis-rackets"]
-Thinking: Core = "tennis", appears with related terms, different positions
-Regex: (?i)tennis
-
-Example 4 - Broad category:
-Paths: ["/solutions/analytics", "/products/analytics-platform", "/analytics-tools"]
-Thinking: Core = "analytics", consistent keyword, various contexts
-Regex: (?i)analytics
+- Use alternation (|) for multiple options
+- Use ? for optional, * for zero-or-more
+- Escape special chars: \\., \\-, \\+, \\?, \\*, \\(, \\), etc.
 
 ## OUTPUT FORMAT
-Return ONLY a valid JSON object with this exact structure. Do NOT include markdown formatting, code blocks, or \`\`\`json tags. Return raw JSON only:
+Return ONLY valid JSON. No markdown, no code blocks, no explanations, no line breaks in strings:
 {
-  "product-name": "(?i)regex-pattern",
-  "another-product": "(?i)another-pattern"
+  "Category1": "(?i)simple-pattern",
+  "Category2": "(?i)simple-pattern"
 }
 
-## CRITICAL REQUIREMENTS
-- Base patterns on the ACTUAL input data provided (not the examples above)
-- Generate patterns for all product/category identifiers
-- Each regex must be a valid POSIX ERE pattern with (?i) flag
-- No additional text, explanations, or markdown formatting - return valid JSON only`;
+## JSON FORMATTING RULES (CRITICAL)
+- NO markdown formatting (no code blocks)
+- NO explanations or comments
+- NO line breaks inside strings
+- Properly escape special characters in strings
+- Use double quotes, not single quotes
+- Ensure all strings are properly closed
+- Return ONLY the JSON object
 
-  const userPrompt = `Generate regex patterns for the following domain, with the products and their URL paths:
+## CRITICAL RULES
+- Analyze the ACTUAL URLs provided
+- Keep patterns SIMPLE and GENERIC
+- Each pattern must start with (?i)
+- Return only JSON, no additional text`;
 
-DOMAIN: ${domain}
+  const userPrompt = `Domain: ${domain}
 
-GROUPED PATHS BY PRODUCT:
-${JSON.stringify(groupedPaths)}`;
+Categories with their example URLs:
+${JSON.stringify(groupedPaths, null, 2)}
+
+Generate simple regex patterns for each category that can match these URLs and similar future URLs.`;
+
+  const createFallbackPatterns = () => Object.keys(groupedPaths).reduce((acc, product) => {
+    const keyword = product.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    acc[product] = `(?i)${keyword}`;
+    return acc;
+  }, {});
 
   try {
     log.info('Generating regex patterns for products');
     const promptResponse = await prompt(systemPrompt, userPrompt, context);
-    if (promptResponse && promptResponse.content) {
-      const parsed = JSON.parse(promptResponse.content);
-      if (parsed && typeof parsed === 'object') {
-        log.info('Successfully generated regex patterns for products');
-        return { patterns: parsed, usage: promptResponse.usage };
-      }
-      log.warn('Unexpected format received; defaulting to fallback regexes');
-      return {
-        patterns: Object.keys(groupedPaths).reduce((acc, product) => {
-          acc[product] = '.*';
-          return acc;
-        }, {}),
-        usage: promptResponse.usage,
-      };
-    } else {
-      log.warn('No content received; defaulting to fallback regexes');
-      return {
-        patterns: Object.keys(groupedPaths).reduce((acc, product) => {
-          acc[product] = '.*';
-          return acc;
-        }, {}),
-        usage: null,
-      };
+
+    if (!promptResponse?.content) {
+      log.warn('No content received; using fallback patterns');
+      return { patterns: createFallbackPatterns(), usage: null };
     }
+
+    // Clean up markdown formatting and parse
+    let content = promptResponse.content.trim();
+    if (content.startsWith('```')) {
+      content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    }
+
+    const parsed = JSON.parse(content);
+    if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+      log.info('Successfully generated regex patterns for products');
+      return { patterns: parsed, usage: promptResponse.usage };
+    }
+
+    log.warn('Empty response; using fallback patterns');
+    return { patterns: createFallbackPatterns(), usage: promptResponse.usage };
   } catch (error) {
-    log.error(`Failed to get regexes for products: ${error.message}`);
-    return {
-      patterns: Object.keys(groupedPaths).reduce((acc, product) => {
-        acc[product] = '.*';
-        return acc;
-      }, {}),
-      usage: null,
-    };
+    log.error(`Failed to generate regex patterns: ${error.message}`);
+    return { patterns: createFallbackPatterns(), usage: null };
   }
 }
 
@@ -457,7 +469,7 @@ export async function analyzeProducts(domain, paths, context, configCategories =
   }
 
   try {
-    // Step 1: Classify paths with config category priority
+    // Step 1: Classify paths - if config categories exist, map to them; otherwise use LLM
     const pathClassifications = await deriveProductsForPaths(
       domain,
       paths,
@@ -472,43 +484,31 @@ export async function analyzeProducts(domain, paths, context, configCategories =
       totalTokenUsage.total_tokens += pathClassifications.usage.total_tokens || 0;
     }
 
-    // Step 2: Apply category count logic and concentration
+    // Step 2: Apply category logic
     let concentratedClassifications;
 
-    if (configCategoryCount >= 3) {
-      // Use ONLY config categories - map all derived products to config categories
-      log.info(`Config categories >= 3 (${configCategoryCount}): Mapping to config categories only (limit ${configCategoryCount})`);
-      concentratedClassifications = await concentrateProducts(
-        pathClassifications.paths,
-        context,
-        configCategories,
-        configCategoryCount, // Limit to ONLY the config categories provided
-      );
-    } else if (configCategoryCount >= 1) {
-      // Use config categories + LLM concentration to reach 6 total
-      log.info(`Config categories 1-2 (${configCategoryCount}): Adding LLM categories to reach 6 total`);
-      concentratedClassifications = await concentrateProducts(
-        pathClassifications.paths,
-        context,
-        configCategories,
-        6, // Target 6 total categories
-      );
+    if (configCategoryCount > 0) {
+      // Config categories provided - use them strictly, no additional LLM concentration needed
+      log.info(`Config categories provided (${configCategoryCount}): Using strict mapping to config categories + "other" for unmatched`);
+      // URLs are already mapped to config categories or "other" by deriveProductsForPaths
+      concentratedClassifications = pathClassifications;
     } else {
-      // Pure LLM generation - max 6 categories
-      log.info('No config categories: Using LLM-only generation (max 6)');
+      // No config categories - use LLM to generate and concentrate categories
+      log.info('No config categories: Using LLM generation and concentration (max 6 categories)');
       concentratedClassifications = await concentrateProducts(
         pathClassifications.paths,
         context,
         [],
         6, // Max 6 LLM-only categories
       );
-    }
 
-    // Track token usage from concentration step
-    if (concentratedClassifications.usage) {
-      totalTokenUsage.prompt_tokens += concentratedClassifications.usage.prompt_tokens || 0;
-      totalTokenUsage.completion_tokens += concentratedClassifications.usage.completion_tokens || 0;
-      totalTokenUsage.total_tokens += concentratedClassifications.usage.total_tokens || 0;
+      // Track token usage from concentration step
+      if (concentratedClassifications.usage) {
+        totalTokenUsage.prompt_tokens += concentratedClassifications.usage.prompt_tokens || 0;
+        totalTokenUsage.completion_tokens
+          += concentratedClassifications.usage.completion_tokens || 0;
+        totalTokenUsage.total_tokens += concentratedClassifications.usage.total_tokens || 0;
+      }
     }
 
     const groupedPaths = groupPathsByProduct(concentratedClassifications.paths);
@@ -523,7 +523,7 @@ export async function analyzeProducts(domain, paths, context, configCategories =
 
     const combinedPatterns = regexPatterns.patterns;
 
-    // Remove "unknown", "unclassified", and "other" keys if they exist
+    // Remove "unknown", "unclassified" and "other" keys if they exist
     delete combinedPatterns.unknown;
     delete combinedPatterns.unclassified;
     delete combinedPatterns.other;

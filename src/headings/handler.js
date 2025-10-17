@@ -174,7 +174,7 @@ export async function getH1HeadingASuggestion(url, log, pageTags, context, brand
       return null;
     }
     const { aiSuggestion } = aiResponseContent.h1;
-    log.info(`[Headings AI Suggestions] AI suggestion for empty heading for ${url}: ${aiSuggestion}`);
+    log.debug(`[Headings AI Suggestions] AI suggestion for empty heading for ${url}: ${aiSuggestion}`);
     return aiSuggestion;
   } catch (error) {
     log.error(`[Headings AI Suggestions] Error for empty heading suggestion: ${error}`);
@@ -262,7 +262,7 @@ export async function validatePageHeadings(
 
     if (h1Elements.length === 0
       || (h1Elements.length === 1 && getTextContent(h1Elements[0]).length === 0)) {
-      log.info(`Missing h1 element detected at ${url}`);
+      log.debug(`Missing h1 element detected at ${url}`);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
         success: false,
@@ -271,7 +271,7 @@ export async function validatePageHeadings(
         pageTags,
       });
     } else if (h1Elements.length > 1) {
-      log.info(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
+      log.debug(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
         success: false,
@@ -296,7 +296,7 @@ export async function validatePageHeadings(
       if (heading.tagName !== 'H1') {
         const text = getTextContent(heading);
         if (text.length === 0) {
-          log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
+          log.debug(`Empty heading detected (${heading.tagName}) at ${url}`);
           return {
             check: HEADINGS_CHECKS.HEADING_EMPTY.check,
             success: false,
@@ -340,7 +340,7 @@ export async function validatePageHeadings(
           duplicates: headingsWithSameText.map((h) => h.tagName),
           count: headingsWithSameText.length,
         });
-        log.info(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`);
+        log.debug(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`);
       }
     }
     for (let i = 0; i < headings.length - 1; i += 1) {
@@ -356,7 +356,7 @@ export async function validatePageHeadings(
           heading: currentHeading.tagName,
           nextHeading: nextHeading.tagName,
         });
-        log.info(`Heading without content detected at ${url}: ${currentHeading.tagName} has no content before ${nextHeading.tagName}`);
+        log.debug(`Heading without content detected at ${url}: ${currentHeading.tagName} has no content before ${nextHeading.tagName}`);
       }
     }
 
@@ -375,7 +375,7 @@ export async function validatePageHeadings(
             previous: `h${prevLevel}`,
             current: `h${curLevel}`,
           });
-          log.info(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);
+          log.debug(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);
         }
       }
     }
@@ -404,11 +404,11 @@ export async function headingsAuditRunner(baseURL, context, site) {
 
   try {
     // Get top 200 pages
-    log.info(`[Headings Audit] Fetching top pages for site: ${siteId}`);
+    log.debug(`[Headings Audit] Fetching top pages for site: ${siteId}`);
     const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
     const topPages = allTopPages.slice(0, 200);
 
-    log.info(`[Headings Audit] Processing ${topPages.length} top pages for headings audit (limited to 200)`);
+    log.debug(`[Headings Audit] Processing ${topPages.length} top pages for headings audit (limited to 200)`);
     log.debug(`[Headings Audit] Top pages sample: ${topPages.slice(0, 3).map((p) => p.url).join(', ')}`);
 
     if (topPages.length === 0) {
@@ -508,7 +508,7 @@ export async function headingsAuditRunner(baseURL, context, site) {
     // wait for all promises to resolve
     await Promise.all(auditResultsPromises);
 
-    log.info(`Successfully completed Headings Audit for site: ${baseURL}. Found ${totalIssuesFound} issues across ${Object.keys(aggregatedResults).length} check types.`);
+    log.debug(`Successfully completed Headings Audit for site: ${baseURL}. Found ${totalIssuesFound} issues across ${Object.keys(aggregatedResults).length} check types.`);
 
     // Return success if no issues found, otherwise return the aggregated results
     if (totalIssuesFound === 0) {
@@ -601,7 +601,7 @@ export function generateSuggestions(auditUrl, auditData, context) {
 
   const suggestions = [...allSuggestions];
 
-  log.info(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`);
+  log.debug(`Generated ${suggestions.length} headings suggestions for ${auditUrl}`);
   return { ...auditData, suggestions, elmoSuggestions };
 }
 

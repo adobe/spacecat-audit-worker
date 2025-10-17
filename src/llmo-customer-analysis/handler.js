@@ -65,7 +65,7 @@ async function checkOptelData(domain, context) {
     const { pageviews } = await rumAPIClient.query('pageviews', options);
     return pageviews > 0;
   } catch (error) {
-    log.info(`Failed to check OpTel data for domain ${domain}: ${error.message}`);
+    log.error(`Failed to check OpTel data for domain ${domain}: ${error.message}`);
     return false;
   }
 }
@@ -169,6 +169,23 @@ export async function triggerGeoBrandPresence(context, site, auditContext = {}) 
 
   await sqs.sendMessage(configuration.getQueues().audits, geoBrandPresenceMessage);
 
+  log.info(`Successfully triggered ${auditType} audit`);
+}
+
+export async function triggerGeoBrandPresenceRefresh(context, site, configVersion) {
+  const { sqs, dataAccess, log } = context;
+  const { Configuration } = dataAccess;
+  const configuration = await Configuration.findLatest();
+  const auditType = 'geo-brand-presence-trigger-refresh';
+  const siteId = site.getSiteId();
+
+  log.info('Triggering %s audit for site: %s', auditType, siteId);
+
+  await sqs.sendMessage(configuration.getQueues().audits, {
+    type: auditType,
+    siteId,
+    auditContext: { configVersion },
+  });
   log.info(`Successfully triggered ${auditType} audit`);
 }
 
@@ -298,13 +315,20 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     triggeredSteps.push('cdn-logs-report');
   }
 
-  const hasBrandPresenceChanges = changes.brands
-    || changes.competitors || changes.topics || changes.categories || changes.entities;
+  const brandPresenceCadence = auditContext?.brandPresenceCadence || 'weekly';
+  const hasBrandPresenceChanges = changes.topics || changes.categories || changes.entities;
+  const needsBrandPresenceRefresh = previousConfigVersion
+    && (changes.brands || changes.competitors);
 
   if (hasBrandPresenceChanges) {
-    log.info('LLMO config changes detected in brands, competitors, topics, categories, or entities; triggering geo-brand-presence audit');
+    log.info('LLMO config changes detected in topics, categories, or entities; triggering geo-brand-presence audit');
     await triggerGeoBrandPresence(context, site, auditContext);
-    triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
+    triggeredSteps.push(brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
+  }
+  if (brandPresenceCadence !== 'daily' && needsBrandPresenceRefresh) {
+    log.info('LLMO config changes detected in brand or competitor aliases; triggering geo-brand-presence-refresh');
+    await triggerGeoBrandPresenceRefresh(context, site, configVersion);
+    triggeredSteps.push('geo-brand-presence-refresh');
   }
 
   if (triggeredSteps.length > 0) {

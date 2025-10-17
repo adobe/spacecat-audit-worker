@@ -60,7 +60,7 @@ export async function scrapeAccessibilityData(context) {
       error: errorMsg,
     };
   }
-  log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
+  log.debug(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
   let urlsToScrape = [];
   urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
@@ -68,7 +68,7 @@ export async function scrapeAccessibilityData(context) {
   if (urlsToScrape.length === 0) {
     const { SiteTopPage } = dataAccess;
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-    log.info(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
+    log.debug(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
     if (!isNonEmptyArray(topPages)) {
       log.info(`[A11yAudit] No top pages found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
       return {
@@ -81,7 +81,7 @@ export async function scrapeAccessibilityData(context) {
       .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
       .sort((a, b) => b.traffic - a.traffic)
       .slice(0, 100);
-    log.info(`[A11yAudit] Top 100 pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape, null, 2)}`);
+    log.debug(`[A11yAudit] Top 100 pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape, null, 2)}`);
   }
 
   const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
@@ -90,16 +90,15 @@ export async function scrapeAccessibilityData(context) {
     siteId,
     log,
   );
-  log.info(`[A11yAudit] Found existing files from failed audits for site ${siteId} (${site.getBaseURL()}): ${existingObjectKeys}`);
+
   const existingUrls = await getExistingUrlsFromFailedAudits(
     s3Client,
     bucketName,
     log,
     existingObjectKeys,
   );
-  log.info(`[A11yAudit] Found existing URLs from failed audits for site ${siteId} (${site.getBaseURL()}): ${existingUrls}`);
+
   const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
-  log.info(`[A11yAudit] Remaining URLs to scrape for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(remainingUrls, null, 2)}`);
 
   // get scraping config from site
   const scrapingConfig = await site.getConfig();
@@ -147,7 +146,7 @@ export async function processAccessibilityOpportunities(context) {
     };
   }
 
-  log.info(`[A11yAudit] Step 2: Processing scraped data for site ${siteId} (${site.getBaseURL()})`);
+  log.debug(`[A11yAudit] Step 2: Processing scraped data for site ${siteId} (${site.getBaseURL()})`);
 
   // Use the accessibility aggregator to process data
   let aggregationResult;

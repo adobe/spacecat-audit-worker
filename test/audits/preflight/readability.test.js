@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 import esmock from 'esmock';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import readability, { PREFLIGHT_READABILITY } from '../../../src/readability/handler.js';
 import { PREFLIGHT_STEP_IDENTIFY } from '../../../src/preflight/handler.js';
 
@@ -23,6 +24,7 @@ use(sinonChai);
 
 describe('Preflight Readability Audit', () => {
   let context;
+  let configuration;
   let auditContext;
   let log;
   let audits;
@@ -35,6 +37,13 @@ describe('Preflight Readability Audit', () => {
       error: sinon.stub(),
       debug: sinon.stub(),
     };
+
+    configuration = {
+      isHandlerEnabledForSite: sinon.stub(),
+      getHandlers: sinon.stub().returns({
+        'readability-preflight': { productCodes: ['aem-sites'] },
+      }),
+    }
 
     context = {
       site: {
@@ -52,6 +61,9 @@ describe('Preflight Readability Audit', () => {
             save: sinon.stub().resolves(),
           }),
         },
+        Configuration: {
+          findLatest: sinon.stub().resolves(configuration),
+        }
       },
       job: {
         getMetadata: () => ({
@@ -81,7 +93,6 @@ describe('Preflight Readability Audit', () => {
     audits.set('https://example.com/page1', auditsResult[0]);
 
     auditContext = {
-      checks: ['readability'],
       previewUrls: ['https://example.com/page1'],
       step: 'identify',
       audits,
@@ -89,6 +100,17 @@ describe('Preflight Readability Audit', () => {
       scrapedObjects: [],
       timeExecutionBreakdown: [],
     };
+
+    configuration.isHandlerEnabledForSite.resolves(true);
+
+    // Ensure entitlement checks succeed; if already stubbed elsewhere, reset safely
+    if (TierClient.createForSite.restore) {
+      TierClient.createForSite.restore();
+    }
+    const mockTierClient = {
+      checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+    };
+    sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
   });
 
   describe('PREFLIGHT_READABILITY constant', () => {
@@ -99,7 +121,7 @@ describe('Preflight Readability Audit', () => {
 
   describe('readability audit', () => {
     it('should skip when check is not included', async () => {
-      auditContext.checks = ['canonical']; // Different check
+      configuration.isHandlerEnabledForSite.resolves(false);
       await readability(context, auditContext);
 
       expect(auditsResult[0].audits).to.have.lengthOf(0);
@@ -157,7 +179,7 @@ describe('Preflight Readability Audit', () => {
 
       const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
       expect(audit.opportunities).to.have.lengthOf(0);
-      expect(log.info).to.have.been.calledWithMatch('Processed 0 text element(s)');
+      expect(log.debug).to.have.been.calledWithMatch('Processed 0 text element(s)');
     });
 
     it('should process both paragraphs and divs', async () => {
@@ -177,7 +199,7 @@ describe('Preflight Readability Audit', () => {
 
       const audit = auditsResult[0].audits.find((a) => a.name === PREFLIGHT_READABILITY);
       expect(audit.opportunities).to.have.lengthOf(1); // Only the poor text should be flagged
-      expect(log.info).to.have.been.calledWithMatch('Processed 2 text element(s)');
+      expect(log.debug).to.have.been.calledWithMatch('Processed 2 text element(s)');
     });
 
     it('should handle DOM parsing errors gracefully', async () => {
@@ -310,7 +332,7 @@ describe('Preflight Readability Audit', () => {
       await readability(context, auditContext);
 
       // Should log a warning and return early
-      expect(log.warn).to.have.been.calledWithMatch('No page result found for');
+      expect(log.debug).to.have.been.calledWithMatch('No page result found for');
     });
 
     it('should handle case when audit entry is missing for a page', async () => {
@@ -328,7 +350,7 @@ describe('Preflight Readability Audit', () => {
       await readability(context, auditContext);
 
       // Should log a warning because no page result exists for this URL
-      expect(log.warn).to.have.been.calledWithMatch('No page result found for');
+      expect(log.debug).to.have.been.calledWithMatch('No page result found for');
     });
 
     it('should handle readability calculation error for individual elements', async () => {
@@ -387,8 +409,8 @@ describe('Preflight Readability Audit', () => {
       expect(audit.opportunities).to.have.lengthOf(0);
 
       // Should log that content was processed but no poor readability found
-      expect(log.info).to.have.been.calledWithMatch('Processed 1 text element(s)');
-      expect(log.info).to.have.been.calledWithMatch('found 0 with poor readability');
+      expect(log.debug).to.have.been.calledWithMatch('Processed 1 text element(s)');
+      expect(log.debug).to.have.been.calledWithMatch('found 0 with poor readability');
     });
 
     it('should process supported multilingual content (e.g. German)', async () => {
@@ -414,8 +436,8 @@ describe('Preflight Readability Audit', () => {
       expect(audit.opportunities[0].fleschReadingEase).to.be.below(30);
 
       // Should log that German content was detected and processed
-      expect(log.info).to.have.been.calledWithMatch('detected languages: german');
-      expect(log.info).to.have.been.calledWithMatch('found 1 with poor readability');
+      expect(log.debug).to.have.been.calledWithMatch('detected languages: german');
+      expect(log.debug).to.have.been.calledWithMatch('found 1 with poor readability');
     });
 
     it('should skip elements with block-level children to avoid duplicate analysis', async () => {
@@ -473,7 +495,7 @@ describe('Preflight Readability Audit', () => {
       expect(audit.opportunities).to.have.lengthOf(1);
 
       // Should log that elements were processed
-      expect(log.info).to.have.been.calledWithMatch('Processed 1 text element(s)');
+      expect(log.debug).to.have.been.calledWithMatch('Processed 1 text element(s)');
     });
 
     it('should properly handle text with <br> tags by splitting into paragraphs', async () => {
@@ -503,7 +525,7 @@ describe('Preflight Readability Audit', () => {
       expect(audit.opportunities).to.have.lengthOf(2);
 
       // Should log that 2 elements were processed (one for each paragraph)
-      expect(log.info).to.have.been.calledWithMatch('Processed 2 text element(s)');
+      expect(log.debug).to.have.been.calledWithMatch('Processed 2 text element(s)');
     });
 
     it('should not truncate text when it is shorter than MAX_CHARACTERS_DISPLAY', async () => {
@@ -567,7 +589,7 @@ describe('Preflight Readability Audit', () => {
 
       const result = await readabilityMocked.default(context, auditContext);
 
-      expect(log.info).to.have.been.calledWithMatch('No readability issues found to send to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('No readability issues found to send to Mystique');
       expect(mockSendReadabilityToMystique).not.to.have.been.called;
       expect(result.processing).to.be.false;
     });
@@ -597,7 +619,7 @@ describe('Preflight Readability Audit', () => {
       const result = await readabilityMocked.default(context, auditContext);
 
       expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
-      expect(log.info).to.have.been.calledWithMatch('Sending 1 readability issues to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('Sending 1 readability issues to Mystique');
       expect(result.processing).to.be.true;
     });
 
@@ -1399,7 +1421,7 @@ describe('Preflight Readability Audit', () => {
       const result = await readabilityMocked.default(context, auditContext);
 
       expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
-      expect(log.info).to.have.been.calledWithMatch('Sending 1 readability issues to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('Sending 1 readability issues to Mystique');
       expect(result.processing).to.be.true;
 
       // Check that opportunities were cleared from response while processing
@@ -1737,7 +1759,7 @@ describe('Preflight Readability Audit', () => {
 
       const result = await readabilityMocked.default(context, auditContext);
 
-      expect(log.info).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
       expect(result.processing).to.be.true;
       expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
     });
@@ -1772,7 +1794,7 @@ describe('Preflight Readability Audit', () => {
 
       const result = await readabilityMocked.default(context, auditContext);
 
-      expect(log.info).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
       expect(result.processing).to.be.true;
       expect(mockSendReadabilityToMystique).to.have.been.calledOnce;
     });
@@ -1999,6 +2021,110 @@ describe('Preflight Readability Audit', () => {
 
       // This tests the scenario where opportunities arrays exist and are used directly
       // (left side of the || operator on line 326)
+    });
+
+    it('should handle Mystique error and update opportunities with error status', async () => {
+      // This test covers lines 392-424 in readability/handler.js
+      const poorText = 'This extraordinarily complex sentence utilizes numerous multisyllabic '
+        + `words and intricate grammatical constructions, making it extremely difficult for ${
+          'the average reader to comprehend without considerable effort and concentration.'.repeat(3)}`;
+
+      auditContext.scrapedObjects = [{
+        data: {
+          finalUrl: 'https://example.com/page1',
+          scrapeResult: {
+            rawBody: `<html><body><p>${poorText}</p></body></html>`,
+          },
+        },
+      }];
+
+      auditContext.step = 'suggest';
+
+      // Create opportunities that will trigger Mystique sending
+      auditsResult[0].audits = [{
+        name: 'readability',
+        type: 'seo',
+        opportunities: [{
+          check: 'poor-readability',
+          textContent: poorText,
+          fleschReadingEase: 20,
+          suggestionStatus: 'processing',
+        }],
+      }];
+
+      // Add another page with readability issues
+      auditsResult.push({
+        pageUrl: 'https://example.com/page2',
+        audits: [{
+          name: 'readability',
+          type: 'seo',
+          opportunities: [{
+            check: 'poor-readability',
+            textContent: 'Another complex text',
+            fleschReadingEase: 25,
+            suggestionStatus: 'processing',
+          }],
+        }],
+      });
+
+      // Mock checkForExistingSuggestions to return no existing suggestions
+      context.dataAccess.AsyncJob.findById.resolves({
+        getMetadata: () => null,
+        setResult: sinon.stub(),
+        save: sinon.stub().resolves(),
+      });
+      context.dataAccess.Opportunity = {
+        allBySiteId: sinon.stub().resolves([]),
+      };
+
+      // Mock sendReadabilityToMystique to throw an error
+      const readabilityModuleFailing = await esmock('../../../src/readability/handler.js', {
+        '../../../src/readability/async-mystique.js': {
+          sendReadabilityToMystique: sinon.stub().rejects(new TypeError('Network error connecting to Mystique')),
+        },
+      });
+
+      // Add environment and sqs to context for error message details
+      context.env = {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.test.com/mystique-queue',
+      };
+      context.sqs = {
+        sendMessage: sinon.stub(),
+      };
+
+      const result = await readabilityModuleFailing.default(context, auditContext);
+
+      // Verify error was logged with detailed information
+      expect(log.error).to.have.been.calledWithMatch('[readability-suggest handler] readability: Error sending issues to Mystique:');
+
+      // Verify all opportunities were updated with error status and debugging info
+      const page1Audit = auditsResult[0].audits.find(a => a.name === 'readability');
+      expect(page1Audit.opportunities[0]).to.include({
+        suggestionStatus: 'error',
+      });
+      expect(page1Audit.opportunities[0].suggestionMessage).to.include('Mystique integration failed: Network error connecting to Mystique');
+      expect(page1Audit.opportunities[0].debugInfo).to.deep.include({
+        errorType: 'TypeError',
+        errorMessage: 'Network error connecting to Mystique',
+        mystiqueQueueConfigured: true,
+        sqsClientAvailable: true,
+      });
+      expect(page1Audit.opportunities[0].debugInfo.timestamp).to.exist;
+
+      const page2Audit = auditsResult[1].audits.find(a => a.name === 'readability');
+      expect(page2Audit.opportunities[0]).to.include({
+        suggestionStatus: 'error',
+      });
+      expect(page2Audit.opportunities[0].suggestionMessage).to.include('Mystique integration failed: Network error connecting to Mystique');
+      expect(page2Audit.opportunities[0].debugInfo).to.deep.include({
+        errorType: 'TypeError',
+        errorMessage: 'Network error connecting to Mystique',
+        mystiqueQueueConfigured: true,
+        sqsClientAvailable: true,
+      });
+
+      // Test should not be marked as processing since error occurred
+      expect(result.processing).to.be.false;
     });
   });
 });

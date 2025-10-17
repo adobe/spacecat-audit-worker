@@ -50,7 +50,7 @@ export function createLLMOSharepointClient({ env, log }, options = {}) {
 
 /**
  * Downloads a document from SharePoint and returns its raw buffer
- * @param {string} fileLocation - The path to the document in SharePoint
+ * @param {string} filename - The path to the document in SharePoint
  * @param {SharepointClient} sharepointClient - The SharePoint client instance
  * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} log - Logger instance
  * @returns {Promise<Buffer>} - The document content as a buffer
@@ -60,7 +60,7 @@ export async function readFromSharePoint(filename, outputLocation, sharepointCli
     const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
     const sharepointDoc = sharepointClient.getDocument(documentPath);
     const buffer = await sharepointDoc.getDocumentContent();
-    log.info(`Document successfully downloaded from SharePoint: ${documentPath}`);
+    log.debug(`Document successfully downloaded from SharePoint: ${documentPath}`);
     return buffer;
   } catch (error) {
     log.error(`Failed to read from SharePoint: ${error.message}`);
@@ -84,7 +84,7 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
     ];
 
     for (const [index, endpoint] of endpoints.entries()) {
-      log.info(`Publishing Excel report via admin API (${endpoint.name}): ${endpoint.url}`);
+      log.debug(`Publishing Excel report via admin API (${endpoint.name}): ${endpoint.url}`);
 
       // eslint-disable-next-line no-await-in-loop
       const response = await fetch(endpoint.url, { method: 'POST', headers });
@@ -93,10 +93,10 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
         throw new Error(`${endpoint.name} failed: ${response.status} ${response.statusText}`);
       }
 
-      log.info(`Excel report successfully published to ${endpoint.name}`);
+      log.debug(`Excel report successfully published to ${endpoint.name}`);
 
       if (index === 0) {
-        log.info('Waiting 2 seconds before publishing to live...');
+        log.debug('Waiting 2 seconds before publishing to live...');
         // eslint-disable-next-line no-await-in-loop
         await sleep(2000);
       }
@@ -106,18 +106,33 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
   }
 }
 
+/**
+ * @param {ArrayBuffer} buffer
+ * @param {string} filename
+ * @param {string} outputLocation
+ * @param {SharepointClient} sharepointClient
+ * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} log
+ */
 export async function uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log) {
   try {
     const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
     const sharepointDoc = sharepointClient.getDocument(documentPath);
     await sharepointDoc.uploadRawDocument(buffer);
-    log.info(`Excel report successfully uploaded to SharePoint: ${documentPath}`);
+    log.debug(`Excel report successfully uploaded to SharePoint: ${documentPath}`);
   } catch (error) {
     log.error(`Failed to upload to SharePoint: ${error.message}`);
     throw error;
   }
 }
 
+/**
+ * Uploads a file to SharePoint and publishes it via the admin.hlx.page API
+ * @param {ArrayBuffer} buffer - The file content as a buffer
+ * @param {string} filename - The name of the file to upload
+ * @param {string} outputLocation - The SharePoint folder path where the file will be uploaded
+ * @param {SharepointClient} sharepointClient - The SharePoint client instance
+ * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} log - Logger instance
+ */
 export async function uploadAndPublishFile(
   buffer,
   filename,
