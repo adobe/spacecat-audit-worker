@@ -89,11 +89,10 @@ export default async function handler(message, context) {
       log.warn(`No valid patterns received for site: ${siteId}`);
     } else {
       // Check accuracy threshold
-      const accuracy = validation?.accuracy_pct;
-      if (accuracy == null || accuracy < MIN_ACCURACY_THRESHOLD) {
-        auditResult.error = `Accuracy ${accuracy}% below threshold ${MIN_ACCURACY_THRESHOLD}%`;
+      if (accuracyPct == null || accuracyPct < MIN_ACCURACY_THRESHOLD) {
+        auditResult.error = `Accuracy ${accuracyPct}% below threshold ${MIN_ACCURACY_THRESHOLD}%`;
         auditResult.patternsStored = false;
-        log.warn(`Page type detection accuracy ${accuracy}% is below threshold ${MIN_ACCURACY_THRESHOLD}% for site: ${siteId}. Skipping pattern storage.`);
+        log.warn(`Page type detection accuracy ${accuracyPct}% is below threshold ${MIN_ACCURACY_THRESHOLD}% for site: ${siteId}. Skipping pattern storage.`);
       } else {
         try {
           log.info(`Updating site page types for site: ${siteId} with patterns: ${JSON.stringify(patterns)}`);
@@ -117,7 +116,7 @@ export default async function handler(message, context) {
         }
       }
 
-      log.info(`Validation results: ${accuracy}% accuracy with ${validation?.sample_size} samples`);
+      log.info(`Validation results: ${accuracyPct}% accuracy with ${validation?.sample_size} samples`);
       log.info(`Execution metrics: processed ${executionMetrics?.total_urls} URLs in ${executionMetrics?.total_duration_seconds}s`);
     }
   }
