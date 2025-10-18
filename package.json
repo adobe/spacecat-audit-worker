@@ -86,7 +86,7 @@
     "@adobe/spacecat-shared-gpt-client": "1.6.5",
     "@adobe/spacecat-shared-http-utils": "1.17.7",
     "@adobe/spacecat-shared-ims-client": "1.8.13",
-    "@adobe/spacecat-shared-rum-api-client": "2.38.2",
+    "@adobe/spacecat-shared-rum-api-client": "2.38.3",
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-tier-client": "1.2.0",
     "@adobe/spacecat-shared-slack-client": "1.5.26",
