@@ -310,8 +310,8 @@ describe('Hreflang Audit', () => {
       mockDataAccess = {
         SiteTopPage: {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-            { getUrl: () => `${baseURL}/` },
-            { getUrl: () => `${baseURL}/about` },
+            { getUrl: () => `${baseURL}/`, getTraffic: () => 100 },
+            { getUrl: () => `${baseURL}/about`, getTraffic: () => 90 },
           ]),
         },
       };
@@ -366,9 +366,11 @@ describe('Hreflang Audit', () => {
       expect(result.auditResult.success).to.be.false;
     });
 
-    it('should limit to 200 pages as requested', async () => {
+    it('should limit to 200 pages as requested', async function () {
+      this.timeout(25000); // Increase timeout for processing 200 pages with rate limiting
       const manyPages = Array.from({ length: 250 }, (_, i) => ({
         getUrl: () => `${baseURL}/page-${i}`,
+        getTraffic: () => 100 - i,
       }));
 
       mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyPages);
@@ -385,11 +387,12 @@ describe('Hreflang Audit', () => {
       expect(scope.isDone()).to.be.true;
     });
 
-    it('should aggregate issues correctly', async () => {
+    it('should aggregate issues correctly', async function () {
+      this.timeout(5000);
       const htmlWithIssues = `
         <html>
           <head>
-            <link rel="alternate" hreflang="invalid-code" href="https://example.com/invalid">
+            <link rel="alternate" hreflang="xx" href="https://example.com/invalid">
           </head>
         </html>
       `;
@@ -446,6 +449,128 @@ describe('Hreflang Audit', () => {
 
       expect(result.auditResult.status).to.equal('success');
       expect(result.auditResult.message).to.include('No hreflang issues detected');
+    });
+
+    it('should process pages in batches with rate limiting', async function () {
+      this.timeout(5000); // Increase timeout for rate-limited test
+      // Create 25 pages to ensure multiple batches (BATCH_SIZE is 10)
+      const manyPages = Array.from({ length: 25 }, (_, i) => ({
+        getUrl: () => `${baseURL}/page-${i}`,
+        getTraffic: () => 100 - i,
+      }));
+
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyPages);
+
+      // Mock all 25 page requests
+      const scope = nock(baseURL);
+      const html = '<html><head><link rel="alternate" hreflang="en" href="https://example.com/"></head></html>';
+      for (let i = 0; i < 25; i += 1) {
+        scope.get(`/page-${i}`).reply(200, html);
+      }
+
+      const startTime = Date.now();
+      const result = await hreflangAuditRunner(baseURL, context, site);
+      const endTime = Date.now();
+
+      // Verify batch processing logs
+      expect(context.log.info).to.have.been.calledWith('Starting Hreflang Audit with siteId: site-id');
+      expect(context.log.info).to.have.been.calledWith(`Base URL for hreflang audit: ${baseURL}`);
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Processing batch 1\/3/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Processing batch 2\/3/));
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Processing batch 3\/3/));
+
+      // Verify all pages were processed
+      expect(result.fullAuditRef).to.equal(baseURL);
+      expect(result.auditResult.status).to.equal('success');
+
+      // Verify rate limiting: should take at least 2 seconds (2 delays × 1000ms)
+      // We have 3 batches, so 2 delays between them
+      const duration = endTime - startTime;
+      expect(duration).to.be.at.least(1900); // Allow some margin for test execution
+
+      // Verify all HTTP requests were made
+      expect(scope.isDone()).to.be.true;
+    });
+
+    it('should process single batch without rate limiting delay', async () => {
+      // Create 5 pages (less than BATCH_SIZE of 10)
+      const fewPages = Array.from({ length: 5 }, (_, i) => ({
+        getUrl: () => `${baseURL}/page-${i}`,
+        getTraffic: () => 100 - i,
+      }));
+
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(fewPages);
+
+      // Mock all 5 page requests
+      const scope = nock(baseURL);
+      const html = '<html><head><link rel="alternate" hreflang="en" href="https://example.com/"></head></html>';
+      for (let i = 0; i < 5; i += 1) {
+        scope.get(`/page-${i}`).reply(200, html);
+      }
+
+      const startTime = Date.now();
+      const result = await hreflangAuditRunner(baseURL, context, site);
+      const endTime = Date.now();
+
+      // Verify only one batch was processed
+      expect(context.log.info).to.have.been.calledWith(sinon.match(/Processing batch 1\/1/));
+
+      // Verify result
+      expect(result.auditResult.status).to.equal('success');
+
+      // Should complete quickly (no rate limiting delay)
+      const duration = endTime - startTime;
+      expect(duration).to.be.lessThan(1000);
+
+      // Verify all HTTP requests were made
+      expect(scope.isDone()).to.be.true;
+    });
+
+    it('should aggregate results correctly across multiple batches', async function () {
+      this.timeout(5000); // Increase timeout for rate-limited test
+      // Create 25 pages with some having issues
+      const manyPages = Array.from({ length: 25 }, (_, i) => ({
+        getUrl: () => `${baseURL}/page-${i}`,
+        getTraffic: () => 100 - i,
+      }));
+
+      mockDataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyPages);
+
+      const scope = nock(baseURL);
+
+      // First 10 pages (batch 1): valid hreflang
+      const validHtml = '<html><head><link rel="alternate" hreflang="en" href="https://example.com/"></head></html>';
+      for (let i = 0; i < 10; i += 1) {
+        scope.get(`/page-${i}`).reply(200, validHtml);
+      }
+
+      // Next 10 pages (batch 2): invalid language code
+      const invalidHtml = '<html><head><link rel="alternate" hreflang="xx" href="https://example.com/invalid"></head></html>';
+      for (let i = 10; i < 20; i += 1) {
+        scope.get(`/page-${i}`).reply(200, invalidHtml);
+      }
+
+      // Last 5 pages (batch 3): hreflang outside head
+      const outsideHeadHtml = '<html><head></head><body><link rel="alternate" hreflang="en" href="https://example.com/"></body></html>';
+      for (let i = 20; i < 25; i += 1) {
+        scope.get(`/page-${i}`).reply(200, outsideHeadHtml);
+      }
+
+      const result = await hreflangAuditRunner(baseURL, context, site);
+
+      // Verify issues were aggregated from all batches
+      expect(result.auditResult).to.have.property(
+        HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_TAG.check,
+      );
+      expect(result.auditResult).to.have.property(
+        HREFLANG_CHECKS.HREFLANG_OUTSIDE_HEAD.check,
+      );
+
+      // Verify correct number of URLs with issues
+      expect(result.auditResult[HREFLANG_CHECKS.HREFLANG_INVALID_LANGUAGE_TAG.check].urls).to.have.length(10);
+      expect(result.auditResult[HREFLANG_CHECKS.HREFLANG_OUTSIDE_HEAD.check].urls).to.have.length(5);
+
+      expect(scope.isDone()).to.be.true;
     });
   });
 
