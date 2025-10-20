@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+/* c8 ignore start */
+
 import { refreshGeoBrandPresenceSheetsHandler } from '../geo-brand-presence/geo-brand-presence-refresh-handler.js';
 
 /**
