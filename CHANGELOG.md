@@ -1,3 +1,10 @@
+# [1.212.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.211.2...v1.212.0) (2025-10-20)
+
+
+### Features
+
+* PageType audit ([#1430](https://github.com/adobe/spacecat-audit-worker/issues/1430)) ([0a8cbe7](https://github.com/adobe/spacecat-audit-worker/commit/0a8cbe7d047b24653a84fcdc5b48fb39fc20334c))
+
 ## [1.211.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.211.1...v1.211.2) (2025-10-18)
 
 
