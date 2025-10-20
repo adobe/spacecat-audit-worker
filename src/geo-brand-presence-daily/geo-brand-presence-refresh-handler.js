@@ -1,3 +1,4 @@
+/* c8 ignore start */
 /*
  * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
@@ -9,7 +10,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* c8 ignore start */
+
+/* eslint-disable header/header */
 
 import { refreshGeoBrandPresenceSheetsHandler } from '../geo-brand-presence/geo-brand-presence-refresh-handler.js';
 
