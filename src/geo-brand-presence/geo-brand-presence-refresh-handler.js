@@ -306,4 +306,4 @@ function errorMsg(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})$/;
+const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})(?:-\d+)?$/;
