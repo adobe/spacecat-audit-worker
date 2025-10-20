@@ -14,6 +14,7 @@
 
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -53,6 +54,11 @@ describe('Step-based Audit Tests', () => {
 
     configuration = {
       isHandlerEnabledForSite: sandbox.stub().returns(true),
+      getHandlers: sandbox.stub().returns({
+        'content-audit': {
+          productCodes: ['ASO', 'LLMO'],
+        },
+      }),
     };
 
     context = new MockContextBuilder()
@@ -61,6 +67,12 @@ describe('Step-based Audit Tests', () => {
 
     context.dataAccess.Site.findById.resolves(site);
     context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+    // Mock TierClient for entitlement checks
+    const mockTierClient = {
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+    };
+    sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
     context.env = {
       CONTENT_SCRAPER_QUEUE_URL: 'https://space.cat/content-scraper',

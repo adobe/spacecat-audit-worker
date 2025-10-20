@@ -1,6 +1,6 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
 SELECT
-  url AS url,
+  url_extract_path(url) AS url,
   request_user_agent AS user_agent,
   response_status AS status,
   try(url_extract_host(request_referer)) AS referer,
@@ -35,7 +35,7 @@ WHERE year  = '{{year}}'
   AND NOT REGEXP_LIKE(COALESCE(request_referer, ''), '{{host}}')
 
 GROUP BY
-  url,
+  url_extract_path(url),
   request_user_agent,
   response_status,
   request_referer,
