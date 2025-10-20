@@ -1,3 +1,10 @@
+## [1.212.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.212.0...v1.212.1) (2025-10-20)
+
+
+### Bug Fixes
+
+* only trigger if category names changed ([#1434](https://github.com/adobe/spacecat-audit-worker/issues/1434)) ([f277a04](https://github.com/adobe/spacecat-audit-worker/commit/f277a0432e950129d033034ea0b00e4174f2f627))
+
 # [1.212.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.211.2...v1.212.0) (2025-10-20)
 
 
