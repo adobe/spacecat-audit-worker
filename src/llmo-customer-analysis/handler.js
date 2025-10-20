@@ -19,7 +19,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import {
-  getLastSunday, compareConfigs,
+  getLastSunday, compareConfigs, areCategoryNamesDifferent,
 } from './utils.js';
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
@@ -282,7 +282,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   }
 
   const changes = compareConfigs(oldConfig, newConfig);
-  const hasCdnLogsChanges = changes.categories;
+  const hasCdnLogsChanges = changes.categories
+    && areCategoryNamesDifferent(oldConfig.categories, newConfig.categories);
 
   if (changes.cdnBucketConfig) {
     try {
