@@ -45,8 +45,23 @@ export async function getTopPagesForSiteId(dataAccess, siteId, context, log) {
 
     const topPages = result || [];
     if (topPages.length > 0) {
-      const topPagesUrls = topPages.map((page) => ({ url: page.getUrl() }));
-      log.info(`Found ${topPagesUrls.length} top pages`);
+      // Deduplicate by URL - keep the most recent entry (highest traffic)
+      const urlMap = new Map();
+      topPages.forEach((page) => {
+        const url = page.getUrl();
+        const existing = urlMap.get(url);
+        if (!existing || page.getTraffic() > existing.getTraffic()) {
+          urlMap.set(url, page);
+        }
+      });
+
+      // Convert to array and limit to 200
+      const uniquePages = Array.from(urlMap.values())
+        .sort((a, b) => b.getTraffic() - a.getTraffic())
+        .slice(0, 200);
+
+      const topPagesUrls = uniquePages.map((page) => ({ url: page.getUrl() }));
+      log.info(`Found ${topPagesUrls.length} unique top pages (after deduplication and limiting to 200)`);
       return topPagesUrls;
     } else {
       log.info('No top pages found');
