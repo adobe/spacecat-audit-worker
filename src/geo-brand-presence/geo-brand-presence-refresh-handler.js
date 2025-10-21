@@ -120,6 +120,14 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   let errMsg;
   const site = await Site.findById(siteId);
 
+  // Priority: context (for wrapper) > site config > default
+  const brandPresenceCadence = context.brandPresenceCadence
+    || site.getConfig()?.getBrandPresenceCadence?.()
+    || 'weekly';
+  const isDaily = brandPresenceCadence === 'daily';
+
+  log.info('%s: Processing refresh with cadence: %s for site %s', AUDIT_NAME, brandPresenceCadence, siteId);
+
   // fetch sheets that need to be refreshed from SharePoint
   // Get the SharePoint client
   const sharepointClient = await createLLMOSharepointClient(context);
@@ -208,8 +216,13 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
         { expiresIn: 86_400 /* seconds, 24h */ },
       );
 
+      // Determine message type based on cadence
+      const messageType = isDaily
+        ? 'refresh:geo-brand-presence-daily'
+        : 'refresh:geo-brand-presence';
+
       const msg = createMystiqueMessage({
-        type: 'refresh:geo-brand-presence',
+        type: messageType,
         auditId,
         baseURL,
         siteId,
@@ -222,7 +235,8 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
       });
 
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, msg);
-      log.info('%s: Sent sheet %s to Mystique for processing', AUDIT_NAME, sheetName, msg);
+      const cadenceLabel = isDaily ? ' DAILY' : '';
+      log.info('%s%s: Sent sheet %s to Mystique for processing', AUDIT_NAME, cadenceLabel, sheetName, msg);
       return true;
     }));
 
@@ -292,4 +306,4 @@ function errorMsg(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})$/;
+const RE_SHEET_NAME = /^brandpresence-(?<webSearchProvider>.+?)-w(?<week>\d{2})-(?<year>\d{4})(?:-\d+)?$/;
