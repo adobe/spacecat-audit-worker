@@ -88,17 +88,24 @@ export function createReportOpportunitySuggestionInstance(suggestionValue) {
  * @param {string|Object} suggestionValue - Either existing object or new markdown string
  * @param {string} deviceType - 'desktop' or 'mobile'
  * @param {string} markdownContent - The markdown content for this device
+ * @param {Object} log - Logger instance (optional, uses console if not provided)
  * @returns {Array} Suggestion instance array
  */
 export function createOrUpdateDeviceSpecificSuggestion(
   suggestionValue,
   deviceType,
   markdownContent,
+  log = console,
 ) {
   let updatedSuggestionValue;
 
+  log.info(`[A11yAudit] [DEBUG] Creating/updating suggestion for ${deviceType}`);
+  log.info(`[A11yAudit] [DEBUG] Input suggestionValue type: ${typeof suggestionValue}`);
+  log.info(`[A11yAudit] [DEBUG] markdownContent length: ${markdownContent?.length || 0}`);
+
   if (typeof suggestionValue === 'string') {
     // First device creating the suggestion (legacy case or when no existing suggestion)
+    log.info('[A11yAudit] [DEBUG] Branch: suggestionValue is string');
     updatedSuggestionValue = {};
     if (deviceType === 'desktop') {
       updatedSuggestionValue['accessibility-desktop'] = suggestionValue;
@@ -107,13 +114,22 @@ export function createOrUpdateDeviceSpecificSuggestion(
     }
   } else if (typeof suggestionValue === 'object' && suggestionValue !== null) {
     // Existing object - update with new device content
+    log.info(`[A11yAudit] [DEBUG] Branch: suggestionValue is object, keys: ${Object.keys(suggestionValue).join(', ')}`);
     updatedSuggestionValue = { ...suggestionValue };
     updatedSuggestionValue[`accessibility-${deviceType}`] = markdownContent;
+    log.info(`[A11yAudit] [DEBUG] After update, keys: ${Object.keys(updatedSuggestionValue).join(', ')}`);
+    log.info(`[A11yAudit] [DEBUG] accessibility-desktop length: ${updatedSuggestionValue['accessibility-desktop']?.length || 0}`);
+    log.info(`[A11yAudit] [DEBUG] accessibility-mobile length: ${updatedSuggestionValue['accessibility-mobile']?.length || 0}`);
   } else {
     // New object structure
+    log.info('[A11yAudit] [DEBUG] Branch: new object structure');
     updatedSuggestionValue = {};
     updatedSuggestionValue[`accessibility-${deviceType}`] = markdownContent;
   }
+
+  log.info(`[A11yAudit] [DEBUG] Final updatedSuggestionValue keys: ${Object.keys(updatedSuggestionValue).join(', ')}`);
+  log.info(`[A11yAudit] [DEBUG] Final ${deviceType} content length: ${updatedSuggestionValue[`accessibility-${deviceType}`]?.length || 0}`);
+  log.info(`[A11yAudit] [DEBUG] FULL ${deviceType} content:\n${updatedSuggestionValue[`accessibility-${deviceType}`]}`);
 
   return createReportOpportunitySuggestionInstance(updatedSuggestionValue);
 }
