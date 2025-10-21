@@ -1,6 +1,6 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
 SELECT
-  ClientRequestURI AS url,
+  url_extract_path(ClientRequestURI) AS url,
   ClientRequestUserAgent AS user_agent,
   EdgeResponseStatus AS status,
   try(url_extract_host(ClientRequestReferer)) AS referer,
@@ -8,6 +8,7 @@ SELECT
   CAST(EdgeTimeToFirstByteMs AS DOUBLE) AS time_to_first_byte,
   COUNT(*) AS count,
   '{{serviceProvider}}' AS cdn_provider,
+  COALESCE(ClientRequestHost, '') as x_forwarded_host,
   
   -- Add partition columns as regular columns
   '{{year}}' AS year,
@@ -38,10 +39,11 @@ WHERE date = '{{year}}{{month}}{{day}}'
   AND NOT REGEXP_LIKE(COALESCE(ClientRequestReferer, ''), '{{host}}')
 
 GROUP BY
-  ClientRequestURI,
+  url_extract_path(ClientRequestURI),
   ClientRequestUserAgent,
   EdgeResponseStatus,
   try(url_extract_host(ClientRequestReferer)),
   ClientRequestHost,
   CAST(EdgeTimeToFirstByteMs AS DOUBLE),
-  '{{serviceProvider}}';
+  '{{serviceProvider}}',
+  COALESCE(ClientRequestHost, '');

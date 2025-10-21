@@ -1,12 +1,6 @@
 INSERT INTO {{database}}.{{aggregatedTable}}
 SELECT
-  -- in akamai, url path and query string come in separate fields - we concatenate them into single url field
-  CASE
-    WHEN queryStr IS NOT NULL AND trim(queryStr) NOT IN ('', '-')
-      THEN concat(reqPath, '?', queryStr)
-    ELSE reqPath
-  END AS url,
-
+  reqPath AS url,
   ua AS user_agent,
   CAST(statusCode AS INTEGER) AS status,
   try(url_extract_host(referer)) AS referer,
@@ -14,6 +8,7 @@ SELECT
   CAST(timeToFirstByte AS DOUBLE) AS time_to_first_byte,
   COUNT(*) AS count,
   '{{serviceProvider}}' AS cdn_provider,
+  COALESCE(reqHost, '') as x_forwarded_host,
   
   -- Add partition columns as regular columns
   '{{year}}' AS year,
@@ -43,14 +38,11 @@ WHERE year  = '{{year}}'
   AND NOT REGEXP_LIKE(COALESCE(referer, ''), '{{host}}')
 
 GROUP BY
-  CASE
-    WHEN queryStr IS NOT NULL AND trim(queryStr) NOT IN ('', '-')
-      THEN concat(reqPath, '?', queryStr)
-    ELSE reqPath
-  END,
+  reqPath,
   ua,
   statusCode,
   try(url_extract_host(referer)),
   reqHost,
   CAST(timeToFirstByte AS DOUBLE),
-  '{{serviceProvider}}';
+  '{{serviceProvider}}',
+  COALESCE(reqHost, '');

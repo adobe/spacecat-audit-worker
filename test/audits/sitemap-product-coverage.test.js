@@ -801,7 +801,7 @@ describe('Sitemap Product Coverage Audit', () => {
       const result = await generateOpportunityMocked(auditUrl, auditData, contextWithDataAccess);
 
       expect(result).to.deep.equal(auditData);
-      expect(context.log.info).to.have.been.calledWith('No existing opportunity found - nothing to resolve');
+      expect(context.log.debug).to.have.been.calledWith('No existing opportunity found - nothing to resolve');
     });
 
     it('should create opportunity when audit succeeds with suggestions and test mapNewSuggestion callback (lines 347-352)', async () => {

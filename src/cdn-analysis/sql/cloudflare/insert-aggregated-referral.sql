@@ -96,7 +96,7 @@ referrals_raw AS (
 )
 
 SELECT 
-  url,
+  url_extract_path(url) as url,
   host,
   referrer,
   utm_source,
@@ -105,6 +105,7 @@ SELECT
   device,
   date,
   cdn_provider,
+  COALESCE(host, '') as x_forwarded_host,
   
   -- Add partition columns as regular columns
   '{{year}}' AS year,

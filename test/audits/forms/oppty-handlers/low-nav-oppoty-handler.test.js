@@ -165,7 +165,7 @@ describe('createLowNavigationOpportunities handler method', () => {
 
     const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
     expect(actualCall).to.deep.equal(expectedOpportunityData);
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
   });
 
   it('should create new high page views low form navigation opportunity with iframe', async () => {
@@ -261,7 +261,7 @@ describe('createLowNavigationOpportunities handler method', () => {
 
     const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
     expect(actualCall).to.deep.equal(expectedOpportunityData);
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
   });
 
   it('should use existing high page views low form navigation opportunity', async () => {
@@ -270,7 +270,7 @@ describe('createLowNavigationOpportunities handler method', () => {
     await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
     expect(formsCTAOppty.setUpdatedBy).to.be.calledWith('system');
     expect(formsCTAOppty.save).to.be.calledOnce;
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
   });
 
   it('should use existing high page views low form navigation opportunity with existing form details', async () => {
@@ -294,7 +294,7 @@ describe('createLowNavigationOpportunities handler method', () => {
     await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
     expect(formsCTAOppty.setUpdatedBy).to.be.calledWith('system');
     expect(formsCTAOppty.save).to.be.calledOnce;
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
   });
 
   it('should not process opportunities with origin ESS_OPS', async () => {
@@ -335,7 +335,7 @@ describe('createLowNavigationOpportunities handler method', () => {
     await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
 
     expect(dataAccessStub.Opportunity.create).to.not.be.called;
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form nav audit type.');
   });
 
   it('should not create low nav opportunity if another opportunity already exists', async () => {

@@ -91,6 +91,11 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
           ...props, // kpiDeltas
           dataSources: opportunityInstance.data?.dataSources,
         });
+      } else if (auditType === Audit.AUDIT_TYPES.PRERENDER) {
+        opportunity.setData({
+          ...opportunity.getData(),
+          ...opportunityInstance.data,
+        });
       } else {
         opportunity.setData({
           ...opportunity.getData(),

@@ -44,6 +44,7 @@ describe('Accessibility Audit Handler', () => {
     mockSite = {
       getId: sandbox.stub().returns('test-site-id'),
       getBaseURL: sandbox.stub().returns('https://example.com'),
+      getConfig: sandbox.stub().resolves(null),
     };
 
     // Mock S3 client
@@ -135,7 +136,7 @@ describe('Accessibility Audit Handler', () => {
 
       expect(getExistingUrlsFromFailedAuditsStub).to.have.been.calledOnce;
 
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         '[A11yAudit] Step 1: Preparing content scrape for accessibility audit for https://example.com with siteId test-site-id',
       );
 
@@ -150,6 +151,9 @@ describe('Accessibility Audit Handler', () => {
         siteId: 'test-site-id',
         jobId: 'test-site-id',
         processingType: 'accessibility',
+        options: {
+          accessibilityScrapingParams: null,
+        },
       });
     });
 
@@ -281,7 +285,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         '[A11yAudit] Step 1: Preparing content scrape for accessibility audit for https://example.com with siteId test-site-id',
       );
     });
@@ -295,6 +299,184 @@ describe('Accessibility Audit Handler', () => {
       // Act & Assert
       await expect(scrapeAccessibilityData(mockContext))
         .to.be.rejectedWith('Invalid input parameters');
+    });
+
+    it('should call site.getConfig and extract accessibility scraping params', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      const mockConfig = {
+        state: {
+          handlers: {
+            accessibility: {
+              scrapingParams: {
+                timeout: 30000,
+                waitForSelector: '.content',
+                enableJS: true,
+              },
+            },
+          },
+        },
+      };
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.resolves(mockConfig);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockSite.getConfig).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Accessibility scraping params for site test-site-id (https://example.com): {\n  "timeout": 30000,\n  "waitForSelector": ".content",\n  "enableJS": true\n}',
+      );
+      expect(result.options.accessibilityScrapingParams).to.deep.equal({
+        timeout: 30000,
+        waitForSelector: '.content',
+        enableJS: true,
+      });
+    });
+
+    it('should handle null config from site.getConfig', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.resolves(null);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockSite.getConfig).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Accessibility scraping params for site test-site-id (https://example.com): null',
+      );
+      expect(result.options.accessibilityScrapingParams).to.be.null;
+    });
+
+    it('should handle undefined config from site.getConfig', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.resolves(undefined);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockSite.getConfig).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Accessibility scraping params for site test-site-id (https://example.com): null',
+      );
+      expect(result.options.accessibilityScrapingParams).to.be.null;
+    });
+
+    it('should handle config without accessibility handler configuration', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      const mockConfig = {
+        state: {
+          handlers: {
+            // No accessibility handler config
+            otherHandler: {
+              someParam: 'value',
+            },
+          },
+        },
+      };
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.resolves(mockConfig);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockSite.getConfig).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Accessibility scraping params for site test-site-id (https://example.com): null',
+      );
+      expect(result.options.accessibilityScrapingParams).to.be.null;
+    });
+
+    it('should handle config without state property', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      const mockConfig = {
+        // No state property
+        someOtherProperty: 'value',
+      };
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.resolves(mockConfig);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockSite.getConfig).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Accessibility scraping params for site test-site-id (https://example.com): null',
+      );
+      expect(result.options.accessibilityScrapingParams).to.be.null;
+    });
+
+    it('should handle config with accessibility handler but no scrapingParams', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      const mockConfig = {
+        state: {
+          handlers: {
+            accessibility: {
+              // No scrapingParams property
+              otherParam: 'value',
+            },
+          },
+        },
+      };
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.resolves(mockConfig);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockSite.getConfig).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Accessibility scraping params for site test-site-id (https://example.com): null',
+      );
+      expect(result.options.accessibilityScrapingParams).to.be.null;
+    });
+
+    it('should handle site.getConfig throwing an error', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      const configError = new Error('Failed to get site config');
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.rejects(configError);
+
+      // Act & Assert
+      await expect(scrapeAccessibilityData(mockContext))
+        .to.be.rejectedWith('Failed to get site config');
+      
+      expect(mockSite.getConfig).to.have.been.calledOnce;
     });
 
     it('should fetch and log top pages information', async () => {
@@ -331,7 +513,7 @@ describe('Accessibility Audit Handler', () => {
           'global', // geo
         );
 
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         `[A11yAudit] Found ${mockTopPages.length} top pages for site https://example.com: ${JSON.stringify(mockTopPages, null, 2)}`,
       );
     });
@@ -354,7 +536,7 @@ describe('Accessibility Audit Handler', () => {
           'global', // geo
         );
 
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         '[A11yAudit] Found 0 top pages for site https://example.com: []',
       );
     });
@@ -458,7 +640,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert - Check that top 100 pages are logged in correct order
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         sinon.match(/Top 100 pages for site test-site-id \(https:\/\/example\.com\):.*page2.*page1.*page3/s),
       );
     });
@@ -481,7 +663,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert - Find the specific "Top 100 pages" log call
-      const logCalls = mockContext.log.info.getCalls();
+      const logCalls = mockContext.log.debug.getCalls();
       const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages for site'));
 
       expect(top100LogCall).to.exist;
@@ -522,7 +704,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert - Check order: high (5000) -> medium (1500) -> low (100)
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         sinon.match(/high.*medium.*low/s),
       );
     });
@@ -542,7 +724,7 @@ describe('Accessibility Audit Handler', () => {
       await scrapeAccessibilityData(mockContext);
 
       // Assert - Verify only 100 pages are processed
-      const logCalls = mockContext.log.info.getCalls();
+      const logCalls = mockContext.log.debug.getCalls();
       const top100LogCall = logCalls.find((call) => call.args[0].includes('Top 100 pages for site'));
 
       const loggedData = top100LogCall.args[0];
@@ -800,7 +982,7 @@ describe('Accessibility Audit Handler', () => {
         mockContext,
       );
 
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         '[A11yAudit] Step 2: Processing scraped data for site test-site-id (https://example.com)',
       );
 
@@ -1119,7 +1301,7 @@ describe('Accessibility Audit Handler', () => {
       await processAccessibilityOpportunities(mockContext);
 
       // Assert
-      expect(mockContext.log.info).to.have.been.calledWith(
+      expect(mockContext.log.debug).to.have.been.calledWith(
         '[A11yAudit] Step 2: Processing scraped data for site test-site-id (https://example.com)',
       );
     });
