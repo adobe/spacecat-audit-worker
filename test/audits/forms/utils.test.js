@@ -300,6 +300,7 @@ describe('calculateProjectedConversionValue', () => {
       log: {
         info: () => {},
         error: () => {},
+        debug: () => {},
       },
     };
     calculateCPCValueStub = sinon.stub().resolves(2.69);
@@ -336,6 +337,7 @@ describe('sendMessageToFormsQualityAgent', () => {
       log: {
         info: sandbox.stub(),
         error: sandbox.stub(),
+        debug: sandbox.stub(),
       },
       sqs: {
         sendMessage: sandbox.stub().resolves(),
@@ -391,6 +393,7 @@ describe('sendMessageToMystiqueForGuidance', () => {
       log: {
         info: sandbox.stub(),
         error: sandbox.stub(),
+        debug: sandbox.stub(),
       },
       sqs: {
         sendMessage: sandbox.stub().resolves(),

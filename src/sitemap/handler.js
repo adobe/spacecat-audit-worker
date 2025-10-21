@@ -100,7 +100,7 @@ export async function sitemapAuditRunner(baseURL, context) {
   const { log } = context;
   const startTime = process.hrtime();
 
-  log.info(`Starting sitemap audit for ${baseURL}`);
+  log.debug(`Starting sitemap audit for ${baseURL}`);
 
   const auditResult = await findSitemap(baseURL);
 
@@ -108,7 +108,7 @@ export async function sitemapAuditRunner(baseURL, context) {
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.info(`Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
+  log.debug(`Sitemap audit for ${baseURL} completed in ${formattedElapsed} seconds`);
 
   return {
     fullAuditRef: baseURL,
@@ -165,7 +165,7 @@ export function generateSuggestions(auditUrl, auditData, context) {
         : 'Make sure your sitemaps only include URLs that return the 200 (OK) response code.',
     }));
 
-  log.info(`Generated ${suggestions.length} suggestions for ${auditUrl}`);
+  log.debug(`Generated ${suggestions.length} suggestions for ${auditUrl}`);
   return { ...auditData, suggestions };
 }
 
@@ -173,12 +173,12 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
 
   if (auditData.auditResult.success === false) {
-    log.info('Sitemap audit failed, skipping opportunity and suggestions creation');
+    log.debug('Sitemap audit failed, skipping opportunity and suggestions creation');
     return { ...auditData };
   }
 
   if (!auditData.suggestions?.length) {
-    log.info('No sitemap issues found, skipping opportunity creation');
+    log.debug('No sitemap issues found, skipping opportunity creation');
     return { ...auditData };
   }
 

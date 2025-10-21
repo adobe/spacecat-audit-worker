@@ -21,6 +21,7 @@ import esmock from 'esmock';
 import AWSXray from 'aws-xray-sdk';
 import { AzureOpenAIClient, GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import { Site } from '@adobe/spacecat-shared-data-access';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import {
   scrapePages, PREFLIGHT_STEP_SUGGEST, PREFLIGHT_STEP_IDENTIFY,
   AUDIT_BODY_SIZE, AUDIT_LOREM_IPSUM, AUDIT_H1_COUNT,
@@ -186,8 +187,8 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      // Verify only one page was processed (now logs total links, internal and external links)
-      expect(context.log.info).to.have.been.calledThrice;
+      // Verify only one page was processed (now logs total links, internal and external links, and broken links)
+      expect(context.log.debug.callCount).to.equal(5);
     });
 
     it('returns empty array when no scrapedObjects match urls', async () => {
@@ -237,8 +238,8 @@ describe('Preflight Audit', () => {
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
       // Verify only two pages were processed
-      // (now logs total links, internal and external links for each page)
-      expect(context.log.info.callCount).to.equal(6);
+      // (now logs total links, internal and external links for each page, plus broken links summary)
+      expect(context.log.debug.callCount).to.equal(8);
     });
 
     it('skips invalid hrefs', async () => {
@@ -256,7 +257,7 @@ describe('Preflight Audit', () => {
 
       const result = await runLinksChecks(urls, scrapedObjects, context);
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
-      expect(context.log.info).to.have.been.calledWithMatch('[preflight-audit] Found internal links:');
+      expect(context.log.debug).to.have.been.calledWithMatch('[preflight-audit] Found internal links:');
     });
 
     it('includes auth token in requests', async () => {
@@ -430,7 +431,7 @@ describe('Preflight Audit', () => {
       // Only the body link should be considered internal
       expect(result.auditResult.brokenInternalLinks).to.deep.equal([]);
       // Check that only the body link is logged as internal
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[preflight-audit] Found internal links:',
         new Set(['https://main--example--page.aem.page/body-link']),
       );
@@ -654,8 +655,27 @@ describe('Preflight Audit', () => {
       }));
       configuration = {
         isHandlerEnabledForSite: sinon.stub(),
+        getHandlers: sinon.stub().returns({
+          'readability-preflight': { productCodes: ['aem-sites'] },
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+          'metatags-preflight': { productCodes: ['aem-sites'] },
+          'canonical-preflight': { productCodes: ['aem-sites'] },
+          'links-preflight': { productCodes: ['aem-sites'] },
+          'body-size-preflight': { productCodes: ['aem-sites'] },
+          'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
+          'h1-count-preflight': { productCodes: ['aem-sites'] },
+        }),
       };
       context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+      // Ensure entitlement checks pass for tests; avoid double-stubbing across tests
+      if (TierClient.createForSite && TierClient.createForSite.restore) {
+        TierClient.createForSite.restore();
+      }
+      const mockTierClient = {
+        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      };
+      sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       nock('https://main--example--page.aem.page')
         .get('/page1')
@@ -724,7 +744,6 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
         },
       });
 
@@ -738,8 +757,7 @@ describe('Preflight Audit', () => {
         }],
       });
 
-      configuration.isHandlerEnabledForSite.onCall(0).returns(true);
-      configuration.isHandlerEnabledForSite.onCall(1).returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
       genvarClient.generateSuggestions.resolves({
         '/page1': {
           h1: {
@@ -841,8 +859,12 @@ describe('Preflight Audit', () => {
         }],
       });
 
-      configuration.isHandlerEnabledForSite.onCall(0).returns(true);
-      configuration.isHandlerEnabledForSite.onCall(1).returns(false);
+      // Mock metatags-preflight audit as enabled
+      configuration.isHandlerEnabledForSite.withArgs('metatags-preflight', site).returns(true);
+      // Mock readability-preflight audit as disabled
+      configuration.isHandlerEnabledForSite.withArgs('readability-preflight', site).returns(false);
+      // All other audits should be enabled by default
+      configuration.isHandlerEnabledForSite.returns(true);
       genvarClient.generateSuggestions.resolves({
         '/': {
           h1: {
@@ -881,10 +903,12 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page'],
-          checks: ['metatags'],
         },
       });
-      configuration.isHandlerEnabledForSite.returns(true);
+
+      configuration.isHandlerEnabledForSite.withArgs('preflight', site).returns(true);
+      configuration.isHandlerEnabledForSite.withArgs('metatags-preflight', site).returns(true);
+      configuration.isHandlerEnabledForSite.returns(false);
       await preflightAuditFunction(context);
       expect(genvarClient.generateSuggestions).to.have.been.called;
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
@@ -930,12 +954,11 @@ describe('Preflight Audit', () => {
           step: PREFLIGHT_STEP_IDENTIFY,
           // Input URL has trailing slash, will get normalized to remove it
           urls: ['https://main--example--page.aem.page/'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links'],
           enableAuthentication: false,
         },
       });
 
-      configuration.isHandlerEnabledForSite.returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
 
       await preflightAuditFunction(context);
 
@@ -1014,15 +1037,16 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
           enableAuthentication: false,
         },
       });
-      configuration.isHandlerEnabledForSite.returns(false);
+
+      configuration.isHandlerEnabledForSite.returns(true);
 
       await preflightAuditFunction(context);
 
-      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
+      // isHandlerEnabledForSite is now called through isAuditEnabledForSite
+      expect(configuration.isHandlerEnabledForSite).to.have.been.called;
       expect(genvarClient.generateSuggestions).not.to.have.been.called;
 
       // Verify that AsyncJob.findById was called for the final save
@@ -1090,11 +1114,10 @@ describe('Preflight Audit', () => {
           enableAuthentication: false,
         },
       });
-      configuration.isHandlerEnabledForSite.returns(false);
+      configuration.isHandlerEnabledForSite.returns(true);
 
       await preflightAuditFunction(context);
 
-      expect(configuration.isHandlerEnabledForSite).not.to.have.been.called;
       expect(genvarClient.generateSuggestions).not.to.have.been.called;
 
       // Verify that AsyncJob.findById was called for the final save
@@ -1158,6 +1181,7 @@ describe('Preflight Audit', () => {
     });
 
     it('logs timing information for each sub-audit', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
       await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for the final save
@@ -1196,6 +1220,7 @@ describe('Preflight Audit', () => {
     });
 
     it('saves intermediate results after each audit step', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
       await preflightAuditFunction(context);
 
       // Verify that AsyncJob.findById was called for each intermediate save and final save
@@ -1225,6 +1250,7 @@ describe('Preflight Audit', () => {
           }),
         });
       });
+      configuration.isHandlerEnabledForSite.returns(true);
 
       await preflightAuditFunction(context);
 
@@ -1239,7 +1265,6 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: [AUDIT_BODY_SIZE], // Only test body size check
         },
       });
 
@@ -1266,6 +1291,8 @@ describe('Preflight Audit', () => {
           });
         }
       });
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_BODY_SIZE}-preflight`, site).returns(true);
+      configuration.isHandlerEnabledForSite.returns(false);
 
       await preflightAuditFunction(context);
 
@@ -1293,7 +1320,6 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: [AUDIT_LOREM_IPSUM], // Only test lorem ipsum check
         },
       });
 
@@ -1321,6 +1347,8 @@ describe('Preflight Audit', () => {
         }
       });
 
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_LOREM_IPSUM}-preflight`, site).returns(true);
+
       await preflightAuditFunction(context);
 
       // Get the final result
@@ -1347,7 +1375,6 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_IDENTIFY,
           urls: ['https://main--example--page.aem.page/page1'],
-          checks: [AUDIT_H1_COUNT], // Only test h1 count check
         },
       });
 
@@ -1374,6 +1401,8 @@ describe('Preflight Audit', () => {
           });
         }
       });
+
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_H1_COUNT}-preflight`, site).returns(true);
 
       await preflightAuditFunction(context);
 
@@ -1435,6 +1464,16 @@ describe('Preflight Audit', () => {
         setError: sinon.stub(),
         save: sinon.stub().resolves(),
       }));
+
+      // Setup Configuration mock for isAuditEnabledForSite
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+        getHandlers: () => ({
+          'readability-preflight': { productCodes: ['aem-sites'] },
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+        }),
+      };
+      mockContext.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
 
       // Mock the preflight audit with readability handler returning processing: true
       const { preflightAudit: testPreflightAudit } = await esmock('../../src/preflight/handler.js', {
@@ -1501,6 +1540,19 @@ describe('Preflight Audit', () => {
         save: sinon.stub().resolves(),
       }));
 
+      // Setup Configuration mock for isAuditEnabledForSite
+      const mockConfiguration = {
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+        getHandlers: () => ({
+          'readability-preflight': { productCodes: ['aem-sites'] },
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+          'body-size-preflight': { productCodes: ['aem-sites'] },
+          'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
+          'h1-count-preflight': { productCodes: ['aem-sites'] },
+        }),
+      };
+      mockContext.dataAccess.Configuration.findLatest.resolves(mockConfiguration);
+
       // Create a simple test that just executes with empty handlers
       // to see if we can hit the edge case
       const { preflightAudit: testPreflightAudit } = await esmock('../../src/preflight/handler.js', {
@@ -1556,6 +1608,7 @@ describe('Preflight Audit', () => {
         log: {
           info: sinon.stub(),
           warn: sinon.stub(),
+          debug: sinon.stub(),
         },
       };
     });
@@ -1569,7 +1622,7 @@ describe('Preflight Audit', () => {
       expect(mockDataAccess.AsyncJob.findById).to.have.been.calledWith('job-456');
       expect(mockJobEntity.setResult).to.have.been.calledWith(result);
       expect(mockJobEntity.save).to.have.been.calledOnce;
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[preflight-audit] site: site-123, job: job-456, step: test-step. test-audit: Intermediate results saved successfully',
       );
     });
@@ -1653,6 +1706,7 @@ describe('Preflight Audit', () => {
     let s3Client;
     let sqs;
     let log;
+    let configuration;
 
     beforeEach(() => {
       s3Client = {
@@ -1666,6 +1720,13 @@ describe('Preflight Audit', () => {
         warn: sinon.stub(),
         error: sinon.stub(),
         debug: sinon.stub(),
+      };
+
+      configuration = {
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+        getHandlers: sinon.stub().returns({
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+        }),
       };
 
       context = {
@@ -1701,8 +1762,20 @@ describe('Preflight Audit', () => {
               save: sinon.stub().resolves(),
             }),
           },
+          Configuration: {
+            findLatest: sinon.stub().resolves(configuration),
+          },
         },
       };
+
+      // Ensure entitlement checks pass for accessibility
+      const mockTierClient = {
+        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      };
+      if (TierClient.createForSite && TierClient.createForSite.restore) {
+        TierClient.createForSite.restore();
+      }
+      sinon.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       auditContext = {
         previewUrls: ['https://example.com/page1', 'https://example.com/page2'],
@@ -1800,7 +1873,7 @@ describe('Preflight Audit', () => {
           promiseToken: 'test-token',
         });
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Sent accessibility scraping request to content scraper for 2 URLs',
         );
       });
@@ -1925,7 +1998,7 @@ describe('Preflight Audit', () => {
         expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Completion queue: https://sqs.test.com/audit',
         );
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Sending to queue: https://sqs.test.com/scraper',
         );
       });
@@ -1972,7 +2045,7 @@ describe('Preflight Audit', () => {
         expect(message.urls).to.deep.equal([
           { url: 'https://example.com/single-page' },
         ]);
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Sent accessibility scraping request to content scraper for 1 URLs',
         );
       });
@@ -1993,7 +2066,7 @@ describe('Preflight Audit', () => {
         expect(sqs.sendMessage).to.have.been.calledOnce;
         const message = sqs.sendMessage.getCall(0).args[1];
         expect(message.urls).to.have.lengthOf(50);
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Sent accessibility scraping request to content scraper for 50 URLs',
         );
       });
@@ -2057,7 +2130,7 @@ describe('Preflight Audit', () => {
 
         await scrapeAccessibilityData(context, auditContext);
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] site: site-123, job: job-123, step: custom-step. Step 1: Preparing accessibility scrape',
         );
       });
@@ -2069,7 +2142,7 @@ describe('Preflight Audit', () => {
 
         await scrapeAccessibilityData(context, auditContext);
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] site: site-123, job: job-123, step: undefined. Step 1: Preparing accessibility scrape',
         );
       });
@@ -2101,7 +2174,7 @@ describe('Preflight Audit', () => {
 
         await scrapeAccessibilityData(context, auditContext);
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Using preview URLs for accessibility audit: [\n  {\n    "url": "https://example.com/page1"\n  },\n  {\n    "url": "https://example.com/page2"\n  }\n]',
         );
       });
@@ -2111,7 +2184,7 @@ describe('Preflight Audit', () => {
 
         await scrapeAccessibilityData(context, auditContext);
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Force re-scraping all 2 URLs for accessibility audit',
         );
       });
@@ -2121,7 +2194,7 @@ describe('Preflight Audit', () => {
 
         await scrapeAccessibilityData(context, auditContext);
 
-        expect(log.info).to.have.been.calledWith(
+        expect(log.debug).to.have.been.calledWith(
           '[preflight-audit] Sending 2 URLs to content scraper for accessibility audit',
         );
       });
@@ -2772,6 +2845,7 @@ describe('Preflight Audit', () => {
 
     describe('accessibility handler polling', () => {
       let pollingContext;
+      let configuration;
       let pollingAuditContext;
       let pollingS3Client;
       let pollingLog;
@@ -2797,6 +2871,13 @@ describe('Preflight Audit', () => {
           debug: sinon.stub(),
         };
 
+        configuration = {
+          isHandlerEnabledForSite: sinon.stub(),
+          getHandlers: sinon.stub().returns({
+            'accessibility-preflight': { productCodes: ['aem-sites'] },
+          }),
+        }
+
         pollingContext = {
           site: {
             getId: () => 'site-123',
@@ -2818,12 +2899,28 @@ describe('Preflight Audit', () => {
             sendMessage: sinon.stub().resolves(),
           },
           log: pollingLog,
+          dataAccess: {
+            Configuration: {
+              findLatest: sinon.stub().resolves(configuration),
+            },
+          },
         };
+
+        // Ensure entitlement checks pass for polling tests; avoid double-stubbing
+        const mockTierClient = {
+          checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+        };
+        if (TierClient.createForSite && TierClient.createForSite.restore) {
+          TierClient.createForSite.restore();
+        }
+        sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+        configuration.isHandlerEnabledForSite.withArgs('preflight', pollingContext.site).resolves(true);
+        configuration.isHandlerEnabledForSite.withArgs('accessibility-preflight', pollingContext.site).resolves(true);
 
         pollingAuditContext = {
           previewUrls: ['https://example.com/page1', 'https://example.com/page2'],
           step: 'identify',
-          checks: ['accessibility'],
           audits: new Map([
             ['https://example.com/page1', { audits: [{ name: 'accessibility', type: 'a11y', opportunities: [] }] }],
             ['https://example.com/page2', { audits: [{ name: 'accessibility', type: 'a11y', opportunities: [] }] }],
@@ -2842,6 +2939,7 @@ describe('Preflight Audit', () => {
 
       it('should skip accessibility when not in checks', async () => {
         pollingAuditContext.checks = ['other-check']; // Not including accessibility
+        configuration.isHandlerEnabledForSite.withArgs('accessibility-preflight', pollingContext.site).resolves(false);
 
         await accessibility(pollingContext, pollingAuditContext);
 
@@ -2880,10 +2978,10 @@ describe('Preflight Audit', () => {
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Site ID: site-123');
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Job ID: job-123');
         expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Looking for data in path: accessibility-preflight/site-123/');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Expected files: ["example_com_page1.json","example_com_page2.json"]');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Expected files: ["example_com_page1.json","example_com_page2.json"]');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
       });
 
       it('should handle polling with files that do not match expected pattern', async () => {
@@ -2923,9 +3021,9 @@ describe('Preflight Audit', () => {
         await mockedAccessibility(pollingContext, pollingAuditContext);
 
         // Verify that it found 0 files due to filtering logic on first attempt
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected accessibility files, continuing to wait...');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected accessibility files, continuing to wait...');
         // Verify that it eventually found the files and proceeded
-        expect(pollingLog.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+        expect(pollingLog.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
       });
 
       it('should handle polling timeout scenario', async () => {
@@ -3020,6 +3118,7 @@ describe('Preflight Audit', () => {
     let log;
     let accessibility;
     let sandbox;
+    let configuration;
 
     beforeEach(async () => {
       sandbox = sinon.createSandbox();
@@ -3041,6 +3140,13 @@ describe('Preflight Audit', () => {
 
       s3Client = {
         send: sinon.stub(),
+      };
+
+      configuration = {
+        isHandlerEnabledForSite: sinon.stub().returns(true),
+        getHandlers: sinon.stub().returns({
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+        }),
       };
 
       context = {
@@ -3068,8 +3174,17 @@ describe('Preflight Audit', () => {
           AsyncJob: {
             update: sinon.stub().resolves(),
           },
+          Configuration: {
+            findLatest: sinon.stub().resolves(configuration),
+          },
         },
       };
+
+      // Ensure entitlement checks pass for coverage tests
+      const mockTierClient = {
+        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       auditContext = {
         previewUrls: ['https://example.com/page1', 'https://example.com/page2'],
@@ -3293,17 +3408,6 @@ describe('Preflight Audit', () => {
       );
     });
 
-    it('should skip accessibility when checks is provided but does not include accessibility', async () => {
-      // Set checks to an array that doesn't include 'accessibility'
-      auditContext.checks = ['other-check', 'another-check'];
-
-      await accessibility(context, auditContext);
-
-      // Verify that no accessibility processing was done
-      expect(s3Client.send).to.not.have.been.called;
-      expect(log.info).to.not.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-    });
-
     it('should handle polling loop in accessibility function', async () => {
       // Mock S3 to return files immediately (simplified test without polling loop)
       s3Client.send.callsFake((command) => {
@@ -3331,9 +3435,9 @@ describe('Preflight Audit', () => {
 
       // Verify that polling was attempted and succeeded
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Polling attempt - checking S3 bucket: test-bucket');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
     });
 
     it('should call processAccessibilityOpportunities after successful polling', async () => {
@@ -3373,13 +3477,13 @@ describe('Preflight Audit', () => {
       await accessibility(context, auditContext);
 
       // Verify that the function completed successfully
-      expect(log.info).to.have.been.calledWith(
+      expect(log.debug).to.have.been.calledWith(
         '[preflight-audit] Polling completed, proceeding to process accessibility data',
       );
 
       // Verify that the function completed without throwing an error
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
     });
 
     it('should complete accessibility function with processAccessibilityOpportunities call', async () => {
@@ -3419,13 +3523,13 @@ describe('Preflight Audit', () => {
       await accessibility(context, auditContext);
 
       // Verify that the function completed successfully
-      expect(log.info).to.have.been.calledWith(
+      expect(log.debug).to.have.been.calledWith(
         '[preflight-audit] Polling completed, proceeding to process accessibility data',
       );
 
       // Verify that the function completed without throwing an error
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
     });
 
     it('should execute complete accessibility workflow', async () => {
@@ -3466,13 +3570,13 @@ describe('Preflight Audit', () => {
       await accessibility(context, auditContext);
 
       // Verify that the function completed successfully
-      expect(log.info).to.have.been.calledWith(
+      expect(log.debug).to.have.been.calledWith(
         '[preflight-audit] Polling completed, proceeding to process accessibility data',
       );
 
       // Verify that the function completed without throwing an error
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
     });
 
     it('should ensure processAccessibilityOpportunities is called', async () => {
@@ -3513,13 +3617,13 @@ describe('Preflight Audit', () => {
       await accessibility(context, auditContext);
 
       // Verify that the function completed successfully
-      expect(log.info).to.have.been.calledWith(
+      expect(log.debug).to.have.been.calledWith(
         '[preflight-audit] Polling completed, proceeding to process accessibility data',
       );
 
       // Verify that the function completed without throwing an error
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
     });
 
     it('should have empty urlsToScrape after mapping', async () => {
@@ -3640,8 +3744,8 @@ describe('Preflight Audit', () => {
       // Verify that the polling error was logged
       expect(log.error).to.have.been.calledWith('[preflight-audit] Error polling for accessibility data: S3 ListObjectsV2 failed');
       // Verify that polling continued and eventually succeeded
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
       // Verify that both polling attempts were made
       expect(pollCallCount).to.equal(2);
     });
@@ -3685,10 +3789,10 @@ describe('Preflight Audit', () => {
 
       // Verify that the foundCount = foundFiles ? foundFiles.length : 0 branch was hit
       // This should log "Found 0 out of 2 expected..." when foundFiles is falsy
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected accessibility files, continuing to wait...');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 0 out of 2 expected accessibility files, continuing to wait...');
       // Verify that polling continued and eventually succeeded
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
-      expect(log.info).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Found 2 accessibility files out of 2 expected, accessibility processing complete');
+      expect(log.debug).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
       // Verify that both polling attempts were made
       expect(pollCallCount).to.equal(2);
     });

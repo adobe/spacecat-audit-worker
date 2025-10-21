@@ -137,7 +137,7 @@ describe('Geo Brand Presence Handler', () => {
       auditResult: { keywordQuestions: [], aiPlatform: 'gemini' },
       fullAuditRef: finalUrl,
     });
-    expect(log.info).to.have.been.calledWith(
+    expect(log.debug).to.have.been.calledWith(
         'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
         finalUrl,
         '2025-09-15',
@@ -161,7 +161,7 @@ describe('Geo Brand Presence Handler', () => {
         'GEO BRAND PRESENCE: Could not parse data as JSON or date string: %s',
         invalidJson,
     );
-    expect(log.info).to.have.been.calledWith(
+    expect(log.debug).to.have.been.calledWith(
         'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
         finalUrl,
         undefined,
@@ -194,8 +194,9 @@ describe('Geo Brand Presence Handler', () => {
       deliveryType: site.getDeliveryType(),
     });
     expect(brandPresenceMessage.data).deep.equal({
-      configVersion: null,
+      configVersion: '1.0.0',
       web_search_provider: 'chatgpt',
+      config_version: '1.0.0',
       url: 'https://example.com/presigned-url',
     });
   });
@@ -250,7 +251,8 @@ describe('Geo Brand Presence Handler', () => {
         deliveryType: site.getDeliveryType(),
       });
       expect(message.data).deep.equal({
-        configVersion: null,
+        config_version: '1.0.0',
+        configVersion: '1.0.0',
         web_search_provider: provider,
         url: 'https://example.com/presigned-url',
       });
@@ -337,10 +339,7 @@ describe('Geo Brand Presence Handler', () => {
             return true;
           })
         })
-    );
-
-
-    console.log(...s3Client.send.args)
+      );
   });
 
   it('should split customer prompts with multiple regions into separate items', async () => {
@@ -1148,6 +1147,7 @@ describe('Geo Brand Presence Handler', () => {
           return JSON.stringify(config);
         },
       },
+      VersionId: '1.0.0', // This is where the version comes from in llmoConfig.readConfig()
     });
   }
 
