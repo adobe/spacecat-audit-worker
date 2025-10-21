@@ -1,3 +1,10 @@
+## [1.213.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.213.2...v1.213.3) (2025-10-21)
+
+
+### Bug Fixes
+
+* add for other cdn provider as table expects field ([#1441](https://github.com/adobe/spacecat-audit-worker/issues/1441)) ([7c84218](https://github.com/adobe/spacecat-audit-worker/commit/7c842180e2e74536b3640701aee25fa15542030c))
+
 ## [1.213.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.213.1...v1.213.2) (2025-10-21)
 
 
