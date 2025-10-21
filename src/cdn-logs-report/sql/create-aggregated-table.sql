@@ -32,4 +32,4 @@ TBLPROPERTIES (
   'projection.hour.digits' = '2',
   'storage.location.template' = '{{aggregatedLocation}}${year}/${month}/${day}/${hour}/',
   'has_encrypted_data' = 'false'
-)
+);
