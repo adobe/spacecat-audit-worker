@@ -1,3 +1,10 @@
+# [1.213.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.212.1...v1.213.0) (2025-10-21)
+
+
+### Features
+
+* add support for x forwarded host ([#1437](https://github.com/adobe/spacecat-audit-worker/issues/1437)) ([07d9262](https://github.com/adobe/spacecat-audit-worker/commit/07d9262b2c2572b4b7d7c9355870d5c817cbc5aa))
+
 ## [1.212.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.212.0...v1.212.1) (2025-10-20)
 
 
