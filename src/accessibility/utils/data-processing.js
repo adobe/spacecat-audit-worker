@@ -579,40 +579,117 @@ export async function createOrUpdateDeviceSpecificSuggestion(
 }
 
 /**
- * Finds existing desktop accessibility opportunity for the same week
+ * Builds the expected opportunity title pattern based on device type and report type
+ * @param {string} deviceType - 'Desktop' or 'Mobile'
+ * @param {number} week - The week number
+ * @param {number} year - The year
+ * @param {string} reportType - The report type ('in-depth', 'enhanced', 'fixed', '' for base)
+ * @returns {string} The expected opportunity title pattern
+ */
+function buildOpportunityTitlePattern(deviceType, week, year, reportType) {
+  const capitalizedDevice = deviceType.charAt(0).toUpperCase() + deviceType.slice(1).toLowerCase();
+  const basePattern = `Accessibility report - ${capitalizedDevice} - Week ${week} - ${year}`;
+
+  if (reportType === 'in-depth') {
+    return `${basePattern} - in-depth`;
+  }
+  if (reportType === 'fixed') {
+    return `Accessibility report Fixed vs New Issues - ${capitalizedDevice} - Week ${week} - ${year}`;
+  }
+  if (reportType === 'enhanced') {
+    return `Enhancing accessibility for the top 10 most-visited pages - ${capitalizedDevice} - Week ${week} - ${year}`;
+  }
+  // Base report (no suffix)
+  return basePattern;
+}
+
+/**
+ * Finds existing accessibility opportunity for a specific device, week, year, and report type
+ * @param {string} deviceType - 'Desktop' or 'Mobile'
  * @param {string} siteId - The site ID
  * @param {number} week - The week number
  * @param {number} year - The year
  * @param {Object} dataAccess - Data access object
  * @param {Object} log - Logger instance
- * @returns {Object|null} Existing desktop opportunity or null
+ * @param {string} reportType - The report type ('in-depth', 'enhanced', 'fixed', '' for base)
+ * @returns {Object|null} Existing opportunity or null
  */
-export async function findExistingDesktopOpportunity(siteId, week, year, dataAccess, log) {
+async function findExistingAccessibilityOpportunity(
+  deviceType,
+  siteId,
+  week,
+  year,
+  dataAccess,
+  log,
+  reportType = '',
+) {
   try {
     const { Opportunity } = dataAccess;
     const opportunities = await Opportunity.allBySiteId(siteId);
 
-    // Look for desktop accessibility opportunities for this week/year
-    const desktopOpportunity = opportunities.find((oppty) => {
+    const titlePattern = buildOpportunityTitlePattern(deviceType, week, year, reportType);
+    const deviceLabel = deviceType.toLowerCase();
+
+    const opportunity = opportunities.find((oppty) => {
       const title = oppty.getTitle();
-      const isDesktopAccessibility = title.includes('Accessibility report - Desktop')
-                                     && title.includes(`Week ${week}`)
-                                     && title.includes(`${year}`);
+      const isMatchingOpportunity = title === titlePattern;
       const isActiveStatus = oppty.getStatus() === 'NEW' || oppty.getStatus() === 'IGNORED';
-      return isDesktopAccessibility && isActiveStatus;
+      return isMatchingOpportunity && isActiveStatus;
     });
 
-    if (desktopOpportunity) {
-      log.info(`[A11yAudit] Found existing desktop opportunity for week ${week}, year ${year}: ${desktopOpportunity.getId()}`);
-      return desktopOpportunity;
+    if (opportunity) {
+      log.info(`[A11yAudit] Found existing ${deviceLabel} ${reportType || 'base'} opportunity for week ${week}, year ${year}: ${opportunity.getId()}`);
+      return opportunity;
     }
 
-    log.info(`[A11yAudit] No existing desktop opportunity found for week ${week}, year ${year}`);
+    log.info(`[A11yAudit] No existing ${deviceLabel} ${reportType || 'base'} opportunity found for week ${week}, year ${year}`);
     return null;
   } catch (error) {
-    log.error(`[A11yAudit] Error searching for existing desktop opportunity: ${error.message}`);
+    log.error(`[A11yAudit] Error searching for existing ${deviceType.toLowerCase()} opportunity: ${error.message}`);
     return null;
   }
+}
+
+/**
+ * Finds existing desktop accessibility opportunity for the same week and report type
+ * @param {string} siteId - The site ID
+ * @param {number} week - The week number
+ * @param {number} year - The year
+ * @param {Object} dataAccess - Data access object
+ * @param {Object} log - Logger instance
+ * @param {string} reportType - The report type suffix (e.g., 'in-depth', 'base', empty for base)
+ * @returns {Object|null} Existing desktop opportunity or null
+ */
+export async function findExistingDesktopOpportunity(
+  siteId,
+  week,
+  year,
+  dataAccess,
+  log,
+  reportType = '',
+) {
+  return findExistingAccessibilityOpportunity('Desktop', siteId, week, year, dataAccess, log, reportType);
+}
+
+/**
+ * Finds existing mobile accessibility opportunity for the same week and report type
+ * @param {string} siteId - The site ID
+ * @param {number} week - The week number
+ * @param {number} year - The year
+ * @param {Object} dataAccess - Data access object
+ * @param {Object} log - Logger instance
+ * @param {string} reportType - The report type suffix (e.g., 'in-depth', 'base', empty for base)
+ * @returns {Object|null} Existing mobile opportunity or null
+ */
+export async function findExistingMobileOpportunity(
+  siteId,
+  week,
+  year,
+  dataAccess,
+  log,
+  reportType = '',
+) {
+  return findExistingAccessibilityOpportunity('Mobile', siteId, week, year, dataAccess, log, reportType);
 }
 
 /**
@@ -684,6 +761,8 @@ export function linkBuilder(linkData, opptyId) {
  * @param {function} createOpportunityFn - the function to create the opportunity
  * @param {string} reportName - the name of the report
  * @param {boolean} shouldIgnore - whether to ignore the opportunity
+ * @param {string} deviceType - the device type (Desktop/Mobile)
+ * @param {string} reportType - the report type ('in-depth', 'enhanced', 'fixed', '' for base)
  * @returns {Promise<string>} - the URL of the opportunity
  */
 export async function generateReportOpportunity(
@@ -693,6 +772,7 @@ export async function generateReportOpportunity(
   reportName,
   shouldIgnore = true,
   deviceType = 'Desktop',
+  reportType = '',
 ) {
   const {
     mdData,
@@ -730,26 +810,44 @@ export async function generateReportOpportunity(
       year,
       dataAccess,
       log,
+      reportType,
     );
 
     if (existingDesktopOpportunity) {
       // Use existing desktop opportunity and add mobile content to it
       opportunity = existingDesktopOpportunity;
       isExistingOpportunity = true;
-      log.info(`[A11yAudit] Mobile audit will update existing desktop opportunity: ${opportunity.getId()}`);
+      log.info(`[A11yAudit] Mobile audit will update existing desktop ${reportType || 'base'} opportunity: ${opportunity.getId()}`);
     } else {
       // No existing desktop opportunity, create new mobile-only opportunity
       const opportunityInstance = createOpportunityFn(week, year, deviceType);
       const opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
       opportunity = opportunityRes.opportunity;
-      log.info(`[A11yAudit] Created new mobile-only opportunity: ${opportunity.getId()}`);
+      log.info(`[A11yAudit] Created new mobile-only ${reportType || 'base'} opportunity: ${opportunity.getId()}`);
     }
   } else {
-    // Desktop audit: create new opportunity as before
-    const opportunityInstance = createOpportunityFn(week, year, deviceType);
-    const opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
-    opportunity = opportunityRes.opportunity;
-    log.info(`[A11yAudit] Created new desktop opportunity: ${opportunity.getId()}`);
+    // Desktop audit: look for existing mobile opportunity to merge with
+    const existingMobileOpportunity = await findExistingMobileOpportunity(
+      siteId,
+      week,
+      year,
+      dataAccess,
+      log,
+      reportType,
+    );
+
+    if (existingMobileOpportunity) {
+      // Use existing mobile opportunity and add desktop content to it
+      opportunity = existingMobileOpportunity;
+      isExistingOpportunity = true;
+      log.info(`[A11yAudit] Desktop audit will update existing mobile ${reportType || 'base'} opportunity: ${opportunity.getId()}`);
+    } else {
+      // No existing mobile opportunity, create new desktop-only opportunity
+      const opportunityInstance = createOpportunityFn(week, year, deviceType);
+      const opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
+      opportunity = opportunityRes.opportunity;
+      log.info(`[A11yAudit] Created new desktop ${reportType || 'base'} opportunity: ${opportunity.getId()}`);
+    }
   }
 
   // 1.3 create or update the suggestions for the report oppty with device-specific content
@@ -841,21 +939,21 @@ export async function generateReportOpportunities(
   };
 
   try {
-    relatedReportsUrls.inDepthReportUrl = await generateReportOpportunity(reportData, generateInDepthReportMarkdown, createInDepthReportOpportunity, 'in-depth report', true, deviceType);
+    relatedReportsUrls.inDepthReportUrl = await generateReportOpportunity(reportData, generateInDepthReportMarkdown, createInDepthReportOpportunity, 'in-depth report', true, deviceType, 'in-depth');
   } catch (error) {
     log.error('[A11yProcessingError] Failed to generate in-depth report opportunity', error.message);
     throw new Error(error.message);
   }
 
   try {
-    relatedReportsUrls.enhancedReportUrl = await generateReportOpportunity(reportData, generateEnhancedReportMarkdown, createEnhancedReportOpportunity, 'enhanced report', true, deviceType);
+    relatedReportsUrls.enhancedReportUrl = await generateReportOpportunity(reportData, generateEnhancedReportMarkdown, createEnhancedReportOpportunity, 'enhanced report', true, deviceType, 'enhanced');
   } catch (error) {
     log.error('[A11yProcessingError] Failed to generate enhanced report opportunity', error.message);
     throw new Error(error.message);
   }
 
   try {
-    relatedReportsUrls.fixedVsNewReportUrl = await generateReportOpportunity(reportData, generateFixedNewReportMarkdown, createFixedVsNewReportOpportunity, 'fixed vs new report', true, deviceType);
+    relatedReportsUrls.fixedVsNewReportUrl = await generateReportOpportunity(reportData, generateFixedNewReportMarkdown, createFixedVsNewReportOpportunity, 'fixed vs new report', true, deviceType, 'fixed');
   } catch (error) {
     log.error('[A11yProcessingError] Failed to generate fixed vs new report opportunity', error.message);
     throw new Error(error.message);
@@ -863,7 +961,7 @@ export async function generateReportOpportunities(
 
   try {
     reportData.mdData.relatedReportsUrls = relatedReportsUrls;
-    await generateReportOpportunity(reportData, generateBaseReportMarkdown, createBaseReportOpportunity, 'base report', false, deviceType);
+    await generateReportOpportunity(reportData, generateBaseReportMarkdown, createBaseReportOpportunity, 'base report', false, deviceType, '');
   } catch (error) {
     log.error('[A11yProcessingError] Failed to generate base report opportunity', error.message);
     throw new Error(error.message);
