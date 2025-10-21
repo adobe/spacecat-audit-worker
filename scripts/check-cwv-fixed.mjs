@@ -45,7 +45,7 @@ const THRESHOLDS = {
 };
 
 const INTERVAL = 7; // days
-const DAILY_THRESHOLD = 1000;
+const DAILY_THRESHOLD = 100;
 const auditType = Audit.AUDIT_TYPES.CWV;
 
 /**
@@ -279,14 +279,12 @@ class CWVFixChecker {
         throw rumError;
       }
       
-      // Apply same filtering as handler
-      const filteredData = cwvData.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL);
-      
-      this.log.info(`✓ Retrieved ${filteredData.length} current CWV entries (filtered by ${DAILY_THRESHOLD * INTERVAL} pageviews)`);
+      // No filtering - we want all data for fix checking
+      this.log.info(`✓ Retrieved ${cwvData.length} current CWV entries (no pageview filtering)`);
       
       // Create lookup map for easy comparison (same buildKey logic as handler)
       const cwvMap = {};
-      filteredData.forEach(entry => {
+      cwvData.forEach(entry => {
         const key = entry.type === 'url' ? entry.url : entry.pattern; // Same buildKey logic
         cwvMap[key] = entry;
       });
@@ -409,32 +407,48 @@ class CWVFixChecker {
           currentINP = inpWeight > 0 ? inpSum / inpWeight : null;
         }
         
-        // Check if each metric improved to "good" threshold (only if we have both old and current data)
-        const lcpImproved = oldLCP > 0 && currentLCP !== null && oldLCP > THRESHOLDS.lcp && currentLCP <= THRESHOLDS.lcp;
-        const clsImproved = oldCLS > 0 && currentCLS !== null && oldCLS > THRESHOLDS.cls && currentCLS <= THRESHOLDS.cls;
-        const inpImproved = oldINP > 0 && currentINP !== null && oldINP > THRESHOLDS.inp && currentINP <= THRESHOLDS.inp;
+        // Identify which metrics were originally problematic (above threshold)
+        const problemMetrics = [];
+        const wasLCPBad = oldLCP > 0 && oldLCP > THRESHOLDS.lcp;
+        const wasCLSBad = oldCLS > 0 && oldCLS > THRESHOLDS.cls;
+        const wasINPBad = oldINP > 0 && oldINP > THRESHOLDS.inp;
         
-        if (lcpImproved) metricsImproved.push('LCP');
-        if (clsImproved) metricsImproved.push('CLS');
-        if (inpImproved) metricsImproved.push('INP');
+        if (wasLCPBad) problemMetrics.push('LCP');
+        if (wasCLSBad) problemMetrics.push('CLS');
+        if (wasINPBad) problemMetrics.push('INP');
         
-        if (metricsImproved.length > 0) {
-          isFixed = true;
-          fixType = `IMPROVED_${metricsImproved.join('_')}`;
+        // Check if each problematic metric is now fixed (improved to "good" threshold)
+        const lcpFixed = !wasLCPBad || (currentLCP !== null && currentLCP <= THRESHOLDS.lcp);
+        const clsFixed = !wasCLSBad || (currentCLS !== null && currentCLS <= THRESHOLDS.cls);
+        const inpFixed = !wasINPBad || (currentINP !== null && currentINP <= THRESHOLDS.inp);
+        
+        // Track which metrics improved
+        if (wasLCPBad && currentLCP !== null && currentLCP <= THRESHOLDS.lcp) {
+          metricsImproved.push('LCP');
+        }
+        if (wasCLSBad && currentCLS !== null && currentCLS <= THRESHOLDS.cls) {
+          metricsImproved.push('CLS');
+        }
+        if (wasINPBad && currentINP !== null && currentINP <= THRESHOLDS.inp) {
+          metricsImproved.push('INP');
         }
         
-        // Check if all current metrics are now "good" (only check metrics that have values)
-        const lcpGood = currentLCP === null || currentLCP <= THRESHOLDS.lcp;
-        const clsGood = currentCLS === null || currentCLS <= THRESHOLDS.cls;
-        const inpGood = currentINP === null || currentINP <= THRESHOLDS.inp;
-        
-        const hasCurrentData = currentLCP !== null || currentCLS !== null || currentINP !== null;
-        
-        if (hasCurrentData && lcpGood && clsGood && inpGood) {
-          fixType = 'ALL_METRICS_GOOD';
-          if (!isFixed) {
-            isFixed = true; // Mark as fixed if all current metrics are good
+        // Only mark as fixed if ALL originally problematic metrics are now good
+        if (problemMetrics.length > 0 && lcpFixed && clsFixed && inpFixed) {
+          isFixed = true;
+          if (metricsImproved.length === problemMetrics.length) {
+            fixType = `ALL_FIXED_${metricsImproved.join('_')}`;
+          } else {
+            // Some metrics improved, but we need to check if all problems are resolved
+            fixType = metricsImproved.length > 0 ? `PARTIALLY_FIXED_${metricsImproved.join('_')}` : 'FIXED_NO_CURRENT_DATA';
           }
+        } else if (problemMetrics.length > 0) {
+          // Not all problems are fixed yet
+          const stillBad = [];
+          if (wasLCPBad && !lcpFixed) stillBad.push('LCP');
+          if (wasCLSBad && !clsFixed) stillBad.push('CLS');
+          if (wasINPBad && !inpFixed) stillBad.push('INP');
+          fixType = `STILL_BAD_${stillBad.join('_')}`;
         }
       } else {
         // No current data - might be low traffic or removed
