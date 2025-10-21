@@ -11,10 +11,10 @@
  */
 
 export class BaseRule {
-  constructor(context, priority = 42, aemAuthorClient = null) {
+  constructor(context, priority = 42, aemClient = null) {
     this.context = context;
     this.priority = priority;
-    this.aemAuthorClient = aemAuthorClient;
+    this.aemClient = aemClient;
   }
 
   async apply(brokenPath) {
@@ -25,15 +25,15 @@ export class BaseRule {
     return this.priority;
   }
 
-  getAemAuthorClient() {
+  getAemClient() {
     const { log } = this.context;
 
-    if (this.aemAuthorClient) {
-      return this.aemAuthorClient;
+    if (this.aemClient) {
+      return this.aemClient;
     }
 
-    log.error('AemAuthorClient not injected');
-    throw new Error('AemAuthorClient not injected');
+    log.error('AemClient not injected');
+    throw new Error('AemClient not injected');
   }
 
   // eslint-disable-next-line no-unused-vars, class-methods-use-this

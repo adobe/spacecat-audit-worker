@@ -14,15 +14,15 @@ import { BaseRule } from './base-rule.js';
 import { Suggestion } from '../domain/suggestion/suggestion.js';
 
 export class PublishRule extends BaseRule {
-  constructor(context, aemAuthorClient) {
-    super(context, 1, aemAuthorClient); // Highest priority
+  constructor(context, aemClient) {
+    super(context, 1, aemClient); // Highest priority
   }
 
   async applyRule(brokenPath) {
     const { log } = this.context;
     log.debug(`Applying PublishRule to path: ${brokenPath}`);
 
-    if (await this.getAemAuthorClient().isAvailable(brokenPath)) {
+    if (await this.getAemClient().isAvailable(brokenPath)) {
       log.info(`Found content on Author for path: ${brokenPath}`);
       return Suggestion.publish(brokenPath);
     }

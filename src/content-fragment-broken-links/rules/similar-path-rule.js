@@ -16,8 +16,8 @@ import { LevenshteinDistance } from '../utils/levenshtein-distance.js';
 import { PathUtils } from '../utils/path-utils.js';
 
 export class SimilarPathRule extends BaseRule {
-  constructor(context, aemAuthorClient, pathIndex) {
-    super(context, 3, aemAuthorClient); // Third priority
+  constructor(context, aemClient, pathIndex) {
+    super(context, 3, aemClient); // Third priority
     this.pathIndex = pathIndex;
   }
 
@@ -46,7 +46,7 @@ export class SimilarPathRule extends BaseRule {
     }
 
     // We are traversing up the hierarchy until we find a path that is available on Author
-    const childrenPaths = await this.getAemAuthorClient().getChildrenFromPath(
+    const childrenPaths = await this.getAemClient().getChildrenFromPath(
       parentPath,
     );
     if (childrenPaths.length === 0) {
@@ -84,7 +84,7 @@ export class SimilarPathRule extends BaseRule {
     log.debug(`Checking double slash removal: ${brokenPath} -> ${fixedPath}`);
 
     // Check if the fixed path exists on Author
-    if (await this.getAemAuthorClient().isAvailable(fixedPath)) {
+    if (await this.getAemClient().isAvailable(fixedPath)) {
       log.info(`Found content for double-slash corrected path: ${brokenPath} -> ${fixedPath}`);
       return { suggestion: Suggestion.similar(brokenPath, fixedPath), fixedPath };
     }

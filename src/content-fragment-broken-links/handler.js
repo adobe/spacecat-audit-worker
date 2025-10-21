@@ -15,7 +15,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { AthenaCollector } from './collectors/athena-collector.js';
 import { AnalysisStrategy } from './analysis/analysis-strategy.js';
 import { PathIndex } from './domain/index/path-index.js';
-import { AemAuthorClient } from './clients/aem-author-client.js';
+import { AemClient } from './clients/aem-client.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
@@ -59,8 +59,8 @@ export async function analyzeBrokenContentFragmentLinks(context) {
 
   try {
     const pathIndex = new PathIndex(context);
-    const aemAuthorClient = AemAuthorClient.createFrom(context, pathIndex);
-    const strategy = new AnalysisStrategy(context, aemAuthorClient, pathIndex);
+    const aemClient = AemClient.createFrom(context, pathIndex);
+    const strategy = new AnalysisStrategy(context, aemClient, pathIndex);
     const suggestions = await strategy.analyze(auditResult.brokenPaths);
 
     log.info(`Found ${suggestions.length} suggestions for broken content fragment paths`);

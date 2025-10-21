@@ -24,7 +24,7 @@ use(chaiAsPromised);
 describe('BaseRule', () => {
   let sandbox;
   let context;
-  let mockAemAuthorClient;
+  let mockAemClient;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -41,7 +41,7 @@ describe('BaseRule', () => {
       })
       .build();
 
-    mockAemAuthorClient = {
+    mockAemClient = {
       isAvailable: sandbox.stub().resolves(true),
       getChildrenFromPath: sandbox.stub().resolves([]),
     };
@@ -57,7 +57,7 @@ describe('BaseRule', () => {
 
       expect(rule.context).to.equal(context);
       expect(rule.priority).to.equal(42);
-      expect(rule.aemAuthorClient).to.be.null;
+      expect(rule.aemClient).to.be.null;
     });
 
     it('should initialize with custom priority', () => {
@@ -65,23 +65,23 @@ describe('BaseRule', () => {
 
       expect(rule.context).to.equal(context);
       expect(rule.priority).to.equal(10);
-      expect(rule.aemAuthorClient).to.be.null;
+      expect(rule.aemClient).to.be.null;
     });
 
     it('should initialize with AEM client', () => {
-      const rule = new BaseRule(context, 42, mockAemAuthorClient);
+      const rule = new BaseRule(context, 42, mockAemClient);
 
       expect(rule.context).to.equal(context);
       expect(rule.priority).to.equal(42);
-      expect(rule.aemAuthorClient).to.equal(mockAemAuthorClient);
+      expect(rule.aemClient).to.equal(mockAemClient);
     });
 
     it('should initialize with all parameters', () => {
-      const rule = new BaseRule(context, 5, mockAemAuthorClient);
+      const rule = new BaseRule(context, 5, mockAemClient);
 
       expect(rule.context).to.equal(context);
       expect(rule.priority).to.equal(5);
-      expect(rule.aemAuthorClient).to.equal(mockAemAuthorClient);
+      expect(rule.aemClient).to.equal(mockAemClient);
     });
   });
 
@@ -147,41 +147,41 @@ describe('BaseRule', () => {
     });
   });
 
-  describe('getAemAuthorClient', () => {
+  describe('getAemClient', () => {
     it('should return injected AEM client when available', () => {
-      const rule = new BaseRule(context, 42, mockAemAuthorClient);
+      const rule = new BaseRule(context, 42, mockAemClient);
 
-      const result = rule.getAemAuthorClient();
+      const result = rule.getAemClient();
 
-      expect(result).to.equal(mockAemAuthorClient);
+      expect(result).to.equal(mockAemClient);
       expect(context.log.error).not.to.have.been.called;
     });
 
     it('should throw error when AEM client not injected', () => {
       const rule = new BaseRule(context);
 
-      expect(() => rule.getAemAuthorClient())
-        .to.throw('AemAuthorClient not injected');
+      expect(() => rule.getAemClient())
+        .to.throw('AemClient not injected');
 
-      expect(context.log.error).to.have.been.calledOnceWith('AemAuthorClient not injected');
+      expect(context.log.error).to.have.been.calledOnceWith('AemClient not injected');
     });
 
     it('should throw error when AEM client is null', () => {
       const rule = new BaseRule(context, 42, null);
 
-      expect(() => rule.getAemAuthorClient())
-        .to.throw('AemAuthorClient not injected');
+      expect(() => rule.getAemClient())
+        .to.throw('AemClient not injected');
 
-      expect(context.log.error).to.have.been.calledOnceWith('AemAuthorClient not injected');
+      expect(context.log.error).to.have.been.calledOnceWith('AemClient not injected');
     });
 
     it('should throw error when AEM client is undefined', () => {
       const rule = new BaseRule(context, 42, undefined);
 
-      expect(() => rule.getAemAuthorClient())
-        .to.throw('AemAuthorClient not injected');
+      expect(() => rule.getAemClient())
+        .to.throw('AemClient not injected');
 
-      expect(context.log.error).to.have.been.calledOnceWith('AemAuthorClient not injected');
+      expect(context.log.error).to.have.been.calledOnceWith('AemClient not injected');
     });
   });
 
@@ -217,13 +217,13 @@ describe('BaseRule', () => {
 
   describe('integration scenarios', () => {
     it('should work in a typical rule application flow', async () => {
-      const rule = new BaseRule(context, 10, mockAemAuthorClient);
+      const rule = new BaseRule(context, 10, mockAemClient);
 
       // Override applyRule to simulate a real implementation
       rule.applyRule = sandbox.stub().resolves({ type: 'publish', path: '/test' });
 
       expect(rule.getPriority()).to.equal(10);
-      expect(rule.getAemAuthorClient()).to.equal(mockAemAuthorClient);
+      expect(rule.getAemClient()).to.equal(mockAemClient);
 
       const result = await rule.apply('/content/dam/test/broken.jpg');
       expect(result).to.deep.equal({ type: 'publish', path: '/test' });

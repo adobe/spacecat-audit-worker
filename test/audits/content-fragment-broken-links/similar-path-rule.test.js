@@ -24,7 +24,7 @@ use(chaiAsPromised);
 describe('SimilarPathRule', () => {
   let sandbox;
   let context;
-  let mockAemAuthorClient;
+  let mockAemClient;
   let mockPathIndex;
   let mockSuggestion;
   let mockPathUtils;
@@ -46,7 +46,7 @@ describe('SimilarPathRule', () => {
       })
       .build();
 
-    mockAemAuthorClient = {
+    mockAemClient = {
       isAvailable: sandbox.stub().resolves(false),
       getChildrenFromPath: sandbox.stub().resolves([]),
     };
@@ -96,19 +96,19 @@ describe('SimilarPathRule', () => {
 
   describe('constructor', () => {
     it('should initialize with third priority (3) and path index', () => {
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
 
       expect(rule.context).to.equal(context);
       expect(rule.priority).to.equal(3);
-      expect(rule.aemAuthorClient).to.equal(mockAemAuthorClient);
+      expect(rule.aemClient).to.equal(mockAemClient);
       expect(rule.pathIndex).to.equal(mockPathIndex);
     });
 
     it('should extend BaseRule', () => {
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
 
       expect(rule.getPriority).to.be.a('function');
-      expect(rule.getAemAuthorClient).to.be.a('function');
+      expect(rule.getAemClient).to.be.a('function');
       expect(rule.apply).to.be.a('function');
     });
   });
@@ -116,26 +116,26 @@ describe('SimilarPathRule', () => {
   describe('applyRule main flow', () => {
     it('should return similar path suggestion when found', async () => {
       mockPathUtils.getParentPath.returns('/content/dam/test');
-      mockAemAuthorClient.getChildrenFromPath.resolves([
+      mockAemClient.getChildrenFromPath.resolves([
         { path: '/content/dam/test/similar.jpg' },
         { path: '/content/dam/test/other.pdf' },
       ]);
       mockPathUtils.removeLocaleFromPath.callsFake((path) => path);
       mockLevenshteinDistance.calculate.returns(1);
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       const result = await rule.applyRule(brokenPath);
 
-      expect(mockAemAuthorClient.getChildrenFromPath).to.have.been.calledWith('/content/dam/test');
+      expect(mockAemClient.getChildrenFromPath).to.have.been.calledWith('/content/dam/test');
       expect(result).to.equal(mockSuggestion);
     });
 
     it('should return null when no parent path found', async () => {
       mockPathUtils.getParentPath.returns(null);
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       const result = await rule.applyRule(brokenPath);
@@ -145,9 +145,9 @@ describe('SimilarPathRule', () => {
 
     it('should return null when no children paths found', async () => {
       mockPathUtils.getParentPath.returns('/content/dam/test');
-      mockAemAuthorClient.getChildrenFromPath.resolves([]);
+      mockAemClient.getChildrenFromPath.resolves([]);
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       const result = await rule.applyRule(brokenPath);
@@ -157,13 +157,13 @@ describe('SimilarPathRule', () => {
 
     it('should return null when no similar paths within distance threshold', async () => {
       mockPathUtils.getParentPath.returns('/content/dam/test');
-      mockAemAuthorClient.getChildrenFromPath.resolves([
+      mockAemClient.getChildrenFromPath.resolves([
         { path: '/content/dam/test/completely-different.jpg' },
       ]);
       mockPathUtils.removeLocaleFromPath.callsFake((path) => path);
       mockLevenshteinDistance.calculate.returns(10); // Distance too high
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       const result = await rule.applyRule(brokenPath);
@@ -176,9 +176,9 @@ describe('SimilarPathRule', () => {
     it('should return suggestion when double slash can be fixed directly', async () => {
       mockPathUtils.hasDoubleSlashes.returns(true);
       mockPathUtils.removeDoubleSlashes.returns('/content/dam/test/fixed.jpg');
-      mockAemAuthorClient.isAvailable.resolves(true);
+      mockAemClient.isAvailable.resolves(true);
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam//test/broken.jpg';
 
       const result = await rule.applyRule(brokenPath);
@@ -190,14 +190,14 @@ describe('SimilarPathRule', () => {
       mockPathUtils.hasDoubleSlashes.returns(true);
       mockPathUtils.removeDoubleSlashes.returns('/content/dam/test/fixed.jpg');
       mockPathUtils.getParentPath.returns('/content/dam/test');
-      mockAemAuthorClient.isAvailable.resolves(false);
-      mockAemAuthorClient.getChildrenFromPath.resolves([
+      mockAemClient.isAvailable.resolves(false);
+      mockAemClient.getChildrenFromPath.resolves([
         { path: '/content/dam/test/similar.jpg' },
       ]);
       mockPathUtils.removeLocaleFromPath.callsFake((path) => path);
       mockLevenshteinDistance.calculate.returns(1);
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam//test/broken.jpg';
 
       const result = await rule.applyRule(brokenPath);
@@ -208,13 +208,13 @@ describe('SimilarPathRule', () => {
     it('should handle paths without double slashes normally', async () => {
       mockPathUtils.hasDoubleSlashes.returns(false);
       mockPathUtils.getParentPath.returns('/content/dam/test');
-      mockAemAuthorClient.getChildrenFromPath.resolves([
+      mockAemClient.getChildrenFromPath.resolves([
         { path: '/content/dam/test/similar.jpg' },
       ]);
       mockPathUtils.removeLocaleFromPath.callsFake((path) => path);
       mockLevenshteinDistance.calculate.returns(1);
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       const result = await rule.applyRule(brokenPath);
@@ -227,7 +227,7 @@ describe('SimilarPathRule', () => {
     it('should return null when no double slashes present', async () => {
       mockPathUtils.hasDoubleSlashes.returns(false);
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       const result = await rule.checkDoubleSlash(brokenPath);
@@ -238,9 +238,9 @@ describe('SimilarPathRule', () => {
     it('should return suggestion when fixed path is available', async () => {
       mockPathUtils.hasDoubleSlashes.returns(true);
       mockPathUtils.removeDoubleSlashes.returns('/content/dam/test/fixed.jpg');
-      mockAemAuthorClient.isAvailable.resolves(true);
+      mockAemClient.isAvailable.resolves(true);
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam//test/broken.jpg';
 
       const result = await rule.checkDoubleSlash(brokenPath);
@@ -252,9 +252,9 @@ describe('SimilarPathRule', () => {
     it('should return fixed path without suggestion when not available', async () => {
       mockPathUtils.hasDoubleSlashes.returns(true);
       mockPathUtils.removeDoubleSlashes.returns('/content/dam/test/fixed.jpg');
-      mockAemAuthorClient.isAvailable.resolves(false);
+      mockAemClient.isAvailable.resolves(false);
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam//test/broken.jpg';
 
       const result = await rule.checkDoubleSlash(brokenPath);
@@ -338,9 +338,9 @@ describe('SimilarPathRule', () => {
   describe('error handling', () => {
     it('should handle AEM client errors during children fetch', async () => {
       mockPathUtils.getParentPath.returns('/content/dam/test');
-      mockAemAuthorClient.getChildrenFromPath.rejects(new Error('AEM connection failed'));
+      mockAemClient.getChildrenFromPath.rejects(new Error('AEM connection failed'));
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       await expect(rule.applyRule(brokenPath))
@@ -350,9 +350,9 @@ describe('SimilarPathRule', () => {
     it('should handle AEM client errors during double slash check', async () => {
       mockPathUtils.hasDoubleSlashes.returns(true);
       mockPathUtils.removeDoubleSlashes.returns('/content/dam/test/fixed.jpg');
-      mockAemAuthorClient.isAvailable.rejects(new Error('AEM connection failed'));
+      mockAemClient.isAvailable.rejects(new Error('AEM connection failed'));
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam//test/broken.jpg';
 
       await expect(rule.applyRule(brokenPath))
@@ -364,20 +364,20 @@ describe('SimilarPathRule', () => {
       const brokenPath = '/content/dam/test/broken.jpg';
 
       await expect(rule.applyRule(brokenPath))
-        .to.be.rejectedWith('AemAuthorClient not injected');
+        .to.be.rejectedWith('AemClient not injected');
     });
   });
 
   describe('integration scenarios', () => {
     it('should work through apply method', async () => {
       mockPathUtils.getParentPath.returns('/content/dam/test');
-      mockAemAuthorClient.getChildrenFromPath.resolves([
+      mockAemClient.getChildrenFromPath.resolves([
         { path: '/content/dam/test/similar.jpg' },
       ]);
       mockPathUtils.removeLocaleFromPath.callsFake((path) => path);
       mockLevenshteinDistance.calculate.returns(1);
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       const result = await rule.apply(brokenPath);
@@ -386,14 +386,14 @@ describe('SimilarPathRule', () => {
     });
 
     it('should return correct priority', () => {
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
 
       expect(rule.getPriority()).to.equal(3);
     });
 
     it('should handle complex similarity scenarios', async () => {
       mockPathUtils.getParentPath.returns('/content/dam/test');
-      mockAemAuthorClient.getChildrenFromPath.resolves([
+      mockAemClient.getChildrenFromPath.resolves([
         { path: '/content/dam/test/image1.jpg' },
         { path: '/content/dam/test/image2.png' },
         { path: '/content/dam/test/document.pdf' },
@@ -403,7 +403,7 @@ describe('SimilarPathRule', () => {
       mockLevenshteinDistance.calculate.onCall(1).returns(1);
       mockLevenshteinDistance.calculate.onCall(2).returns(5);
 
-      const rule = new SimilarPathRule(context, mockAemAuthorClient, mockPathIndex);
+      const rule = new SimilarPathRule(context, mockAemClient, mockPathIndex);
       const brokenPath = '/content/dam/test/image3.jpg';
 
       const result = await rule.applyRule(brokenPath);

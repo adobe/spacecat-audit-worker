@@ -18,14 +18,14 @@ import { Suggestion, SuggestionType } from '../domain/suggestion/suggestion.js';
 export class AnalysisStrategy {
   static GRAPHQL_SUFFIX = /\.cfm.*\.json$/;
 
-  constructor(context, aemAuthorClient, pathIndex) {
+  constructor(context, aemClient, pathIndex) {
     this.context = context;
-    this.aemAuthorClient = aemAuthorClient;
+    this.aemClient = aemClient;
     this.pathIndex = pathIndex;
     this.rules = [
-      new PublishRule(context, this.aemAuthorClient),
-      new LocaleFallbackRule(context, this.aemAuthorClient),
-      new SimilarPathRule(context, this.aemAuthorClient, pathIndex),
+      new PublishRule(context, this.aemClient),
+      new LocaleFallbackRule(context, this.aemClient),
+      new SimilarPathRule(context, this.aemClient, pathIndex),
     ].sort((a, b) => a.getPriority() - b.getPriority());
   }
 

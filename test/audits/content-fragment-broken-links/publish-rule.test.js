@@ -24,7 +24,7 @@ use(chaiAsPromised);
 describe('PublishRule', () => {
   let sandbox;
   let context;
-  let mockAemAuthorClient;
+  let mockAemClient;
   let mockSuggestion;
   let PublishRule;
 
@@ -43,7 +43,7 @@ describe('PublishRule', () => {
       })
       .build();
 
-    mockAemAuthorClient = {
+    mockAemClient = {
       isAvailable: sandbox.stub().resolves(false),
     };
 
@@ -70,18 +70,18 @@ describe('PublishRule', () => {
 
   describe('constructor', () => {
     it('should initialize with highest priority (1)', () => {
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      const rule = new PublishRule(context, mockAemClient);
 
       expect(rule.context).to.equal(context);
       expect(rule.priority).to.equal(1);
-      expect(rule.aemAuthorClient).to.equal(mockAemAuthorClient);
+      expect(rule.aemClient).to.equal(mockAemClient);
     });
 
     it('should extend BaseRule', () => {
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      const rule = new PublishRule(context, mockAemClient);
 
       expect(rule.getPriority).to.be.a('function');
-      expect(rule.getAemAuthorClient).to.be.a('function');
+      expect(rule.getAemClient).to.be.a('function');
       expect(rule.apply).to.be.a('function');
     });
 
@@ -90,36 +90,36 @@ describe('PublishRule', () => {
 
       expect(rule.context).to.equal(context);
       expect(rule.priority).to.equal(1);
-      expect(rule.aemAuthorClient).to.be.null;
+      expect(rule.aemClient).to.be.null;
     });
   });
 
   describe('applyRule', () => {
     it('should return publish suggestion when content is available on Author', async () => {
-      mockAemAuthorClient.isAvailable.resolves(true);
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      mockAemClient.isAvailable.resolves(true);
+      const rule = new PublishRule(context, mockAemClient);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       const result = await rule.applyRule(brokenPath);
 
-      expect(mockAemAuthorClient.isAvailable).to.have.been.calledOnceWith(brokenPath);
+      expect(mockAemClient.isAvailable).to.have.been.calledOnceWith(brokenPath);
       expect(result).to.equal(mockSuggestion);
     });
 
     it('should return null when content is not available on Author', async () => {
-      mockAemAuthorClient.isAvailable.resolves(false);
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      mockAemClient.isAvailable.resolves(false);
+      const rule = new PublishRule(context, mockAemClient);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       const result = await rule.applyRule(brokenPath);
 
-      expect(mockAemAuthorClient.isAvailable).to.have.been.calledOnceWith(brokenPath);
+      expect(mockAemClient.isAvailable).to.have.been.calledOnceWith(brokenPath);
       expect(result).to.be.null;
     });
 
     it('should handle different path formats', async () => {
-      mockAemAuthorClient.isAvailable.resolves(true);
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      mockAemClient.isAvailable.resolves(true);
+      const rule = new PublishRule(context, mockAemClient);
       const testPaths = [
         '/content/dam/folder/file.pdf',
         '/content/dam/en-us/assets/image.png',
@@ -127,28 +127,28 @@ describe('PublishRule', () => {
       ];
 
       for (const path of testPaths) {
-        mockAemAuthorClient.isAvailable.resetHistory();
+        mockAemClient.isAvailable.resetHistory();
         context.log.debug.resetHistory();
         context.log.info.resetHistory();
 
         // eslint-disable-next-line no-await-in-loop
         const result = await rule.applyRule(path);
 
-        expect(mockAemAuthorClient.isAvailable).to.have.been.calledOnceWith(path);
+        expect(mockAemClient.isAvailable).to.have.been.calledOnceWith(path);
         expect(result).to.equal(mockSuggestion);
       }
     });
 
     it('should handle AEM client errors gracefully', async () => {
       const testError = new Error('AEM connection failed');
-      mockAemAuthorClient.isAvailable.rejects(testError);
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      mockAemClient.isAvailable.rejects(testError);
+      const rule = new PublishRule(context, mockAemClient);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       await expect(rule.applyRule(brokenPath))
         .to.be.rejectedWith('AEM connection failed');
 
-      expect(mockAemAuthorClient.isAvailable).to.have.been.calledOnceWith(brokenPath);
+      expect(mockAemClient.isAvailable).to.have.been.calledOnceWith(brokenPath);
     });
 
     it('should throw error when AEM client not available', async () => {
@@ -156,40 +156,40 @@ describe('PublishRule', () => {
       const brokenPath = '/content/dam/test/broken.jpg';
 
       await expect(rule.applyRule(brokenPath))
-        .to.be.rejectedWith('AemAuthorClient not injected');
+        .to.be.rejectedWith('AemClient not injected');
 
-      expect(context.log.error).to.have.been.calledWith('AemAuthorClient not injected');
+      expect(context.log.error).to.have.been.calledWith('AemClient not injected');
     });
 
     it('should handle empty path', async () => {
-      mockAemAuthorClient.isAvailable.resolves(false);
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      mockAemClient.isAvailable.resolves(false);
+      const rule = new PublishRule(context, mockAemClient);
       const brokenPath = '';
 
       const result = await rule.applyRule(brokenPath);
 
       expect(context.log.debug).to.have.been.calledWith('Applying PublishRule to path: ');
-      expect(mockAemAuthorClient.isAvailable).to.have.been.calledOnceWith('');
+      expect(mockAemClient.isAvailable).to.have.been.calledOnceWith('');
       expect(result).to.be.null;
     });
 
     it('should handle null path', async () => {
-      mockAemAuthorClient.isAvailable.resolves(false);
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      mockAemClient.isAvailable.resolves(false);
+      const rule = new PublishRule(context, mockAemClient);
       const brokenPath = null;
 
       const result = await rule.applyRule(brokenPath);
 
       expect(context.log.debug).to.have.been.calledWith('Applying PublishRule to path: null');
-      expect(mockAemAuthorClient.isAvailable).to.have.been.calledOnceWith(null);
+      expect(mockAemClient.isAvailable).to.have.been.calledOnceWith(null);
       expect(result).to.be.null;
     });
   });
 
   describe('integration with BaseRule', () => {
     it('should work through apply method', async () => {
-      mockAemAuthorClient.isAvailable.resolves(true);
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      mockAemClient.isAvailable.resolves(true);
+      const rule = new PublishRule(context, mockAemClient);
       const brokenPath = '/content/dam/test/broken.jpg';
 
       const result = await rule.apply(brokenPath);
@@ -198,49 +198,49 @@ describe('PublishRule', () => {
     });
 
     it('should return correct priority', () => {
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      const rule = new PublishRule(context, mockAemClient);
 
       expect(rule.getPriority()).to.equal(1);
     });
 
     it('should return AEM client when available', () => {
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      const rule = new PublishRule(context, mockAemClient);
 
-      expect(rule.getAemAuthorClient()).to.equal(mockAemAuthorClient);
+      expect(rule.getAemClient()).to.equal(mockAemClient);
     });
   });
 
   describe('edge cases', () => {
     it('should handle very long paths', async () => {
-      mockAemAuthorClient.isAvailable.resolves(true);
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      mockAemClient.isAvailable.resolves(true);
+      const rule = new PublishRule(context, mockAemClient);
       const longPath = `/content/dam/${'very-long-folder-name/'.repeat(20)}file.jpg`;
 
       const result = await rule.applyRule(longPath);
 
-      expect(mockAemAuthorClient.isAvailable).to.have.been.calledOnceWith(longPath);
+      expect(mockAemClient.isAvailable).to.have.been.calledOnceWith(longPath);
       expect(result).to.equal(mockSuggestion);
     });
 
     it('should handle paths with special characters', async () => {
-      mockAemAuthorClient.isAvailable.resolves(true);
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      mockAemClient.isAvailable.resolves(true);
+      const rule = new PublishRule(context, mockAemClient);
       const specialPath = '/content/dam/folder with spaces/file-with-dashes_and_underscores.jpg';
 
       const result = await rule.applyRule(specialPath);
 
-      expect(mockAemAuthorClient.isAvailable).to.have.been.calledOnceWith(specialPath);
+      expect(mockAemClient.isAvailable).to.have.been.calledOnceWith(specialPath);
       expect(result).to.equal(mockSuggestion);
     });
 
     it('should handle paths with encoded characters', async () => {
-      mockAemAuthorClient.isAvailable.resolves(true);
-      const rule = new PublishRule(context, mockAemAuthorClient);
+      mockAemClient.isAvailable.resolves(true);
+      const rule = new PublishRule(context, mockAemClient);
       const encodedPath = '/content/dam/folder%20with%20spaces/file.jpg';
 
       const result = await rule.applyRule(encodedPath);
 
-      expect(mockAemAuthorClient.isAvailable).to.have.been.calledOnceWith(encodedPath);
+      expect(mockAemClient.isAvailable).to.have.been.calledOnceWith(encodedPath);
       expect(result).to.equal(mockSuggestion);
     });
   });

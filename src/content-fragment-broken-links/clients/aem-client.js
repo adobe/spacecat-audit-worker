@@ -15,10 +15,10 @@ import { ContentPath } from '../domain/content/content-path.js';
 import { Locale } from '../domain/language/locale.js';
 import { PathUtils } from '../utils/path-utils.js';
 
-export class AemAuthorClient {
+export class AemClient {
   static API_SITES_BASE = '/adobe/sites';
 
-  static API_SITES_FRAGMENTS = `${AemAuthorClient.API_SITES_BASE}/cf/fragments`;
+  static API_SITES_FRAGMENTS = `${AemClient.API_SITES_BASE}/cf/fragments`;
 
   // Safety limit to prevent too many paginated queries
   static MAX_PAGES = 10;
@@ -42,7 +42,7 @@ export class AemAuthorClient {
       throw new Error('AEM Author configuration missing: AEM_AUTHOR_URL and AEM_AUTHOR_TOKEN required');
     }
 
-    return new AemAuthorClient(context, authorUrl, authToken, pathIndex);
+    return new AemClient(context, authorUrl, authToken, pathIndex);
   }
 
   static isBreakingPoint(path) {
@@ -98,7 +98,7 @@ export class AemAuthorClient {
         for (const item of data.items) {
           const contentPath = new ContentPath(
             item.path,
-            AemAuthorClient.parseContentStatus(item.status),
+            AemClient.parseContentStatus(item.status),
             Locale.fromPath(item.path),
           );
           this.pathIndex.insertContentPath(contentPath);
@@ -152,21 +152,21 @@ export class AemAuthorClient {
         // Add small delay to implement rate limiting
         if (cursor) {
           // eslint-disable-next-line no-await-in-loop
-          await AemAuthorClient.delay(AemAuthorClient.PAGINATION_DELAY_MS);
+          await AemClient.delay(AemClient.PAGINATION_DELAY_MS);
         }
       } catch (error) {
         log.error(`Error fetching page ${pageCount} for path ${path}: ${error.message}`);
         // Return what we have so far instead of failing completely
         break;
       }
-    } while (cursor && pageCount < AemAuthorClient.MAX_PAGES);
+    } while (cursor && pageCount < AemClient.MAX_PAGES);
 
     // Cache items
     if (this.pathIndex) {
       for (const item of allItems) {
         const contentPath = new ContentPath(
           item.path,
-          AemAuthorClient.parseContentStatus(item.status),
+          AemClient.parseContentStatus(item.status),
           Locale.fromPath(item.path),
         );
         this.pathIndex.insertContentPath(contentPath);
@@ -211,7 +211,7 @@ export class AemAuthorClient {
       return [];
     }
 
-    if (AemAuthorClient.isBreakingPoint(parentPath)) {
+    if (AemClient.isBreakingPoint(parentPath)) {
       log.debug(`Reached breaking point: ${parentPath}`);
       return [];
     }
@@ -275,7 +275,7 @@ export class AemAuthorClient {
   }
 
   createUrl(fragmentPath) {
-    const url = new URL(AemAuthorClient.API_SITES_FRAGMENTS, this.authorUrl);
+    const url = new URL(AemClient.API_SITES_FRAGMENTS, this.authorUrl);
     url.searchParams.set('path', fragmentPath);
     url.searchParams.set('projection', 'minimal');
     return url;

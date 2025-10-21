@@ -21,7 +21,7 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe('AemAuthorClient', () => {
+describe('AemClient', () => {
   let sandbox;
   let context;
   let mockFetch;
@@ -29,7 +29,7 @@ describe('AemAuthorClient', () => {
   let mockContentPath;
   let mockLocale;
   let mockPathUtils;
-  let AemAuthorClient;
+  let AemClient;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -66,7 +66,7 @@ describe('AemAuthorClient', () => {
       getParentPath: sandbox.stub().returns('/content/dam/parent'),
     };
 
-    const module = await esmock('../../../src/content-fragment-broken-links/clients/aem-author-client.js', {
+    const module = await esmock('../../../src/content-fragment-broken-links/clients/aem-client.js', {
       '@adobe/spacecat-shared-utils': {
         tracingFetch: mockFetch,
       },
@@ -81,7 +81,7 @@ describe('AemAuthorClient', () => {
       },
     });
 
-    AemAuthorClient = module.AemAuthorClient;
+    AemClient = module.AemClient;
   });
 
   afterEach(() => {
@@ -90,19 +90,19 @@ describe('AemAuthorClient', () => {
 
   describe('static constants', () => {
     it('should have correct API endpoints', () => {
-      expect(AemAuthorClient.API_SITES_BASE).to.equal('/adobe/sites/cf');
-      expect(AemAuthorClient.API_SITES_FRAGMENTS).to.equal('/adobe/sites/cf/fragments');
+      expect(AemClient.API_SITES_BASE).to.equal('/adobe/sites');
+      expect(AemClient.API_SITES_FRAGMENTS).to.equal('/adobe/sites/cf/fragments');
     });
 
     it('should have pagination constants', () => {
-      expect(AemAuthorClient.MAX_PAGES).to.equal(10);
-      expect(AemAuthorClient.PAGINATION_DELAY_MS).to.equal(100);
+      expect(AemClient.MAX_PAGES).to.equal(10);
+      expect(AemClient.PAGINATION_DELAY_MS).to.equal(100);
     });
   });
 
   describe('constructor', () => {
     it('should create client with all parameters', () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
 
       expect(client.authorUrl).to.equal('https://author.example.com');
       expect(client.authToken).to.equal('token-123');
@@ -111,7 +111,7 @@ describe('AemAuthorClient', () => {
     });
 
     it('should create client without pathIndex', () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
 
       expect(client.authorUrl).to.equal('https://author.example.com');
       expect(client.authToken).to.equal('token-123');
@@ -120,7 +120,7 @@ describe('AemAuthorClient', () => {
     });
 
     it('should handle null pathIndex explicitly', () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', null);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', null);
 
       expect(client.context).to.equal(context);
       expect(client.pathIndex).to.be.null;
@@ -129,7 +129,7 @@ describe('AemAuthorClient', () => {
 
   describe('createFrom static factory method', () => {
     it('should create client from context with environment variables', () => {
-      const client = AemAuthorClient.createFrom(context, mockPathIndex);
+      const client = AemClient.createFrom(context, mockPathIndex);
 
       expect(client.authorUrl).to.equal('https://author.example.com');
       expect(client.authToken).to.equal('test-token-123');
@@ -138,7 +138,7 @@ describe('AemAuthorClient', () => {
     });
 
     it('should create client without pathIndex', () => {
-      const client = AemAuthorClient.createFrom(context);
+      const client = AemClient.createFrom(context);
 
       expect(client.authorUrl).to.equal('https://author.example.com');
       expect(client.authToken).to.equal('test-token-123');
@@ -156,7 +156,7 @@ describe('AemAuthorClient', () => {
         })
         .build();
 
-      expect(() => AemAuthorClient.createFrom(contextWithoutUrl))
+      expect(() => AemClient.createFrom(contextWithoutUrl))
         .to.throw('AEM Author configuration missing: AEM_AUTHOR_URL and AEM_AUTHOR_TOKEN required');
     });
 
@@ -170,7 +170,7 @@ describe('AemAuthorClient', () => {
         })
         .build();
 
-      expect(() => AemAuthorClient.createFrom(contextWithoutToken))
+      expect(() => AemClient.createFrom(contextWithoutToken))
         .to.throw('AEM Author configuration missing: AEM_AUTHOR_URL and AEM_AUTHOR_TOKEN required');
     });
 
@@ -182,83 +182,83 @@ describe('AemAuthorClient', () => {
         })
         .build();
 
-      expect(() => AemAuthorClient.createFrom(contextWithoutConfig))
+      expect(() => AemClient.createFrom(contextWithoutConfig))
         .to.throw('AEM Author configuration missing: AEM_AUTHOR_URL and AEM_AUTHOR_TOKEN required');
     });
   });
 
   describe('isBreakingPoint static method', () => {
     it('should return true for null path', () => {
-      expect(AemAuthorClient.isBreakingPoint(null)).to.be.true;
+      expect(AemClient.isBreakingPoint(null)).to.be.true;
     });
 
     it('should return true for undefined path', () => {
-      expect(AemAuthorClient.isBreakingPoint(undefined)).to.be.true;
+      expect(AemClient.isBreakingPoint(undefined)).to.be.true;
     });
 
     it('should return true for empty string path', () => {
-      expect(AemAuthorClient.isBreakingPoint('')).to.be.true;
+      expect(AemClient.isBreakingPoint('')).to.be.true;
     });
 
     it('should return true for paths not starting with /content/dam/', () => {
-      expect(AemAuthorClient.isBreakingPoint('/content')).to.be.true;
-      expect(AemAuthorClient.isBreakingPoint('/other/path')).to.be.true;
-      expect(AemAuthorClient.isBreakingPoint('content/dam/test')).to.be.true;
+      expect(AemClient.isBreakingPoint('/content')).to.be.true;
+      expect(AemClient.isBreakingPoint('/other/path')).to.be.true;
+      expect(AemClient.isBreakingPoint('content/dam/test')).to.be.true;
     });
 
     it('should return true for exact /content/dam path', () => {
-      expect(AemAuthorClient.isBreakingPoint('/content/dam')).to.be.true;
+      expect(AemClient.isBreakingPoint('/content/dam')).to.be.true;
     });
 
     it('should return false for valid content dam paths', () => {
-      expect(AemAuthorClient.isBreakingPoint('/content/dam/test')).to.be.false;
-      expect(AemAuthorClient.isBreakingPoint('/content/dam/en-us/images')).to.be.false;
-      expect(AemAuthorClient.isBreakingPoint('/content/dam/folder/subfolder/file.jpg')).to.be.false;
+      expect(AemClient.isBreakingPoint('/content/dam/test')).to.be.false;
+      expect(AemClient.isBreakingPoint('/content/dam/en-us/images')).to.be.false;
+      expect(AemClient.isBreakingPoint('/content/dam/folder/subfolder/file.jpg')).to.be.false;
     });
   });
 
   describe('parseContentStatus static method', () => {
     it('should return UNKNOWN for null status', () => {
-      expect(AemAuthorClient.parseContentStatus(null)).to.equal('UNKNOWN');
+      expect(AemClient.parseContentStatus(null)).to.equal('UNKNOWN');
     });
 
     it('should return UNKNOWN for undefined status', () => {
-      expect(AemAuthorClient.parseContentStatus(undefined)).to.equal('UNKNOWN');
+      expect(AemClient.parseContentStatus(undefined)).to.equal('UNKNOWN');
     });
 
     it('should return UNKNOWN for empty string status', () => {
-      expect(AemAuthorClient.parseContentStatus('')).to.equal('UNKNOWN');
+      expect(AemClient.parseContentStatus('')).to.equal('UNKNOWN');
     });
 
     it('should parse valid statuses case-insensitively', () => {
-      expect(AemAuthorClient.parseContentStatus('published')).to.equal('PUBLISHED');
-      expect(AemAuthorClient.parseContentStatus('PUBLISHED')).to.equal('PUBLISHED');
-      expect(AemAuthorClient.parseContentStatus('Published')).to.equal('PUBLISHED');
+      expect(AemClient.parseContentStatus('published')).to.equal('PUBLISHED');
+      expect(AemClient.parseContentStatus('PUBLISHED')).to.equal('PUBLISHED');
+      expect(AemClient.parseContentStatus('Published')).to.equal('PUBLISHED');
 
-      expect(AemAuthorClient.parseContentStatus('modified')).to.equal('MODIFIED');
-      expect(AemAuthorClient.parseContentStatus('MODIFIED')).to.equal('MODIFIED');
+      expect(AemClient.parseContentStatus('modified')).to.equal('MODIFIED');
+      expect(AemClient.parseContentStatus('MODIFIED')).to.equal('MODIFIED');
 
-      expect(AemAuthorClient.parseContentStatus('draft')).to.equal('DRAFT');
-      expect(AemAuthorClient.parseContentStatus('DRAFT')).to.equal('DRAFT');
+      expect(AemClient.parseContentStatus('draft')).to.equal('DRAFT');
+      expect(AemClient.parseContentStatus('DRAFT')).to.equal('DRAFT');
 
-      expect(AemAuthorClient.parseContentStatus('archived')).to.equal('ARCHIVED');
-      expect(AemAuthorClient.parseContentStatus('ARCHIVED')).to.equal('ARCHIVED');
+      expect(AemClient.parseContentStatus('archived')).to.equal('ARCHIVED');
+      expect(AemClient.parseContentStatus('ARCHIVED')).to.equal('ARCHIVED');
 
-      expect(AemAuthorClient.parseContentStatus('deleted')).to.equal('DELETED');
-      expect(AemAuthorClient.parseContentStatus('DELETED')).to.equal('DELETED');
+      expect(AemClient.parseContentStatus('deleted')).to.equal('DELETED');
+      expect(AemClient.parseContentStatus('DELETED')).to.equal('DELETED');
     });
 
     it('should return UNKNOWN for invalid statuses', () => {
-      expect(AemAuthorClient.parseContentStatus('invalid')).to.equal('UNKNOWN');
-      expect(AemAuthorClient.parseContentStatus('pending')).to.equal('UNKNOWN');
-      expect(AemAuthorClient.parseContentStatus('123')).to.equal('UNKNOWN');
+      expect(AemClient.parseContentStatus('invalid')).to.equal('UNKNOWN');
+      expect(AemClient.parseContentStatus('pending')).to.equal('UNKNOWN');
+      expect(AemClient.parseContentStatus('123')).to.equal('UNKNOWN');
     });
   });
 
   describe('delay static method', () => {
     it('should delay for specified milliseconds', async () => {
       const start = Date.now();
-      await AemAuthorClient.delay(50);
+      await AemClient.delay(50);
       const end = Date.now();
 
       expect(end - start).to.be.at.least(45); // Allow some tolerance
@@ -266,7 +266,7 @@ describe('AemAuthorClient', () => {
 
     it('should handle zero delay', async () => {
       const start = Date.now();
-      await AemAuthorClient.delay(0);
+      await AemClient.delay(0);
       const end = Date.now();
 
       expect(end - start).to.be.lessThan(10);
@@ -275,21 +275,21 @@ describe('AemAuthorClient', () => {
 
   describe('createUrl method', () => {
     it('should create correct URL with path and projection', () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const url = client.createUrl('/content/dam/test/image.jpg');
 
       expect(url.toString()).to.equal('https://author.example.com/adobe/sites/cf/fragments?path=%2Fcontent%2Fdam%2Ftest%2Fimage.jpg&projection=minimal');
     });
 
     it('should handle paths with special characters', () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const url = client.createUrl('/content/dam/test/image with spaces.jpg');
 
       expect(url.toString()).to.include('image+with+spaces');
     });
 
     it('should handle authorUrl with trailing slash', () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com/', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com/', 'token-123');
       const url = client.createUrl('/content/dam/test');
 
       expect(url.toString()).to.equal('https://author.example.com/adobe/sites/cf/fragments?path=%2Fcontent%2Fdam%2Ftest&projection=minimal');
@@ -298,21 +298,21 @@ describe('AemAuthorClient', () => {
 
   describe('createUrlWithPagination method', () => {
     it('should create URL without cursor when cursor is null', () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const url = client.createUrlWithPagination('/content/dam/test', null);
 
       expect(url.toString()).to.equal('https://author.example.com/adobe/sites/cf/fragments?path=%2Fcontent%2Fdam%2Ftest&projection=minimal');
     });
 
     it('should create URL with cursor when cursor is provided', () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const url = client.createUrlWithPagination('/content/dam/test', 'cursor-123');
 
       expect(url.toString()).to.equal('https://author.example.com/adobe/sites/cf/fragments?path=%2Fcontent%2Fdam%2Ftest&projection=minimal&cursor=cursor-123');
     });
 
     it('should handle empty string cursor', () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const url = client.createUrlWithPagination('/content/dam/test', '');
 
       // Empty string cursor is falsy, so it doesn't get added
@@ -322,7 +322,7 @@ describe('AemAuthorClient', () => {
 
   describe('createAuthHeaders method', () => {
     it('should create correct authorization headers', () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const headers = client.createAuthHeaders();
 
       expect(headers).to.deep.equal({
@@ -332,7 +332,7 @@ describe('AemAuthorClient', () => {
     });
 
     it('should handle empty token', () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', '');
+      const client = new AemClient(context, 'https://author.example.com', '');
       const headers = client.createAuthHeaders();
 
       expect(headers).to.deep.equal({
@@ -352,7 +352,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
       const result = await client.isAvailable('/content/dam/test/image.jpg');
 
       expect(result).to.be.true;
@@ -363,7 +363,7 @@ describe('AemAuthorClient', () => {
       const mockResponse = { ok: false };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const result = await client.isAvailable('/content/dam/test/image.jpg');
 
       expect(result).to.be.false;
@@ -376,7 +376,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const result = await client.isAvailable('/content/dam/test/image.jpg');
 
       expect(result).to.be.false;
@@ -395,7 +395,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const result = await client.isAvailable('/content/dam/test');
 
       expect(result).to.be.true;
@@ -410,7 +410,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
       await client.isAvailable('/content/dam/test/image.jpg');
 
       expect(mockContentPath).to.have.been.calledWith(
@@ -430,7 +430,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       await client.isAvailable('/content/dam/test/image.jpg');
 
       expect(mockContentPath).to.not.have.been.called;
@@ -439,7 +439,7 @@ describe('AemAuthorClient', () => {
     it('should throw error when fetch fails', async () => {
       mockFetch.rejects(new Error('Network error'));
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
 
       await expect(client.isAvailable('/content/dam/test/image.jpg'))
         .to.be.rejectedWith('Failed to check AEM Author availability for /content/dam/test/image.jpg: Network error');
@@ -452,7 +452,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
 
       await expect(client.isAvailable('/content/dam/test/image.jpg'))
         .to.be.rejectedWith('Failed to check AEM Author availability for /content/dam/test/image.jpg: Invalid JSON');
@@ -470,7 +470,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const result = await client.fetchWithPagination('/content/dam/test');
 
       expect(result).to.deep.equal({
@@ -489,7 +489,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const result = await client.fetchWithPagination('/content/dam/test', 'current-cursor');
 
       expect(result).to.deep.equal({
@@ -505,7 +505,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const result = await client.fetchWithPagination('/content/dam/test');
 
       expect(result).to.deep.equal({
@@ -522,7 +522,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
 
       await expect(client.fetchWithPagination('/content/dam/test'))
         .to.be.rejectedWith('HTTP 404: Not Found');
@@ -531,7 +531,7 @@ describe('AemAuthorClient', () => {
     it('should throw error when fetch fails', async () => {
       mockFetch.rejects(new Error('Network error'));
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
 
       await expect(client.fetchWithPagination('/content/dam/test'))
         .to.be.rejectedWith('Network error');
@@ -559,7 +559,7 @@ describe('AemAuthorClient', () => {
       mockFetch.onCall(0).resolves(mockResponses[0]);
       mockFetch.onCall(1).resolves(mockResponses[1]);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
       const result = await client.fetchContentWithPagination('/content/dam/test');
 
       expect(result).to.have.lengthOf(2);
@@ -578,11 +578,11 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const result = await client.fetchContentWithPagination('/content/dam/test');
 
-      expect(mockFetch.callCount).to.equal(AemAuthorClient.MAX_PAGES);
-      expect(result).to.have.lengthOf(AemAuthorClient.MAX_PAGES);
+      expect(mockFetch.callCount).to.equal(AemClient.MAX_PAGES);
+      expect(result).to.have.lengthOf(AemClient.MAX_PAGES);
     });
 
     it('should handle errors gracefully and return partial results', async () => {
@@ -598,7 +598,7 @@ describe('AemAuthorClient', () => {
       mockFetch.onCall(0).resolves(mockResponses[0]);
       mockFetch.onCall(1).rejects(new Error('Network error'));
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const result = await client.fetchContentWithPagination('/content/dam/test');
 
       expect(result).to.have.lengthOf(1);
@@ -618,7 +618,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
       await client.fetchContentWithPagination('/content/dam/test');
 
       expect(mockContentPath).to.have.been.calledTwice;
@@ -628,7 +628,7 @@ describe('AemAuthorClient', () => {
 
   describe('fetchContent method', () => {
     it('should delegate to fetchContentWithPagination', async () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const fetchContentWithPaginationStub = sandbox.stub(client, 'fetchContentWithPagination').resolves([]);
 
       await client.fetchContent('/content/dam/test');
@@ -637,7 +637,7 @@ describe('AemAuthorClient', () => {
     });
 
     it('should wrap errors with descriptive message', async () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       sandbox.stub(client, 'fetchContentWithPagination').rejects(new Error('Original error'));
 
       await expect(client.fetchContent('/content/dam/test'))
@@ -647,14 +647,14 @@ describe('AemAuthorClient', () => {
 
   describe('getChildrenFromPath method', () => {
     it('should return empty array when pathIndex is not available', async () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123');
+      const client = new AemClient(context, 'https://author.example.com', 'token-123');
       const result = await client.getChildrenFromPath('/content/dam/test');
 
       expect(result).to.deep.equal([]);
     });
 
     it('should return empty array for breaking point paths', async () => {
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
       const result = await client.getChildrenFromPath('/content/dam');
 
       expect(result).to.deep.equal([]);
@@ -664,7 +664,7 @@ describe('AemAuthorClient', () => {
       const cachedChildren = [{ path: '/content/dam/test/child1.jpg' }];
       mockPathIndex.findChildren.returns(cachedChildren);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
       const result = await client.getChildrenFromPath('/content/dam/test');
 
       expect(result).to.equal(cachedChildren);
@@ -683,7 +683,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
       const fetchContentStub = sandbox.stub(client, 'fetchContent').resolves();
 
       const result = await client.getChildrenFromPath('/content/dam/test');
@@ -710,7 +710,7 @@ describe('AemAuthorClient', () => {
       mockFetch.onCall(0).resolves(mockResponse1); // First isAvailable call
       mockFetch.onCall(1).resolves(mockResponse2); // Second isAvailable call for parent
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
       const result = await client.getChildrenFromPath('/content/dam/test/child');
 
       expect(mockPathUtils.getParentPath).to.have.been.calledWith('/content/dam/test/child');
@@ -724,7 +724,7 @@ describe('AemAuthorClient', () => {
       const mockResponse = { ok: false };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
       const result = await client.getChildrenFromPath('/content/dam/test');
 
       expect(result).to.deep.equal([]);
@@ -734,7 +734,7 @@ describe('AemAuthorClient', () => {
       mockPathIndex.findChildren.returns([]);
       mockFetch.rejects(new Error('Network error'));
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
       const result = await client.getChildrenFromPath('/content/dam/test');
 
       expect(result).to.deep.equal([]);
@@ -752,7 +752,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemAuthorClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
       const fetchContentStub = sandbox.stub(client, 'fetchContent').rejects(new Error('Fetch failed'));
 
       const result = await client.getChildrenFromPath('/content/dam/test');
@@ -772,7 +772,7 @@ describe('AemAuthorClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = AemAuthorClient.createFrom(context, mockPathIndex);
+      const client = AemClient.createFrom(context, mockPathIndex);
       const isAvailable = await client.isAvailable('/content/dam/test/image.jpg');
 
       expect(isAvailable).to.be.true;
@@ -807,7 +807,7 @@ describe('AemAuthorClient', () => {
       mockFetch.onCall(0).resolves(mockResponses[0]);
       mockFetch.onCall(1).resolves(mockResponses[1]);
 
-      const client = AemAuthorClient.createFrom(context, mockPathIndex);
+      const client = AemClient.createFrom(context, mockPathIndex);
       const result = await client.fetchContent('/content/dam/test');
 
       expect(result).to.have.lengthOf(2);
@@ -820,7 +820,7 @@ describe('AemAuthorClient', () => {
       const cachedChildren = [{ path: '/content/dam/test/child1.jpg' }];
       mockPathIndex.findChildren.returns(cachedChildren);
 
-      const client = AemAuthorClient.createFrom(context, mockPathIndex);
+      const client = AemClient.createFrom(context, mockPathIndex);
       const result = await client.getChildrenFromPath('/content/dam/test');
 
       expect(result).to.equal(cachedChildren);

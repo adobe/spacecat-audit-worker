@@ -17,8 +17,8 @@ import { LanguageTree } from '../domain/language/language-tree.js';
 import { PathUtils } from '../utils/path-utils.js';
 
 export class LocaleFallbackRule extends BaseRule {
-  constructor(context, aemAuthorClient) {
-    super(context, 2, aemAuthorClient); // Second priority
+  constructor(context, aemClient) {
+    super(context, 2, aemClient); // Second priority
   }
 
   async applyRule(brokenPath) {
@@ -46,7 +46,7 @@ export class LocaleFallbackRule extends BaseRule {
       log.debug(`Trying locale fallback: ${detectedLocale.getCode()} -> ${similarRoot}`);
 
       // eslint-disable-next-line no-await-in-loop
-      if (await this.getAemAuthorClient().isAvailable(suggestedPath)) {
+      if (await this.getAemClient().isAvailable(suggestedPath)) {
         log.info(`Found locale fallback for ${brokenPath}: ${detectedLocale.getCode()} -> ${similarRoot}`);
         return Suggestion.locale(brokenPath, suggestedPath);
       }
@@ -74,7 +74,7 @@ export class LocaleFallbackRule extends BaseRule {
       log.debug(`Trying locale insertion: ${brokenPath} -> ${localePath}`);
 
       // eslint-disable-next-line no-await-in-loop
-      if (await this.getAemAuthorClient().isAvailable(localePath)) {
+      if (await this.getAemClient().isAvailable(localePath)) {
         log.info(`Found content with locale insertion: ${brokenPath} -> ${localePath}`);
         return Suggestion.locale(brokenPath, localePath);
       }

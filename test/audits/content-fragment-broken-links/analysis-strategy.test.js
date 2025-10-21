@@ -24,7 +24,7 @@ use(chaiAsPromised);
 describe('AnalysisStrategy', () => {
   let sandbox;
   let context;
-  let mockAemAuthorClient;
+  let mockAemClient;
   let mockPathIndex;
   let mockPublishRule;
   let mockLocaleFallbackRule;
@@ -140,10 +140,10 @@ describe('AnalysisStrategy', () => {
 
   describe('constructor', () => {
     it('should initialize with context, AEM client, and path index', () => {
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
 
       expect(strategy.context).to.equal(context);
-      expect(strategy.aemAuthorClient).to.equal(mockAemAuthorClient);
+      expect(strategy.aemClient).to.equal(mockAemClient);
       expect(strategy.pathIndex).to.equal(mockPathIndex);
       expect(strategy.rules).to.have.lengthOf(3);
     });
@@ -153,7 +153,7 @@ describe('AnalysisStrategy', () => {
       mockLocaleFallbackRule.getPriority.returns(1);
       mockSimilarPathRule.getPriority.returns(2);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
 
       expect(strategy.rules[0]).to.equal(mockLocaleFallbackRule);
       expect(strategy.rules[1]).to.equal(mockSimilarPathRule);
@@ -191,7 +191,7 @@ describe('AnalysisStrategy', () => {
       const suggestion1 = { type: 'PUBLISH', requestedPath: '/content/dam/test/broken1.jpg' };
       const suggestion2 = { type: 'LOCALE', requestedPath: '/content/dam/test/broken2' };
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const analyzePathStub = sandbox.stub(strategy, 'analyzePath');
       analyzePathStub.onCall(0).resolves(suggestion1);
       analyzePathStub.onCall(1).resolves(suggestion2);
@@ -216,7 +216,7 @@ describe('AnalysisStrategy', () => {
 
       const suggestion1 = { type: 'PUBLISH', requestedPath: '/content/dam/test/broken1.jpg' };
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const analyzePathStub = sandbox.stub(strategy, 'analyzePath');
       analyzePathStub.onCall(0).resolves(suggestion1);
       analyzePathStub.onCall(1).resolves(null);
@@ -232,7 +232,7 @@ describe('AnalysisStrategy', () => {
     });
 
     it('should handle empty broken paths array', async () => {
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const processSuggestionsStub = sandbox.stub(strategy, 'processSuggestions').resolves([]);
 
       const result = await strategy.analyze([]);
@@ -244,7 +244,7 @@ describe('AnalysisStrategy', () => {
     it('should clean GraphQL paths before analysis', async () => {
       const brokenPaths = ['/content/dam/test/broken.cfm.json'];
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const analyzePathStub = sandbox.stub(strategy, 'analyzePath').resolves(null);
       sandbox.stub(strategy, 'processSuggestions').resolves([]);
 
@@ -263,7 +263,7 @@ describe('AnalysisStrategy', () => {
       mockLocaleFallbackRule.apply.resolves(null);
       mockSimilarPathRule.apply.resolves(null);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.analyzePath(brokenPath);
 
       expect(mockPublishRule.apply).to.have.been.calledWith(brokenPath);
@@ -280,7 +280,7 @@ describe('AnalysisStrategy', () => {
       mockLocaleFallbackRule.apply.resolves(suggestion);
       mockSimilarPathRule.apply.resolves(null);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.analyzePath(brokenPath);
 
       expect(mockPublishRule.apply).to.have.been.calledWith(brokenPath);
@@ -298,7 +298,7 @@ describe('AnalysisStrategy', () => {
       mockSimilarPathRule.apply.resolves(null);
       mockSuggestion.notFound.returns(notFoundSuggestion);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.analyzePath(brokenPath);
 
       expect(mockPublishRule.apply).to.have.been.calledWith(brokenPath);
@@ -316,7 +316,7 @@ describe('AnalysisStrategy', () => {
       mockLocaleFallbackRule.apply.rejects(new Error('Locale rule failed'));
       mockSimilarPathRule.apply.resolves(suggestion);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.analyzePath(brokenPath);
 
       expect(mockPublishRule.apply).to.have.been.calledWith(brokenPath);
@@ -335,7 +335,7 @@ describe('AnalysisStrategy', () => {
       mockSimilarPathRule.apply.rejects(new Error('Similar rule failed'));
       mockSuggestion.notFound.returns(notFoundSuggestion);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.analyzePath(brokenPath);
 
       expect(context.log.error).to.have.been.calledThrice;
@@ -349,7 +349,7 @@ describe('AnalysisStrategy', () => {
 
       mockPublishRule.apply.resolves(suggestion);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       await strategy.analyzePath(brokenPath);
 
       expect(context.log.info).to.have.been.calledWith(`Analyzing broken path: ${brokenPath}`);
@@ -364,7 +364,7 @@ describe('AnalysisStrategy', () => {
         { type: 'NOT_FOUND', requestedPath: '/content/dam/test/broken2.jpg', suggestedPath: null },
       ];
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.processSuggestions(suggestions);
 
       expect(result).to.deep.equal(suggestions);
@@ -382,7 +382,7 @@ describe('AnalysisStrategy', () => {
       };
       mockPathIndex.find.returns(contentPath);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.processSuggestions(suggestions);
 
       expect(mockPathIndex.find).to.have.been.calledWith('/content/dam/test/suggested.jpg');
@@ -401,7 +401,7 @@ describe('AnalysisStrategy', () => {
       };
       mockPathIndex.find.returns(contentPath);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.processSuggestions(suggestions);
 
       expect(result).to.deep.equal(suggestions);
@@ -418,7 +418,7 @@ describe('AnalysisStrategy', () => {
       };
       mockPathIndex.find.returns(contentPath);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.processSuggestions(suggestions);
 
       expect(result).to.have.lengthOf(1);
@@ -426,7 +426,7 @@ describe('AnalysisStrategy', () => {
     });
 
     it('should handle empty suggestions array', async () => {
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.processSuggestions([]);
 
       expect(result).to.deep.equal([]);
@@ -446,7 +446,7 @@ describe('AnalysisStrategy', () => {
       };
       mockPathIndex.find.onCall(0).returns(contentPath);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.processSuggestions(suggestions);
 
       expect(result).to.have.lengthOf(3);
@@ -473,7 +473,7 @@ describe('AnalysisStrategy', () => {
       };
       mockPathIndex.find.returns(contentPath);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.analyze(brokenPaths);
 
       expect(result).to.have.lengthOf(1);
@@ -495,7 +495,7 @@ describe('AnalysisStrategy', () => {
       mockSimilarPathRule.apply.resolves(null);
       mockSuggestion.notFound.returns(notFoundSuggestion);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.analyze(brokenPaths);
 
       expect(result).to.have.lengthOf(1);
@@ -531,7 +531,7 @@ describe('AnalysisStrategy', () => {
       };
       mockPathIndex.find.returns(contentPath);
 
-      const strategy = new AnalysisStrategy(context, mockAemAuthorClient, mockPathIndex);
+      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.analyze(brokenPaths);
 
       expect(result).to.have.lengthOf(3);

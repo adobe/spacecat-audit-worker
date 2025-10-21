@@ -27,7 +27,7 @@ describe('Broken Content Path Handler', () => {
   let handlerModule;
   let athenaCollectorStub;
   let pathIndexStub;
-  let aemAuthorClientStub;
+  let aemClientStub;
   let analysisStrategyStub;
 
   beforeEach(async () => {
@@ -39,7 +39,7 @@ describe('Broken Content Path Handler', () => {
     };
 
     pathIndexStub = sandbox.stub();
-    aemAuthorClientStub = sandbox.stub();
+    aemClientStub = sandbox.stub();
     analysisStrategyStub = {
       analyze: sandbox.stub().resolves([
         { toJSON: () => ({ requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' }) },
@@ -83,9 +83,9 @@ describe('Broken Content Path Handler', () => {
           return pathIndexStub;
         },
       },
-      '../../../src/content-fragment-broken-links/clients/aem-author-client.js': {
-        AemAuthorClient: {
-          createFrom: sandbox.stub().returns(aemAuthorClientStub),
+      '../../../src/content-fragment-broken-links/clients/aem-client.js': {
+        AemClient: {
+          createFrom: sandbox.stub().returns(aemClientStub),
         },
       },
       '../../../src/content-fragment-broken-links/analysis/analysis-strategy.js': {
@@ -216,14 +216,14 @@ describe('Broken Content Path Handler', () => {
       });
     });
 
-    it('should create PathIndex and AemAuthorClient correctly', async () => {
+    it('should create PathIndex and AemClient correctly', async () => {
       await handlerModule.analyzeBrokenContentFragmentLinks(context);
 
       expect(pathIndexStub).to.exist;
-      expect(handlerModule.AemAuthorClient?.createFrom || (() => {})).to.exist;
+      expect(handlerModule.AemClient?.createFrom || (() => {})).to.exist;
     });
 
-    it('should handle AemAuthorClient creation errors', async () => {
+    it('should handle AemClient creation errors', async () => {
       const aemError = new Error('AEM client initialization failed');
 
       const errorHandlerModule = await esmock('../../../src/content-fragment-broken-links/handler.js', {
@@ -237,8 +237,8 @@ describe('Broken Content Path Handler', () => {
             return pathIndexStub;
           },
         },
-        '../../../src/content-fragment-broken-links/clients/aem-author-client.js': {
-          AemAuthorClient: {
+        '../../../src/content-fragment-broken-links/clients/aem-client.js': {
+          AemClient: {
             createFrom: sandbox.stub().throws(aemError),
           },
         },
