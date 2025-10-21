@@ -35,22 +35,22 @@ describe('FAQs guidance handler', () => {
     opportunity_id: 'oppty-123',
     site_id: 'site-123',
     audit_id: 'audit-123',
-    url: 'https://bulk.com',
+    url: 'https://adobe.com',
     faqs: [
       {
-        url: 'https://www.bulk.com/uk/sports-nutrition/creatine',
-        topic: 'creatine',
-        prompts: ['Is Bulk Creatine a good brand?', 'Is creatine good to bulk up?'],
+        url: 'https://www.adobe.com/products/photoshop',
+        topic: 'photoshop',
+        prompts: ['How to use Photoshop?', 'Is Photoshop good for beginners?'],
         suggestions: [
           {
             is_answer_suitable: true,
             answer_suitability_reason: 'Answer is suitable',
             is_question_relevant: true,
             question_relevance_reason: 'Question is relevant',
-            question: 'Is Bulk Creatine a good brand?',
-            answer: 'Bulk Creatine is recognized for its high quality...',
+            question: 'How to use Photoshop?',
+            answer: 'Photoshop is a powerful image editing tool...',
             sources: [
-              { url: 'https://www.bulk.com/uk/products/creapure' },
+              { url: 'https://www.adobe.com/products/photoshop/guides' },
             ],
           },
           {
@@ -58,10 +58,10 @@ describe('FAQs guidance handler', () => {
             answer_suitability_reason: 'Answer is suitable',
             is_question_relevant: true,
             question_relevance_reason: 'Question is relevant',
-            question: 'Is creatine good to bulk up?',
-            answer: 'Creatine offers several benefits for bulking up...',
+            question: 'Is Photoshop good for beginners?',
+            answer: 'Photoshop offers several features suitable for beginners...',
             sources: [
-              { title: 'Benefits of Taking Creatine', url: 'https://www.bulk.com/uk/benefits' },
+              { title: 'Getting Started with Photoshop', url: 'https://www.adobe.com/products/photoshop/tutorials' },
             ],
           },
         ],
@@ -72,7 +72,7 @@ describe('FAQs guidance handler', () => {
   beforeEach(async function () {
     this.timeout(10000); // Increase timeout for esmock loading
     syncSuggestionsStub = sinon.stub().resolves();
-    getFaqMarkdownStub = sinon.stub().returns('## 1. Target URL: [/uk/sports-nutrition/creatine]...');
+    getFaqMarkdownStub = sinon.stub().returns('## 1. Target URL: [/products/photoshop]...');
     fetchStub = sinon.stub(global, 'fetch');
 
     // Mock the handler with stubbed dependencies
@@ -91,7 +91,7 @@ describe('FAQs guidance handler', () => {
       findById: sinon.stub(),
     };
     dummySite = {
-      getBaseURL: () => 'https://bulk.com',
+      getBaseURL: () => 'https://adobe.com',
       getId: () => 'site-123',
     };
     Site.findById.resolves(dummySite);
@@ -192,7 +192,7 @@ describe('FAQs guidance handler', () => {
       ok: true,
       json: sinon.stub().resolves({
         opportunity_id: 'oppty-123',
-        url: 'https://bulk.com',
+        url: 'https://adobe.com',
         faqs: [],
       }),
     });
@@ -217,8 +217,8 @@ describe('FAQs guidance handler', () => {
       ...mockFaqData,
       faqs: [
         {
-          url: 'https://www.bulk.com/uk/sports-nutrition/creatine',
-          topic: 'creatine',
+          url: 'https://www.adobe.com/products/photoshop',
+          topic: 'photoshop',
           prompts: ['Test question'],
           suggestions: [
             {
@@ -316,7 +316,7 @@ describe('FAQs guidance handler', () => {
     // Test the mapNewSuggestion function
     const testData = {
       suggestionValue: '## FAQ Markdown Content',
-      bKey: 'faqs:https://bulk.com',
+      bKey: 'faqs:https://adobe.com',
     };
 
     const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
@@ -347,10 +347,10 @@ describe('FAQs guidance handler', () => {
     const syncArgs = syncCall.args[0];
     const testData = {
       suggestionValue: 'test',
-      bKey: 'faqs:https://bulk.com',
+      bKey: 'faqs:https://adobe.com',
     };
     const buildKeyResult = syncArgs.buildKey(testData);
-    expect(buildKeyResult).to.equal('faqs:https://bulk.com');
+    expect(buildKeyResult).to.equal('faqs:https://adobe.com');
   });
 
   it('should create correct guidance object with recommendation count', async () => {
@@ -411,7 +411,7 @@ describe('FAQs guidance handler', () => {
       ...mockFaqData,
       faqs: [
         {
-          url: 'https://www.bulk.com/uk/test',
+          url: 'https://www.adobe.com/products/test',
           topic: 'test',
           prompts: ['Question 1', 'Question 2'],
           suggestions: [
@@ -467,10 +467,10 @@ describe('FAQs guidance handler', () => {
 
   it('should handle FAQs with missing suggestions array', async () => {
     const faqData = {
-      url: 'https://bulk.com',
+      url: 'https://adobe.com',
       faqs: [
         {
-          url: 'https://bulk.com/test1',
+          url: 'https://adobe.com/test1',
           topic: 'test1',
           prompts: ['Question 1?'],
           suggestions: [
@@ -483,7 +483,7 @@ describe('FAQs guidance handler', () => {
           ],
         },
         {
-          url: 'https://bulk.com/test2',
+          url: 'https://adobe.com/test2',
           topic: 'test2',
           prompts: ['Question 2?'],
           // No suggestions property

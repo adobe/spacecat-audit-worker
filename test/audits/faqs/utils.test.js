@@ -34,17 +34,17 @@ describe('FAQ Utils', () => {
     it('should generate markdown for FAQ with URL and topic', () => {
       const faqs = [
         {
-          url: 'https://www.bulk.com/uk/sports-nutrition/creatine',
-          topic: 'creatine',
-          prompts: ['Is Bulk Creatine a good brand?'],
+          url: 'https://www.adobe.com/products/photoshop',
+          topic: 'photoshop',
+          prompts: ['How to use Photoshop?'],
           suggestions: [
             {
               is_answer_suitable: true,
               is_question_relevant: true,
-              question: 'Is Bulk Creatine a good brand?',
-              answer: 'Bulk Creatine is recognized for its high quality.',
+              question: 'How to use Photoshop?',
+              answer: 'Photoshop is a powerful image editing tool.',
               sources: [
-                { url: 'https://www.bulk.com/uk/products/creapure' },
+                { url: 'https://www.adobe.com/products/photoshop/guides' },
               ],
             },
           ],
@@ -53,15 +53,15 @@ describe('FAQ Utils', () => {
 
       const markdown = getFaqMarkdown(faqs, log);
 
-      expect(markdown).to.include('## 1. Target URL: [/uk/sports-nutrition/creatine](https://www.bulk.com/uk/sports-nutrition/creatine)');
-      expect(markdown).to.include('**Topic:** creatine');
+      expect(markdown).to.include('## 1. Target URL: [/products/photoshop](https://www.adobe.com/products/photoshop)');
+      expect(markdown).to.include('**Topic:** photoshop');
       expect(markdown).to.include('**Related Search Queries:**');
-      expect(markdown).to.include('- Is Bulk Creatine a good brand?');
+      expect(markdown).to.include('- How to use Photoshop?');
       expect(markdown).to.include('### Suggested FAQs');
-      expect(markdown).to.include('#### Is Bulk Creatine a good brand?');
-      expect(markdown).to.include('*AI suggested answer:* Bulk Creatine is recognized for its high quality.');
+      expect(markdown).to.include('#### How to use Photoshop?');
+      expect(markdown).to.include('*AI suggested answer:* Photoshop is a powerful image editing tool.');
       expect(markdown).to.include('**Sources:**');
-      expect(markdown).to.include('- https://www.bulk.com/uk/products/creapure');
+      expect(markdown).to.include('- https://www.adobe.com/products/photoshop/guides');
     });
 
     it('should generate markdown with topic as heading when no URL', () => {
@@ -114,7 +114,7 @@ describe('FAQ Utils', () => {
     it('should not show topic subtitle if URL exists but topic is empty', () => {
       const faqs = [
         {
-          url: 'https://www.bulk.com/uk/test',
+          url: 'https://www.adobe.com/products/test',
           prompts: ['Test question?'],
           suggestions: [
             {
@@ -130,14 +130,14 @@ describe('FAQ Utils', () => {
 
       const markdown = getFaqMarkdown(faqs, log);
 
-      expect(markdown).to.include('## 1. Target URL: [/uk/test](https://www.bulk.com/uk/test)');
+      expect(markdown).to.include('## 1. Target URL: [/products/test](https://www.adobe.com/products/test)');
       expect(markdown).not.to.include('**Topic:**');
     });
 
     it('should filter out unsuitable suggestions', () => {
       const faqs = [
         {
-          url: 'https://www.bulk.com/uk/test',
+          url: 'https://www.adobe.com/products/test',
           topic: 'test',
           prompts: ['Question 1', 'Question 2'],
           suggestions: [
@@ -168,7 +168,7 @@ describe('FAQ Utils', () => {
     it('should filter out irrelevant suggestions', () => {
       const faqs = [
         {
-          url: 'https://www.bulk.com/uk/test',
+          url: 'https://www.adobe.com/products/test',
           topic: 'test',
           prompts: ['Question 1'],
           suggestions: [
@@ -292,7 +292,7 @@ describe('FAQ Utils', () => {
     it('should handle multiple FAQs with incrementing numbers', () => {
       const faqs = [
         {
-          url: 'https://www.bulk.com/uk/page1',
+          url: 'https://www.adobe.com/products/page1',
           topic: 'topic1',
           prompts: ['Question 1?'],
           suggestions: [
@@ -306,7 +306,7 @@ describe('FAQ Utils', () => {
           ],
         },
         {
-          url: 'https://www.bulk.com/uk/page2',
+          url: 'https://www.adobe.com/products/page2',
           topic: 'topic2',
           prompts: ['Question 2?'],
           suggestions: [
@@ -323,8 +323,8 @@ describe('FAQ Utils', () => {
 
       const markdown = getFaqMarkdown(faqs, log);
 
-      expect(markdown).to.include('## 1. Target URL: [/uk/page1]');
-      expect(markdown).to.include('## 2. Target URL: [/uk/page2]');
+      expect(markdown).to.include('## 1. Target URL: [/products/page1]');
+      expect(markdown).to.include('## 2. Target URL: [/products/page2]');
       expect(markdown).to.include('**Topic:** topic1');
       expect(markdown).to.include('**Topic:** topic2');
     });
@@ -452,7 +452,7 @@ describe('FAQ Utils', () => {
     it('should handle FAQs with undefined suggestions', async () => {
       const faqs = [
         {
-          url: 'https://bulk.com/test1',
+          url: 'https://adobe.com/test1',
           topic: 'test1',
           prompts: ['Q1?'],
           suggestions: [
@@ -465,7 +465,7 @@ describe('FAQ Utils', () => {
           ],
         },
         {
-          url: 'https://bulk.com/test2',
+          url: 'https://adobe.com/test2',
           topic: 'test2',
           prompts: ['Q2?'],
           // No suggestions property - this tests the || [] fallback

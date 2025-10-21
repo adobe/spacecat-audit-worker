@@ -78,7 +78,7 @@ describe('FAQs Handler', () => {
     sendMystiqueMessagePostProcessor = mockedModule.default.postProcessors[0];
 
     site = {
-      getBaseURL: () => 'https://bulk.com',
+      getBaseURL: () => 'https://adobe.com',
       getId: () => 'site-123',
       getDeliveryType: () => 'aem',
       getConfig: () => ({
@@ -89,7 +89,7 @@ describe('FAQs Handler', () => {
     audit = {
       getId: () => 'audit-456',
       getAuditType: () => 'faqs',
-      getFullAuditRef: () => 'https://bulk.com',
+      getFullAuditRef: () => 'https://adobe.com',
     };
 
     log = {
@@ -136,25 +136,25 @@ describe('FAQs Handler', () => {
             getRows: (start, count) => [
               {
                 getCell: (col) => {
-                  if (col === 2) return { value: 'creatine' }; // Topic
-                  if (col === 3) return { value: 'Is creatine good?' }; // Prompt
-                  if (col === 7) return { value: 'https://bulk.com/creatine' }; // URL
+                  if (col === 2) return { value: 'photoshop' }; // Topic
+                  if (col === 3) return { value: 'How to use Photoshop?' }; // Prompt
+                  if (col === 7) return { value: 'https://adobe.com/photoshop' }; // URL
                   return { value: '' };
                 },
               },
               {
                 getCell: (col) => {
-                  if (col === 2) return { value: 'protein' }; // Topic
-                  if (col === 3) return { value: 'What is protein?' }; // Prompt
-                  if (col === 7) return { value: 'https://bulk.com/protein' }; // URL
+                  if (col === 2) return { value: 'illustrator' }; // Topic
+                  if (col === 3) return { value: 'What is Illustrator?' }; // Prompt
+                  if (col === 7) return { value: 'https://adobe.com/illustrator' }; // URL
                   return { value: '' };
                 },
               },
               {
                 getCell: (col) => {
-                  if (col === 2) return { value: 'creatine' }; // Topic
-                  if (col === 3) return { value: 'How to take creatine?' }; // Prompt
-                  if (col === 7) return { value: 'https://bulk.com/creatine' }; // URL
+                  if (col === 2) return { value: 'photoshop' }; // Topic
+                  if (col === 3) return { value: 'Photoshop tutorials?' }; // Prompt
+                  if (col === 7) return { value: 'https://adobe.com/photoshop' }; // URL
                   return { value: '' };
                 },
               },
@@ -191,13 +191,13 @@ describe('FAQs Handler', () => {
       });
 
       const runner = excelJsMock.default.runner;
-      const result = await runner('https://bulk.com', context, site);
+      const result = await runner('https://adobe.com', context, site);
 
       expect(result.auditResult.success).to.equal(true);
       expect(result.auditResult.periodIdentifier).to.equal('w10-2025');
       expect(result.auditResult.topPrompts).to.be.an('array').with.lengthOf(3);
       expect(result.auditResult.groupedPrompts).to.be.an('array').with.lengthOf(2);
-      expect(result.fullAuditRef).to.equal('https://bulk.com');
+      expect(result.fullAuditRef).to.equal('https://adobe.com');
     });
 
     it('should return failure when no prompts are found', async () => {
@@ -237,7 +237,7 @@ describe('FAQs Handler', () => {
       });
 
       const runner = excelJsMock.default.runner;
-      const result = await runner('https://bulk.com', context, site);
+      const result = await runner('https://adobe.com', context, site);
 
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.message).to.equal('No prompts found in brand presence spreadsheet');
@@ -258,7 +258,7 @@ describe('FAQs Handler', () => {
       });
 
       const runner = excelJsMock.default.runner;
-      const result = await runner('https://bulk.com', context, site);
+      const result = await runner('https://adobe.com', context, site);
 
       expect(result.auditResult.success).to.equal(false);
       // The readBrandPresenceSpreadsheet catches the error and returns empty array
@@ -318,7 +318,7 @@ describe('FAQs Handler', () => {
       });
 
       const runner = excelJsMock.default.runner;
-      await runner('https://bulk.com', context, site);
+      await runner('https://adobe.com', context, site);
 
       expect(context.getOutputLocation).to.have.been.calledWith(site);
     });
@@ -355,7 +355,7 @@ describe('FAQs Handler', () => {
       });
 
       const runner = excelJsMock.default.runner;
-      const result = await runner('https://bulk.com', context, site);
+      const result = await runner('https://adobe.com', context, site);
 
       expect(result.auditResult.success).to.equal(false);
       expect(log.warn).to.have.been.called;
@@ -398,7 +398,7 @@ describe('FAQs Handler', () => {
       });
 
       const runner = excelJsMock.default.runner;
-      const result = await runner('https://bulk.com', context, site);
+      const result = await runner('https://adobe.com', context, site);
 
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.message).to.equal('No prompts found in brand presence spreadsheet');
@@ -418,7 +418,7 @@ describe('FAQs Handler', () => {
       });
 
       const runner = excelJsMock.default.runner;
-      const result = await runner('https://bulk.com', context, site);
+      const result = await runner('https://adobe.com', context, site);
 
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.error).to.be.a('string');
@@ -440,14 +440,14 @@ describe('FAQs Handler', () => {
           periodIdentifier: 'w10-2025',
           groupedPrompts: [
             {
-              url: 'https://bulk.com/creatine',
-              topic: 'creatine',
-              prompts: ['Is creatine good?', 'How to take creatine?'],
+              url: 'https://adobe.com/photoshop',
+              topic: 'photoshop',
+              prompts: ['How to use Photoshop?', 'Photoshop tutorials?'],
             },
             {
-              url: 'https://bulk.com/protein',
-              topic: 'protein',
-              prompts: ['What is protein?'],
+              url: 'https://adobe.com/illustrator',
+              topic: 'illustrator',
+              prompts: ['What is Illustrator?'],
             },
           ],
         },
@@ -458,7 +458,7 @@ describe('FAQs Handler', () => {
 
     it('should send message to Mystique when audit is successful', async () => {
       const result = await sendMystiqueMessagePostProcessor(
-        'https://bulk.com',
+        'https://adobe.com',
         auditData,
         context,
       );
@@ -472,7 +472,7 @@ describe('FAQs Handler', () => {
       const message = call.args[1];
       expect(message.type).to.equal('guidance:faqs');
       expect(message.siteId).to.equal('site-123');
-      expect(message.url).to.equal('https://bulk.com');
+      expect(message.url).to.equal('https://adobe.com');
       expect(message.auditId).to.equal('audit-456');
       expect(message.deliveryType).to.equal('aem');
       expect(message.data.faqs).to.deep.equal(auditData.auditResult.groupedPrompts);
@@ -486,7 +486,7 @@ describe('FAQs Handler', () => {
       auditData.auditResult.success = false;
 
       const result = await sendMystiqueMessagePostProcessor(
-        'https://bulk.com',
+        'https://adobe.com',
         auditData,
         context,
       );
@@ -500,7 +500,7 @@ describe('FAQs Handler', () => {
       auditData.auditResult.groupedPrompts = [];
 
       const result = await sendMystiqueMessagePostProcessor(
-        'https://bulk.com',
+        'https://adobe.com',
         auditData,
         context,
       );
@@ -514,7 +514,7 @@ describe('FAQs Handler', () => {
       delete auditData.auditResult.groupedPrompts;
 
       const result = await sendMystiqueMessagePostProcessor(
-        'https://bulk.com',
+        'https://adobe.com',
         auditData,
         context,
       );
@@ -527,7 +527,7 @@ describe('FAQs Handler', () => {
       context.sqs = null;
 
       const result = await sendMystiqueMessagePostProcessor(
-        'https://bulk.com',
+        'https://adobe.com',
         auditData,
         context,
       );
@@ -540,7 +540,7 @@ describe('FAQs Handler', () => {
       context.env.QUEUE_SPACECAT_TO_MYSTIQUE = null;
 
       const result = await sendMystiqueMessagePostProcessor(
-        'https://bulk.com',
+        'https://adobe.com',
         auditData,
         context,
       );
@@ -553,7 +553,7 @@ describe('FAQs Handler', () => {
       dataAccess.Site.findById.resolves(null);
 
       const result = await sendMystiqueMessagePostProcessor(
-        'https://bulk.com',
+        'https://adobe.com',
         auditData,
         context,
       );
@@ -567,7 +567,7 @@ describe('FAQs Handler', () => {
       sqs.sendMessage.rejects(new Error('SQS connection failed'));
 
       const result = await sendMystiqueMessagePostProcessor(
-        'https://bulk.com',
+        'https://adobe.com',
         auditData,
         context,
       );
