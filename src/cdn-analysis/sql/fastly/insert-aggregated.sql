@@ -5,6 +5,7 @@ SELECT
   response_status AS status,
   try(url_extract_host(request_referer)) AS referer,
   host,
+  COALESCE(request_x_forwarded_host, '') as x_forwarded_host,
   CAST(time_to_first_byte AS DOUBLE) * 1000 AS time_to_first_byte,
   COUNT(*) AS count,
   '{{serviceProvider}}' AS cdn_provider,
@@ -40,5 +41,6 @@ GROUP BY
   response_status,
   request_referer,
   host,
+  COALESCE(request_x_forwarded_host, ''),
   CAST(time_to_first_byte AS DOUBLE) * 1000,
   '{{serviceProvider}}';
