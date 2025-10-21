@@ -16,9 +16,9 @@ import { Locale } from '../domain/language/locale.js';
 import { PathUtils } from '../utils/path-utils.js';
 
 export class AemAuthorClient {
-  static API_SITES_BASE = '/adobe/sites/cf';
+  static API_SITES_BASE = '/adobe/sites';
 
-  static API_SITES_FRAGMENTS = `${AemAuthorClient.API_SITES_BASE}/fragments`;
+  static API_SITES_FRAGMENTS = `${AemAuthorClient.API_SITES_BASE}/cf/fragments`;
 
   // Safety limit to prevent too many paginated queries
   static MAX_PAGES = 10;
