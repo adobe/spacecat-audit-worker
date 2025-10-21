@@ -1,3 +1,10 @@
+## [1.213.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.213.0...v1.213.1) (2025-10-21)
+
+
+### Bug Fixes
+
+* add column in the aggregated table ([#1439](https://github.com/adobe/spacecat-audit-worker/issues/1439)) ([ce5f5e1](https://github.com/adobe/spacecat-audit-worker/commit/ce5f5e1e951faa152537ce9f637d291db6099a05))
+
 # [1.213.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.212.1...v1.213.0) (2025-10-21)
 
 
