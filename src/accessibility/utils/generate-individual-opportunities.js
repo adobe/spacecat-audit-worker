@@ -16,6 +16,7 @@ import { createAccessibilityAssistiveOpportunity, createAccessibilityColorContra
 import {
   syncSuggestions,
   keepSameDataFunction,
+  updateOpportunityStatusIfAllSuggestionsFinal,
 } from '../../utils/data-access.js';
 import { successCriteriaLinks, accessibilityOpportunitiesMap, URL_SOURCE_SEPARATOR } from './constants.js';
 import { getAuditData } from './data-processing.js';
@@ -717,6 +718,8 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
             context,
             log,
           );
+
+          await updateOpportunityStatusIfAllSuggestionsFinal(opportunity, context);
 
           // Calculate metrics for this opportunity type
           const typeMetrics = calculateAccessibilityMetrics(typeSpecificData);
