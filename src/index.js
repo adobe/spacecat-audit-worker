@@ -79,6 +79,8 @@ import vulnerabilities from './vulnerabilities/handler.js';
 import prerender from './prerender/handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
+import faqs from './faqs/handler.js';
+import faqsGuidance from './faqs/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -143,6 +145,8 @@ const HANDLERS = {
   headings,
   prerender,
   'security-vulnerabilities': vulnerabilities,
+  faqs,
+  'guidance:faqs': faqsGuidance,
   dummy: (message) => ok(message),
 };
 
