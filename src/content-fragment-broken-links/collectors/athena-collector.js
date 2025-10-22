@@ -39,36 +39,6 @@ export class AthenaCollector {
     return collector;
   }
 
-  validate() {
-    const { env } = this.context;
-
-    if (!env.S3_BUCKET) {
-      throw new Error('Raw bucket is required');
-    }
-
-    if (!this.imsOrg) {
-      throw new Error('IMS organization is required');
-    }
-  }
-
-  initialize() {
-    this.validate();
-    this.config = this.getAthenaConfig();
-    this.athenaClient = AWSAthenaClient.fromContext(this.context, this.config.tempLocation);
-  }
-
-  getAthenaConfig() {
-    const { env } = this.context;
-    const bucket = `${env.S3_BUCKET}/${this.imsOrg}`;
-
-    return {
-      database: AthenaCollector.DATABASE_NAME,
-      tableName: AthenaCollector.TABLE_NAME,
-      location: `s3://${bucket}/aggregated-404`,
-      tempLocation: `s3://${env.S3_BUCKET}/temp/athena-results/`,
-    };
-  }
-
   static getPreviousDayParts() {
     const yesterday = new Date();
     yesterday.setUTCDate(yesterday.getUTCDate() - 1);
@@ -85,6 +55,36 @@ export class AthenaCollector {
 
   static async loadSql(filename, variables) {
     return getStaticContent(variables, `./src/content-fragment-broken-links/sql/${filename}.sql`);
+  }
+
+  initialize() {
+    this.validate();
+    this.config = this.getAthenaConfig();
+    this.athenaClient = AWSAthenaClient.fromContext(this.context, this.config.tempLocation);
+  }
+
+  validate() {
+    const { env } = this.context;
+
+    if (!env.S3_BUCKET) {
+      throw new Error('Raw bucket is required');
+    }
+
+    if (!this.imsOrg) {
+      throw new Error('IMS organization is required');
+    }
+  }
+
+  getAthenaConfig() {
+    const { env } = this.context;
+    const bucket = `${env.S3_BUCKET}/${this.imsOrg}`;
+
+    return {
+      database: AthenaCollector.DATABASE_NAME,
+      tableName: AthenaCollector.TABLE_NAME,
+      location: `s3://${bucket}/aggregated-404`,
+      tempLocation: `s3://${env.S3_BUCKET}/temp/athena-results/`,
+    };
   }
 
   async ensureDatabase() {
