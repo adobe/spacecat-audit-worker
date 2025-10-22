@@ -348,11 +348,8 @@ describe('Step-based Audit Tests', () => {
         .reply(200, 'Success');
 
       // Mock ScrapeClient
-      const mockScrapeJob = {
-        getId: () => 'scrape-job-123',
-      };
       const mockScrapeClient = {
-        createScrapeJob: sandbox.stub().resolves(mockScrapeJob),
+        createScrapeJob: sandbox.stub().resolves({ id: 'scrape-job-123' }),
       };
       sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
 
@@ -394,7 +391,7 @@ describe('Step-based Audit Tests', () => {
 
       // Verify log messages
       expect(context.log.debug).to.have.been.calledWith(sinon.match(/Creating new scrapeJob with the ScrapeClient/));
-      expect(context.log.info).to.have.been.calledWith('Created scrapeJob with id: "scrape-job-123"');
+      expect(context.log.info).to.have.been.calledWith('Created scrapeJob with id: scrape-job-123');
     });
 
     it('loads scrape result paths when scrapeJobId is provided', async () => {
