@@ -127,25 +127,20 @@ async function runFaqsAudit(url, context, site) {
       return {
         auditResult: {
           success: false,
-          timestamp: new Date().toISOString(),
-          periodIdentifier,
-          message: 'No prompts found in brand presence spreadsheet',
+          promptsByUrl: [],
         },
         fullAuditRef: url,
       };
     }
 
     // Group prompts by URL and topic (already limited to MAX_ROWS_TO_READ)
-    const groupedPrompts = groupPromptsByUrlAndTopic(topPrompts);
+    const promptsByUrl = groupPromptsByUrlAndTopic(topPrompts);
 
-    log.info(`Grouped ${topPrompts.length} prompts into ${groupedPrompts.length} topics`);
+    log.info(`Grouped ${topPrompts.length} prompts into ${promptsByUrl.length} topics`);
 
     const auditResult = {
       success: true,
-      timestamp: new Date().toISOString(),
-      periodIdentifier,
-      topPrompts,
-      groupedPrompts,
+      promptsByUrl,
     };
 
     return {
@@ -158,8 +153,7 @@ async function runFaqsAudit(url, context, site) {
     return {
       auditResult: {
         success: false,
-        timestamp: new Date().toISOString(),
-        error: error.message,
+        promptsByUrl: [],
       },
       fullAuditRef: url,
     };
@@ -179,10 +173,10 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     return auditData;
   }
 
-  const { groupedPrompts } = auditResult;
+  const { promptsByUrl } = auditResult;
 
-  if (!groupedPrompts || groupedPrompts.length === 0) {
-    log.info('No grouped prompts found, skipping Mystique message');
+  if (!promptsByUrl || promptsByUrl.length === 0) {
+    log.info('No grouped prompts by URL found, skipping Mystique message');
     return auditData;
   }
 
@@ -208,12 +202,12 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
-        faqs: groupedPrompts,
+        faqs: promptsByUrl,
       },
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`Queued ${groupedPrompts.length} FAQ topics to Mystique for AI processing`);
+    log.info(`Queued ${promptsByUrl.length} FAQ topics to Mystique for AI processing`);
   } catch (error) {
     log.error(`Failed to send Mystique message: ${error.message}`);
   }

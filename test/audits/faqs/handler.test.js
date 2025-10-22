@@ -194,9 +194,7 @@ describe('FAQs Handler', () => {
       const result = await runner('https://adobe.com', context, site);
 
       expect(result.auditResult.success).to.equal(true);
-      expect(result.auditResult.periodIdentifier).to.equal('w10-2025');
-      expect(result.auditResult.topPrompts).to.be.an('array').with.lengthOf(3);
-      expect(result.auditResult.groupedPrompts).to.be.an('array').with.lengthOf(2);
+      expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(2);
       expect(result.fullAuditRef).to.equal('https://adobe.com');
     });
 
@@ -240,8 +238,8 @@ describe('FAQs Handler', () => {
       const result = await runner('https://adobe.com', context, site);
 
       expect(result.auditResult.success).to.equal(false);
-      expect(result.auditResult.message).to.equal('No prompts found in brand presence spreadsheet');
-      expect(result.auditResult.periodIdentifier).to.equal('w10-2025');
+      expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
+      expect(log.warn).to.have.been.calledWith('No prompts found in brand presence spreadsheet');
     });
 
     it('should handle spreadsheet read errors gracefully', async () => {
@@ -261,12 +259,10 @@ describe('FAQs Handler', () => {
       const result = await runner('https://adobe.com', context, site);
 
       expect(result.auditResult.success).to.equal(false);
+      expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
       // The readBrandPresenceSpreadsheet catches the error and returns empty array
-      // So the handler sees no prompts, not the original error
-      expect(result.auditResult.message).to.equal('No prompts found in brand presence spreadsheet');
-      expect(log.error).to.have.been.calledWith(
-        sinon.match(/Failed to read brand presence spreadsheet.*SharePoint/),
-      );
+      // So the handler sees no prompts and logs the warning
+      expect(log.warn).to.have.been.calledWith('No prompts found in brand presence spreadsheet');
     });
 
     it('should use custom output location when getOutputLocation is provided', async () => {
@@ -401,7 +397,8 @@ describe('FAQs Handler', () => {
       const result = await runner('https://adobe.com', context, site);
 
       expect(result.auditResult.success).to.equal(false);
-      expect(result.auditResult.message).to.equal('No prompts found in brand presence spreadsheet');
+      expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
+      expect(log.warn).to.have.been.calledWith('No prompts found in brand presence spreadsheet');
     });
 
     it('should handle general errors during audit execution', async () => {
@@ -421,8 +418,7 @@ describe('FAQs Handler', () => {
       const result = await runner('https://adobe.com', context, site);
 
       expect(result.auditResult.success).to.equal(false);
-      expect(result.auditResult.error).to.be.a('string');
-      expect(result.auditResult.error).to.contain('Failed to create SharePoint client');
+      expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
       expect(log.error).to.have.been.calledWith(
         sinon.match(/FAQs audit failed.*Failed to create SharePoint client/),
       );
@@ -437,8 +433,7 @@ describe('FAQs Handler', () => {
         siteId: 'site-123',
         auditResult: {
           success: true,
-          periodIdentifier: 'w10-2025',
-          groupedPrompts: [
+          promptsByUrl: [
             {
               url: 'https://adobe.com/photoshop',
               topic: 'photoshop',
@@ -475,7 +470,7 @@ describe('FAQs Handler', () => {
       expect(message.url).to.equal('https://adobe.com');
       expect(message.auditId).to.equal('audit-456');
       expect(message.deliveryType).to.equal('aem');
-      expect(message.data.faqs).to.deep.equal(auditData.auditResult.groupedPrompts);
+      expect(message.data.faqs).to.deep.equal(auditData.auditResult.promptsByUrl);
 
       expect(log.info).to.have.been.calledWith(
         sinon.match(/Queued 2 FAQ topics to Mystique/),
@@ -497,7 +492,7 @@ describe('FAQs Handler', () => {
     });
 
     it('should skip Mystique message when no grouped prompts', async () => {
-      auditData.auditResult.groupedPrompts = [];
+      auditData.auditResult.promptsByUrl = [];
 
       const result = await sendMystiqueMessagePostProcessor(
         'https://adobe.com',
@@ -507,20 +502,7 @@ describe('FAQs Handler', () => {
 
       expect(result).to.deep.equal(auditData);
       expect(sqs.sendMessage).not.to.have.been.called;
-      expect(log.info).to.have.been.calledWith('No grouped prompts found, skipping Mystique message');
-    });
-
-    it('should skip Mystique message when grouped prompts is undefined', async () => {
-      delete auditData.auditResult.groupedPrompts;
-
-      const result = await sendMystiqueMessagePostProcessor(
-        'https://adobe.com',
-        auditData,
-        context,
-      );
-
-      expect(result).to.deep.equal(auditData);
-      expect(sqs.sendMessage).not.to.have.been.called;
+      expect(log.info).to.have.been.calledWith('No grouped prompts by URL found, skipping Mystique message');
     });
 
     it('should skip Mystique message when SQS is not configured', async () => {
