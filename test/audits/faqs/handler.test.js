@@ -239,7 +239,7 @@ describe('FAQs Handler', () => {
 
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
-      expect(log.warn).to.have.been.calledWith('No prompts found in brand presence spreadsheet');
+      expect(log.warn).to.have.been.calledWith('[FAQ] No prompts found in brand presence spreadsheet');
     });
 
     it('should handle spreadsheet read errors gracefully', async () => {
@@ -262,7 +262,7 @@ describe('FAQs Handler', () => {
       expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
       // The readBrandPresenceSpreadsheet catches the error and returns empty array
       // So the handler sees no prompts and logs the warning
-      expect(log.warn).to.have.been.calledWith('No prompts found in brand presence spreadsheet');
+      expect(log.warn).to.have.been.calledWith('[FAQ] No prompts found in brand presence spreadsheet');
     });
 
     it('should use custom output location when getOutputLocation is provided', async () => {
@@ -398,7 +398,7 @@ describe('FAQs Handler', () => {
 
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
-      expect(log.warn).to.have.been.calledWith('No prompts found in brand presence spreadsheet');
+      expect(log.warn).to.have.been.calledWith('[FAQ] No prompts found in brand presence spreadsheet');
     });
 
     it('should handle general errors during audit execution', async () => {
@@ -420,7 +420,7 @@ describe('FAQs Handler', () => {
       expect(result.auditResult.success).to.equal(false);
       expect(result.auditResult.promptsByUrl).to.be.an('array').with.lengthOf(0);
       expect(log.error).to.have.been.calledWith(
-        sinon.match(/FAQs audit failed.*Failed to create SharePoint client/),
+        sinon.match(/\[FAQ\] Audit failed.*Failed to create SharePoint client/),
       );
     });
   });
@@ -488,7 +488,7 @@ describe('FAQs Handler', () => {
 
       expect(result).to.deep.equal(auditData);
       expect(sqs.sendMessage).not.to.have.been.called;
-      expect(log.info).to.have.been.calledWith('Audit failed, skipping Mystique message');
+      expect(log.info).to.have.been.calledWith('[FAQ] Audit failed, skipping Mystique message');
     });
 
     it('should skip Mystique message when no grouped prompts', async () => {
@@ -502,7 +502,7 @@ describe('FAQs Handler', () => {
 
       expect(result).to.deep.equal(auditData);
       expect(sqs.sendMessage).not.to.have.been.called;
-      expect(log.info).to.have.been.calledWith('No grouped prompts by URL found, skipping Mystique message');
+      expect(log.info).to.have.been.calledWith('[FAQ] No grouped prompts by URL found, skipping Mystique message');
     });
 
     it('should skip Mystique message when SQS is not configured', async () => {
@@ -515,7 +515,7 @@ describe('FAQs Handler', () => {
       );
 
       expect(result).to.deep.equal(auditData);
-      expect(log.warn).to.have.been.calledWith('SQS or Mystique queue not configured, skipping message');
+      expect(log.warn).to.have.been.calledWith('[FAQ] SQS or Mystique queue not configured, skipping message');
     });
 
     it('should skip Mystique message when queue name is not configured', async () => {
@@ -528,7 +528,7 @@ describe('FAQs Handler', () => {
       );
 
       expect(result).to.deep.equal(auditData);
-      expect(log.warn).to.have.been.calledWith('SQS or Mystique queue not configured, skipping message');
+      expect(log.warn).to.have.been.calledWith('[FAQ] SQS or Mystique queue not configured, skipping message');
     });
 
     it('should skip Mystique message when site is not found', async () => {
@@ -542,7 +542,7 @@ describe('FAQs Handler', () => {
 
       expect(result).to.deep.equal(auditData);
       expect(sqs.sendMessage).not.to.have.been.called;
-      expect(log.warn).to.have.been.calledWith('Site not found, skipping Mystique message');
+      expect(log.warn).to.have.been.calledWith('[FAQ] Site not found, skipping Mystique message');
     });
 
     it('should handle SQS send errors gracefully', async () => {

@@ -409,7 +409,7 @@ describe('FAQ Utils', () => {
       const markdown = getFaqMarkdown(faqs, log);
 
       expect(markdown).to.equal('');
-      expect(log.info).to.have.been.calledWith('Skipping FAQ topic "skipped topic" - no suitable suggestions');
+      expect(log.info).to.have.been.calledWith('[FAQ] Skipping FAQ topic "skipped topic" - no suitable suggestions');
     });
 
     it('should add separators between FAQ sections', () => {

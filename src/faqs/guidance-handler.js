@@ -29,27 +29,27 @@ export default async function handler(message, context) {
   const { siteId, auditId, data } = message;
   const { presignedUrl } = data;
 
-  log.info(`Message received in FAQ guidance handler: ${JSON.stringify(message, null, 2)}`);
+  log.info(`[FAQ] Message received in FAQ guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   // Validate presigned URL
   if (!presignedUrl) {
-    log.error('No presigned URL provided in message data');
+    log.error('[FAQ] No presigned URL provided in message data');
     return badRequest('Presigned URL is required');
   }
 
   const site = await Site.findById(siteId);
   if (!site) {
-    log.error(`Site not found for siteId: ${siteId}`);
+    log.error(`[FAQ] Site not found for siteId: ${siteId}`);
     return notFound('Site not found');
   }
 
   try {
     // Fetch FAQ data from presigned URL
-    log.info(`Fetching FAQ data from presigned URL: ${presignedUrl}`);
+    log.info(`[FAQ] Fetching FAQ data from presigned URL: ${presignedUrl}`);
     const response = await fetch(presignedUrl);
 
     if (!response.ok) {
-      log.error(`Failed to fetch FAQ data: ${response.status} ${response.statusText}`);
+      log.error(`[FAQ] Failed to fetch FAQ data: ${response.status} ${response.statusText}`);
       return badRequest(`Failed to fetch FAQ data: ${response.statusText}`);
     }
 
@@ -59,10 +59,10 @@ export default async function handler(message, context) {
 
     // Validate the fetched data
     if (!faqs || !Array.isArray(faqs) || faqs.length === 0) {
-      log.info('No FAQs found in the response');
+      log.info('[FAQ] No FAQs found in the response');
       return noContent();
     }
-    log.info(`Received FAQ data with ${faqs.length} FAQ topics`);
+    log.info(`[FAQ] Received FAQ data with ${faqs.length} FAQ topics`);
 
     // Filter to count only suitable suggestions
     const totalSuitableSuggestions = faqs.reduce((count, faq) => {
@@ -73,7 +73,7 @@ export default async function handler(message, context) {
     }, 0);
 
     if (totalSuitableSuggestions === 0) {
-      log.info('No suitable FAQ suggestions found after filtering');
+      log.info('[FAQ] No suitable FAQ suggestions found after filtering');
       return noContent();
     }
 
@@ -97,7 +97,7 @@ export default async function handler(message, context) {
 
     if (!opportunity) {
       opportunity = await Opportunity.create(entity);
-      log.info(`Created new FAQ opportunity: ${opportunity.getId()}`);
+      log.info(`[FAQ] Created new FAQ opportunity: ${opportunity.getId()}`);
     } else {
       opportunity.setAuditId(auditId);
       opportunity.setData({
@@ -107,7 +107,7 @@ export default async function handler(message, context) {
       opportunity.setGuidance(wrappedGuidance);
       opportunity.setUpdatedBy('system');
       opportunity = await opportunity.save();
-      log.info(`Updated existing FAQ opportunity: ${opportunity.getId()}`);
+      log.info(`[FAQ] Updated existing FAQ opportunity: ${opportunity.getId()}`);
     }
 
     // Generate markdown from FAQs
@@ -137,10 +137,10 @@ export default async function handler(message, context) {
       }),
     });
 
-    log.info(`Successfully processed FAQ guidance for site: ${siteId}, opportunity: ${opportunity.getId()}, ${totalSuitableSuggestions} suitable suggestions`);
+    log.info(`[FAQ] Successfully processed FAQ guidance for site: ${siteId}, opportunity: ${opportunity.getId()}, ${totalSuitableSuggestions} suitable suggestions`);
     return ok();
   } catch (error) {
-    log.error(`Error processing FAQ guidance: ${error.message}`, error);
+    log.error(`[FAQ] Error processing FAQ guidance: ${error.message}`, error);
     return badRequest(`Error processing FAQ guidance: ${error.message}`);
   }
 }

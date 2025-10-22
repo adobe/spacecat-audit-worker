@@ -145,7 +145,7 @@ describe('FAQs guidance handler', () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(400);
-    expect(log.error).to.have.been.calledWith('No presigned URL provided in message data');
+    expect(log.error).to.have.been.calledWith('[FAQ] No presigned URL provided in message data');
     expect(fetchStub).not.to.have.been.called;
   });
 
@@ -162,7 +162,7 @@ describe('FAQs guidance handler', () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(404);
-    expect(log.error).to.have.been.calledWith(sinon.match(/Site not found for siteId: unknown-site-id/));
+    expect(log.error).to.have.been.calledWith(sinon.match(/\[FAQ\] Site not found for siteId: unknown-site-id/));
     expect(fetchStub).not.to.have.been.called;
   });
 
@@ -184,7 +184,7 @@ describe('FAQs guidance handler', () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(400);
-    expect(log.error).to.have.been.calledWith(sinon.match(/Failed to fetch FAQ data: 404 Not Found/));
+    expect(log.error).to.have.been.calledWith(sinon.match(/\[FAQ\] Failed to fetch FAQ data: 404 Not Found/));
   });
 
   it('should return noContent when no FAQs are found', async () => {
@@ -208,7 +208,7 @@ describe('FAQs guidance handler', () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(204);
-    expect(log.info).to.have.been.calledWith('No FAQs found in the response');
+    expect(log.info).to.have.been.calledWith('[FAQ] No FAQs found in the response');
     expect(Opportunity.create).not.to.have.been.called;
   });
 
@@ -248,7 +248,7 @@ describe('FAQs guidance handler', () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(204);
-    expect(log.info).to.have.been.calledWith('No suitable FAQ suggestions found after filtering');
+    expect(log.info).to.have.been.calledWith('[FAQ] No suitable FAQ suggestions found after filtering');
   });
 
   it('should create a new FAQ opportunity if no existing opportunity is found', async () => {
@@ -386,7 +386,7 @@ describe('FAQs guidance handler', () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(400);
-    expect(log.error).to.have.been.calledWith(sinon.match(/Error processing FAQ guidance: Network error/));
+    expect(log.error).to.have.been.calledWith(sinon.match(/\[FAQ\] Error processing FAQ guidance: Network error/));
   });
 
   it('should handle error when syncSuggestions fails', async () => {
@@ -403,7 +403,7 @@ describe('FAQs guidance handler', () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(400);
-    expect(log.error).to.have.been.calledWith(sinon.match(/Error processing FAQ guidance: Database error/));
+    expect(log.error).to.have.been.calledWith(sinon.match(/\[FAQ\] Error processing FAQ guidance: Database error/));
   });
 
   it('should filter and count only suitable and relevant suggestions', async () => {

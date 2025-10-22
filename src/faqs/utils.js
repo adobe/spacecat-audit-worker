@@ -59,7 +59,7 @@ export function getFaqMarkdown(faqs, log) {
     );
 
     if (suitableSuggestions.length === 0) {
-      log.info(`Skipping FAQ topic "${topic}" - no suitable suggestions`);
+      log.info(`[FAQ] Skipping FAQ topic "${topic}" - no suitable suggestions`);
       return;
     }
 

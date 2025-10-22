@@ -54,7 +54,7 @@ function groupPromptsByUrlAndTopic(prompts) {
  */
 async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepointClient, log) {
   try {
-    log.info(`Reading brand presence spreadsheet from: ${filename}`);
+    log.info(`[FAQ] Reading brand presence spreadsheet from: ${filename}`);
 
     const buffer = await readFromSharePoint(filename, outputLocation, sharepointClient, log);
     const workbook = new ExcelJS.Workbook();
@@ -62,7 +62,7 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
 
     const worksheet = workbook.worksheets[0];
     if (!worksheet) {
-      log.warn('No worksheet found in spreadsheet');
+      log.warn('[FAQ] No worksheet found in spreadsheet');
       return [];
     }
 
@@ -70,7 +70,7 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
     const maxRows = Math.min(MAX_ROWS_TO_READ, worksheet.rowCount - 1);
     const rows = worksheet.getRows(2, maxRows) || [];
 
-    log.info(`Reading ${maxRows} rows from spreadsheet (total rows: ${worksheet.rowCount})`);
+    log.info(`[FAQ] Reading ${maxRows} rows from spreadsheet (total rows: ${worksheet.rowCount})`);
 
     // Extract data using named column constants
     rows.forEach((row) => {
@@ -87,10 +87,10 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
       }
     });
 
-    log.info(`Extracted ${prompts.length} prompts from ${maxRows} rows`);
+    log.info(`[FAQ] Extracted ${prompts.length} prompts from ${maxRows} rows`);
     return prompts;
   } catch (error) {
-    log.error(`Failed to read brand presence spreadsheet: ${error.message}`);
+    log.error(`[FAQ] Failed to read brand presence spreadsheet: ${error.message}`);
     return [];
   }
 }
@@ -101,12 +101,12 @@ async function runFaqsAudit(url, context, site) {
   } = context;
   const { getOutputLocation } = context;
 
-  log.info('Running FAQs audit');
+  log.info('[FAQ] Running FAQs audit');
 
   try {
     const week = generateReportingPeriods().weeks[0];
     const periodIdentifier = `w${week.weekNumber}-${week.year}`;
-    log.info(`Running weekly audit for ${periodIdentifier}`);
+    log.info(`[FAQ] Running weekly audit for ${periodIdentifier}`);
 
     // Prepare SharePoint client and file location
     const sharepointClient = await createLLMOSharepointClient(context);
@@ -124,7 +124,7 @@ async function runFaqsAudit(url, context, site) {
     );
 
     if (topPrompts.length === 0) {
-      log.warn('No prompts found in brand presence spreadsheet');
+      log.warn('[FAQ] No prompts found in brand presence spreadsheet');
       return {
         auditResult: {
           success: false,
@@ -137,7 +137,7 @@ async function runFaqsAudit(url, context, site) {
     // Group prompts by URL and topic (already limited to MAX_ROWS_TO_READ)
     const promptsByUrl = groupPromptsByUrlAndTopic(topPrompts);
 
-    log.info(`Grouped ${topPrompts.length} prompts into ${promptsByUrl.length} topics`);
+    log.info(`[FAQ] Grouped ${topPrompts.length} prompts into ${promptsByUrl.length} topics`);
 
     const auditResult = {
       success: true,
@@ -149,7 +149,7 @@ async function runFaqsAudit(url, context, site) {
       fullAuditRef: url,
     };
   } catch (error) {
-    log.error(`FAQs audit failed: ${error.message}`);
+    log.error(`[FAQ] Audit failed: ${error.message}`);
 
     return {
       auditResult: {
@@ -170,19 +170,19 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
 
   // Skip if audit failed
   if (!auditResult.success) {
-    log.info('Audit failed, skipping Mystique message');
+    log.info('[FAQ] Audit failed, skipping Mystique message');
     return auditData;
   }
 
   const { promptsByUrl } = auditResult;
 
   if (!promptsByUrl || promptsByUrl.length === 0) {
-    log.info('No grouped prompts by URL found, skipping Mystique message');
+    log.info('[FAQ] No grouped prompts by URL found, skipping Mystique message');
     return auditData;
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    log.warn('SQS or Mystique queue not configured, skipping message');
+    log.warn('[FAQ] SQS or Mystique queue not configured, skipping message');
     return auditData;
   }
 
@@ -191,7 +191,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     const { Site } = dataAccess;
     const site = await Site.findById(siteId);
     if (!site) {
-      log.warn('Site not found, skipping Mystique message');
+      log.warn('[FAQ] Site not found, skipping Mystique message');
       return auditData;
     }
 
@@ -208,9 +208,9 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`Queued ${promptsByUrl.length} FAQ topics to Mystique for AI processing`);
+    log.info(`[FAQ] Queued ${promptsByUrl.length} FAQ topics to Mystique for AI processing`);
   } catch (error) {
-    log.error(`Failed to send Mystique message: ${error.message}`);
+    log.error(`[FAQ] Failed to send Mystique message: ${error.message}`);
   }
 
   return auditData;
