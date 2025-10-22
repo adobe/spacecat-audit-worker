@@ -368,7 +368,7 @@ describe('FAQs guidance handler', () => {
     const createdArg = Opportunity.create.getCall(0).args[0];
     expect(createdArg.guidance).to.exist;
     expect(createdArg.guidance.recommendations).to.be.an('array');
-    expect(createdArg.guidance.recommendations[0].insight).to.include('2 FAQ opportunities identified');
+    expect(createdArg.guidance.recommendations[0].insight).to.include('2 relevant FAQs identified');
     expect(createdArg.guidance.recommendations[0].type).to.equal('CONTENT_UPDATE');
   });
 
@@ -462,7 +462,7 @@ describe('FAQs guidance handler', () => {
     expect(Opportunity.create).to.have.been.calledOnce;
     const createdArg = Opportunity.create.getCall(0).args[0];
     // Should only count the 2 suitable AND relevant suggestions
-    expect(createdArg.guidance.recommendations[0].insight).to.include('2 FAQ opportunities identified');
+    expect(createdArg.guidance.recommendations[0].insight).to.include('2 relevant FAQs identified');
   });
 
   it('should handle FAQs with missing suggestions array', async () => {
@@ -509,7 +509,7 @@ describe('FAQs guidance handler', () => {
     expect(Opportunity.create).to.have.been.calledOnce;
     const createdArg = Opportunity.create.getCall(0).args[0];
     // Should only count the 1 suitable suggestion from the first FAQ
-    expect(createdArg.guidance.recommendations[0].insight).to.include('1 FAQ opportunities identified');
+    expect(createdArg.guidance.recommendations[0].insight).to.include('1 relevant FAQs identified');
   });
 });
 

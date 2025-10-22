@@ -80,9 +80,9 @@ export default async function handler(message, context) {
     // Create guidance object (similar to summarization)
     const wrappedGuidance = {
       recommendations: [{
-        insight: `${totalSuitableSuggestions} FAQ opportunities identified based on brand presence analysis`,
-        rationale: 'These FAQs address frequently searched queries related to your brand and products',
-        recommendation: 'Add these FAQs to relevant pages to improve content discoverability and user engagement',
+        insight: `${totalSuitableSuggestions} relevant FAQs identified based on top user prompts in your brand presence analysis`,
+        rationale: 'When your content aligns with the user intent recognized by large language models (LLMs), it becomes easier for these models to reference or mention your page in their responses',
+        recommendation: 'Add the relevant FAQs listed below to the corresponding pages',
         type: 'CONTENT_UPDATE',
       }],
     };
