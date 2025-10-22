@@ -27,7 +27,7 @@ export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Site, Opportunity } = dataAccess;
   const { siteId, auditId, data } = message;
-  const { presigned_url: presignedUrl } = data;
+  const { presignedUrl } = data;
 
   log.info(`Message received in FAQ guidance handler: ${JSON.stringify(message, null, 2)}`);
 
@@ -67,7 +67,7 @@ export default async function handler(message, context) {
     // Filter to count only suitable suggestions
     const totalSuitableSuggestions = faqs.reduce((count, faq) => {
       const suitable = (faq.suggestions || []).filter(
-        (s) => s.is_answer_suitable && s.is_question_relevant,
+        (s) => s.isAnswerSuitable && s.isQuestionRelevant,
       );
       return count + suitable.length;
     }, 0);

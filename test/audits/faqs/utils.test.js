@@ -39,8 +39,8 @@ describe('FAQ Utils', () => {
           prompts: ['How to use Photoshop?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'How to use Photoshop?',
               answer: 'Photoshop is a powerful image editing tool.',
               sources: [
@@ -71,8 +71,8 @@ describe('FAQ Utils', () => {
           prompts: ['What is protein?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'What is protein?',
               answer: 'Protein is an essential macronutrient.',
               sources: [],
@@ -94,8 +94,8 @@ describe('FAQ Utils', () => {
           prompts: ['Generic question?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Generic question?',
               answer: 'Generic answer.',
               sources: [],
@@ -118,8 +118,8 @@ describe('FAQ Utils', () => {
           prompts: ['Test question?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Test question?',
               answer: 'Test answer.',
               sources: [],
@@ -142,14 +142,14 @@ describe('FAQ Utils', () => {
           prompts: ['Question 1', 'Question 2'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Good question?',
               answer: 'Good answer.',
             },
             {
-              is_answer_suitable: false,
-              is_question_relevant: true,
+              isAnswerSuitable: false,
+              isQuestionRelevant: true,
               question: 'Bad answer question?',
               answer: 'Bad answer.',
             },
@@ -173,8 +173,8 @@ describe('FAQ Utils', () => {
           prompts: ['Question 1'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: false,
+              isAnswerSuitable: true,
+              isQuestionRelevant: false,
               question: 'Irrelevant question?',
               answer: 'Good answer.',
             },
@@ -195,8 +195,8 @@ describe('FAQ Utils', () => {
           prompts: ['Question?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Question?',
               answer: 'Answer.',
               sources: [
@@ -220,8 +220,8 @@ describe('FAQ Utils', () => {
           prompts: ['Question?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Question?',
               answer: 'Answer.',
               sources: [
@@ -245,12 +245,12 @@ describe('FAQ Utils', () => {
           prompts: ['Question?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Question?',
               answer: 'Answer.',
-              answer_suitability_reason: 'The answer is well-structured.',
-              question_relevance_reason: 'The question is directly related.',
+              answerSuitabilityReason: 'The answer is well-structured.',
+              questionRelevanceReason: 'The question is directly related.',
               sources: [],
             },
           ],
@@ -273,8 +273,8 @@ describe('FAQ Utils', () => {
           prompts: ['Question?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Question?',
               answer: 'Answer.',
               sources: [],
@@ -297,8 +297,8 @@ describe('FAQ Utils', () => {
           prompts: ['Question 1?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Question 1?',
               answer: 'Answer 1.',
               sources: [],
@@ -311,8 +311,8 @@ describe('FAQ Utils', () => {
           prompts: ['Question 2?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Question 2?',
               answer: 'Answer 2.',
               sources: [],
@@ -336,15 +336,15 @@ describe('FAQ Utils', () => {
           prompts: ['Q1?', 'Q2?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Question 1?',
               answer: 'Answer 1.',
               sources: [],
             },
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Question 2?',
               answer: 'Answer 2.',
               sources: [],
@@ -367,8 +367,8 @@ describe('FAQ Utils', () => {
           topic: 'test',
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Question?',
               answer: 'Answer.',
               sources: [],
@@ -397,8 +397,8 @@ describe('FAQ Utils', () => {
           prompts: ['Question?'],
           suggestions: [
             {
-              is_answer_suitable: false,
-              is_question_relevant: false,
+              isAnswerSuitable: false,
+              isQuestionRelevant: false,
               question: 'Bad question?',
               answer: 'Bad answer.',
             },
@@ -419,8 +419,8 @@ describe('FAQ Utils', () => {
           prompts: ['Q1?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Q1?',
               answer: 'A1.',
               sources: [],
@@ -432,8 +432,8 @@ describe('FAQ Utils', () => {
           prompts: ['Q2?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Q2?',
               answer: 'A2.',
               sources: [],
@@ -457,8 +457,8 @@ describe('FAQ Utils', () => {
           prompts: ['Q1?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Q1?',
               answer: 'A1.',
             },

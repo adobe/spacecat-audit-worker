@@ -43,10 +43,10 @@ describe('FAQs guidance handler', () => {
         prompts: ['How to use Photoshop?', 'Is Photoshop good for beginners?'],
         suggestions: [
           {
-            is_answer_suitable: true,
-            answer_suitability_reason: 'Answer is suitable',
-            is_question_relevant: true,
-            question_relevance_reason: 'Question is relevant',
+            isAnswerSuitable: true,
+            answerSuitabilityReason: 'Answer is suitable',
+            isQuestionRelevant: true,
+            questionRelevanceReason: 'Question is relevant',
             question: 'How to use Photoshop?',
             answer: 'Photoshop is a powerful image editing tool...',
             sources: [
@@ -54,10 +54,10 @@ describe('FAQs guidance handler', () => {
             ],
           },
           {
-            is_answer_suitable: true,
-            answer_suitability_reason: 'Answer is suitable',
-            is_question_relevant: true,
-            question_relevance_reason: 'Question is relevant',
+            isAnswerSuitable: true,
+            answerSuitabilityReason: 'Answer is suitable',
+            isQuestionRelevant: true,
+            questionRelevanceReason: 'Question is relevant',
             question: 'Is Photoshop good for beginners?',
             answer: 'Photoshop offers several features suitable for beginners...',
             sources: [
@@ -155,7 +155,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'unknown-site-id',
       data: {
-        presigned_url: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
 
@@ -177,7 +177,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presigned_url: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
 
@@ -201,7 +201,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presigned_url: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
 
@@ -222,8 +222,8 @@ describe('FAQs guidance handler', () => {
           prompts: ['Test question'],
           suggestions: [
             {
-              is_answer_suitable: false,
-              is_question_relevant: false,
+              isAnswerSuitable: false,
+              isQuestionRelevant: false,
               question: 'Test question?',
               answer: 'Test answer',
             },
@@ -241,7 +241,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presigned_url: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
 
@@ -258,7 +258,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presigned_url: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
 
@@ -281,7 +281,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presigned_url: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
 
@@ -302,7 +302,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presigned_url: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
 
@@ -335,7 +335,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presigned_url: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
 
@@ -358,7 +358,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presigned_url: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
 
@@ -379,7 +379,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presigned_url: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
 
@@ -396,7 +396,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presigned_url: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
 
@@ -416,26 +416,26 @@ describe('FAQs guidance handler', () => {
           prompts: ['Question 1', 'Question 2'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Good question 1?',
               answer: 'Good answer 1',
             },
             {
-              is_answer_suitable: false,
-              is_question_relevant: true,
+              isAnswerSuitable: false,
+              isQuestionRelevant: true,
               question: 'Bad answer question?',
               answer: 'Bad answer',
             },
             {
-              is_answer_suitable: true,
-              is_question_relevant: false,
+              isAnswerSuitable: true,
+              isQuestionRelevant: false,
               question: 'Irrelevant question?',
               answer: 'Good answer',
             },
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Good question 2?',
               answer: 'Good answer 2',
             },
@@ -453,7 +453,7 @@ describe('FAQs guidance handler', () => {
       auditId: 'audit-123',
       siteId: 'site-123',
       data: {
-        presigned_url: 'https://s3.aws.com/faqs.json',
+        presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
 
@@ -475,8 +475,8 @@ describe('FAQs guidance handler', () => {
           prompts: ['Question 1?'],
           suggestions: [
             {
-              is_answer_suitable: true,
-              is_question_relevant: true,
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
               question: 'Q1?',
               answer: 'A1',
             },
@@ -500,7 +500,7 @@ describe('FAQs guidance handler', () => {
       siteId: 'site-123',
       auditId: 'audit-456',
       data: {
-        presigned_url: 'https://s3.example.com/faqs.json?signature=xyz',
+        presignedUrl: 'https://s3.example.com/faqs.json?signature=xyz',
       },
     };
 

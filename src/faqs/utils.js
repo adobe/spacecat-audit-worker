@@ -55,7 +55,7 @@ export function getFaqMarkdown(faqs, log) {
 
     // Filter only suitable suggestions
     const suitableSuggestions = (suggestions || []).filter(
-      (s) => s.is_answer_suitable && s.is_question_relevant,
+      (s) => s.isAnswerSuitable && s.isQuestionRelevant,
     );
 
     if (suitableSuggestions.length === 0) {
@@ -109,13 +109,13 @@ export function getFaqMarkdown(faqs, log) {
       }
 
       // Add rationale in a collapsible section (optional, for transparency)
-      if (suggestion.answer_suitability_reason || suggestion.question_relevance_reason) {
+      if (suggestion.answerSuitabilityReason || suggestion.questionRelevanceReason) {
         markdown += '<details>\n<summary>AI Analysis</summary>\n\n';
-        if (suggestion.answer_suitability_reason) {
-          markdown += `**Answer Suitability:** ${suggestion.answer_suitability_reason}\n\n`;
+        if (suggestion.answerSuitabilityReason) {
+          markdown += `**Answer Suitability:** ${suggestion.answerSuitabilityReason}\n\n`;
         }
-        if (suggestion.question_relevance_reason) {
-          markdown += `**Question Relevance:** ${suggestion.question_relevance_reason}\n\n`;
+        if (suggestion.questionRelevanceReason) {
+          markdown += `**Question Relevance:** ${suggestion.questionRelevanceReason}\n\n`;
         }
         markdown += '</details>\n\n';
       }
