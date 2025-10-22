@@ -1,3 +1,24 @@
+## [1.215.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.215.0...v1.215.1) (2025-10-22)
+
+
+### Bug Fixes
+
+* **step-audit:** resolves the error during scrapeJobId logging ([#1444](https://github.com/adobe/spacecat-audit-worker/issues/1444)) ([1b15c1d](https://github.com/adobe/spacecat-audit-worker/commit/1b15c1deb056c8a88359c9c98142e7227c3c0497))
+
+# [1.215.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.214.1...v1.215.0) (2025-10-22)
+
+
+### Features
+
+* CWV Auto-Suggest - enable multi-page analysis ([#1443](https://github.com/adobe/spacecat-audit-worker/issues/1443)) ([8303854](https://github.com/adobe/spacecat-audit-worker/commit/8303854d27a9044675bd8eab2ed3d0489240cfd7))
+
+## [1.214.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.214.0...v1.214.1) (2025-10-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.60.0 ([#1438](https://github.com/adobe/spacecat-audit-worker/issues/1438)) ([514e1f9](https://github.com/adobe/spacecat-audit-worker/commit/514e1f9598c17d8be66eb1c2f3a3fbd7d14a377b))
+
 # [1.214.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.213.3...v1.214.0) (2025-10-21)
 
 
