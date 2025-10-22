@@ -153,6 +153,7 @@ describe('CWVRunner Tests', () => {
         getType: () => Audit.AUDIT_TYPES.CWV,
         getId: () => 'oppty-id',
         getSiteId: () => 'site-id',
+        getAuditId: () => 'audit-id',
         addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
         getSuggestions: sandbox.stub().resolves([]),
         setAuditId: sandbox.stub(),
@@ -219,9 +220,10 @@ describe('CWVRunner Tests', () => {
     it('updates the existing opportunity object', async () => {
       sinon.stub(GoogleClient, 'createFrom').resolves({});
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
-      const existingSuggestions = suggestions.map((suggestion) => ({
+      const existingSuggestions = suggestions.map((suggestion, index) => ({
         ...suggestion,
         opportunityId: oppty.getId(),
+        getId: () => `sugg-${index}`,
         remove: sinon.stub(),
         save: sinon.stub(),
         getData: () => (suggestion.data),
@@ -293,8 +295,8 @@ describe('CWVRunner Tests', () => {
     it('calls sendSQSMessageForAutoSuggest when suggestions have no guidance', async () => {
       // Mock suggestions without guidance (empty issues array)
       const mockSuggestions = [
-        { getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
-        { getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
+        { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
+        { getId: () => 'sugg-2', getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
       ];
       
       // Setup opportunity with mock suggestions before the function call
@@ -306,8 +308,8 @@ describe('CWVRunner Tests', () => {
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      // Verify that SQS sendMessage was called
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      // Verify that SQS sendMessage was called twice (once per suggestion)
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
       const message = context.sqs.sendMessage.firstCall.args[1];
       expect(message.type).to.equal('guidance:cwv-analysis');
       expect(message.siteId).to.equal('site-id');
@@ -316,7 +318,8 @@ describe('CWVRunner Tests', () => {
     it('does not call sendSQSMessageForAutoSuggest when all suggestions have guidance', async () => {
       // Mock suggestions with existing guidance
       const mockSuggestions = [
-        { 
+        {
+          getId: () => 'sugg-1',
           getData: () => ({ 
             type: 'url', 
             url: 'test1',
@@ -344,7 +347,8 @@ describe('CWVRunner Tests', () => {
     it('calls sendSQSMessageForAutoSuggest when some suggestions have guidance and some do not', async () => {
       // Mock mixed suggestions - some with guidance, some without
       const mockSuggestions = [
-        { 
+        {
+          getId: () => 'sugg-1',
           getData: () => ({ 
             type: 'url', 
             url: 'test1',
@@ -354,7 +358,8 @@ describe('CWVRunner Tests', () => {
           }),
           getStatus: () => 'NEW'
         },
-        { 
+        {
+          getId: () => 'sugg-2',
           getData: () => ({ 
             type: 'url', 
             url: 'test2',
@@ -373,7 +378,7 @@ describe('CWVRunner Tests', () => {
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      // Verify that SQS sendMessage was called (because at least one suggestion needs guidance)
+      // Verify that SQS sendMessage was called once (only for the suggestion without guidance)
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
   });
