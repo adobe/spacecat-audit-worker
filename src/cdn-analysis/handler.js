@@ -17,10 +17,12 @@ import {
   resolveCdnBucketName,
   extractCustomerDomain,
   buildCdnPaths,
+  buildImporterPaths,
   getBucketInfo,
   discoverCdnProviders,
   mapServiceToCdnProvider,
   CDN_TYPES,
+  resolveImporterBucketName,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
@@ -59,8 +61,49 @@ async function loadSql(provider, filename, variables) {
   return getStaticContent(variables, `./src/cdn-analysis/sql/${provider}/${filename}.sql`);
 }
 
-export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext) {
+/**
+ * Returns aggregated table names based on customer domain and mode.
+ */
+function getAggregatedTableNames(customerDomain, useImporterBucket) {
+  const suffix = useImporterBucket ? '_importer' : '';
+  return {
+    aggregatedTable: `aggregated_logs_${customerDomain}${suffix}`,
+    aggregatedReferralTable: `aggregated_referral_logs_${customerDomain}${suffix}`,
+  };
+}
+
+/**
+ * Builds paths for CDN logs based on processing mode.
+ */
+function buildPaths(options) {
+  const {
+    useImporterBucket,
+    cdnBucketName,
+    importerBucketName,
+    serviceProvider,
+    timeParts,
+    pathId,
+    siteId,
+  } = options;
+
+  if (useImporterBucket) {
+    return buildImporterPaths(
+      cdnBucketName,
+      importerBucketName,
+      serviceProvider,
+      timeParts,
+      pathId,
+      siteId,
+    );
+  }
+
+  return buildCdnPaths(cdnBucketName, serviceProvider, timeParts, pathId);
+}
+
+export async function processCdnLogs(auditUrl, context, site, auditContext, options = {}) {
   const { log, s3Client, dataAccess } = context;
+
+  const { useImporterBucket = false } = options;
 
   const bucketName = await resolveCdnBucketName(site, context);
   if (!bucketName) {
@@ -78,9 +121,9 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
   const { host } = new URL(site.getBaseURL());
   const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
   // for non-adobe customers, use the orgId from the config
-  const imsOrgId = orgId || await getImsOrgId(site, dataAccess, log);
+  const pathId = orgId || await getImsOrgId(site, dataAccess, log);
 
-  const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName, imsOrgId);
+  const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName, pathId);
   const serviceProviders = isLegacy
     ? await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour })
     : providers;
@@ -88,8 +131,12 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
   log.debug(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
 
   const database = `cdn_logs_${customerDomain}`;
-  const aggregatedTable = `aggregated_logs_${customerDomain}`;
-  const aggregatedReferralTable = `aggregated_referral_logs_${customerDomain}`;
+  const { aggregatedTable, aggregatedReferralTable } = getAggregatedTableNames(
+    customerDomain,
+    useImporterBucket,
+  );
+  const importerBucket = resolveImporterBucketName(context);
+  const siteId = site.getId();
   const results = [];
 
   // Create database and aggregated tables once
@@ -105,12 +152,15 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
     } else {
       log.info(`Processing service provider ${serviceProvider.toUpperCase()} (CDN: ${cdnType.toUpperCase()})`);
 
-      const paths = buildCdnPaths(
-        bucketName,
+      const paths = buildPaths({
+        useImporterBucket,
+        cdnBucketName: bucketName,
+        importerBucketName: importerBucket,
         serviceProvider,
-        { year, month, day, hour },
-        imsOrgId,
-      );
+        timeParts: { year, month, day, hour },
+        pathId,
+        siteId,
+      });
       const rawTable = `raw_logs_${customerDomain}_${serviceProvider.replace(/-/g, '_')}`;
       const athenaClient = AWSAthenaClient.fromContext(context, paths.tempLocation, {
         maxPollAttempts: 500,
@@ -214,7 +264,22 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
   };
 }
 
+export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext) {
+  return processCdnLogs(auditUrl, context, site, auditContext, { useImporterBucket: false });
+}
+
+export async function cdnLogsAnalysisRunner(auditUrl, context, site, auditContext) {
+  return processCdnLogs(auditUrl, context, site, auditContext, { useImporterBucket: true });
+}
+
+// Current handler (per-org, existing functionality)
 export default new AuditBuilder()
   .withRunner(cdnLogAnalysisRunner)
+  .withUrlResolver(wwwUrlResolver)
+  .build();
+
+// New handler (all sites, importer bucket)
+export const cdnLogsAnalysis = new AuditBuilder()
+  .withRunner(cdnLogsAnalysisRunner)
   .withUrlResolver(wwwUrlResolver)
   .build();
