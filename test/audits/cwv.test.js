@@ -17,9 +17,10 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
-import esmock from 'esmock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
+import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import expectedOpptyWithoutGSC from '../fixtures/cwv/opptyWithoutGSC.json' with { type: 'json' };
 import suggestions from '../fixtures/cwv/suggestions.json' with { type: 'json' };
@@ -39,17 +40,16 @@ const DOMAIN_REQUEST_DEFAULT_PARAMS = {
 };
 
 describe('CWVRunner Tests', () => {
-  let CWVRunner;
-  let opportunityAndSuggestions;
-
   const groupedURLs = [{ name: 'test', pattern: 'test/*' }];
   const siteConfig = {
     getGroupedURLs: sandbox.stub().returns(groupedURLs),
   };
   const site = {
+    getId: () => 'test-site-id',
     getBaseURL: sandbox.stub().returns(baseURL),
     getConfig: () => siteConfig,
     getDeliveryType: sandbox.stub().returns('aem_cs'),
+    hasProductEntitlement: sandbox.stub().resolves(true),
   };
 
   const context = {
@@ -61,6 +61,11 @@ describe('CWVRunner Tests', () => {
     dataAccess: {
       Configuration: {
         findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({
+            'cwv-auto-suggest': {
+              productCodes: ['aem-sites'],
+            },
+          }),
           isHandlerEnabledForSite: () => true,
         }),
       },
@@ -71,51 +76,6 @@ describe('CWVRunner Tests', () => {
       info: sinon.stub(),
     },
   };
-
-  before(async () => {
-    const module = await esmock('../../src/cwv/handler.js', {
-      '../../src/cwv/utils.js': {
-        needsAutoSuggest: async (context, opportunity, site) => {
-          // Check feature toggle (mocked in context.dataAccess)
-          const config = await context.dataAccess?.Configuration?.findLatest?.('cwv-mystique-auto-suggest');
-          if (config && typeof config.isHandlerEnabledForSite === 'function') {
-            const isEnabled = config.isHandlerEnabledForSite(site);
-            if (!isEnabled) {
-              context.log.info('CWV auto-suggest is disabled for site, skipping');
-              return false;
-            }
-          }
-
-          const suggestions = await opportunity.getSuggestions();
-          if (suggestions.length === 0) return false;
-          return suggestions.some((s) => {
-            const data = s.getData();
-            const issues = data?.issues || [];
-            if (issues.length === 0) return true;
-            return issues.some((issue) => !issue.value || !issue.value.trim());
-          });
-        },
-        sendSQSMessageForAutoSuggest: async (context, opportunity, site) => {
-          const opptyData = JSON.parse(JSON.stringify(opportunity));
-          const sqsMessage = {
-            type: 'guidance:cwv-analysis',
-            siteId: opptyData.siteId,
-            auditId: opptyData.auditId,
-            deliveryType: site ? site.getDeliveryType() : 'aem_cs',
-            time: new Date().toISOString(),
-            data: {
-              page: site ? site.getBaseURL() : '',
-              opportunityId: opptyData.opportunityId || '',
-            },
-          };
-          await context.sqs.sendMessage(context.env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
-        },
-      },
-    });
-
-    CWVRunner = module.CWVRunner;
-    opportunityAndSuggestions = module.opportunityAndSuggestions;
-  });
 
   afterEach(() => {
     nock.cleanAll();
@@ -177,6 +137,12 @@ describe('CWVRunner Tests', () => {
       context.env = {
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       };
+      
+      // Mock TierClient for entitlement checks
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
       addSuggestionsResponse = {
         createdItems: [],
@@ -324,17 +290,19 @@ describe('CWVRunner Tests', () => {
       expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
     });
 
-    it('calls sendSQSMessageForAutoSuggest when suggestions have no auto-suggest guidance', async () => {
-      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-      context.dataAccess.Opportunity.create.resolves(oppty);
-      sinon.stub(GoogleClient, 'createFrom').resolves({});
-
+    it('calls sendSQSMessageForAutoSuggest when suggestions have no guidance', async () => {
       // Mock suggestions without guidance (empty issues array)
       const mockSuggestions = [
         { getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
         { getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
       ];
-      oppty.getSuggestions.resolves(mockSuggestions);
+      
+      // Setup opportunity with mock suggestions before the function call
+      oppty.getSuggestions = sandbox.stub().resolves(mockSuggestions);
+      
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
@@ -345,11 +313,7 @@ describe('CWVRunner Tests', () => {
       expect(message.siteId).to.equal('site-id');
     });
 
-    it('does not call sendSQSMessageForAutoSuggest when all suggestions have auto-suggest guidance', async () => {
-      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-      context.dataAccess.Opportunity.create.resolves(oppty);
-      sinon.stub(GoogleClient, 'createFrom').resolves({});
-
+    it('does not call sendSQSMessageForAutoSuggest when all suggestions have guidance', async () => {
       // Mock suggestions with existing guidance
       const mockSuggestions = [
         { 
@@ -363,7 +327,13 @@ describe('CWVRunner Tests', () => {
           getStatus: () => 'NEW'
         }
       ];
-      oppty.getSuggestions.resolves(mockSuggestions);
+      
+      // Setup opportunity with mock suggestions before the function call
+      oppty.getSuggestions = sandbox.stub().resolves(mockSuggestions);
+      
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
@@ -371,41 +341,7 @@ describe('CWVRunner Tests', () => {
       expect(context.sqs.sendMessage).to.not.have.been.called;
     });
 
-    it('does not call sendSQSMessageForAutoSuggest when CWV auto-suggest is disabled', async () => {
-      // Temporarily override Configuration mock to return false (disabled)
-      const originalFindLatest = context.dataAccess.Configuration.findLatest;
-      context.dataAccess.Configuration.findLatest = sandbox.stub().resolves({
-        isHandlerEnabledForSite: () => false,
-      });
-
-      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-      context.dataAccess.Opportunity.create.resolves(oppty);
-      sinon.stub(GoogleClient, 'createFrom').resolves({});
-
-      // Mock suggestions without guidance (normally would trigger SQS)
-      const mockSuggestions = [
-        { getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
-        { getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
-      ];
-      oppty.getSuggestions.resolves(mockSuggestions);
-
-      await opportunityAndSuggestions(auditUrl, auditData, context, site);
-
-      // Verify that SQS sendMessage was NOT called (feature disabled)
-      expect(context.sqs.sendMessage).to.not.have.been.called;
-
-      // Verify log message
-      expect(context.log.info).to.have.been.calledWith('CWV auto-suggest is disabled for site, skipping');
-
-      // Restore original mock for other tests
-      context.dataAccess.Configuration.findLatest = originalFindLatest;
-    });
-
     it('calls sendSQSMessageForAutoSuggest when some suggestions have guidance and some do not', async () => {
-      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
-      context.dataAccess.Opportunity.create.resolves(oppty);
-      sinon.stub(GoogleClient, 'createFrom').resolves({});
-
       // Mock mixed suggestions - some with guidance, some without
       const mockSuggestions = [
         { 
@@ -427,7 +363,13 @@ describe('CWVRunner Tests', () => {
           getStatus: () => 'NEW'
         }
       ];
-      oppty.getSuggestions.resolves(mockSuggestions);
+      
+      // Setup opportunity with mock suggestions before the function call
+      oppty.getSuggestions = sandbox.stub().resolves(mockSuggestions);
+      
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 

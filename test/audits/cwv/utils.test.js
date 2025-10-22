@@ -13,6 +13,7 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { sendSQSMessageForAutoSuggest, needsAutoSuggest } from '../../../src/cwv/utils.js';
 
 describe('sendSQSMessageForAutoSuggest', () => {
@@ -187,7 +188,11 @@ describe('sendSQSMessageForAutoSuggest', () => {
 
     expect(context.log.info.calledTwice).to.be.true;
     expect(context.log.info.firstCall.args[0]).to.include('Received CWV opportunity for auto-suggest');
+    expect(context.log.info.firstCall.args[0]).to.include('siteId: site-123');
+    expect(context.log.info.firstCall.args[0]).to.include('opportunityId: oppty-789');
     expect(context.log.info.secondCall.args[0]).to.include('CWV opportunity sent to Mystique for auto-suggest');
+    expect(context.log.info.secondCall.args[0]).to.include('siteId: site-123');
+    expect(context.log.info.secondCall.args[0]).to.include('opportunityId: oppty-789');
   });
 
   it('should handle missing opportunityId', async () => {
@@ -227,6 +232,81 @@ describe('sendSQSMessageForAutoSuggest', () => {
       expect(thrownError.message).to.equal('SQS send failed');
       expect(context.log.error.calledOnce).to.be.true;
       expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('siteId: site-123');
+      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-789');
+    }
+  });
+
+  it('should handle SQS sendMessage error with missing opportunityId but with getId method', async () => {
+    const error = new Error('SQS send failed');
+    context.sqs.sendMessage.rejects(error);
+
+    const opportunity = {
+      siteId: 'site-456',
+      auditId: 'audit-789',
+      // opportunityId is missing, but getId is available
+      getId: () => 'oppty-from-getId',
+      data: {
+      },
+    };
+
+    try {
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('SQS send failed');
+      expect(context.log.error.calledOnce).to.be.true;
+      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('siteId: site-456');
+      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-from-getId');
+    }
+  });
+
+  it('should handle SQS sendMessage error with missing opportunityId and no getId method', async () => {
+    const error = new Error('SQS send failed');
+    context.sqs.sendMessage.rejects(error);
+
+    const opportunity = {
+      siteId: 'site-999',
+      auditId: 'audit-888',
+      // opportunityId is missing and no getId method
+      data: {
+      },
+    };
+
+    try {
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('SQS send failed');
+      expect(context.log.error.calledOnce).to.be.true;
+      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('siteId: site-999');
+      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: ');
+    }
+  });
+
+  it('should handle SQS sendMessage error with missing siteId', async () => {
+    const error = new Error('SQS send failed');
+    context.sqs.sendMessage.rejects(error);
+
+    const opportunity = {
+      // siteId is missing
+      auditId: 'audit-111',
+      opportunityId: 'oppty-222',
+      data: {
+      },
+    };
+
+    try {
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+      expect.fail('Should have thrown an error');
+    } catch (thrownError) {
+      expect(thrownError.message).to.equal('SQS send failed');
+      expect(context.log.error.calledOnce).to.be.true;
+      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
+      expect(context.log.error.firstCall.args[0]).to.include('siteId: unknown');
+      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-222');
     }
   });
 });
@@ -236,12 +316,7 @@ describe('needsAutoSuggest', () => {
   let site;
   const sandbox = sinon.createSandbox();
 
-  beforeEach(async () => {
-    site = {
-      getBaseURL: sandbox.stub().returns('https://example.com'),
-      getDeliveryType: sandbox.stub().returns('aem_cs'),
-    };
-
+  beforeEach(() => {
     context = {
       log: {
         info: sandbox.stub(),
@@ -249,10 +324,29 @@ describe('needsAutoSuggest', () => {
       },
       dataAccess: {
         Configuration: {
-          findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: () => true }),
+          findLatest: sandbox.stub().resolves({
+            getHandlers: () => ({
+              'cwv-auto-suggest': {
+                productCodes: ['aem-sites'],
+              },
+            }),
+            isHandlerEnabledForSite: () => true,
+          }),
         },
       },
     };
+    
+    site = {
+      getId: sandbox.stub().returns('test-site-id'),
+      getBaseURL: sandbox.stub().returns('https://example.com'),
+      getDeliveryType: sandbox.stub().returns('aem_cs'),
+    };
+    
+    // Mock TierClient for entitlement checks
+    const mockTierClient = {
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+    };
+    sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
   });
 
   afterEach(() => {
@@ -354,8 +448,13 @@ describe('needsAutoSuggest', () => {
   });
 
   it('returns false when CWV auto-suggest feature toggle is disabled', async () => {
-    // Mock feature toggle as disabled
+    // Mock feature toggle as disabled (handler returns false)
     context.dataAccess.Configuration.findLatest.resolves({
+      getHandlers: () => ({
+        'cwv-auto-suggest': {
+          productCodes: ['aem-sites'],
+        },
+      }),
       isHandlerEnabledForSite: () => false,
     });
 
@@ -369,6 +468,6 @@ describe('needsAutoSuggest', () => {
 
     const result = await needsAutoSuggest(context, opportunity, site);
     expect(result).to.be.false;
-    expect(context.log.info).to.have.been.calledWith('CWV auto-suggest is disabled for site, skipping');
+    expect(context.log.info).to.have.been.calledWith('CWV auto-suggest is disabled for site test-site-id, skipping');
   });
 });
