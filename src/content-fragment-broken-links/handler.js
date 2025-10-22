@@ -22,8 +22,6 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 export async function fetchBrokenContentFragmentLinks(context) {
   const { log, site } = context;
 
-  const baseUrl = site.getBaseURL();
-
   try {
     const collector = await AthenaCollector.createFrom(context);
     const brokenPaths = await collector.fetchBrokenPaths();
@@ -31,7 +29,8 @@ export async function fetchBrokenContentFragmentLinks(context) {
     log.info(`Found ${brokenPaths.length} broken content fragment paths from ${collector.constructor.name}`);
 
     return {
-      fullAuditRef: baseUrl,
+      siteId: site.getId(),
+      fullAuditRef: site.getBaseURL(),
       auditResult: {
         brokenPaths,
         success: true,
@@ -40,7 +39,8 @@ export async function fetchBrokenContentFragmentLinks(context) {
   } catch (error) {
     log.error(`Failed to fetch broken content fragment paths: ${error.message}`);
     return {
-      fullAuditRef: baseUrl,
+      siteId: site.getId(),
+      fullAuditRef: site.getBaseURL(),
       auditResult: {
         error: error.message,
         success: false,
@@ -50,7 +50,7 @@ export async function fetchBrokenContentFragmentLinks(context) {
 }
 
 export async function analyzeBrokenContentFragmentLinks(context) {
-  const { log, audit } = context;
+  const { log, audit, site } = context;
 
   const auditResult = audit.getAuditResult();
   if (!auditResult.success) {
@@ -66,6 +66,8 @@ export async function analyzeBrokenContentFragmentLinks(context) {
     log.info(`Found ${suggestions.length} suggestions for broken content fragment paths`);
 
     return {
+      siteId: site.getId(),
+      fullAuditRef: site.getBaseURL(),
       auditResult: {
         suggestions: suggestions.map((suggestion) => suggestion.toJSON()),
         success: true,
@@ -74,6 +76,8 @@ export async function analyzeBrokenContentFragmentLinks(context) {
   } catch (error) {
     log.error(`Failed to analyze broken content fragment paths: ${error.message}`);
     return {
+      siteId: site.getId(),
+      fullAuditRef: site.getBaseURL(),
       auditResult: {
         error: error.message,
         success: false,
@@ -83,7 +87,7 @@ export async function analyzeBrokenContentFragmentLinks(context) {
 }
 
 export function provideContentFragmentLinkSuggestions(context) {
-  const { log, audit } = context;
+  const { log, audit, site } = context;
 
   const auditResult = audit.getAuditResult();
   if (!auditResult.success) {
@@ -95,6 +99,8 @@ export function provideContentFragmentLinkSuggestions(context) {
   log.info(`Providing ${suggestions.length} content fragment path suggestions`);
 
   return {
+    siteId: site.getId(),
+    fullAuditRef: site.getBaseURL(),
     auditResult: {
       suggestions,
       success: true,
