@@ -6,7 +6,8 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{databaseName}}.{{tableName}} (
   host string,
   time_to_first_byte double,
   count bigint,
-  cdn_provider string
+  cdn_provider string,
+  x_forwarded_host string
 )
 PARTITIONED BY (
   year string,
@@ -31,4 +32,4 @@ TBLPROPERTIES (
   'projection.hour.digits' = '2',
   'storage.location.template' = '{{aggregatedLocation}}${year}/${month}/${day}/${hour}/',
   'has_encrypted_data' = 'false'
-)
+);
