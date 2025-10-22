@@ -35,10 +35,12 @@ describe('CDN 404 Analysis Handler', () => {
     sandbox.stub(Date, 'now').returns(fixedDate.getTime());
     site = {
       getBaseURL: sandbox.stub().returns('https://example.com'),
+      getOrganizationId: sandbox.stub().returns('test-org-id'),
     };
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
+        site,
         log: {
           info: sandbox.spy(),
           debug: sandbox.spy(),
@@ -47,7 +49,13 @@ describe('CDN 404 Analysis Handler', () => {
         },
         s3Client: { send: sandbox.stub() },
         rawBucket: 'test-raw-bucket',
-        imsOrg: '1234567890',
+        dataAccess: {
+          Organization: {
+            findById: sandbox.stub().resolves({
+              getImsOrgId: () => '1234567890',
+            }),
+          },
+        },
       })
       .build();
     athenaClientStub = {
@@ -65,7 +73,7 @@ describe('CDN 404 Analysis Handler', () => {
   });
 
   it('runs the full cdnContentFragment404Runner flow', async () => {
-    const result = await handlerModule.cdnContentFragment404Runner(context, site);
+    const result = await handlerModule.cdnContentFragment404Runner(context);
 
     expect(getStaticContentStub).to.have.been.calledThrice;
     expect(athenaClientStub.execute).to.have.been.calledThrice;
@@ -80,14 +88,14 @@ describe('CDN 404 Analysis Handler', () => {
   it('correctly extracts and escapes customer domain', async () => {
     site.getBaseURL.returns('https://test-site.com');
 
-    const result = await handlerModule.cdnContentFragment404Runner(context, site);
+    const result = await handlerModule.cdnContentFragment404Runner(context);
 
     expect(result.auditResult.database).to.equal('cdn_logs_test_site_com');
     expect(result.auditResult.rawTable).to.equal('raw_logs_status_test_site_com');
   });
 
   it('generates correct S3 paths with IMS org', async () => {
-    const result = await handlerModule.cdnContentFragment404Runner(context, site);
+    const result = await handlerModule.cdnContentFragment404Runner(context);
 
     // Verify the output path includes the IMS org
     expect(result.fullAuditRef).to.include('test-raw-bucket/1234567890/aggregated-404/');
@@ -105,7 +113,7 @@ describe('CDN 404 Analysis Handler', () => {
     Date.now = sandbox.stub().returns(mockTime);
 
     try {
-      await handlerModule.cdnContentFragment404Runner(context, site);
+      await handlerModule.cdnContentFragment404Runner(context);
 
       // Should use the previous hour (13:00)
       const unloadCall = getStaticContentStub.thirdCall.args[0];
@@ -125,7 +133,7 @@ describe('CDN 404 Analysis Handler', () => {
     Date.now = sandbox.stub().returns(mockTime);
 
     try {
-      await handlerModule.cdnContentFragment404Runner(context, site);
+      await handlerModule.cdnContentFragment404Runner(context);
 
       // Should use the previous hour (23:00 of previous day)
       const unloadCall = getStaticContentStub.thirdCall.args[0];
@@ -140,7 +148,7 @@ describe('CDN 404 Analysis Handler', () => {
 
   it('returns completedAt timestamp in ISO format', async () => {
     const beforeTime = new Date();
-    const result = await handlerModule.cdnContentFragment404Runner(context, site);
+    const result = await handlerModule.cdnContentFragment404Runner(context);
     const afterTime = new Date();
 
     expect(result.auditResult.completedAt).to.be.a('string');
@@ -150,7 +158,7 @@ describe('CDN 404 Analysis Handler', () => {
   });
 
   it('calls athena client with correct descriptions', async () => {
-    await handlerModule.cdnContentFragment404Runner(context, site);
+    await handlerModule.cdnContentFragment404Runner(context);
 
     expect(athenaClientStub.execute.firstCall.args[2]).to.equal('[Athena Query] Create database cdn_logs_example_com');
     expect(athenaClientStub.execute.secondCall.args[2]).to.equal('[Athena Query] Create raw logs table cdn_logs_example_com.raw_logs_status_example_com from s3://test-raw-bucket/1234567890/raw/aem-cs-fastly');
@@ -158,7 +166,7 @@ describe('CDN 404 Analysis Handler', () => {
   });
 
   it('loads correct SQL files with proper variables', async () => {
-    await handlerModule.cdnContentFragment404Runner(context, site);
+    await handlerModule.cdnContentFragment404Runner(context);
 
     expect(getStaticContentStub.firstCall.args[1]).to.equal('./src/cdn-content-fragment-404/sql/create-database.sql');
     expect(getStaticContentStub.secondCall.args[1]).to.equal('./src/cdn-content-fragment-404/sql/create-raw-table.sql');
@@ -169,7 +177,7 @@ describe('CDN 404 Analysis Handler', () => {
     getStaticContentStub.onFirstCall().rejects(new Error('SQL load error'));
 
     await expect(
-      handlerModule.cdnContentFragment404Runner(context, site),
+      handlerModule.cdnContentFragment404Runner(context),
     ).to.be.rejectedWith('SQL load error');
   });
 
@@ -177,7 +185,7 @@ describe('CDN 404 Analysis Handler', () => {
     getStaticContentStub.onSecondCall().rejects(new Error('Table SQL load error'));
 
     await expect(
-      handlerModule.cdnContentFragment404Runner(context, site),
+      handlerModule.cdnContentFragment404Runner(context),
     ).to.be.rejectedWith('Table SQL load error');
   });
 
@@ -185,7 +193,7 @@ describe('CDN 404 Analysis Handler', () => {
     getStaticContentStub.onThirdCall().rejects(new Error('Unload SQL load error'));
 
     await expect(
-      handlerModule.cdnContentFragment404Runner(context, site),
+      handlerModule.cdnContentFragment404Runner(context),
     ).to.be.rejectedWith('Unload SQL load error');
   });
 
@@ -193,7 +201,7 @@ describe('CDN 404 Analysis Handler', () => {
     athenaClientStub.execute.onFirstCall().rejects(new Error('Database creation error'));
 
     await expect(
-      handlerModule.cdnContentFragment404Runner(context, site),
+      handlerModule.cdnContentFragment404Runner(context),
     ).to.be.rejectedWith('Database creation error');
   });
 
@@ -201,7 +209,7 @@ describe('CDN 404 Analysis Handler', () => {
     athenaClientStub.execute.onSecondCall().rejects(new Error('Table creation error'));
 
     await expect(
-      handlerModule.cdnContentFragment404Runner(context, site),
+      handlerModule.cdnContentFragment404Runner(context),
     ).to.be.rejectedWith('Table creation error');
   });
 
@@ -209,7 +217,7 @@ describe('CDN 404 Analysis Handler', () => {
     athenaClientStub.execute.onThirdCall().rejects(new Error('Unload operation error'));
 
     await expect(
-      handlerModule.cdnContentFragment404Runner(context, site),
+      handlerModule.cdnContentFragment404Runner(context),
     ).to.be.rejectedWith('Unload operation error');
   });
 
@@ -217,6 +225,7 @@ describe('CDN 404 Analysis Handler', () => {
     const contextWithoutRawBucket = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
+        site,
         log: {
           info: sandbox.spy(),
           debug: sandbox.spy(),
@@ -225,19 +234,26 @@ describe('CDN 404 Analysis Handler', () => {
         },
         s3Client: { send: sandbox.stub() },
         rawBucket: undefined,
-        imsOrg: '1234567890',
+        dataAccess: {
+          Organization: {
+            findById: sandbox.stub().resolves({
+              getImsOrgId: () => '1234567890',
+            }),
+          },
+        },
       })
       .build();
 
     await expect(
-      handlerModule.cdnContentFragment404Runner(contextWithoutRawBucket, site),
+      handlerModule.cdnContentFragment404Runner(contextWithoutRawBucket),
     ).to.be.rejectedWith('Raw bucket is required');
   });
 
-  it('throws if imsOrg is undefined in context', async () => {
+  it('throws if imsOrg cannot be retrieved', async () => {
     const contextWithoutImsOrg = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
+        site,
         log: {
           info: sandbox.spy(),
           debug: sandbox.spy(),
@@ -246,12 +262,16 @@ describe('CDN 404 Analysis Handler', () => {
         },
         s3Client: { send: sandbox.stub() },
         rawBucket: 'test-raw-bucket',
-        imsOrg: undefined,
+        dataAccess: {
+          Organization: {
+            findById: sandbox.stub().resolves(null),
+          },
+        },
       })
       .build();
 
     await expect(
-      handlerModule.cdnContentFragment404Runner(contextWithoutImsOrg, site),
-    ).to.be.rejectedWith('IMS organization is required');
+      handlerModule.cdnContentFragment404Runner(contextWithoutImsOrg),
+    ).to.be.rejectedWith('Unable to retrieve IMS organization ID');
   });
 });

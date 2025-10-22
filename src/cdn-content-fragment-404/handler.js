@@ -14,6 +14,7 @@ import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
+import { getImsOrgId } from '../utils/data-access.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -41,9 +42,11 @@ async function loadSql(filename, variables) {
   return getStaticContent(variables, `./src/cdn-content-fragment-404/sql/${filename}.sql`);
 }
 
-export async function cdnContentFragment404Runner(context, site) {
+export async function cdnContentFragment404Runner(context) {
+  const {
+    site, rawBucket, dataAccess, log,
+  } = context;
   const { sanitizedHostname } = extractCustomerDomain(site);
-  const { rawBucket, imsOrg } = context;
   const {
     year, month, day, hour,
   } = getHourParts();
@@ -51,8 +54,10 @@ export async function cdnContentFragment404Runner(context, site) {
   if (!rawBucket) {
     throw new Error('Raw bucket is required');
   }
+
+  const imsOrg = await getImsOrgId(site, dataAccess, log);
   if (!imsOrg) {
-    throw new Error('IMS organization is required');
+    throw new Error('Unable to retrieve IMS organization ID');
   }
 
   const database = `cdn_logs_${sanitizedHostname}`;
