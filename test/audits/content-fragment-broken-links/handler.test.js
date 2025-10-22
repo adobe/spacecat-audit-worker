@@ -57,6 +57,7 @@ describe('Broken Content Path Handler', () => {
           error: sandbox.spy(),
         },
         site: {
+          getId: () => 'test-site-id',
           getBaseURL: () => 'https://test-tenant.adobe.com',
         },
         audit: {
@@ -108,6 +109,7 @@ describe('Broken Content Path Handler', () => {
       expect(context.log.info).to.have.been.calledWith('Found 2 broken content fragment paths from AthenaCollector');
 
       expect(result).to.deep.equal({
+        siteId: 'test-site-id',
         fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
           brokenPaths: ['/content/dam/test/broken1.jpg', '/content/dam/test/broken2.pdf'],
@@ -124,6 +126,7 @@ describe('Broken Content Path Handler', () => {
 
       expect(context.log.error).to.have.been.calledWith('Failed to fetch broken content fragment paths: Athena connection failed');
       expect(result).to.deep.equal({
+        siteId: 'test-site-id',
         fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
           error: 'Athena connection failed',
@@ -146,6 +149,7 @@ describe('Broken Content Path Handler', () => {
       const customContext = {
         ...context,
         site: {
+          getId: () => 'custom-site-id',
           getBaseURL: () => 'https://custom-tenant.adobe.com',
         },
         log: context.log,
@@ -153,6 +157,7 @@ describe('Broken Content Path Handler', () => {
 
       const result = await handlerModule.fetchBrokenContentFragmentLinks(customContext);
 
+      expect(result.siteId).to.equal('custom-site-id');
       expect(result.fullAuditRef).to.equal('https://custom-tenant.adobe.com');
     });
   });
@@ -165,6 +170,8 @@ describe('Broken Content Path Handler', () => {
       expect(context.log.info).to.have.been.calledWith('Found 2 suggestions for broken content fragment paths');
 
       expect(result).to.deep.equal({
+        siteId: 'test-site-id',
+        fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
           suggestions: [
             { requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' },
@@ -190,6 +197,8 @@ describe('Broken Content Path Handler', () => {
 
       expect(context.log.error).to.have.been.calledWith('Failed to analyze broken content fragment paths: Analysis strategy failed');
       expect(result).to.deep.equal({
+        siteId: 'test-site-id',
+        fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
           error: 'Analysis strategy failed',
           success: false,
@@ -209,6 +218,8 @@ describe('Broken Content Path Handler', () => {
       expect(analysisStrategyStub.analyze).to.have.been.calledWith([]);
       expect(context.log.info).to.have.been.calledWith('Found 0 suggestions for broken content fragment paths');
       expect(result).to.deep.equal({
+        siteId: 'test-site-id',
+        fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
           suggestions: [],
           success: true,
@@ -253,6 +264,8 @@ describe('Broken Content Path Handler', () => {
 
       expect(context.log.error).to.have.been.calledWith('Failed to analyze broken content fragment paths: AEM client initialization failed');
       expect(result).to.deep.equal({
+        siteId: 'test-site-id',
+        fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
           error: 'AEM client initialization failed',
           success: false,
@@ -267,6 +280,8 @@ describe('Broken Content Path Handler', () => {
 
       expect(context.log.info).to.have.been.calledWith('Providing 2 content fragment path suggestions');
       expect(result).to.deep.equal({
+        siteId: 'test-site-id',
+        fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
           suggestions: [
             { requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' },
