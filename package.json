@@ -20,7 +20,7 @@
     "build": "hedy -v --test-bundle",
     "deploy": "hedy -v --deploy --aws-deploy-bucket=spacecat-prod-deploy --pkgVersion=latest",
     "deploy-stage": "hedy -v --deploy --aws-deploy-bucket=spacecat-stage-deploy --pkgVersion=latest",
-    "deploy-dev": "hedy -v --deploy --pkgVersion=ci$CI_BUILD_NUM -l dianapredaa --aws-deploy-bucket=spacecat-dev-deploy --cleanup-ci=24h --aws-region us-east-1",
+    "deploy-dev": "hedy -v --deploy --pkgVersion=ci$CI_BUILD_NUM -l dianaapredaa --aws-deploy-bucket=spacecat-dev-deploy --cleanup-ci=24h --aws-region us-east-1",
     "deploy-secrets": "hedy --aws-update-secrets --params-file=secrets/secrets.env",
     "prepare": "husky",
     "local-build": "sam build",
