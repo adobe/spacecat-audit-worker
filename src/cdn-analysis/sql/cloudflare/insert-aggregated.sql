@@ -8,6 +8,7 @@ SELECT
   CAST(EdgeTimeToFirstByteMs AS DOUBLE) AS time_to_first_byte,
   COUNT(*) AS count,
   '{{serviceProvider}}' AS cdn_provider,
+  COALESCE(ClientRequestHost, '') as x_forwarded_host,
   
   -- Add partition columns as regular columns
   '{{year}}' AS year,
@@ -44,4 +45,5 @@ GROUP BY
   try(url_extract_host(ClientRequestReferer)),
   ClientRequestHost,
   CAST(EdgeTimeToFirstByteMs AS DOUBLE),
-  '{{serviceProvider}}';
+  '{{serviceProvider}}',
+  COALESCE(ClientRequestHost, '');

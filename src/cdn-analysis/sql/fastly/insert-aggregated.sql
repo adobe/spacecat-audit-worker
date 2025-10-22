@@ -8,6 +8,7 @@ SELECT
   CAST(time_to_first_byte AS DOUBLE) * 1000 AS time_to_first_byte,
   COUNT(*) AS count,
   '{{serviceProvider}}' AS cdn_provider,
+  COALESCE(request_x_forwarded_host, '') as x_forwarded_host,
   
   -- Add partition columns as regular columns
   '{{year}}' AS year,
@@ -41,4 +42,5 @@ GROUP BY
   request_referer,
   host,
   CAST(time_to_first_byte AS DOUBLE) * 1000,
-  '{{serviceProvider}}';
+  '{{serviceProvider}}',
+  COALESCE(request_x_forwarded_host, '');
