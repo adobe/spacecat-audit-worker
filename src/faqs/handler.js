@@ -15,8 +15,9 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { generateReportingPeriods } from '../llm-error-pages/utils.js';
+import { SPREADSHEET_COLUMNS } from './utils.js';
 
-const MAX_ROWS_TO_READ = 1000;
+const MAX_ROWS_TO_READ = 200;
 
 /**
  * Groups prompts by URL and topic
@@ -71,11 +72,11 @@ async function readBrandPresenceSpreadsheet(filename, outputLocation, sharepoint
 
     log.info(`Reading ${maxRows} rows from spreadsheet (total rows: ${worksheet.rowCount})`);
 
-    // Columns: Category, Topics, Prompt, Origin, Region, Volume, URL, ...
+    // Extract data using named column constants
     rows.forEach((row) => {
-      const topic = row.getCell(2).value; // Topics
-      const prompt = row.getCell(3).value; // Prompt
-      const url = row.getCell(7).value || ''; // URL
+      const topic = row.getCell(SPREADSHEET_COLUMNS.TOPICS).value;
+      const prompt = row.getCell(SPREADSHEET_COLUMNS.PROMPT).value;
+      const url = row.getCell(SPREADSHEET_COLUMNS.URL).value || '';
 
       if (topic && prompt) {
         prompts.push({

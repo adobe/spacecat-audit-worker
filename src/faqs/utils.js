@@ -11,6 +11,34 @@
  */
 
 /**
+ * Column indices for the brand presence spreadsheet.
+ * Excel uses 1-based indexing for columns.
+ */
+export const SPREADSHEET_COLUMNS = {
+  CATEGORY: 1,
+  TOPICS: 2,
+  PROMPT: 3,
+  ORIGIN: 4,
+  REGION: 5,
+  VOLUME: 6,
+  URL: 7,
+  ANSWER: 8,
+  SOURCES: 9,
+  CITATIONS: 10,
+  MENTIONS: 11,
+  SENTIMENT: 12,
+  BUSINESS_COMPETITORS: 13,
+  ORGANIC_COMPETITORS: 14,
+  CONTENT_AI_RESULT: 15,
+  IS_ANSWERED: 16,
+  SOURCE_TO_ANSWER: 17,
+  POSITION: 18,
+  VISIBILITY_SCORE: 19,
+  DETECTED_BRAND_MENTIONS: 20,
+  EXECUTION_DATE: 21,
+};
+
+/**
  * Generates formatted markdown from FAQ data
  * @param {Array} faqs - Array of FAQ objects from Mystique
  * @param {Object} log - Logger object

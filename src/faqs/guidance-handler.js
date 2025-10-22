@@ -54,7 +54,6 @@ export default async function handler(message, context) {
     }
 
     const faqData = await response.json();
-    log.info(`Received FAQ data with ${faqData.faqs?.length || 0} FAQ topics`);
 
     const { url, faqs } = faqData;
 
@@ -63,6 +62,7 @@ export default async function handler(message, context) {
       log.info('No FAQs found in the response');
       return noContent();
     }
+    log.info(`Received FAQ data with ${faqs.length} FAQ topics`);
 
     // Filter to count only suitable suggestions
     const totalSuitableSuggestions = faqs.reduce((count, faq) => {
@@ -117,7 +117,7 @@ export default async function handler(message, context) {
       bKey: `faqs:${site.getBaseURL()}`,
     }];
 
-    // Sync suggestions using the same pattern as summarization
+    // Sync suggestions
     await syncSuggestions({
       context,
       opportunity,
