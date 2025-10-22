@@ -100,6 +100,33 @@ describe('Canonical URL Tests', () => {
       expect(result).to.deep.equal([]);
       expect(log.info).to.have.been.calledWith('No top pages found');
     });
+
+    it('should deduplicate URLs and keep the one with highest traffic', async () => {
+      const dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => 'http://example.com/page1', getTraffic: () => 100 },
+            { getUrl: () => 'http://example.com/page2', getTraffic: () => 200 },
+            { getUrl: () => 'http://example.com/page1', getTraffic: () => 50 }, // Duplicate with lower traffic
+            { getUrl: () => 'http://example.com/page2', getTraffic: () => 250 }, // Duplicate with higher traffic
+          ]),
+        },
+      };
+      const siteId = 'testSiteId';
+      const context = { log };
+
+      const result = await getTopPagesForSiteId(dataAccess, siteId, context, log);
+
+      // Should have 2 unique URLs
+      expect(result).to.have.length(2);
+      
+      // page2 should come first (highest traffic: 250)
+      expect(result[0]).to.deep.equal({ url: 'http://example.com/page2' });
+      // page1 should have traffic 100 (not 50)
+      expect(result[1]).to.deep.equal({ url: 'http://example.com/page1' });
+      
+      expect(log.info).to.have.been.calledWith('Found 2 unique top pages (after deduplication and limiting to 200)');
+    });
   });
 
   describe('validateCanonicalTag', () => {
@@ -728,13 +755,13 @@ describe('Canonical URL Tests', () => {
       nock('https://example.com').get('/page1').twice().reply(200, html);
 
       const getTopPagesForSiteStub = sinon.stub().resolves([
-        { getUrl: () => 'https://example.com/login' },
-        { getUrl: () => 'https://example.com/signin' },
-        { getUrl: () => 'https://example.com/auth' },
-        { getUrl: () => 'https://example.com/auth/user' },
-        { getUrl: () => 'https://example.com/oauth/callback' },
-        { getUrl: () => 'https://example.com/sso' },
-        { getUrl: () => pageURL },
+        { getUrl: () => 'https://example.com/login', getTraffic: () => 100 },
+        { getUrl: () => 'https://example.com/signin', getTraffic: () => 90 },
+        { getUrl: () => 'https://example.com/auth', getTraffic: () => 80 },
+        { getUrl: () => 'https://example.com/auth/user', getTraffic: () => 70 },
+        { getUrl: () => 'https://example.com/oauth/callback', getTraffic: () => 60 },
+        { getUrl: () => 'https://example.com/sso', getTraffic: () => 50 },
+        { getUrl: () => pageURL, getTraffic: () => 40 },
       ]);
 
       const context = {
@@ -772,10 +799,10 @@ describe('Canonical URL Tests', () => {
       nock('https://example.com').get('/page1').twice().reply(200, html);
 
       const getTopPagesForSiteStub = sinon.stub().resolves([
-        { getUrl: () => 'https://example.com/document.pdf' },
-        { getUrl: () => 'https://example.com/guide.PDF' },
-        { getUrl: () => 'https://example.com/files/report.pdf' },
-        { getUrl: () => pageURL },
+        { getUrl: () => 'https://example.com/document.pdf', getTraffic: () => 100 },
+        { getUrl: () => 'https://example.com/guide.PDF', getTraffic: () => 90 },
+        { getUrl: () => 'https://example.com/files/report.pdf', getTraffic: () => 80 },
+        { getUrl: () => pageURL, getTraffic: () => 70 },
       ]);
 
       const context = {
@@ -810,9 +837,9 @@ describe('Canonical URL Tests', () => {
       nock('https://example.com').get('/page1').twice().reply(200, html);
 
       const getTopPagesForSiteStub = sinon.stub().resolves([
-        { getUrl: () => '://invalid' },
-        { getUrl: () => 'ht!tp://bad-protocol.com' },
-        { getUrl: () => pageURL },
+        { getUrl: () => '://invalid', getTraffic: () => 100 },
+        { getUrl: () => 'ht!tp://bad-protocol.com', getTraffic: () => 90 },
+        { getUrl: () => pageURL, getTraffic: () => 80 },
       ]);
 
       const context = {
