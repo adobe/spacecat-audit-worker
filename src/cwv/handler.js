@@ -18,6 +18,7 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit from './kpi-metrics.js';
+import { sendSQSMessageForAutoSuggest } from './utils.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
@@ -57,7 +58,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
     auditType,
     kpiDeltas,
   );
-  const { log } = context;
   // Sync suggestions
   const buildKey = (data) => (data.type === 'url' ? data.url : data.pattern);
   const maxOrganicForUrls = Math.max(...auditData.auditResult.cwv.filter((entry) => entry.type === 'url').map((entry) => entry.pageviews));
@@ -80,8 +80,10 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
         ...entry,
       },
     }),
-    log,
   });
+
+  // Send SQS messages for Mystique auto-suggest
+  await sendSQSMessageForAutoSuggest(context, opportunity, site);
 }
 
 export default new AuditBuilder()

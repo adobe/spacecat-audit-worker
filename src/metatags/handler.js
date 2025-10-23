@@ -13,14 +13,13 @@
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { calculateCPCValue } from '../support/utils.js';
-import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
+import { getObjectFromKey } from '../utils/s3-utils.js';
 import SeoChecks from './seo-checks.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { getTopPagesForSiteId } from '../canonical/handler.js';
-import { getIssueRanking, removeTrailingSlash } from './opportunity-utils.js';
+import { getIssueRanking, getBaseUrl } from './opportunity-utils.js';
 import {
   DESCRIPTION,
   H1,
@@ -47,6 +46,15 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   );
   const { log } = context;
   const { detectedTags } = auditData.auditResult;
+  log.debug(`started to audit metatags for site url: ${auditData.auditResult.finalUrl}`);
+  let useHostnameOnly = false;
+  try {
+    const siteId = opportunity.getSiteId();
+    const site = await context.dataAccess.Site.findById(siteId);
+    useHostnameOnly = site?.getDeliveryConfig?.()?.useHostnameOnly ?? false;
+  } catch (error) {
+    log.error('Error in meta-tags configuration:', error);
+  }
   const suggestions = [];
   // Generate suggestions data to be inserted in meta-tags opportunity suggestions
   Object.keys(detectedTags)
@@ -56,7 +64,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
           suggestions.push({
             ...detectedTags[endpoint][tag],
             tagName: tag,
-            url: removeTrailingSlash(auditData.auditResult.finalUrl) + endpoint,
+            url: getBaseUrl(auditData.auditResult.finalUrl, useHostnameOnly) + endpoint,
             rank: getIssueRanking(tag, detectedTags[endpoint][tag].issue),
           });
         }
@@ -77,12 +85,11 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
       rank: suggestion.rank,
       data: { ...suggestion },
     }),
-    log,
   });
-  log.info(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
+  log.debug(`Successfully synced Opportunity And Suggestions for site: ${auditData.siteId} and ${auditType} audit type.`);
 }
 
-export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log) {
+export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
     log.error(`No Scraped tags found in S3 ${key} object`);
@@ -94,12 +101,9 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, key, prefi
     return null;
   }
 
-  let pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
-    : key.slice(prefix.length - 1).replace('/scrape.json', ''); // Remove the prefix and scrape.json suffix
+  const pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
+    : new URL(url).pathname;
   // handling for homepage
-  if (pageUrl === '') {
-    pageUrl = '/';
-  }
   return {
     [pageUrl]: {
       title: object.scrapeResult.tags.title,
@@ -143,9 +147,7 @@ function getOrganicTrafficForEndpoint(endpoint, rumDataMapMonthly, rumDataMapBiM
     log.warn(`No rum data found for ${endpoint}.`);
     return 0;
   }
-  const trafficSum = target.earned + target.paid;
-  log.info(`Found ${trafficSum} page views for ${endpoint}.`);
-  return trafficSum;
+  return target.earned + target.paid;
 }
 
 // Calculate the projected traffic lost for a site
@@ -186,7 +188,7 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
     });
 
     const cpcValue = await calculateCPCValue(context, site.getId());
-    log.info(`Calculated cpc value: ${cpcValue} for site: ${site.getId()}`);
+    log.debug(`Calculated cpc value: ${cpcValue} for site: ${site.getId()}`);
     const projectedTrafficValue = projectedTrafficLost * cpcValue;
 
     // Skip updating projected traffic data if lost traffic value is insignificant
@@ -198,16 +200,13 @@ async function calculateProjectedTraffic(context, site, detectedTags, log) {
   }
 }
 
-export async function metatagsAutoDetect(site, pagesSet, context) {
+export async function metatagsAutoDetect(site, pagesMap, context) {
   const { log, s3Client } = context;
   // Fetch site's scraped content from S3
   const bucketName = context.env.S3_SCRAPER_BUCKET_NAME;
-  const prefix = `scrapes/${site.getId()}/`;
-  const scrapedObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, prefix, log);
   const extractedTags = {};
-  const pageMetadataResults = await Promise.all(scrapedObjectKeys
-    .filter((key) => pagesSet.has(key))
-    .map((key) => fetchAndProcessPageObject(s3Client, bucketName, key, prefix, log)));
+  const pageMetadataResults = await Promise.all([...pagesMap]
+    .map(([url, path]) => fetchAndProcessPageObject(s3Client, bucketName, url, path, log)));
   pageMetadataResults.forEach((pageMetadata) => {
     if (pageMetadata) {
       Object.assign(extractedTags, pageMetadata);
@@ -215,18 +214,16 @@ export async function metatagsAutoDetect(site, pagesSet, context) {
   });
   const extractedTagsCount = Object.entries(extractedTags).length;
   if (extractedTagsCount === 0) {
-    log.error(`Failed to extract tags from scraped content for bucket ${bucketName} and prefix ${prefix}`);
+    log.error(`Failed to extract tags from scraped content for bucket ${bucketName}`);
   }
 
   // Perform SEO checks
-  log.info(`Performing SEO checks for ${extractedTagsCount} tags`);
   const seoChecks = new SeoChecks(log);
   for (const [pageUrl, pageTags] of Object.entries(extractedTags)) {
     seoChecks.performChecks(pageUrl, pageTags);
   }
   seoChecks.finalChecks();
   const detectedTags = seoChecks.getDetectedTags();
-  log.info(`Found ${Object.keys(detectedTags).length} pages with issues out of ${extractedTagsCount} total pages`);
   return {
     seoChecks,
     detectedTags,
@@ -234,38 +231,16 @@ export async function metatagsAutoDetect(site, pagesSet, context) {
   };
 }
 
-/**
- * Transforms a URL into a scrape.json path for a given site
- * @param {string} url - The URL to transform
- * @param {string} siteId - The site ID
- * @returns {string} The path to the scrape.json file
- */
-function getScrapeJsonPath(url, siteId) {
-  const pathname = new URL(url).pathname.replace(/\/$/, '');
-  return `scrapes/${siteId}${pathname}/scrape.json`;
-}
-
 export async function runAuditAndGenerateSuggestions(context) {
   const {
-    site, audit, finalUrl, log, dataAccess,
+    site, audit, finalUrl, log, scrapeResultPaths,
   } = context;
-  // Get top pages for a site
-  const siteId = site.getId();
-  const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-  const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
-
-  // Transform URLs into scrape.json paths and combine them into a Set
-  const topPagePaths = topPages.map((page) => getScrapeJsonPath(page.url, siteId));
-  const includedUrlPaths = includedURLs.map((url) => getScrapeJsonPath(url, siteId));
-  const totalPagesSet = new Set([...topPagePaths, ...includedUrlPaths]);
-
-  log.info(`Received topPages: ${topPagePaths.length}, includedURLs: ${includedUrlPaths.length}, totalPages to process after removing duplicates: ${totalPagesSet.size}`);
-
+  log.debug(`scrapeResultPaths: ${JSON.stringify(scrapeResultPaths)}`);
   const {
     seoChecks,
     detectedTags,
     extractedTags,
-  } = await metatagsAutoDetect(site, totalPagesSet, context);
+  } = await metatagsAutoDetect(site, scrapeResultPaths, context);
 
   // Calculate projected traffic lost
   const {
@@ -331,7 +306,7 @@ export async function submitForScraping(context) {
   const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
-  log.info(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
+  log.debug(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
 
   if (finalUrls.length === 0) {
     throw new Error('No URLs found for site neither top pages nor included URLs');
@@ -347,6 +322,6 @@ export async function submitForScraping(context) {
 export default new AuditBuilder()
   .withUrlResolver((site) => site.getBaseURL())
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('run-audit-and-generate-suggestions', runAuditAndGenerateSuggestions)
   .build();

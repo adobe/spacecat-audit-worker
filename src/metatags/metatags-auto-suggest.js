@@ -108,6 +108,6 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
       }
     }
   }
-  log.info('Generated AI suggestions for Meta-tags using Genvar.');
+  log.debug('Generated AI suggestions for Meta-tags using Genvar.');
   return updatedDetectedTags;
 }

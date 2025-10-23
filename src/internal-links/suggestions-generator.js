@@ -11,20 +11,18 @@
  */
 
 import { getPrompt, isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { FirefallClient } from '@adobe/spacecat-shared-gpt-client';
+import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { getScrapedDataForSiteId } from '../support/utils.js';
+import { syncSuggestions } from '../utils/data-access.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 
 export const generateSuggestionData = async (finalUrl, brokenInternalLinks, context, site) => {
   const { log } = context;
-  const { FIREFALL_MODEL } = context.env;
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Generating suggestions for site ${finalUrl}`);
-
-  const firefallClient = FirefallClient.createFrom(context);
-  const firefallOptions = { responseFormat: 'json_object', model: FIREFALL_MODEL };
+  const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
+  const azureOpenAIOptions = { responseFormat: 'json_object' };
   const BATCH_SIZE = 300;
 
   const data = await getScrapedDataForSiteId(site, context);
@@ -41,11 +39,9 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     return brokenInternalLinks;
   }
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Processing ${siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
-
   const processBatch = async (batch, urlTo) => {
     const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
-    const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
+    const response = await azureOpenAIClient.fetchChatCompletion(requestBody, azureOpenAIOptions);
     if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
       log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No suggestions found for ${urlTo}`);
       return null;
@@ -71,21 +67,19 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
   }
 
   /**
-   * Process a broken internal link to generate URL suggestions
-   * @param {Object} link - The broken internal link object containing urlTo and other properties
-   * @param {Object} headerSuggestions - Suggestions generated from header links
-   * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
-   */
+     * Process a broken internal link to generate URL suggestions
+     * @param {Object} link - The broken internal link object containing urlTo and other properties
+     * @param {Object} headerSuggestions - Suggestions generated from header links
+     * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
+     */
   const processLink = async (link, headerSuggestions) => {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Processing link: ${link.urlTo}`);
     const suggestions = await processBatches(dataBatches, link.urlTo);
 
     if (totalBatches > 1) {
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Compiling final suggestions for: ${link.urlTo}`);
       try {
         const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: link.urlTo }, 'broken-backlinks-followup', log);
-        const finalResponse = await firefallClient
-          .fetchChatCompletion(finalRequestBody, firefallOptions);
+        const finalResponse = await azureOpenAIClient
+          .fetchChatCompletion(finalRequestBody, azureOpenAIOptions);
 
         if (finalResponse.choices?.length >= 1 && finalResponse.choices[0].finish_reason !== 'stop') {
           log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No final suggestions found for ${link.urlTo}`);
@@ -93,7 +87,6 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
         }
 
         const answer = JSON.parse(finalResponse.choices[0].message.content);
-        log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Final suggestion for ${link.urlTo}:, ${JSON.stringify(answer)}`, answer);
         return {
           ...link,
           urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
@@ -105,13 +98,14 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
       }
     }
 
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions for ${link.urlTo}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
     return {
       ...link,
       urlsSuggested:
-        suggestions[0]?.suggested_urls?.length > 0 ? suggestions[0]?.suggested_urls : [finalUrl],
+                suggestions[0]?.suggested_urls?.length > 0
+                  ? suggestions[0]?.suggested_urls
+                  : [finalUrl],
       aiRationale:
-        suggestions[0]?.aiRationale?.length > 0 ? suggestions[0]?.aiRationale : 'No suitable suggestions found',
+                suggestions[0]?.aiRationale?.length > 0 ? suggestions[0]?.aiRationale : 'No suitable suggestions found',
     };
   };
 
@@ -121,7 +115,10 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
       // eslint-disable-next-line no-await-in-loop
       const requestBody = await getPrompt({ alternative_urls: headerLinks, broken_url: link.urlTo }, 'broken-backlinks', log);
       // eslint-disable-next-line no-await-in-loop
-      const response = await firefallClient.fetchChatCompletion(requestBody, firefallOptions);
+      const response = await azureOpenAIClient.fetchChatCompletion(
+        requestBody,
+        azureOpenAIOptions,
+      );
       if (response.choices?.length >= 1 && response.choices[0].finish_reason !== 'stop') {
         log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No header suggestions for ${link.urlTo}`);
         headerSuggestionsResults.push(null);
@@ -144,7 +141,33 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     const updatedLink = await processLink(link, headerSuggestions);
     updatedInternalLinks.push(updatedLink);
   }
-
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions generation complete.`);
   return updatedInternalLinks;
 };
+
+export async function syncBrokenInternalLinksSuggestions({
+  opportunity,
+  brokenInternalLinks,
+  context,
+  opportunityId,
+}) {
+  const buildKey = (item) => `${item.urlFrom}-${item.urlTo}`;
+  await syncSuggestions({
+    opportunity,
+    newData: brokenInternalLinks,
+    context,
+    buildKey,
+    mapNewSuggestion: (entry) => ({
+      opportunityId,
+      type: 'CONTENT_UPDATE',
+      rank: entry.trafficDomain,
+      data: {
+        title: entry.title,
+        urlFrom: entry.urlFrom,
+        urlTo: entry.urlTo,
+        urlsSuggested: entry.urlsSuggested || [],
+        aiRationale: entry.aiRationale || '',
+        trafficDomain: entry.trafficDomain,
+      },
+    }),
+  });
+}

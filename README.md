@@ -68,7 +68,7 @@ Output message body format sent to `AUDIT_RESULTS_QUEUE` is:
 
 ### 1. Using `nodemon` and AWS Credentials
 
-Everyone working on Spacecat should have access to the development environments via [KLAM](https://klam.corp.adobe.com/).  
+Everyone working on Spacecat should have access to the development environments via [KLAM](https://klam.corp.adobe.com/). 
 If you don’t have access, please refer to the engineering onboarding guide or contact your Spacecat team representative.
 
 After logging into KLAM, you’ll receive the following credentials required to access AWS resources such as DynamoDB and S3 for local development:
@@ -500,6 +500,7 @@ Each step receives a context object containing:
 - `site`: The site being audited (with methods like `getBaseURL()`, `getId()`)
 - `audit`: The audit record (undefined for first step)
 - `finalUrl`: The resolved URL (only in first step)
+- `scrapeResultPaths`: Map(url -> path) for all successfully scraped URLs (only after scrape step (SCRAPE_CLIENT only))
 - Standard context properties (`log`, `dataAccess`, etc.)
 
 ### Destinations
@@ -533,6 +534,26 @@ IMPORT_WORKER: {
       fullAuditRef: string
     }
   }
+}
+
+SCRAPE_CLIENT: {
+    // Formats payload for scrape client
+    payload: {
+        urls: Array<{url: string}>,
+        processingType: string,
+        options: object,
+        maxScrapeAge: number,
+        auditData: {
+          siteId: string,
+          completionQueueUrl: string, 
+          auditContext: {
+            next: string,
+            auditId: string,
+            auditType: string,
+            fullAuditRef: string
+          }
+        }
+    }
 }
 ```
 
@@ -633,3 +654,4 @@ Here's how messages flow between workers in a step-based audit:
 ```
 
 Each message preserves the `auditContext` to maintain the step chain. The `next` field determines which step runs next, while `auditId` and `fullAuditRef` track the audit state across workers.
+

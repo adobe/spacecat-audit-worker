@@ -5,9 +5,9 @@ runs:
   using: "composite"
   steps:
     - name: Set up Node
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
-        node-version: 22.12
+        node-version: 22.19
 
     - name: Get npm cache directory
       id: npm-cache-dir

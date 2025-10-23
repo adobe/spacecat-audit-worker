@@ -14,13 +14,13 @@ import { main as universalMain } from './index.js';
 
 export const main = async () => {
   const messageBody = {
-    type: 'structured-data',
-    siteId: '40f377b0-2242-41d6-b215-e9ff8ace8b3d',
+    type: 'llm-blocked',
+    siteId: 'b1555a54-48b4-47ee-97c1-438257bd3839',
     auditContext: {
-      next: 'run-audit-and-generate-suggestions',
-      auditId: '75148f30-bd3f-41ae-bb16-7b458d19d1b0',
-      type: 'structured-data',
-      fullAuditRef: 'scrapes/40f377b0-2242-41d6-b215-e9ff8ace8b3d/',
+      next: 'check-llm-blocked',
+      auditId: 'a263123c-9f9a-44a8-9531-955884563472',
+      type: 'llm-blocked',
+      fullAuditRef: 'llm-blocked::cisco.com',
     },
   };
 

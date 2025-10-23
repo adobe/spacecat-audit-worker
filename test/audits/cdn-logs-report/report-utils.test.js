@@ -11,237 +11,444 @@
  */
 
 /* eslint-env mocha */
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
+import nock from 'nock';
 import esmock from 'esmock';
-import * as utils from '../../../src/cdn-logs-report/utils/report-utils.js';
-import { DEFAULT_COUNTRY_PATTERNS } from '../../../src/cdn-logs-report/constants/country-patterns.js';
+import * as reportUtils from '../../../src/cdn-logs-report/utils/report-utils.js';
+import { getConfigs } from '../../../src/cdn-logs-report/constants/report-configs.js';
 
-function extractCC(url) {
-  for (const { regex } of DEFAULT_COUNTRY_PATTERNS) {
-    const pattern = new RegExp(regex, 'i');
-    const match = url.match(pattern);
-    if (match && match[1]) {
-      return match[1].toLowerCase();
-    }
-  }
-  return null;
-}
+use(sinonChai);
+use(chaiAsPromised);
 
 describe('CDN Logs Report Utils', () => {
   let sandbox;
-
-  const mockSite = (baseURL, cdnLogsConfig = null) => ({
-    getBaseURL: () => baseURL,
-    getConfig: () => ({ getCdnLogsConfig: () => cdnLogsConfig }),
-  });
+  let mockContext;
+  const referralConfig = getConfigs('test-bucket', 'example_com')
+    .find((c) => c.name === 'referral');
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    nock.cleanAll();
+    mockContext = {
+      s3Client: {
+        send: sandbox.stub().resolves(),
+      },
+    };
   });
 
   afterEach(() => {
     sandbox.restore();
+    nock.cleanAll();
   });
 
-  describe('Domain and Bucket Operations', () => {
-    it('should extract and sanitize customer domains', () => {
-      expect(utils.extractCustomerDomain(mockSite('https://test.example-site.com')))
-        .to.equal('test_example_site_com');
-      expect(utils.extractCustomerDomain(mockSite('https://sub-domain.multi-word-site.example-test.co.uk')))
-        .to.equal('sub_domain_multi_word_site_example_test_co_uk');
+  const createSiteConfig = (overrides = {}) => {
+    const defaultConfig = {
+      getLlmoCdnBucketConfig: () => ({ bucketName: 'test-bucket' }),
+    };
+    return { ...defaultConfig, ...overrides };
+  };
+
+  describe('getS3Config', () => {
+    it('generates correct S3 config from site', async () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => createSiteConfig(),
+      };
+
+      const config = await reportUtils.getS3Config(mockSite, mockContext);
+
+      expect(config).to.have.property('customerName', 'example');
+      expect(config).to.have.property('customerDomain', 'example_com');
+      expect(config).to.have.property('bucket', 'test-bucket');
+      expect(config).to.have.property('databaseName', 'cdn_logs_example_com');
     });
 
-    it('should generate analysis bucket names', () => {
-      expect(utils.getAnalysisBucket('test.example.com')).to.equal('cdn-logs-test-example-com');
-      expect(utils.getAnalysisBucket('Test.Example.COM')).to.equal('cdn-logs-Test-Example-COM');
+    it('extracts customer name from domain parts correctly', async () => {
+      const mockSite = {
+        getBaseURL: () => 'https://sub.example.com',
+        getConfig: () => createSiteConfig(),
+      };
+
+      const config = await reportUtils.getS3Config(mockSite, mockContext);
+
+      expect(config).to.have.property('customerName', 'sub');
+      expect(config).to.have.property('customerDomain', 'sub_example_com');
+    });
+
+    it('getAthenaTempLocation method works correctly', async () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.example.com',
+        getConfig: () => createSiteConfig(),
+      };
+
+      const config = await reportUtils.getS3Config(mockSite, mockContext);
+      const tempLocation = config.getAthenaTempLocation();
+
+      expect(tempLocation).to.equal('s3://test-bucket/temp/athena-results/');
     });
   });
+  describe('generateReportingPeriods', () => {
+    it('generates week periods with offset', () => {
+      const refDate = new Date('2025-01-15');
 
-  describe('S3 Configuration', () => {
-    it('should handle custom bucket config', () => {
-      const config = utils.getS3Config(mockSite('https://test.com', { bucketName: 'custom-bucket' }));
-      expect(config.bucket).to.equal('custom-bucket');
-      expect(config.customerName).to.equal('test');
-      expect(config.customerDomain).to.equal('test_com');
+      const periods = reportUtils.generateReportingPeriods(refDate, -1);
+
+      expect(periods).to.have.property('weeks').that.is.an('array');
+      expect(periods.weeks[0].startDate.toISOString()).to.equal('2025-01-06T00:00:00.000Z');
+      expect(periods.weeks[0].endDate.toISOString()).to.equal('2025-01-12T23:59:59.999Z');
+      expect(periods.weeks[0].weekLabel).to.equal('Week 2');
+      expect(periods.weeks[0].weekNumber).to.equal(2);
+      expect(periods.weeks[0].year).to.equal(2025);
+      expect(periods.periodIdentifier).to.equal('w02-2025');
     });
 
-    it('should handle null config fallback', () => {
-      const config = utils.getS3Config(mockSite('https://empty.com', null));
-      expect(config.bucket).to.equal('cdn-logs-empty-com');
-      expect(config.customerName).to.equal('empty');
-      expect(config.customerDomain).to.equal('empty_com');
-    });
+    it('handles Sunday reference date correctly', () => {
+      const sundayDate = new Date('2025-01-12');
 
-    it('should handle empty object config', () => {
-      const config = utils.getS3Config(mockSite('https://empty.com', {}));
-      expect(config.bucket).to.be.undefined;
-      expect(config.customerName).to.equal('empty');
-      expect(config.customerDomain).to.equal('empty_com');
-    });
+      const periods = reportUtils.generateReportingPeriods(sundayDate, -1);
 
-    it('should generate correct temp location', () => {
-      const config = utils.getS3Config(mockSite('https://test.example.com'));
-      expect(config.getAthenaTempLocation()).to.equal('s3://cdn-logs-test-example-com/temp/athena-results/');
-    });
-  });
-
-  describe('Date and Time Operations', () => {
-    it('should format dates correctly', () => {
-      expect(utils.formatDateString(new Date('2024-01-15T10:30:00Z'))).to.equal('2024-01-15');
-      expect(utils.formatDateString(new Date('2024-02-29T00:00:00Z'))).to.equal('2024-02-29');
-    });
-
-    it('should generate valid week ranges', () => {
-      [new Date('2024-01-15T10:00:00Z'), new Date('2024-01-07T10:00:00Z')].forEach((date) => {
-        const { weekStart, weekEnd } = utils.getWeekRange(0, date);
-        expect(weekStart.getUTCDay()).to.equal(1); // Monday
-        expect(weekEnd.getUTCDay()).to.equal(0); // Sunday
-        expect(weekStart.getUTCHours()).to.equal(0);
-        expect(weekEnd.getUTCHours()).to.equal(23);
-      });
-    });
-
-    it('should create and validate date ranges', () => {
-      const { startDate, endDate } = utils.createDateRange('2025-01-01', '2025-01-07');
-      expect(startDate.getUTCHours()).to.equal(0);
-      expect(endDate.getUTCHours()).to.equal(23);
-
-      expect(() => utils.createDateRange('invalid', '2025-01-07')).to.throw('Invalid date format provided');
-      expect(() => utils.createDateRange('2025-01-07', '2025-01-01')).to.throw('Start date must be before end date');
-    });
-
-    it('should generate period identifiers', () => {
-      const weekStart = new Date('2025-01-08T00:00:00Z');
-      const weekEnd = new Date('2025-01-14T23:59:59Z');
-      expect(utils.generatePeriodIdentifier(weekStart, weekEnd)).to.match(/^w\d{2}-\d{4}$/);
-
-      const start = new Date('2025-01-01');
-      const end = new Date('2025-01-05');
-      expect(utils.generatePeriodIdentifier(start, end)).to.equal('2025-01-01_to_2025-01-05');
-    });
-
-    it('should generate reporting periods for various dates', () => {
-      [
-        new Date('2025-01-15T10:00:00Z'),
-        new Date('2025-01-01'),
-        new Date('2025-12-31'),
-        new Date('2024-02-29'), // Keep leap year test
-        new Date('2025-01-07T10:00:00Z'),
-      ].forEach((date) => {
-        const periods = utils.generateReportingPeriods(date);
-        expect(periods.weeks).to.be.an('array').with.lengthOf(1);
-        expect(periods.columns).to.be.an('array');
-        expect(periods.referenceDate).to.be.a('string');
-        expect(periods.weeks[0].weekNumber).to.be.a('number').greaterThan(0).lessThan(54);
-      });
+      expect(periods.weeks).to.have.length(1);
+      expect(periods.weeks[0].startDate.getUTCDay()).to.equal(1); // Monday
     });
   });
 
-  describe('Validation and Filtering', () => {
-    it('should validate basic country codes', () => {
-      expect(utils.validateCountryCode('US')).to.equal('US');
-      expect(utils.validateCountryCode('us')).to.equal('US');
-      expect(utils.validateCountryCode('FR')).to.equal('FR');
-      expect(utils.validateCountryCode('GLOBAL')).to.equal('GLOBAL');
-
-      ['', null, undefined, 'INVALID', '   '].forEach((input) => {
-        expect(utils.validateCountryCode(input)).to.equal('GLOBAL');
-      });
+  describe('validateCountryCode', () => {
+    it('validates valid country codes', () => {
+      expect(reportUtils.validateCountryCode('US')).to.equal('US');
+      expect(reportUtils.validateCountryCode('us')).to.equal('US');
     });
 
-    it('should validate country codes from URL paths', () => {
-      const testCases = [
-        { url: 'genuine/ooc-dm-twp-row-cx6-nc.html', expected: 'GLOBAL' },
-        { url: 'th_th/genuine/ooc-dm-ses-cx6-nc.html', expected: 'TH' },
-        { url: '/', expected: 'GLOBAL' },
-        { url: 'in/creativecloud.html', expected: 'IN' },
-        { url: 'kr/genuine/ooc-dm-ses-cx6-nc.html', expected: 'KR' },
-        { url: 'upload', expected: 'GLOBAL' },
-        { url: 'id_id/genuine/ooc-dm-ses-cx6-nc.html', expected: 'ID' },
-        { url: '/uk/', expected: 'UK' },
-        { url: '/se/', expected: 'SE' },
-        { url: '/nl/products/pure-whey-protein/bpb-wpc8-0000', expected: 'NL' },
-        { url: '/fr/search', expected: 'FR' },
-        { url: '/ie/products/creatine-monohydrate/bpb-cmon-0000', expected: 'IE' },
-        { url: '/sendfriend/', expected: 'GLOBAL' },
-        { url: '/en-us/', expected: 'US' },
-        { url: '/en-us/sportswear/women/new-arrivals', expected: 'US' },
-        { url: '/en-gb/', expected: 'GB' },
-      ];
-
-      testCases.forEach(({ url, expected }) => {
-        expect(utils.validateCountryCode(extractCC(url))).to.equal(expected);
-      });
+    it('returns GLOBAL for invalid codes', () => {
+      expect(reportUtils.validateCountryCode('ABC')).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode(null)).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('')).to.equal('GLOBAL');
     });
 
-    it('should build site filters', () => {
-      expect(utils.buildSiteFilters([])).to.equal('');
-      expect(utils.buildSiteFilters(null)).to.equal('');
-      expect(utils.buildSiteFilters([{ key: 'domain', value: ['example.com'] }]))
-        .to.equal("(REGEXP_LIKE(domain, '(?i)(example.com)'))");
-      expect(utils.buildSiteFilters([{ key: 'domain', value: ['example.com', 'test.com'], type: 'include' }]))
-        .to.equal("(REGEXP_LIKE(domain, '(?i)(example.com|test.com)'))");
-      expect(utils.buildSiteFilters([{ key: 'domain', value: ['example.com', 'test.com'], type: 'exclude' }]))
-        .to.equal("(NOT REGEXP_LIKE(domain, '(?i)(example.com|test.com)'))");
-      expect(utils.buildSiteFilters([
-        { key: 'domain', value: ['example.com'] },
-        { key: 'status', value: ['200'] },
-      ])).to.equal("(REGEXP_LIKE(domain, '(?i)(example.com)') AND REGEXP_LIKE(status, '(?i)(200)'))");
-      expect(utils.buildSiteFilters([
-        { key: 'domain', value: ['example.com', 'test.com'], type: 'exclude' },
-        { key: 'status', value: ['200'], type: 'include' },
-      ])).to.equal("(NOT REGEXP_LIKE(domain, '(?i)(example.com|test.com)') AND REGEXP_LIKE(status, '(?i)(200)'))");
+    it('handles GLOBAL country code correctly', () => {
+      expect(reportUtils.validateCountryCode('GLOBAL')).to.equal('GLOBAL');
+      expect(reportUtils.validateCountryCode('global')).to.equal('GLOBAL');
     });
   });
 
-  describe('Database Operations', () => {
-    it('should load SQL and ensure table exists successfully', async () => {
-      const reportUtils = await esmock('../../../src/cdn-logs-report/utils/report-utils.js', {
+  describe('buildSiteFilters', () => {
+    it('builds include filters correctly', () => {
+      const result = reportUtils.buildSiteFilters([
+        { key: 'url', value: ['test'], type: 'include' },
+      ]);
+      expect(result).to.include("REGEXP_LIKE(url, '(?i)(test)')");
+    });
+
+    it('builds exclude filters correctly', () => {
+      const result = reportUtils.buildSiteFilters([
+        { key: 'url', value: ['admin'], type: 'exclude' },
+      ]);
+      expect(result).to.include("NOT REGEXP_LIKE(url, '(?i)(admin)')");
+    });
+
+    it('combines multiple filters with AND', () => {
+      const result = reportUtils.buildSiteFilters([
+        { key: 'url', value: ['test'], type: 'include' },
+        { key: 'url', value: ['admin'], type: 'exclude' },
+      ]);
+      expect(result).to.include('AND');
+    });
+
+    it('falls back to baseURL when filters are empty', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://adobe.com',
+      };
+
+      const result = reportUtils.buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(adobe.com)')");
+    });
+
+    it('keeps www prefix when already present', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.adobe.com',
+      };
+
+      const result = reportUtils.buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(www.adobe.com)')");
+    });
+
+    it('keeps subdomain as-is without adding www', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://business.adobe.com',
+      };
+
+      const result = reportUtils.buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(business.adobe.com)')");
+    });
+  });
+
+  describe('loadSql', () => {
+    it('loads SQL templates with variables', async () => {
+      const sql = await reportUtils.loadSql('create-database', { database: 'test_db' });
+
+      expect(sql).to.be.a('string');
+    });
+
+    it('loads SQL without variables', async () => {
+      const sql = await reportUtils.loadSql('create-database', {});
+
+      expect(sql).to.be.a('string');
+    });
+  });
+
+  describe('ensureTableExists', () => {
+    it('creates table successfully', async () => {
+      const mockAthenaClient = {
+        execute: sandbox.stub().resolves(),
+      };
+      const mockS3Config = {
+        tableName: 'test_table',
+        databaseName: 'test_db',
+        aggregatedLocation: 's3://test-bucket/data/',
+      };
+      const mockLog = {
+        debug: sandbox.stub(),
+        error: sandbox.stub(),
+      };
+
+      await reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, referralConfig, mockLog);
+
+      expect(mockAthenaClient.execute).to.have.been.calledOnce;
+      expect(mockLog.debug).to.have.been.calledWith('Creating or checking table: aggregated_referral_logs_example_com');
+      expect(mockLog.debug).to.have.been.calledWith('Table aggregated_referral_logs_example_com is ready');
+    });
+
+    it('handles table creation errors', async () => {
+      const mockAthenaClient = {
+        execute: sandbox.stub().rejects(new Error('Table creation failed')),
+      };
+      const mockS3Config = {
+        tableName: 'test_table',
+        databaseName: 'test_db',
+        aggregatedLocation: 's3://test-bucket/data/',
+      };
+      const mockLog = {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+        debug: sandbox.stub(),
+      };
+
+      await expect(
+        reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, referralConfig, mockLog),
+      ).to.be.rejectedWith('Table creation failed');
+
+      expect(mockLog.error).to.have.been.calledWith(
+        'Failed to ensure table exists: Table creation failed',
+      );
+    });
+  });
+
+  describe('getConfigCategories', () => {
+    let mockLlmoConfig;
+    let mockedReportUtils;
+    const mockSite = { getSiteId: () => 'test-site-id' };
+    const mockContext = {
+      log: { info: sinon.stub(), warn: sinon.stub() },
+      s3Client: {},
+      env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
+    };
+
+    beforeEach(async () => {
+      mockLlmoConfig = { readConfig: sandbox.stub() };
+      mockedReportUtils = await esmock('../../../src/cdn-logs-report/utils/report-utils.js', {
         '@adobe/spacecat-shared-utils': {
-          getStaticContent: sandbox.stub().resolves('CREATE TABLE test_table...'),
+          getStaticContent: () => Promise.resolve('SELECT * FROM table'),
+          llmoConfig: mockLlmoConfig,
+        },
+      });
+      mockContext.log.warn.resetHistory();
+    });
+
+    it('fetches and extracts category names successfully', async () => {
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          categories: {
+            'cat-id-1': { name: 'General', region: ['us'] },
+            'cat-id-2': { name: 'Products', region: ['us', 'gb'] },
+          },
         },
       });
 
-      const result = await reportUtils.loadSql('test-query', { table: 'test_table' });
-      expect(result).to.equal('CREATE TABLE test_table...');
+      const result = await mockedReportUtils.getConfigCategories(mockSite, mockContext);
 
-      const mockAthenaClient = { execute: sandbox.stub().resolves() };
-      const mockS3Config = {
-        tableName: 'test_table',
-        databaseName: 'test_database',
-        aggregatedLocation: 's3://test-bucket/aggregated/',
-      };
-      const mockLog = { info: sandbox.stub(), error: sandbox.stub() };
-
-      await reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, mockLog);
-      expect(mockAthenaClient.execute.calledOnce).to.be.true;
-      expect(mockLog.info.calledWith('Creating or checking table: test_table')).to.be.true;
-      expect(mockLog.info.calledWith('Table test_table is ready')).to.be.true;
+      expect(result).to.deep.equal(['General', 'Products']);
     });
 
-    it('should handle database operation errors', async () => {
-      const errorReportUtils = await esmock('../../../src/cdn-logs-report/utils/report-utils.js', {
-        '@adobe/spacecat-shared-utils': {
-          getStaticContent: sandbox.stub().rejects(new Error('SQL load failed')),
-        },
-      });
+    it('returns empty array when categories are missing, null, or empty', async () => {
+      mockLlmoConfig.readConfig.resolves({ config: { categories: null } });
+      expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
 
-      const mockAthenaClient = { execute: sandbox.stub().resolves() };
-      const mockS3Config = {
-        tableName: 'test_table',
-        databaseName: 'test_database',
-        aggregatedLocation: 's3://test-bucket/aggregated/',
+      mockLlmoConfig.readConfig.resolves({ config: {} });
+      expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
+
+      mockLlmoConfig.readConfig.resolves({ config: { categories: {} } });
+      expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
+    });
+
+    it('returns empty array and logs warning on error', async () => {
+      mockLlmoConfig.readConfig.rejects(new Error('S3 fetch failed'));
+
+      const result = await mockedReportUtils.getConfigCategories(mockSite, mockContext);
+
+      expect(result).to.deep.equal([]);
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to fetch config categories:/),
+      );
+    });
+  });
+
+  describe('fetchRemotePatterns', () => {
+    it('fetches remote patterns successfully', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        }),
       };
-      const mockLog = { info: sandbox.stub(), error: sandbox.stub() };
 
-      try {
-        await errorReportUtils.ensureTableExists(mockAthenaClient, mockS3Config, mockLog);
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.equal('SQL load failed');
-        expect(mockLog.error.calledOnce).to.be.true;
-      }
+      const mockResponseData = {
+        pagetype: {
+          data: [
+            { name: 'Homepage', regex: '.*/[a-z]{2}/$' },
+            { name: 'Product Detail Page', regex: '.*/products/.*' },
+          ],
+        },
+        products: {
+          data: [
+            { regex: '/products/([^/]+)/' },
+          ],
+        },
+      };
+
+      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/agentic-traffic/patterns/patterns.json')
+        .reply(200, mockResponseData);
+
+      const result = await reportUtils.fetchRemotePatterns(mockSite);
+
+      expect(patternNock.isDone()).to.be.true;
+      expect(result).to.deep.equal({
+        pagePatterns: [
+          { name: 'Homepage', regex: '.*/[a-z]{2}/$' },
+          { name: 'Product Detail Page', regex: '.*/products/.*' },
+        ],
+        topicPatterns: [
+          { regex: '/products/([^/]+)/' },
+        ],
+      });
+    });
+
+    it('returns null when no data folder is configured', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => null,
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        }),
+      };
+
+      const result = await reportUtils.fetchRemotePatterns(mockSite);
+
+      expect(result).to.be.null;
+    });
+
+    it('returns null when getConfig returns null', async () => {
+      const mockSite = {
+        getConfig: () => null,
+      };
+
+      const result = await reportUtils.fetchRemotePatterns(mockSite);
+
+      expect(result).to.be.null;
+    });
+
+    it('returns null when fetch fails', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        }),
+      };
+
+      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/agentic-traffic/patterns/patterns.json')
+        .reply(404, 'Not Found');
+
+      const result = await reportUtils.fetchRemotePatterns(mockSite);
+
+      expect(result).to.be.null;
+      expect(patternNock.isDone()).to.be.true;
+    });
+
+    it('returns null when fetch throws an error', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        }),
+      };
+
+      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/agentic-traffic/patterns/patterns.json')
+        .replyWithError('Network error');
+
+      const result = await reportUtils.fetchRemotePatterns(mockSite);
+
+      expect(result).to.be.null;
+      expect(patternNock.isDone()).to.be.true;
+    });
+
+    it('returns null when JSON parsing fails', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        }),
+      };
+
+      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/agentic-traffic/patterns/patterns.json')
+        .reply(200, 'invalid json content');
+
+      const result = await reportUtils.fetchRemotePatterns(mockSite);
+
+      expect(result).to.be.null;
+      expect(patternNock.isDone()).to.be.true;
+    });
+
+    it('handles missing pagetype or products data gracefully', async () => {
+      const mockSite = {
+        getConfig: () => ({
+          getLlmoDataFolder: () => 'bulk',
+          getLlmoCdnBucketConfig: () => ({ orgId: 'test-org-id' }),
+        }),
+      };
+
+      const mockResponseData = {
+        pagetype: null,
+        products: null,
+      };
+
+      const patternNock = nock('https://main--project-elmo-ui-data--adobe.aem.live')
+        .get('/bulk/agentic-traffic/patterns/patterns.json')
+        .reply(200, mockResponseData);
+
+      const result = await reportUtils.fetchRemotePatterns(mockSite);
+
+      expect(result).to.deep.equal({
+        pagePatterns: [],
+        topicPatterns: [],
+      });
+      expect(patternNock.isDone()).to.be.true;
     });
   });
 });

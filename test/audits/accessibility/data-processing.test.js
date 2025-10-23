@@ -32,6 +32,8 @@ import {
   createReportOpportunitySuggestion,
   getEnvAsoDomain,
   aggregateAccessibilityData,
+  getAuditPrefixes,
+  sendRunImportMessage,
 } from '../../../src/accessibility/utils/data-processing.js';
 
 use(sinonChai);
@@ -50,6 +52,7 @@ describe('data-processing utility functions', () => {
       info: sandbox.stub(),
       error: sandbox.stub(),
       warn: sandbox.stub(),
+      debug: sandbox.stub(),
     };
   });
 
@@ -82,7 +85,7 @@ describe('data-processing utility functions', () => {
       expect(command).to.be.instanceOf(DeleteObjectCommand);
       expect(command.input.Bucket).to.equal('test-bucket');
       expect(command.input.Key).to.equal('file1.json');
-      expect(mockLog.info.calledWith('Deleted 1 original files after aggregation')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted 1 original files after aggregation')).to.be.true;
     });
 
     it('should use DeleteObjects for multiple files', async () => {
@@ -102,7 +105,7 @@ describe('data-processing utility functions', () => {
         { Key: 'file3.json' },
       ]);
       expect(command.input.Delete.Quiet).to.be.true;
-      expect(mockLog.info.calledWith('Deleted 3 original files after aggregation')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted 3 original files after aggregation')).to.be.true;
     });
 
     it('should handle errors gracefully and log them', async () => {
@@ -113,7 +116,7 @@ describe('data-processing utility functions', () => {
       const result = await deleteOriginalFiles(mockS3Client, 'test-bucket', objectKeys, mockLog);
 
       expect(result).to.equal(0);
-      expect(mockLog.error.calledWith('Error deleting original files', error)).to.be.true;
+      expect(mockLog.error.calledWith('[A11yProcessingError] Error deleting original files', error)).to.be.true;
     });
 
     it('should handle errors for multiple files', async () => {
@@ -124,7 +127,7 @@ describe('data-processing utility functions', () => {
       const result = await deleteOriginalFiles(mockS3Client, 'test-bucket', objectKeys, mockLog);
 
       expect(result).to.equal(0);
-      expect(mockLog.error.calledWith('Error deleting original files', error)).to.be.true;
+      expect(mockLog.error.calledWith('[A11yProcessingError] Error deleting original files', error)).to.be.true;
     });
   });
 
@@ -223,7 +226,7 @@ describe('data-processing utility functions', () => {
       expect(command.input.Prefix).to.equal('accessibility/site1/');
       expect(command.input.Delimiter).to.equal('/');
       expect(command.input.MaxKeys).to.equal(1000);
-      expect(mockLog.info.calledWith('Fetched 3 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
+      expect(mockLog.debug.calledWith('Fetched 3 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
     });
 
     it('should use custom maxKeys parameter', async () => {
@@ -262,7 +265,7 @@ describe('data-processing utility functions', () => {
         expect.fail('Should have thrown an error');
       } catch (thrownError) {
         expect(thrownError).to.equal(error);
-        expect(mockLog.error.calledWith('Error while fetching S3 object keys using bucket test-bucket and prefix accessibility/site1/ with delimiter /', error)).to.be.true;
+        expect(mockLog.error.calledWith('[A11yProcessingError] Error while fetching S3 object keys using bucket test-bucket and prefix accessibility/site1/ with delimiter /', error)).to.be.true;
       }
     });
 
@@ -281,7 +284,7 @@ describe('data-processing utility functions', () => {
       );
 
       expect(result).to.deep.equal([]);
-      expect(mockLog.info.calledWith('Fetched 0 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
+      expect(mockLog.debug.calledWith('Fetched 0 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
     });
   });
 
@@ -548,7 +551,7 @@ describe('data-processing utility functions', () => {
       expect(result.objectKeys).to.deep.equal([]);
       expect(result.message).to.include('No accessibility data found');
       // eslint-disable-next-line max-len
-      expect(mockLog.info.calledWith('No accessibility data found in bucket test-bucket at prefix accessibility/site123/ for site site123 with delimiter /')).to.be.true;
+      expect(mockLog.debug.calledWith('No accessibility data found in bucket test-bucket at prefix accessibility/site123/ for site site123 with delimiter /')).to.be.true;
     });
 
     it('should return success false when no current date subfolders found', async () => {
@@ -606,7 +609,7 @@ describe('data-processing utility functions', () => {
       expect(result.success).to.be.true;
       expect(result.objectKeys).to.deep.equal(['file1.json', 'file2.json']);
       expect(result.message).to.equal('Found 2 data files');
-      expect(mockLog.info.calledWith('Found 2 data files for site site123')).to.be.true;
+      expect(mockLog.debug.calledWith('Found 2 data files for site site123')).to.be.true;
     });
 
     it('should filter subfolders by exact date match', async () => {
@@ -732,9 +735,7 @@ describe('data-processing utility functions', () => {
         mockLog,
       );
 
-      expect(mockLog.info.calledWith('Fetching accessibility data for site site123 from bucket test-bucket')).to.be.true;
-      expect(mockLog.info.calledWith('Found 1 subfolders for site site123 in bucket test-bucket with delimiter / and value accessibility/site123/1705276800000/')).to.be.true;
-      expect(mockLog.info.calledWith('Found 1 data files for site site123')).to.be.true;
+      expect(mockLog.debug.calledWith('Found 1 data files for site site123')).to.be.true;
     });
 
     it('should handle complex subfolder filtering with multiple dates', async () => {
@@ -823,7 +824,7 @@ describe('data-processing utility functions', () => {
 
       // Should call delete twice: once for original files, once for oldest final result
       expect(mockS3Client.send.callCount).to.equal(2);
-      expect(mockLog.info.calledWith('Deleted 1 oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
 
     it('should only delete original files when 2 or fewer final result files exist', async () => {
@@ -853,7 +854,7 @@ describe('data-processing utility functions', () => {
 
       await cleanupS3Files(mockS3Client, 'test-bucket', objectKeys, lastWeekObjectKeys, mockLog);
 
-      expect(mockLog.info.calledWith('Deleted 1 oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
 
     it('should handle empty object keys array', async () => {
@@ -870,7 +871,7 @@ describe('data-processing utility functions', () => {
 
       // Should still delete oldest final result file even if no original files
       expect(mockS3Client.send.callCount).to.equal(1);
-      expect(mockLog.info.calledWith('Deleted 1 oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
 
     it('should handle single final result file', async () => {
@@ -901,7 +902,7 @@ describe('data-processing utility functions', () => {
       await cleanupS3Files(mockS3Client, 'test-bucket', objectKeys, lastWeekObjectKeys, mockLog);
 
       // Should delete the oldest file (2024-01-01)
-      expect(mockLog.info.calledWith('Deleted 1 oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
   });
 
@@ -974,7 +975,7 @@ describe('data-processing utility functions', () => {
         expect.fail('Should have thrown an error');
       } catch (thrownError) {
         expect(thrownError.message).to.equal('Database connection failed');
-        expect(mockLog.error.calledWith('Failed to create new opportunity for siteId test-site-123 and auditId audit-456: Database connection failed')).to.be.true;
+        expect(mockLog.error.calledWith('[A11yProcessingError] Failed to create new opportunity for siteId test-site-123 and auditId audit-456: Database connection failed')).to.be.true;
       }
     });
 
@@ -1092,7 +1093,7 @@ describe('data-processing utility functions', () => {
         const suggestion = await opportunity.addSuggestions(suggestions);
         return { suggestion };
       } catch (e) {
-        log.error(`Failed to create new suggestion for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
+        log.error(`[A11yProcessingError] Failed to create new suggestion for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
         throw new Error(e.message);
       }
     };
@@ -1140,7 +1141,7 @@ describe('data-processing utility functions', () => {
         expect.fail('Should have thrown an error');
       } catch (thrownError) {
         expect(thrownError.message).to.equal('Failed to add suggestions');
-        expect(mockLog.error.calledWith('Failed to create new suggestion for siteId test-site-123 and auditId audit-456: Failed to add suggestions')).to.be.true;
+        expect(mockLog.error.calledWith('[A11yProcessingError] Failed to create new suggestion for siteId test-site-123 and auditId audit-456: Failed to add suggestions')).to.be.true;
       }
     });
 
@@ -1226,7 +1227,7 @@ describe('data-processing utility functions', () => {
         );
         expect.fail('Should have thrown an error');
       } catch {
-        expect(mockLog.error.calledWith('Failed to create new suggestion for siteId different-site and auditId different-audit: Validation failed')).to.be.true;
+        expect(mockLog.error.calledWith('[A11yProcessingError] Failed to create new suggestion for siteId different-site and auditId different-audit: Validation failed')).to.be.true;
       }
     });
 
@@ -1282,7 +1283,7 @@ describe('data-processing utility functions', () => {
 
         // Test line 486: log.error with specific format
         expect(mockLog.error.calledWith(
-          'Failed to create new suggestion for siteId test-site-456 and auditId audit-789: Database connection failed',
+          '[A11yProcessingError] Failed to create new suggestion for siteId test-site-456 and auditId audit-789: Database connection failed',
         )).to.be.true;
       } finally {
         // Restore the original function
@@ -1299,13 +1300,14 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         '2024-01-01',
       );
 
       expect(result.success).to.be.false;
       expect(result.aggregatedData).to.be.null;
       expect(result.message).to.equal('Missing required parameters for aggregateAccessibilityData');
-      expect(mockLog.error.calledWith('Missing required parameters for aggregateAccessibilityData')).to.be.true;
+      expect(mockLog.error.calledWith('[A11yProcessingError] Missing required parameters for aggregateAccessibilityData')).to.be.true;
     });
 
     it('should return error when bucketName is missing', async () => {
@@ -1315,6 +1317,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         '2024-01-01',
       );
 
@@ -1330,6 +1333,23 @@ describe('data-processing utility functions', () => {
         null,
         mockLog,
         'output-key',
+        'accessibility',
+        '2024-01-01',
+      );
+
+      expect(result.success).to.be.false;
+      expect(result.aggregatedData).to.be.null;
+      expect(result.message).to.equal('Missing required parameters for aggregateAccessibilityData');
+    });
+
+    it('should return error when auditType is missing', async () => {
+      const result = await aggregateAccessibilityData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        null,
         '2024-01-01',
       );
 
@@ -1353,6 +1373,7 @@ describe('data-processing utility functions', () => {
           'test-site',
           mockLog,
           'output-key',
+          'accessibility',
           '2024-01-01',
           2,
         );
@@ -1377,6 +1398,7 @@ describe('data-processing utility functions', () => {
           'test-site',
           mockLog,
           'output-key',
+          'accessibility',
           '2024-01-01',
           2,
         );
@@ -1398,6 +1420,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         '2024-01-01',
         2,
       );
@@ -1434,14 +1457,15 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate, // version
         2,
       );
 
       expect(result.success).to.be.false;
       expect(result.aggregatedData).to.be.null;
-      expect(result.message).to.equal('No files could be processed successfully for site test-site');
-      expect(mockLog.error.calledWith('No files could be processed successfully for site test-site')).to.be.true;
+      expect(result.message).to.equal('[A11yAudit] No files could be processed successfully for site test-site');
+      expect(mockLog.error.calledWith('[A11yProcessingError] [A11yAudit] No files could be processed successfully for site test-site')).to.be.true;
     });
 
     it('should successfully aggregate data with single file', async () => {
@@ -1492,6 +1516,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate,
         2,
       );
@@ -1502,7 +1527,7 @@ describe('data-processing utility functions', () => {
       expect(result.finalResultFiles.current['https://example.com/page1'].violations.total).to.equal(5);
       expect(result.finalResultFiles.current['https://example.com/page1'].traffic).to.equal(100);
       expect(result.message).to.equal('Successfully aggregated 1 files into output-key');
-      expect(mockLog.info.calledWith('Saved aggregated accessibility data to output-key')).to.be.true;
+      expect(mockLog.debug.calledWith('[A11yAudit] Saved aggregated accessibility data to output-key')).to.be.true;
     });
 
     it('should handle multiple files and aggregate violations correctly', async () => {
@@ -1573,6 +1598,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate,
         2,
       );
@@ -1630,6 +1656,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate,
         2,
       );
@@ -1676,6 +1703,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate,
         2,
       );
@@ -1684,7 +1712,7 @@ describe('data-processing utility functions', () => {
       expect(result.aggregatedData).to.be.null;
       expect(result.message).to.equal('Error: S3 save failed');
       // The main catch block in aggregateAccessibilityData logs a generic error
-      expect(mockLog.error.calledWith('Error aggregating accessibility data for site test-site')).to.be.true;
+      expect(mockLog.error.calledWith('[A11yAudit][A11yProcessingError] Error aggregating accessibility data for site test-site')).to.be.true;
     });
 
     it('should handle lastWeekFile logging correctly', async () => {
@@ -1731,6 +1759,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate,
         2,
       );
@@ -1740,7 +1769,7 @@ describe('data-processing utility functions', () => {
       // const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey1}`;
       // The log message in the code actually uses lastWeekObjectKeys[1] for the key part.
       const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey2}`;
-      const logCall = mockLog.info.getCalls().find((call) => call.args[0].includes(expectedKeyInLog) && call.args[0].includes('with content:'));
+      const logCall = mockLog.debug.getCalls().find((call) => call.args[0].includes(expectedKeyInLog) && call.args[0].includes('with content:'));
       expect(logCall).to.not.be.undefined;
       // If more precise matching is needed, verify the full content:
       const logContentString = JSON.stringify(mockLastWeekContent, null, 2);
@@ -1785,6 +1814,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility',
         targetDate,
         2,
       );
@@ -1817,6 +1847,7 @@ describe('data-processing utility functions', () => {
         'test-site',
         mockLog,
         'output-key',
+        'accessibility', // auditType
         '2024-01-01', // version
         2, // maxRetries
       );
@@ -1826,6 +1857,244 @@ describe('data-processing utility functions', () => {
       expect(result.message).to.equal(expectedMessage);
       expect(mockS3Client.send
         .calledOnceWith(sinon.match.instanceOf(ListObjectsV2Command))).to.be.true;
+    });
+
+    it('should use correct log identifier and storage prefix for forms-opportunities audit type', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+      const mockFileData = {
+        url: 'https://example.com/contact',
+        violations: { total: 3 },
+        traffic: 50,
+        formSource: '#contact-form',
+        source: '#contact-form',
+      };
+
+      // S3 ListObjectsV2 mock - note the forms-accessibility prefix
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
+        });
+      // S3 PutObject mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+      // S3 DeleteObject mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            .onFirstCall().resolves(['file1.json'])
+            .onSecondCall()
+            .resolves([`forms-accessibility/test-site/${targetDate}-final-result.json`]),
+          getObjectFromKey: sandbox.stub()
+            .onFirstCall().resolves(mockFileData)
+            .onSecondCall()
+            .resolves(null),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'forms-opportunities', // forms audit type
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.true;
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/contact?source=#contact-form');
+      expect(result.finalResultFiles.current['https://example.com/contact?source=#contact-form'].violations.total).to.equal(3);
+      expect(result.message).to.equal('Successfully aggregated 1 files into output-key');
+
+      // Verify the correct log identifier is used
+      expect(mockLog.debug.calledWith('[FormsA11yAudit] Saved aggregated accessibility data to output-key')).to.be.true;
+    });
+
+    it('should handle forms-opportunities audit type with form source data', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+      const mockFileData = {
+        url: 'https://example.com/contact',
+        violations: { total: 2 },
+        traffic: 30,
+        formSource: '#contact-form', // CSS selector for form
+        source: '#contact-form',
+      };
+
+      // S3 ListObjectsV2 mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
+        });
+      // S3 PutObject mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+      // S3 DeleteObject mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            .onFirstCall().resolves(['file1.json'])
+            .onSecondCall()
+            .resolves([`forms-accessibility/test-site/${targetDate}-final-result.json`]),
+          getObjectFromKey: sandbox.stub()
+            .onFirstCall().resolves(mockFileData)
+            .onSecondCall()
+            .resolves(null),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'forms-opportunities',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.true;
+      // Should create composite key for form source data
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/contact?source=#contact-form');
+      expect(result.finalResultFiles.current['https://example.com/contact?source=#contact-form'].violations.total).to.equal(2);
+      expect(result.finalResultFiles.current['https://example.com/contact?source=#contact-form'].traffic).to.equal(30);
+    });
+
+    it('should handle forms-opportunities audit type with different CSS selector form sources', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+      const mockFileData = {
+        url: 'https://example.com/newsletter',
+        violations: { total: 1 },
+        traffic: 25,
+        formSource: '.newsletter-signup-form', // CSS class selector for form
+        source: '.newsletter-signup-form',
+      };
+
+      // S3 ListObjectsV2 mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
+        });
+      // S3 PutObject mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).resolves({});
+      // S3 DeleteObject mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(DeleteObjectCommand)).resolves({});
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            .onFirstCall().resolves(['file1.json'])
+            .onSecondCall()
+            .resolves([`forms-accessibility/test-site/${targetDate}-final-result.json`]),
+          getObjectFromKey: sandbox.stub()
+            .onFirstCall().resolves(mockFileData)
+            .onSecondCall()
+            .resolves(null),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'forms-opportunities',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.true;
+      // Should create composite key for form source data with CSS class selector
+      expect(result.finalResultFiles.current).to.have.property('https://example.com/newsletter?source=.newsletter-signup-form');
+      expect(result.finalResultFiles.current['https://example.com/newsletter?source=.newsletter-signup-form'].violations.total).to.equal(1);
+      expect(result.finalResultFiles.current['https://example.com/newsletter?source=.newsletter-signup-form'].traffic).to.equal(25);
+    });
+
+    it('should return error with correct log identifier for forms-opportunities when no files processed', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+
+      // S3 ListObjectsV2 mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
+        });
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub()
+            .onFirstCall().resolves(['file1.json', 'file2.json'])
+            .onSecondCall()
+            .resolves([`forms-accessibility/test-site/${targetDate}-final-result.json`]),
+          getObjectFromKey: sandbox.stub().resolves(null), // No data returned
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'forms-opportunities',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.false;
+      expect(result.aggregatedData).to.be.null;
+      expect(result.message).to.equal('[FormsA11yAudit] No files could be processed successfully for site test-site');
+      expect(mockLog.error.calledWith('[A11yProcessingError] [FormsA11yAudit] No files could be processed successfully for site test-site')).to.be.true;
+    });
+
+    it('should handle forms-opportunities audit type error with correct log identifier', async () => {
+      const targetDate = '2024-01-01';
+      const timestampToday = new Date(`${targetDate}T00:00:00Z`).getTime();
+
+      // S3 ListObjectsV2 mock
+      mockS3Client.send.withArgs(sinon.match.instanceOf(ListObjectsV2Command))
+        .resolves({
+          CommonPrefixes: [{ Prefix: `forms-accessibility/test-site/${timestampToday}/` }],
+        });
+      // S3 PutObject mock - THIS ONE FAILS
+      mockS3Client.send.withArgs(sinon.match.instanceOf(PutObjectCommand)).rejects(new Error('S3 save failed'));
+
+      const { aggregateAccessibilityData: aggregateData } = await esmock('../../../src/accessibility/utils/data-processing.js', {
+        '../../../src/utils/s3-utils.js': {
+          getObjectKeysUsingPrefix: sandbox.stub().resolves(['file1.json']),
+          getObjectFromKey: sandbox.stub().resolves({
+            url: 'https://example.com/contact',
+            violations: { total: 1 },
+            traffic: 20,
+            formSource: '#contact-form',
+            source: '#contact-form',
+          }),
+        },
+      });
+
+      const result = await aggregateData(
+        mockS3Client,
+        'test-bucket',
+        'test-site',
+        mockLog,
+        'output-key',
+        'forms-opportunities',
+        targetDate,
+        2,
+      );
+
+      expect(result.success).to.be.false;
+      expect(result.aggregatedData).to.be.null;
+      expect(result.message).to.equal('Error: S3 save failed');
+      // Verify the correct log identifier is used in error message
+      expect(mockLog.error.calledWith('[FormsA11yAudit][A11yProcessingError] Error aggregating accessibility data for site test-site')).to.be.true;
     });
   });
 
@@ -1949,7 +2218,7 @@ describe('data-processing utility functions', () => {
         expect(result.results[1]).to.deep.equal({ key: 'file2.json', data: mockData2 });
         expect(result.results[2]).to.deep.equal({ key: 'file3.json', data: mockData3 });
 
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 3 successful, 0 failed out of 3 total files',
         );
       });
@@ -1965,7 +2234,7 @@ describe('data-processing utility functions', () => {
 
         // Assert
         expect(result.results).to.have.length(0);
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 0 successful, 0 failed out of 0 total files',
         );
         expect(mockGetObjectFromKey).to.not.have.been.called;
@@ -1988,7 +2257,7 @@ describe('data-processing utility functions', () => {
         // Assert
         expect(result.results).to.have.length(1);
         expect(result.results[0]).to.deep.equal({ key: 'single-file.json', data: mockData });
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 1 successful, 0 failed out of 1 total files',
         );
       });
@@ -2026,7 +2295,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           'Retrying file retry-file.json (attempt 1/2): Temporary S3 error',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 1 successful, 0 failed out of 1 total files',
         );
       });
@@ -2058,12 +2327,12 @@ describe('data-processing utility functions', () => {
           'Retrying file failing-file.json (attempt 1/1): Persistent S3 error',
         );
         expect(mockLog.error).to.have.been.calledWith(
-          'Failed to process file failing-file.json after 1 retries: Persistent S3 error',
+          '[A11yProcessingError] Failed to process file failing-file.json after 1 retries: Persistent S3 error',
         );
         expect(mockLog.warn).to.have.been.calledWith(
           '1 out of 1 files failed to process, continuing with 0 successful files',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 0 successful, 1 failed out of 1 total files',
         );
       });
@@ -2108,12 +2377,12 @@ describe('data-processing utility functions', () => {
           'Retrying file retry-success-file.json (attempt 1/1): Temporary failure',
         );
         expect(mockLog.error).to.have.been.calledWith(
-          'Failed to process file fail-file.json after 1 retries: Permanent failure',
+          '[A11yProcessingError] Failed to process file fail-file.json after 1 retries: Permanent failure',
         );
         expect(mockLog.warn).to.have.been.calledWith(
           '1 out of 3 files failed to process, continuing with 2 successful files',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 2 successful, 1 failed out of 3 total files',
         );
       });
@@ -2137,7 +2406,7 @@ describe('data-processing utility functions', () => {
           'Retrying file default-retry-file.json (attempt 1/1): Error for default retry test',
         );
         expect(mockLog.error).to.have.been.calledWith(
-          'Failed to process file default-retry-file.json after 1 retries: Error for default retry test',
+          '[A11yProcessingError] Failed to process file default-retry-file.json after 1 retries: Error for default retry test',
         );
       });
     });
@@ -2170,7 +2439,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           '1 out of 2 files failed to process, continuing with 1 successful files',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 1 successful, 1 failed out of 2 total files',
         );
       });
@@ -2198,7 +2467,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           '2 out of 2 files failed to process, continuing with 0 successful files',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 0 successful, 2 failed out of 2 total files',
         );
       });
@@ -2233,7 +2502,7 @@ describe('data-processing utility functions', () => {
           sinon.match(/Retrying file/),
         );
         expect(mockLog.error).to.have.been.calledWith(
-          'Failed to process file no-retry-file.json after 0 retries: No retry error',
+          '[A11yProcessingError] Failed to process file no-retry-file.json after 0 retries: No retry error',
         );
       });
 
@@ -2666,8 +2935,8 @@ describe('data-processing utility functions', () => {
         // Assert
         expect(result).to.be.an('array');
         expect(result).to.have.length(0);
-        expect(mockLogForAudit.error.calledWith(
-          '[A11yAudit] No final result files found for no-files-site',
+        expect(mockLogForAudit.warn.calledWith(
+          '[A11yProcessingWarning] [A11yAudit] No final result files found for no-files-site',
         )).to.be.true;
       });
 
@@ -2700,7 +2969,7 @@ describe('data-processing utility functions', () => {
         expect(result).to.be.an('array');
         expect(result).to.have.length(0);
         expect(mockLogForAudit.error.calledWith(
-          '[A11yAudit] Error getting final result files for error-site: S3 access denied',
+          '[A11yAudit][A11yProcessingError] Error getting final result files for error-site: S3 access denied',
         )).to.be.true;
       });
 
@@ -2732,7 +3001,7 @@ describe('data-processing utility functions', () => {
         expect(result).to.be.an('array');
         expect(result).to.have.length(0);
         expect(mockLogForAudit.error.calledWith(
-          '[A11yAudit] No latest final result file found for null-file-site',
+          '[A11yProcessingError] [A11yAudit] No latest final result file found for null-file-site',
         )).to.be.true;
       });
 
@@ -2765,7 +3034,7 @@ describe('data-processing utility functions', () => {
         expect(result).to.be.an('array');
         expect(result).to.have.length(0);
         expect(mockLogForAudit.error.calledWith(
-          '[A11yAudit] Error getting latest final result file for get-object-error-site: Failed to get object from S3',
+          '[A11yAudit][A11yProcessingError] Error getting latest final result file for get-object-error-site: Failed to get object from S3',
         )).to.be.true;
       });
 
@@ -2803,7 +3072,7 @@ describe('data-processing utility functions', () => {
         expect(result).to.be.an('array');
         expect(result).to.have.length(0);
         expect(mockLogForAudit.error.calledWith(
-          '[A11yAudit] No URLs found for no-urls-site',
+          '[A11yProcessingError] [A11yAudit] No URLs found for no-urls-site',
         )).to.be.true;
       });
 
@@ -2833,7 +3102,7 @@ describe('data-processing utility functions', () => {
         expect(result).to.be.an('array');
         expect(result).to.have.length(0);
         expect(mockLogForAudit.error.calledWith(
-          '[A11yAudit] No URLs found for only-overall-site',
+          '[A11yProcessingError] [A11yAudit] No URLs found for only-overall-site',
         )).to.be.true;
       });
     });
@@ -2861,7 +3130,7 @@ describe('data-processing utility functions', () => {
         expect(result).to.be.an('array');
         expect(result).to.have.length(0);
         expect(mockLogForAudit.error.calledWith(
-          '[A11yAudit] No URLs found for empty-file-site',
+          '[A11yProcessingError] [A11yAudit] No URLs found for empty-file-site',
         )).to.be.true;
       });
 
@@ -3372,7 +3641,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.equal('Database connection failed');
           expect(mockLog.error.calledWith(
-            'Failed to create report opportunity for Error Test Report',
+            '[A11yProcessingError] Failed to create report opportunity for Error Test Report',
             'Database connection failed',
           )).to.be.true;
         }
@@ -3416,7 +3685,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.equal('Failed to add suggestions');
           expect(mockLog.error.calledWith(
-            'Failed to create report opportunity suggestion for Suggestion Error Report',
+            '[A11yProcessingError] Failed to create report opportunity suggestion for Suggestion Error Report',
             'Failed to add suggestions',
           )).to.be.true;
           expect(mockDataAccess.Opportunity.create.calledOnce).to.be.true;
@@ -3745,7 +4014,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.include('Database connection failed');
           expect(mockLog.error.calledWith(
-            'Failed to generate in-depth report opportunity',
+            '[A11yProcessingError] Failed to generate in-depth report opportunity',
             'Database connection failed',
           )).to.be.true;
         }
@@ -3774,7 +4043,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.include('Failed to create suggestions');
           expect(mockLog.error.calledWith(
-            'Failed to generate in-depth report opportunity',
+            '[A11yProcessingError] Failed to generate in-depth report opportunity',
             'Failed to create suggestions',
           )).to.be.true;
         }
@@ -3949,7 +4218,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.include('Enhanced report creation failed');
           expect(mockLog.error.calledWith(
-            'Failed to generate enhanced report opportunity',
+            '[A11yProcessingError] Failed to generate enhanced report opportunity',
             'Enhanced report creation failed',
           )).to.be.true;
         }
@@ -3990,7 +4259,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.include('Enhanced suggestions failed');
           expect(mockLog.error.calledWith(
-            'Failed to generate enhanced report opportunity',
+            '[A11yProcessingError] Failed to generate enhanced report opportunity',
             'Enhanced suggestions failed',
           )).to.be.true;
         }
@@ -4094,7 +4363,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.include('Enhanced report database error');
           expect(mockLog.error.calledWith(
-            'Failed to generate enhanced report opportunity',
+            '[A11yProcessingError] Failed to generate enhanced report opportunity',
             'Enhanced report database error',
           )).to.be.true;
         }
@@ -4211,7 +4480,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.include('Fixed vs new report creation failed');
           expect(mockLog.error.calledWith(
-            'Failed to generate fixed vs new report opportunity',
+            '[A11yProcessingError] Failed to generate fixed vs new report opportunity',
             'Fixed vs new report creation failed',
           )).to.be.true;
         }
@@ -4261,7 +4530,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.include('Fixed vs new suggestions failed');
           expect(mockLog.error.calledWith(
-            'Failed to generate fixed vs new report opportunity',
+            '[A11yProcessingError] Failed to generate fixed vs new report opportunity',
             'Fixed vs new suggestions failed',
           )).to.be.true;
         }
@@ -4416,7 +4685,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.include('Fixed vs new database error');
           expect(mockLog.error.calledWith(
-            'Failed to generate fixed vs new report opportunity',
+            '[A11yProcessingError] Failed to generate fixed vs new report opportunity',
             'Fixed vs new database error',
           )).to.be.true;
         }
@@ -4575,7 +4844,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.include('Base report creation failed');
           expect(mockLog.error.calledWith(
-            'Failed to generate base report opportunity',
+            '[A11yProcessingError] Failed to generate base report opportunity',
             'Base report creation failed',
           )).to.be.true;
         }
@@ -4616,7 +4885,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.include('Base report suggestions failed');
           expect(mockLog.error.calledWith(
-            'Failed to generate base report opportunity',
+            '[A11yProcessingError] Failed to generate base report opportunity',
             'Base report suggestions failed',
           )).to.be.true;
         }
@@ -4718,7 +4987,7 @@ describe('data-processing utility functions', () => {
         } catch (error) {
           expect(error.message).to.include('Base report database error');
           expect(mockLog.error.calledWith(
-            'Failed to generate base report opportunity',
+            '[A11yProcessingError] Failed to generate base report opportunity',
             'Base report database error',
           )).to.be.true;
         }
@@ -4752,6 +5021,92 @@ describe('data-processing utility functions', () => {
         expect(creationOrder[1]).to.equal('Enhanced Report');
         expect(creationOrder[2]).to.equal('Fixed vs New Report');
         expect(creationOrder[3]).to.equal('Base Report'); // Base report should be last
+      });
+    });
+  });
+
+  describe('getAuditPrefixes', () => {
+    it('should return correct prefixes for accessibility audit type', () => {
+      const result = getAuditPrefixes('accessibility');
+
+      expect(result).to.deep.equal({
+        logIdentifier: 'A11yAudit',
+        storagePrefix: 'accessibility',
+      });
+    });
+
+    it('should return correct prefixes for forms-opportunities audit type', () => {
+      const result = getAuditPrefixes('forms-opportunities');
+
+      expect(result).to.deep.equal({
+        logIdentifier: 'FormsA11yAudit',
+        storagePrefix: 'forms-accessibility',
+      });
+    });
+
+    it('should throw error for unsupported audit type', () => {
+      expect(() => {
+        getAuditPrefixes('unsupported-audit-type');
+      }).to.throw('Unsupported audit type: unsupported-audit-type');
+    });
+
+    it('should throw error for null audit type', () => {
+      expect(() => {
+        getAuditPrefixes(null);
+      }).to.throw('Unsupported audit type: null');
+    });
+
+    it('should throw error for undefined audit type', () => {
+      expect(() => {
+        getAuditPrefixes(undefined);
+      }).to.throw('Unsupported audit type: undefined');
+    });
+
+    it('should return different prefixes for different audit types', () => {
+      const accessibilityResult = getAuditPrefixes('accessibility');
+      const formsResult = getAuditPrefixes('forms-opportunities');
+
+      expect(accessibilityResult).to.not.deep.equal(formsResult);
+      expect(accessibilityResult.logIdentifier).to.not.equal(formsResult.logIdentifier);
+      expect(accessibilityResult.storagePrefix).to.not.equal(formsResult.storagePrefix);
+    });
+  });
+
+  describe('sendRunImportMessage', () => {
+    it('should create data object with a11y-metrics-aggregator import type', async () => {
+      // Mock SQS message sending to capture the message structure
+      const sqsMessageCapture = sinon.stub();
+
+      // Call sendRunImportMessage directly to test data structure
+      await sendRunImportMessage(
+        { sendMessage: sqsMessageCapture },
+        'test-queue',
+        'a11y-metrics-aggregator',
+        'site-123',
+        {
+          scraperBucketName: 'test-scraper-bucket',
+          importerBucketName: 'test-importer-bucket',
+          version: '2024-01-01',
+          urlSourceSeparator: '|',
+          totalChecks: 10,
+          options: {},
+        },
+      );
+
+      // Verify the message structure includes the data object
+      expect(sqsMessageCapture.calledOnce).to.be.true;
+      const sentMessage = sqsMessageCapture.firstCall.args[1];
+
+      expect(sentMessage).to.have.property('type', 'a11y-metrics-aggregator');
+      expect(sentMessage).to.have.property('siteId', 'site-123');
+      expect(sentMessage).to.have.property('data');
+      expect(sentMessage.data).to.deep.equal({
+        scraperBucketName: 'test-scraper-bucket',
+        importerBucketName: 'test-importer-bucket',
+        version: '2024-01-01',
+        urlSourceSeparator: '|',
+        totalChecks: 10,
+        options: {},
       });
     });
   });

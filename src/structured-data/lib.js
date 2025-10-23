@@ -15,6 +15,7 @@ import {
 import GoogleClient from '@adobe/spacecat-shared-google-client';
 import StructuredDataValidator from '@adobe/structured-data-validator';
 import { join } from 'path';
+import { readFile } from 'fs/promises';
 import { load as cheerioLoad } from 'cheerio';
 import jsBeautify from 'js-beautify';
 import { Site } from '@adobe/spacecat-shared-data-access';
@@ -57,7 +58,7 @@ export async function getIssuesFromGSC(finalUrl, context, pages) {
   try {
     google = await GoogleClient.createFrom(context, finalUrl);
   } catch (error) {
-    log.warn('SDA: Failed to create Google client. Site was probably not onboarded to GSC yet. Continue without data from GSC.', error);
+    log.warn(`SDA: Failed to create Google client for site with url ${finalUrl}. Site was probably not onboarded to GSC yet. Continue without data from GSC.`, error);
     return [];
   }
 
@@ -157,7 +158,7 @@ export function deduplicateIssues(context, gscIssues, scraperIssues) {
   return issues;
 }
 
-export function includeIssue(context, issue) {
+export function includeIssue(context, issue, flag) {
   const { log } = context;
   const isError = issue.severity === 'ERROR';
   const isImageObject = issue.rootType === 'ImageObject';
@@ -170,7 +171,11 @@ export function includeIssue(context, issue) {
   if (isImageObject && isAffectedCustomer) {
     const messageToSuppress = 'One of the following conditions needs to be met: Required attribute "creator" is missing or Required attribute "creditText" is missing or Required attribute "copyrightNotice" is missing or Required attribute "license" is missing';
     if (issue.issueMessage.includes(messageToSuppress)) {
-      log.warn('SDA: Suppressing issue', issue.issueMessage);
+      if (flag.logSuppressionMessage) {
+        // eslint-disable-next-line no-param-reassign
+        flag.logSuppressionMessage = false;
+        log.warn('SDA: Suppressing issue', issue.issueMessage);
+      }
       return false;
     }
   }
@@ -181,7 +186,7 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
   const { log, site } = context;
 
   const issues = [];
-
+  const imageObjectFlag = { logSuppressionMessage: true };
   await Promise.all(pages.map(async ({ url: page }) => {
     let scrapeResult;
     let { pathname } = new URL(page);
@@ -211,14 +216,15 @@ export async function getIssuesFromScraper(context, pages, scrapeCache) {
       'static',
       'schemaorg-current-https.jsonld',
     );
+    const schemaOrgJson = JSON.parse(await readFile(schemaOrgPath, 'utf8'));
 
-    const validator = new StructuredDataValidator(schemaOrgPath);
+    const validator = new StructuredDataValidator(schemaOrgJson);
     let validatorIssues = [];
     try {
       validatorIssues = (await validator.validate(waeResult))
         // For now, ignore issues with severity lower than ERROR
         //          and suppress unnecessary issues for AEM customers
-        .filter((issue) => includeIssue(context, issue));
+        .filter((issue) => includeIssue(context, issue, imageObjectFlag));
     } catch (e) {
       log.error(`SDA: Failed to validate structured data for ${page}.`, e);
     }
@@ -355,7 +361,7 @@ export function generateErrorMarkupForIssue(issue) {
           JSON.stringify(JSON.parse(issue.source), null, 4),
           '```',
         ].join('\n');
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // eslint-disable-next-line no-unused-vars
       } catch (error) {
         markup = [
           '```json',
@@ -376,7 +382,7 @@ export function generateErrorMarkupForIssue(issue) {
           cleanup,
           '```',
         ].join('\n');
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // eslint-disable-next-line no-unused-vars
       } catch (error) {
         markup = [
           '```html',

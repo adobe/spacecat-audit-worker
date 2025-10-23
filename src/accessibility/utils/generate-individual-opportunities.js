@@ -11,12 +11,35 @@
  */
 
 import { isNonEmptyArray, isString } from '@adobe/spacecat-shared-utils';
-import { createAccessibilityAssistiveOpportunity } from './report-oppty.js';
-import { syncSuggestions } from '../../utils/data-access.js';
-import { successCriteriaLinks, accessibilityOpportunitiesMap } from './constants.js';
+import { Opportunity as OpportunityDataAccess, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { createAccessibilityAssistiveOpportunity, createAccessibilityColorContrastOpportunity } from './report-oppty.js';
+import {
+  syncSuggestions,
+  keepSameDataFunction,
+} from '../../utils/data-access.js';
+import { successCriteriaLinks, accessibilityOpportunitiesMap, URL_SOURCE_SEPARATOR } from './constants.js';
 import { getAuditData } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
+import { saveMystiqueValidationMetricsToS3, saveOpptyWithRetry } from './scrape-utils.js';
+
+/**
+ * Extracts the 'source' query parameter from a URL and returns a clean URL
+ * without the source parameter
+ *
+ * @param {string} url - The original URL that may contain a source parameter
+ * @returns {Object} An object containing the clean URL and extracted source
+ * @returns {string} returns.url - The URL without the source parameter
+ * @returns {string|null} returns.source - The extracted source value, or null
+ */
+function extractSourceFromUrl(url) {
+  if (url.includes(URL_SOURCE_SEPARATOR)) {
+    const [pageUrl, source] = url.split(URL_SOURCE_SEPARATOR);
+    return { url: pageUrl, source };
+  }
+
+  return { url, source: null };
+}
 
 /**
  * Creates a Mystique message object
@@ -31,8 +54,7 @@ import { isAuditEnabledForSite } from '../../common/audit-utils.js';
  * @returns {Object} The message object ready for SQS
  */
 function createMystiqueMessage({
-  suggestion,
-  suggestionData,
+  url,
   issuesList,
   opportunity,
   siteId,
@@ -46,10 +68,9 @@ function createMystiqueMessage({
     deliveryType,
     time: new Date().toISOString(),
     data: {
-      url: suggestionData.url,
-      opportunity_id: opportunity.getId(),
-      suggestion_id: suggestion.getId ? suggestion.getId() : '',
-      issues_list: issuesList,
+      url,
+      opportunityId: opportunity.getId(),
+      issuesList,
     },
   };
 }
@@ -72,9 +93,7 @@ function createMystiqueMessage({
  * @returns {Promise<Object>} Result object with success status and details
  */
 async function sendMystiqueMessage({
-  suggestion,
-  suggestionData,
-  issueType,
+  url,
   issuesList,
   opportunity,
   siteId,
@@ -85,8 +104,7 @@ async function sendMystiqueMessage({
   log,
 }) {
   const message = createMystiqueMessage({
-    suggestion,
-    suggestionData,
+    url,
     issuesList,
     opportunity,
     siteId,
@@ -97,36 +115,22 @@ async function sendMystiqueMessage({
   try {
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
     log.info(
-      `[A11yIndividual] Sent message to Mystique for suggestion ${
-        suggestion.getId ? suggestion.getId() : ''
-      } and issue type ${issueType} with ${issuesList.length} issues`,
+      `[A11yIndividual] Sent message to Mystique for url ${url}: ${JSON.stringify(message, null, 2)}`,
     );
     return {
       success: true,
-      issueType,
-      suggestionId: suggestion.getId ? suggestion.getId() : '',
+      url,
     };
   } catch (error) {
     log.error(
-      `[A11yIndividual] Failed to send message to Mystique for suggestion ${
-        suggestion.getId ? suggestion.getId() : ''
-      } and issue type ${issueType}: ${error.message}`,
+      `[A11yIndividual][A11yProcessingError] Failed to send message to Mystique for url ${url}, message: ${JSON.stringify(message, null, 2)} with error: ${error.message}`,
     );
     return {
       success: false,
-      issueType,
-      suggestionId: suggestion.getId ? suggestion.getId() : '',
+      url,
       error: error.message,
     };
   }
-}
-
-/**
- * Generates a UUID for issue identification
- * @returns {string} A unique identifier
- */
-function generateUUID() {
-  return crypto.randomUUID();
 }
 
 /**
@@ -191,8 +195,10 @@ export function formatIssue(type, issueData, severity) {
 
   // Extract target selector from the target field
   let targetSelector = '';
-  if (isNonEmptyArray(issueData.target)) {
+  if (Array.isArray(issueData.target) && issueData.target.length > 0) {
     [targetSelector] = issueData.target;
+  } else if (typeof issueData.target === 'string') {
+    targetSelector = issueData.target;
   }
 
   // Use htmlWithIssues directly from issueData if available, otherwise create minimal structure
@@ -215,7 +221,6 @@ export function formatIssue(type, issueData, severity) {
       return {
         update_from: updateFrom,
         target_selector: targetSelector,
-        issue_id: (isString(item) ? generateUUID() : (item && item.issue_id)) || generateUUID(),
       };
     });
   } else {
@@ -223,8 +228,17 @@ export function formatIssue(type, issueData, severity) {
     htmlWithIssues = [{
       update_from: '',
       target_selector: targetSelector,
-      issue_id: generateUUID(),
     }];
+  }
+
+  // Extract understanding URL
+  let understandingUrl = '';
+  if (rawWcagRule && rawWcagRule.startsWith('wcag')) {
+    const numberPart = rawWcagRule.replace('wcag', '');
+    const ruleInfo = successCriteriaLinks[numberPart];
+    if (ruleInfo && ruleInfo.understandingUrl) {
+      understandingUrl = ruleInfo.understandingUrl;
+    }
   }
 
   return {
@@ -232,8 +246,9 @@ export function formatIssue(type, issueData, severity) {
     description: issueData.description || '',
     wcagRule,
     wcagLevel: issueData.level || '', // AA, AAA, etc.
+    understandingUrl,
     severity,
-    occurrences: issueData.count || 0,
+    occurrences: (issueData.htmlWithIssues && issueData.htmlWithIssues.length) || 0,
     htmlWithIssues,
     failureSummary: issueData.failureSummary || '',
   };
@@ -251,76 +266,74 @@ export function formatIssue(type, issueData, severity) {
  * @param {Object} accessibilityData[url] - Per-URL accessibility data
  * @returns {Object} Object with data array containing URLs and their issues
  */
-export function aggregateAccessibilityIssues(accessibilityData) {
+export function aggregateAccessibilityIssues(
+  accessibilityData,
+  opportunitiesMap = accessibilityOpportunitiesMap,
+) {
   if (!accessibilityData) {
     return { data: [] };
   }
 
-  // Create reverse mapping from issueType to opportunityType
-  // This eliminates the O(n³) complexity by converting the innermost loop to O(1) lookup
+  // Create reverse mapping (unchanged)
   const issueTypeToOpportunityMap = {};
-  for (const [opportunityType, issuesList] of Object.entries(accessibilityOpportunitiesMap)) {
+  for (const [opportunityType, issuesList] of Object.entries(opportunitiesMap)) {
     for (const issueType of issuesList) {
       issueTypeToOpportunityMap[issueType] = opportunityType;
     }
   }
 
-  // Initialize grouped data structure by opportunity type
+  // Initialize grouped data structure (unchanged)
   const groupedData = {};
-  for (const [opportunityType] of Object.entries(accessibilityOpportunitiesMap)) {
+  for (const [opportunityType] of Object.entries(opportunitiesMap)) {
     groupedData[opportunityType] = [];
   }
 
-  // Helper function to process issues for a given severity level
-  const processIssuesForSeverity = (items, severity, pageIssuesByType) => {
+  // NEW: Process individual HTML elements directly
+  const processIssuesForSeverity = (items, severity, url, data) => {
     for (const [issueType, issueData] of Object.entries(items)) {
-      // O(1) lookup instead of O(n) search through all opportunity types
       const opportunityType = issueTypeToOpportunityMap[issueType];
-      if (opportunityType) {
-        pageIssuesByType[opportunityType].issues.push(
-          formatIssue(issueType, issueData, severity),
-        );
+      if (opportunityType && issueData.htmlWithIssues) {
+        issueData.htmlWithIssues.forEach((htmlElement, index) => {
+          const singleElementIssueData = {
+            ...issueData,
+            htmlWithIssues: [htmlElement],
+            target: issueData.target ? issueData.target[index] : '',
+          };
+
+          // Extract source from URL and clean the URL
+          const { url: pageUrl, source } = extractSourceFromUrl(url);
+
+          const urlObject = {
+            type: 'url',
+            url: pageUrl,
+            ...(source && { source }),
+            issues: [formatIssue(issueType, singleElementIssueData, severity)],
+          };
+
+          data[opportunityType].push(urlObject);
+        });
       }
     }
   };
 
-  // Process each page (skip 'overall' summary which contains site-wide data)
+  // Simplified main processing loop
   for (const [url, pageData] of Object.entries(accessibilityData)) {
     if (url !== 'overall' && pageData.violations) {
-      // Initialize page issues for each opportunity type
-      const pageIssuesByType = {};
-      for (const [opportunityType] of Object.entries(accessibilityOpportunitiesMap)) {
-        pageIssuesByType[opportunityType] = {
-          type: 'url', // Indicates this is a URL-based suggestion
-          url,
-          issues: [], // Will contain accessibility issues for this opportunity type
-        };
-      }
-
       const { violations } = pageData;
 
-      // Process critical issues (only those in our tracked categories)
       if (violations.critical?.items) {
-        processIssuesForSeverity(violations.critical.items, 'critical', pageIssuesByType);
+        processIssuesForSeverity(violations.critical.items, 'critical', url, groupedData);
       }
 
-      // Process serious issues (only those in our tracked categories)
       if (violations.serious?.items) {
-        processIssuesForSeverity(violations.serious.items, 'serious', pageIssuesByType);
-      }
-
-      // Add URLs with issues directly to their respective opportunity type groups
-      for (const [opportunityType, urlData] of Object.entries(pageIssuesByType)) {
-        if (urlData.issues.length > 0) {
-          groupedData[opportunityType].push(urlData);
-        }
+        processIssuesForSeverity(violations.serious.items, 'serious', url, groupedData);
       }
     }
   }
 
-  // Convert grouped data to the desired format
+  // Convert to final format (unchanged)
   const formattedData = Object.entries(groupedData)
-    .filter(([, urls]) => urls.length > 0) // Only include types that have URLs with issues
+    .filter(([, urls]) => urls.length > 0)
     .map(([opportunityType, urls]) => ({
       [opportunityType]: urls,
     }));
@@ -361,7 +374,7 @@ export async function createIndividualOpportunity(opportunityInstance, auditData
     log.debug(`[A11yIndividual] Created opportunity with ID: ${opportunity.getId()}`);
     return { opportunity };
   } catch (e) {
-    log.error(`Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
+    log.error(`[A11yProcessingError] Failed to create new opportunity for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
     throw new Error(e.message);
   }
 }
@@ -385,10 +398,19 @@ export async function createIndividualOpportunitySuggestions(
   context,
   log,
 ) {
-  // Build unique key for each suggestion based on URL
-  const buildKey = (data) => data.url;
-
-  log.debug(`[A11yIndividual] Creating ${aggregatedData.data.length} suggestions for opportunity ${opportunity.getId()}`);
+  // Build unique key for each suggestion based on URL,
+  // issue type and target - single issue per data item
+  const buildKey = (data) => {
+    const issues = data.issues || [];
+    if (issues.length === 0) {
+      return data.url;
+    }
+    let key = `${data.url}|${issues[0].type}|${issues[0]?.htmlWithIssues[0]?.target_selector || ''}`;
+    if (data.source) {
+      key += `|${data.source}`;
+    }
+    return key;
+  };
 
   try {
     await syncSuggestions({
@@ -399,19 +421,46 @@ export async function createIndividualOpportunitySuggestions(
       // Map each URL's data to a suggestion format
       mapNewSuggestion: (urlData) => ({
         opportunityId: opportunity.getId(),
-        type: 'CODE_CHANGE', // Indicates this requires content updates
+        type: 'CODE_CHANGE', // Indicates this requires code updates
         // Rank by total occurrences across all issues for this URL
         rank: urlData.issues.reduce((total, issue) => total + issue.occurrences, 0),
         data: {
           url: urlData.url,
           type: urlData.type,
           issues: urlData.issues, // Array of formatted accessibility issues
-          isCreateTicketClicked: false,
+          ...(urlData.source && { source: urlData.source }),
+          jiraLink: '',
         },
       }),
-      log,
+      mergeDataFunction: keepSameDataFunction,
+      statusToSetForOutdated: SuggestionDataAccess.STATUSES.FIXED,
     });
 
+    return { success: true };
+  } catch (e) {
+    log.error(`[A11yProcessingError] Failed to create suggestions for opportunity ${opportunity.getId()}: ${e.message}`);
+    throw new Error(e.message);
+  }
+}
+
+/**
+ * Sends messages to Mystique for remediation
+ *
+ * This function handles the responsibility of sending sqs messages to Mystique for remediation.
+ * It processes the opportunity's suggestions,
+ * and sends them to the Mystique queue for AI-powered remediation guidance.
+ *
+ * @param {Object} opportunity - The opportunity object with suggestions
+ * @param {Object} context - Audit context containing sqs, env, site, and other utilities
+ * @param {Object} log - Logger instance
+ * @returns {Object} Success status object
+ */
+export async function sendMessageToMystiqueForRemediation(
+  opportunity,
+  context,
+  log,
+) {
+  try {
     // Check if mystique suggestions are enabled for this site
     const isMystiqueEnabled = await isAuditEnabledForSite('a11y-mystique-auto-suggest', context.site, context);
     if (!isMystiqueEnabled) {
@@ -457,18 +506,16 @@ export async function createIndividualOpportunitySuggestions(
 
     // Validate required context objects before proceeding
     if (!sqs || !env || !env.QUEUE_SPACECAT_TO_MYSTIQUE) {
-      log.error(`[A11yIndividual] Missing required context - sqs: ${!!sqs}, env: ${!!env}, queue: ${env?.QUEUE_SPACECAT_TO_MYSTIQUE || 'undefined'}`);
+      log.error(`[A11yIndividual][A11yProcessingError] Missing required context - sqs: ${!!sqs}, env: ${!!env}, queue: ${env?.QUEUE_SPACECAT_TO_MYSTIQUE || 'undefined'}`);
       return { success: false, error: 'Missing SQS context or queue configuration' };
     }
 
-    log.info(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+    log.debug(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
 
     const messagePromises = mystiqueData.map(({
-      suggestion, suggestionData, issueType, issuesList,
+      url, issuesList,
     }) => sendMystiqueMessage({
-      suggestion,
-      suggestionData,
-      issueType,
+      url,
       issuesList,
       opportunity: refreshedOpportunity,
       siteId,
@@ -478,7 +525,6 @@ export async function createIndividualOpportunitySuggestions(
       env,
       log,
     }));
-
     // Wait for all messages to be sent (successfully or with errors)
     const results = await Promise.allSettled(messagePromises);
 
@@ -487,57 +533,67 @@ export async function createIndividualOpportunitySuggestions(
     const failedMessages = results.filter((result) => result.status === 'fulfilled' && !result.value.success).length;
     const rejectedPromises = results.filter((result) => result.status === 'rejected').length;
 
-    log.info(
+    log.debug(
       `[A11yIndividual] Message sending completed: ${successfulMessages} successful, ${failedMessages} failed, ${rejectedPromises} rejected`,
     );
 
     return { success: true };
   } catch (e) {
-    log.error(`Failed to create suggestions for opportunity ${opportunity.getId()}: ${e.message}`);
+    log.error(`[A11yProcessingError] Failed to send messages to Mystique for opportunity ${opportunity.getId()}: ${e.message}`);
     throw new Error(e.message);
   }
 }
 
 /**
- * Deletes existing individual accessibility opportunities for a site
+ * Finds existing accessibility opportunity with NEW or IN_PROGRESS status, or creates a new one
  *
- * @param {Object} dataAccess - Data access object containing Opportunity model
  * @param {string} siteId - Site identifier
- * @param {string} opportunityType - Type of opportunity to delete
- * @param {Object} log - Logger instance
- * @returns {Promise<number>} Number of deleted opportunities
+ * @param {Object} auditData - Audit metadata including siteId and auditId
+ * @param {Object} opportunityInstance - The opportunity template
+ * @param {Object} context - Audit context with dataAccess and logging
+ * @returns {Promise<Object>} Object containing the opportunity and whether it's new
  */
-export async function deleteExistingAccessibilityOpportunities(
-  dataAccess,
-  siteId,
-  opportunityType,
-  log,
+export async function findOrCreateAccessibilityOpportunity(
+  opportunityInstance,
+  auditData,
+  context,
 ) {
+  const { log, dataAccess } = context;
   const { Opportunity } = dataAccess;
 
-  const allOpportunities = await Opportunity.allBySiteId(siteId);
+  // Find existing opportunities of this type
+  const allOpportunities = await Opportunity.allBySiteId(auditData.siteId);
   const existingOpportunities = allOpportunities.filter(
-    (opportunity) => opportunity.getType() === opportunityType,
+    (opportunity) => opportunity.getType() === opportunityInstance.type,
   );
 
-  if (existingOpportunities.length > 0) {
-    const count = existingOpportunities.length;
-    log.info(`[A11yIndividual] Found ${count} existing opportunities of type ${opportunityType} - deleting`);
-    try {
-      await Promise.all(existingOpportunities.map(async (opportunity) => {
-        await opportunity.remove();
-        log.debug(`[A11yIndividual] Deleted opportunity ID: ${opportunity.getId()}`);
-      }));
-      log.info(`[A11yIndividual] Successfully deleted all existing opportunities of type ${opportunityType}`);
-      return existingOpportunities.length;
-    } catch (error) {
-      log.error(`[A11yIndividual] Error deleting existing opportunities of type ${opportunityType}: ${error.message}`);
-      throw new Error(`Failed to delete existing opportunities: ${error.message}`);
-    }
-  } else {
-    log.info(`[A11yIndividual] No existing opportunities of type ${opportunityType} found - proceeding with creation`);
-    return 0;
+  // Find opportunity with NEW or IN_PROGRESS status
+  const activeOpportunity = existingOpportunities.find(
+    (opportunity) => opportunity.getStatus() === OpportunityDataAccess.STATUSES.NEW
+      || opportunity.getStatus() === OpportunityDataAccess.STATUSES.IN_PROGRESS,
+  );
+
+  if (activeOpportunity) {
+    log.debug(`[A11yIndividual] Found existing ${opportunityInstance.type} opportunity with status ${activeOpportunity.getStatus()} - updating`);
+
+    // Update existing opportunity with new audit data
+    activeOpportunity.setAuditId(auditData.auditId);
+    activeOpportunity.setUpdatedBy('system');
+    await activeOpportunity.save();
+
+    return { opportunity: activeOpportunity, isNew: false };
   }
+
+  // Create new opportunity if none exists or all are IGNORED/RESOLVED
+  log.debug(`[A11yIndividual] No active ${opportunityInstance.type} opportunity found - creating new one`);
+
+  const opportunityRes = await createIndividualOpportunity(
+    opportunityInstance,
+    auditData,
+    context,
+  );
+
+  return { opportunity: opportunityRes.opportunity, isNew: true };
 }
 
 /**
@@ -579,17 +635,16 @@ export function calculateAccessibilityMetrics(aggregatedData) {
  */
 export async function createAccessibilityIndividualOpportunities(accessibilityData, context) {
   const {
-    site, log, dataAccess,
+    site, log,
   } = context;
-
-  log.info(`[A11yIndividual] Creating accessibility opportunities for ${site.getBaseURL()}`);
 
   // Step 1: Aggregate accessibility issues by URL
   const aggregatedData = aggregateAccessibilityIssues(accessibilityData);
+  log.debug(`[A11yIndividual] Aggregated data: ${JSON.stringify(aggregatedData, null, 2)}`);
 
   // Early return if no actionable issues found
   if (!aggregatedData || !aggregatedData.data || aggregatedData.data.length === 0) {
-    log.info(`[A11yIndividual] No individual accessibility opportunities found for ${site.getBaseURL()}`);
+    log.debug(`[A11yIndividual] No individual accessibility opportunities found for ${site.getBaseURL()}`);
     return {
       status: 'NO_OPPORTUNITIES',
       message: 'No accessibility issues found in tracked categories',
@@ -605,6 +660,7 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
     // Map opportunity types to their creation functions
     const opportunityCreators = {
       'a11y-assistive': createAccessibilityAssistiveOpportunity,
+      'a11y-color-contrast': createAccessibilityColorContrastOpportunity,
       // Add more opportunity types here as they are created
     };
 
@@ -615,59 +671,52 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
           // Each item is an object with one key (the opportunity type) and an array of URLs
           const [opportunityType, typeData] = Object.entries(opportunityTypeData)[0];
 
-          log.debug(`[A11yIndividual] Creating opportunity for type: ${opportunityType}`);
+          log.debug(`[A11yIndividual] Processing opportunity for type: ${opportunityType}`);
 
           // Get the appropriate opportunity creator function
           const creatorFunc = opportunityCreators[opportunityType];
           if (!creatorFunc) {
             const availableCreators = Object.keys(opportunityCreators).join(', ');
             log.error(
-              `[A11yIndividual] No opportunity creator found for type: ${opportunityType}. Available creators: ${availableCreators}`,
+              `[A11yIndividual][A11yProcessingError] No opportunity creator found for type: ${opportunityType}. Available creators: ${availableCreators}`,
             );
             throw new Error(`No opportunity creator found for type: ${opportunityType}`);
           }
 
           const opportunityInstance = creatorFunc();
 
-          // Step 2a: Delete existing opportunities for this specific type
-          await deleteExistingAccessibilityOpportunities(
-            dataAccess,
-            auditData.siteId,
-            opportunityInstance.type,
-            log,
-          );
-
-          // Step 2b: Create the new accessibility opportunity for this type
+          // Step 2a: Find existing opportunity or create new one
           let opportunityRes;
           try {
-            opportunityRes = await createIndividualOpportunity(
+            opportunityRes = await findOrCreateAccessibilityOpportunity(
               opportunityInstance,
               auditData,
               context,
             );
           } catch (error) {
             log.error(
-              `Failed to create individual accessibility opportunity for ${opportunityType}: ${error.message}`,
+              `[A11yProcessingError] Failed to find or create individual accessibility opportunity for ${opportunityType}: ${error.message}`,
             );
             throw new Error(error.message);
           }
 
-          const { opportunity } = opportunityRes;
+          const { opportunity, isNew } = opportunityRes;
 
-          // Step 3: Create the suggestions for this opportunity type only
+          // Step 3: Update suggestions for this opportunity type using enhanced sync
           const typeSpecificData = { data: typeData };
-          try {
-            await createIndividualOpportunitySuggestions(
-              opportunity,
-              typeSpecificData,
-              context,
-              log,
-            );
-          } catch (error) {
-            const errorMsg = `Failed to create individual accessibility opportunity suggestions for ${opportunityType}: ${error.message}`;
-            log.error(errorMsg);
-            throw new Error(error.message);
-          }
+          await createIndividualOpportunitySuggestions(
+            opportunity,
+            typeSpecificData,
+            context,
+            log,
+          );
+
+          // Step 4: Send messages to Mystique for remediation
+          await sendMessageToMystiqueForRemediation(
+            opportunity,
+            context,
+            log,
+          );
 
           // Calculate metrics for this opportunity type
           const typeMetrics = calculateAccessibilityMetrics(typeSpecificData);
@@ -676,24 +725,26 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
           const uniqueUrlsForType = new Set(typeData.map((urlData) => urlData.url));
           const pagesWithIssuesForType = uniqueUrlsForType.size;
 
-          const logMsg = `[A11yIndividual] Created opportunity for ${opportunityType} with ${typeMetrics.totalSuggestions} suggestions (${typeMetrics.totalIssues} issues) across ${pagesWithIssuesForType} pages`;
+          const action = isNew ? 'Created' : 'Updated';
+          const logMsg = `[A11yIndividual] ${action} opportunity for ${opportunityType} 
+          with ${typeMetrics.totalSuggestions} suggestions (${typeMetrics.totalIssues} issues) across ${pagesWithIssuesForType} pages`;
           log.info(logMsg);
 
           // Return the individual opportunity result with its own status
           return {
-            status: 'OPPORTUNITY_CREATED',
+            status: isNew ? 'OPPORTUNITY_CREATED' : 'OPPORTUNITY_UPDATED',
             opportunityType,
             opportunityId: opportunity.getId(),
             suggestionsCount: typeMetrics.totalSuggestions,
             totalIssues: typeMetrics.totalIssues,
             pagesWithIssues: pagesWithIssuesForType,
-            summary: `Created ${opportunityType} opportunity with ${typeMetrics.totalSuggestions} suggestions across ${pagesWithIssuesForType} pages`,
+            summary: `${action} ${opportunityType} opportunity with ${typeMetrics.totalSuggestions} suggestions across ${pagesWithIssuesForType} pages`,
           };
         },
       ),
     );
 
-    log.info(`[A11yIndividual] Successfully created ${opportunityResults.length} individual accessibility opportunities`);
+    log.debug(`[A11yIndividual] Successfully processed ${opportunityResults.length} individual accessibility opportunities`);
 
     return {
       opportunities: opportunityResults, // Return individual opportunity details
@@ -701,7 +752,7 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
       ...aggregatedData,
     };
   } catch (error) {
-    log.error(`[A11yIndividual] Error creating accessibility opportunities: ${error.message}`, error);
+    log.error(`[A11yIndividual][A11yProcessingError] Error processing accessibility opportunities: ${error.message}`, error);
     return {
       status: 'OPPORTUNITIES_FAILED',
       error: error.message,
@@ -755,100 +806,180 @@ export async function handleAccessibilityRemediationGuidance(message, context) {
   const { log, dataAccess } = context;
   const { auditId, siteId, data } = message;
   const {
-    opportunityId, suggestionId, pageUrl, remediations, totalIssues,
+    opportunityId, pageUrl, remediations, totalIssues,
   } = data;
 
-  log.info(`[A11yRemediationGuidance] Received accessibility remediation guidance for opportunity ${opportunityId}, suggestion ${suggestionId}`);
-  log.debug(`[A11yRemediationGuidance] Processing ${totalIssues} issues for page: ${pageUrl}`);
+  log.debug(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Received accessibility remediation guidance with ${remediations.length} remediations and ${totalIssues} total issues`);
 
   try {
     const { Opportunity } = dataAccess;
     const opportunity = await Opportunity.findById(opportunityId);
 
     if (!opportunity) {
-      log.error(`[A11yRemediationGuidance] Opportunity not found for ID: ${opportunityId}`);
+      log.error(`[A11yRemediationGuidance][A11yProcessingError] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Opportunity not found`);
       return { success: false, error: 'Opportunity not found' };
     }
 
     // Verify the opportunity belongs to the correct site
     if (opportunity.getSiteId() !== siteId) {
-      const errorMsg = `[A11yRemediationGuidance] Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`;
-      log.error(errorMsg);
+      log.error(`[A11yRemediationGuidance][A11yProcessingError] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Site ID mismatch. Expected: ${siteId}, Found: ${opportunity.getSiteId()}`);
       return { success: false, error: 'Site ID mismatch' };
     }
 
-    // Get the current suggestions
-    const suggestions = await opportunity.getSuggestions();
-    const targetSuggestion = suggestions.find((suggestion) => suggestion.getId() === suggestionId);
+    // This ensures we get the original count before any suggestions are filtered out
+    const allSuggestionsForCount = await opportunity.getSuggestions();
+    const sentPayloads = processSuggestionsForMystique(allSuggestionsForCount);
+    const allSentSuggestionIds = sentPayloads
+      .flatMap((payload) => payload.issuesList)
+      .map((issue) => issue.suggestionId);
+    const sentCount = allSentSuggestionIds.length;
 
-    if (!targetSuggestion) {
-      log.error(`[A11yRemediationGuidance] Suggestion not found for ID: ${suggestionId}`);
-      return { success: false, error: 'Suggestion not found' };
+    if (!remediations || remediations.length === 0) {
+      log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: No remediations provided`);
+      return {
+        success: true,
+        totalIssues: 0,
+        pageUrl,
+        notFoundSuggestionIds: [],
+        invalidRemediations: [],
+        failedSuggestionIds: [],
+      };
     }
 
-    // Process the remediations and match them to specific issues and HTML elements
-    const suggestionData = targetSuggestion.getData();
-    const updatedIssues = suggestionData.issues.map((issue) => {
-      if (isNonEmptyArray(issue.htmlWithIssues)) {
-        // Enhanced htmlWithIssues structure - match remediations directly by issue_id
-        const enhancedHtmlWithIssues = issue.htmlWithIssues.map((htmlIssueObj) => {
-          // Find the specific remediation that matches this HTML element by issue_id
-          const specificRemediation = remediations.find(
-            (remediation) => remediation.issue_id === htmlIssueObj.issue_id,
-          );
+    const suggestions = await opportunity.getSuggestions();
 
-          if (specificRemediation) {
-            // Return enhanced structure with specific remediation guidance
-            return {
+    const notFoundSuggestionIds = [];
+    const invalidRemediations = [];
+
+    // Separate valid and invalid remediations
+    const validRemediations = [];
+    for (const remediation of remediations) {
+      const { suggestionId } = remediation;
+      if (!suggestionId) {
+        invalidRemediations.push(remediation);
+      } else {
+        validRemediations.push(remediation);
+      }
+    }
+    // Process only valid remediations
+    const processingPromises = [];
+
+    for (const remediation of validRemediations) {
+      const { suggestionId } = remediation;
+
+      const targetSuggestion = suggestions.find(
+        (suggestion) => suggestion.getId() === suggestionId,
+      );
+
+      if (targetSuggestion) {
+        // Process this specific remediation for this specific suggestion
+        const suggestionData = targetSuggestion.getData();
+        const updatedIssues = suggestionData.issues.map((issue) => {
+          if (isNonEmptyArray(issue.htmlWithIssues)) {
+            const enhancedHtmlWithIssues = issue.htmlWithIssues.map((htmlIssueObj) => ({
               ...htmlIssueObj,
               guidance: {
-                general_suggestion: specificRemediation.general_suggestion,
-                update_to: specificRemediation.update_to,
-                user_impact: specificRemediation.user_impact,
+                generalSuggestion: remediation.generalSuggestion || remediation.general_suggestion,
+                updateTo: remediation.updateTo || remediation.update_to,
+                userImpact: remediation.userImpact || remediation.user_impact,
               },
+            }));
+
+            return {
+              ...issue,
+              htmlWithIssues: enhancedHtmlWithIssues,
             };
           }
-
-          // Return unchanged if no specific remediation found
-          return htmlIssueObj;
+          return issue;
         });
 
-        // Return enhanced issue with improved htmlWithIssues structure
-        return {
-          ...issue,
-          htmlWithIssues: enhancedHtmlWithIssues,
+        // Update the suggestion with enhanced issues containing remediation details
+        const updatedSuggestionData = {
+          ...suggestionData,
+          issues: updatedIssues,
         };
+
+        // Update the suggestion
+        targetSuggestion.setData(updatedSuggestionData);
+        processingPromises.push({
+          promise: targetSuggestion.save(),
+          suggestionId,
+        });
+      } else {
+        notFoundSuggestionIds.push(suggestionId);
       }
+    }
 
-      // Return issue unchanged if no matching remediation found
-      return issue;
+    // Wait for all suggestion updates to complete using allSettled
+    const saveResults = await Promise.allSettled(processingPromises.map((item) => item.promise));
+
+    // Process the results to track successful and failed saves
+    const failedSuggestionIds = [];
+    let successfulSaves = 0;
+
+    saveResults.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        failedSuggestionIds.push(processingPromises[index].suggestionId);
+        log.error(`[A11yRemediationGuidance][A11yProcessingError] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Failed to save suggestion ${processingPromises[index].suggestionId}: ${result.reason}`);
+      } else {
+        successfulSaves += 1;
+      }
     });
-
-    // Update the suggestion with enhanced issues containing remediation details
-    const updatedSuggestionData = {
-      ...suggestionData,
-      issues: updatedIssues,
-    };
-
-    // Update the suggestion
-    targetSuggestion.setData(updatedSuggestionData);
-    await targetSuggestion.save();
 
     // Update the opportunity with new audit ID
     opportunity.setAuditId(auditId);
     opportunity.setUpdatedBy('system');
-    await opportunity.save();
+    // await opportunity.save();
+    await saveOpptyWithRetry(opportunity, auditId, Opportunity, log);
 
-    const logMsg = `Successfully updated suggestion ${suggestionId} with remediations`;
-    log.info(`[A11yRemediationGuidance] ${logMsg} for opportunity ${opportunityId}`);
+    if (invalidRemediations.length > 0) {
+      log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: ${invalidRemediations.length} remediations missing suggestionId`);
+    }
+    if (notFoundSuggestionIds.length > 0) {
+      log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: ${notFoundSuggestionIds.length} suggestions not found: ${notFoundSuggestionIds.join(', ')}`);
+    }
+    if (failedSuggestionIds.length > 0) {
+      log.warn(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: ${failedSuggestionIds.length} suggestions failed to save: ${failedSuggestionIds.join(', ')}`);
+    }
+
+    log.debug(`[A11yRemediationGuidance] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Successfully processed ${successfulSaves} remediations`);
+
+    // Save complete Mystique validation metrics to S3 (sent + received)
+    try {
+      // Extract suggestion IDs from valid remediations
+      const receivedSuggestionIds = validRemediations
+        .map((remediation) => remediation.suggestionId);
+
+      // Use the pre-calculated sent count (calculated before adding any guidance)
+      const receivedCount = receivedSuggestionIds.length;
+
+      await saveMystiqueValidationMetricsToS3(
+        {
+          pageUrl,
+          sentCount,
+          receivedCount,
+        },
+        context,
+        opportunityId,
+        opportunity.getType(),
+        siteId,
+        auditId,
+      );
+      log.debug(`[A11yRemediationGuidance] Saved complete Mystique validation metrics for opportunity ${opportunityId}, page ${pageUrl}: sent=${sentCount}, received=${receivedCount}`);
+    } catch (error) {
+      log.error(`[A11yRemediationGuidance][A11yProcessingError] Failed to save Mystique validation metrics for opportunity ${opportunityId}, page ${pageUrl}: ${error.message}`);
+    }
 
     return {
       success: true,
       totalIssues,
       pageUrl,
+      notFoundSuggestionIds,
+      invalidRemediations,
+      failedSuggestionIds,
     };
   } catch (error) {
-    log.error(`[A11yRemediationGuidance] Failed to process accessibility remediation guidance: ${error.message}`);
+    log.error(`[A11yRemediationGuidance][A11yProcessingError] site ${siteId}, audit ${auditId}, page ${pageUrl}, opportunity ${opportunityId}: Failed to process accessibility remediation guidance: ${error.message}`);
     return { success: false, error: error.message };
   }
 }

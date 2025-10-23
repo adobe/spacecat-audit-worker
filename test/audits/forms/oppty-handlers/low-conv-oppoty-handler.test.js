@@ -16,7 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import testData from '../../../fixtures/forms/high-form-views-low-conversions.js';
 import createLowConversionOpportunities from '../../../../src/forms-opportunities/oppty-handlers/low-conversion-handler.js';
-import { FORM_OPPORTUNITY_TYPES } from '../../../../src/forms-opportunities/constants.js';
+import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../../../../src/forms-opportunities/constants.js';
 import formScrapeData from '../../../fixtures/forms/formscrapedata.js';
 
 use(sinonChai);
@@ -32,6 +32,7 @@ describe('createLowConversionOpportunities handler method', () => {
     sinon.restore();
     auditUrl = 'https://example.com';
     formsOppty = {
+      getOrigin: sinon.stub().returns('AUTOMATION'),
       getId: () => 'opportunity-id',
       setAuditId: sinon.stub(),
       save: sinon.stub(),
@@ -68,6 +69,7 @@ describe('createLowConversionOpportunities handler method', () => {
         QUEUE_SPACECAT_TO_MYSTIQUE: 'spacecat-to-mystique',
       },
       site: {
+        getBaseURL: sinon.stub().returns('test-base-url'),
         getId: sinon.stub().returns('test-site-id'),
         getDeliveryType: sinon.stub().returns('eds'),
       },
@@ -85,11 +87,11 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.be.callCount(5);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
     // with empty guidance due to no scraping
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
     // asserting spacecat to mystique message
     const [queueArg, messageArg] = context.sqs.sendMessage.getCall(4).args;
     expect(queueArg).to.equal('spacecat-to-mystique');
-    expect(messageArg.data).to.deep.equal(testData.mystiqueMessage.data);
+    expect(messageArg.data).to.deep.equal(testData.mystiqueMessageForFormDetails);
   });
 
   it('should create new forms opportunity with scraped data available', async () => {
@@ -99,7 +101,7 @@ describe('createLowConversionOpportunities handler method', () => {
     await createLowConversionOpportunities(auditUrl, auditData, scrapeData, context);
     // with BTF guidance
     // expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should create new forms opportunity with scraped data available not matched', async () => {
@@ -110,7 +112,7 @@ describe('createLowConversionOpportunities handler method', () => {
     await createLowConversionOpportunities(auditUrl, auditData2, scrapeData, context);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData2);
     // with empty guidance due to scrapedStatus = false
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should create new forms opportunity with scraped data available with all field labels containing search', async () => {
@@ -128,7 +130,7 @@ describe('createLowConversionOpportunities handler method', () => {
     // with large form guidance
     expectedOpportunityData.data.scrapedStatus = true;
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(expectedOpportunityData);
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should create new forms opportunity with scraped data available and matched with Generic guidance', async () => {
@@ -140,7 +142,7 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData4);
 
     // with Generic guidance
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should use existing opportunity', async () => {
@@ -154,7 +156,37 @@ describe('createLowConversionOpportunities handler method', () => {
     );
     expect(formsOppty.setUpdatedBy).to.be.calledWith('system');
     expect(formsOppty.save).to.be.callCount(1);
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+  });
+
+  it('should use existing opportunity with form details', async () => {
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
+    const { auditDataWithExistingOppty } = testData;
+    formsOppty.getData = sinon.stub().returns({
+      form: 'https://www.surest.com/info/win-1',
+      screenshot: '',
+      trackedFormKPIName: 'Conversion Rate',
+      trackedFormKPIValue: 0.5,
+      formViews: 1000,
+      pageViews: 5000,
+      samples: 5000,
+      formDetails: {
+        is_lead_gen: true,
+        industry: 'Insurance',
+        form_type: 'Quote Request Form',
+        form_category: 'B2C',
+        cpl: 230.6,
+      },
+    });
+    await createLowConversionOpportunities(
+      auditUrl,
+      auditDataWithExistingOppty,
+      undefined,
+      context,
+    );
+    expect(formsOppty.setUpdatedBy).to.be.calledWith('system');
+    expect(formsOppty.save).to.be.callCount(1);
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should throw error if fetching opportunity fails', async () => {
@@ -190,7 +222,7 @@ describe('createLowConversionOpportunities handler method', () => {
     );
     expect(dataAccessStub.Opportunity.create).to.be.callCount(1);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData5);
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should not create low conversion opportunity if another opportunity already exists', async () => {
@@ -202,5 +234,15 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(excludeUrls.has('https://www.surest.com/contact-us.mycontact')).to.be.true;
     expect(excludeUrls.has('https://www.surest.com/info/win-2')).to.be.true;
     expect(excludeUrls.has('https://www.surest.com/info/win')).to.be.false;
+  });
+
+  it('should not process opportunities with origin ESS_OPS', async () => {
+    formsOppty.getOrigin = sinon.stub().returns(ORIGINS.ESS_OPS);
+    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
+    const { auditDataWithExistingOppty } = testData;
+    // eslint-disable-next-line max-len
+    await createLowConversionOpportunities(auditUrl, auditDataWithExistingOppty, undefined, context);
+    expect(dataAccessStub.Opportunity.create).to.be.callCount(2);
+    formsOppty.getOrigin = sinon.stub().returns('');
   });
 });

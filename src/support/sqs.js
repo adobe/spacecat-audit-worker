@@ -22,23 +22,26 @@ class SQS {
     this.log = log;
   }
 
-  async sendMessage(queueUrl, message) {
+  async sendMessage(queueUrl, message, msgGroupId, delaySeconds = 0) {
     const body = {
       ...message,
       timestamp: new Date().toISOString(),
     };
 
+    const asJSON = JSON.stringify(body);
     const msgCommand = new SendMessageCommand({
-      MessageBody: JSON.stringify(body),
+      MessageBody: asJSON,
       QueueUrl: queueUrl,
+      MessageGroupId: msgGroupId, // Only needed for FIFO queues
+      DelaySeconds: delaySeconds,
     });
 
     try {
       const data = await this.sqsClient.send(msgCommand);
-      this.log.info(`Success, message sent. MessageID:  ${data.MessageId}`);
+      this.log.debug(`Success, message sent. MessageID:  ${data.MessageId}`);
     } catch (e) {
       const { type, code, message: msg } = e;
-      this.log.error(`Message sent failed. Type: ${type}, Code: ${code}, Message: ${msg}`);
+      this.log.error(`Message send failed. Type: ${type}, Code: ${code}, Message: ${msg}`, { length: asJSON.length }, e);
       throw e;
     }
   }

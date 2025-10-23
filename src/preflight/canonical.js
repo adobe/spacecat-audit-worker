@@ -11,15 +11,15 @@
  */
 import { validateCanonicalFormat, validateCanonicalTag } from '../canonical/handler.js';
 import { saveIntermediateResults } from './utils.js';
+import { isAuditEnabledForSite } from '../common/index.js';
 
 export const PREFLIGHT_CANONICAL = 'canonical';
 
 export default async function canonical(context, auditContext) {
   const {
-    site, jobId, log,
+    site, job, log,
   } = context;
   const {
-    checks,
     authHeader,
     previewBaseURL,
     previewUrls,
@@ -28,7 +28,9 @@ export default async function canonical(context, auditContext) {
     auditsResult,
     timeExecutionBreakdown,
   } = auditContext;
-  if (!checks || checks.includes(PREFLIGHT_CANONICAL)) {
+
+  const canonicalEnabled = await isAuditEnabledForSite(`${PREFLIGHT_CANONICAL}-preflight`, site, context);
+  if (canonicalEnabled) {
     const canonicalStartTime = Date.now();
     const canonicalStartTimestamp = new Date().toISOString();
     // Create canonical audit entries for all pages
@@ -45,7 +47,7 @@ export default async function canonical(context, auditContext) {
         } = await validateCanonicalTag(url, log, authHeader, true);
         const allChecks = [...tagChecks];
         if (canonicalUrl) {
-          log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Found Canonical URL: ${canonicalUrl}`);
+          log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Found Canonical URL: ${canonicalUrl}`);
           allChecks.push(...validateCanonicalFormat(canonicalUrl, previewBaseURL, log, true));
         }
         return { url, checks: allChecks.filter((c) => !c.success) };
@@ -54,7 +56,7 @@ export default async function canonical(context, auditContext) {
     const canonicalEndTime = Date.now();
     const canonicalEndTimestamp = new Date().toISOString();
     const canonicalElapsed = ((canonicalEndTime - canonicalStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Canonical audit completed in ${canonicalElapsed} seconds`);
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Canonical audit completed in ${canonicalElapsed} seconds`);
 
     timeExecutionBreakdown.push({
       name: 'canonical',

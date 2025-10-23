@@ -73,7 +73,7 @@ describe('sqs', () => {
 
     await expect(action({}, context)).to.be.rejectedWith(errorResponse.message);
 
-    const errorMessage = `Message sent failed. Type: ${errorResponse.type}, Code: ${errorResponse.code}, Message: ${errorResponse.message}`;
+    const errorMessage = `Message send failed. Type: ${errorResponse.type}, Code: ${errorResponse.code}, Message: ${errorResponse.message}`;
     expect(errorSpy).to.have.been.calledWith(errorMessage);
   });
 
@@ -81,7 +81,7 @@ describe('sqs', () => {
     const messageId = 'message-id';
     const message = { key: 'value' };
     const queueUrl = 'queue-url';
-    const logSpy = sandbox.spy(context.log, 'info');
+    const logSpy = sandbox.spy(context.log, 'debug');
 
     nock('https://sqs.us-east-1.amazonaws.com')
       .post('/')

@@ -12,9 +12,13 @@
 
 import { isNonEmptyArray, isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import {
-  filterForms, generateOpptyData, shouldExcludeForm, calculateProjectedConversionValue,
+  filterForms,
+  generateOpptyData,
+  shouldExcludeForm,
+  calculateProjectedConversionValue,
+  sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance,
 } from '../utils.js';
-import { FORM_OPPORTUNITY_TYPES } from '../constants.js';
+import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../constants.js';
 import { DATA_SOURCES } from '../../common/constants.js';
 
 function generateDefaultGuidance(scrapedData, oppoty) {
@@ -90,13 +94,12 @@ function generateDefaultGuidance(scrapedData, oppoty) {
 // eslint-disable-next-line max-len
 export default async function createLowConversionOpportunities(auditUrl, auditDataObject, scrapedData, context, excludeForms = new Set()) {
   const {
-    dataAccess, log, sqs, site, env,
+    dataAccess, log,
   } = context;
   const { Opportunity } = dataAccess;
 
   // eslint-disable-next-line no-param-reassign
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
-  log.info(`Syncing opportunity high form views low conversion for ${auditData.siteId}`);
   let opportunities;
 
   try {
@@ -113,7 +116,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
   log.debug(`forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
-  log.info(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
+  log.debug(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {
     for (const opptyData of filteredOpportunities) {
@@ -141,12 +144,30 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         guidance: generateDefaultGuidance(scrapedData, opptyData),
       };
 
-      log.info(`Forms Opportunity high form views low conversion ${JSON.stringify(opportunityData, null, 2)}`);
+      log.debug(`Forms Opportunity high form views low conversion ${JSON.stringify(opportunityData, null, 2)}`);
+      let formsList = [];
+
       if (!highFormViewsLowConversionsOppty) {
         // eslint-disable-next-line no-await-in-loop
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
+        // eslint-disable-next-line max-len
+        formsList = [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
         log.debug('Forms Opportunity high form views low conversion created');
+      } else if (highFormViewsLowConversionsOppty.getOrigin() === ORIGINS.ESS_OPS) {
+        log.debug('Forms Opportunity high form views low conversion exists and is from ESS_OPS');
+        opportunityData.status = 'IGNORED';
+        // eslint-disable-next-line no-await-in-loop
+        highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
+        // eslint-disable-next-line max-len
+        formsList = [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
       } else {
+        const data = highFormViewsLowConversionsOppty.getData();
+        const { formDetails } = data;
+        log.info(`Form details available for data  ${JSON.stringify(data, null, 2)}`);
+        formsList = (formDetails !== undefined && isNonEmptyObject(formDetails))
+          ? (log.info('Form details available for opportunity, not sending it to mystique'), [])
+          : [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
+
         highFormViewsLowConversionsOppty.setAuditId(auditData.auditId);
         highFormViewsLowConversionsOppty.setData({
           ...highFormViewsLowConversionsOppty.getData(),
@@ -162,27 +183,13 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         log.debug('Forms Opportunity high form views low conversion updated');
       }
 
-      log.info('sending message to mystique');
-      const mystiqueMessage = {
-        type: 'guidance:high-form-views-low-conversions',
-        siteId: auditData.siteId,
-        auditId: auditData.auditId,
-        deliveryType: site.getDeliveryType(),
-        time: new Date().toISOString(),
-        data: {
-          url: opportunityData.data.form,
-          cr: opportunityData.data.trackedFormKPIValue,
-          metrics: opportunityData.data.metrics,
-          form_source: opportunityData.data.formsource || '',
-        },
-      };
-
       // eslint-disable-next-line no-await-in-loop
-      await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-      log.info(`forms opportunity high form views low conversions sent to mystique: ${JSON.stringify(mystiqueMessage)}`);
+      await (formsList.length === 0
+        ? sendMessageToMystiqueForGuidance(context, highFormViewsLowConversionsOppty)
+        : sendMessageToFormsQualityAgent(context, highFormViewsLowConversionsOppty, formsList));
     }
   } catch (e) {
     log.error(`Creating Forms opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
   }
-  log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high-form-views-low-conversions audit type.`);
+  log.debug(`Successfully synced Opportunity for site: ${auditData.siteId} and high-form-views-low-conversions audit type.`);
 }

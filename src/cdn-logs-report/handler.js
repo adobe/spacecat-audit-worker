@@ -9,86 +9,139 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { createFrom } from '@adobe/spacecat-helix-content-sdk';
+/* eslint-disable no-await-in-loop */
+
+import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { getS3Config, ensureTableExists, loadSql } from './utils/report-utils.js';
-import { runWeeklyReport, runCustomDateRangeReport } from './utils/report-runner.js';
-import { AWSAthenaClient } from '../utils/athena-client.js';
+import {
+  getS3Config,
+  ensureTableExists,
+  loadSql,
+  generateReportingPeriods,
+  fetchRemotePatterns,
+  getConfigCategories,
+} from './utils/report-utils.js';
+import { pathHasData } from '../utils/cdn-utils.js';
+import { runWeeklyReport } from './utils/report-runner.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
+import { createLLMOSharepointClient } from '../utils/report-uploader.js';
+import { getConfigs } from './constants/report-configs.js';
+import { getImsOrgId } from '../utils/data-access.js';
+import { generatePatternsWorkbook } from './patterns/patterns-uploader.js';
 
-async function runCdnLogsReport(url, context, site) {
-  const { log, message = {} } = context;
-  const s3Config = getS3Config(site, context);
+async function runCdnLogsReport(url, context, site, auditContext) {
+  const { log, dataAccess } = context;
+  const s3Config = await getS3Config(site, context);
 
-  log.info(`Starting CDN logs report audit for ${url}`);
-
-  const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
-
-  const sharepointClient = await createFrom({
-    clientId: process.env.SHAREPOINT_CLIENT_ID,
-    clientSecret: process.env.SHAREPOINT_CLIENT_SECRET,
-    authority: process.env.SHAREPOINT_AUTHORITY,
-    domainId: process.env.SHAREPOINT_DOMAIN_ID,
-  }, { url: SHAREPOINT_URL, type: 'onedrive' });
-
-  const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
-
-  // create db if not exists
-  const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
-  const sqlDbDescription = `[Athena Query] Create database ${s3Config.databaseName}`;
-  await athenaClient.execute(sqlDb, s3Config.databaseName, sqlDbDescription);
-
-  await ensureTableExists(athenaClient, s3Config, log);
-
-  const auditResultBase = {
-    success: true,
-    timestamp: new Date().toISOString(),
-    database: s3Config.databaseName,
-    table: s3Config.tableName,
-    customer: s3Config.customerName,
-  };
-
-  if (message.type === 'runCustomDateRange') {
-    const { startDate, endDate } = message;
-    if (!startDate || !endDate) {
-      throw new Error('Custom date range requires startDate and endDate in message');
-    }
-
-    log.info(`Running custom report: ${startDate} to ${endDate}`);
-
-    await runCustomDateRangeReport({
-      athenaClient,
-      startDateStr: startDate,
-      endDateStr: endDate,
-      s3Config,
-      log,
-      site,
-      sharepointClient,
-    });
-
+  if (!s3Config?.bucket) {
     return {
       auditResult: {
-        ...auditResultBase,
-        reportType: 'custom',
-        dateRange: { startDate, endDate },
-        sharePointPath: `/sites/elmo-ui-data/${s3Config.customerName}/`,
+        success: false,
+        error: 'No CDN bucket found',
+        completedAt: new Date().toISOString(),
       },
-      fullAuditRef: `${SHAREPOINT_URL}/${s3Config.customerName}/`,
+      fullAuditRef: url,
     };
   }
 
-  log.info('Running weekly report...');
-  await runWeeklyReport({
-    athenaClient, s3Config, log, site, sharepointClient,
+  log.debug(`Starting CDN logs report audit for ${url}`);
+
+  const sharepointClient = await createLLMOSharepointClient(
+    context,
+    auditContext?.sharepointOptions,
+  );
+  const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation(), {
+    pollIntervalMs: 3000,
+    maxPollAttempts: 250,
   });
+  /* c8 ignore next */
+  const { orgId } = site.getConfig().getLlmoCdnBucketConfig() || {};
+  // for non-adobe customers, use the orgId from the config
+  const imsOrgId = orgId || await getImsOrgId(site, dataAccess, log);
+
+  const reportConfigs = getConfigs(s3Config.bucket, s3Config.customerDomain, imsOrgId);
+
+  const results = [];
+  for (const reportConfig of reportConfigs) {
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await pathHasData(context.s3Client, reportConfig.aggregatedLocation))) {
+      log.info(`No data found for ${reportConfig.name} report - skipping`);
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+
+    if (results.length === 0) {
+      // eslint-disable-next-line no-await-in-loop
+      const sqlDb = await loadSql('create-database', { database: s3Config.databaseName });
+      // eslint-disable-next-line no-await-in-loop
+      await athenaClient.execute(sqlDb, s3Config.databaseName, `[Athena Query] Create database ${s3Config.databaseName}`);
+    }
+
+    await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
+
+    const isMonday = new Date().getUTCDay() === 1;
+    // If weekOffset is not provided, run for both week 0 and -1 on Monday and
+    // on non-Monday, run for current week. Otherwise, run for the provided weekOffset
+    let weekOffsets;
+    if (auditContext?.weekOffset !== undefined) {
+      weekOffsets = [auditContext.weekOffset];
+    } else if (isMonday) {
+      weekOffsets = [0, -1];
+    } else {
+      weekOffsets = [0];
+    }
+
+    if (reportConfig.name === 'agentic') {
+      const existingPatterns = await fetchRemotePatterns(site);
+
+      if (!existingPatterns || auditContext?.categoriesUpdated) {
+        log.info('Patterns not found, generating patterns workbook...');
+        const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
+        const configCategories = await getConfigCategories(site, context);
+
+        await generatePatternsWorkbook({
+          site,
+          context,
+          athenaClient,
+          s3Config: {
+            ...s3Config,
+            tableName: reportConfig.tableName,
+          },
+          periods,
+          sharepointClient,
+          configCategories,
+          existingPatterns,
+        });
+      }
+    }
+
+    log.debug(`Running weekly report: ${reportConfig.name}...`);
+
+    for (const weekOffset of weekOffsets) {
+      // eslint-disable-next-line no-await-in-loop
+      await runWeeklyReport({
+        athenaClient,
+        s3Config,
+        reportConfig,
+        log,
+        site,
+        sharepointClient,
+        weekOffset,
+        context,
+      });
+    }
+
+    results.push({
+      name: reportConfig.name,
+      table: reportConfig.tableName,
+      database: s3Config.databaseName,
+      customer: s3Config.customerName,
+    });
+  }
 
   return {
-    auditResult: {
-      ...auditResultBase,
-      reportType: 'cdn-report-weekly',
-      sharePointPath: `/sites/elmo-ui-data/${s3Config.customerName}/`,
-    },
-    fullAuditRef: `${SHAREPOINT_URL}/${s3Config.customerName}/`,
+    auditResult: results,
+    fullAuditRef: `${site.getConfig()?.getLlmoDataFolder()}`,
   };
 }
 

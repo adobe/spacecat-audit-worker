@@ -11,243 +11,404 @@
  */
 
 /* eslint-env mocha */
-import { expect } from 'chai';
+import { expect, use } from 'chai';
+import sinonChai from 'sinon-chai';
+import sinon from 'sinon';
 
-describe('Sheet Configs', () => {
+use(sinonChai);
+
+describe('CDN Logs Sheet Configs', () => {
   let SHEET_CONFIGS;
+
+  const sandbox = sinon.createSandbox();
 
   before(async () => {
     ({ SHEET_CONFIGS } = await import('../../../src/cdn-logs-report/constants/sheet-configs.js'));
   });
 
-  const mockPeriods = {
-    weeks: [
-      { weekLabel: 'Week 1', dateRange: { start: '2024-01-01', end: '2024-01-07' } },
-      { weekLabel: 'Week 2', dateRange: { start: '2024-01-08', end: '2024-01-14' } },
-    ],
-    columns: ['Week 1', 'Week 2'],
-  };
-
-  describe('Configuration Properties', () => {
-    it('should have required properties for all configs', () => {
-      Object.entries(SHEET_CONFIGS).forEach(([name, config]) => {
-        expect(config).to.have.property('getHeaders').that.is.a('function', `${name} missing getHeaders function`);
-        expect(config).to.have.property('processData').that.is.a('function', `${name} missing processData function`);
-        expect(config).to.have.property('headerColor').that.is.a('string', `${name} missing headerColor string`);
-
-        if (['country', 'pageType'].includes(name)) {
-          expect(config).to.have.property('getNumberColumns').that.is.a('function', `${name} missing getNumberColumns function`);
-        } else {
-          expect(config).to.have.property('numberColumns').that.is.an('array', `${name} missing numberColumns array`);
-        }
-      });
-    });
-
-    it('should return correct headers', () => {
-      expect(SHEET_CONFIGS.referralCountryTopic.getHeaders()).to.deep.equal(['Country', 'Topic', 'Hits']);
-      expect(SHEET_CONFIGS.referralUrlTopic.getHeaders()).to.deep.equal(['URL', 'Topic', 'Hits']);
-      expect(SHEET_CONFIGS.country.getHeaders(mockPeriods)).to.deep.equal(['Country Code', 'Week 1', 'Week 2']);
-      expect(SHEET_CONFIGS.userAgents.getHeaders(mockPeriods)).to.deep.equal([
-        'Request User Agent', 'Status', 'Number of Hits',
-        'Interval: Last Week (2024-01-08 - 2024-01-14)',
-      ]);
-      expect(SHEET_CONFIGS.topBottom.getHeaders()).to.deep.equal(['Status', 'TOP', '', '', 'BOTTOM', '']);
-      expect(SHEET_CONFIGS.error404.getHeaders()).to.deep.equal(['URL', 'Number of 404s']);
-      expect(SHEET_CONFIGS.error503.getHeaders()).to.deep.equal(['URL', 'Number of 503s']);
-      expect(SHEET_CONFIGS.category.getHeaders()).to.deep.equal(['Category', 'Number of Hits']);
-      expect(SHEET_CONFIGS.topUrls.getHeaders(mockPeriods)).to.deep.equal(['URL', 'Week 1', 'Week 2']);
-      expect(SHEET_CONFIGS.pageType.getHeaders(mockPeriods)).to.deep.equal(['Page Type', 'Week 1', 'Week 2']);
-    });
-
-    it('should return correct number columns for dynamic configs', () => {
-      expect(SHEET_CONFIGS.country.getNumberColumns(mockPeriods)).to.deep.equal([1]);
-      expect(SHEET_CONFIGS.pageType.getNumberColumns(mockPeriods)).to.deep.equal([1]);
-    });
+  afterEach(() => {
+    sandbox.restore();
   });
 
-  describe('Data Processing', () => {
-    describe('Referral Data Processing', () => {
-      it('processes referralCountryTopic with country validation and aggregation', () => {
-        const mockData = [
-          { country: 'US', topic: 'photoshop', hits: 100 },
-          { country: 'invalid', topic: 'photoshop', hits: 50 },
-          { country: 'US', topic: 'photoshop', hits: 75 },
-          { country: 'CA', topic: null, hits: 25 },
-        ];
-
-        const result = SHEET_CONFIGS.referralCountryTopic.processData(mockData);
-
-        expect(result).to.have.length(3);
-        expect(result[0]).to.deep.equal(['US', 'Photoshop', 175]);
-        expect(result[1]).to.deep.equal(['GLOBAL', 'Photoshop', 50]);
-        expect(result[2]).to.deep.equal(['CA', 'Other', 25]);
-      });
-
-      it('processes referralUrlTopic data', () => {
-        const mockData = [
-          { url: '/products/photoshop.html', topic: 'photoshop', hits: 100 },
-          { url: null, topic: null, hits: null },
-        ];
-
-        const result = SHEET_CONFIGS.referralUrlTopic.processData(mockData);
-
-        expect(result).to.deep.equal([
-          ['/products/photoshop.html', 'Photoshop', 100],
-          ['', 'Other', 0],
+  describe('agentic sheet config', () => {
+    it('generates correct headers', () => {
+      const headers = SHEET_CONFIGS.agentic.getHeaders();
+      expect(headers)
+        .to
+        .deep
+        .equal([
+          'Agent Type',
+          'User Agent',
+          'Status',
+          'Number of Hits',
+          'Avg TTFB (ms)',
+          'Country Code',
+          'URL',
+          'Product',
+          'Category',
         ]);
-      });
     });
 
-    describe('Weekly Data Processing', () => {
-      it('processes country data with weekly aggregation', () => {
-        const mockData = [
-          { country_code: 'US', week_1: 100, week_2: 150 },
-          { country_code: 'invalid', week_1: 50, week_2: 75 },
-          { country_code: 'US', week_1: 25, week_2: 30 },
-        ];
-
-        const result = SHEET_CONFIGS.country.processData(mockData, mockPeriods);
-
-        expect(result).to.have.length(2);
-        expect(result[0]).to.deep.equal(['US', 125, 180]); // Aggregated US data
-        expect(result[1]).to.deep.equal(['GLOBAL', 50, 75]); // Invalid country -> GLOBAL
-      });
-
-      it('processes pageType data with fallback', () => {
-        const mockData = [
-          { page_type: 'product', week_1: 100, week_2: 150 },
-        ];
-
-        const result = SHEET_CONFIGS.pageType.processData(mockData, mockPeriods);
-        expect(result).to.deep.equal([['product', 100, 150]]);
-
-        // Test fallback for empty data
-        const emptyResult = SHEET_CONFIGS.pageType.processData([], mockPeriods);
-        expect(emptyResult).to.deep.equal([['No data', 0, 0]]);
-      });
-    });
-
-    describe('Standard Data Processing', () => {
-      it('processes userAgents data', () => {
-        const mockData = [
-          { user_agent: 'Chrome', status: 200, total_requests: 100 },
-          { user_agent: null, status: null, total_requests: null },
-        ];
-
-        const result = SHEET_CONFIGS.userAgents.processData(mockData);
-
-        expect(result).to.deep.equal([
-          ['Chrome', 200, 100, ''],
-          ['Unknown', 'All', 0, ''],
-        ]);
-      });
-
-      it('processes topUrls data', () => {
-        const mockData = [
-          { url: '/page1', total_requests: 100 },
-          { url: null, total_requests: null },
-        ];
-
-        const result = SHEET_CONFIGS.topUrls.processData(mockData);
-
-        expect(result).to.deep.equal([
-          ['/page1', 100],
-          ['', 0],
-        ]);
-      });
-
-      it('processes error pages data', () => {
-        const mockData = [
-          { url: '/missing-page', total_requests: 10 },
-          { url: '/server-error', total_requests: 3 },
-        ];
-
-        const error404Result = SHEET_CONFIGS.error404.processData(mockData);
-        expect(error404Result).to.deep.equal([
-          ['/missing-page', 10],
-          ['/server-error', 3],
-        ]);
-
-        const error503Result = SHEET_CONFIGS.error503.processData(mockData);
-        expect(error503Result).to.deep.equal([
-          ['/missing-page', 10],
-          ['/server-error', 3],
-        ]);
-      });
-
-      it('processes category data with URL pattern matching', () => {
-        const mockData = [
-          { url: '/en/products/photoshop/features', total_requests: 100 },
-          { url: '/es/products/illustrator/pricing', total_requests: 50 },
-          { url: '/other-page', total_requests: 25 },
-        ];
-
-        const result = SHEET_CONFIGS.category.processData(mockData);
-
-        expect(result).to.be.an('array');
-        expect(result.length).to.be.greaterThan(0);
-        expect(result.some(([category]) => category.includes('photoshop'))).to.be.true;
-        expect(result.some(([category]) => category.includes('illustrator'))).to.be.true;
-        expect(result.some(([category]) => category === 'Other')).to.be.true;
-      });
-
-      it('processes topBottom data with status analysis', () => {
-        const mockData = [
-          { status: 200, url: '/page1', total_requests: 100 },
-          { status: 200, url: '/page2', total_requests: 50 },
-          { status: 404, url: '/missing', total_requests: 10 },
-        ];
-
-        const result = SHEET_CONFIGS.topBottom.processData(mockData);
-
-        expect(result).to.be.an('array');
-        expect(result[0]).to.deep.equal(['', 'URL', 'Hits', '', 'URL', 'Hits']);
-        expect(result.length).to.be.greaterThan(1);
-
-        // Check that it contains status sections
-        expect(result.some((row) => row[0] === '200')).to.be.true;
-        expect(result.some((row) => row[0] === '404')).to.be.true;
-      });
-    });
-  });
-
-  describe('Edge Cases and Error Handling', () => {
-    const configsToTest = [
-      'userAgents', 'topUrls', 'topBottom', 'error404', 'error503',
-      'category', 'referralCountryTopic', 'referralUrlTopic',
-    ];
-
-    it('handles null/undefined data gracefully', () => {
-      configsToTest.forEach((configName) => {
-        const config = SHEET_CONFIGS[configName];
-
-        [null, undefined, []].forEach((testData) => {
-          const result = config.processData(testData);
-          expect(result).to.be.an('array', `${configName} should return array for ${testData}`);
-        });
-      });
-    });
-
-    it('handles malformed data gracefully', () => {
-      const malformedData = [
-        { invalidField: 'test' },
-        {},
-        { hits: 'not-a-number' },
-        { total_requests: 'invalid' },
+    it('processes agentic flat data correctly', () => {
+      const testData = [
+        {
+          agent_type: 'Chatbots',
+          user_agent_display: 'ChatGPT-User',
+          status: 200,
+          number_of_hits: 100,
+          avg_ttfb_ms: 250.5,
+          country_code: 'US',
+          url: 'https://example.com/test',
+          product: 'firefly',
+          category: 'Products',
+        },
+        {
+          agent_type: 'Crawlers',
+          user_agent_display: 'GPTBot',
+          status: 404,
+          number_of_hits: 50,
+          avg_ttfb_ms: 100.0,
+          country_code: 'invalid',
+          url: '-',
+          product: null,
+          category: null,
+        },
       ];
 
-      configsToTest.forEach((configName) => {
-        const config = SHEET_CONFIGS[configName];
-        const result = config.processData(malformedData);
-        expect(result).to.be.an('array', `${configName} should handle malformed data`);
-      });
+      const result = SHEET_CONFIGS.agentic.processData(testData);
+
+      expect(result)
+        .to
+        .have
+        .length(2);
+      expect(result[0])
+        .to
+        .deep
+        .equal([
+          'Chatbots',
+          'ChatGPT-User',
+          200,
+          100,
+          250.5,
+          'US',
+          'https://example.com/test',
+          'Firefly',
+          'Products',
+        ]);
+      expect(result[1])
+        .to
+        .deep
+        .equal([
+          'Crawlers',
+          'GPTBot',
+          404,
+          50,
+          100.0,
+          'GLOBAL',
+          '/',
+          'Other',
+          'Uncategorized',
+        ]);
     });
 
-    it('handles weekly data edge cases', () => {
-      const emptyPeriods = { weeks: [], columns: ['Country Code'] };
+    it('handles null data gracefully', () => {
+      const result = SHEET_CONFIGS.agentic.processData(null);
+      expect(result)
+        .to
+        .deep
+        .equal([]);
+    });
 
-      expect(() => SHEET_CONFIGS.country.processData([], emptyPeriods)).to.not.throw();
-      expect(() => SHEET_CONFIGS.pageType.processData([], emptyPeriods)).to.not.throw();
+    it('handles data with missing fields', () => {
+      const testData = [
+        {
+          // Missing agent_type, user_agent_display, etc.
+          status: null,
+          number_of_hits: 'invalid',
+          avg_ttfb_ms: null,
+          country_code: null,
+          url: null,
+          product: null,
+          category: null,
+        },
+      ];
+
+      const result = SHEET_CONFIGS.agentic.processData(testData);
+
+      expect(result)
+        .to
+        .have
+        .length(1);
+      expect(result[0])
+        .to
+        .deep
+        .equal([
+          'Other',
+          'Unknown',
+          'N/A',
+          0,
+          0,
+          'GLOBAL',
+          '',
+          'Other',
+          'Uncategorized',
+        ]);
+    });
+
+    it('handles empty array data', () => {
+      const result = SHEET_CONFIGS.agentic.processData([]);
+      expect(result)
+        .to
+        .deep
+        .equal([]);
+    });
+
+    it('has required properties', () => {
+      const config = SHEET_CONFIGS.agentic;
+      expect(config)
+        .to
+        .have
+        .property('getHeaders')
+        .that
+        .is
+        .a('function');
+      expect(config)
+        .to
+        .have
+        .property('processData')
+        .that
+        .is
+        .a('function');
+      expect(config)
+        .to
+        .have
+        .property('headerColor')
+        .that
+        .is
+        .a('string');
+      expect(config)
+        .to
+        .have
+        .property('numberColumns')
+        .that
+        .is
+        .an('array');
+    });
+  });
+
+  describe('referral sheet config', () => {
+    let site;
+
+    beforeEach('setup', () => {
+      site = {
+        getBaseURL: sandbox.stub().returns('https://space.cat'),
+      };
+    });
+
+    it('generates correct headers', () => {
+      const headers = SHEET_CONFIGS.referral.getHeaders();
+      expect(headers)
+        .to
+        .deep
+        .equal([
+          'path',
+          'trf_type',
+          'trf_channel',
+          'trf_platform',
+          'device',
+          'date',
+          'pageviews',
+          'consent',
+          'bounced',
+          'region',
+          'user_intent',
+        ]);
+    });
+
+    it('referral traffic post processing throws error for the non array data', () => {
+      expect(() => SHEET_CONFIGS.referral.processData(null))
+        .to
+        .throw('Referral traffic postprocessing failed, provided data: null');
+    });
+
+    it('referral traffic post processes empty array', () => {
+      const testData = [];
+
+      const result = SHEET_CONFIGS.referral.processData(testData, site);
+
+      expect(result).to.have.length(0);
+    });
+
+    it('referral traffic post processes valid data', () => {
+      const testData = [{
+        path: 'some/path/first',
+        referrer: '',
+        utm_source: 'google',
+        utm_medium: 'cpc',
+        tracking_param: 'paid',
+        device: 'mobile',
+        date: '2025-07-18',
+        pageviews: '200',
+        region: 'UK',
+      }, {
+        path: 'some/path/first',
+        referrer: '',
+        utm_source: 'google',
+        utm_medium: 'cpc',
+        tracking_param: 'paid',
+        device: 'mobile',
+        date: '2025-07-18',
+        pageviews: 300,
+        region: 'UK',
+      }, {
+        path: '/another/path',
+        referrer: 'https://facebook.com',
+        utm_source: '',
+        utm_medium: '',
+        tracking_param: '',
+        device: 'desktop',
+        date: '2025-07-19',
+        pageviews: '23',
+        region: 'US',
+      }, {
+        path: '',
+        referrer: '',
+        utm_source: 'tiktok',
+        utm_medium: 'cpc',
+        tracking_param: '',
+        device: 'mobile',
+        date: '2025-07-19',
+        pageviews: '23',
+        region: 'FR',
+      }, {
+        path: '/',
+        referrer: '',
+        utm_source: '',
+        utm_medium: '',
+        tracking_param: '',
+        device: 'mobile',
+        date: '2025-07-19',
+        pageviews: '23',
+        region: 'US',
+      },
+      ];
+
+      const result = SHEET_CONFIGS.referral.processData(testData, site);
+
+      expect(result).to.deep.include.members([[
+        'some/path/first',
+        'paid',
+        'display',
+        'google',
+        'mobile',
+        '2025-07-18',
+        500,
+        '',
+        '',
+        'UK',
+        '',
+      ], [
+        '/another/path',
+        'earned',
+        'social',
+        'facebook',
+        'desktop',
+        '2025-07-19',
+        23,
+        '',
+        '',
+        'US',
+        '',
+      ], [
+        '',
+        'paid',
+        'social',
+        'tiktok',
+        'mobile',
+        '2025-07-19',
+        23,
+        '',
+        '',
+        'FR',
+        '',
+      ],
+      ]);
+    });
+
+    it('has required properties', () => {
+      const config = SHEET_CONFIGS.referral;
+      expect(config)
+        .to
+        .have
+        .property('getHeaders')
+        .that
+        .is
+        .a('function');
+      expect(config)
+        .to
+        .have
+        .property('processData')
+        .that
+        .is
+        .a('function');
+      expect(config)
+        .to
+        .have
+        .property('headerColor')
+        .that
+        .is
+        .a('string');
+      expect(config)
+        .to
+        .have
+        .property('numberColumns')
+        .that
+        .is
+        .an('array');
+    });
+  });
+
+  describe('patterns sheet config', () => {
+    it('generates correct headers', () => {
+      const headers = SHEET_CONFIGS.patterns.getHeaders();
+      expect(headers)
+        .to
+        .deep
+        .equal([
+          'name',
+          'regex',
+        ]);
+    });
+
+    it('processes patterns data with null fields', () => {
+      const testData = [
+        {
+          name: null,
+          regex: null,
+        },
+      ];
+
+      const result = SHEET_CONFIGS.patterns.processData(testData);
+
+      expect(result)
+        .to
+        .have
+        .length(1);
+      expect(result[0])
+        .to
+        .deep
+        .equal([
+          '',
+          '',
+        ]);
+    });
+
+    it('handles null data gracefully', () => {
+      const result = SHEET_CONFIGS.patterns.processData(null);
+      expect(result)
+        .to
+        .deep
+        .equal([]);
     });
   });
 });

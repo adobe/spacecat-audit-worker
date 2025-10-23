@@ -25,9 +25,12 @@ import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
 import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
-import paid from './paid/handler.js';
+import sitemapProductCoverage from './sitemap-product-coverage/handler.js';
+import redirectChains from './redirect-chains/handler.js';
+import paid from './paid-cookie-consent/handler.js';
 import canonical from './canonical/handler.js';
 import backlinks from './backlinks/handler.js';
+import brokenLinksGuidance from './broken-links-guidance/guidance-handler.js';
 import internalLinks from './internal-links/handler.js';
 import experimentation from './experimentation/handler.js';
 import conversion from './conversion/handler.js';
@@ -38,25 +41,49 @@ import formsOpportunities from './forms-opportunities/handler.js';
 import metaTags from './metatags/handler.js';
 import costs from './costs/handler.js';
 import structuredData from './structured-data/handler.js';
+import structuredDataGuidance from './structured-data/guidance-handler.js';
 import siteDetection from './site-detection/handler.js';
 import highFormViewsLowConversionsGuidance from './forms-opportunities/guidance-handlers/guidance-high-form-views-low-conversions.js';
 import highPageViewsLowFormNavGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-nav.js';
 import highPageViewsLowFormViewsGuidance from './forms-opportunities/guidance-handlers/guidance-high-page-views-low-form-views.js';
 import highOrganicLowCtrGuidance from './experimentation-opportunities/guidance-high-organic-low-ctr-handler.js';
-import paidConsentGuidance from './paid/guidance-handler.js';
+import paidConsentGuidance from './paid-cookie-consent/guidance-handler.js';
+import paidTrafficAnalysisGuidance from './paid-traffic-analysis/guidance-handler.js';
 import imageAltText from './image-alt-text/handler.js';
 import preflight from './preflight/handler.js';
-import { suggestionsInternalLinksHandler } from './internal-links/suggestions-internal-links-handler.js';
+import llmBlocked from './llm-blocked/handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
-import guidanceGeoBrandPresence from './geo-brand-presence/guidance-geo-brand-presence-handler.js';
+import detectGeoBrandPresence from './geo-brand-presence/detect-geo-brand-presence-handler.js';
+import geoBrandPresenceDaily from './geo-brand-presence-daily/handler.js';
+import detectGeoBrandPresenceDaily from './geo-brand-presence-daily/detect-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
+import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 import accessibilityRemediationGuidance from './accessibility/guidance-handlers/guidance-accessibility-remediation.js';
 import cdnAnalysis from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
 import detectPageIntent from './page-intent/handler.detect.js';
+import updatePageIntent from './page-intent/handler.update.js';
+import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
+import readabilityGuidance from './readability/guidance-readability-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
+import llmErrorPages from './llm-error-pages/handler.js';
+import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
+import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
+import pageTypeDetection from './page-type/handler.js';
+import pageTypeGuidance from './page-type/guidance-handler.js';
+import hreflang from './hreflang/handler.js';
+import optimizationReportCallback from './optimization-report/handler.js';
+import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
+import headings from './headings/handler.js';
+import vulnerabilities from './vulnerabilities/handler.js';
+import prerender from './prerender/handler.js';
+import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
+import summarization from './summarization/handler.js';
+import summarizationGuidance from './summarization/guidance-handler.js';
+import permissions from './permissions/handler.js';
+import permissionsRedundant from './permissions/handler.redundant.js';
 
 const HANDLERS = {
   accessibility,
@@ -66,7 +93,12 @@ const HANDLERS = {
   'lhs-desktop': lhsDesktop,
   404: notfound,
   sitemap,
+  'sitemap-product-coverage': sitemapProductCoverage,
+  'redirect-chains': redirectChains,
   paid,
+  'paid-traffic-analysis-weekly': paidTrafficAnalysisWeekly,
+  'paid-traffic-analysis-monthly': paidTrafficAnalysisMonthly,
+  'page-type-detection': pageTypeDetection,
   canonical,
   'broken-backlinks': backlinks,
   'broken-internal-links': internalLinks,
@@ -78,26 +110,51 @@ const HANDLERS = {
   'meta-tags': metaTags,
   costs,
   'structured-data': structuredData,
+  'llm-blocked': llmBlocked,
   'forms-opportunities': formsOpportunities,
   'site-detection': siteDetection,
-  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance, // ref
-  'suggestions:internal-links': suggestionsInternalLinksHandler,
+  'guidance:high-organic-low-ctr': highOrganicLowCtrGuidance,
+  'guidance:broken-links': brokenLinksGuidance,
   'alt-text': imageAltText,
   'guidance:high-form-views-low-conversions': highFormViewsLowConversionsGuidance,
   'guidance:high-page-views-low-form-nav': highPageViewsLowFormNavGuidance,
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
-  'guidance:geo-brand-presence': guidanceGeoBrandPresence,
+  'detect:geo-brand-presence': detectGeoBrandPresence,
+  'refresh:geo-brand-presence': detectGeoBrandPresence,
+  'geo-brand-presence-daily': geoBrandPresenceDaily,
+  'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
+  'detect:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
+  'refresh:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
   'guidance:paid-cookie-consent': paidConsentGuidance,
+  'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
+  'detect:page-types': pageTypeGuidance,
+  'guidance:missing-alt-text': missingAltTextGuidance,
+  'guidance:readability': readabilityGuidance,
+  'guidance:structured-data-remediation': structuredDataGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
   'detect:page-intent': detectPageIntent,
+  'detect:form-details': detectFormDetails,
+  'page-intent': updatePageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
+  'llm-error-pages': llmErrorPages,
+  'guidance:llm-error-pages': llmErrorPagesGuidance,
+  'optimization-report-callback': optimizationReportCallback,
+  'llmo-customer-analysis': llmoCustomerAnalysis,
+  summarization,
+  'guidance:summarization': summarizationGuidance,
+  hreflang,
+  headings,
+  prerender,
+  'security-vulnerabilities': vulnerabilities,
+  'security-permissions': permissions,
+  'security-permissions-redundant': permissionsRedundant,
   dummy: (message) => ok(message),
 };
 
@@ -117,8 +174,7 @@ async function run(message, context) {
   const { log } = context;
   const { type, siteId } = message;
 
-  log.info(`Received ${type} audit request for: ${siteId}`);
-  log.info(`Message ${JSON.stringify(message)}`);
+  log.info(`Received ${type} audit request for: ${siteId}. Message:`, message);
 
   const handler = HANDLERS[type];
   if (!handler) {

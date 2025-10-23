@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { Audit } from '@adobe/spacecat-shared-data-access';
+
 /**
  * Accessibility success criteria links for common WCAG issues
  * This file contains standardized links to the WCAG success criteria
@@ -724,6 +726,10 @@ export const accessibilityOpportunitiesMap = {
     'link-name',
     'select-name',
   ],
+  'a11y-color-contrast': [
+    'color-contrast',
+    'link-in-text-block',
+  ],
 };
 
 /**
@@ -731,6 +737,15 @@ export const accessibilityOpportunitiesMap = {
  */
 export const issueTypesForMystique = [
   'aria-allowed-attr',
+  'aria-prohibited-attr',
+  'aria-roles',
+  'aria-hidden-focus',
+  'aria-required-attr',
+  'aria-valid-attr-value',
+  'button-name',
+  'link-name',
+  'select-name',
+  'aria-required-parent',
 ];
 
 /**
@@ -745,3 +760,28 @@ export const WCAG_CRITERIA_COUNTS = {
     return this.LEVEL_A + this.LEVEL_AA;
   },
 };
+
+/**
+ * Separator used to create composite keys for URLs with source identifiers
+ * This allows tracking issues from different sources (forms, specific elements, etc.)
+ * Format: {siteUrl}{URL_SOURCE_SEPARATOR}{sourceIdentifier}
+ * Example: https://example.com/contact?source=contact-form (form source)
+ * Future: Could be used for other sources like specific sections, components, etc.
+ */
+export const URL_SOURCE_SEPARATOR = '?source=';
+
+/**
+ * Prefixes for different audit types
+ */
+export const AUDIT_PREFIXES = {
+  [Audit.AUDIT_TYPES.ACCESSIBILITY]: {
+    logIdentifier: 'A11yAudit',
+    storagePrefix: 'accessibility',
+  },
+  [Audit.AUDIT_TYPES.FORMS_OPPORTUNITIES]: {
+    logIdentifier: 'FormsA11yAudit',
+    storagePrefix: 'forms-accessibility',
+  },
+};
+
+export const A11Y_METRICS_AGGREGATOR_IMPORT_TYPE = 'a11y-metrics-aggregator';

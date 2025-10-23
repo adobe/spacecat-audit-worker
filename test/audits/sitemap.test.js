@@ -17,20 +17,22 @@ import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import chaiAsPromised from 'chai-as-promised';
 import {
-  ERROR_CODES,
   sitemapAuditRunner,
+  opportunityAndSuggestions,
+  generateSuggestions,
+  findSitemap,
+  getPagesWithIssues,
+  getSitemapsWithIssues,
+} from '../../src/sitemap/handler.js';
+import {
+  ERROR_CODES,
+  filterValidUrls,
   isSitemapContentValid,
   checkSitemap,
   checkRobotsForSitemap,
   fetchContent,
-  opportunityAndSuggestions,
-  generateSuggestions,
-  findSitemap,
-  filterValidUrls,
   getBaseUrlPagesFromSitemaps,
-  getPagesWithIssues,
-  getSitemapsWithIssues,
-} from '../../src/sitemap/handler.js';
+} from '../../src/sitemap/common.js';
 import { extractDomainAndProtocol } from '../../src/support/utils.js';
 import { MockContextBuilder } from '../shared.js';
 import { DATA_SOURCES } from '../../src/common/constants.js';
@@ -605,6 +607,68 @@ describe('Sitemap Audit', () => {
       const result = await findSitemap(url);
       expect(result.success).to.equal(false);
     });
+
+    it('should handle missing details properties with fallback defaults (lines 41-42)', async () => {
+      // Test the exact fallback logic directly by simulating the specific scenario
+      // This is what the code does on lines 41-42:
+      // const extractedPaths = siteMapUrlsResult.details?.extractedPaths || {};
+      // const filteredSitemapUrls = siteMapUrlsResult.details?.filteredSitemapUrls || [];
+
+      // Test case 1: details exists but properties are undefined
+      const siteMapUrlsResult1 = {
+        success: true,
+        reasons: [{ value: 'Extracted URLs successfully' }],
+        details: {
+          // extractedPaths and filteredSitemapUrls are undefined
+        },
+      };
+
+      const extractedPaths1 = siteMapUrlsResult1.details?.extractedPaths || {};
+      const filteredSitemapUrls1 = siteMapUrlsResult1.details?.filteredSitemapUrls || [];
+
+      expect(extractedPaths1).to.deep.equal({});
+      expect(filteredSitemapUrls1).to.deep.equal([]);
+
+      // Test case 2: details is undefined
+      const siteMapUrlsResult2 = {
+        success: true,
+        reasons: [{ value: 'Test scenario' }],
+        details: undefined,
+      };
+
+      const extractedPaths2 = siteMapUrlsResult2.details?.extractedPaths || {};
+      const filteredSitemapUrls2 = siteMapUrlsResult2.details?.filteredSitemapUrls || [];
+
+      expect(extractedPaths2).to.deep.equal({});
+      expect(filteredSitemapUrls2).to.deep.equal([]);
+
+      // Test case 3: details is null
+      const siteMapUrlsResult3 = {
+        success: true,
+        reasons: [{ value: 'Test scenario' }],
+        details: null,
+      };
+
+      const extractedPaths3 = siteMapUrlsResult3.details?.extractedPaths || {};
+      const filteredSitemapUrls3 = siteMapUrlsResult3.details?.filteredSitemapUrls || [];
+
+      expect(extractedPaths3).to.deep.equal({});
+      expect(filteredSitemapUrls3).to.deep.equal([]);
+
+      // Now use esmock to test the actual findSitemap function with these conditions
+      const esmock = (await import('esmock')).default;
+
+      const mockedSitemapHandler = await esmock('../../src/sitemap/handler.js', {
+        '../../src/sitemap/common.js': {
+          getSitemapUrls: async () => siteMapUrlsResult1,
+          ERROR_CODES,
+        },
+      });
+
+      const result = await mockedSitemapHandler.findSitemap(url);
+      expect(result.success).to.equal(false);
+      expect(result.reasons[0].error).to.equal(ERROR_CODES.NO_VALID_PATHS_EXTRACTED);
+    });
   });
 
   describe('classifySuggestions', () => {
@@ -971,7 +1035,7 @@ describe('Sitemap Audit', () => {
         context,
       );
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         'Sitemap audit failed, skipping opportunity and suggestions creation',
       );
       // Check that the existing stubs weren't called
@@ -1299,17 +1363,22 @@ describe('filterValidUrls with redirect handling', () => {
       .head('/broken-redirect')
       .reply(301, '', { Location: 'https://example.com/error' });
 
-    // Second request fails with network error
+    // Second request fails with network error (suggests invalid URL)
     nock('https://example.com')
       .head('/error')
       .replyWithError('Network error');
+
+    // Third request to validate homepage suggestion
+    nock('https://example.com')
+      .head('/')
+      .reply(200);
 
     const result = await filterValidUrls(urls);
 
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/broken-redirect',
-        urlsSuggested: 'https://example.com/error',
+        urlsSuggested: 'https://example.com',
         statusCode: 301,
       },
     ]);
@@ -1478,12 +1547,67 @@ describe('filterValidUrls with redirect handling', () => {
     nock('https://example.com')
       .head('/redirect-no-location')
       .reply(301, ''); // No location header
+
+    // Mock homepage validation
+    nock('https://example.com')
+      .head('/')
+      .reply(200);
+
     const result = await filterValidUrls(urls);
     expect(result.notOk).to.deep.equal([
       {
         url: 'https://example.com/redirect-no-location',
         statusCode: 301,
         urlsSuggested: 'https://example.com',
+      },
+    ]);
+  });
+
+  it('should not suggest URL when homepage validation fails with network error', async () => {
+    const urls = ['https://example.com/redirect-no-location'];
+    nock('https://example.com')
+      .head('/redirect-no-location')
+      .reply(301, ''); // No location header
+
+    // Mock homepage validation failure
+    nock('https://example.com')
+      .head('/')
+      .replyWithError('Network error');
+
+    const result = await filterValidUrls(urls);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect-no-location',
+        statusCode: 301,
+        // No urlsSuggested since homepage validation failed
+      },
+    ]);
+  });
+
+  it('should fallback to homepage when redirect target validation fails', async () => {
+    const urls = ['https://example.com/broken-redirect'];
+
+    // Original redirect
+    nock('https://example.com')
+      .head('/broken-redirect')
+      .reply(301, '', { Location: 'https://example.com/invalid' });
+
+    // Redirect target validation fails
+    nock('https://example.com')
+      .head('/invalid')
+      .replyWithError('Network error');
+
+    // Homepage validation succeeds
+    nock('https://example.com')
+      .head('/')
+      .reply(200);
+
+    const result = await filterValidUrls(urls);
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/broken-redirect',
+        statusCode: 301,
+        urlsSuggested: 'https://example.com', // Falls back to homepage
       },
     ]);
   });
@@ -1566,6 +1690,10 @@ describe('filterValidUrls with status code tracking', () => {
     nock('https://example.com').head('/server-error').reply(500);
     nock('https://example.com').head('/forbidden').reply(403);
 
+    // Mock validation of suggested URLs
+    nock('https://example.com').head('/new').reply(200);
+    nock('https://example.com').head('/temp').reply(200);
+
     const result = await filterValidUrls(urls);
 
     expect(result.ok).to.deep.equal(['https://example.com/ok']);
@@ -1619,6 +1747,15 @@ describe('filterValidUrls with status code tracking', () => {
       .head('/normal-redirect')
       .reply(301, '', { Location: 'https://example.com/valid-page' });
 
+    // Mock validation requests for redirect targets
+    nock('https://example.com').head('/404.html').reply(404);
+    nock('https://example.com').head('/404/not-found').reply(404);
+    nock('https://example.com').head('/errors/404/page').reply(404);
+    nock('https://example.com').head('/valid-page').reply(200);
+
+    // Mock homepage validation for 404 pattern redirects
+    nock('https://example.com').head('/').times(3).reply(200);
+
     const result = await filterValidUrls(urls);
 
     expect(result.notOk).to.have.length(4);
@@ -1638,5 +1775,83 @@ describe('filterValidUrls with status code tracking', () => {
     const normalRedirect = result.notOk.find((item) => item.url.includes('normal-redirect'));
     expect(normalRedirect.statusCode).to.equal(301);
     expect(normalRedirect.urlsSuggested).to.equal('https://example.com/valid-page');
+  });
+});
+
+describe('filterValidUrls with HEAD to GET fallback', () => {
+  beforeEach(() => {
+    nock.cleanAll();
+  });
+
+  it('should fallback to GET when HEAD returns 404 but GET returns 200', async () => {
+    const urls = ['https://example.com/head-404-get-200'];
+
+    // HEAD returns 404, but GET returns 200
+    nock('https://example.com').head('/head-404-get-200').reply(404);
+    nock('https://example.com').get('/head-404-get-200').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.deep.equal(['https://example.com/head-404-get-200']);
+    expect(result.notOk).to.be.empty;
+  });
+
+  it('should still return 404 when both HEAD and GET return 404', async () => {
+    const urls = ['https://example.com/truly-not-found'];
+
+    // Both HEAD and GET return 404
+    nock('https://example.com').head('/truly-not-found').reply(404);
+    nock('https://example.com').get('/truly-not-found').reply(404);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.be.empty;
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/truly-not-found',
+        statusCode: 404,
+      },
+    ]);
+  });
+
+  it('should not fallback to GET when HEAD returns non-404 status', async () => {
+    const urls = ['https://example.com/head-403'];
+
+    // HEAD returns 403, no GET fallback should happen
+    nock('https://example.com').head('/head-403').reply(403);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.ok).to.be.empty;
+    expect(result.notOk).to.be.empty;
+    expect(result.otherStatusCodes).to.deep.equal([
+      {
+        url: 'https://example.com/head-403',
+        statusCode: 403,
+      },
+    ]);
+  });
+
+  it('should apply HEAD to GET fallback for redirect URL validation', async () => {
+    const urls = ['https://example.com/redirect-to-head-404-get-200'];
+
+    // Original URL redirects
+    nock('https://example.com')
+      .head('/redirect-to-head-404-get-200')
+      .reply(301, '', { Location: 'https://example.com/target-page' });
+
+    // Target page returns 404 for HEAD but 200 for GET
+    nock('https://example.com').head('/target-page').reply(404);
+    nock('https://example.com').get('/target-page').reply(200);
+
+    const result = await filterValidUrls(urls);
+
+    expect(result.notOk).to.deep.equal([
+      {
+        url: 'https://example.com/redirect-to-head-404-get-200',
+        statusCode: 301,
+        urlsSuggested: 'https://example.com/target-page',
+      },
+    ]);
   });
 });

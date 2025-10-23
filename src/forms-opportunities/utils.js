@@ -12,7 +12,7 @@
 
 import {
   FORMS_AUDIT_INTERVAL,
-  isNonEmptyArray,
+  isNonEmptyArray, isNonEmptyObject,
 } from '@adobe/spacecat-shared-utils';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -35,7 +35,7 @@ function getS3PathPrefix(url, site) {
 async function getPresignedUrl(fileName, context, url, site) {
   const { log, s3Client: s3ClientObj } = context;
   const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
-  log.info(`Generating presigned URL for ${screenshotPath}`);
+  log.debug(`Generating presigned URL for ${screenshotPath}`);
 
   const command = new GetObjectCommand({
     Bucket: process.env.S3_BUCKET_NAME,
@@ -470,7 +470,7 @@ export async function calculateProjectedConversionValue(context, siteId, opportu
 
   try {
     const cpcValue = await calculateCPCValue(context, siteId);
-    log.info(`Calculated CPC value: ${cpcValue} for site: ${siteId}`);
+    log.debug(`Calculated CPC value: ${cpcValue} for site: ${siteId}`);
 
     const originalTraffic = opportunityData.pageViews;
     // traffic is calculated for 15 days - extrapolating for a year
@@ -487,4 +487,120 @@ export async function calculateProjectedConversionValue(context, siteId, opportu
     log.error(`Error calculating projected conversion value for site ${siteId}:`, error);
     return null;
   }
+}
+
+export async function sendMessageToFormsQualityAgent(context, opportunity, formsList) {
+  if (opportunity) {
+    const {
+      log, sqs, site, env,
+    } = context;
+
+    log.debug(`Received forms quality agent message for mystique : ${JSON.stringify(opportunity)}`);
+    const opportunityData = JSON.parse(JSON.stringify(opportunity));
+
+    const data = {
+      url: site ? site.getBaseURL() : formsList[0]?.form,
+      form_details: formsList.map(({ form, formSource }) => ({
+        url: form,
+        form_source: formSource,
+      })),
+    };
+
+    const mystiqueFormsQualityAgentMessage = {
+      type: 'detect:form-details',
+      siteId: opportunityData.siteId,
+      auditId: opportunityData.opportunityId,
+      deliveryType: site ? site.getDeliveryType() : 'aem_cs',
+      time: new Date().toISOString(),
+      data,
+    };
+
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueFormsQualityAgentMessage);
+    log.debug(`Forms quality agent message sent to mystique: ${JSON.stringify(mystiqueFormsQualityAgentMessage)}`);
+  }
+}
+
+export async function sendMessageToMystiqueForGuidance(context, opportunity) {
+  const {
+    log, sqs, env, site,
+  } = context;
+
+  if (opportunity) {
+    log.debug(`Received forms opportunity for guidance: ${JSON.stringify(opportunity)}`);
+    const opptyData = JSON.parse(JSON.stringify(opportunity));
+    // Normalize type: convert forms-accessibility → forms-a11y
+    const normalizedType = opptyData.type === 'form-accessibility' ? 'forms-a11y' : opptyData.type;
+    const mystiqueMessage = {
+      type: `guidance:${normalizedType}`,
+      siteId: opptyData.siteId,
+      auditId: opptyData.auditId,
+      deliveryType: site ? site.getDeliveryType() : 'aem_cs',
+      time: new Date().toISOString(),
+      // keys inside data should follow snake case and outside should follow camel case
+      data: {
+        url: opptyData.type === 'form-accessibility' ? opptyData.data?.accessibility?.[0]?.form || '' : opptyData.data?.form || '',
+        cr: opptyData.data?.trackedFormKPIValue || 0,
+        metrics: opptyData.data?.metrics || [],
+        cta_source: opptyData.data?.formNavigation?.source || '',
+        cta_text: opptyData.data?.formNavigation?.text || '',
+        opportunityId: opptyData.opportunityId || '',
+        form_source: opptyData.data?.formsource || '',
+        // form_details: opptyData.data?.formDetails,
+        // eslint-disable-next-line max-len,no-nested-ternary
+        form_details: Array.isArray(opptyData.data?.formDetails) ? opptyData.data.formDetails : (opptyData.data?.formDetails ? [opptyData.data.formDetails] : []),
+        page_views: opptyData.data?.pageViews,
+        form_views: opptyData.data?.formViews,
+        form_navigation: {
+          url: opptyData.data?.formNavigation?.url || '',
+          source: opptyData.data?.formNavigation?.source || '',
+          cta_clicks: opptyData.data?.formNavigation?.clicksOnCTA || 0,
+          page_views: opptyData.data?.formNavigation?.pageViews || 0,
+        },
+      },
+    };
+
+    // eslint-disable-next-line no-await-in-loop
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
+    log.debug(`Forms opportunity sent to mystique for guidance: ${JSON.stringify(mystiqueMessage)}`);
+  }
+}
+
+/**
+ * get the title for opportunity based on form details.
+ * @param {Object} formDetails - The form details object.
+ * @param {Object} opportunity - Object with setTitle method.
+ */
+export function getFormTitle(formDetails, opportunity) {
+  let formType = (formDetails && isNonEmptyObject(formDetails) && formDetails.form_type?.trim())
+    ? formDetails.form_type.trim()
+    : 'Form';
+
+  const normalizedType = formType.toLowerCase();
+  if (normalizedType === 'na' || normalizedType.includes('other')) {
+    formType = 'Form';
+  }
+
+  const suffixMap = {
+    [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]: 'has low conversions',
+    [FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION]: 'has low views',
+    [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]: 'has low views',
+    [FORM_OPPORTUNITY_TYPES.FORM_A11Y]: '',
+  };
+
+  const suffix = suffixMap[opportunity.getType()] || '';
+  return suffix ? `${formType.trim()} ${suffix}` : formType.trim();
+}
+
+/**
+ * Check if a JSON object is safe for DynamoDB and return its estimated size
+ * @param {Object} item - JSON object to check
+ * @param {number} safetyMargin - Fraction of max size considered safe (default 0.85)
+ * @returns {{safe: boolean, sizeKB: number}} - Safety status and size in KB
+ */
+export function checkDynamoItem(item, safetyMargin = 0.85) {
+  const MAX_ITEM_SIZE_KB = 400;
+  const safeLimitKB = MAX_ITEM_SIZE_KB * safetyMargin;
+  const sizeKB = Buffer.byteLength(JSON.stringify(item), 'utf8') / 1024;
+  return { safe: sizeKB < safeLimitKB, sizeKB };
 }

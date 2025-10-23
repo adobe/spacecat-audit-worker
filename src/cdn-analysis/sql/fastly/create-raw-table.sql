@@ -1,17 +1,18 @@
 CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
   timestamp             string,
-  geo_country           string,
+  client_country_code   string,
   host                  string,
   url                   string,
   request_method        string,
-  request_protocol      string,
   request_user_agent    string,
   response_state        string,
   response_status       int,
   response_reason       string,
   request_referer       string,
   response_content_type string,
-  time_to_first_byte    string
+  time_to_first_byte    string,
+  -- this is the host header added for AEM CS Fastly customer to identify BYOCDN customers
+  request_x_forwarded_host string
 )
 PARTITIONED BY (
   year  string,

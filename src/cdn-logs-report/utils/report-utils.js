@@ -10,45 +10,28 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { getStaticContent, llmoConfig } from '@adobe/spacecat-shared-utils';
+import {
+  getWeek,
+  getYear,
+} from 'date-fns';
+import {
+  extractCustomerDomain,
+  resolveCdnBucketName,
+} from '../../utils/cdn-utils.js';
 
-const TIME_CONSTANTS = {
-  ISO_MONDAY: 1,
-  ISO_SUNDAY: 0,
-  DAYS_PER_WEEK: 7,
-};
-
-const REGEX_PATTERNS = {
-  URL_SANITIZATION: /[^a-zA-Z0-9]/g,
-  BUCKET_SANITIZATION: /[._]/g,
-};
-
-const CDN_LOGS_PREFIX = 'cdn-logs-';
-
-export function extractCustomerDomain(site) {
-  return new URL(site.getBaseURL()).host
-    .replace(REGEX_PATTERNS.URL_SANITIZATION, '_')
-    .toLowerCase();
-}
-
-export function getAnalysisBucket(customerDomain) {
-  const bucketCustomer = customerDomain.replace(REGEX_PATTERNS.BUCKET_SANITIZATION, '-');
-  return `${CDN_LOGS_PREFIX}${bucketCustomer}`;
-}
-
-export function getS3Config(site) {
+export async function getS3Config(site, context) {
   const customerDomain = extractCustomerDomain(site);
-  const customerName = customerDomain.split(/[._]/)[0];
-  const { bucketName: bucket } = site.getConfig().getCdnLogsConfig()
-    || { bucketName: getAnalysisBucket(customerDomain) };
+  const domainParts = customerDomain.split(/[._]/);
+  /* c8 ignore next */
+  const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
+  const bucket = await resolveCdnBucketName(site, context);
 
   return {
     bucket,
     customerName,
     customerDomain,
-    aggregatedLocation: `s3://${bucket}/aggregated/`,
     databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
   };
 }
@@ -59,7 +42,7 @@ export async function loadSql(filename, variables) {
 
 export function validateCountryCode(code) {
   const DEFAULT_COUNTRY_CODE = 'GLOBAL';
-  if (!code) return DEFAULT_COUNTRY_CODE;
+  if (!code || typeof code !== 'string') return DEFAULT_COUNTRY_CODE;
 
   const upperCode = code.toUpperCase();
 
@@ -72,6 +55,7 @@ export function validateCountryCode(code) {
     if (countryName && countryName !== upperCode) {
       return upperCode;
     }
+    /* c8 ignore next 3 */
   } catch {
     // Invalid country code
   }
@@ -79,116 +63,77 @@ export function validateCountryCode(code) {
   return DEFAULT_COUNTRY_CODE;
 }
 
-export async function ensureTableExists(athenaClient, s3Config, log) {
-  const { tableName, databaseName, aggregatedLocation } = s3Config;
+export async function ensureTableExists(athenaClient, databaseName, reportConfig, log) {
+  const {
+    createTableSql, tableName, aggregatedLocation,
+  } = reportConfig;
 
   try {
-    const createTableQuery = await loadSql('create-aggregated-table', {
+    const createTableQuery = await loadSql(createTableSql, {
       databaseName,
       tableName,
       aggregatedLocation,
     });
 
-    log.info(`Creating or checking table: ${tableName}`);
+    log.debug(`Creating or checking table: ${tableName}`);
     const sqlCreateTableDescription = `[Athena Query] Create table ${databaseName}.${tableName}`;
     await athenaClient.execute(createTableQuery, databaseName, sqlCreateTableDescription);
 
-    log.info(`Table ${tableName} is ready`);
+    log.debug(`Table ${tableName} is ready`);
   } catch (error) {
     log.error(`Failed to ensure table exists: ${error.message}`);
     throw error;
   }
 }
 
-export function formatDateString(date) {
-  return date.toISOString().split('T')[0];
-}
+/**
+ * Generates reporting periods data for past weeks
+ * @param {number|Date} [offsetOrDate=-1] - If number: weeks offset. If Date: reference date
+ * @param {Date} [referenceDate=new Date()] - Reference date (when first param is number)
+ * @returns {Object} Object with weeks array and periodIdentifier
+ */
+export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1) {
+  const refUTC = new Date(Date.UTC(
+    refDate.getUTCFullYear(),
+    refDate.getUTCMonth(),
+    refDate.getUTCDate(),
+  ));
 
-function getWeekNumber(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
+  const dayOfWeek = refUTC.getUTCDay();
   /* c8 ignore next */
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-}
-
-export function getWeekRange(offsetWeeks = 0, referenceDate = new Date()) {
-  const refDate = new Date(referenceDate);
-  const isSunday = refDate.getUTCDay() === TIME_CONSTANTS.ISO_SUNDAY;
-  const daysToMonday = isSunday ? 6 : refDate.getUTCDay() - TIME_CONSTANTS.ISO_MONDAY;
-
-  const weekStart = new Date(refDate);
-  const totalOffset = daysToMonday - (offsetWeeks * TIME_CONSTANTS.DAYS_PER_WEEK);
-  weekStart.setUTCDate(refDate.getUTCDate() - totalOffset);
+  const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const weekStart = new Date(refUTC);
+  weekStart.setUTCDate(refUTC.getUTCDate() - daysToMonday - (Math.abs(offsetWeeks) * 7));
   weekStart.setUTCHours(0, 0, 0, 0);
 
   const weekEnd = new Date(weekStart);
   weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
   weekEnd.setUTCHours(23, 59, 59, 999);
 
-  return { weekStart, weekEnd };
-}
+  const localDate = new Date(
+    weekStart.getUTCFullYear(),
+    weekStart.getUTCMonth(),
+    weekStart.getUTCDate(),
+  );
+  const weekNumber = getWeek(localDate, { weekStartsOn: 1, firstWeekContainsDate: 4 });
+  const year = getYear(localDate);
 
-export function createDateRange(startInput, endInput) {
-  const startDate = new Date(startInput);
-  const endDate = new Date(endInput);
-
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-    throw new Error('Invalid date format provided');
-  }
-
-  if (startDate >= endDate) {
-    throw new Error('Start date must be before end date');
-  }
-
-  startDate.setUTCHours(0, 0, 0, 0);
-  endDate.setUTCHours(23, 59, 59, 999);
-
-  return { startDate, endDate };
-}
-
-export function generatePeriodIdentifier(startDate, endDate) {
-  const start = formatDateString(startDate);
-  const end = formatDateString(endDate);
-
-  const diffDays = Math.ceil((endDate - startDate) / (24 * 60 * 60 * 1000));
-  if (diffDays === 7) {
-    const year = startDate.getUTCFullYear();
-    const weekNum = getWeekNumber(startDate);
-    return `w${String(weekNum).padStart(2, '0')}-${year}`;
-  }
-
-  return `${start}_to_${end}`;
-}
-
-export function generateReportingPeriods(referenceDate = new Date()) {
-  const { weekStart, weekEnd } = getWeekRange(-1, referenceDate);
-
-  const weekNumber = getWeekNumber(weekStart);
-  const year = weekStart.getUTCFullYear();
-
-  const weeks = [{
-    weekNumber,
-    year,
-    weekLabel: `Week ${weekNumber}`,
-    startDate: weekStart,
-    endDate: weekEnd,
-    dateRange: {
-      start: formatDateString(weekStart),
-      end: formatDateString(weekEnd),
-    },
-  }];
+  const periodIdentifier = `w${String(weekNumber).padStart(2, '0')}-${year}`;
 
   return {
-    weeks,
-    referenceDate: referenceDate.toISOString(),
-    columns: [`Week ${weekNumber}`],
+    weeks: [{
+      startDate: weekStart, endDate: weekEnd, weekNumber, year, weekLabel: `Week ${weekNumber}`,
+    }],
+    periodIdentifier,
   };
 }
 
-export function buildSiteFilters(filters) {
-  if (!filters || filters.length === 0) return '';
+export function buildSiteFilters(filters, site) {
+  if (!filters || filters.length === 0) {
+    const baseURL = site.getBaseURL();
+    const { host } = new URL(baseURL);
+    return `REGEXP_LIKE(host, '(?i)(${host})')`;
+  }
 
   const clauses = filters.map(({ key, value, type }) => {
     const regexPattern = value.join('|');
@@ -200,4 +145,65 @@ export function buildSiteFilters(filters) {
 
   const filterConditions = clauses.length > 1 ? clauses.join(' AND ') : clauses[0];
   return `(${filterConditions})`;
+}
+
+/**
+ * Fetches remote patterns for a site
+ */
+export async function fetchRemotePatterns(site) {
+  const dataFolder = site.getConfig()?.getLlmoDataFolder();
+
+  if (!dataFolder) {
+    return null;
+  }
+
+  try {
+    const url = `https://main--project-elmo-ui-data--adobe.aem.live/${dataFolder}/agentic-traffic/patterns/patterns.json`;
+
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'spacecat-audit-worker',
+        Authorization: `token ${process.env.LLMO_HLX_API_KEY}`,
+      },
+    });
+
+    if (!res.ok) {
+      return null;
+    }
+
+    const data = await res.json();
+
+    return {
+      pagePatterns: data.pagetype?.data || [],
+      topicPatterns: data.products?.data || [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetches config categories from the latest LLMO config
+ */
+export async function getConfigCategories(site, context) {
+  const { log, s3Client, env } = context;
+  const siteId = site.getSiteId();
+  const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
+
+  try {
+    const { config } = await llmoConfig.readConfig(
+      siteId,
+      s3Client,
+      { s3Bucket },
+    );
+
+    if (!config?.categories) {
+      return [];
+    }
+
+    return Object.values(config.categories).map((category) => category.name);
+  } catch (error) {
+    log.warn(`Failed to fetch config categories: ${error.message}`);
+    return [];
+  }
 }

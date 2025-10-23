@@ -13,7 +13,10 @@
 /* eslint-env mocha */
 
 import { expect } from 'chai';
-import { isPreviewPage, getCountryCodeFromLang } from '../../src/utils/url-utils.js';
+import sinon from 'sinon';
+import nock from 'nock';
+import { isPreviewPage, getCountryCodeFromLang, parseCustomUrls } from '../../src/utils/url-utils.js';
+import * as utils from '../../src/utils/url-utils.js';
 
 describe('isPreviewPage', () => {
   it('should return true for preview pages', () => {
@@ -39,5 +42,194 @@ describe('isPreviewPage', () => {
   it('should return the default country if the language code is not present', () => {
     expect(getCountryCodeFromLang(null)).to.equal('us');
     expect(getCountryCodeFromLang(undefined)).to.equal('us');
+  });
+});
+
+describe('parseCustomUrls Function', () => {
+  it('should return null for empty or invalid input', () => {
+    expect(parseCustomUrls(null)).to.be.null;
+    expect(parseCustomUrls(undefined)).to.be.null;
+    expect(parseCustomUrls('')).to.be.null;
+    expect(parseCustomUrls('   ')).to.be.null;
+    expect(parseCustomUrls(123)).to.be.null;
+    expect(parseCustomUrls([])).to.be.null;
+  });
+
+  it('should handle single URL', () => {
+    const result = parseCustomUrls('https://example.com/page1');
+    expect(result).to.deep.equal(['https://example.com/page1']);
+  });
+
+  it('should handle comma-separated URLs', () => {
+    const result = parseCustomUrls('https://example.com/page1,https://example.com/page2,https://example.com/page3');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+      'https://example.com/page3',
+    ]);
+  });
+
+  it('should trim whitespace from URLs', () => {
+    const result = parseCustomUrls(' https://example.com/page1 ,  https://example.com/page2  ');
+    expect(result).to.deep.equal(['https://example.com/page1', 'https://example.com/page2']);
+  });
+
+  it('should remove duplicates', () => {
+    const result = parseCustomUrls('https://example.com/page1,https://example.com/page1,https://example.com/page2');
+    expect(result).to.deep.equal(['https://example.com/page1', 'https://example.com/page2']);
+  });
+
+  it('should handle empty entries in comma-separated values', () => {
+    const result = parseCustomUrls('https://example.com/page1,,https://example.com/page2, ,https://example.com/page3');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+      'https://example.com/page3',
+    ]);
+  });
+
+  it('should handle URLs with query parameters', () => {
+    const result = parseCustomUrls('https://example.com/page1?param=value,https://example.com/page2?a=1&b=2');
+    expect(result).to.deep.equal([
+      'https://example.com/page1?param=value',
+      'https://example.com/page2?a=1&b=2',
+    ]);
+  });
+
+  it('should handle URLs with fragments', () => {
+    const result = parseCustomUrls('https://example.com/page1#section,https://example.com/page2#top');
+    expect(result).to.deep.equal([
+      'https://example.com/page1#section',
+      'https://example.com/page2#top',
+    ]);
+  });
+
+  it('should handle mixed URL formats', () => {
+    const result = parseCustomUrls('https://example.com/page1,http://other.com/page2,https://third.com/page3');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'http://other.com/page2',
+      'https://third.com/page3',
+    ]);
+  });
+
+  it('should return null for string with only empty values', () => {
+    const result = parseCustomUrls(',,, ,  ,');
+    expect(result).to.be.null;
+  });
+
+  it('should remove angle brackets from URLs', () => {
+    const result = parseCustomUrls('<https://example.com/page1>,<https://example.com/page2>');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+    ]);
+  });
+
+  it('should handle mixed URLs with and without angle brackets', () => {
+    const result = parseCustomUrls('<https://example.com/page1>,https://example.com/page2,<https://example.com/page3>');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+      'https://example.com/page3',
+    ]);
+  });
+
+  it('should handle angle brackets with whitespace', () => {
+    const result = parseCustomUrls(' < https://example.com/page1 > ,  <https://example.com/page2>  ');
+    expect(result).to.deep.equal([
+      'https://example.com/page1',
+      'https://example.com/page2',
+    ]);
+  });
+});
+
+describe('filterBrokenSuggestedUrls', () => {
+  let fetchStub;
+  let prependSchemaStub;
+  const baseURL = 'https://example.com';
+
+  beforeEach(() => {
+    fetchStub = sinon.stub();
+    prependSchemaStub = sinon.stub();
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should return only working URLs from the same domain', async () => {
+    const suggestedUrls = [
+      'https://www.example.com/page1',
+      'https://www.example.com/page2',
+      'https://www.other.com/page3',
+    ];
+
+    nock('https://example.com')
+      .get('/page1').reply(200)
+      .get('/page2')
+      .reply(200);
+    nock('https://www.other.com')
+      .head('/page3').reply(200);
+
+    prependSchemaStub.callsFake((url) => url);
+    fetchStub.withArgs('https://www.example.com/page1').resolves({ ok: true });
+    fetchStub.withArgs('https://www.example.com/page2').resolves({ ok: true });
+    fetchStub.withArgs('https://www.other.com/page3').resolves({ ok: true });
+
+    const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
+    expect(result).to.deep.equal([
+      'https://www.example.com/page1',
+      'https://www.example.com/page2',
+    ]);
+  });
+
+  it('should filter out broken URLs', async () => {
+    const suggestedUrls = [
+      'https://www.example.com/page1',
+      'https://www.example.com/page2',
+    ];
+    nock('https://example.com')
+      .get('/page1').reply(404)
+      .get('/page2')
+      .reply(200);
+    prependSchemaStub.callsFake((url) => url);
+    fetchStub.withArgs('https://www.example.com/page1').resolves({ ok: false });
+    fetchStub.withArgs('https://www.example.com/page2').resolves({ ok: true });
+
+    const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
+    expect(result).to.deep.equal(['https://www.example.com/page2']);
+  });
+
+  it('should filter out URLs from different domains', async () => {
+    const suggestedUrls = [
+      'https://www.example.com/page1',
+      'https://www.other.com/page2',
+    ];
+    nock('https://example.com')
+      .get('/page1').reply(200)
+      .get('/page2')
+      .reply(200);
+    fetchStub.resolves({ ok: true });
+
+    const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
+    expect(result).to.deep.equal(['https://www.example.com/page1']);
+  });
+
+  it('should handle fetch errors gracefully', async () => {
+    const suggestedUrls = [
+      'https://www.example.com/page1',
+      'https://www.example.com/page2',
+    ];
+    nock('https://example.com')
+      .get('/page1').replyWithError('Network error')
+      .get('/page2')
+      .reply(200);
+    prependSchemaStub.callsFake((url) => url);
+    fetchStub.withArgs('https://www.example.com/page1').rejects(new Error('Network error'));
+    fetchStub.withArgs('https://www.example.com/page2').resolves({ ok: true });
+
+    const result = await utils.filterBrokenSuggestedUrls(suggestedUrls, baseURL);
+    expect(result).to.deep.equal(['https://www.example.com/page2']);
   });
 });

@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { prependSchema, stripWWW, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+
 /**
  * Checks if a given URL is a "preview" page
  *
@@ -19,6 +21,27 @@
 export function isPreviewPage(url) {
   const urlObj = new URL(url);
   return urlObj.hostname.endsWith('.page');
+}
+
+export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
+  const baseDomain = new URL(baseURL).hostname;
+  const checks = suggestedUrls.map(async (suggestedUrl) => {
+    try {
+      const schemaPrependedUrl = prependSchema(stripWWW(suggestedUrl));
+      const suggestedURLObj = new URL(schemaPrependedUrl);
+      if (suggestedURLObj.hostname === baseDomain) {
+        const response = await fetch(schemaPrependedUrl);
+        if (response.ok) {
+          return suggestedUrl;
+        }
+      }
+      return null;
+      // eslint-disable-next-line no-unused-vars
+    } catch (error) {
+      return null;
+    }
+  });
+  return (await Promise.all(checks)).filter((url) => url !== null);
 }
 
 /**
@@ -39,4 +62,23 @@ export function getCountryCodeFromLang(lang, defaultCountry = 'us') {
   }
   // If only language is present, return default
   return defaultCountry;
+}
+
+/**
+ * Parses comma-separated URLs from Slack command data
+ * @param {string} data - Comma-separated URLs string
+ * @returns {Array|null} Array of unique URLs or null
+ */
+export function parseCustomUrls(data) {
+  if (!data || typeof data !== 'string') {
+    return null;
+  }
+
+  const urls = data
+    .split(',')
+    .map((url) => url.trim())
+    .map((url) => url.replace(/^<|>$/g, '').trim()) // Remove < at start and > at end, then trim again
+    .filter((url) => url.length > 0);
+
+  return urls.length > 0 ? [...new Set(urls)] : null;
 }

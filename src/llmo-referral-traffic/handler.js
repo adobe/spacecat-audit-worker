@@ -13,21 +13,28 @@
 /* eslint-disable no-param-reassign */
 /* c8 ignore start */
 
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { getDateRanges, getStaticContent, isInteger } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import ExcelJS from 'exceljs';
-import { createFrom } from '@adobe/spacecat-helix-content-sdk';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { getPreviousWeekYear, getTemporalCondition } from './date-utils.js';
-import { saveExcelReport } from '../utils/report-uploader.js';
+import { getPreviousWeekYear, getTemporalCondition } from '../utils/date-utils.js';
+import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../cdn-logs-report/constants/country-patterns.js';
 
-const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
+const COMPILED_COUNTRY_PATTERNS = DEFAULT_COUNTRY_PATTERNS.map(({ name, regex }) => {
+  let flags = '';
+
+  if (regex.startsWith('(?i)')) {
+    flags += 'i';
+    regex = regex.slice(4);
+  }
+
+  return { name, re: new RegExp(regex, flags) };
+});
 
 function extractCountryCode(url) {
-  for (const { regex } of DEFAULT_COUNTRY_PATTERNS) {
-    const re = new RegExp(regex, 'i');
+  for (const { re } of COMPILED_COUNTRY_PATTERNS) {
     const match = url.match(re);
     if (match && match[1]) {
       return match[1].toUpperCase();
@@ -57,22 +64,32 @@ async function createWorkbook(results) {
   return workbook;
 }
 
-export async function referralTrafficRunner(auditUrl, context, site) {
+function calculateAuditStartDate(auditContext) {
+  if (!isInteger(auditContext.week) || !isInteger(auditContext.year)) {
+    return new Date();
+  }
+
+  const ranges = getDateRanges(auditContext.week, auditContext.year);
+  return new Date(ranges[0].startTime);
+}
+
+export async function referralTrafficRunner(auditUrl, context, site, auditContext) {
   const { env, log } = context;
   const { S3_IMPORTER_BUCKET_NAME: importerBucket } = env;
+
+  const today = calculateAuditStartDate(auditContext);
 
   // constants
   const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
   const databaseName = 'rum_metrics';
   const tableName = 'compact_metrics';
-
   const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
 
   // query build-up
   const variables = {
     tableName: `${databaseName}.${tableName}`,
     siteId: site.getSiteId(),
-    temporalCondition: getTemporalCondition(),
+    temporalCondition: getTemporalCondition(today),
   };
 
   // run athena query - fetch data
@@ -80,24 +97,35 @@ export async function referralTrafficRunner(auditUrl, context, site) {
   const description = `[Athena Query] Fetching referral traffic data for ${site.getBaseURL()}`;
   const results = await athenaClient.query(query, databaseName, description);
 
+  // early return if no rum data available
+  if (results.length === 0) {
+    return {
+      auditResult: {
+        rowCount: results.length,
+      },
+      fullAuditRef: `No OpTel Data Found for ${site.getBaseURL()}`,
+    };
+  }
+
+  const pageIntents = await site.getPageIntents();
+  const pageIntentMap = pageIntents.reduce((acc, cur) => {
+    acc[new URL(cur.getUrl()).pathname] = cur.getPageIntent();
+    return acc;
+  }, {});
+
   // enrich with extra fields
   results.forEach((result) => {
+    result.page_intent = pageIntentMap[result.path] || '';
     result.region = extractCountryCode(result.path);
-    result.user_intent = '';
   });
 
   // upload to sharepoint & publish via hlx admin api
-  const sharepointClient = await createFrom({
-    clientId: context.env.SHAREPOINT_CLIENT_ID,
-    clientSecret: context.env.SHAREPOINT_CLIENT_SECRET,
-    authority: context.env.SHAREPOINT_AUTHORITY,
-    domainId: context.env.SHAREPOINT_DOMAIN_ID,
-  }, { url: SHAREPOINT_URL, type: 'onedrive' });
+  const sharepointClient = await createLLMOSharepointClient(context);
 
   const workbook = await createWorkbook(results);
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();
   const outputLocation = `${llmoFolder}/referral-traffic`;
-  const filename = `referral-traffic-w${getPreviousWeekYear()}.xlsx`;
+  const filename = `referral-traffic-w${getPreviousWeekYear(today)}.xlsx`;
 
   await saveExcelReport({
     sharepointClient,

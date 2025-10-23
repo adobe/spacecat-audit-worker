@@ -11,7 +11,7 @@
  */
 
 import { JSDOM } from 'jsdom';
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { stripTrailingSlash, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 
 /**
  * Helper function to check if a link is broken
@@ -95,7 +95,7 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
 
   await Promise.all(
     scrapedObjects
-      .filter(({ data }) => urlSet.has(data.finalUrl))
+      .filter(({ data }) => urlSet.has(stripTrailingSlash(data.finalUrl)))
       .map(async ({ data }) => {
         const html = data.scrapeResult.rawBody;
         const pageUrl = data.finalUrl;
@@ -107,7 +107,7 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
         const internalSet = new Set();
         const externalSet = new Set();
 
-        log.info(`[preflight-audit] Total links found (${anchors.length}):`, anchors.map((a) => a.href));
+        log.debug(`[preflight-audit] Total links found (${anchors.length}):`, anchors.map((a) => a.href));
 
         anchors.forEach((a) => {
           // Skip links that are inside header or footer elements
@@ -127,8 +127,8 @@ export async function runLinksChecks(urls, scrapedObjects, context, options = {
           }
         });
 
-        log.info('[preflight-audit] Found internal links:', internalSet);
-        log.info('[preflight-audit] Found external links:', externalSet);
+        log.debug('[preflight-audit] Found internal links:', internalSet);
+        log.debug('[preflight-audit] Found external links:', externalSet);
 
         // Check internal links
         const internalResults = await Promise.all(
