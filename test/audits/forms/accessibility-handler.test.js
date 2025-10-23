@@ -828,8 +828,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       });
 
-      // Mock aggregateAccessibilityIssues to return individual issues
-      const aggregateAccessibilityIssuesStub = sandbox.stub().returns({
+      // Mock aggregateA11yIssuesByOppType to return individual issues
+      const aggregateA11yIssuesByOppTypeStub = sandbox.stub().returns({
         data: [{
           'form-accessibility': [
             {
@@ -863,7 +863,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
         },
         '../../../src/accessibility/utils/generate-individual-opportunities.js': {
-          aggregateAccessibilityIssues: aggregateAccessibilityIssuesStub,
+          aggregateA11yIssuesByOppType: aggregateA11yIssuesByOppTypeStub,
           createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
         },
       });
@@ -871,8 +871,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
       // Verify individual suggestions were created
-      expect(aggregateAccessibilityIssuesStub).to.have.been.calledOnce;
-      expect(aggregateAccessibilityIssuesStub).to.have.been.calledWith(
+      expect(aggregateA11yIssuesByOppTypeStub).to.have.been.calledOnce;
+      expect(aggregateA11yIssuesByOppTypeStub).to.have.been.calledWith(
         sinon.match.object,
         sinon.match.object,
       );
@@ -912,8 +912,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       });
 
-      // Mock aggregateAccessibilityIssues to throw an error
-      const aggregateAccessibilityIssuesStub = sandbox.stub().throws(new Error('Aggregation failed'));
+      // Mock aggregateA11yIssuesByOppType to throw an error
+      const aggregateA11yIssuesByOppTypeStub = sandbox.stub().throws(new Error('Aggregation failed'));
 
       const createdOpportunity = {
         getId: () => 'opportunity-123',
@@ -925,7 +925,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
         },
         '../../../src/accessibility/utils/generate-individual-opportunities.js': {
-          aggregateAccessibilityIssues: aggregateAccessibilityIssuesStub,
+          aggregateA11yIssuesByOppType: aggregateA11yIssuesByOppTypeStub,
           createIndividualOpportunitySuggestions: sandbox.stub().resolves(),
         },
       });
@@ -937,7 +937,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       expect(context.sqs.sendMessage).to.have.been.calledTwice;
 
       // Verify the stub was called even though it threw an error
-      expect(aggregateAccessibilityIssuesStub).to.have.been.calledOnce;
+      expect(aggregateA11yIssuesByOppTypeStub).to.have.been.calledOnce;
 
       // Verify error was logged for individual suggestions but main success was still logged
       expect(context.log.error).to.have.been.calledWith(
@@ -965,7 +965,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       });
 
-      const aggregateAccessibilityIssuesStub = sandbox.stub();
+      const aggregateA11yIssuesByOppTypeStub = sandbox.stub();
       const createIndividualOpportunitySuggestionsStub = sandbox.stub();
 
       const accessibilityHandlerModule = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
@@ -973,7 +973,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           aggregateAccessibilityData: aggregateAccessibilityDataStub,
         },
         '../../../src/accessibility/utils/generate-individual-opportunities.js': {
-          aggregateAccessibilityIssues: aggregateAccessibilityIssuesStub,
+          aggregateA11yIssuesByOppType: aggregateA11yIssuesByOppTypeStub,
           createIndividualOpportunitySuggestions: createIndividualOpportunitySuggestionsStub,
         },
       });
@@ -981,7 +981,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       await accessibilityHandlerModule.createAccessibilityOpportunity(latestAudit, context);
 
       // Verify individual suggestions functions were not called when no opportunity was created
-      expect(aggregateAccessibilityIssuesStub).to.not.have.been.called;
+      expect(aggregateA11yIssuesByOppTypeStub).to.not.have.been.called;
       expect(createIndividualOpportunitySuggestionsStub).to.not.have.been.called;
     });
 

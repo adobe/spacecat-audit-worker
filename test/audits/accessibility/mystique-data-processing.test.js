@@ -324,15 +324,17 @@ describe('mystique-data-processing', () => {
         [mockSuggestion1, mockSuggestion2, mockSuggestion3],
       );
 
-      expect(result).to.have.length(2);
-      expect(result[0].url).to.equal('https://example.com/page1');
-      expect(result[1].url).to.equal('https://example.com/page2');
+      // aria-allowed-attr uses PER_TYPE granularity, so all are grouped into one message
+      expect(result).to.have.length(1);
+      expect(result[0]).to.have.property('aggregationKey');
+      expect(result[0].url).to.equal('https://example.com/page1'); // URL from first suggestion
+      expect(result[0].issuesList).to.have.length(3);
       expect(result[0].issuesList[0].suggestionId).to.equal('sugg-1');
       expect(result[0].issuesList[0].targetSelector).to.equal('dt');
-      expect(result[0].issuesList[1].suggestionId).to.equal('sugg-3');
-      expect(result[0].issuesList[1].targetSelector).to.equal('li');
-      expect(result[1].issuesList[0].suggestionId).to.equal('sugg-2');
-      expect(result[1].issuesList[0].targetSelector).to.equal('span');
+      expect(result[0].issuesList[1].suggestionId).to.equal('sugg-2');
+      expect(result[0].issuesList[1].targetSelector).to.equal('span');
+      expect(result[0].issuesList[2].suggestionId).to.equal('sugg-3');
+      expect(result[0].issuesList[2].targetSelector).to.equal('li');
     });
 
     it('should group suggestions with the same URL', () => {
