@@ -13,43 +13,30 @@
 import {
   badRequest, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
-import { createOpportunityData } from './opportunity-data-mapper.js';
-import { getSuggestionValue } from './utils.js';
+import { createGenericOpportunityData, createSpecificOpportunityData } from './opportunity-data-mapper.js';
+import { getJsonSummarySuggestion, getMarkdownSummarySuggestion } from './utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
 
-/**
- * Handles Mystique response for summarization and updates pages with AI suggestions
- * @param {Object} message - Message from Mystique with AI suggestions
- * @param {Object} context - Context object with data access and logger
- * @returns {Promise<Object>} - HTTP response
- */
-export default async function handler(message, context) {
-  const { log, dataAccess } = context;
-  const {
-    Site, Audit, Opportunity,
-  } = dataAccess;
-  const { siteId, data, auditId } = message;
-  const { guidance, suggestions } = data;
+async function createSpecificOpportunity(siteId, auditId, baseUrl, guidance, context) {
+  const opportunity = await convertToOpportunity(
+    baseUrl,
+    {
+      siteId,
+      auditId,
+      id: auditId,
+    },
+    context,
+    createSpecificOpportunityData,
+    'summarization',
+    { guidance },
+  );
+  return opportunity;
+}
 
-  log.info(`Message received in summarization guidance handler: ${JSON.stringify(message, null, 2)}`);
-
-  const site = await Site.findById(siteId);
-  if (!site) {
-    log.error(`Site not found for siteId: ${siteId}`);
-    return notFound('Site not found');
-  }
-
-  const audit = await Audit.findById(auditId);
-  if (!audit) {
-    log.warn(`No audit found for auditId: ${auditId}`);
-    return notFound();
-  }
-
-  if (suggestions.length === 0) {
-    log.info(`No suggestions found for siteId: ${siteId}`);
-    return noContent();
-  }
-
+async function createGenericOpportunity(siteId, auditId, guidance, context) {
+  const { dataAccess } = context;
+  const { Opportunity } = dataAccess;
   const wrappedGuidance = {
     recommendations: guidance.map((g) => ({
       insight: g.insight,
@@ -62,7 +49,7 @@ export default async function handler(message, context) {
   let opportunity = existingOpportunities.find(
     (oppty) => oppty.getData()?.subType === 'summarization',
   );
-  const entity = createOpportunityData(siteId, auditId, wrappedGuidance);
+  const entity = createGenericOpportunityData(siteId, auditId, wrappedGuidance);
   if (!opportunity) {
     opportunity = await Opportunity.create(entity);
   } else {
@@ -75,37 +62,123 @@ export default async function handler(message, context) {
     opportunity.setUpdatedBy('system');
     opportunity = await opportunity.save();
   }
+  return opportunity;
+}
+
+async function addSuggestionsToSpecificOpportunity(
+  specificOpportunity,
+  suggestions,
+  context,
+) {
+  const suggestionValues = getJsonSummarySuggestion(suggestions);
+
+  await syncSuggestions({
+    context,
+    opportunity: specificOpportunity,
+    newData: suggestionValues,
+    buildKey: (suggestion) => `${suggestion.url}-${suggestion.insertAfter}`,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: specificOpportunity.getId(),
+      type: 'CODE_CHANGE',
+      rank: 10,
+      data: suggestion,
+    }),
+  });
+}
+
+async function addSuggestionsToGenericOpportunity(
+  genericOpportunity,
+  suggestions,
+  baseUrl,
+  context,
+) {
+  const { auditId } = context;
+  const { log } = context;
+
+  genericOpportunity.setAuditId(auditId);
+  genericOpportunity.setUpdatedBy('system');
+
+  const suggestionValue = getMarkdownSummarySuggestion(suggestions, log);
+  const newData = [{
+    suggestionValue,
+    bKey: `summarization:${baseUrl}`,
+  }];
+
+  await syncSuggestions({
+    context,
+    opportunity: genericOpportunity,
+    newData,
+    buildKey: (dataItem) => dataItem.bKey,
+    mapNewSuggestion: (dataItem) => ({
+      opportunityId: genericOpportunity.getId(),
+      type: 'CONTENT_UPDATE',
+      rank: 1,
+      status: 'NEW',
+      data: {
+        suggestionValue: dataItem.suggestionValue,
+      },
+      kpiDeltas: {
+        estimatedKPILift: 0,
+      },
+    }),
+  });
+
+  log.info(`Saved summarization opportunity: ${genericOpportunity.getId()}`);
+}
+
+/**
+ * Handles Mystique response for summarization and updates pages with AI suggestions
+ * @param {Object} message - Message from Mystique with AI suggestions
+ * @param {Object} context - Context object with data access and logger
+ * @returns {Promise<Object>} - HTTP response
+ */
+export default async function handler(message, context) {
+  const { log, dataAccess } = context;
+  const {
+    Audit,
+    Site,
+  } = dataAccess;
+  const { siteId, data, auditId } = message;
+  const { guidance, suggestions } = data;
+
+  log.info(`Message received in summarization guidance handler: ${JSON.stringify(message, null, 2)}`);
+
+  const site = await Site.findById(siteId);
+  if (!site) {
+    log.error(`Site not found for siteId: ${siteId}`);
+    return notFound('Site not found');
+  }
+
+  const baseUrl = site.getBaseURL();
+
+  const audit = await Audit.findById(auditId);
+  if (!audit) {
+    log.warn(`No audit found for auditId: ${auditId}`);
+    return notFound();
+  }
+
+  if (suggestions.length === 0) {
+    log.info(`No suggestions found for siteId: ${siteId}`);
+    return noContent();
+  }
+
+  const genericOpportunity = await createGenericOpportunity(
+    siteId,
+    auditId,
+    guidance,
+    context,
+  );
+  const specificOpportunity = await createSpecificOpportunity(
+    siteId,
+    auditId,
+    baseUrl,
+    guidance,
+    context,
+  );
 
   try {
-    opportunity.setAuditId(auditId);
-    opportunity.setUpdatedBy('system');
-
-    const suggestionValue = getSuggestionValue(suggestions, log);
-    const newData = [{
-      suggestionValue,
-      bKey: `summarization:${site.getBaseURL()}`,
-    }];
-
-    await syncSuggestions({
-      context,
-      opportunity,
-      newData,
-      buildKey: (dataItem) => dataItem.bKey,
-      mapNewSuggestion: (dataItem) => ({
-        opportunityId: opportunity.getId(),
-        type: 'CONTENT_UPDATE',
-        rank: 1,
-        status: 'NEW',
-        data: {
-          suggestionValue: dataItem.suggestionValue,
-        },
-        kpiDeltas: {
-          estimatedKPILift: 0,
-        },
-      }),
-    });
-
-    log.info(`Saved summarization opportunity: ${opportunity.getId()}`);
+    await addSuggestionsToGenericOpportunity(genericOpportunity, suggestions, baseUrl, context);
+    await addSuggestionsToSpecificOpportunity(specificOpportunity, suggestions, baseUrl, context);
   } catch (e) {
     log.error(`Failed to save summarization opportunity on Mystique callback: ${e.message}`);
     return badRequest('Failed to persist summarization opportunity');
