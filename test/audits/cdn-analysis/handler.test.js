@@ -137,7 +137,7 @@ describe('CDN Analysis Handler', () => {
       expect(result.auditResult.providers).to.be.an('array');
     });
 
-    it('successfully processes CDN analysis with valid importer bucket configuration', async function () {
+    it('successfully processes CDN analysis with valid consolidated bucket configuration', async function () {
       const result = await cdnLogsAnalysisRunner('https://example.com', context, site);
       expect(result.auditResult).to.include.keys('database', 'providers', 'completedAt');
       expect(result.auditResult.database).to.equal('cdn_logs_example_com');

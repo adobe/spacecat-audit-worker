@@ -197,17 +197,17 @@ export function buildCdnPaths(bucketName, serviceProvider, timeParts, pathId = n
 }
 
 /**
- * Builds paths with importer bucket for aggregated output
+ * Builds paths with consolidated bucket for aggregated output
  * @param {string} cdnBucketName - CDN bucket for raw logs
- * @param {string} importerBucket - Importer bucket for aggregated output
+ * @param {string} consolidatedBucket - Consolidated bucket for aggregated output
  * @param {string} serviceProvider - service provider
  * @param {Object} timeParts - Time parts {year, month, day, hour}
  * @param {string} pathId - Path ID for the logs
  * @param {string} siteId - Site ID
  */
-export function buildImporterPaths(
+export function buildConsolidatedPaths(
   cdnBucketName,
-  importerBucket,
+  consolidatedBucket,
   serviceProvider,
   timeParts,
   pathId,
@@ -221,11 +221,11 @@ export function buildImporterPaths(
 
   return {
     rawLocation: cdnPaths.rawLocation,
-    aggregatedLocation: `s3://${importerBucket}/aggregated/${siteId}/`,
-    aggregatedOutput: `s3://${importerBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/`,
-    aggregatedReferralLocation: `s3://${importerBucket}/aggregated-referral/${siteId}/`,
-    aggregatedReferralOutput: `s3://${importerBucket}/aggregated-referral/${siteId}/${year}/${month}/${day}/${hour}/`,
-    tempLocation: `s3://${importerBucket}/temp/athena-results/`,
+    aggregatedLocation: `s3://${consolidatedBucket}/aggregated/${siteId}/`,
+    aggregatedOutput: `s3://${consolidatedBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/`,
+    aggregatedReferralLocation: `s3://${consolidatedBucket}/aggregated-referral/${siteId}/`,
+    aggregatedReferralOutput: `s3://${consolidatedBucket}/aggregated-referral/${siteId}/${year}/${month}/${day}/${hour}/`,
+    tempLocation: `s3://${consolidatedBucket}/temp/athena-results/`,
   };
 }
 
@@ -311,9 +311,10 @@ export async function discoverCdnProviders(s3Client, bucketName, timeParts) {
   return [];
 }
 
-export function resolveImporterBucketName(context) {
+export function resolveConsolidatedBucketName(context) {
   const { env } = context;
-  const environment = env?.AWS_ENV || 'prod';
-  return `spacecat-${environment}-importer`;
+  const { AWS_ENV, AWS_REGION = 'us-east-1' } = env;
+  const environment = AWS_ENV || 'prod';
+  return `spacecat-${environment}-cdn-logs-aggregates-${AWS_REGION}`;
 }
 /* c8 ignore end */

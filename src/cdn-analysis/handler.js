@@ -17,12 +17,12 @@ import {
   resolveCdnBucketName,
   extractCustomerDomain,
   buildCdnPaths,
-  buildImporterPaths,
+  buildConsolidatedPaths,
   getBucketInfo,
   discoverCdnProviders,
   mapServiceToCdnProvider,
   CDN_TYPES,
-  resolveImporterBucketName,
+  resolveConsolidatedBucketName,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
@@ -64,8 +64,8 @@ async function loadSql(provider, filename, variables) {
 /**
  * Returns aggregated table names based on customer domain and mode.
  */
-function getAggregatedTableNames(customerDomain, useImporterBucket) {
-  const suffix = useImporterBucket ? '_importer' : '';
+function getAggregatedTableNames(customerDomain, useConsolidatedBucket) {
+  const suffix = useConsolidatedBucket ? '_consolidated' : '';
   return {
     aggregatedTable: `aggregated_logs_${customerDomain}${suffix}`,
     aggregatedReferralTable: `aggregated_referral_logs_${customerDomain}${suffix}`,
@@ -77,19 +77,19 @@ function getAggregatedTableNames(customerDomain, useImporterBucket) {
  */
 function buildPaths(options) {
   const {
-    useImporterBucket,
+    useConsolidatedBucket,
     cdnBucketName,
-    importerBucketName,
+    consolidatedBucketName,
     serviceProvider,
     timeParts,
     pathId,
     siteId,
   } = options;
 
-  if (useImporterBucket) {
-    return buildImporterPaths(
+  if (useConsolidatedBucket) {
+    return buildConsolidatedPaths(
       cdnBucketName,
-      importerBucketName,
+      consolidatedBucketName,
       serviceProvider,
       timeParts,
       pathId,
@@ -103,7 +103,7 @@ function buildPaths(options) {
 export async function processCdnLogs(auditUrl, context, site, auditContext, options = {}) {
   const { log, s3Client, dataAccess } = context;
 
-  const { useImporterBucket = false } = options;
+  const { useConsolidatedBucket = false } = options;
 
   const bucketName = await resolveCdnBucketName(site, context);
   if (!bucketName) {
@@ -133,9 +133,9 @@ export async function processCdnLogs(auditUrl, context, site, auditContext, opti
   const database = `cdn_logs_${customerDomain}`;
   const { aggregatedTable, aggregatedReferralTable } = getAggregatedTableNames(
     customerDomain,
-    useImporterBucket,
+    useConsolidatedBucket,
   );
-  const importerBucket = resolveImporterBucketName(context);
+  const consolidatedBucket = resolveConsolidatedBucketName(context);
   const siteId = site.getId();
   const results = [];
 
@@ -153,9 +153,9 @@ export async function processCdnLogs(auditUrl, context, site, auditContext, opti
       log.info(`Processing service provider ${serviceProvider.toUpperCase()} (CDN: ${cdnType.toUpperCase()})`);
 
       const paths = buildPaths({
-        useImporterBucket,
+        useConsolidatedBucket,
         cdnBucketName: bucketName,
-        importerBucketName: importerBucket,
+        consolidatedBucketName: consolidatedBucket,
         serviceProvider,
         timeParts: { year, month, day, hour },
         pathId,
@@ -268,11 +268,11 @@ export async function processCdnLogs(auditUrl, context, site, auditContext, opti
 }
 
 export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext) {
-  return processCdnLogs(auditUrl, context, site, auditContext, { useImporterBucket: false });
+  return processCdnLogs(auditUrl, context, site, auditContext, { useConsolidatedBucket: false });
 }
 
 export async function cdnLogsAnalysisRunner(auditUrl, context, site, auditContext) {
-  return processCdnLogs(auditUrl, context, site, auditContext, { useImporterBucket: true });
+  return processCdnLogs(auditUrl, context, site, auditContext, { useConsolidatedBucket: true });
 }
 
 // Current handler (per-org, existing functionality)
@@ -281,7 +281,7 @@ export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .build();
 
-// New handler (all sites, importer bucket)
+// New handler (all sites, consolidated bucket)
 export const cdnLogsAnalysis = new AuditBuilder()
   .withRunner(cdnLogsAnalysisRunner)
   .withUrlResolver(wwwUrlResolver)
