@@ -84,6 +84,8 @@ import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
 import permissions from './permissions/handler.js';
 import permissionsRedundant from './permissions/handler.redundant.js';
+import faqs from './faqs/handler.js';
+import faqsGuidance from './faqs/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -155,6 +157,8 @@ const HANDLERS = {
   'security-vulnerabilities': vulnerabilities,
   'security-permissions': permissions,
   'security-permissions-redundant': permissionsRedundant,
+  faqs,
+  'guidance:faqs': faqsGuidance,
   dummy: (message) => ok(message),
 };
 
