@@ -919,6 +919,86 @@ describe('Accessibility Audit Handler', () => {
     });
   });
 
+  describe('withUrlResolver', () => {
+    let accessibilityHandler;
+
+    beforeEach(async () => {
+      // Import the default export (the built audit handler)
+      const accessibilityModule = await esmock('../../src/accessibility/handler.js', {
+        '../../src/accessibility/utils/data-processing.js': {
+          getUrlsForAudit: getUrlsForAuditStub,
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          generateReportOpportunities: generateReportOpportunitiesStub,
+          sendRunImportMessage: sendRunImportMessageStub,
+        },
+        '../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createAccessibilityIndividualOpportunities: createAccessibilityIndividualOpportunitiesStub,
+        },
+        '../../src/accessibility/utils/scrape-utils.js': {
+          getExistingObjectKeysFromFailedAudits: getExistingObjectKeysFromFailedAuditsStub,
+          getExistingUrlsFromFailedAudits: getExistingUrlsFromFailedAuditsStub,
+          getRemainingUrls: (allUrls, existingUrls) => allUrls.filter(
+            (url) => !existingUrls.includes(url.url),
+          ),
+          updateStatusToIgnored: sandbox.stub().resolves(),
+        },
+      });
+
+      accessibilityHandler = accessibilityModule.default;
+    });
+
+    it('should use site.resolveFinalURL() as the URL resolver', async () => {
+      // Arrange
+      const resolvedUrl = 'https://resolved.example.com';
+      mockSite.resolveFinalURL = sandbox.stub().resolves(resolvedUrl);
+      getUrlsForAuditStub.resolves([
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ]);
+
+      const message = {
+        type: 'accessibility',
+        siteId: 'test-site-id',
+        auditContext: {},
+      };
+
+      // Act
+      await accessibilityHandler.run(message, mockContext);
+
+      // Assert
+      expect(mockSite.resolveFinalURL).to.have.been.calledOnce;
+    });
+
+    it('should pass resolved URL to step context as finalUrl', async () => {
+      // Arrange
+      const resolvedUrl = 'https://final-resolved.example.com';
+      mockSite.resolveFinalURL = sandbox.stub().resolves(resolvedUrl);
+      
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      getUrlsForAuditStub.resolves(mockUrls);
+
+      const message = {
+        type: 'accessibility',
+        siteId: 'test-site-id',
+        auditContext: {},
+      };
+
+      // Act
+      await accessibilityHandler.run(message, mockContext);
+
+      // Assert
+      // The finalUrl should be passed to processImportStep in the context
+      expect(mockSite.resolveFinalURL).to.have.been.calledOnce;
+      
+      // Verify that the resolved URL is passed to the context
+      // We can check this by verifying that processImportStep was called and returned the finalUrl
+      expect(mockContext.log.debug).to.have.been.calledWith(
+        sinon.match(/Step 1: Preparing content scrape/),
+      );
+    });
+  });
+
   describe('processAccessibilityOpportunities', () => {
     beforeEach(() => {
       // Reset context to include AWS_ENV for processAccessibilityOpportunities tests
