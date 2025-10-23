@@ -82,3 +82,34 @@ export function parseCustomUrls(data) {
 
   return urls.length > 0 ? [...new Set(urls)] : null;
 }
+
+/**
+ * Finds the best matching path from config based on context.
+ * Sorts by depth (deepest first) to find most specific match.
+ * Use case: Config path resolution for multi-locale configurations.
+ * @param {Object} sectionData - The config section (e.g., public).
+ * @param {string} contextPath - The path to match (e.g., '/en/us/products').
+ * @returns {string} The best matching config key.
+ */
+export function findBestMatchingPath(sectionData, contextPath) {
+  if (!contextPath || contextPath === 'default') {
+    return 'default';
+  }
+
+  const paths = Object.keys(sectionData)
+    .filter((key) => key !== 'default')
+    .sort((a, b) => {
+      const aDepth = a.split('/').filter(Boolean).length;
+      const bDepth = b.split('/').filter(Boolean).length;
+      return bDepth - aDepth; // Deepest first
+    });
+
+  // Find exact match or startsWith match
+  for (const path of paths) {
+    if (contextPath === path || contextPath.startsWith(path)) {
+      return path;
+    }
+  }
+
+  return 'default';
+}
