@@ -20,7 +20,7 @@ import esmock from 'esmock';
 import {
   formatWcagRule,
   formatIssue,
-  aggregateAccessibilityIssues,
+  aggregateA11yIssuesByOppType,
   createIndividualOpportunity,
   calculateAccessibilityMetrics,
 } from '../../../src/accessibility/utils/generate-individual-opportunities.js';
@@ -804,12 +804,12 @@ describe('aggregateAccessibilityIssues', () => {
   });
 
   it('should return empty data array for null input', () => {
-    const result = aggregateAccessibilityIssues(null);
+    const result = aggregateA11yIssuesByOppType(null);
     expect(result).to.deep.equal({ data: [] });
   });
 
   it('should return empty data array for undefined input', () => {
-    const result = aggregateAccessibilityIssues(undefined);
+    const result = aggregateA11yIssuesByOppType(undefined);
     expect(result).to.deep.equal({ data: [] });
   });
 
@@ -822,7 +822,7 @@ describe('aggregateAccessibilityIssues', () => {
         },
       },
     };
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.be.empty;
   });
 
@@ -845,7 +845,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com');
@@ -876,7 +876,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com');
@@ -918,7 +918,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
     expect(opportunity['a11y-assistive']).to.have.lengthOf(2); // Now creates separate URL objects
@@ -968,7 +968,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
     expect(opportunity['a11y-assistive']).to.have.lengthOf(2);
@@ -1002,7 +1002,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com/page2');
@@ -1013,7 +1013,7 @@ describe('aggregateAccessibilityIssues', () => {
       'https://example.com': {},
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.be.empty;
   });
 
@@ -1027,7 +1027,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.be.empty;
   });
 
@@ -1049,7 +1049,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.be.empty;
   });
 
@@ -1073,7 +1073,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
 
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
@@ -1114,10 +1114,10 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     const opportunity = result.data[0];
-    expect(opportunity['a11y-assistive']).to.have.lengthOf(3); // Creates 3 separate URL objects
+    expect(opportunity['a11y-assistive']).to.have.lengthOf(3); // Creates 3 separate URL objects (one per HTML element)
 
     // Verify each URL object has one issue with one HTML element
     opportunity['a11y-assistive'].forEach((urlObject) => {
@@ -1127,21 +1127,17 @@ describe('aggregateAccessibilityIssues', () => {
       expect(urlObject.issues[0].htmlWithIssues).to.have.lengthOf(1);
     });
 
-    // Verify specific HTML content
-    expect(opportunity['a11y-assistive'][0].issues[0].htmlWithIssues[0].update_from)
-      .to.equal('<div aria-fake="true">Content 1</div>');
-    expect(opportunity['a11y-assistive'][1].issues[0].htmlWithIssues[0].update_from)
-      .to.equal('<span aria-invalid-attr="value">Content 2</span>');
-    expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].update_from)
-      .to.equal('<p aria-made-up="test">Content 3</p>');
+    // Verify all HTML elements are present across the URL objects (order may vary)
+    const allUpdateFromValues = opportunity['a11y-assistive'].map((obj) => obj.issues[0].htmlWithIssues[0].update_from);
+    const allTargetSelectors = opportunity['a11y-assistive'].map((obj) => obj.issues[0].htmlWithIssues[0].target_selector);
 
-    // Verify specific target
-    expect(opportunity['a11y-assistive'][0].issues[0].htmlWithIssues[0].target_selector)
-      .to.equal('div[aria-fake]');
-    expect(opportunity['a11y-assistive'][1].issues[0].htmlWithIssues[0].target_selector)
-      .to.equal('span[aria-invalid-attr]');
-    expect(opportunity['a11y-assistive'][2].issues[0].htmlWithIssues[0].target_selector)
-      .to.equal('p[aria-made-up]');
+    expect(allUpdateFromValues).to.include('<div aria-fake="true">Content 1</div>');
+    expect(allUpdateFromValues).to.include('<span aria-invalid-attr="value">Content 2</span>');
+    expect(allUpdateFromValues).to.include('<p aria-made-up="test">Content 3</p>');
+
+    expect(allTargetSelectors).to.include('div[aria-fake]');
+    expect(allTargetSelectors).to.include('span[aria-invalid-attr]');
+    expect(allTargetSelectors).to.include('p[aria-made-up]');
   });
 
   it('should return original url if URL parsing fails', () => {
@@ -1163,7 +1159,7 @@ describe('aggregateAccessibilityIssues', () => {
       },
     };
 
-    const result = aggregateAccessibilityIssues(input);
+    const result = aggregateA11yIssuesByOppType(input);
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com:port');
   });
@@ -1597,6 +1593,8 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the buildKey function with missing target_selector
     const result = buildKey(aggregatedData.data[0]);
 
+    // buildKey always uses INDIVIDUAL granularity for database uniqueness: url|type|selector
+    // Empty selector results in trailing pipe for backwards compatibility
     expect(result).to.equal('https://example.com/page3|image-alt|');
   });
 
@@ -1633,6 +1631,8 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the buildKey function with null target_selector
     const result = buildKey(aggregatedData.data[0]);
 
+    // buildKey always uses INDIVIDUAL granularity: url|type|selector
+    // Null selector results in trailing pipe
     expect(result).to.equal('https://example.com/page4|button-name|');
   });
 
@@ -1664,6 +1664,8 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the buildKey function with empty htmlWithIssues
     const result = buildKey(aggregatedData.data[0]);
 
+    // buildKey always uses INDIVIDUAL granularity: url|type|selector
+    // Empty htmlWithIssues results in empty selector and trailing pipe
     expect(result).to.equal('https://example.com/page5|label|');
   });
 

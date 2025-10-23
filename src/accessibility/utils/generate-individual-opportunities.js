@@ -22,6 +22,7 @@ import { getAuditData } from './data-processing.js';
 import { processSuggestionsForMystique } from '../guidance-utils/mystique-data-processing.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 import { saveMystiqueValidationMetricsToS3, saveOpptyWithRetry } from './scrape-utils.js';
+import { buildSuggestionKey } from './aggregation-strategies.js';
 
 /**
  * Extracts the 'source' query parameter from a URL and returns a clean URL
@@ -60,6 +61,7 @@ function createMystiqueMessage({
   siteId,
   auditId,
   deliveryType,
+  aggregationKey,
 }) {
   return {
     type: 'guidance:accessibility-remediation',
@@ -67,6 +69,7 @@ function createMystiqueMessage({
     auditId: auditId || '',
     deliveryType,
     time: new Date().toISOString(),
+    aggregationKey,
     data: {
       url,
       opportunityId: opportunity.getId(),
@@ -99,6 +102,7 @@ async function sendMystiqueMessage({
   siteId,
   auditId,
   deliveryType,
+  aggregationKey,
   sqs,
   env,
   log,
@@ -110,6 +114,7 @@ async function sendMystiqueMessage({
     siteId,
     auditId,
     deliveryType,
+    aggregationKey,
   });
 
   try {
@@ -261,12 +266,15 @@ export function formatIssue(type, issueData, severity) {
  * Only includes issues that are in our tracked categories (from accessibilityOpportunitiesMap)
  * and only includes URLs that have at least one issue.
  *
+ * Uses aggregation strategies to control how HTML elements are grouped into suggestions.
+ *
  * @param {Object} accessibilityData - The accessibility data to process
  * @param {Object} accessibilityData.overall - Site-wide summary data
  * @param {Object} accessibilityData[url] - Per-URL accessibility data
+ * @param {Object} opportunitiesMap - Map of opportunity types to issue types
  * @returns {Object} Object with data array containing URLs and their issues
  */
-export function aggregateAccessibilityIssues(
+export function aggregateA11yIssuesByOppType(
   accessibilityData,
   opportunitiesMap = accessibilityOpportunitiesMap,
 ) {
@@ -398,26 +406,12 @@ export async function createIndividualOpportunitySuggestions(
   context,
   log,
 ) {
-  // Build unique key for each suggestion based on URL,
-  // issue type and target - single issue per data item
-  const buildKey = (data) => {
-    const issues = data.issues || [];
-    if (issues.length === 0) {
-      return data.url;
-    }
-    let key = `${data.url}|${issues[0].type}|${issues[0]?.htmlWithIssues[0]?.target_selector || ''}`;
-    if (data.source) {
-      key += `|${data.source}`;
-    }
-    return key;
-  };
-
   try {
     await syncSuggestions({
       opportunity,
       newData: aggregatedData.data,
       context,
-      buildKey,
+      buildKey: buildSuggestionKey,
       // Map each URL's data to a suggestion format
       mapNewSuggestion: (urlData) => ({
         opportunityId: opportunity.getId(),
@@ -491,7 +485,9 @@ export async function sendMessageToMystiqueForRemediation(
       const suggestionData = suggestion.getData();
       const issueTypes = suggestionData.issues
         ? suggestionData.issues.map((issue) => issue.type) : [];
-      log.debug(`[A11yIndividual] Suggestion ${index}: URL=${suggestionData.url}, Issues=[${issueTypes.join(', ')}]`);
+      // Log the database key (INDIVIDUAL level) for each suggestion
+      const databaseKey = buildSuggestionKey(suggestionData);
+      log.debug(`[A11yIndividual] Suggestion ${index}: URL=${suggestionData.url}, DatabaseKey=${databaseKey}, Issues=[${issueTypes.join(', ')}]`);
     });
 
     // Process the suggestions directly to create Mystique messages
@@ -513,10 +509,11 @@ export async function sendMessageToMystiqueForRemediation(
     log.debug(`[A11yIndividual] Sending ${mystiqueData.length} messages to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
 
     const messagePromises = mystiqueData.map(({
-      url, issuesList,
+      url, issuesList, aggregationKey,
     }) => sendMystiqueMessage({
       url,
       issuesList,
+      aggregationKey,
       opportunity: refreshedOpportunity,
       siteId,
       auditId,
@@ -639,7 +636,7 @@ export async function createAccessibilityIndividualOpportunities(accessibilityDa
   } = context;
 
   // Step 1: Aggregate accessibility issues by URL
-  const aggregatedData = aggregateAccessibilityIssues(accessibilityData);
+  const aggregatedData = aggregateA11yIssuesByOppType(accessibilityData);
   log.debug(`[A11yIndividual] Aggregated data: ${JSON.stringify(aggregatedData, null, 2)}`);
 
   // Early return if no actionable issues found
