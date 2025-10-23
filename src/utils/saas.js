@@ -328,6 +328,21 @@ export async function extractCommerceConfigFromACCS(params, log) {
 }
 
 /**
+ * Extracts commerce configuration from ACO (Adobe Commerce Optimizer) instance type.
+ * ACO configs have the same structure as ACCS configs, so this function delegates to
+ * extractCommerceConfigFromACCS with appropriate logging.
+ *
+ * @param {Object} params - Configuration parameters.
+ * @param {string} [params.scope='cs'] - Header scope to extract (e.g., 'cs', 'pdp', 'plp').
+ * @param {Object} log - Logger instance.
+ * @returns {Promise<Object>} Commerce config with url and headers.
+ */
+export async function extractCommerceConfigFromACO(params, log) {
+  log.debug('ACO instance type detected, using ACCS extraction logic');
+  return extractCommerceConfigFromACCS(params, log);
+}
+
+/**
  * Retrieves and validates configuration for a given store and locale (PAAS only).
  * This is a legacy function used by sitemap-product-coverage and other PAAS integrations.
  * For new code, use extractCommerceConfigFromPAAS directly.
@@ -470,8 +485,8 @@ export async function getCommerceConfig(site, auditType, finalUrl, log, locale =
         return extractCommerceConfigFromACCS(params, log);
 
       case 'ACO':
-        // Not implemented yet
-        throw new Error('ACO instance type not yet implemented');
+        log.info('Successfully retrieved commerce config');
+        return extractCommerceConfigFromACO(params, log);
 
       case 'PAAS':
       default:
