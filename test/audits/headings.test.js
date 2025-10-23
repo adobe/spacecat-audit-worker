@@ -137,14 +137,14 @@ describe('Headings Audit', () => {
     context.s3Client = s3Client;
     const completedAudit = await headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
-    // Check heading-missing-h1
-    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check]).to.exist;
-    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].success).to.equal(false);
-    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_MISSING_H1.explanation);
-    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion);
-    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].urls).to.be.an('array').with.lengthOf.at.least(1);
-    expect(result[HEADINGS_CHECKS.HEADING_MISSING_H1.check].urls[0].url).to.equal(url);
-
+    // Check heading-h1-length (empty H1 now triggers this check instead of heading-missing-h1)
+    expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check]).to.exist;
+    expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].success).to.equal(false);
+    expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_H1_LENGTH.explanation);
+    expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion);
+    expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].urls).to.be.an('array').with.lengthOf.at.least(1);
+    expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].urls[0].url).to.equal(url);
+    
     // Check heading-no-content
     expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
     expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
