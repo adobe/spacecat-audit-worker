@@ -1,3 +1,10 @@
+# [1.216.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.215.3...v1.216.0) (2025-10-23)
+
+
+### Features
+
+* add FAQs audit ([#1442](https://github.com/adobe/spacecat-audit-worker/issues/1442)) ([378d76a](https://github.com/adobe/spacecat-audit-worker/commit/378d76a5554449a3a068e53fa506ef7dcf5b134d))
+
 ## [1.215.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.215.2...v1.215.3) (2025-10-23)
 
 
