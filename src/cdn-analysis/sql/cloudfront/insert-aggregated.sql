@@ -8,6 +8,7 @@ SELECT
   CAST("time-to-first-byte" AS DOUBLE) * 1000 AS time_to_first_byte,
   COUNT(*) AS count,
   '{{serviceProvider}}' AS cdn_provider,
+  COALESCE("x-host-header", '') as x_forwarded_host,
   
   -- Add partition columns as regular columns
   '{{year}}' AS year,
@@ -18,7 +19,7 @@ FROM {{database}}.{{rawTable}}
 WHERE year  = '{{year}}'
   AND month = '{{month}}'
   AND day   = '{{day}}'
-  AND hour  = '{{hour}}'
+  {{hourFilter}}
 
    -- match known LLM-related user-agents
   AND REGEXP_LIKE("cs(user-agent)", '(?i)(ChatGPT|GPTBot|OAI-SearchBot|Perplexity|Claude|Anthropic|Gemini|Copilot|Googlebot|bingbot|^Google$)')
@@ -41,4 +42,5 @@ GROUP BY
   "cs(referer)",
   "x-host-header",
   CAST("time-to-first-byte" AS DOUBLE) * 1000,
-  '{{serviceProvider}}';
+  '{{serviceProvider}}',
+  COALESCE("x-host-header", '');

@@ -115,6 +115,12 @@ function compareArrays(oldArray, newArray) {
   return newArray;
 }
 
+export function areCategoryNamesDifferent(oldCategories, newCategories) {
+  const oldNames = Object.values(oldCategories || {}).map((c) => c?.name).filter(Boolean).sort();
+  const newNames = Object.values(newCategories || {}).map((c) => c?.name).filter(Boolean).sort();
+  return oldNames.length !== newNames.length || !oldNames.every((name, i) => name === newNames[i]);
+}
+
 export function compareConfigs(oldConfig, newConfig) {
   const changes = {};
 
@@ -160,6 +166,14 @@ export function compareConfigs(oldConfig, newConfig) {
     changes.competitors = {
       competitors: competitorsChanges,
     };
+  }
+
+  const cdnBucketConfigChanges = compareRecords(
+    oldConfig.cdnBucketConfig || {},
+    newConfig.cdnBucketConfig || {},
+  );
+  if (cdnBucketConfigChanges) {
+    changes.cdnBucketConfig = cdnBucketConfigChanges;
   }
 
   return changes;

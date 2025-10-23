@@ -14,7 +14,7 @@ import { isValidUrl, retrievePageAuthentication, stripTrailingSlash } from '@ado
 import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
 import { JSDOM } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { noopPersister, noopUrlResolver } from '../common/index.js';
+import { isAuditEnabledForSite, noopPersister, noopUrlResolver } from '../common/index.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import {
   getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults,
@@ -94,13 +94,12 @@ export const preflightAudit = async (context) => {
   /**
    * @type {{
    *   urls: string[],
-   *   step: PREFLIGHT_STEP_IDENTIFY | PREFLIGHT_STEP_SUGGEST, checks?: string[],
+   *   step: PREFLIGHT_STEP_IDENTIFY | PREFLIGHT_STEP_SUGGEST,
    * }}
    */
   const {
     urls,
     step: rawStep = PREFLIGHT_STEP_IDENTIFY,
-    checks,
     enableAuthentication = true,
   } = jobMetadata.payload;
   const step = rawStep.toLowerCase();
@@ -112,7 +111,7 @@ export const preflightAudit = async (context) => {
     return stripTrailingSlash(url);
   });
 
-  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit started.`);
+  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit started.`);
 
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
@@ -153,21 +152,22 @@ export const preflightAudit = async (context) => {
     }));
     const audits = new Map(auditsResult.map((r) => [r.pageUrl, r]));
 
+    const bodySizeEnabled = await isAuditEnabledForSite(`${AUDIT_BODY_SIZE}-preflight`, site, context);
+    const loremIpsumEnabled = await isAuditEnabledForSite(`${AUDIT_LOREM_IPSUM}-preflight`, site, context);
+    const h1CountEnabled = await isAuditEnabledForSite(`${AUDIT_H1_COUNT}-preflight`, site, context);
     // DOM-based checks: body size, lorem ipsum, h1 count
-    if (!checks || checks.includes(AUDIT_BODY_SIZE) || checks.includes(AUDIT_LOREM_IPSUM)
-      || checks.includes(AUDIT_H1_COUNT)) {
+    if (bodySizeEnabled || loremIpsumEnabled || h1CountEnabled) {
       const domStartTime = Date.now();
       const domStartTimestamp = new Date().toISOString();
-      // Create DOM-based audit entries for all pages
       previewUrls.forEach((url) => {
         const pageResult = audits.get(url);
-        if (!checks || checks.includes(AUDIT_BODY_SIZE)) {
+        if (bodySizeEnabled) {
           pageResult.audits.push({ name: AUDIT_BODY_SIZE, type: 'seo', opportunities: [] });
         }
-        if (!checks || checks.includes(AUDIT_LOREM_IPSUM)) {
+        if (loremIpsumEnabled) {
           pageResult.audits.push({ name: AUDIT_LOREM_IPSUM, type: 'seo', opportunities: [] });
         }
-        if (!checks || checks.includes(AUDIT_H1_COUNT)) {
+        if (h1CountEnabled) {
           pageResult.audits.push({ name: AUDIT_H1_COUNT, type: 'seo', opportunities: [] });
         }
       });
@@ -183,7 +183,7 @@ export const preflightAudit = async (context) => {
 
         const textContent = doc.body.textContent.replace(/\n/g, '').trim();
 
-        if (!checks || checks.includes(AUDIT_BODY_SIZE)) {
+        if (bodySizeEnabled) {
           if (textContent.length > 0 && textContent.length <= 100) {
             auditsByName[AUDIT_BODY_SIZE].opportunities.push({
               check: 'content-length',
@@ -194,7 +194,7 @@ export const preflightAudit = async (context) => {
           }
         }
 
-        if ((!checks || checks.includes(AUDIT_LOREM_IPSUM)) && /lorem ipsum/i.test(textContent)) {
+        if (loremIpsumEnabled && /lorem ipsum/i.test(textContent)) {
           auditsByName[AUDIT_LOREM_IPSUM].opportunities.push({
             check: 'placeholder-text',
             issue: 'Found Lorem ipsum placeholder text in the page content',
@@ -203,7 +203,7 @@ export const preflightAudit = async (context) => {
           });
         }
 
-        if (!checks || checks.includes(AUDIT_H1_COUNT)) {
+        if (h1CountEnabled) {
           const headingCount = doc.querySelectorAll('h1').length;
           if (headingCount !== 1) {
             auditsByName[AUDIT_H1_COUNT].opportunities.push({
@@ -218,7 +218,7 @@ export const preflightAudit = async (context) => {
       const domEndTime = Date.now();
       const domEndTimestamp = new Date().toISOString();
       const domElapsed = ((domEndTime - domStartTime) / 1000).toFixed(2);
-      log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. DOM-based audit completed in ${domElapsed} seconds`);
+      log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. DOM-based audit completed in ${domElapsed} seconds`);
 
       timeExecutionBreakdown.push({
         name: 'dom',
@@ -235,7 +235,6 @@ export const preflightAudit = async (context) => {
       async (accPromise, handler) => {
         const acc = await accPromise;
         const res = await PREFLIGHT_HANDLERS[handler](context, {
-          checks,
           authHeader,
           previewBaseURL,
           previewUrls,
@@ -268,7 +267,7 @@ export const preflightAudit = async (context) => {
       },
     }));
 
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. resultWithProfiling: ${JSON.stringify(resultWithProfiling)}`);
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. resultWithProfiling: ${JSON.stringify(resultWithProfiling)}`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const anyProcessing = handlerResults.some((r) => r && r.processing === true);
@@ -297,7 +296,7 @@ export const preflightAudit = async (context) => {
     throw error;
   }
 
-  log.info(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit completed.`);
+  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Preflight audit completed.`);
 };
 
 export default new AuditBuilder()

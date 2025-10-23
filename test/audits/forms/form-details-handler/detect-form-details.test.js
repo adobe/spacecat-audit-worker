@@ -33,6 +33,7 @@ describe('Detect Form Details Handler', () => {
   beforeEach(() => {
     logStub = {
       info: sinon.stub(),
+      debug: sinon.stub(),
       error: sinon.stub(),
     };
     siteStub = {
@@ -181,7 +182,7 @@ describe('Detect Form Details Handler', () => {
 
     await handler(message, context);
 
-    expect(logStub.info).to.have.been.calledWith(sinon.match.string);
+    expect(logStub.debug).to.have.been.calledWith(sinon.match.string);
   });
 
   it('should return ok response', async () => {

@@ -6,7 +6,7 @@ WITH hosts AS (
   WHERE year  = '{{year}}'
     AND month = '{{month}}'
     AND day   = '{{day}}'
-    AND hour  = '{{hour}}'
+    {{hourFilter}}
 ),
 
 referrals_raw AS (
@@ -47,7 +47,7 @@ referrals_raw AS (
   WHERE year  = '{{year}}'
     AND month = '{{month}}'
     AND day   = '{{day}}'
-    AND hour  = '{{hour}}'
+    {{hourFilter}}
 
     -- referral traffic definition
     AND (
@@ -101,6 +101,7 @@ SELECT
   device,
   date,
   cdn_provider,
+  COALESCE(host, '') as x_forwarded_host,
   
   -- Add partition columns as regular columns
   '{{year}}' AS year,

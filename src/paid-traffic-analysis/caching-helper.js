@@ -46,7 +46,7 @@ export async function addResultJsonToCache(s3, cacheKey, data, log) {
     });
 
     await s3.send(command);
-    log.info(`Successfully cached result to: ${cacheKey}`);
+    log.debug(`Successfully cached result to: ${cacheKey}`);
   } catch (error) {
     log.error(`Failed to cache result to: ${cacheKey}.  Ignoring error and proceeding with next steps`, error);
   }

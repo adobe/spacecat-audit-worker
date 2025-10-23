@@ -89,6 +89,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
 
     const logMock = {
       info: sandbox.stub(),
+      debug: sandbox.stub(),
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
@@ -125,7 +126,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { error: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() },
+      log: { error: sandbox.stub(), info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -158,7 +159,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { error: sandbox.stub(), info: sandbox.stub(), warn: sandbox.stub() },
+      log: { error: sandbox.stub(), info: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -194,6 +195,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
 
     const logMock = {
       info: sandbox.stub(),
+      debug: sandbox.stub(),
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
@@ -240,7 +242,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -288,7 +290,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -338,6 +340,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
 
     const logMock = {
       info: sandbox.stub(),
+      debug: sandbox.stub(),
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
@@ -351,7 +354,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     expect(resp.status).to.equal(200);
 
     // Verify that the debug logging was called
-    expect(logMock.info.calledWith('Processing 1 broken links from Mystique')).to.be.true;
+    expect(logMock.debug.calledWith('Processing 1 broken links from Mystique')).to.be.true;
   });
 
   it('handles empty suggestedUrls array from Mystique', async () => {
@@ -394,6 +397,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
 
     const logMock = {
       info: sandbox.stub(),
+      debug: sandbox.stub(),
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
@@ -450,6 +454,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
 
     const logMock = {
       info: sandbox.stub(),
+      debug: sandbox.stub(),
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
@@ -463,7 +468,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     expect(resp.status).to.equal(200);
 
     // Verify that the Excel was updated despite user agent mismatch
-    expect(logMock.info.calledWith('✅ Updated row 2 for URL: /test-page with 1 suggestions')).to.be.true;
+    expect(logMock.debug.calledWith('Updated row 2 for URL: /test-page with 1 suggestions')).to.be.true;
   });
 
   it('covers workbook.worksheets[0] || addWorksheet fallback', async () => {
@@ -495,7 +500,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -538,7 +543,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -587,7 +592,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -635,7 +640,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -683,7 +688,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -730,7 +735,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -770,7 +775,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -818,7 +823,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -860,7 +865,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };
@@ -913,7 +918,7 @@ describe('LLM Error Pages – guidance-handler (Excel upsert)', () => {
     };
 
     const context = {
-      log: { info: sandbox.stub(), error: sandbox.stub(), warn: sandbox.stub() },
+      log: { info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub(), warn: sandbox.stub() },
       dataAccess,
       s3Client: { send: sandbox.stub().resolves() },
     };

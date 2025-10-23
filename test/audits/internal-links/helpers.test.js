@@ -93,6 +93,8 @@ describe('isLinkInaccessible', () => {
     // Reset mock logger before each test
     mockLog = {
       info: sinon.stub(),
+      error: sinon.stub(),
+      warn: sinon.stub(),
     };
     // Clear all nock interceptors
     nock.cleanAll();
@@ -130,7 +132,7 @@ describe('isLinkInaccessible', () => {
 
     const result = await isLinkInaccessible('https://example.com/forbidden', mockLog);
     expect(result).to.be.true;
-    expect(mockLog.info.calledWith(
+    expect(mockLog.warn.calledWith(
       'broken-internal-links audit: Warning: https://example.com/forbidden returned client error: 403',
     )).to.be.true;
   });
@@ -143,7 +145,7 @@ describe('isLinkInaccessible', () => {
 
     const result = await isLinkInaccessible('https://example.com/error', mockLog);
     expect(result).to.be.true;
-    expect(mockLog.info.calledWith(
+    expect(mockLog.error.calledWith(
       'broken-internal-links audit: Error checking https://example.com/error: Network error',
     )).to.be.true;
   });
@@ -158,7 +160,7 @@ describe('isLinkInaccessible', () => {
 
     const result = await isLinkInaccessible('https://example.com/timeout', mockLog);
     expect(result).to.be.true;
-    expect(mockLog.info.calledWith(
+    expect(mockLog.error.calledWith(
       'broken-internal-links audit: Error checking https://example.com/timeout: Request timed out after 3000ms',
     )).to.be.true;
   });

@@ -71,6 +71,8 @@ import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
 import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
+import pageTypeDetection from './page-type/handler.js';
+import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
@@ -78,8 +80,13 @@ import headings from './headings/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import prerender from './prerender/handler.js';
 import productMetatags from './product-metatags/handler.js';
+import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
+import permissions from './permissions/handler.js';
+import permissionsRedundant from './permissions/handler.redundant.js';
+import faqs from './faqs/handler.js';
+import faqsGuidance from './faqs/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -94,6 +101,7 @@ const HANDLERS = {
   paid,
   'paid-traffic-analysis-weekly': paidTrafficAnalysisWeekly,
   'paid-traffic-analysis-monthly': paidTrafficAnalysisMonthly,
+  'page-type-detection': pageTypeDetection,
   canonical,
   'broken-backlinks': backlinks,
   'broken-internal-links': internalLinks,
@@ -116,13 +124,17 @@ const HANDLERS = {
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
   'detect:geo-brand-presence': detectGeoBrandPresence,
+  'refresh:geo-brand-presence': detectGeoBrandPresence,
   'geo-brand-presence-daily': geoBrandPresenceDaily,
+  'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
   'detect:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
+  'refresh:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
+  'detect:page-types': pageTypeGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
   'guidance:readability': readabilityGuidance,
   'guidance:structured-data-remediation': structuredDataGuidance,
@@ -145,6 +157,10 @@ const HANDLERS = {
   prerender,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
+  'security-permissions': permissions,
+  'security-permissions-redundant': permissionsRedundant,
+  faqs,
+  'guidance:faqs': faqsGuidance,
   dummy: (message) => ok(message),
 };
 

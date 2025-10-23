@@ -34,7 +34,7 @@ export default async function handler(message, context) {
   const { siteId, data, auditId } = message;
   const { brokenLinks } = data;
 
-  log.info(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
+  log.debug(`Message received in LLM error pages guidance handler: ${JSON.stringify(message, null, 2)}`);
 
   const site = await Site.findById(siteId);
   if (!site) {
@@ -68,7 +68,7 @@ export default async function handler(message, context) {
 
     // Create a map of broken URLs for quick lookup
     const brokenUrlsMap = new Map();
-    log.info(`Processing ${brokenLinks.length} broken links from Mystique`);
+    log.debug(`Processing ${brokenLinks.length} broken links from Mystique`);
 
     brokenLinks.forEach((brokenLink) => {
       const {
@@ -102,20 +102,20 @@ export default async function handler(message, context) {
           sheet.getCell(i, col('AI Rationale')).value = brokenUrlData.aiRationale;
           updatedRows += 1;
 
-          log.info(`✅ Updated row ${i} for URL: ${pathOnlyUrl} with ${brokenUrlData.suggestedUrls.length} suggestions`);
+          log.debug(`Updated row ${i} for URL: ${pathOnlyUrl} with ${brokenUrlData.suggestedUrls.length} suggestions`);
         } else {
           log.info(`No Mystique data found for URL: ${pathOnlyUrl}`);
         }
       }
     }
 
-    log.info(`Updated ${updatedRows} rows with Mystique suggestions`);
+    log.debug(`Updated ${updatedRows} rows with Mystique suggestions`);
 
     // Overwrite the file
     const buffer = await workbook.xlsx.writeBuffer();
     await uploadToSharePoint(buffer, filename, outputDir, sharepointClient, log);
     await publishToAdminHlx(filename, outputDir, log);
-    log.info(`Updated Excel 404 file with Mystique guidance: ${filename}`);
+    log.debug(`Updated Excel 404 file with Mystique guidance: ${filename}`);
   } catch (e) {
     log.error(`Failed to update 404 Excel on Mystique callback: ${e.message}`);
     return badRequest('Failed to persist guidance');

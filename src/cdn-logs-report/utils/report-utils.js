@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { getStaticContent, llmoConfig } from '@adobe/spacecat-shared-utils';
 import {
   getWeek,
   getYear,
@@ -75,11 +75,11 @@ export async function ensureTableExists(athenaClient, databaseName, reportConfig
       aggregatedLocation,
     });
 
-    log.info(`Creating or checking table: ${tableName}`);
+    log.debug(`Creating or checking table: ${tableName}`);
     const sqlCreateTableDescription = `[Athena Query] Create table ${databaseName}.${tableName}`;
     await athenaClient.execute(createTableQuery, databaseName, sqlCreateTableDescription);
 
-    log.info(`Table ${tableName} is ready`);
+    log.debug(`Table ${tableName} is ready`);
   } catch (error) {
     log.error(`Failed to ensure table exists: ${error.message}`);
     throw error;
@@ -179,5 +179,31 @@ export async function fetchRemotePatterns(site) {
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Fetches config categories from the latest LLMO config
+ */
+export async function getConfigCategories(site, context) {
+  const { log, s3Client, env } = context;
+  const siteId = site.getSiteId();
+  const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
+
+  try {
+    const { config } = await llmoConfig.readConfig(
+      siteId,
+      s3Client,
+      { s3Bucket },
+    );
+
+    if (!config?.categories) {
+      return [];
+    }
+
+    return Object.values(config.categories).map((category) => category.name);
+  } catch (error) {
+    log.warn(`Failed to fetch config categories: ${error.message}`);
+    return [];
   }
 }

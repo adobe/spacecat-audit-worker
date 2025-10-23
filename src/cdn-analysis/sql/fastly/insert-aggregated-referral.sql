@@ -6,7 +6,7 @@ WITH hosts AS (
   WHERE year  = '{{year}}'
     AND month = '{{month}}'
     AND day   = '{{day}}'
-    AND hour  = '{{hour}}'
+    {{hourFilter}}
 ),
 
 referrals_raw AS (
@@ -40,6 +40,7 @@ referrals_raw AS (
         THEN 'mobile'
       ELSE 'desktop'
     END AS device,
+    COALESCE(request_x_forwarded_host, '') as x_forwarded_host,
     '{{serviceProvider}}' AS cdn_provider,
     CONCAT('{{year}}', '-', '{{month}}', '-', '{{day}}') as date
 
@@ -47,7 +48,7 @@ referrals_raw AS (
   WHERE year  = '{{year}}'
     AND month = '{{month}}'
     AND day   = '{{day}}'
-    AND hour  = '{{hour}}'
+    {{hourFilter}}
 
     -- referral traffic definition
     AND (
@@ -89,7 +90,7 @@ referrals_raw AS (
 )
 
 SELECT 
-  url,
+  url_extract_path(url) as url,
   host,
   referrer,
   utm_source,
@@ -98,6 +99,7 @@ SELECT
   device,
   date,
   cdn_provider,
+  x_forwarded_host,
   
   -- Add partition columns as regular columns
   '{{year}}' AS year,

@@ -19,6 +19,7 @@ import {
   loadSql,
   generateReportingPeriods,
   fetchRemotePatterns,
+  getConfigCategories,
 } from './utils/report-utils.js';
 import { pathHasData } from '../utils/cdn-utils.js';
 import { runWeeklyReport } from './utils/report-runner.js';
@@ -43,7 +44,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     };
   }
 
-  log.info(`Starting CDN logs report audit for ${url}`);
+  log.debug(`Starting CDN logs report audit for ${url}`);
 
   const sharepointClient = await createLLMOSharepointClient(
     context,
@@ -78,29 +79,6 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
     await ensureTableExists(athenaClient, s3Config.databaseName, reportConfig, log);
 
-    if (reportConfig.name === 'agentic') {
-      const patternsExist = await fetchRemotePatterns(site);
-
-      if (!patternsExist) {
-        log.info('Patterns not found, generating patterns workbook...');
-        const periods = generateReportingPeriods();
-
-        await generatePatternsWorkbook({
-          site,
-          context,
-          athenaClient,
-          s3Config: {
-            ...s3Config,
-            tableName: reportConfigs[0]?.tableName, // Use first report config's table
-          },
-          periods,
-          sharepointClient,
-        });
-      }
-    }
-
-    log.info(`Running weekly report: ${reportConfig.name}...`);
-
     const isMonday = new Date().getUTCDay() === 1;
     // If weekOffset is not provided, run for both week 0 and -1 on Monday and
     // on non-Monday, run for current week. Otherwise, run for the provided weekOffset
@@ -112,6 +90,32 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     } else {
       weekOffsets = [0];
     }
+
+    if (reportConfig.name === 'agentic') {
+      const existingPatterns = await fetchRemotePatterns(site);
+
+      if (!existingPatterns || auditContext?.categoriesUpdated) {
+        log.info('Patterns not found, generating patterns workbook...');
+        const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
+        const configCategories = await getConfigCategories(site, context);
+
+        await generatePatternsWorkbook({
+          site,
+          context,
+          athenaClient,
+          s3Config: {
+            ...s3Config,
+            tableName: reportConfig.tableName,
+          },
+          periods,
+          sharepointClient,
+          configCategories,
+          existingPatterns,
+        });
+      }
+    }
+
+    log.debug(`Running weekly report: ${reportConfig.name}...`);
 
     for (const weekOffset of weekOffsets) {
       // eslint-disable-next-line no-await-in-loop

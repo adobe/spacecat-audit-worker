@@ -23,15 +23,18 @@ import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
+import { transformWebSearchProviderForMystique } from './util.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const LLMO_QUESTIONS_IMPORT_TYPE = 'llmo-prompts-ahrefs';
 export const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
+export const GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE = 'detect:geo-brand-presence-daily';
 export const GEO_FAQ_OPPTY_TYPE = 'guidance:geo-faq';
 export const OPPTY_TYPES = [
   GEO_BRAND_PRESENCE_OPPTY_TYPE,
+  GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE,
   // GEO_FAQ_OPPTY_TYPE, // TODO reenable when working on faqs again
 ];
 
@@ -49,15 +52,17 @@ export const WEB_SEARCH_PROVIDERS = [
 
 /**
  * @import { S3Client } from '@aws-sdk/client-s3';
+ * @import { ISOCalendarWeek } from '@adobe/spacecat-shared-utils';
  */
 
 /**
  * Removes duplicate prompts from AI-generated prompts based on region, topic, and prompt text.
  * @param {Array<Object>} prompts - Array of prompt objects
+ * @param {string} siteId - Site id
  * @param {Object} log - Logger instance
  * @returns {Array<Object>} Deduplicated array of prompts
  */
-function deduplicatePrompts(prompts, log) {
+function deduplicatePrompts(prompts, siteId, log) {
   /* c8 ignore start */
   if (!Array.isArray(prompts) || prompts.length === 0) {
     return prompts;
@@ -129,15 +134,19 @@ function deduplicatePrompts(prompts, log) {
   const totalSkipped = totalDuplicatesRemoved + totalEmptyPromptsSkipped + totalInvalidItemsSkipped;
   const skipRate = originalCount > 0 ? ((totalSkipped / originalCount) * 100).toFixed(1) : 0;
 
-  log.info(`GEO BRAND PRESENCE: [DEDUP] Processed ${originalCount} prompts across `
-    + `${regionTopicGroups.size} region/topic groups`);
-  log.info(`GEO BRAND PRESENCE: [DEDUP] Skipped ${totalSkipped} items (${skipRate}%): `
-    + `${totalDuplicatesRemoved} duplicates, ${totalEmptyPromptsSkipped} empty, ${totalInvalidItemsSkipped} invalid`);
-  if (totalErrorsRecovered > 0) {
-    log.info(`GEO BRAND PRESENCE: [DEDUP] Recovered from ${totalErrorsRecovered} processing errors `
-      + '(items included despite errors)');
-  }
-  log.info(`GEO BRAND PRESENCE: [DEDUP] Kept ${finalCount} unique prompts`);
+  log.info(
+    'GEO BRAND PRESENCE: [DEDUP] Site %s: Processed %d prompts across %d region/topic groups. Skipped %d items (%s%%): %d duplicates, %d empty, %d invalid. Recovered from %d errors. Kept %d unique prompts.',
+    siteId,
+    originalCount,
+    regionTopicGroups.size,
+    totalSkipped,
+    skipRate,
+    totalDuplicatesRemoved,
+    totalEmptyPromptsSkipped,
+    totalInvalidItemsSkipped,
+    totalErrorsRecovered,
+    finalCount,
+  );
 
   // Log group statistics if debug enabled
   if (log.debug) {
@@ -206,7 +215,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     return;
   }
 
-  log.info('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s), calendarWeek: %j', siteId, baseURL, calendarWeek);
+  log.debug('GEO BRAND PRESENCE: sending data to mystique for site id %s (%s), calendarWeek: %j', siteId, baseURL, calendarWeek);
 
   const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
   const recordSets = await Promise.all(
@@ -219,10 +228,10 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     x.origin = x.source; // TODO(aurelio): remove when we decided which one to pick
   }
 
-  log.info('GEO BRAND PRESENCE: Loaded %d raw parquet prompts for site id %s (%s)', parquetPrompts.length, siteId, baseURL);
+  log.debug('GEO BRAND PRESENCE: Loaded %d raw parquet prompts for site id %s (%s)', parquetPrompts.length, siteId, baseURL);
 
   // Remove duplicates from AI-generated prompts
-  parquetPrompts = deduplicatePrompts(parquetPrompts, log);
+  parquetPrompts = deduplicatePrompts(parquetPrompts, siteId, log);
 
   // Load customer-defined prompts from customer config
   const {
@@ -232,9 +241,9 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
   const customerPrompts = Object.values(config.topics).flatMap((x) => {
     const category = config.categories[x.category];
-    return x.prompts.map((p) => ({
+    return x.prompts.flatMap((p) => p.regions.map((region) => ({
       prompt: p.prompt,
-      region: p.regions.join(','),
+      region,
       category: category.name,
       topic: x.name,
       url: '',
@@ -245,7 +254,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
       source: 'human',
       market: p.regions.join(','),
       origin: 'human',
-    }));
+    })));
   });
   // Apply 200 limit with customer prompt priority (FIXED LOGIC)
   let prompts;
@@ -253,10 +262,12 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     if (customerPrompts.length >= 200) {
       // Only use first 200 customer prompts
       prompts = customerPrompts.slice(0, 200);
+      log.warn('GEO BRAND PRESENCE: Customer prompts exceed or meet 200 limit, using only first 200 for site id %s (%s)', siteId, baseURL);
     } else if (parquetPrompts.length + customerPrompts.length > 200) {
       // Use ALL customer prompts + fill remaining slots with parquet prompts
       const remainingSlots = 200 - customerPrompts.length;
       prompts = parquetPrompts.slice(0, remainingSlots).concat(customerPrompts);
+      log.warn('GEO BRAND PRESENCE: Total prompts exceed 200 limit, using all %d customer prompts + first %d parquet prompts for site id %s (%s)', customerPrompts.length, remainingSlots, siteId, baseURL);
     } else {
       // Total is <= 200, use all prompts
       prompts = parquetPrompts.concat(customerPrompts);
@@ -278,7 +289,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     }
     : { ...context, getPresignedUrl };
   const url = await asPresignedJsonUrl(prompts, bucket, s3Context);
-  log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
+  log.debug('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
 
   if (!isNonEmptyArray(providersToUse)) {
     log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
@@ -286,27 +297,29 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   }
 
   // Determine opportunity types based on cadence
-  const opptyTypes = isDaily ? ['detect:geo-brand-presence-daily'] : OPPTY_TYPES;
+  const opptyTypes = isDaily
+    ? [GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE]
+    : [GEO_BRAND_PRESENCE_OPPTY_TYPE];
 
   // Send messages for each combination of opportunity type and web search provider
   await Promise.all(
     opptyTypes.flatMap((opptyType) => providersToUse.map(async (webSearchProvider) => {
       const message = createMystiqueMessage({
-        opptyType,
+        type: opptyType,
         siteId,
         baseURL,
         auditId: audit.getId(),
         deliveryType: site.getDeliveryType(),
         calendarWeek: dateContext,
         url,
-        webSearchProvider,
+        webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
         configVersion: /* c8 ignore next */ configExists ? configVersion : null,
         ...(isDaily && { date: dateContext.date }), // Add date only for daily cadence
       });
 
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
       const cadenceLabel = isDaily ? ' DAILY' : '';
-      log.info('GEO BRAND PRESENCE%s: %s message sent to Mystique for site id %s (%s) with provider %s', cadenceLabel, opptyType, siteId, baseURL, webSearchProvider);
+      log.debug('GEO BRAND PRESENCE%s: %s message sent to Mystique for site id %s (%s) with provider %s', cadenceLabel, opptyType, siteId, baseURL, webSearchProvider);
     })),
   );
   /* c8 ignore end */
@@ -388,8 +401,7 @@ export async function keywordPromptsImportStep(context) {
     }
   }
 
-  log.info('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
-
+  log.debug('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
   const result = {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,
@@ -410,20 +422,20 @@ export async function keywordPromptsImportStep(context) {
 /**
  * Creates a message object for sending to Mystique.
  * @param {object} params - Message parameters
- * @param {string} params.opptyType - The opportunity type
+ * @param {string} params.type - The opportunity type
  * @param {string} params.siteId - The site ID
  * @param {string} params.baseURL - The base URL
  * @param {string} params.auditId - The audit ID
  * @param {string} params.deliveryType - The delivery type
- * @param {object} params.calendarWeek - The calendar week object
+ * @param {ISOCalendarWeek} params.calendarWeek - The calendar week object
  * @param {string} params.url - The presigned URL for data
  * @param {string} params.webSearchProvider - The web search provider
  * @param {null | string} [params.configVersion] - The configuration version
  * @param {null | string} [params.date] - The date string (for daily cadence)
  * @returns {object} The message object
  */
-function createMystiqueMessage({
-  opptyType,
+export function createMystiqueMessage({
+  type,
   siteId,
   baseURL,
   auditId,
@@ -437,6 +449,7 @@ function createMystiqueMessage({
   const data = {
     url,
     configVersion,
+    config_version: configVersion, // @todo remove after mystique supports configVersion
     web_search_provider: webSearchProvider,
   };
 
@@ -446,7 +459,7 @@ function createMystiqueMessage({
   }
 
   return {
-    type: opptyType,
+    type,
     siteId,
     url: baseURL,
     auditId,

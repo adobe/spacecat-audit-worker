@@ -17,12 +17,19 @@ import { saveExcelReport } from '../../utils/report-uploader.js';
 
 export async function generatePatternsWorkbook(options) {
   const {
-    site, context, athenaClient, s3Config, periods, sharepointClient,
+    site,
+    context,
+    athenaClient,
+    s3Config,
+    periods,
+    sharepointClient,
+    configCategories = [],
+    existingPatterns = null,
   } = options;
   const { log } = context;
 
   try {
-    log.info('patterns.json not found, generating patterns.xlsx...');
+    log.info(existingPatterns ? 'Generating patterns.xlsx with merge of existing patterns...' : 'patterns.json not found, generating patterns.xlsx...');
 
     const query = await weeklyBreakdownQueries.createTopUrlsQuery({
       periods,
@@ -45,23 +52,80 @@ export async function generatePatternsWorkbook(options) {
     const baseURL = site.getBaseURL();
     const domain = new URL(baseURL).hostname;
 
-    // Analyze products and page types
-    const productRegexes = await analyzeProducts(domain, paths, context);
-    const pagetypeRegexes = await analyzePageTypes(domain, paths, context);
+    // Skip page type analysis if patterns already exist
+    const pagetypeRegexes = existingPatterns?.pagePatterns?.length
+      ? (log.info('Reusing existing page type patterns'), {})
+      : await analyzePageTypes(domain, paths, context);
 
-    // Prepare data for workbook
-    const productData = [];
-    if (productRegexes && Object.keys(productRegexes).length > 0) {
-      for (const [name, regex] of Object.entries(productRegexes)) {
-        productData.push({ name, regex });
+    // Filter new categories and skip product analysis if all exist
+    const existingCategories = existingPatterns?.topicPatterns?.map(
+      (p) => p.name.toLowerCase(),
+    ) || [];
+    const newCategories = configCategories.filter(
+      (cat) => !existingCategories.includes(cat.toLowerCase()),
+    );
+    const categoriesToAnalyze = newCategories.length ? newCategories : configCategories;
+
+    let productRegexes;
+    if (!existingPatterns?.topicPatterns?.length || newCategories.length) {
+      if (newCategories.length) {
+        log.info(`Analyzing ${newCategories.length} new categories`);
+      }
+      productRegexes = await analyzeProducts(domain, paths, context, categoriesToAnalyze);
+    } else {
+      log.info('Reusing existing product patterns');
+      productRegexes = {};
+    }
+
+    // Merge with existing patterns
+    const mergedProductRegexes = { ...productRegexes };
+    const mergedPagetypeRegexes = { ...pagetypeRegexes };
+
+    if (existingPatterns) {
+      log.info('Merging with existing patterns...');
+
+      // Merge existing product patterns
+      if (existingPatterns.topicPatterns && Array.isArray(existingPatterns.topicPatterns)) {
+        const existingProductCount = existingPatterns.topicPatterns.length;
+        existingPatterns.topicPatterns.forEach((pattern) => {
+          if (pattern.name && pattern.regex) {
+            mergedProductRegexes[pattern.name] = pattern.regex;
+          }
+        });
+        log.info(`Preserved ${existingProductCount} existing product patterns`);
+      }
+
+      // Merge existing page type patterns
+      if (existingPatterns.pagePatterns && Array.isArray(existingPatterns.pagePatterns)) {
+        const existingPageTypeCount = existingPatterns.pagePatterns.length;
+        existingPatterns.pagePatterns.forEach((pattern) => {
+          if (pattern.name && pattern.regex) {
+            mergedPagetypeRegexes[pattern.name] = pattern.regex;
+          }
+        });
+        log.info(`Preserved ${existingPageTypeCount} existing page type patterns`);
       }
     }
 
-    const pagetypeData = [];
-    if (pagetypeRegexes && Object.keys(pagetypeRegexes).length > 0) {
-      for (const [name, regex] of Object.entries(pagetypeRegexes)) {
-        pagetypeData.push({ name, regex });
-      }
+    // Prepare data for workbook with unique lowercase names
+    const productData = Array.from(
+      new Map(Object.entries(mergedProductRegexes).map(([name, regex]) => [
+        name.toLowerCase(),
+        { name: name.toLowerCase(), regex },
+      ])).values(),
+    );
+
+    const pagetypeData = Array.from(
+      new Map(Object.entries(mergedPagetypeRegexes).map(([name, regex]) => [
+        name.toLowerCase(),
+        { name: name.toLowerCase(), regex },
+      ])).values(),
+    );
+
+    // Return early if both arrays are empty
+    if (productData.length === 0 && pagetypeData.length === 0) {
+      log.warn('No pattern data available to generate report');
+      return false;
     }
 
     const reportData = {

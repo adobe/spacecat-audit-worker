@@ -85,7 +85,7 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
     ? await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour })
     : providers;
 
-  log.info(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
+  log.debug(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
 
   const database = `cdn_logs_${customerDomain}`;
   const aggregatedTable = `aggregated_logs_${customerDomain}`;
@@ -155,6 +155,9 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlRaw, database, `[Athena Query] Create raw logs table ${database}.${rawTable}`);
 
+      // Generate hour filter based on processing mode
+      const hourFilter = auditContext?.processFullDay ? '' : `AND hour = '${hour}'`;
+
       // eslint-disable-next-line no-await-in-loop
       const sqlInsert = await loadSql(cdnType, 'insert-aggregated', {
         database,
@@ -164,6 +167,7 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
         month,
         day,
         hour,
+        hourFilter,
         bucket: bucketName,
         host,
         serviceProvider,
@@ -181,6 +185,7 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
         month,
         day,
         hour,
+        hourFilter,
         bucket: bucketName,
         serviceProvider,
       });
