@@ -213,6 +213,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     'hreflang',
     'summarization',
     REFERRAL_TRAFFIC_AUDIT,
+    'cdn-logs-analysis',
     'cdn-logs-report',
     'geo-brand-presence',
   ]);

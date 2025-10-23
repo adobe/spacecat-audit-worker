@@ -208,39 +208,42 @@ export async function processCdnLogs(auditUrl, context, site, auditContext, opti
       // Generate hour filter based on processing mode
       const hourFilter = auditContext?.processFullDay ? '' : `AND hour = '${hour}'`;
 
+      // Load SQL queries in parallel
       // eslint-disable-next-line no-await-in-loop
-      const sqlInsert = await loadSql(cdnType, 'insert-aggregated', {
-        database,
-        rawTable,
-        aggregatedTable,
-        year,
-        month,
-        day,
-        hour,
-        hourFilter,
-        bucket: bucketName,
-        host,
-        serviceProvider,
-      });
-      // eslint-disable-next-line no-await-in-loop
-      await athenaClient.execute(sqlInsert, database, `[Athena Query] Insert aggregated data for ${serviceProvider} into ${database}.${aggregatedTable}`);
+      const [sqlInsert, sqlInsertReferral] = await Promise.all([
+        loadSql(cdnType, 'insert-aggregated', {
+          database,
+          rawTable,
+          aggregatedTable,
+          year,
+          month,
+          day,
+          hour,
+          hourFilter,
+          bucket: bucketName,
+          host,
+          serviceProvider,
+        }),
+        loadSql(cdnType, 'insert-aggregated-referral', {
+          database,
+          rawTable,
+          aggregatedTable: aggregatedReferralTable,
+          year,
+          month,
+          day,
+          hour,
+          hourFilter,
+          bucket: bucketName,
+          serviceProvider,
+        }),
+      ]);
 
-      // Insert aggregated referral data
+      // Execute both insert operations in parallel
       // eslint-disable-next-line no-await-in-loop
-      const sqlInsertReferral = await loadSql(cdnType, 'insert-aggregated-referral', {
-        database,
-        rawTable,
-        aggregatedTable: aggregatedReferralTable,
-        year,
-        month,
-        day,
-        hour,
-        hourFilter,
-        bucket: bucketName,
-        serviceProvider,
-      });
-      // eslint-disable-next-line no-await-in-loop
-      await athenaClient.execute(sqlInsertReferral, database, `[Athena Query] Insert aggregated referral data for ${serviceProvider} into ${database}.${aggregatedReferralTable}`);
+      await Promise.all([
+        athenaClient.execute(sqlInsert, database, `[Athena Query] Insert aggregated data for ${serviceProvider} into ${database}.${aggregatedTable}`),
+        athenaClient.execute(sqlInsertReferral, database, `[Athena Query] Insert aggregated referral data for ${serviceProvider} into ${database}.${aggregatedReferralTable}`),
+      ]);
 
       results.push({
         serviceProvider,
