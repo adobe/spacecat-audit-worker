@@ -76,13 +76,13 @@ export function getFaqMarkdown(faqs, log) {
     }
     // If no URL and no topic, skip heading entirely
 
-    // Add prompts that led to these FAQs
+    // Add prompts that led to these FAQs in a collapsible section
     if (prompts && Array.isArray(prompts) && prompts.length > 0) {
-      markdown += '**Related Search Queries:**\n';
+      markdown += '<details>\n<summary>Related Search Queries</summary>\n\n';
       prompts.forEach((prompt) => {
         markdown += `- ${prompt}\n`;
       });
-      markdown += '\n';
+      markdown += '\n</details>\n\n';
     }
 
     // Add suggested FAQ section

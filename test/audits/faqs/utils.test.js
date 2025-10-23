@@ -55,7 +55,7 @@ describe('FAQ Utils', () => {
 
       expect(markdown).to.include('## 1. Target URL: [/products/photoshop](https://www.adobe.com/products/photoshop)');
       expect(markdown).to.include('**Topic:** photoshop');
-      expect(markdown).to.include('**Related Search Queries:**');
+      expect(markdown).to.include('<details>\n<summary>Related Search Queries</summary>');
       expect(markdown).to.include('- How to use Photoshop?');
       expect(markdown).to.include('### Suggested FAQs');
       expect(markdown).to.include('#### How to use Photoshop?');
@@ -107,7 +107,7 @@ describe('FAQ Utils', () => {
       const markdown = getFaqMarkdown(faqs, log);
 
       expect(markdown).not.to.include('## 1.');
-      expect(markdown).to.include('**Related Search Queries:**');
+      expect(markdown).to.include('<details>\n<summary>Related Search Queries</summary>');
       expect(markdown).to.include('#### Generic question?');
     });
 
@@ -285,8 +285,10 @@ describe('FAQ Utils', () => {
 
       const markdown = getFaqMarkdown(faqs, log);
 
-      expect(markdown).not.to.include('<details>');
-      expect(markdown).not.to.include('AI Analysis');
+      expect(markdown).to.include('Related Search Queries'); // Should have prompts accordion
+      expect(markdown).not.to.include('AI Analysis'); // Should not have AI analysis
+      expect(markdown).not.to.include('Answer Suitability');
+      expect(markdown).not.to.include('Question Relevance');
     });
 
     it('should handle multiple FAQs with incrementing numbers', () => {
@@ -379,7 +381,7 @@ describe('FAQ Utils', () => {
 
       const markdown = getFaqMarkdown(faqs, log);
 
-      expect(markdown).not.to.include('**Related Search Queries:**');
+      expect(markdown).not.to.include('Related Search Queries');
     });
 
     it('should return empty string for empty FAQ array', () => {
