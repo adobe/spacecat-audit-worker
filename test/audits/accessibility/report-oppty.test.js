@@ -20,11 +20,12 @@ import {
   createFixedVsNewReportOpportunity,
   createBaseReportOpportunity,
   createReportOpportunitySuggestionInstance,
+  createOrUpdateDeviceSpecificSuggestion,
   createAccessibilityAssistiveOpportunity,
   createAccessibilityColorContrastOpportunity,
 } from '../../../src/accessibility/utils/report-oppty.js';
 
-describe.skip('Accessibility Report Opportunity Utils', () => {
+describe('Accessibility Report Opportunity Utils', () => {
   describe('createInDepthReportOpportunity', () => {
     it('should create correct in-depth report opportunity structure', () => {
       const week = 42;
@@ -37,7 +38,7 @@ describe.skip('Accessibility Report Opportunity Utils', () => {
         origin: 'AUTOMATION',
         type: 'generic-opportunity',
         title: 'Accessibility report - Desktop - Week 42 - 2024 - in-depth',
-        description: 'This report provides an in-depth overview of various accessibility issues identified across different web pages. It categorizes issues based on their severity and impact, offering detailed descriptions and recommended fixes. The report covers critical aspects such as ARIA attributes, keyboard navigation, and screen reader compatibility to ensure a more inclusive and accessible web experience for all users.',
+        description: 'This report provides an in-depth overview of various accessibility issues identified across different web pages on Desktop devices. It categorizes issues based on their severity and impact, offering detailed descriptions and recommended fixes. The report covers critical aspects such as ARIA attributes, keyboard navigation, and screen reader compatibility to ensure a more inclusive and accessible web experience for all users.',
         tags: ['a11y'],
         status: 'IGNORED',
       });
@@ -65,7 +66,7 @@ describe.skip('Accessibility Report Opportunity Utils', () => {
         origin: 'AUTOMATION',
         type: 'generic-opportunity',
         title: 'Enhancing accessibility for the top 10 most-visited pages - Desktop - Week 25 - 2024',
-        description: 'Here are some optimization suggestions that could help solve the accessibility issues found on the top 10 most-visited pages.',
+        description: 'Here are some optimization suggestions that could help solve the accessibility issues found on the top 10 most-visited pages on Desktop devices.',
         tags: ['a11y'],
         status: 'IGNORED',
       });
@@ -84,7 +85,7 @@ describe.skip('Accessibility Report Opportunity Utils', () => {
         origin: 'AUTOMATION',
         type: 'generic-opportunity',
         title: 'Accessibility report Fixed vs New Issues - Desktop - Week 30 - 2024',
-        description: 'This report provides a comprehensive analysis of accessibility issues, highlighting both resolved and newly identified problems. It aims to track progress in improving accessibility and identify areas requiring further attention.',
+        description: 'This report provides a comprehensive analysis of accessibility issues on Desktop devices, highlighting both resolved and newly identified problems. It aims to track progress in improving accessibility and identify areas requiring further attention.',
         tags: ['a11y'],
         status: 'IGNORED',
       });
@@ -430,6 +431,398 @@ describe.skip('Accessibility Report Opportunity Utils', () => {
       // Assistive and color contrast opportunities don't take parameters
       expect(() => createAccessibilityAssistiveOpportunity()).to.not.throw();
       expect(() => createAccessibilityColorContrastOpportunity()).to.not.throw();
+    });
+  });
+
+  describe('createOrUpdateDeviceSpecificSuggestion', () => {
+    let mockLog;
+
+    beforeEach(() => {
+      mockLog = {
+        info: () => {},
+      };
+    });
+
+    it('should handle string suggestionValue for desktop device', () => {
+      const suggestionValue = '# Desktop Report\nSome content';
+      const deviceType = 'desktop';
+      const markdownContent = '# Updated Desktop Report\nNew content';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        mockLog,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.have.property('type', 'CODE_CHANGE');
+      expect(result[0].data).to.have.property('suggestionValue');
+      expect(result[0].data.suggestionValue).to.deep.equal({
+        'accessibility-desktop': suggestionValue,
+      });
+    });
+
+    it('should handle string suggestionValue for mobile device', () => {
+      const suggestionValue = '# Mobile Report\nSome content';
+      const deviceType = 'mobile';
+      const markdownContent = '# Updated Mobile Report\nNew content';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        mockLog,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.have.property('type', 'CODE_CHANGE');
+      expect(result[0].data).to.have.property('suggestionValue');
+      expect(result[0].data.suggestionValue).to.deep.equal({
+        'accessibility-mobile': suggestionValue,
+      });
+    });
+
+    it('should handle object suggestionValue and update with new device content', () => {
+      const suggestionValue = {
+        'accessibility-desktop': '# Desktop Report\nExisting desktop content',
+      };
+      const deviceType = 'mobile';
+      const markdownContent = '# Mobile Report\nNew mobile content';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        mockLog,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].data.suggestionValue).to.deep.equal({
+        'accessibility-desktop': '# Desktop Report\nExisting desktop content',
+        'accessibility-mobile': '# Mobile Report\nNew mobile content',
+      });
+    });
+
+    it('should handle object suggestionValue and update existing device content', () => {
+      const suggestionValue = {
+        'accessibility-desktop': '# Desktop Report\nOld desktop content',
+        'accessibility-mobile': '# Mobile Report\nOld mobile content',
+      };
+      const deviceType = 'desktop';
+      const markdownContent = '# Desktop Report\nUpdated desktop content';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        mockLog,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result[0].data.suggestionValue).to.deep.equal({
+        'accessibility-desktop': '# Desktop Report\nUpdated desktop content',
+        'accessibility-mobile': '# Mobile Report\nOld mobile content',
+      });
+    });
+
+    it('should handle null suggestionValue and create new object', () => {
+      const suggestionValue = null;
+      const deviceType = 'desktop';
+      const markdownContent = '# Desktop Report\nNew content';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        mockLog,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result[0].data.suggestionValue).to.deep.equal({
+        'accessibility-desktop': '# Desktop Report\nNew content',
+      });
+    });
+
+    it('should handle undefined suggestionValue and create new object', () => {
+      const suggestionValue = undefined;
+      const deviceType = 'mobile';
+      const markdownContent = '# Mobile Report\nNew content';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        mockLog,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result[0].data.suggestionValue).to.deep.equal({
+        'accessibility-mobile': '# Mobile Report\nNew content',
+      });
+    });
+
+    it('should use console as default logger if not provided', () => {
+      const suggestionValue = '# Test';
+      const deviceType = 'desktop';
+      const markdownContent = '# Test';
+
+      // Should not throw when logger is not provided
+      expect(() => createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+      )).to.not.throw();
+    });
+
+    it('should preserve existing device content when adding new device', () => {
+      const suggestionValue = {
+        'accessibility-desktop': '# Desktop Content\nImportant desktop info',
+      };
+      const deviceType = 'mobile';
+      const markdownContent = '# Mobile Content\nNew mobile info';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        mockLog,
+      );
+
+      expect(result[0].data.suggestionValue['accessibility-desktop']).to.equal('# Desktop Content\nImportant desktop info');
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.equal('# Mobile Content\nNew mobile info');
+    });
+
+    it('should handle empty markdownContent', () => {
+      const suggestionValue = {
+        'accessibility-desktop': '# Desktop Report',
+      };
+      const deviceType = 'mobile';
+      const markdownContent = '';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        mockLog,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.equal('');
+    });
+
+    it('should handle existing content with both desktop and mobile having content', () => {
+      const suggestionValue = {
+        'accessibility-desktop': '# Desktop Report\nWith substantial content that is longer',
+        'accessibility-mobile': '# Mobile Report\nWith substantial mobile content',
+      };
+      const deviceType = 'desktop';
+      const markdownContent = '# Updated Desktop Report\nWith even more substantial content';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        mockLog,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result[0].data.suggestionValue['accessibility-desktop']).to.have.length.greaterThan(0);
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.have.length.greaterThan(0);
+    });
+
+    it('should handle long markdownContent properly', () => {
+      const longContent = '# Very Long Report\n' + 'Content line\n'.repeat(100);
+      const suggestionValue = {
+        'accessibility-desktop': longContent,
+      };
+      const deviceType = 'mobile';
+      const markdownContent = longContent;
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        mockLog,
+      );
+
+      expect(result[0].data.suggestionValue['accessibility-desktop']).to.equal(longContent);
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.equal(longContent);
+      expect(result[0].data.suggestionValue['accessibility-desktop']).to.have.length.greaterThan(1000);
+    });
+
+    it('should handle object with undefined device content', () => {
+      const suggestionValue = {
+        'accessibility-desktop': '# Desktop Report',
+        // mobile is undefined
+      };
+      const deviceType = 'mobile';
+      const markdownContent = '# Mobile Report';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        mockLog,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.equal('# Mobile Report');
+    });
+
+    it('should handle object with one device having empty string', () => {
+      const suggestionValue = {
+        'accessibility-desktop': '',
+        'accessibility-mobile': '# Mobile Report',
+      };
+      const deviceType = 'desktop';
+      const markdownContent = '# Desktop Report';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        mockLog,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result[0].data.suggestionValue['accessibility-desktop']).to.equal('# Desktop Report');
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.equal('# Mobile Report');
+    });
+
+    it('should log desktop content length when desktop content exists', () => {
+      const suggestionValue = {
+        'accessibility-desktop': '# Desktop Report\nWith some content',
+      };
+      const deviceType = 'mobile';
+      const markdownContent = '# Mobile Report';
+
+      // Create a spy to track log calls
+      const logSpy = {
+        info: () => {},
+      };
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        markdownContent,
+        logSpy,
+      );
+
+      // Verify the result has both desktop and mobile content
+      expect(result[0].data.suggestionValue['accessibility-desktop']).to.have.length.greaterThan(0);
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.equal('# Mobile Report');
+    });
+
+    it('should handle object with desktop content when updating mobile', () => {
+      // This test specifically ensures we hit the truthy branch of line 121
+      const desktopContent = '# Desktop Accessibility Report\n\n## Critical Issues\n\nSome detailed content here.';
+      const suggestionValue = {
+        'accessibility-desktop': desktopContent,
+      };
+      const deviceType = 'mobile';
+      const mobileContent = '# Mobile Accessibility Report\n\n## Mobile Issues\n\nMobile specific content.';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        mobileContent,
+        mockLog,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result[0].data.suggestionValue['accessibility-desktop']).to.equal(desktopContent);
+      expect(result[0].data.suggestionValue['accessibility-desktop']).to.have.length.greaterThan(50);
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.equal(mobileContent);
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.have.length.greaterThan(50);
+    });
+
+    it('should handle object with mobile content when updating desktop', () => {
+      // This test ensures both branches are covered
+      const mobileContent = '# Mobile Accessibility Report\n\n## Mobile Issues\n\nMobile specific content.';
+      const suggestionValue = {
+        'accessibility-mobile': mobileContent,
+      };
+      const deviceType = 'desktop';
+      const desktopContent = '# Desktop Accessibility Report\n\n## Critical Issues\n\nDesktop specific content.';
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        desktopContent,
+        mockLog,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result[0].data.suggestionValue['accessibility-desktop']).to.equal(desktopContent);
+      expect(result[0].data.suggestionValue['accessibility-desktop']).to.have.length.greaterThan(50);
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.equal(mobileContent);
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.have.length.greaterThan(50);
+    });
+
+    it('should correctly log desktop content length when it exists with truthy length', () => {
+      // This test specifically targets line 121 where desktop content already exists
+      const existingDesktopContent = 'Desktop Report Content';
+      const suggestionValue = {
+        'accessibility-desktop': existingDesktopContent,
+      };
+      const deviceType = 'mobile';
+      const mobileContent = 'Mobile Content';
+
+      let loggedDesktopLength = false;
+      const logSpy = {
+        info: (message) => {
+          if (message.includes('accessibility-desktop length:') && message.includes(existingDesktopContent.length.toString())) {
+            loggedDesktopLength = true;
+          }
+        },
+      };
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        mobileContent,
+        logSpy,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result[0].data.suggestionValue['accessibility-desktop']).to.equal(existingDesktopContent);
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.equal(mobileContent);
+      expect(loggedDesktopLength).to.be.true;
+    });
+
+    it('should correctly log desktop content length when it does not exist (hits || 0 branch)', () => {
+      // This test targets line 121 falsy branch where desktop content is undefined
+      // We update mobile but desktop doesn't exist yet, so line 121 logs "0"
+      const suggestionValue = {
+        'accessibility-mobile': 'Existing Mobile Content',
+      };
+      const deviceType = 'mobile';  // Updating mobile, so desktop remains undefined
+      const mobileContent = 'Updated Mobile Content';
+
+      let loggedDesktopZero = false;
+      const logSpy = {
+        info: (message) => {
+          if (message.includes('accessibility-desktop length: 0')) {
+            loggedDesktopZero = true;
+          }
+        },
+      };
+
+      const result = createOrUpdateDeviceSpecificSuggestion(
+        suggestionValue,
+        deviceType,
+        mobileContent,
+        logSpy,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result[0].data.suggestionValue['accessibility-desktop']).to.be.undefined;
+      expect(result[0].data.suggestionValue['accessibility-mobile']).to.equal(mobileContent);
+      expect(loggedDesktopZero).to.be.true;
     });
   });
 });

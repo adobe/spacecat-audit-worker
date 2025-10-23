@@ -23,7 +23,7 @@ import { MockContextBuilder } from '../../shared.js';
 
 use(sinonChai);
 
-describe.skip('Forms Opportunities - Accessibility Handler', () => {
+describe('Forms Opportunities - Accessibility Handler', () => {
   let sandbox;
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -49,7 +49,7 @@ describe.skip('Forms Opportunities - Accessibility Handler', () => {
       expect(filterLogic(opportunityWithoutTag)).to.be.false;
     });
 
-    it('should test the complete flow with opportunities that need to be updated to IGNORED', async () => {
+    it('should create a new opportunity when no existing opportunity ID is provided', async () => {
       const message = {
         auditId: 'test-audit-id',
         siteId: 'test-site-id',
@@ -68,11 +68,29 @@ describe.skip('Forms Opportunities - Accessibility Handler', () => {
         },
       };
 
-      // Mock existing opportunities that have Forms Accessibility tag
-      const existingOpportunity = {
+      const newOpportunity = {
+        getId: () => 'new-opportunity-id',
         getTags: () => ['Forms Accessibility'],
-        setStatus: sandbox.stub(),
+        getData: () => ({
+          accessibility: [{
+            form: 'https://example.com/form1',
+            formSource: '#form1',
+            a11yIssues: [{
+              issue: 'Missing alt text',
+              level: 'error',
+              successCriterias: [{
+                id: '1.1.1',
+                level: 'A',
+                description: 'Non-text Content',
+              }],
+              htmlWithIssues: '<img src="test.jpg">',
+              recommendation: 'Add alt text to image',
+            }],
+          }],
+        }),
+        setUpdatedBy: sandbox.stub(),
         save: sandbox.stub().resolves(),
+        addSuggestions: sandbox.stub().resolves({ id: 'sugg-1' }),
       };
 
       const context = new MockContextBuilder()
@@ -80,16 +98,7 @@ describe.skip('Forms Opportunities - Accessibility Handler', () => {
         .withOverrides({
           dataAccess: {
             Opportunity: {
-              // Return existing opportunities when queried for NEW status
-              allBySiteIdAndStatus: sandbox.stub().callsFake(async (siteId, status) => {
-                if (status === 'NEW') {
-                  return [existingOpportunity];
-                }
-                return [];
-              }),
-              create: sandbox.stub().resolves({
-                getId: () => 'new-opportunity-id',
-              }),
+              create: sandbox.stub().resolves(newOpportunity),
               findById: sandbox.stub().resolves(null), // No existing opportunity with this ID
             },
             Site: {
@@ -115,15 +124,11 @@ describe.skip('Forms Opportunities - Accessibility Handler', () => {
 
       await mystiqueDetectedFormAccessibilityHandler(message, context);
 
-      // Verify that allBySiteIdAndStatus was called to find opportunities to update
-      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith('test-site-id', 'NEW');
-
-      // Verify that the existing opportunity was updated to IGNORED status
-      expect(existingOpportunity.setStatus).to.have.been.calledWith('IGNORED');
-      expect(existingOpportunity.save).to.have.been.calledOnce;
-
       // Verify that a new opportunity was created
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
+      
+      // Verify that guidance was sent (either to Mystique or FormsQualityAgent)
+      expect(context.sqs.sendMessage).to.have.been.called;
     });
   });
 

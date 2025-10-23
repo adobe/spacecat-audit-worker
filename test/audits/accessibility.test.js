@@ -21,13 +21,14 @@ import { MockContextBuilder } from '../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
-describe.skip('Accessibility Audit Handler', () => {
+describe('Accessibility Audit Handler', () => {
   let sandbox;
   let mockContext;
   let mockSite;
   let mockS3Client;
   let scrapeAccessibilityData;
   let processAccessibilityOpportunities;
+  let createProcessAccessibilityOpportunitiesWithDevice;
   let processImportStep;
   let getUrlsForAuditStub;
   let aggregateAccessibilityDataStub;
@@ -35,6 +36,7 @@ describe.skip('Accessibility Audit Handler', () => {
   let createAccessibilityIndividualOpportunitiesStub;
   let getExistingObjectKeysFromFailedAuditsStub;
   let getExistingUrlsFromFailedAuditsStub;
+  let updateStatusToIgnoredStub;
   let sendRunImportMessageStub;
 
   beforeEach(async () => {
@@ -80,6 +82,7 @@ describe.skip('Accessibility Audit Handler', () => {
     createAccessibilityIndividualOpportunitiesStub = sandbox.stub();
     getExistingObjectKeysFromFailedAuditsStub = sandbox.stub().resolves([]);
     getExistingUrlsFromFailedAuditsStub = sandbox.stub().resolves([]);
+    updateStatusToIgnoredStub = sandbox.stub().resolves();
     sendRunImportMessageStub = sandbox.stub().resolves();
 
     const accessibilityModule = await esmock('../../src/accessibility/handler.js', {
@@ -95,11 +98,13 @@ describe.skip('Accessibility Audit Handler', () => {
       '../../src/accessibility/utils/scrape-utils.js': {
         getExistingObjectKeysFromFailedAudits: getExistingObjectKeysFromFailedAuditsStub,
         getExistingUrlsFromFailedAudits: getExistingUrlsFromFailedAuditsStub,
+        updateStatusToIgnored: updateStatusToIgnoredStub,
       },
     });
 
     scrapeAccessibilityData = accessibilityModule.scrapeAccessibilityData;
     processAccessibilityOpportunities = accessibilityModule.processAccessibilityOpportunities;
+    createProcessAccessibilityOpportunitiesWithDevice = accessibilityModule.createProcessAccessibilityOpportunitiesWithDevice;
     processImportStep = accessibilityModule.processImportStep;
   });
 
@@ -137,7 +142,7 @@ describe.skip('Accessibility Audit Handler', () => {
       expect(getExistingUrlsFromFailedAuditsStub).to.have.been.calledOnce;
 
       expect(mockContext.log.debug).to.have.been.calledWith(
-        '[A11yAudit] Step 1: Preparing content scrape for accessibility audit for https://example.com with siteId test-site-id',
+        '[A11yAudit] Step 1: Preparing content scrape for desktop accessibility audit for https://example.com with siteId test-site-id',
       );
 
       expect(result).to.deep.equal({
@@ -153,6 +158,8 @@ describe.skip('Accessibility Audit Handler', () => {
         processingType: 'accessibility',
         options: {
           accessibilityScrapingParams: null,
+          deviceType: 'desktop',
+          storagePrefix: 'accessibility',
         },
       });
     });
@@ -286,7 +293,7 @@ describe.skip('Accessibility Audit Handler', () => {
 
       // Assert
       expect(mockContext.log.debug).to.have.been.calledWith(
-        '[A11yAudit] Step 1: Preparing content scrape for accessibility audit for https://example.com with siteId test-site-id',
+        '[A11yAudit] Step 1: Preparing content scrape for desktop accessibility audit for https://example.com with siteId test-site-id',
       );
     });
 
@@ -764,6 +771,21 @@ describe.skip('Accessibility Audit Handler', () => {
       expect(mockContext.log.info).to.not.have.been.calledWith(
         sinon.match(/Top 100 pages:/),
       );
+    });
+
+    it('should use mobile-specific storage prefix when deviceType is mobile', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      getUrlsForAuditStub.resolves(mockUrls);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext, 'mobile');
+
+      // Assert
+      expect(result.options.storagePrefix).to.equal('accessibility-mobile');
+      expect(result.options.deviceType).to.equal('mobile');
     });
   });
 
@@ -1456,6 +1478,529 @@ describe.skip('Accessibility Audit Handler', () => {
         'test-site-id',
         sinon.match.object,
       );
+    });
+
+  });
+
+  describe('createProcessAccessibilityOpportunitiesWithDevice', () => {
+    beforeEach(() => {
+      // Reset context to include AWS_ENV for tests
+      mockContext.env.AWS_ENV = 'test';
+    });
+
+    it('should process mobile audit and skip individual opportunities', async () => {
+      // Arrange - mobile audit with device-specific htmlData
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 5,
+              },
+            },
+            'https://example.com/page1': {
+              violations: {
+                critical: {
+                  items: {
+                    'rule-1': {
+                      htmlData: [
+                        { deviceTypes: ['mobile'] },
+                        { deviceTypes: ['desktop'] },
+                        { deviceTypes: ['mobile', 'desktop'] },
+                      ],
+                    },
+                  },
+                },
+                serious: {
+                  items: {
+                    'rule-2': {
+                      htmlData: [
+                        { deviceTypes: ['mobile'] },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+
+      // Reset stubs to avoid pollution from previous tests
+      mockContext.log.info.resetHistory();
+      createAccessibilityIndividualOpportunitiesStub.resetHistory();
+      sendRunImportMessageStub.resetHistory();
+
+      // Act - use the factory to create a mobile-specific processor
+      const processMobileOpportunities = createProcessAccessibilityOpportunitiesWithDevice('mobile');
+      const result = await processMobileOpportunities(mockContext);
+
+      // Assert
+      expect(createAccessibilityIndividualOpportunitiesStub).to.not.have.been.called;
+      expect(sendRunImportMessageStub).to.not.have.been.called;
+      expect(result.status).to.equal('OPPORTUNITIES_FOUND');
+      expect(result.deviceType).to.equal('mobile');
+      expect(result.opportunitiesFound).to.equal(3); // 3 mobile issues
+      
+      // Check that the specific log messages were called
+      const logCalls = mockContext.log.info.getCalls().map(call => call.args[0]);
+      expect(logCalls).to.include('[A11yAudit] Step 2: Processing scraped data for mobile on site test-site-id (https://example.com)');
+      expect(logCalls).to.include('[A11yAudit] Skipping individual opportunities (Step 2c) and metrics import (Step 3) for mobile audit on site test-site-id');
+      expect(logCalls).to.include('[A11yAudit] Found 3 mobile accessibility issues across 1 unique URLs for site test-site-id (https://example.com)');
+    });
+
+    it('should count device-specific issues correctly for desktop', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 10,
+              },
+            },
+            'https://example.com/page1': {
+              violations: {
+                critical: {
+                  items: {
+                    'rule-1': {
+                      htmlData: [
+                        { deviceTypes: ['desktop'] },
+                        { deviceTypes: ['mobile'] },
+                      ],
+                    },
+                  },
+                },
+                serious: {
+                  items: {
+                    'rule-2': {
+                      htmlData: [
+                        { deviceTypes: ['desktop'] },
+                        { deviceTypes: ['desktop', 'mobile'] },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
+      sendRunImportMessageStub.resolves();
+
+      // Reset stubs
+      mockContext.log.info.resetHistory();
+      createAccessibilityIndividualOpportunitiesStub.resetHistory();
+      sendRunImportMessageStub.resetHistory();
+
+      // Act - use the factory to create a desktop-specific processor
+      const processDesktopOpportunities = createProcessAccessibilityOpportunitiesWithDevice('desktop');
+      const result = await processDesktopOpportunities(mockContext);
+
+      // Assert
+      expect(result.opportunitiesFound).to.equal(3); // desktop appears 3 times
+      expect(result.deviceType).to.equal('desktop');
+      
+      const logCalls = mockContext.log.info.getCalls().map(call => call.args[0]);
+      expect(logCalls).to.include('[A11yAudit] Found 3 desktop accessibility issues across 1 unique URLs for site test-site-id (https://example.com)');
+    });
+
+    it('should handle URLs without violations in device counting', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 0,
+              },
+            },
+            'https://example.com/page1': {
+              // No violations property
+            },
+            'https://example.com/page2': {
+              violations: {
+                critical: {
+                  items: {
+                    'rule-1': {
+                      htmlData: [
+                        { deviceTypes: ['desktop'] },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
+      sendRunImportMessageStub.resolves();
+
+      // Act
+      const processDesktopOpportunities = createProcessAccessibilityOpportunitiesWithDevice('desktop');
+      const result = await processDesktopOpportunities(mockContext);
+
+      // Assert - should only count page2's issue
+      expect(result.opportunitiesFound).to.equal(1);
+      expect(result.urlsProcessed).to.equal(2); // Still counts both URLs
+    });
+
+    it('should handle rules without htmlData in device counting', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 0,
+              },
+            },
+            'https://example.com/page1': {
+              violations: {
+                critical: {
+                  items: {
+                    'rule-1': {
+                      // No htmlData
+                      count: 5,
+                    },
+                    'rule-2': {
+                      htmlData: [
+                        { deviceTypes: ['desktop'] },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
+      sendRunImportMessageStub.resolves();
+
+      // Act
+      const processDesktopOpportunities = createProcessAccessibilityOpportunitiesWithDevice('desktop');
+      const result = await processDesktopOpportunities(mockContext);
+
+      // Assert - should only count rule-2
+      expect(result.opportunitiesFound).to.equal(1);
+    });
+
+    it('should handle htmlData items without deviceTypes', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 0,
+              },
+            },
+            'https://example.com/page1': {
+              violations: {
+                critical: {
+                  items: {
+                    'rule-1': {
+                      htmlData: [
+                        { deviceTypes: ['desktop'] },
+                        { someOtherProperty: 'value' }, // No deviceTypes
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
+      sendRunImportMessageStub.resolves();
+
+      // Act
+      const processDesktopOpportunities = createProcessAccessibilityOpportunitiesWithDevice('desktop');
+      const result = await processDesktopOpportunities(mockContext);
+
+      // Assert - should only count the one with deviceTypes
+      expect(result.opportunitiesFound).to.equal(1);
+    });
+
+    it('should use mobile-specific output key for mobile audits', async () => {
+      // Arrange
+      const mockDate = new Date('2024-03-15T10:30:00Z');
+      sandbox.stub(global, 'Date').returns(mockDate);
+      mockDate.toISOString = sinon.stub().returns('2024-03-15T10:30:00.000Z');
+
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: {
+              violations: {
+                total: 1,
+              },
+            },
+            'https://example.com/page1': {
+              violations: {
+                critical: {
+                  items: {
+                    'rule-1': {
+                      htmlData: [{ deviceTypes: ['mobile'] }],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+
+      // Act
+      const processMobileOpportunities = createProcessAccessibilityOpportunitiesWithDevice('mobile');
+      const result = await processMobileOpportunities(mockContext);
+
+      // Assert
+      expect(aggregateAccessibilityDataStub).to.have.been.calledWith(
+        mockS3Client,
+        'test-bucket',
+        'test-site-id',
+        mockContext.log,
+        'accessibility-mobile/test-site-id/2024-03-15-final-result.json',
+        'accessibility-mobile',
+        '2024-03-15'
+      );
+      expect(result.fullReportUrl).to.equal('accessibility-mobile/test-site-id/2024-03-15-final-result.json');
+    });
+
+    it('should log processing message with device type', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: { violations: { total: 0 } },
+            'https://example.com/page1': {
+              violations: {
+                critical: { items: {} },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+
+      // Reset log stub
+      mockContext.log.info.resetHistory();
+
+      // Act
+      const processMobileOpportunities = createProcessAccessibilityOpportunitiesWithDevice('mobile');
+      await processMobileOpportunities(mockContext);
+
+      // Assert
+      const logCalls = mockContext.log.info.getCalls().map(call => call.args[0]);
+      expect(logCalls).to.include('[A11yAudit] Step 2: Processing scraped data for mobile on site test-site-id (https://example.com)');
+    });
+
+    it('should handle missing S3 bucket configuration', async () => {
+      // Arrange - remove bucket name
+      mockContext.env.S3_SCRAPER_BUCKET_NAME = undefined;
+
+      // Act
+      const processDesktopOpportunities = createProcessAccessibilityOpportunitiesWithDevice('desktop');
+      const result = await processDesktopOpportunities(mockContext);
+
+      // Assert
+      expect(result.status).to.equal('PROCESSING_FAILED');
+      expect(result.error).to.equal('Missing S3 bucket configuration for accessibility audit');
+      expect(mockContext.log.error).to.have.been.calledWith('[A11yProcessingError] Missing S3 bucket configuration for accessibility audit');
+    });
+
+    it('should handle aggregation failure (success false)', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: false,
+        message: 'No data found in S3',
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+
+      // Act
+      const processDesktopOpportunities = createProcessAccessibilityOpportunitiesWithDevice('desktop');
+      const result = await processDesktopOpportunities(mockContext);
+
+      // Assert
+      expect(result.status).to.equal('NO_OPPORTUNITIES');
+      expect(result.message).to.equal('No data found in S3');
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/No data aggregated for desktop on site test-site-id/)
+      );
+    });
+
+    it('should handle aggregation error (exception thrown)', async () => {
+      // Arrange
+      const error = new Error('S3 read failed');
+      aggregateAccessibilityDataStub.rejects(error);
+
+      // Act
+      const processDesktopOpportunities = createProcessAccessibilityOpportunitiesWithDevice('desktop');
+      const result = await processDesktopOpportunities(mockContext);
+
+      // Assert
+      expect(result.status).to.equal('PROCESSING_FAILED');
+      expect(result.error).to.equal('S3 read failed');
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/Error processing accessibility data for desktop on site test-site-id/),
+        error
+      );
+    });
+
+    it('should handle error from generateReportOpportunities', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: { violations: { total: 1 } },
+            'https://example.com/page1': {
+              violations: {
+                critical: { items: { 'rule-1': { htmlData: [{ deviceTypes: ['desktop'] }] } } },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      const error = new Error('Failed to create opportunities');
+      generateReportOpportunitiesStub.rejects(error);
+
+      // Act
+      const processDesktopOpportunities = createProcessAccessibilityOpportunitiesWithDevice('desktop');
+      const result = await processDesktopOpportunities(mockContext);
+
+      // Assert
+      expect(result.status).to.equal('PROCESSING_FAILED');
+      expect(result.error).to.equal('Failed to create opportunities');
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/Error generating report opportunities for desktop on site test-site-id/),
+        error
+      );
+    });
+
+    it('should handle error from createAccessibilityIndividualOpportunities', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: { violations: { total: 1 } },
+            'https://example.com/page1': {
+              violations: {
+                critical: { items: { 'rule-1': { htmlData: [{ deviceTypes: ['desktop'] }] } } },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+      const error = new Error('Failed to create individual opportunities');
+      createAccessibilityIndividualOpportunitiesStub.rejects(error);
+
+      // Act
+      const processDesktopOpportunities = createProcessAccessibilityOpportunitiesWithDevice('desktop');
+      const result = await processDesktopOpportunities(mockContext);
+
+      // Assert
+      expect(result.status).to.equal('PROCESSING_FAILED');
+      expect(result.error).to.equal('Failed to create individual opportunities');
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/Error creating individual opportunities for desktop on site test-site-id/),
+        error
+      );
+    });
+
+    it('should handle error from sendRunImportMessage for desktop', async () => {
+      // Arrange
+      const mockAggregationResult = {
+        success: true,
+        finalResultFiles: {
+          current: {
+            overall: { violations: { total: 1 } },
+            'https://example.com/page1': {
+              violations: {
+                critical: { items: { 'rule-1': { htmlData: [{ deviceTypes: ['desktop'] }] } } },
+              },
+            },
+          },
+        },
+      };
+      aggregateAccessibilityDataStub.resolves(mockAggregationResult);
+      generateReportOpportunitiesStub.resolves();
+      createAccessibilityIndividualOpportunitiesStub.resolves();
+      const error = new Error('SQS send failed');
+      sendRunImportMessageStub.rejects(error);
+
+      // Act
+      const processDesktopOpportunities = createProcessAccessibilityOpportunitiesWithDevice('desktop');
+      const result = await processDesktopOpportunities(mockContext);
+
+      // Assert
+      expect(result.status).to.equal('PROCESSING_FAILED');
+      expect(result.error).to.equal('SQS send failed');
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/Error sending message to importer-worker to save a11y metrics for desktop on site test-site-id/),
+        error
+      );
+    });
+  });
+
+  describe('handler-desktop and handler-mobile modules', () => {
+    it('should call desktop scraping wrapper function', async () => {
+      const handlerDesktop = await import('../../src/accessibility/handler-desktop.js');
+      expect(handlerDesktop.default).to.exist;
+      expect(handlerDesktop.default.steps).to.exist;
+      
+      // Get the scrapeAccessibilityData step handler from the handler
+      const scrapeStep = handlerDesktop.default.steps.scrapeAccessibilityData;
+      expect(scrapeStep).to.exist;
+      expect(scrapeStep.handler).to.be.a('function');
+      
+      // Call the wrapper function to cover lines 24-26
+      const result = await scrapeStep.handler(mockContext);
+      expect(result).to.exist;
+    });
+
+    it('should call mobile scraping wrapper function', async () => {
+      const handlerMobile = await import('../../src/accessibility/handler-mobile.js');
+      expect(handlerMobile.default).to.exist;
+      expect(handlerMobile.default.steps).to.exist;
+      
+      // Get the scrapeAccessibilityData step handler from the handler
+      const scrapeStep = handlerMobile.default.steps.scrapeAccessibilityData;
+      expect(scrapeStep).to.exist;
+      expect(scrapeStep.handler).to.be.a('function');
+      
+      // Call the wrapper function to cover lines 24-26
+      const result = await scrapeStep.handler(mockContext);
+      expect(result).to.exist;
     });
   });
 });
