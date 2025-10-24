@@ -12,8 +12,8 @@
 
 import { DATA_SOURCES } from '../common/constants.js';
 
-export function createOpportunityData(projectedTrafficMetrics = {}) {
-  const { projectedTrafficLost, projectedTrafficValue } = projectedTrafficMetrics;
+export function createOpportunityData(params = {}) {
+  const { projectedTrafficLost, projectedTrafficValue, auditScopeUrl } = params;
 
   return {
     runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Acquisition%20-%20SEO/Experience_Success_Studio_Redirect_Chains_Runbook.docx?d=w15b25d46a5124cf29543ed08acf6caae&csf=1&web=1&e=Kiosk9',
@@ -30,6 +30,7 @@ export function createOpportunityData(projectedTrafficMetrics = {}) {
       dataSources: [DATA_SOURCES.SITE],
       projectedTrafficLost: projectedTrafficLost || 0,
       projectedTrafficValue: projectedTrafficValue || 0,
+      auditScopeUrl: auditScopeUrl || '',
     },
   };
 }
