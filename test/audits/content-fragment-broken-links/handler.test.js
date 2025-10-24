@@ -245,6 +245,27 @@ describe('Broken Content Path Handler', () => {
       });
     });
 
+    it('should handle mixed format in brokenPaths (objects and strings)', async () => {
+      // Test that it handles both new format (objects) and old format (strings)
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenPaths: [
+          { url: '/content/dam/test/object-format', requestUserAgents: ['Mozilla/5.0'] }, // New format
+          '/content/dam/test/string-format', // Old format
+        ],
+      });
+      analysisStrategyStub.analyze.resolves([]);
+
+      const result = await handlerModule.analyzeBrokenContentFragmentLinks(context);
+
+      // Should extract URLs from both formats correctly
+      expect(analysisStrategyStub.analyze).to.have.been.calledWith([
+        '/content/dam/test/object-format',
+        '/content/dam/test/string-format',
+      ]);
+      expect(result.auditResult.success).to.be.true;
+    });
+
     it('should create PathIndex and AemClient correctly', async () => {
       await handlerModule.analyzeBrokenContentFragmentLinks(context);
 
