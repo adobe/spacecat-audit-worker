@@ -12,22 +12,51 @@
 
 import { DATA_SOURCES } from '../common/constants.js';
 
+const OpptyData = {
+  runbook: '',
+  origin: 'AUTOMATION',
+  title: 'Canonical URL issues affecting SEO',
+  description: 'Canonical URLs help search engines understand which version of a page is the preferred one to index. Issues with canonical URLs can lead to duplicate content problems, diluted page authority, and reduced search rankings.',
+  guidance: {
+    steps: [
+      'Review each URL with canonical issues identified in the audit results.',
+      'Ensure canonical tags are properly implemented in the <head> section of each page.',
+      'Use lowercase, absolute URLs for canonical tags to avoid formatting issues.',
+    ],
+  },
+  tags: ['Traffic Acquisition', 'SEO'],
+  data: {
+    dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
+  },
+};
+
 export function createOpportunityData() {
+  return OpptyData;
+}
+
+export function createOpportunityDataForElmo() {
   return {
-    runbook: '',
-    origin: 'AUTOMATION',
-    title: 'Canonical URL issues affecting SEO',
-    description: 'Canonical URLs help search engines understand which version of a page is the preferred one to index. Issues with canonical URLs can lead to duplicate content problems, diluted page authority, and reduced search rankings.',
+    ...OpptyData,
     guidance: {
-      steps: [
-        'Review each URL with canonical issues identified in the audit results.',
-        'Ensure canonical tags are properly implemented in the <head> section of each page.',
-        'Use lowercase, absolute URLs for canonical tags to avoid formatting issues.',
+      recommendations: [
+        {
+          insight: 'Canonical URL analysis reveals issues affecting SEO and content deduplication',
+          recommendation: 'Ensure canonical tags are properly implemented in the <head> section of each page using lowercase, absolute URLs',
+          type: 'CONTENT',
+          rationale: 'Proper canonical URL implementation helps search engines understand which version of a page is preferred, preventing duplicate content issues and improving search rankings',
+        },
       ],
     },
-    tags: ['Traffic Acquisition', 'SEO'],
+    tags: [...OpptyData.tags, 'llm', 'isElmo'],
     data: {
+      ...OpptyData.data,
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
+      additionalMetrics: [
+        {
+          value: 'canonical',
+          key: 'subtype',
+        },
+      ],
     },
   };
 }

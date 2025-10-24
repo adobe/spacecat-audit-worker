@@ -226,7 +226,7 @@ describe('Guidance Readability Handler Tests', () => {
 
       expect(result).to.deep.equal({ ok: true });
       expect(mockAsyncJob.setMetadata).to.have.been.called;
-      expect(logStub.info).to.have.been.calledWithMatch('Successfully processed 1 suggestions');
+      expect(logStub.debug).to.have.been.calledWithMatch('Successfully processed 1 suggestions');
     });
 
     it('should process suggestions array format', async () => {
@@ -263,7 +263,7 @@ describe('Guidance Readability Handler Tests', () => {
       const result = await handler.default(message, mockContext);
 
       expect(result).to.deep.equal({ ok: true });
-      expect(logStub.info).to.have.been.calledWithMatch('Successfully processed 2 suggestions');
+      expect(logStub.debug).to.have.been.calledWithMatch('Successfully processed 2 suggestions');
     });
 
     it('should process guidance array format', async () => {
@@ -290,7 +290,7 @@ describe('Guidance Readability Handler Tests', () => {
       const result = await handler.default(message, mockContext);
 
       expect(result).to.deep.equal({ ok: true });
-      expect(logStub.info).to.have.been.calledWithMatch('Successfully processed 1 suggestions');
+      expect(logStub.debug).to.have.been.calledWithMatch('Successfully processed 1 suggestions');
     });
 
     it('should handle empty or invalid suggestions gracefully', async () => {
@@ -447,7 +447,7 @@ describe('Guidance Readability Handler Tests', () => {
       expect(mockAsyncJob.setResult).to.have.been.called;
       expect(mockAsyncJob.setStatus).to.have.been.calledWith('COMPLETED');
       expect(mockAsyncJob.setEndedAt).to.have.been.called;
-      expect(logStub.info).to.have.been.calledWithMatch('All 2 Mystique responses received');
+      expect(logStub.debug).to.have.been.calledWithMatch('All 2 Mystique responses received');
     });
 
     it('should handle race condition when job is already completed', async () => {
@@ -570,8 +570,7 @@ describe('Guidance Readability Handler Tests', () => {
       const result = await handler.default(message, mockContext);
 
       expect(result).to.deep.equal({ ok: true });
-      expect(logStub.info).to.have.been.calledWithMatch('Reconstructing opportunities from 3 stored suggestions');
-      expect(logStub.info).to.have.been.calledWithMatch('Reconstructed 3 opportunities from suggestions');
+      expect(logStub.debug).to.have.been.calledWithMatch('Reconstructing opportunities from 3 stored suggestions');
     });
 
     it('should handle null suggestions during reconstruction', async () => {
@@ -684,8 +683,8 @@ describe('Guidance Readability Handler Tests', () => {
       const result = await handler.default(message, mockContext);
 
       expect(result).to.deep.equal({ ok: true });
-      expect(logStub.info).to.have.been.calledWithMatch('Using stored original order mapping with 2 items');
-      expect(logStub.info).to.have.been.calledWithMatch('Sorted 2 opportunities back to original order');
+      expect(logStub.debug).to.have.been.calledWithMatch('Using stored original order mapping with 2 items');
+      expect(logStub.debug).to.have.been.calledWithMatch('Sorted 2 opportunities back to original order');
     });
 
     it('should create fallback order mapping when none is stored', async () => {
@@ -1148,7 +1147,7 @@ describe('Guidance Readability Handler Tests', () => {
       const result = await handler.default(message, mockContext);
 
       expect(result).to.deep.equal({ ok: true });
-      expect(logStub.info).to.have.been.calledWithMatch('Sorted 2 opportunities back to original order');
+      expect(logStub.debug).to.have.been.calledWithMatch('Sorted 2 opportunities back to original order');
     });
   });
 

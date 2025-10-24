@@ -147,6 +147,17 @@ const defaultMergeDataFunction = (existingData, newData) => ({
 });
 
 /**
+ * Keep latest merge function for combining existing and new data.
+ * This performs a shallow merge where new data overrides existing data.
+ * @param {Object} existingData - The existing suggestion data.
+ * @param {Object} newData - The new data to merge.
+ * @returns {Object} - The merged data object.
+ */
+export const keepLatestMergeDataFunction = (existingData, newData) => ({
+  ...newData,
+});
+
+/**
  * Synchronizes existing suggestions with new data.
  * Handles outdated suggestions by updating their status, either to OUTDATED or the provided one.
  * Updates existing suggestions with new data if they match based on the provided key.

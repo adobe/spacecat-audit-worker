@@ -252,5 +252,22 @@ describe('CDN Analysis Handler', () => {
         expect(result.auditResult.providers[0].outputReferral).to.include('2025/09/07/04');
       }
     });
+
+    it('should allow full day to be processed', async () => {
+      const auditContext = {
+        year: 2025, month: 9, day: 7, hour: 4,
+        processFullDay: true,
+      };
+
+      const result = await cdnLogAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.fullAuditRef).to.include('2025/09/07/04');
+
+      expect(result.auditResult.providers).to.be.an('array');
+      if (result.auditResult.providers.length > 0) {
+        expect(result.auditResult.providers[0].output).to.include('2025/09/07/04');
+        expect(result.auditResult.providers[0].outputReferral).to.include('2025/09/07/04');
+      }
+    });
   });
 });

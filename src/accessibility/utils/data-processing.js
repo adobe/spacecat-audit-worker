@@ -16,6 +16,7 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
+import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
 import {
   createReportOpportunitySuggestionInstance,
@@ -68,7 +69,7 @@ export async function deleteOriginalFiles(s3Client, bucketName, objectKeys, log)
       deletedCount = 1;
     }
 
-    log.info(`Deleted ${deletedCount} original files after aggregation`);
+    log.debug(`Deleted ${deletedCount} original files after aggregation`);
   } catch (error) {
     log.error('[A11yProcessingError] Error deleting original files', error);
   }
@@ -100,7 +101,7 @@ export async function getSubfoldersUsingPrefixAndDelimiter(
     };
     const data = await s3Client.send(new ListObjectsV2Command(params));
     const commonPrefixes = data.CommonPrefixes || [];
-    log.info(
+    log.debug(
       `Fetched ${commonPrefixes.length} keys from S3 for bucket ${bucketName} and prefix ${prefix} with delimiter ${delimiter}`,
     );
     return commonPrefixes.map((subfolder) => subfolder.Prefix);
@@ -160,7 +161,6 @@ export async function getObjectKeysFromSubfolders(
 ) {
   const prefix = `${storagePrefix}/${siteId}/`;
   const delimiter = '/';
-  log.info(`Fetching accessibility data for site ${siteId} from bucket ${bucketName}`);
 
   // Get all subfolders for this site that have reports per url
   // up to 3 depending on the total no of urls (content-scraper has a batch size of 40 urls)
@@ -173,10 +173,9 @@ export async function getObjectKeysFromSubfolders(
   );
   if (subfolders.length === 0) {
     const message = `No accessibility data found in bucket ${bucketName} at prefix ${prefix} for site ${siteId} with delimiter ${delimiter}`;
-    log.info(message);
+    log.debug(message);
     return { success: false, objectKeys: [], message };
   }
-  log.info(`Found ${subfolders.length} subfolders for site ${siteId} in bucket ${bucketName} with delimiter ${delimiter} and value ${subfolders}`);
 
   // filter subfolders to match the current date because the name of the subfolder is a timestamp
   // we do this in case there are leftover subfolders from previous runs that fail to be deleted
@@ -187,7 +186,7 @@ export async function getObjectKeysFromSubfolders(
   });
   if (getCurrentSubfolders.length === 0) {
     const message = `No accessibility data found for today's date in bucket ${bucketName} at prefix ${prefix} for site ${siteId} with delimiter ${delimiter}`;
-    log.info(message);
+    log.debug(message);
     return { success: false, objectKeys: [], message };
   }
 
@@ -201,12 +200,12 @@ export async function getObjectKeysFromSubfolders(
 
   if (!objectKeys || objectKeys.length === 0) {
     const message = `No accessibility data found in bucket ${bucketName} at prefix ${prefix} for site ${siteId}`;
-    log.info(message);
+    log.debug(message);
     return { success: false, objectKeys: [], message };
   }
 
   // return the object keys for the JSON files that have the reports per url
-  log.info(`Found ${objectKeys.length} data files for site ${siteId}`);
+  log.debug(`Found ${objectKeys.length} data files for site ${siteId}`);
   return { success: true, objectKeys, message: `Found ${objectKeys.length} data files` };
 }
 
@@ -222,13 +221,13 @@ export async function cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekO
       return timestampA.getTime() > timestampB.getTime() ? 1 : -1;
     });
     const objectKeyToDelete = lastWeekObjectKeys[0];
-    const deletedCountOldestFile = await deleteOriginalFiles(
+    await deleteOriginalFiles(
       s3Client,
       bucketName,
       [objectKeyToDelete],
       log,
     );
-    log.info(`Deleted ${deletedCountOldestFile} oldest final result file: ${objectKeyToDelete}`);
+    log.debug(`Deleted oldest final result file: ${objectKeyToDelete}`);
   }
 }
 
@@ -295,7 +294,7 @@ export async function processFilesWithRetry(s3Client, bucketName, objectKeys, lo
     log.warn(`${failedCount} out of ${objectKeys.length} files failed to process, continuing with ${results.length} successful files`);
   }
 
-  log.info(`File processing completed: ${results.length} successful, ${failedCount} failed out of ${objectKeys.length} total files`);
+  log.debug(`File processing completed: ${results.length} successful, ${failedCount} failed out of ${objectKeys.length} total files`);
 
   return { results };
 }
@@ -422,12 +421,12 @@ export async function aggregateAccessibilityData(
       ContentType: 'application/json',
     }));
 
-    log.info(`[${logIdentifier}] Saved aggregated accessibility data to ${outputKey}`);
+    log.debug(`[${logIdentifier}] Saved aggregated accessibility data to ${outputKey}`);
 
     // check if there are any other final-result files in the {storagePrefix}/siteId folder
     // if there are, we will use the latest one for comparison later on
     const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `${storagePrefix}/${siteId}/`, log, 10, '-final-result.json');
-    log.info(`[${logIdentifier}] Found ${lastWeekObjectKeys.length} final-result files in the ${storagePrefix}/siteId folder with keys: ${lastWeekObjectKeys}`);
+    log.debug(`[${logIdentifier}] Found ${lastWeekObjectKeys.length} final-result files in the ${storagePrefix}/siteId folder with keys: ${lastWeekObjectKeys}`);
 
     // get last week file and start creating the report
     const lastWeekFile = lastWeekObjectKeys.length < 2
@@ -439,7 +438,7 @@ export async function aggregateAccessibilityData(
         log,
       );
     if (lastWeekFile) {
-      log.info(`[${logIdentifier}] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
+      log.debug(`[${logIdentifier}] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
     }
 
     await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
@@ -645,24 +644,10 @@ export function getEnvAsoDomain(env) {
   return isProd ? 'experience' : 'experience-stage';
 }
 
-export function getWeekNumber(date) {
-  // Calculate ISO 8601 week number
-  const target = new Date(date.valueOf());
-  const dayNumber = (date.getDay() + 6) % 7;
-  target.setDate(target.getDate() - dayNumber + 3);
-  const firstThursday = target.valueOf();
-  target.setMonth(0, 1);
-  if (target.getDay() !== 4) {
-    target.setMonth(0, 1 + (((4 - target.getDay()) + 7) % 7));
-  }
-  const week = 1 + Math.ceil((firstThursday - target) / 604800000);
-  return week;
-}
-
 export function getWeekNumberAndYear() {
   const date = new Date();
-  const week = getWeekNumber(date);
-  const year = date.getFullYear();
+  // Use ISO calendar week and year from shared utility
+  const { week, year } = isoCalendarWeek(date);
   return { week, year };
 }
 

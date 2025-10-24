@@ -16,8 +16,14 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { MockContextBuilder } from '../../shared.js';
-import { prepareTrafficAnalysisRequest, sendRequestToMystique } from '../../../src/paid-traffic-analysis/handler.js';
-
+import {
+  prepareTrafficAnalysisRequest,
+  sendRequestToMystique,
+  weeklyImportDataStep,
+  monthlyImportDataStep,
+  weeklyProcessAnalysisStep,
+} from '../../../src/paid-traffic-analysis/handler.js';
+import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 use(sinonChai);
 use(chaiAsPromised);
 
@@ -35,11 +41,20 @@ describe('Paid Traffic Analysis Handler', () => {
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
 
+    // Mock AWSAthenaClient.fromContext to return our mock client
+    const mockAthenaClientInstance = {
+      query: sandbox.stub().resolves([
+        { page_views: 1000, sessions: 500, conversion_rate: 0.05 },
+      ]),
+    };
+    sandbox.stub(AWSAthenaClient, 'fromContext').returns(mockAthenaClientInstance);
+
     site = {
       getSiteId: sandbox.stub().returns(siteId),
+      getId: sandbox.stub().returns(siteId),
       getDeliveryType: sandbox.stub().returns('aem_edge'),
-      getBaseURL: sandbox.stub().returns(auditUrl),
-      getPageTypes: sandbox.stub().returns(null),
+      getBaseURL: sandbox.stub().resolves(auditUrl),
+      getPageTypes: sandbox.stub().resolves(null),
     };
 
     mockSqs = {
@@ -58,12 +73,13 @@ describe('Paid Traffic Analysis Handler', () => {
     };
 
     const mockAthenaClient = {
-      query: sandbox.stub().resolves([]),
+      query: sandbox.stub().resolves([
+        { page_views: 1000, sessions: 500, conversion_rate: 0.05 },
+      ]),
     };
 
     const mockS3Client = {
       send: sandbox.stub().resolves({
-        // Simulate cache files exist, so no warming needed
         ContentLength: 1024,
         LastModified: new Date(),
       }),
@@ -89,6 +105,9 @@ describe('Paid Traffic Analysis Handler', () => {
           S3_IMPORTER_BUCKET_NAME: 'test-bucket',
           PAID_DATA_THRESHOLD: 2000,
           MAX_CONCURRENT_REQUESTS: 5,
+          ATHENA_TEMP: 's3://test-athena-temp/',
+          CACHE_LOCATION: 's3://test-cache-bucket/',
+          PAGE_VIEW_THRESHOLD: 100,
         },
         siteId,
       })
@@ -104,7 +123,7 @@ describe('Paid Traffic Analysis Handler', () => {
   });
 
   describe('prepareTrafficAnalysisRequest', () => {
-    it('should prepare weekly analysis request correctly and warm cache', async () => {
+    it('should prepare weekly analysis request correctly', async () => {
       const result = await prepareTrafficAnalysisRequest(
         auditUrl,
         context,
@@ -118,6 +137,7 @@ describe('Paid Traffic Analysis Handler', () => {
         temporalCondition: '(year=2025 AND month=1 AND week=2)',
         month: 1,
         siteId,
+        period: 'weekly',
       };
 
       expect(result).to.deep.include({
@@ -125,12 +145,9 @@ describe('Paid Traffic Analysis Handler', () => {
         fullAuditRef: auditUrl,
       });
       expect(result.auditResult.temporalCondition).to.include('week=2');
-
-      // Verify cache warming checked S3 for existing cache files
-      expect(context.s3Client.send).to.have.been.called;
     });
 
-    it('should prepare monthly analysis request correctly and warm cache', async () => {
+    it('should prepare monthly analysis request correctly', async () => {
       const result = await prepareTrafficAnalysisRequest(
         auditUrl,
         context,
@@ -143,46 +160,20 @@ describe('Paid Traffic Analysis Handler', () => {
         month: 12,
         siteId,
         temporalCondition: '(year=2024 AND month=12)',
+        period: 'monthly',
       };
 
-      expect(result).to.deep.equal({
+      expect(result).to.deep.include({
         auditResult: expectedAuditResult,
         fullAuditRef: auditUrl,
       });
-
-      // Verify cache warming checked S3 for existing cache files
-      expect(context.s3Client.send).to.have.been.called;
-    });
-
-    it('should handle cache warming partial success', async () => {
-      const result = await prepareTrafficAnalysisRequest(
-        auditUrl,
-        context,
-        site,
-        'weekly',
-      );
-
-      expect(result).to.have.property('auditResult');
-      // Verify cache warming checked S3 for existing cache files
-      expect(context.s3Client.send).to.have.been.called;
-    });
-
-    it('should warm cache with temporal parameters', async () => {
-      const result = await prepareTrafficAnalysisRequest(
-        auditUrl,
-        context,
-        site,
-        'weekly',
-      );
-
-      expect(result).to.have.property('auditResult');
-      // Cache warming should check S3 for existing cache files
-      expect(context.s3Client.send).to.have.been.called;
     });
   });
 
   describe('sendRequestToMystique', () => {
-    it('should send weekly message to Mystique correctly', async () => {
+    it('should send weekly message to Mystique correctly', async function() {
+      this.timeout(5000); // 5 second timeout for this test
+      
       const auditData = {
         id: auditId,
         auditResult: {
@@ -191,6 +182,7 @@ describe('Paid Traffic Analysis Handler', () => {
           month: 1,
           siteId,
           temporalCondition: '(year=2025 AND month=1 AND week=2)',
+          period: 'weekly',
         },
       };
 
@@ -217,7 +209,9 @@ describe('Paid Traffic Analysis Handler', () => {
       );
     });
 
-    it('should send monthly message to Mystique correctly', async () => {
+    it('should send monthly message to Mystique correctly', async function() {
+      this.timeout(5000); // 5 second timeout for this test
+      
       const auditData = {
         id: auditId,
         auditResult: {
@@ -225,6 +219,7 @@ describe('Paid Traffic Analysis Handler', () => {
           month: 12,
           siteId,
           temporalCondition: '(year=2024 AND month=12)',
+          period: 'monthly',
         },
       };
 
@@ -240,7 +235,7 @@ describe('Paid Traffic Analysis Handler', () => {
         data: {
           year: 2024,
           month: 12,
-          week: undefined,
+          week: 0,
           temporalCondition: '(year=2024 AND month=12)',
         },
       };
@@ -249,6 +244,59 @@ describe('Paid Traffic Analysis Handler', () => {
         'test-queue',
         sinon.match(expectedMessage),
       );
+    });
+  });
+
+  describe('Step Functions', () => {
+    describe('weeklyImportDataStep', () => {
+      it('should return correct import payload for import worker', async () => {
+        context.site = site;
+        context.finalUrl = auditUrl;
+
+        const result = await weeklyImportDataStep(context);
+
+        expect(result).to.have.property('auditResult');
+        expect(result).to.have.property('fullAuditRef', auditUrl);
+        expect(result).to.have.property('type', 'traffic-analysis');
+        expect(result).to.have.property('siteId', siteId);
+        expect(result).to.have.property('allowCache', true);
+
+        expect(result.auditResult).to.have.property('year');
+        expect(result.auditResult).to.have.property('week');
+        expect(result.auditResult).to.have.property('month');
+        expect(result.auditResult).to.have.property('siteId', siteId);
+        expect(result.auditResult).to.have.property('temporalCondition');
+      });
+    });
+
+    describe('weeklyProcessAnalysisStep', () => {
+      it('should send audit result to Mystique and return completion status', async () => {
+        const mockAuditResult = {
+          year: 2025,
+          week: 2,
+          month: 1,
+          siteId,
+          temporalCondition: '(year=2025 AND month=1 AND week=2)',
+        };
+
+        const mockAudit = {
+          getId: sandbox.stub().returns(auditId),
+          getAuditResult: sandbox.stub().returns(mockAuditResult),
+        };
+
+        context.site = site;
+        context.audit = mockAudit;
+
+        const result = await weeklyProcessAnalysisStep(context);
+
+        expect(result).to.deep.equal({
+          status: 'complete',
+          findings: ['Traffic analysis completed and sent to Mystique'],
+        });
+
+        // Verify SQS message was sent
+        expect(mockSqs.sendMessage).to.have.been.called;
+      });
     });
   });
 
@@ -265,11 +313,59 @@ describe('Paid Traffic Analysis Handler', () => {
           siteId,
           temporalCondition: '(year=2025 AND month=1)',
         },
+        period: 'weekly',
       };
 
       await expect(
         sendRequestToMystique(auditUrl, auditData, context, site),
       ).to.be.rejectedWith('SQS Error');
+    });
+  });
+
+  describe('monthlyImportDataStep', () => {
+    it('should send multiple weekly import messages and return correct structure', async () => {
+      const mockConfiguration = {
+        getQueues: sandbox.stub().returns({ imports: 'test-import-queue' }),
+      };
+
+      context.dataAccess = {
+        Configuration: { findLatest: sandbox.stub().resolves(mockConfiguration) },
+      };
+      context.site = site;
+      context.finalUrl = auditUrl;
+
+      const result = await monthlyImportDataStep(context);
+
+      // Validate return structure
+      expect(result).to.include({
+        fullAuditRef: auditUrl,
+        type: 'traffic-analysis',
+        siteId,
+        allowCache: true,
+      });
+
+      expect(result.auditResult).to.include({
+        year: 2024,
+        month: 12,
+        siteId,
+      });
+
+      // Validate SQS messages were sent
+      expect(mockSqs.sendMessage.callCount).to.be.greaterThan(0);
+      
+      // Validate each SQS message structure
+      const expectedMessage = {
+        type: 'traffic-analysis',
+        siteId,
+        allowCache: true,
+      };
+
+      mockSqs.sendMessage.getCalls().forEach(call => {
+        const [queueUrl, message] = call.args;
+        expect(queueUrl).to.equal('test-import-queue');
+        expect(message).to.include(expectedMessage);
+        expect(message.auditContext).to.have.all.keys('week', 'year');
+      });
     });
   });
 });

@@ -49,8 +49,6 @@ async function filterOutValidBacklinks(backlinks, log) {
 
   const backlinkStatuses = [];
   for (const backlink of backlinks) {
-    log.info(`Checking backlink: ${backlink.url_to}`);
-
     // eslint-disable-next-line no-await-in-loop
     const result = await isStillBrokenBacklink(backlink);
     backlinkStatuses.push(result);
@@ -70,7 +68,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
       result,
       fullAuditRef,
     } = await ahrefsAPIClient.getBrokenBacklinks(auditUrl);
-    log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditUrl}`);
+    log.debug(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditUrl}`);
     const excludedURLs = site.getConfig().getExcludedURLs('broken-backlinks');
     const filteredBacklinks = result?.backlinks?.filter(
       (backlink) => !excludedURLs?.includes(backlink.url_to),
@@ -109,8 +107,14 @@ export async function runAuditAndImportTopPages(context) {
 }
 
 export async function submitForScraping(context) {
-  const { site, dataAccess } = context;
+  const {
+    site, dataAccess, audit,
+  } = context;
   const { SiteTopPage } = dataAccess;
+  const auditResult = audit.getAuditResult();
+  if (auditResult.success === false) {
+    throw new Error('Audit failed, skipping scraping and suggestions generation');
+  }
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
   return {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
@@ -127,7 +131,6 @@ export const generateSuggestionData = async (context) => {
 
   const auditResult = audit.getAuditResult();
   if (auditResult.success === false) {
-    log.info('Audit failed, skipping suggestions generation');
     throw new Error('Audit failed, skipping suggestions generation');
   }
 
@@ -196,6 +199,6 @@ export const generateSuggestionData = async (context) => {
 export default new AuditBuilder()
   .withUrlResolver((site) => site.resolveFinalURL())
   .addStep('audit-and-import-top-pages', runAuditAndImportTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('generate-suggestion-data', generateSuggestionData)
   .build();

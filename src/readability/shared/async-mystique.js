@@ -49,7 +49,7 @@ export async function sendReadabilityToMystique(
     throw new Error('Missing SQS context or queue configuration');
   }
 
-  log.info(`[readability-suggest async] Sending ${readabilityIssues.length} readability issues to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
+  log.debug(`[readability-suggest async] Sending ${readabilityIssues.length} readability issues to Mystique queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`);
 
   try {
     const site = await dataAccess.Site.findById(siteId);
@@ -147,7 +147,7 @@ export async function sendReadabilityToMystique(
       throw new Error(`Failed to send ${failedMessages.length} out of ${readabilityIssues.length} messages to Mystique`);
     }
 
-    log.info(`[readability-suggest async] Successfully sent ${successfulMessages.length} messages to Mystique for processing`);
+    log.debug(`[readability-suggest async] Successfully sent ${successfulMessages.length} messages to Mystique for processing`);
   } catch (error) {
     log.error(`[readability-suggest async] Failed to send readability issues to Mystique: ${error.message}`);
     throw error;

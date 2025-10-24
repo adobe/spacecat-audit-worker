@@ -26,6 +26,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 import {
   ensureFullUrl,
   is404page,
+  getStringByteLength,
 } from './opportunity-utils.js';
 
 const auditType = 'redirect-chains';
@@ -40,6 +41,9 @@ const MAX_REDIRECTS_TO_TOLERATE = 1; // ex: only allow 1 redirect before we cons
 // Constants for projected traffic calculations
 const TRAFFIC_LOST_PERCENTAGE = 0.20; // 0.20 == 20% of total issues found
 const DOLLAR_PER_TRAFFIC_LOST = 1.00; // 1.00 == $1 per traffic lost
+// Constants for size filtering
+const MAX_DB_OBJ_SIZE_KB = 400; // 400 KB limit for database object storage
+const MAX_DB_OBJ_SIZE_BYTES = MAX_DB_OBJ_SIZE_KB * 1024; // KB in terms of bytes
 
 // ----- support -----------------------------------------------------------------------------------
 
@@ -548,6 +552,129 @@ export function analyzeResults(results) {
 }
 
 /**
+ * Categorizes an issue based on the priority order from the `getSuggestedFix` function.
+ * Although any 1 issue could fit into multiple categories, we only assign it to one category.
+ * (This is also the philosophy of the `getSuggestedFix` function.)
+ *
+ * @param {Object} issue - The issue object to categorize
+ * @returns {string} The category name
+ */
+function categorizeIssue(issue) {
+  if (issue.isDuplicateSrc) {
+    return 'duplicate-src';
+  }
+  if (issue.tooQualified) {
+    return 'too-qualified';
+  }
+  if (issue.hasSameSrcDest) {
+    return 'same-src-dest';
+  }
+  if (issue.status >= 400) {
+    return 'http-errors';
+  }
+  if (!issue.fullFinalMatchesDestUrl) {
+    return 'final-mismatch';
+  }
+  if (issue.redirectCount > MAX_REDIRECTS_TO_TOLERATE) {
+    return 'too-many-redirects';
+  }
+  return 'unknown';
+}
+
+/**
+ * Filters issues to fit within the maximum size limit for the database space constraint.
+ * Maintains a fair distribution across the issues' categories.
+ * Uses a conservative size estimate to ensure this filtered set does not exceed the limit.
+ *
+ * @param {Object[]} issues - Array of issues to filter
+ * @param {Object} log - Logger object
+ * @returns {Object} Object containing filteredIssues and wasReduced flag
+ */
+export function filterIssuesToFitIntoSpace(issues, log) {
+  // Sanity check
+  if (!issues || issues.length === 0) {
+    return { filteredIssues: [], wasReduced: false };
+  }
+
+  // Calculate total size of all issues
+  const totalSize = issues.reduce((sum, issue) => {
+    const issueJson = JSON.stringify(issue);
+    return sum + getStringByteLength(issueJson);
+  }, 0);
+
+  // If all issues fit within the limit, return them all
+  if (totalSize <= MAX_DB_OBJ_SIZE_BYTES) {
+    log.info(`${AUDIT_LOGGING_NAME} - All ${issues.length} issues fit within ${MAX_DB_OBJ_SIZE_BYTES / 1024} KB limit (${Math.round(totalSize / 1024)} KB used)`);
+    return { filteredIssues: issues, wasReduced: false };
+  }
+
+  log.info(`${AUDIT_LOGGING_NAME} - Total size of all the issues exceed space limit (${Math.round(totalSize / 1024)} KB > ${MAX_DB_OBJ_SIZE_BYTES / 1024} KB) ... filtering issues to fit within limit`);
+
+  // Categorize issues.  Later we will re-create them into specific suggestions.
+  const categorizedIssues = {
+    'duplicate-src': [], // 'duplicate-src'
+    'too-qualified': [], // 'too-qualified'
+    'same-src-dest': [], // 'same-src-dest'
+    'http-errors': [], // 'manual-check'
+    'final-mismatch': [], // '404-page', 'src-is-final', 'final-mismatch'
+    'too-many-redirects': [], // 'msx-redirects-exceeded', 'high-redirect-count'
+  };
+
+  issues.forEach((issue) => {
+    const category = categorizeIssue(issue);
+    if (categorizedIssues[category]) {
+      categorizedIssues[category].push(issue);
+    }
+  });
+
+  // Calculate size statistics for conservative estimation
+  const issueSizes = issues.map((issue) => {
+    const issueJson = JSON.stringify(issue);
+    return getStringByteLength(issueJson);
+  });
+  const averageSize = issueSizes.reduce((sum, size) => sum + size, 0) / issueSizes.length;
+  const largestSize = Math.max(...issueSizes);
+  const conservativeSizeEstimate = Math.max(averageSize, largestSize * 0.8); // 80% of max size
+
+  // Calculate how many issues we can fit
+  const maxIssues = Math.floor(MAX_DB_OBJ_SIZE_BYTES / conservativeSizeEstimate);
+  // eslint-disable-next-line max-len,no-shadow
+  const nonEmptyCategories = Object.entries(categorizedIssues).filter(([_, issues]) => issues.length > 0);
+
+  if (nonEmptyCategories.length === 0) {
+    return { filteredIssues: [], wasReduced: true }; // "should never happen"
+  }
+
+  // Distribute issues fairly across categories
+  const issuesPerCategory = Math.floor(maxIssues / nonEmptyCategories.length);
+  const remainingSlots = maxIssues % nonEmptyCategories.length;
+
+  const filteredIssues = [];
+  let totalFiltered = 0;
+
+  nonEmptyCategories.forEach(([category, categoryIssues], index) => {
+    const slotsForThisCategory = issuesPerCategory + (index < remainingSlots ? 1 : 0);
+    const issuesToTake = Math.min(slotsForThisCategory, categoryIssues.length);
+
+    // Take the first N issues from this category
+    const selectedIssues = categoryIssues.slice(0, issuesToTake);
+    filteredIssues.push(...selectedIssues);
+    totalFiltered += issuesToTake;
+
+    log.info(`${AUDIT_LOGGING_NAME} - category '${category}' - selected ${issuesToTake} out of ${categoryIssues.length} issues`);
+  });
+
+  // Log the stats about the size of the filtered set
+  const filteredSize = filteredIssues.reduce((sum, issue) => {
+    const issueJson = JSON.stringify(issue);
+    return sum + getStringByteLength(issueJson);
+  }, 0);
+  log.info(`${AUDIT_LOGGING_NAME} - Filtered ${totalFiltered} issues (${Math.round(filteredSize / 1024)} KB) from original ${issues.length} issues (${Math.round(totalSize / 1024)} KB)`);
+
+  return { filteredIssues, wasReduced: true };
+}
+
+/**
  * Processes each entry in the given array of page URLs.
  * Returns statistical counts and all affected entries.
  *
@@ -621,7 +748,7 @@ export async function redirectsAuditRunner(baseUrl, context) {
   };
 
   // run the audit
-  log.info(`${AUDIT_LOGGING_NAME} - STARTED running audit for /redirects.json for ${baseUrl}`);
+  log.info(`${AUDIT_LOGGING_NAME} - STARTED running audit worker for /redirects.json for ${baseUrl}`);
   if (!extractDomainAndProtocol(baseUrl)) {
     auditResult.success = false;
     auditResult.reasons = [{ value: baseUrl, error: 'INVALID URL' }];
@@ -637,7 +764,10 @@ export async function redirectsAuditRunner(baseUrl, context) {
   // process the entries & remember the results
   const { counts, entriesWithProblems } = await processEntries(pageUrls, baseUrl, log);
   if (counts.countTotalEntriesWithProblems > 0) {
-    auditResult.details.issues = entriesWithProblems;
+    // Filter issues to fit within size limit
+    const { filteredIssues } = filterIssuesToFitIntoSpace(entriesWithProblems, log);
+    auditResult.details.issues = filteredIssues;
+    log.warn(`${AUDIT_LOGGING_NAME} - Issues might be reduced from ${entriesWithProblems.length} to ${filteredIssues.length} to fit within space limit`);
   }
 
   // end timer
@@ -657,7 +787,7 @@ export async function redirectsAuditRunner(baseUrl, context) {
     log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. with too many redirects:      ${counts.countTooManyRedirects}`);
   }
 
-  log.info(`${AUDIT_LOGGING_NAME} - DONE running audit for /redirects.json for ${baseUrl}. Completed in ${formattedElapsed} seconds.`);
+  log.info(`${AUDIT_LOGGING_NAME} - DONE with audit worker for processing /redirects.json for ${baseUrl}. Completed in ${formattedElapsed} seconds.`);
   return {
     fullAuditRef: baseUrl,
     url: baseUrl,
@@ -675,7 +805,7 @@ export async function redirectsAuditRunner(baseUrl, context) {
  *    finalUrl: string, // (in the style of the source URL)
  *    fixType: string,  // kabob-case tokens ...
  *       // {'duplicate-src', 'too-qualified', 'same-src-dest', 'manual-check', 'final-mismatch',
- *       //   'max-redirects-exceeded', 'high-redirect-count', '404-page', 'unknown'}
+ *       //  'max-redirects-exceeded', 'high-redirect-count', '404-page', 'src-is-final', 'unknown'}
  *    canApplyFixAutomatically: boolean, // true if the fix could be applied automatically
  *  }
  */
@@ -703,6 +833,7 @@ export function getSuggestedFix(result) {
   const fixForHasSameSrcDest = 'Remove this entry since the Source URL is the same as the Destination URL.';
   const fixForManualCheck = `Check the URL: ${finalUrl} since it resulted in an error code. Maybe remove the entry from the redirects file. Error message: ${errorMsg}`;
   const fixFor404page = 'Update, or remove, this entry since the Source URL redirects to a 404 page.';
+  const fixForSrcRedirectsToSelf = 'Remove this entry since the Source URL redirects to itself.';
   const fixForFinalMismatch = 'Replace the Destination URL with the Final URL, since the Source URL actually redirects to the Final URL.';
   const fixForMaxRedirectsExceeded = `Redesign the redirects that start from the Source URL. An excessive number of redirects were encountered. Partial redirect chain is: ${redirectChain}`;
   const fixForHighRedirectCount = `Reduce the redirects that start from the Source URL. There are too many redirects to get to the Destination URL. Redirect chain is: ${redirectChain}`;
@@ -731,6 +862,10 @@ export function getSuggestedFix(result) {
     if (is404page(result.fullFinal)) {
       fix = fixFor404page;
       fixType = '404-page';
+    } else if (result.fullFinal === result.fullSrc) {
+      fix = fixForSrcRedirectsToSelf;
+      fixType = 'src-is-final';
+      canApplyFixAutomatically = true;
     } else {
       fix = fixForFinalMismatch;
       fixType = 'final-mismatch';
@@ -797,7 +932,7 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
         key: buildUniqueKey(row), // string
 
         // {'duplicate-src', 'too-qualified', 'same-src-dest', 'manual-check', 'final-mismatch',
-        //   'max-redirects-exceeded', 'high-redirect-count', '404-page', 'unknown'}
+        //  'max-redirects-exceeded', 'high-redirect-count', '404-page', 'src-is-final', 'unknown'}
         fixType: suggestedFixResult.fixType, // string: kabob-case tokens ... (see comments above)
 
         fix: suggestedFixResult.fix, // string: en_US locale. Used as a human-readable example.
@@ -823,6 +958,37 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
   log.info(`${AUDIT_LOGGING_NAME} - Skipped ${skippedEntriesCount} entries due to exclusion criteria.`);
   log.info(`${AUDIT_LOGGING_NAME} - Generated ${suggestedFixes.length} suggested fixes.`);
   log.debug(`${AUDIT_LOGGING_NAME} - Suggested fixes: ${JSON.stringify(suggestedFixes)}`);
+
+  // Calculate and log the size of suggestions
+  const suggestionsJson = JSON.stringify(suggestedFixes);
+  const sizeInBytes = getStringByteLength(suggestionsJson);
+  const sizeInKB = Math.max(1, Math.round(sizeInBytes / 1024));
+
+  log.info(`${AUDIT_LOGGING_NAME} - Total size of suggestions (rounded up): ${sizeInKB} KB`);
+
+  // Analyze individual suggestion sizes for debugging
+  if (suggestedFixes && suggestedFixes.length > 0) {
+    const suggestionSizes = suggestedFixes.map((suggestion) => {
+      const suggestionJson = JSON.stringify(suggestion);
+      return getStringByteLength(suggestionJson);
+    });
+
+    const nonZeroSizes = suggestionSizes.filter((size) => size > 0);
+    const smallestSize = nonZeroSizes.length > 0 ? Math.min(...nonZeroSizes) : 0;
+    const largestSize = Math.max(...suggestionSizes);
+    // eslint-disable-next-line max-len
+    const averageSize = suggestionSizes.reduce((sum, size) => sum + size, 0) / suggestionSizes.length;
+    const averageSizeKB = averageSize / 1024;
+    const maxNumberFitInDB = Math.floor(MAX_DB_OBJ_SIZE_KB / averageSizeKB);
+
+    log.info(`${AUDIT_LOGGING_NAME} - Suggestion size analysis: smallest non-zero size = ${smallestSize} bytes, average size = ${Math.round(averageSize)} bytes, largest size = ${largestSize} bytes`);
+    log.info(`${AUDIT_LOGGING_NAME} - Suggestion database capacity: approximately ${maxNumberFitInDB} suggestions can be saved within ${MAX_DB_OBJ_SIZE_KB} KB limit (based on average size of ${averageSizeKB.toFixed(2)} KB per suggestion)`);
+  }
+
+  // Log warning if total suggestion size is >= maximum allowed size
+  if (sizeInKB >= MAX_DB_OBJ_SIZE_KB) {
+    log.warn(`${AUDIT_LOGGING_NAME} - WARNING: Total size of all suggestions (${sizeInKB} KB) is >= ${MAX_DB_OBJ_SIZE_KB} KB. This will be too large for the database!`);
+  }
 
   // return what will become the next 'auditData' object
   return {

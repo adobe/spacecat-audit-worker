@@ -26,6 +26,7 @@ import {
   downloadExistingCdnSheet,
   matchErrorsWithCdnData,
   SPREADSHEET_COLUMNS,
+  toPathOnly,
 } from './utils.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
@@ -36,8 +37,8 @@ async function runLlmErrorPagesAudit(url, context, site) {
   } = context;
   const s3Config = await getS3Config(site, context);
 
-  log.info(`Starting LLM error pages audit for ${url}`);
-  log.info(`Running LLM error pages audit ${audit}`);
+  log.debug(`Starting LLM error pages audit for ${url}`);
+  log.debug(`Running LLM error pages audit ${audit}`);
 
   try {
     const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
@@ -46,11 +47,11 @@ async function runLlmErrorPagesAudit(url, context, site) {
     const { startDate } = week;
     const { endDate } = week;
     const periodIdentifier = `w${week.weekNumber}-${week.year}`;
-    log.info(`Running weekly audit for ${periodIdentifier}`);
+    log.debug(`Running weekly audit for ${periodIdentifier}`);
 
     // Get site configuration
     const filters = site.getConfig()?.getLlmoCdnlogsFilter?.() || [];
-    const siteFilters = buildSiteFilters(filters);
+    const siteFilters = buildSiteFilters(filters, site);
 
     // Build and execute query
     const query = await buildLlmErrorPagesQuery({
@@ -62,7 +63,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
       siteFilters,
     });
 
-    log.info('Executing LLM error pages query...');
+    log.debug('Executing LLM error pages query...');
     const sqlQueryDescription = '[Athena Query] LLM error pages analysis';
     const results = await athenaClient.query(
       query,
@@ -100,7 +101,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
         return;
       }
 
-      log.info(`Found existing CDN data with ${existingCdnData.length} rows, enriching error data`);
+      log.debug(`Found existing CDN data with ${existingCdnData.length} rows, enriching error data`);
       const enrichedErrors = matchErrorsWithCdnData(errors, existingCdnData, baseUrl);
 
       const sorted = enrichedErrors.sort((a, b) => b.number_of_hits - a.number_of_hits);
@@ -134,7 +135,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
         sharepointClient,
         filename,
       });
-      log.info(`Uploaded Excel for ${code}: ${filename} (${sorted.length} rows)`);
+      log.debug(`Uploaded Excel for ${code}: ${filename} (${sorted.length} rows)`);
     };
 
     // Generate and upload Excel files for each category
@@ -144,7 +145,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
       writeCategoryExcel('5xx', categorizedResults['5xx']),
     ]);
 
-    log.info(`Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
+    log.debug(`Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
 
     const auditResult = {
       success: true,
@@ -228,7 +229,8 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     // Consolidate by URL and combine user agents
     const urlToUserAgentsMap = new Map();
     sorted404.forEach((errorPage) => {
-      const fullUrl = messageBaseUrl ? `${messageBaseUrl}${errorPage.url}` : errorPage.url;
+      const path = toPathOnly(errorPage.url, messageBaseUrl);
+      const fullUrl = messageBaseUrl ? new URL(path, messageBaseUrl).toString() : path;
       if (!urlToUserAgentsMap.has(fullUrl)) {
         urlToUserAgentsMap.set(fullUrl, new Set());
       }
@@ -255,7 +257,7 @@ async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.info(`Queued ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
+    log.debug(`Queued ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
   } catch (error) {
     log.error(`Failed to send Mystique message: ${error.message}`);
   }

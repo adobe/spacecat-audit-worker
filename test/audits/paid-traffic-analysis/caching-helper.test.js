@@ -103,7 +103,7 @@ describe('Paid Traffic Analysis Caching Helper', () => {
       expect(mockS3.send).to.have.been.calledOnce;
       const command = mockS3.send.getCall(0).args[0];
       expect(command).to.be.instanceOf(PutObjectCommand);
-      expect(mockLog.info).to.have.been.calledWith(
+      expect(mockLog.debug).to.have.been.calledWith(
         `Successfully cached result to: ${testCacheKey}`,
       );
     });

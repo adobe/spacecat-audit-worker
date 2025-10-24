@@ -610,6 +610,7 @@ describe('LLM Error Pages Handler', () => {
           info: sandbox.stub(),
           warn: sandbox.stub(),
           error: sandbox.stub(),
+          debug: sandbox.stub(),
         },
         env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
         sqs,
@@ -838,6 +839,7 @@ describe('LLM Error Pages Handler', () => {
           info: sandbox.stub(),
           warn: sandbox.stub(),
           error: sandbox.stub(),
+          debug: sandbox.stub(),
         },
         env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
         sqs,
@@ -853,7 +855,7 @@ describe('LLM Error Pages Handler', () => {
       expect(sqs.sendMessage.calledOnce).to.be.true;
 
       // Verify success log was called (covers line 231)
-      expect(context.log.info.calledWith(sinon.match(/Queued \d+ consolidated 404 URLs to Mystique for AI processing/))).to.be.true;
+      expect(context.log.debug.calledWith(sinon.match(/Queued \d+ consolidated 404 URLs to Mystique for AI processing/))).to.be.true;
 
       // Verify message structure includes brokenLinks mapping (covers lines 220-222)
       const message = sqs.sendMessage.firstCall.args[1];
@@ -951,7 +953,7 @@ describe('LLM Error Pages Handler', () => {
       };
 
       const context = {
-        log: { warn: sandbox.stub(), info: sandbox.stub(), error: sandbox.stub() },
+        log: { warn: sandbox.stub(), info: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
         env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
         sqs,
         dataAccess,
@@ -992,7 +994,7 @@ describe('LLM Error Pages Handler', () => {
       };
 
       const context = {
-        log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+        log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
         env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
         sqs,
         dataAccess,
@@ -1016,7 +1018,7 @@ describe('LLM Error Pages Handler', () => {
 
       const sqs = { sendMessage: sandbox.stub().resolves() };
       const context = {
-        log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub() },
+        log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
         env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
         sqs,
         dataAccess: {},
@@ -1099,6 +1101,7 @@ describe('LLM Error Pages Handler', () => {
           info: sandbox.stub(),
           warn: sandbox.stub(),
           error: sandbox.stub(),
+          debug: sandbox.stub(),
         },
         env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
         sqs,
@@ -1114,7 +1117,7 @@ describe('LLM Error Pages Handler', () => {
       expect(sqs.sendMessage.calledOnce).to.be.true;
 
       // Verify success logging (covers line 231)
-      expect(context.log.info.calledWith('Queued 2 consolidated 404 URLs to Mystique for AI processing')).to.be.true;
+      expect(context.log.debug.calledWith('Queued 2 consolidated 404 URLs to Mystique for AI processing')).to.be.true;
 
       // Verify message structure includes brokenLinks mapping (covers lines 220-222)
       const message = sqs.sendMessage.firstCall.args[1];
@@ -1180,6 +1183,7 @@ describe('LLM Error Pages Handler', () => {
           info: sandbox.stub(),
           warn: sandbox.stub(),
           error: sandbox.stub(),
+          debug: sandbox.stub(),
         },
         env: { QUEUE_SPACECAT_TO_MYSTIQUE: 'queue-url' },
         sqs,
