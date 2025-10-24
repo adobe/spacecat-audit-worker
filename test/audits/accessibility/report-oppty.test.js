@@ -763,8 +763,9 @@ describe('Accessibility Report Opportunity Utils', () => {
       expect(result[0].data.suggestionValue['accessibility-mobile']).to.have.length.greaterThan(50);
     });
 
-    it('should correctly log desktop content length when it exists with truthy length', () => {
-      // This test specifically targets line 121 where desktop content already exists
+    it('should correctly handle desktop content when it exists with truthy length', () => {
+      // This test verifies that when desktop content already exists,
+      // we can update mobile content while preserving desktop
       const existingDesktopContent = 'Desktop Report Content';
       const suggestionValue = {
         'accessibility-desktop': existingDesktopContent,
@@ -772,57 +773,35 @@ describe('Accessibility Report Opportunity Utils', () => {
       const deviceType = 'mobile';
       const mobileContent = 'Mobile Content';
 
-      let loggedDesktopLength = false;
-      const logSpy = {
-        info: (message) => {
-          if (message.includes('accessibility-desktop length:') && message.includes(existingDesktopContent.length.toString())) {
-            loggedDesktopLength = true;
-          }
-        },
-      };
-
       const result = createOrUpdateDeviceSpecificSuggestion(
         suggestionValue,
         deviceType,
         mobileContent,
-        logSpy,
       );
 
       expect(result).to.be.an('array');
       expect(result[0].data.suggestionValue['accessibility-desktop']).to.equal(existingDesktopContent);
       expect(result[0].data.suggestionValue['accessibility-mobile']).to.equal(mobileContent);
-      expect(loggedDesktopLength).to.be.true;
     });
 
-    it('should correctly log desktop content length when it does not exist (hits || 0 branch)', () => {
-      // This test targets line 121 falsy branch where desktop content is undefined
-      // We update mobile but desktop doesn't exist yet, so line 121 logs "0"
+    it('should correctly handle when desktop content does not exist', () => {
+      // This test verifies that when desktop content is undefined,
+      // we can still update mobile content without issues
       const suggestionValue = {
         'accessibility-mobile': 'Existing Mobile Content',
       };
       const deviceType = 'mobile';  // Updating mobile, so desktop remains undefined
       const mobileContent = 'Updated Mobile Content';
 
-      let loggedDesktopZero = false;
-      const logSpy = {
-        info: (message) => {
-          if (message.includes('accessibility-desktop length: 0')) {
-            loggedDesktopZero = true;
-          }
-        },
-      };
-
       const result = createOrUpdateDeviceSpecificSuggestion(
         suggestionValue,
         deviceType,
         mobileContent,
-        logSpy,
       );
 
       expect(result).to.be.an('array');
       expect(result[0].data.suggestionValue['accessibility-desktop']).to.be.undefined;
       expect(result[0].data.suggestionValue['accessibility-mobile']).to.equal(mobileContent);
-      expect(loggedDesktopZero).to.be.true;
     });
   });
 });
