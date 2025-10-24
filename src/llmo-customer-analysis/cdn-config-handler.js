@@ -272,10 +272,8 @@ export async function handleCdnBucketConfigChanges(context, data) {
 
   // Enable audits and run analysis
   if (cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY) {
-    await Promise.all([
-      enableCdnAnalysisPerOrg(site, context),
-      handleAdobeFastly(siteId, context),
-    ]);
+    await enableCdnAnalysisPerOrg(site, context);
+    await handleAdobeFastly(siteId, context);
   }
 
   if (cdnProvider?.includes('byocdn')) {
