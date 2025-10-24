@@ -279,7 +279,7 @@ export async function validatePageHeadings(
         count: h1Elements.length,
       });
     } else if (getTextContent(h1Elements[0]).length === 0
-      || h1Elements[0].textContent.length > H1_LENGTH_CHARS) {
+      || getTextContent(h1Elements[0]).length > H1_LENGTH_CHARS) {
       const h1Length = h1Elements[0].textContent.length;
       const lengthIssue = h1Length === 0 ? 'empty' : 'too long';
       log.info(`H1 length ${lengthIssue} detected at ${url}: ${h1Length} characters`);
