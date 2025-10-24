@@ -1533,14 +1533,28 @@ describe('Accessibility Audit Handler', () => {
       mockContext.log.info.resetHistory();
       createAccessibilityIndividualOpportunitiesStub.resetHistory();
       sendRunImportMessageStub.resetHistory();
+      sendRunImportMessageStub.resolves();
 
       // Act - use the factory to create a mobile-specific processor
       const processMobileOpportunities = createProcessAccessibilityOpportunitiesWithDevice('mobile');
       const result = await processMobileOpportunities(mockContext);
 
-      // Assert
+      // Assert - individual opportunities should be skipped for mobile
       expect(createAccessibilityIndividualOpportunitiesStub).to.not.have.been.called;
-      expect(sendRunImportMessageStub).to.not.have.been.called;
+      
+      // Assert - metrics import SHOULD be called for mobile (changed behavior)
+      expect(sendRunImportMessageStub).to.have.been.calledOnceWith(
+        mockContext.sqs,
+        'test-queue',
+        'a11y-metrics-aggregator_mobile',
+        'test-site-id',
+        sinon.match({
+          scraperBucketName: 'test-bucket',
+          importerBucketName: 'test-bucket-2',
+          deviceType: 'mobile',
+        }),
+      );
+      
       expect(result.status).to.equal('OPPORTUNITIES_FOUND');
       expect(result.deviceType).to.equal('mobile');
       expect(result.opportunitiesFound).to.equal(3); // 3 mobile issues
@@ -1548,7 +1562,7 @@ describe('Accessibility Audit Handler', () => {
       // Check that the specific log messages were called
       const logCalls = mockContext.log.info.getCalls().map(call => call.args[0]);
       expect(logCalls).to.include('[A11yAudit] Step 2: Processing scraped data for mobile on site test-site-id (https://example.com)');
-      expect(logCalls).to.include('[A11yAudit] Skipping individual opportunities (Step 2c) and metrics import (Step 3) for mobile audit on site test-site-id');
+      expect(logCalls).to.include('[A11yAudit] Skipping individual opportunities (Step 2c) for mobile audit on site test-site-id');
       expect(logCalls).to.include('[A11yAudit] Found 3 mobile accessibility issues across 1 unique URLs for site test-site-id (https://example.com)');
     });
 
