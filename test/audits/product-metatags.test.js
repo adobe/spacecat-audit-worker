@@ -2466,6 +2466,55 @@ describe('Product MetaTags', () => {
       expect(result.projectedTrafficLost).to.be.greaterThan(0);
     });
 
+    it('should skip tags without issues from traffic calculation', async () => {
+      const detectedTags = {
+        '/page1': {
+          title: { issue: 'Missing Title', tagName: 'title' },
+          description: { tagName: 'description' }, // No issue property - should be skipped
+          h1: { tagName: 'h1' }, // No issue property - should be skipped
+        },
+      };
+
+      const rumData = [
+        { url: 'https://example.com/page1', earned: 50000, paid: 25000 },
+      ];
+
+      const mockCalculateProjectedTraffic = esmock('../../src/product-metatags/handler.js', {
+        '@adobe/spacecat-shared-rum-api-client': {
+          default: {
+            createFrom: () => ({
+              query: sinon.stub().resolves(rumData),
+            }),
+          },
+        },
+        '../../src/support/utils.js': {
+          calculateCPCValue: sinon.stub().resolves(2.5),
+        },
+        '../../src/common/index.js': {
+          wwwUrlResolver: sinon.stub().resolves('https://example.com'),
+        },
+      });
+
+      const {
+        calculateProjectedTraffic: mockedCalculateProjectedTraffic,
+      } = await mockCalculateProjectedTraffic;
+
+      const result = await mockedCalculateProjectedTraffic(
+        mockContext,
+        mockSite,
+        detectedTags,
+        logStub,
+      );
+
+      // Should only calculate for title (with issue), not description/h1 without issues
+      expect(result).to.have.property('projectedTrafficLost');
+      expect(result.projectedTrafficLost).to.be.greaterThan(0);
+      // Traffic lost should be: 75000 * 0.01 = 750
+      // Value should be: 750 * 2.5 = 1875
+      expect(result.projectedTrafficLost).to.equal(750);
+      expect(result.projectedTrafficValue).to.equal(1875);
+    });
+
     it('should return empty object when projected value is below threshold', async () => {
       const detectedTags = {
         '/page1': {
@@ -2718,11 +2767,21 @@ describe('Product MetaTags', () => {
         },
       });
 
-      await mockedFunction(mockSite, pagesSet, mockContext);
+      const result = await mockedFunction(mockSite, pagesSet, mockContext);
 
       expect(logStub.info.getCalls().some((call) => call.args[0].includes('Processing product page:'))).to.be.true;
       expect(logStub.debug.getCalls().some((call) => call.args[0].includes('Extracted product tags for'))).to.be.true;
       expect(logStub.info.getCalls().some((call) => call.args[0].includes('Product pages processed: 1 out of 1 total pages'))).to.be.true;
+      
+      // Verify that productTags includes SKU, thumbnail, and title
+      const detectedTagsKeys = Object.keys(result.detectedTags);
+      expect(detectedTagsKeys.length).to.be.greaterThan(0);
+      const firstPageTags = result.detectedTags[detectedTagsKeys[0]];
+      if (firstPageTags && firstPageTags.productTags) {
+        expect(firstPageTags.productTags).to.have.property('sku', 'PROD-123');
+        expect(firstPageTags.productTags).to.have.property('thumbnail', 'https://example.com/image.jpg');
+        expect(firstPageTags.productTags).to.have.property('title', 'Product Page');
+      }
     });
 
     it('should log error when no tags are extracted', async () => {
