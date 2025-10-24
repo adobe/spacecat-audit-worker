@@ -15,15 +15,9 @@ import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
 import { getImsOrgId } from '../utils/data-access.js';
+import { extractCustomerDomain } from '../utils/cdn-utils.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
-
-function extractCustomerDomain(site) {
-  const { hostname } = new URL(site.getBaseURL());
-  return {
-    sanitizedHostname: hostname.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(),
-  };
-}
 
 function getHourParts() {
   const previousHour = new Date(Date.now() - ONE_HOUR_MS);
@@ -46,7 +40,7 @@ export async function cdnContentFragment404Runner(context) {
   const {
     site, rawBucket, dataAccess, log,
   } = context;
-  const { sanitizedHostname } = extractCustomerDomain(site);
+  const sanitizedHostname = extractCustomerDomain(site);
   const {
     year, month, day, hour,
   } = getHourParts();
