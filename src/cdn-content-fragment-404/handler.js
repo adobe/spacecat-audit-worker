@@ -102,6 +102,6 @@ export async function cdnContentFragment404Runner(context) {
 }
 
 export default new AuditBuilder()
-  .withRunner(cdnContentFragment404Runner)
   .withUrlResolver(wwwUrlResolver)
+  .withRunner(cdnContentFragment404Runner)
   .build();
