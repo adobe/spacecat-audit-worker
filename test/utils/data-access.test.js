@@ -447,7 +447,7 @@ describe('data-access', () => {
         });
 
         // Check that existing count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Existing suggestions count: 0');
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Existing suggestions\s*=\s*0/);
         // Verify no sample logs for empty array
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
         expect(debugCalls.some((msg) => msg.includes('Existing suggestions sample'))).to.be.false;
@@ -476,12 +476,11 @@ describe('data-access', () => {
         });
 
         // Check that existing count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Existing suggestions count: 8');
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Existing suggestions\s*=\s*8/);
         // Check that full sample is logged
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => msg.includes('Existing suggestions sample:'));
+        const sampleLog = debugCalls.find((msg) => /Existing suggestions\s*=\s*8:/.test(msg));
         expect(sampleLog).to.exist;
-        expect(sampleLog).to.not.include('first 10');
       });
 
       it('should log only first 10 items when there are more than 10 existing suggestions', async () => {
@@ -507,10 +506,10 @@ describe('data-access', () => {
         });
 
         // Check that existing count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Existing suggestions count: 20');
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Existing suggestions\s*=\s*20/);
         // Check that only first 10 are logged
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => msg.includes('Existing suggestions sample (first 10):'));
+        const sampleLog = debugCalls.find((msg) => /Existing suggestions\s*=\s*20:/.test(msg));
         expect(sampleLog).to.exist;
       });
 
@@ -537,12 +536,11 @@ describe('data-access', () => {
         });
 
         // Check that updated count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Updated existing suggestions count: 7');
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Updated existing suggestions\s*=\s*7/);
         // Check that full sample is logged
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => msg.includes('Updated existing suggestions sample:'));
+        const sampleLog = debugCalls.find((msg) => /Updated existing suggestions\s*=\s*7:/.test(msg));
         expect(sampleLog).to.exist;
-        expect(sampleLog).to.not.include('first 10');
       });
 
       it('should log only first 10 items when there are more than 10 updated suggestions', async () => {
@@ -568,10 +566,10 @@ describe('data-access', () => {
         });
 
         // Check that updated count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('Updated existing suggestions count: 12');
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/Updated existing suggestions\s*=\s*12/);
         // Check that only first 10 are logged
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => msg.includes('Updated existing suggestions sample (first 10):'));
+        const sampleLog = debugCalls.find((msg) => /Updated existing suggestions\s*=\s*12:/.test(msg));
         expect(sampleLog).to.exist;
       });
 
@@ -609,12 +607,11 @@ describe('data-access', () => {
         });
 
         // Check that new suggestions count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('New suggestions count: 9');
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/New suggestions\s*=\s*9/);
         // Check that full sample is logged
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => msg.includes('New suggestions sample:'));
+        const sampleLog = debugCalls.find((msg) => /New suggestions\s*=\s*9:/.test(msg));
         expect(sampleLog).to.exist;
-        expect(sampleLog).to.not.include('first 10');
       });
 
       it('should log only first 10 items when there are more than 10 new suggestions', async () => {
@@ -651,10 +648,10 @@ describe('data-access', () => {
         });
 
         // Check that new suggestions count is logged
-        expect(mockLogger.debug).to.have.been.calledWith('New suggestions count: 15');
+        expect(mockLogger.debug).to.have.been.calledWithMatch(/New suggestions\s*=\s*15/);
         // Check that only first 10 are logged
         const debugCalls = mockLogger.debug.getCalls().map((call) => call.args[0]);
-        const sampleLog = debugCalls.find((msg) => msg.includes('New suggestions sample (first 10):'));
+        const sampleLog = debugCalls.find((msg) => /New suggestions\s*=\s*15:/.test(msg));
         expect(sampleLog).to.exist;
       });
     });

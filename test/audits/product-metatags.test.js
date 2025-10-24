@@ -4340,6 +4340,8 @@ describe('Product MetaTags', () => {
 
       // Verify the function executed successfully
       expect(logStub.info).to.have.been.called;
+    });
+
   describe('buildSuggestionKey', () => {
     it('uses fallbacks when fields are missing', () => {
       expect(buildSuggestionKey(undefined)).to.equal('unknown-url|unknown-issue|');
@@ -4353,8 +4355,478 @@ describe('Product MetaTags', () => {
       expect(key).to.equal('https://x|Title too long|foo');
     });
   });
+
+  describe('extractLocaleFromUrl', () => {
+    let logStub;
+
+    beforeEach(() => {
+      logStub = {
+        debug: sinon.stub(),
+        warn: sinon.stub(),
+      };
+    });
+
+    it('should extract locale from URL with %locale in template', async () => {
+      const mockModule = await esmock('../../src/product-metatags/handler.js');
+      const { extractLocaleFromUrl } = mockModule;
+
+      const url = 'https://example.com/en-us/products/item123';
+      const template = '%baseUrl/%locale/products/%urlKey';
+
+      const result = extractLocaleFromUrl(url, template, logStub);
+
+      expect(result).to.equal('en-us');
+      expect(logStub.debug).to.have.been.calledWith(
+        sinon.match(/Extracted locale "en-us" from URL/),
+      );
+    });
+
+    it('should extract locale without %baseUrl in template', async () => {
+      const mockModule = await esmock('../../src/product-metatags/handler.js');
+      const { extractLocaleFromUrl } = mockModule;
+
+      const url = 'https://example.com/fr/products/item456';
+      const template = '%locale/products/%urlKey';
+
+      const result = extractLocaleFromUrl(url, template, logStub);
+
+      expect(result).to.equal('fr');
+      expect(logStub.debug).to.have.been.calledWith(
+        sinon.match(/Extracted locale "fr" from URL/),
+      );
+    });
+
+    it('should return empty string when %locale not found in template', async () => {
+      const mockModule = await esmock('../../src/product-metatags/handler.js');
+      const { extractLocaleFromUrl } = mockModule;
+
+      const url = 'https://example.com/products/item789';
+      const template = '%baseUrl/products/%urlKey';
+
+      const result = extractLocaleFromUrl(url, template, logStub);
+
+      expect(result).to.equal('');
+      expect(logStub.debug).to.have.been.calledWith(
+        '[PRODUCT-METATAGS] No %locale found in product URL template, using empty locale',
+      );
+    });
+
+    it('should return empty string when actualLocaleIndex is out of bounds', async () => {
+      const mockModule = await esmock('../../src/product-metatags/handler.js');
+      const { extractLocaleFromUrl } = mockModule;
+
+      const url = 'https://example.com/products';
+      const template = '%baseUrl/products/%locale/%urlKey';
+
+      const result = extractLocaleFromUrl(url, template, logStub);
+
+      expect(result).to.equal('');
+      expect(logStub.debug).to.have.been.calledWith(
+        sinon.match(/Could not extract locale from URL/),
+      );
+    });
+
+    it('should handle URL parsing errors', async () => {
+      const mockModule = await esmock('../../src/product-metatags/handler.js');
+      const { extractLocaleFromUrl } = mockModule;
+
+      const invalidUrl = 'not-a-valid-url';
+      const template = '%baseUrl/%locale/products/%urlKey';
+
+      const result = extractLocaleFromUrl(invalidUrl, template, logStub);
+
+      expect(result).to.equal('');
+      expect(logStub.warn).to.have.been.calledWith(
+        sinon.match(/Error extracting locale from URL/),
+      );
     });
   });
+
+  describe('opportunityAndSuggestions - missing issue validation', () => {
+    let dataAccessStub;
+    let logStub;
+    let context;
+    let opportunity;
+
+    beforeEach(() => {
+      logStub = {
+        info: sinon.stub(),
+        debug: sinon.stub(),
+        error: sinon.stub(),
+        warn: sinon.stub(),
+      };
+      opportunity = {
+        getId: () => 'opportunity-id',
+        getSiteId: () => 'site-id',
+        setAuditId: sinon.stub(),
+        save: sinon.stub(),
+        getSuggestions: sinon.stub().returns([]),
+        addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [1] }),
+        getType: () => 'product-metatags',
+        setData: () => {},
+        getData: () => {},
+        setUpdatedBy: sinon.stub().returnsThis(),
+      };
+      dataAccessStub = {
+        Opportunity: {
+          allBySiteIdAndStatus: sinon.stub().resolves([opportunity]),
+          create: sinon.stub(),
+        },
+        Site: {
+          findById: sinon.stub().resolves({
+            getId: () => 'site-id',
+            getDeliveryConfig: () => ({}),
+          }),
+        },
+        Suggestion: {
+          bulkUpdateStatus: sinon.stub(),
+        },
+      };
+      context = {
+        log: logStub,
+        dataAccess: dataAccessStub,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        },
+      };
+    });
+
+    it('should skip suggestions with missing issue field', async () => {
+      dataAccessStub.Site.findById = sinon.stub().resolves({
+        getId: () => 'site-id',
+        getDeliveryConfig: () => ({ useHostnameOnly: false }),
+        getConfig: () => ({
+          getHandlers: () => ({}),
+        }),
+      });
+
+      const auditData = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        auditResult: {
+          finalUrl: 'https://example.com',
+          projectedTrafficLost: 100,
+          projectedTrafficValue: 500,
+          detectedTags: {
+            '/product1': {
+              title: (() => {
+                let call = 0;
+                return {
+                  get issue() {
+                    call += 1;
+                    // Return truthy for the first two reads (ranking + guard), then undefined inside validation
+                    return call <= 2 ? 'title-length' : undefined;
+                  },
+                  tagContent: 'Product Title',
+                  seoImpact: 'High',
+                };
+              })(),
+            },
+          },
+        },
+      };
+
+      const mockModule = await esmock('../../src/product-metatags/handler.js', {
+        '../../src/utils/data-access.js': { syncSuggestions: sinon.stub().resolves() },
+        '../../src/utils/saas.js': { getCommerceConfig: sinon.stub().resolves({}) },
+      });
+      const { opportunityAndSuggestions: mockedOAS } = mockModule;
+      await mockedOAS('https://example.com', auditData, context);
+
+      // Verify warning was logged for missing issue (line 235-237)
+      expect(logStub.warn).to.have.been.calledWith(
+        sinon.match(/Missing issue for https:\/\/example\.com\/product1, tag: title/),
+      );
+
+      // Verify the suggestion was not added
+      expect(logStub.info).to.have.been.calledWith(
+        sinon.match(/Generated 0 valid suggestions and 1 invalid suggestions/),
+      );
+    });
+  });
+
+
+  describe('opportunityAndSuggestions - commerce config coverage', () => {
+    let logStub;
+    let context;
+
+    beforeEach(() => {
+      logStub = { info: sinon.stub(), debug: sinon.stub(), error: sinon.stub(), warn: sinon.stub() };
+      context = {
+        log: logStub,
+        dataAccess: {
+          Site: {
+            findById: sinon.stub().resolves({
+              getId: () => 'site-id',
+              getDeliveryConfig: () => ({}),
+              getConfig: () => ({ getHandlers: () => ({}) }),
+            }),
+          },
+          Opportunity: { allBySiteIdAndStatus: sinon.stub().resolves([]), create: sinon.stub() },
+          Suggestion: { bulkUpdateStatus: sinon.stub() },
+        },
+      };
+    });
+
+    const baseAuditData = {
+      siteId: 'site-id',
+      auditId: 'audit-id',
+      auditResult: {
+        finalUrl: 'https://example.com/en',
+        projectedTrafficLost: 0,
+        projectedTrafficValue: 0,
+        detectedTags: {
+          '/product': {
+            title: { issue: 'title-length', tagContent: 'X', seoImpact: 'High' },
+          },
+        },
+      },
+    };
+
+    it('logs Empty config when getCommerceConfig returns null (covers config || {} falsy)', async () => {
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const mockModule = await esmock('../../src/product-metatags/handler.js', {
+        '../../src/product-metatags/opportunity-utils.js': {
+          getBaseUrl: () => 'https://example.com',
+          getIssueRanking: () => 1,
+        },
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'opty', getSiteId: () => 'site-id' }),
+        },
+        '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        '../../src/utils/saas.js': { getCommerceConfig: sinon.stub().resolves(null) },
+      });
+
+      const { opportunityAndSuggestions } = mockModule;
+      await opportunityAndSuggestions(baseAuditData.auditResult.finalUrl, baseAuditData, context);
+
+      expect(logStub.debug).to.have.been.calledWith(
+        sinon.match(/Empty config for https:\/\/example\.com\/product/),
+      );
+      expect(syncSuggestionsStub.callCount).to.be.greaterThan(0);
+    });
+
+    it('logs Extracted config when getCommerceConfig returns object (covers config || {} truthy)', async () => {
+      const syncSuggestionsStub = sinon.stub().resolves();
+      const mockModule = await esmock('../../src/product-metatags/handler.js', {
+        '../../src/product-metatags/opportunity-utils.js': {
+          getBaseUrl: () => 'https://example.com',
+          getIssueRanking: () => 1,
+        },
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: sinon.stub().resolves({ getId: () => 'opty', getSiteId: () => 'site-id' }),
+        },
+        '../../src/utils/data-access.js': { syncSuggestions: syncSuggestionsStub },
+        '../../src/utils/saas.js': { getCommerceConfig: sinon.stub().resolves({ region: 'us' }) },
+      });
+
+      const { opportunityAndSuggestions } = mockModule;
+      await opportunityAndSuggestions(baseAuditData.auditResult.finalUrl, baseAuditData, context);
+
+      expect(logStub.debug).to.have.been.calledWith(
+        sinon.match(/Extracted config for https:\/\/example\.com\/product/),
+      );
+      expect(syncSuggestionsStub.callCount).to.be.greaterThan(0);
+    });
+  });
+
+  describe('opportunityAndSuggestions - invalid fullUrl handling', () => {
+    let logStub;
+    let dataAccessStub;
+    let context;
+
+    beforeEach(() => {
+      logStub = {
+        info: sinon.stub(),
+        debug: sinon.stub(),
+        error: sinon.stub(),
+        warn: sinon.stub(),
+      };
+      dataAccessStub = {
+        Opportunity: {
+          allBySiteIdAndStatus: sinon.stub().resolves([]),
+          create: sinon.stub().resolves({
+            getId: () => 'opportunity-id',
+            getSiteId: () => 'site-id',
+            setAuditId: sinon.stub(),
+            save: sinon.stub(),
+            getSuggestions: sinon.stub().returns([]),
+            addSuggestions: sinon.stub().returns({ errorItems: [], createdItems: [] }),
+            getType: () => 'product-metatags',
+            setData: () => {},
+            getData: () => {},
+            setUpdatedBy: sinon.stub().returnsThis(),
+          }),
+        },
+        Site: { findById: sinon.stub().resolves(null) },
+        Suggestion: { bulkUpdateStatus: sinon.stub() },
+      };
+      context = {
+        log: logStub,
+        dataAccess: dataAccessStub,
+        env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+      };
+    });
+
+    it('should mark suggestion invalid when constructed fullUrl is empty (covers line 247)', async () => {
+      const auditData = {
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        auditResult: {
+          finalUrl: 'https://example.com',
+          projectedTrafficLost: 100,
+          projectedTrafficValue: 500,
+          detectedTags: {
+            '': {
+              title: {
+                issue: 'Title too short',
+                tagContent: 'Title',
+                seoImpact: 'High',
+              },
+            },
+          },
+        },
+      };
+
+      const mockModule = await esmock('../../src/product-metatags/handler.js', {
+        '../../src/product-metatags/opportunity-utils.js': {
+          getBaseUrl: () => '', // force empty base to construct empty fullUrl
+          getIssueRanking: () => 1,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: sinon.stub().resolves(),
+        },
+      });
+
+      await mockModule.opportunityAndSuggestions('https://example.com', auditData, context);
+
+      expect(logStub.warn).to.have.been.calledWith(
+        sinon.match(/Invalid URL for endpoint: , tag: title/),
+      );
+
+
+
+
+      expect(logStub.info).to.have.been.calledWith(
+        sinon.match(/Generated 0 valid suggestions and 1 invalid suggestions/),
+      );
+    });
+  });
+
+  describe('productMetatagsAutoDetect - non-product page skipping', () => {
+    let logStub;
+    let s3ClientStub;
+    let context;
+    let site;
+
+    beforeEach(() => {
+      logStub = { info: sinon.stub(), debug: sinon.stub(), error: sinon.stub(), warn: sinon.stub() };
+      s3ClientStub = { send: sinon.stub() };
+      site = { getId: sinon.stub().returns('site-id') };
+      context = { log: logStub, s3Client: s3ClientStub, env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' } };
+    });
+
+    it('should log debug message when skipping non-product page', async () => {
+      const mockScrapeResultWithSKU = {
+        finalUrl: 'http://example.com/regular-page',
+        scrapeResult: {
+          tags: {},
+          rawBody: 'x'.repeat(400),
+          structuredData: { jsonld: { Product: [{ sku: 'SKU-111' }] } },
+        },
+      };
+      const pagesMap = new Map([[ 'http://example.com/regular-page', 'scrapes/site-id/regular-page/scrape.json' ]]);
+      const mockModule = await esmock('../../src/product-metatags/handler.js', {
+        '../../src/utils/s3-utils.js': { getObjectFromKey: sinon.stub().resolves(mockScrapeResultWithSKU) },
+        '../../src/product-metatags/seo-checks.js': {
+          default: class ProductSeoChecks {
+            constructor(log) { this.log = log; this.detectedTags = {}; }
+            static hasProductTags() { return false; }
+            static extractProductTags() { return { 'http://example.com/regular-page': { sku: 'SKU-111' } }; }
+            performChecks() {}
+            finalChecks() { return {}; }
+            getDetectedTags() { return this.detectedTags; }
+          },
+        },
+      });
+      const { productMetatagsAutoDetect } = mockModule;
+      await productMetatagsAutoDetect(site, pagesMap, context);
+      expect(logStub.debug).to.have.been.calledWith(
+        sinon.match(/\[PRODUCT-METATAGS\] Skipping non-product page: \/regular-page \(no SKU found\)/),
+      );
+    });
+
+    it('should log checking page with sku value present (covers sku truthy in line 574)', async () => {
+      const mockScrape = {
+        finalUrl: 'http://example.com/regular-page',
+        scrapeResult: { tags: {}, rawBody: 'x'.repeat(400), structuredData: { jsonld: { Product: [{ sku: 'SKU-999' }] } } },
+      };
+      const mockModule = await esmock('../../src/product-metatags/handler.js', {
+        '../../src/utils/s3-utils.js': { getObjectFromKey: sinon.stub().resolves(mockScrape) },
+        '../../src/product-metatags/seo-checks.js': {
+          default: class ProductSeoChecks {
+            constructor(log) { this.log = log; this.detectedTags = {}; }
+            static hasProductTags() { return true; }
+            static extractProductTags() { return { 'http://example.com/regular-page': { sku: 'SKU-999' } }; }
+            performChecks() {}
+            finalChecks() { return {}; }
+            getDetectedTags() { return this.detectedTags; }
+          },
+        },
+      });
+      const pagesMap = new Map([[ 'http://example.com/regular-page', 'scrapes/site-id/regular-page/scrape.json' ]]);
+      const { productMetatagsAutoDetect } = mockModule;
+      await productMetatagsAutoDetect(site, pagesMap, context);
+      expect(logStub.debug).to.have.been.calledWith(
+        sinon.match(/Checking page \/regular-page: hasProductTags=true, sku=SKU-999/),
+      );
+    });
+
+    it('should log checking page with sku none when sku is missing (covers falsy branch at line 574)', async () => {
+      // Stub Promise.all to inject a pageMetadata result with sku undefined
+      const promiseAllStub = sinon.stub(Promise, 'all').callsFake(async () => ([
+        { '/regular-page': { title: 'T', description: 'D', h1: [], sku: undefined, s3key: 'k' } },
+      ]));
+      try {
+        const mockModule = await esmock('../../src/product-metatags/handler.js', {
+          '../../src/product-metatags/seo-checks.js': {
+            default: class ProductSeoChecks {
+              constructor(log) { this.log = log; this.detectedTags = {}; }
+              static hasProductTags() { return true; }
+              static extractProductTags() { return {}; }
+              performChecks() {}
+              finalChecks() { return {}; }
+              getDetectedTags() { return this.detectedTags; }
+            },
+          },
+        });
+        const pagesMap = new Map(); // empty on purpose; Promise.all provides results
+        const { productMetatagsAutoDetect } = mockModule;
+        await productMetatagsAutoDetect(site, pagesMap, context);
+        expect(logStub.debug).to.have.been.calledWith(
+          sinon.match(/Checking page \/regular-page: hasProductTags=true, sku=none/),
+        );
+      } finally {
+        promiseAllStub.restore();
+      }
+    });
+
+  });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 });
 
-
+});
