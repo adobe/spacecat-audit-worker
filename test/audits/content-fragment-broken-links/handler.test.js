@@ -34,7 +34,10 @@ describe('Broken Content Path Handler', () => {
     sandbox = sinon.createSandbox();
 
     athenaCollectorStub = {
-      fetchBrokenPaths: sandbox.stub().resolves(['/content/dam/test/broken1.jpg', '/content/dam/test/broken2.pdf']),
+      fetchBrokenPaths: sandbox.stub().resolves([
+        { url: '/content/dam/test/fragment1', requestUserAgents: ['Mozilla/5.0'] },
+        { url: '/content/dam/test/fragment2', requestUserAgents: ['Chrome/91.0'] },
+      ]),
       constructor: { name: 'AthenaCollector' },
     };
 
@@ -42,8 +45,8 @@ describe('Broken Content Path Handler', () => {
     aemClientStub = sandbox.stub();
     analysisStrategyStub = {
       analyze: sandbox.stub().resolves([
-        { toJSON: () => ({ requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' }) },
-        { toJSON: () => ({ requestedPath: '/content/dam/test/broken2.pdf', suggestedPath: null, type: 'PUBLISH' }) },
+        { toJSON: () => ({ requestedPath: '/content/dam/test/fragment1', suggestedPath: '/content/dam/test/fixed1', type: 'SIMILAR' }) },
+        { toJSON: () => ({ requestedPath: '/content/dam/test/fragment2', suggestedPath: null, type: 'PUBLISH' }) },
       ]),
     };
 
@@ -63,10 +66,13 @@ describe('Broken Content Path Handler', () => {
         audit: {
           getAuditResult: sandbox.stub().returns({
             success: true,
-            brokenPaths: ['/content/dam/test/broken1.jpg', '/content/dam/test/broken2.pdf'],
+            brokenPaths: [
+              { url: '/content/dam/test/fragment1', requestUserAgents: ['Mozilla/5.0'] },
+              { url: '/content/dam/test/fragment2', requestUserAgents: ['Chrome/91.0'] },
+            ],
             suggestions: [
-              { requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' },
-              { requestedPath: '/content/dam/test/broken2.pdf', suggestedPath: null, type: 'PUBLISH' },
+              { requestedPath: '/content/dam/test/fragment1', suggestedPath: '/content/dam/test/fixed1', type: 'SIMILAR' },
+              { requestedPath: '/content/dam/test/fragment2', suggestedPath: null, type: 'PUBLISH' },
             ],
           }),
         },
@@ -112,7 +118,10 @@ describe('Broken Content Path Handler', () => {
         siteId: 'test-site-id',
         fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
-          brokenPaths: ['/content/dam/test/broken1.jpg', '/content/dam/test/broken2.pdf'],
+          brokenPaths: [
+            { url: '/content/dam/test/fragment1', requestUserAgents: ['Mozilla/5.0'] },
+            { url: '/content/dam/test/fragment2', requestUserAgents: ['Chrome/91.0'] },
+          ],
           success: true,
         },
       });
@@ -166,16 +175,20 @@ describe('Broken Content Path Handler', () => {
     it('should successfully analyze broken content paths', async () => {
       const result = await handlerModule.analyzeBrokenContentFragmentLinks(context);
 
-      expect(analysisStrategyStub.analyze).to.have.been.calledWith(['/content/dam/test/broken1.jpg', '/content/dam/test/broken2.pdf']);
+      expect(analysisStrategyStub.analyze).to.have.been.calledWith(['/content/dam/test/fragment1', '/content/dam/test/fragment2']);
       expect(context.log.info).to.have.been.calledWith('Found 2 suggestions for broken content fragment paths');
 
       expect(result).to.deep.equal({
         siteId: 'test-site-id',
         fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
+          brokenPaths: [
+            { url: '/content/dam/test/fragment1', requestUserAgents: ['Mozilla/5.0'] },
+            { url: '/content/dam/test/fragment2', requestUserAgents: ['Chrome/91.0'] },
+          ],
           suggestions: [
-            { requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' },
-            { requestedPath: '/content/dam/test/broken2.pdf', suggestedPath: null, type: 'PUBLISH' },
+            { requestedPath: '/content/dam/test/fragment1', suggestedPath: '/content/dam/test/fixed1', type: 'SIMILAR' },
+            { requestedPath: '/content/dam/test/fragment2', suggestedPath: null, type: 'PUBLISH' },
           ],
           success: true,
         },
@@ -200,6 +213,10 @@ describe('Broken Content Path Handler', () => {
         siteId: 'test-site-id',
         fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
+          brokenPaths: [
+            { url: '/content/dam/test/fragment1', requestUserAgents: ['Mozilla/5.0'] },
+            { url: '/content/dam/test/fragment2', requestUserAgents: ['Chrome/91.0'] },
+          ],
           error: 'Analysis strategy failed',
           success: false,
         },
@@ -221,6 +238,7 @@ describe('Broken Content Path Handler', () => {
         siteId: 'test-site-id',
         fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
+          brokenPaths: [],
           suggestions: [],
           success: true,
         },
@@ -267,6 +285,10 @@ describe('Broken Content Path Handler', () => {
         siteId: 'test-site-id',
         fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
+          brokenPaths: [
+            { url: '/content/dam/test/fragment1', requestUserAgents: ['Mozilla/5.0'] },
+            { url: '/content/dam/test/fragment2', requestUserAgents: ['Chrome/91.0'] },
+          ],
           error: 'AEM client initialization failed',
           success: false,
         },
@@ -283,9 +305,13 @@ describe('Broken Content Path Handler', () => {
         siteId: 'test-site-id',
         fullAuditRef: 'https://test-tenant.adobe.com',
         auditResult: {
+          brokenPaths: [
+            { url: '/content/dam/test/fragment1', requestUserAgents: ['Mozilla/5.0'] },
+            { url: '/content/dam/test/fragment2', requestUserAgents: ['Chrome/91.0'] },
+          ],
           suggestions: [
-            { requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg', type: 'SIMILAR' },
-            { requestedPath: '/content/dam/test/broken2.pdf', suggestedPath: null, type: 'PUBLISH' },
+            { requestedPath: '/content/dam/test/fragment1', suggestedPath: '/content/dam/test/fixed1', type: 'SIMILAR' },
+            { requestedPath: '/content/dam/test/fragment2', suggestedPath: null, type: 'PUBLISH' },
           ],
           success: true,
         },

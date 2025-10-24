@@ -13,6 +13,7 @@
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { getImsOrgId } from '../../utils/data-access.js';
+import { isAssetUrl } from '../../utils/asset-utils.js';
 
 export class AthenaCollector {
   // TODO: Change to a dynamic database name
@@ -143,7 +144,23 @@ export class AthenaCollector {
       sqlQueryDescription,
     );
 
-    const urls = result.map((row) => row.url).filter(Boolean);
-    return urls;
+    // Group by URL and collect all user agents for each URL, excluding assets (for now)
+    const urlMap = new Map();
+    result.filter((row) => row.url && !isAssetUrl(row.url)).forEach((row) => {
+      const { url, request_user_agent: userAgent } = row;
+      if (!urlMap.has(url)) {
+        urlMap.set(url, []);
+      }
+      if (userAgent && !urlMap.get(url).includes(userAgent)) {
+        urlMap.get(url).push(userAgent);
+      }
+    });
+
+    const brokenPaths = Array.from(urlMap.entries()).map(([url, userAgents]) => ({
+      url,
+      requestUserAgents: userAgents,
+    }));
+
+    return brokenPaths;
   }
 }

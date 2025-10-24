@@ -34,10 +34,10 @@ describe('AthenaCollector', () => {
     athenaClientStub = {
       execute: sandbox.stub().resolves(),
       query: sandbox.stub().resolves([
-        { url: '/content/dam/test/broken1.jpg' },
-        { url: '/content/dam/test/broken2.pdf' },
-        { url: null }, // Should be filtered out
-        { url: '/content/dam/test/broken3.png' },
+        { url: '/content/dam/test/fragment1', request_user_agent: 'Mozilla/5.0' },
+        { url: '/content/dam/test/asset.jpg', request_user_agent: 'Mozilla/5.0' }, // Asset should be filtered
+        { url: null }, // Should be filtered
+        { url: '/content/dam/test/fragment2', request_user_agent: 'Chrome/91.0' },
       ]),
     };
 
@@ -412,7 +412,7 @@ describe('AthenaCollector', () => {
   });
 
   describe('queryBrokenPaths', () => {
-    it('should query broken paths with correct parameters', async () => {
+    it('should query broken paths with correct parameters and filter assets', async () => {
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
       collector.initialize();
@@ -436,18 +436,26 @@ describe('AthenaCollector', () => {
       );
 
       expect(result).to.deep.equal([
-        '/content/dam/test/broken1.jpg',
-        '/content/dam/test/broken2.pdf',
-        '/content/dam/test/broken3.png',
+        {
+          url: '/content/dam/test/fragment1',
+          requestUserAgents: ['Mozilla/5.0'],
+        },
+        {
+          url: '/content/dam/test/fragment2',
+          requestUserAgents: ['Chrome/91.0'],
+        },
       ]);
     });
 
-    it('should filter out null URLs from results', async () => {
+    it('should filter out asset URLs (images, documents, media)', async () => {
       athenaClientStub.query.resolves([
-        { url: '/content/dam/test/valid.jpg' },
-        { url: null },
-        { url: '' },
-        { url: '/content/dam/test/another.pdf' },
+        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0' },
+        { url: '/content/dam/image.jpg', request_user_agent: 'Mozilla/5.0' }, // Image asset
+        { url: '/content/dam/document.pdf', request_user_agent: 'Mozilla/5.0' }, // Document asset
+        { url: '/content/dam/video.mp4', request_user_agent: 'Mozilla/5.0' }, // Media asset
+        { url: '/content/dam/font.woff', request_user_agent: 'Mozilla/5.0' }, // Font asset
+        { url: '/content/dam/archive.zip', request_user_agent: 'Mozilla/5.0' }, // Archive asset
+        { url: '/content/dam/another-fragment', request_user_agent: 'Chrome/91.0' },
       ]);
 
       const collector = new AthenaCollector(context);
@@ -456,8 +464,84 @@ describe('AthenaCollector', () => {
       const result = await collector.queryBrokenPaths('2025', '01', '15');
 
       expect(result).to.deep.equal([
-        '/content/dam/test/valid.jpg',
-        '/content/dam/test/another.pdf',
+        {
+          url: '/content/dam/fragment',
+          requestUserAgents: ['Mozilla/5.0'],
+        },
+        {
+          url: '/content/dam/another-fragment',
+          requestUserAgents: ['Chrome/91.0'],
+        },
+      ]);
+    });
+
+    it('should filter out null URLs from results', async () => {
+      athenaClientStub.query.resolves([
+        { url: '/content/dam/test/valid-fragment', request_user_agent: 'Mozilla/5.0' },
+        { url: null },
+        { url: '' },
+        { url: '/content/dam/test/another-fragment', request_user_agent: 'Chrome/91.0' },
+      ]);
+
+      const collector = new AthenaCollector(context);
+      collector.imsOrg = 'test-ims-org';
+      collector.initialize();
+      const result = await collector.queryBrokenPaths('2025', '01', '15');
+
+      expect(result).to.deep.equal([
+        {
+          url: '/content/dam/test/valid-fragment',
+          requestUserAgents: ['Mozilla/5.0'],
+        },
+        {
+          url: '/content/dam/test/another-fragment',
+          requestUserAgents: ['Chrome/91.0'],
+        },
+      ]);
+    });
+
+    it('should group multiple user agents for the same URL', async () => {
+      athenaClientStub.query.resolves([
+        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0' },
+        { url: '/content/dam/fragment', request_user_agent: 'Chrome/91.0' },
+        { url: '/content/dam/fragment', request_user_agent: 'Safari/14.0' },
+        { url: '/content/dam/another', request_user_agent: 'Mozilla/5.0' },
+      ]);
+
+      const collector = new AthenaCollector(context);
+      collector.imsOrg = 'test-ims-org';
+      collector.initialize();
+      const result = await collector.queryBrokenPaths('2025', '01', '15');
+
+      expect(result).to.deep.equal([
+        {
+          url: '/content/dam/fragment',
+          requestUserAgents: ['Mozilla/5.0', 'Chrome/91.0', 'Safari/14.0'],
+        },
+        {
+          url: '/content/dam/another',
+          requestUserAgents: ['Mozilla/5.0'],
+        },
+      ]);
+    });
+
+    it('should not duplicate user agents for the same URL', async () => {
+      athenaClientStub.query.resolves([
+        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0' },
+        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0' },
+        { url: '/content/dam/fragment', request_user_agent: 'Chrome/91.0' },
+      ]);
+
+      const collector = new AthenaCollector(context);
+      collector.imsOrg = 'test-ims-org';
+      collector.initialize();
+      const result = await collector.queryBrokenPaths('2025', '01', '15');
+
+      expect(result).to.deep.equal([
+        {
+          url: '/content/dam/fragment',
+          requestUserAgents: ['Mozilla/5.0', 'Chrome/91.0'],
+        },
       ]);
     });
 
@@ -494,7 +578,7 @@ describe('AthenaCollector', () => {
   });
 
   describe('fetchBrokenPaths', () => {
-    it('should fetch broken paths successfully', async () => {
+    it('should fetch broken paths successfully and exclude assets', async () => {
       // Mock getPreviousDayParts to return specific date
       const originalGetPreviousDayParts = AthenaCollector.getPreviousDayParts;
       AthenaCollector.getPreviousDayParts = sandbox.stub().returns({
@@ -510,12 +594,17 @@ describe('AthenaCollector', () => {
         const result = await collector.fetchBrokenPaths();
 
         expect(context.log.info).to.have.been.calledWith('Fetching broken content paths for 2025-01-14 from Athena');
-        expect(context.log.info).to.have.been.calledWith('Found 3 broken content paths from Athena');
+        expect(context.log.info).to.have.been.calledWith('Found 2 broken content paths from Athena');
 
         expect(result).to.deep.equal([
-          '/content/dam/test/broken1.jpg',
-          '/content/dam/test/broken2.pdf',
-          '/content/dam/test/broken3.png',
+          {
+            url: '/content/dam/test/fragment1',
+            requestUserAgents: ['Mozilla/5.0'],
+          },
+          {
+            url: '/content/dam/test/fragment2',
+            requestUserAgents: ['Chrome/91.0'],
+          },
         ]);
       } finally {
         AthenaCollector.getPreviousDayParts = originalGetPreviousDayParts;

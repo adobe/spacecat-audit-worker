@@ -1,5 +1,6 @@
 CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
   url                   string,
+  request_user_agent    string,
   response_status       int
 )
 PARTITIONED BY (

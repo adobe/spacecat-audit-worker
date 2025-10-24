@@ -1,6 +1,7 @@
 UNLOAD (
   SELECT
     url,
+    request_user_agent,
     COALESCE(REGEXP_EXTRACT(url, '/content/dam/([^/]+)', 1), 'unknown') AS tenant,
     count(*) AS count
   FROM {{database}}.{{rawTable}}
@@ -13,6 +14,6 @@ UNLOAD (
     -- Only include content fragment requests
     AND url LIKE '/content/dam/%'
 
-  GROUP BY url, COALESCE(REGEXP_EXTRACT(url, '/content/dam/([^/]+)', 1), 'unknown')
+  GROUP BY url, request_user_agent, COALESCE(REGEXP_EXTRACT(url, '/content/dam/([^/]+)', 1), 'unknown')
 ) TO '{{output}}'
 WITH (format = 'PARQUET');

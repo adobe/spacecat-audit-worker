@@ -61,7 +61,10 @@ export async function analyzeBrokenContentFragmentLinks(context) {
     const pathIndex = new PathIndex(context);
     const aemClient = AemClient.createFrom(context, pathIndex);
     const strategy = new AnalysisStrategy(context, aemClient, pathIndex);
-    const suggestions = await strategy.analyze(auditResult.brokenPaths);
+
+    // Extract URLs for analysis while keeping the full brokenPaths data
+    const urls = auditResult.brokenPaths.map((item) => item.url || item);
+    const suggestions = await strategy.analyze(urls);
 
     log.info(`Found ${suggestions.length} suggestions for broken content fragment paths`);
 
@@ -69,6 +72,7 @@ export async function analyzeBrokenContentFragmentLinks(context) {
       siteId: site.getId(),
       fullAuditRef: site.getBaseURL(),
       auditResult: {
+        brokenPaths: auditResult.brokenPaths,
         suggestions: suggestions.map((suggestion) => suggestion.toJSON()),
         success: true,
       },
@@ -79,6 +83,7 @@ export async function analyzeBrokenContentFragmentLinks(context) {
       siteId: site.getId(),
       fullAuditRef: site.getBaseURL(),
       auditResult: {
+        brokenPaths: auditResult.brokenPaths,
         error: error.message,
         success: false,
       },
@@ -94,7 +99,7 @@ export function provideContentFragmentLinkSuggestions(context) {
     throw new Error('Audit failed, skipping content fragment path suggestions generation');
   }
 
-  const { suggestions = [] } = auditResult;
+  const { brokenPaths = [], suggestions = [] } = auditResult;
 
   log.info(`Providing ${suggestions.length} content fragment path suggestions`);
 
@@ -102,6 +107,7 @@ export function provideContentFragmentLinkSuggestions(context) {
     siteId: site.getId(),
     fullAuditRef: site.getBaseURL(),
     auditResult: {
+      brokenPaths,
       suggestions,
       success: true,
     },

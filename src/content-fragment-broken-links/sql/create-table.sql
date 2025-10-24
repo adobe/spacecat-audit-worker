@@ -1,5 +1,6 @@
 CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{tableName}} (
   url string,
+  request_user_agent string,
   tenant string
 )
 PARTITIONED BY (
