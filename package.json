@@ -90,7 +90,7 @@
     "@adobe/spacecat-shared-rum-api-client-v1": "npm:@adobe/spacecat-shared-rum-api-client@1.8.4",
     "@adobe/spacecat-shared-tier-client": "1.2.0",
     "@adobe/spacecat-shared-slack-client": "1.5.26",
-    "@adobe/spacecat-shared-utils": "1.63.0",
+    "@adobe/spacecat-shared-utils": "1.65.0",
     "@adobe/spacecat-shared-scrape-client": "2.1.5",
     "@adobe/structured-data-validator": "1.5.0",
     "@aws-sdk/client-athena": "3.893.0",
