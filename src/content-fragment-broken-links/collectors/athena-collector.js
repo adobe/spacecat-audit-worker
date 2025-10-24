@@ -146,21 +146,39 @@ export class AthenaCollector {
       sqlQueryDescription,
     );
 
-    // Group by URL and collect all user agents for each URL, excluding assets (for now)
+    // Group by URL and collect all user agents with counts for each URL, excluding assets (for now)
     const urlMap = new Map();
     result.filter((row) => row.url && !isAssetUrl(row.url)).forEach((row) => {
-      const { url, request_user_agent: userAgent } = row;
+      const {
+        url,
+        request_user_agent: userAgent,
+        request_count: count,
+      } = row;
+
+      // Athena returns it as string
+      const parsedCount = parseInt(count, 10) || 0;
+
       if (!urlMap.has(url)) {
-        urlMap.set(url, []);
+        urlMap.set(url, { userAgents: [], totalCount: 0 });
       }
-      if (userAgent && !urlMap.get(url).includes(userAgent)) {
-        urlMap.get(url).push(userAgent);
+
+      const entry = urlMap.get(url);
+
+      // Find existing user agent or add new one
+      const existingAgent = entry.userAgents.find((agent) => agent.userAgent === userAgent);
+      if (existingAgent) {
+        existingAgent.count += parsedCount;
+      } else if (userAgent) {
+        entry.userAgents.push({ userAgent, count: parsedCount });
       }
+
+      entry.totalCount += parsedCount;
     });
 
-    const brokenPaths = Array.from(urlMap.entries()).map(([url, userAgents]) => ({
+    const brokenPaths = Array.from(urlMap.entries()).map(([url, data]) => ({
       url,
-      requestUserAgents: userAgents,
+      requestUserAgents: data.userAgents,
+      requestCount: data.totalCount,
     }));
 
     return brokenPaths;
