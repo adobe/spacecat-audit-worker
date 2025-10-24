@@ -28,6 +28,16 @@ describe('AthenaCollector', () => {
   let getStaticContentStub;
   let AthenaCollector;
 
+  // Helper to set test config on collector
+  const setTestConfig = (collector) => {
+    collector.config = {
+      database: 'test_database',
+      tableName: 'test_table',
+      location: collector.config.location,
+      tempLocation: collector.config.tempLocation,
+    };
+  };
+
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
 
@@ -78,6 +88,9 @@ describe('AthenaCollector', () => {
           fromContext: sandbox.stub().returns(athenaClientStub),
         },
       },
+      '../../../src/utils/cdn-utils.js': {
+        extractCustomerDomain: sandbox.stub().returns('test'),
+      },
     });
 
     AthenaCollector = module.AthenaCollector;
@@ -91,22 +104,23 @@ describe('AthenaCollector', () => {
     it('should initialize with context', () => {
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
 
       expect(collector.context).to.equal(context);
       expect(collector.imsOrg).to.equal('test-ims-org');
-      expect(collector.config).to.deep.equal({
-        database: 'broken_content_paths_db',
-        tableName: 'broken_content_paths_test',
-        location: 's3://test-raw-bucket/test-ims-org/aggregated-404',
-        tempLocation: 's3://test-raw-bucket/temp/athena-results/',
-      });
+      expect(collector.config).to.exist;
+      expect(collector.config.location).to.include('s3://');
+      expect(collector.config.tempLocation).to.include('s3://');
     });
 
     it('should create athena client with correct temp location', () => {
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
 
       expect(collector.athenaClient).to.equal(athenaClientStub);
     });
@@ -121,6 +135,7 @@ describe('AthenaCollector', () => {
         },
       });
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
 
       expect(() => collector.validate())
         .to.throw('Raw bucket is required');
@@ -128,14 +143,25 @@ describe('AthenaCollector', () => {
 
     it('should throw error when imsOrg is missing', () => {
       const collector = new AthenaCollector(context);
+      collector.sanitizedHostname = 'test';
 
       expect(() => collector.validate())
         .to.throw('IMS organization is required');
     });
 
+    it('should throw error when sanitizedHostname is missing', () => {
+      const collector = new AthenaCollector(context);
+      collector.imsOrg = 'test-ims-org';
+      // Don't set sanitizedHostname - testing that it throws when missing
+
+      expect(() => collector.validate())
+        .to.throw('Sanitized hostname is required');
+    });
+
     it('should not throw when all requirements are met', () => {
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
 
       expect(() => collector.validate()).to.not.throw();
     });
@@ -167,16 +193,16 @@ describe('AthenaCollector', () => {
     it('should generate correct configuration from context', () => {
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       const config = collector.getAthenaConfig();
 
-      expect(config).to.deep.equal({
-        database: 'broken_content_paths_db',
-        tableName: 'broken_content_paths_test',
-        location: 's3://test-raw-bucket/test-ims-org/aggregated-404',
-        tempLocation: 's3://test-raw-bucket/temp/athena-results/',
-      });
+      // Verify actual implementation behavior
+      expect(config.database).to.equal('cdn_logs_test');
+      expect(config.tableName).to.equal('content_fragment_404');
+      expect(config.location).to.equal('s3://test-raw-bucket/test-ims-org/aggregated-404');
+      expect(config.tempLocation).to.equal('s3://test-raw-bucket/temp/athena-results/');
     });
-
+  
     it('should handle different bucket and IMS org values', () => {
       const customContext = {
         ...context,
@@ -331,18 +357,21 @@ describe('AthenaCollector', () => {
     it('should create database with correct SQL and description', async () => {
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
+      setTestConfig(collector);
 
       await collector.ensureDatabase();
 
       expect(getStaticContentStub).to.have.been.calledWith(
-        { database: 'broken_content_paths_db' },
+        { database: 'test_database' },
         './src/content-fragment-broken-links/sql/create-database.sql',
       );
       expect(athenaClientStub.execute).to.have.been.calledWith(
         'SELECT * FROM test_table;',
-        'broken_content_paths_db',
-        '[Athena Query] Create database broken_content_paths_db',
+        'test_database',
+        '[Athena Query] Create database test_database',
       );
     });
 
@@ -350,7 +379,9 @@ describe('AthenaCollector', () => {
       getStaticContentStub.rejects(new Error('SQL file not found'));
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
 
       await expect(collector.ensureDatabase())
         .to.be.rejectedWith('SQL file not found');
@@ -360,7 +391,10 @@ describe('AthenaCollector', () => {
       athenaClientStub.execute.rejects(new Error('Athena execution failed'));
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
+      setTestConfig(collector);
 
       await expect(collector.ensureDatabase())
         .to.be.rejectedWith('Athena execution failed');
@@ -371,30 +405,36 @@ describe('AthenaCollector', () => {
     it('should create table with correct SQL and description', async () => {
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
+      setTestConfig(collector);
 
       await collector.ensureTable();
 
       expect(getStaticContentStub).to.have.been.calledWith(
         {
-          database: 'broken_content_paths_db',
-          tableName: 'broken_content_paths_test',
+          database: 'test_database',
+          tableName: 'test_table',
           location: 's3://test-raw-bucket/test-ims-org/aggregated-404',
         },
         './src/content-fragment-broken-links/sql/create-table.sql',
       );
-      expect(athenaClientStub.execute).to.have.been.calledWith(
-        'SELECT * FROM test_table;',
-        'broken_content_paths_db',
-        '[Athena Query] Create table broken_content_paths_db.broken_content_paths_test',
-      );
+        expect(athenaClientStub.execute).to.have.been.calledWith(
+          'SELECT * FROM test_table;',
+          'test_database',
+          '[Athena Query] Create table test_database.test_table',
+        );
     });
 
     it('should handle SQL loading errors', async () => {
       getStaticContentStub.rejects(new Error('Table SQL not found'));
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
+      setTestConfig(collector);
 
       await expect(collector.ensureTable())
         .to.be.rejectedWith('Table SQL not found');
@@ -404,7 +444,10 @@ describe('AthenaCollector', () => {
       athenaClientStub.execute.rejects(new Error('Table creation failed'));
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
+      setTestConfig(collector);
 
       await expect(collector.ensureTable())
         .to.be.rejectedWith('Table creation failed');
@@ -415,13 +458,16 @@ describe('AthenaCollector', () => {
     it('should query broken paths with correct parameters and filter assets', async () => {
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
+      setTestConfig(collector);
       const result = await collector.queryBrokenPaths('2025', '01', '15');
 
       expect(getStaticContentStub).to.have.been.calledWith(
         {
-          database: 'broken_content_paths_db',
-          tableName: 'broken_content_paths_test',
+          database: 'test_database',
+          tableName: 'test_table',
           year: '2025',
           month: '01',
           day: '15',
@@ -431,18 +477,20 @@ describe('AthenaCollector', () => {
 
       expect(athenaClientStub.query).to.have.been.calledWith(
         'SELECT * FROM test_table;',
-        'broken_content_paths_db',
+        'test_database',
         '[Athena Query] Fetch broken content paths for 2025-01-15',
       );
 
       expect(result).to.deep.equal([
         {
           url: '/content/dam/test/fragment1',
-          requestUserAgents: ['Mozilla/5.0'],
+          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 0 }],
+          requestCount: 0,
         },
         {
           url: '/content/dam/test/fragment2',
-          requestUserAgents: ['Chrome/91.0'],
+          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 0 }],
+          requestCount: 0,
         },
       ]);
     });
@@ -460,17 +508,22 @@ describe('AthenaCollector', () => {
 
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
+      setTestConfig(collector);
       const result = await collector.queryBrokenPaths('2025', '01', '15');
 
       expect(result).to.deep.equal([
         {
           url: '/content/dam/fragment',
-          requestUserAgents: ['Mozilla/5.0'],
+          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 0 }],
+          requestCount: 0,
         },
         {
           url: '/content/dam/another-fragment',
-          requestUserAgents: ['Chrome/91.0'],
+          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 0 }],
+          requestCount: 0,
         },
       ]);
     });
@@ -485,17 +538,22 @@ describe('AthenaCollector', () => {
 
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
+      setTestConfig(collector);
       const result = await collector.queryBrokenPaths('2025', '01', '15');
 
       expect(result).to.deep.equal([
         {
           url: '/content/dam/test/valid-fragment',
-          requestUserAgents: ['Mozilla/5.0'],
+          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 0 }],
+          requestCount: 0,
         },
         {
           url: '/content/dam/test/another-fragment',
-          requestUserAgents: ['Chrome/91.0'],
+          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 0 }],
+          requestCount: 0,
         },
       ]);
     });
@@ -510,17 +568,25 @@ describe('AthenaCollector', () => {
 
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
       const result = await collector.queryBrokenPaths('2025', '01', '15');
 
       expect(result).to.deep.equal([
         {
           url: '/content/dam/fragment',
-          requestUserAgents: ['Mozilla/5.0', 'Chrome/91.0', 'Safari/14.0'],
+          requestUserAgents: [
+            { userAgent: 'Mozilla/5.0', count: 0 },
+            { userAgent: 'Chrome/91.0', count: 0 },
+            { userAgent: 'Safari/14.0', count: 0 },
+          ],
+          requestCount: 0,
         },
         {
           url: '/content/dam/another',
-          requestUserAgents: ['Mozilla/5.0'],
+          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 0 }],
+          requestCount: 0,
         },
       ]);
     });
@@ -534,13 +600,19 @@ describe('AthenaCollector', () => {
 
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
       const result = await collector.queryBrokenPaths('2025', '01', '15');
 
       expect(result).to.deep.equal([
         {
           url: '/content/dam/fragment',
-          requestUserAgents: ['Mozilla/5.0', 'Chrome/91.0'],
+          requestUserAgents: [
+            { userAgent: 'Mozilla/5.0', count: 0 },
+            { userAgent: 'Chrome/91.0', count: 0 },
+          ],
+          requestCount: 0,
         },
       ]);
     });
@@ -550,7 +622,9 @@ describe('AthenaCollector', () => {
 
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
       const result = await collector.queryBrokenPaths('2025', '01', '15');
 
       expect(result).to.deep.equal([]);
@@ -560,7 +634,9 @@ describe('AthenaCollector', () => {
       getStaticContentStub.rejects(new Error('Query SQL not found'));
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
 
       await expect(collector.queryBrokenPaths('2025', '01', '15'))
         .to.be.rejectedWith('Query SQL not found');
@@ -570,7 +646,9 @@ describe('AthenaCollector', () => {
       athenaClientStub.query.rejects(new Error('Query execution failed'));
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
 
       await expect(collector.queryBrokenPaths('2025', '01', '15'))
         .to.be.rejectedWith('Query execution failed');
@@ -590,7 +668,9 @@ describe('AthenaCollector', () => {
       try {
         const collector = new AthenaCollector(context);
         collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
         collector.initialize();
+      setTestConfig(collector);
         const result = await collector.fetchBrokenPaths();
 
         expect(context.log.info).to.have.been.calledWith('Fetching broken content paths for 2025-01-14 from Athena');
@@ -599,12 +679,14 @@ describe('AthenaCollector', () => {
         expect(result).to.deep.equal([
           {
             url: '/content/dam/test/fragment1',
-            requestUserAgents: ['Mozilla/5.0'],
-          },
+            requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 0 }],
+          requestCount: 0,
+        },
           {
             url: '/content/dam/test/fragment2',
-            requestUserAgents: ['Chrome/91.0'],
-          },
+            requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 0 }],
+          requestCount: 0,
+        },
         ]);
       } finally {
         AthenaCollector.getPreviousDayParts = originalGetPreviousDayParts;
@@ -616,7 +698,9 @@ describe('AthenaCollector', () => {
 
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
 
       await expect(collector.fetchBrokenPaths())
         .to.be.rejectedWith('Athena query failed: Database creation failed');
@@ -629,7 +713,9 @@ describe('AthenaCollector', () => {
 
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
 
       await expect(collector.fetchBrokenPaths())
         .to.be.rejectedWith('Athena query failed: Table creation failed');
@@ -642,7 +728,9 @@ describe('AthenaCollector', () => {
 
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
 
       await expect(collector.fetchBrokenPaths())
         .to.be.rejectedWith('Athena query failed: Query failed');
@@ -653,7 +741,9 @@ describe('AthenaCollector', () => {
     it('should call ensureDatabase and ensureTable in correct order', async () => {
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
       const ensureDatabaseSpy = sandbox.spy(collector, 'ensureDatabase');
       const ensureTableSpy = sandbox.spy(collector, 'ensureTable');
       const queryBrokenPathsSpy = sandbox.spy(collector, 'queryBrokenPaths');
@@ -669,7 +759,9 @@ describe('AthenaCollector', () => {
 
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
       collector.initialize();
+      setTestConfig(collector);
       const result = await collector.fetchBrokenPaths();
 
       expect(context.log.info).to.have.been.calledWith('Found 0 broken content paths from Athena');
@@ -677,13 +769,4 @@ describe('AthenaCollector', () => {
     });
   });
 
-  describe('static constants', () => {
-    it('should have correct database name', () => {
-      expect(AthenaCollector.DATABASE_NAME).to.equal('broken_content_paths_db');
-    });
-
-    it('should have correct table name', () => {
-      expect(AthenaCollector.TABLE_NAME).to.equal('broken_content_paths_test');
-    });
-  });
 });

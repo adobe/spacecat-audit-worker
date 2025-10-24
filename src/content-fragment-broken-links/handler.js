@@ -10,112 +10,78 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { AthenaCollector } from './collectors/athena-collector.js';
 import { AnalysisStrategy } from './analysis/analysis-strategy.js';
 import { PathIndex } from './domain/index/path-index.js';
 import { AemClient } from './clients/aem-client.js';
+import { wwwUrlResolver } from '../common/index.js';
 
-const { AUDIT_STEP_DESTINATIONS } = Audit;
+async function fetchBrokenContentFragmentLinks(context) {
+  const { log } = context;
 
-export async function fetchBrokenContentFragmentLinks(context) {
-  const { log, site } = context;
+  const collector = await AthenaCollector.createFrom(context);
+  const brokenPaths = await collector.fetchBrokenPaths();
+
+  log.info(`Found ${brokenPaths.length} broken content fragment paths from ${collector.constructor.name}`);
+
+  return brokenPaths;
+}
+
+async function analyzeBrokenContentFragmentLinks(context, brokenPaths) {
+  const { log } = context;
+
+  const pathIndex = new PathIndex(context);
+  const aemClient = AemClient.createFrom(context, pathIndex);
+  const strategy = new AnalysisStrategy(context, aemClient, pathIndex);
+
+  // Extract URLs for analysis while keeping the full brokenPaths data
+  const urls = brokenPaths.map((item) => item.url || item);
+  const suggestions = await strategy.analyze(urls);
+
+  log.info(`Found ${suggestions.length} suggestions for broken content fragment paths`);
+
+  return suggestions.map((suggestion) => suggestion.toJSON());
+}
+
+/**
+ * The main audit runner that orchestrates the content fragment broken links audit.
+ *
+ * @param {string} baseURL - The base URL of the site being audited
+ * @param {Object} context - The context object containing configurations, services, etc.
+ * @param {Object} site - The site object being audited
+ * @returns {Promise<Object>} The audit result containing broken paths and suggestions
+ */
+export async function contentFragmentBrokenLinksAuditRunner(baseURL, context, site) {
+  const { log } = context;
+  const auditContext = { ...context, site };
 
   try {
-    const collector = await AthenaCollector.createFrom(context);
-    const brokenPaths = await collector.fetchBrokenPaths();
-
-    log.info(`Found ${brokenPaths.length} broken content fragment paths from ${collector.constructor.name}`);
+    const brokenPaths = await fetchBrokenContentFragmentLinks(auditContext);
+    const suggestions = await analyzeBrokenContentFragmentLinks(auditContext, brokenPaths);
 
     return {
-      siteId: site.getId(),
-      fullAuditRef: site.getBaseURL(),
+      fullAuditRef: baseURL,
       auditResult: {
         brokenPaths,
+        suggestions,
         success: true,
       },
     };
   } catch (error) {
-    log.error(`Failed to fetch broken content fragment paths: ${error.message}`);
+    log.error(`Audit failed with error: ${error.message}`);
+
     return {
-      siteId: site.getId(),
-      fullAuditRef: site.getBaseURL(),
+      fullAuditRef: baseURL,
       auditResult: {
         error: error.message,
         success: false,
       },
     };
   }
-}
-
-export async function analyzeBrokenContentFragmentLinks(context) {
-  const { log, audit, site } = context;
-
-  const auditResult = audit.getAuditResult();
-  if (!auditResult.success) {
-    throw new Error('Audit failed, skipping content fragment path analysis');
-  }
-
-  try {
-    const pathIndex = new PathIndex(context);
-    const aemClient = AemClient.createFrom(context, pathIndex);
-    const strategy = new AnalysisStrategy(context, aemClient, pathIndex);
-
-    // Extract URLs for analysis while keeping the full brokenPaths data
-    const urls = auditResult.brokenPaths.map((item) => item.url || item);
-    const suggestions = await strategy.analyze(urls);
-
-    log.info(`Found ${suggestions.length} suggestions for broken content fragment paths`);
-
-    return {
-      siteId: site.getId(),
-      fullAuditRef: site.getBaseURL(),
-      auditResult: {
-        brokenPaths: auditResult.brokenPaths,
-        suggestions: suggestions.map((suggestion) => suggestion.toJSON()),
-        success: true,
-      },
-    };
-  } catch (error) {
-    log.error(`Failed to analyze broken content fragment paths: ${error.message}`);
-    return {
-      siteId: site.getId(),
-      fullAuditRef: site.getBaseURL(),
-      auditResult: {
-        brokenPaths: auditResult.brokenPaths,
-        error: error.message,
-        success: false,
-      },
-    };
-  }
-}
-
-export function provideContentFragmentLinkSuggestions(context) {
-  const { log, audit, site } = context;
-
-  const auditResult = audit.getAuditResult();
-  if (!auditResult.success) {
-    throw new Error('Audit failed, skipping content fragment path suggestions generation');
-  }
-
-  const { brokenPaths = [], suggestions = [] } = auditResult;
-
-  log.info(`Providing ${suggestions.length} content fragment path suggestions`);
-
-  return {
-    siteId: site.getId(),
-    fullAuditRef: site.getBaseURL(),
-    auditResult: {
-      brokenPaths,
-      suggestions,
-      success: true,
-    },
-  };
 }
 
 export default new AuditBuilder()
-  .addStep('fetch-broken-content-fragment-links', fetchBrokenContentFragmentLinks, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('analyze-broken-content-fragment-links', analyzeBrokenContentFragmentLinks, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('provide-content-fragment-link-suggestions', provideContentFragmentLinkSuggestions)
+  .withUrlResolver(wwwUrlResolver)
+  .withRunner(contentFragmentBrokenLinksAuditRunner)
   .build();
