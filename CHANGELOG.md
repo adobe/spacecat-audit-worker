@@ -1,3 +1,10 @@
+# [1.217.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.216.3...v1.217.0) (2025-10-24)
+
+
+### Features
+
+* read rum threshold values from dlivery config if available ([#1423](https://github.com/adobe/spacecat-audit-worker/issues/1423)) ([4e99a57](https://github.com/adobe/spacecat-audit-worker/commit/4e99a571466040e735f0079995b1601888d09a77))
+
 ## [1.216.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.216.2...v1.216.3) (2025-10-24)
 
 
