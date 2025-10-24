@@ -14,6 +14,7 @@ import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { getImsOrgId } from '../../utils/data-access.js';
 import { isAssetUrl } from '../../utils/asset-utils.js';
+import { extractCustomerDomain } from '../../utils/cdn-utils.js';
 
 export class AthenaCollector {
   // TODO: Change to a dynamic database name
@@ -36,6 +37,7 @@ export class AthenaCollector {
 
     const collector = new AthenaCollector(context);
     collector.imsOrg = imsOrg;
+    collector.sanitizedHostname = extractCustomerDomain(site);
     collector.initialize();
     return collector;
   }
@@ -73,6 +75,10 @@ export class AthenaCollector {
 
     if (!this.imsOrg) {
       throw new Error('IMS organization is required');
+    }
+
+    if (!this.sanitizedHostname) {
+      throw new Error('Sanitized hostname is required');
     }
   }
 
