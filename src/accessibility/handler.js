@@ -412,6 +412,7 @@ export function createProcessAccessibilityOpportunitiesWithDevice(deviceType) {
 }
 
 export default new AuditBuilder()
+  .withUrlResolver((site) => site.resolveFinalURL())
   .addStep(
     'processImport',
     processImportStep,
