@@ -1,5 +1,6 @@
 CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{tableName}} (
   url string,
+  request_count int,
   request_user_agent string,
   tenant string
 )

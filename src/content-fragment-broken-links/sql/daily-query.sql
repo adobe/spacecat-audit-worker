@@ -1,5 +1,6 @@
 SELECT 
   url,
+  request_count,
   request_user_agent
 FROM {{database}}.{{tableName}}
 WHERE year = '{{year}}' 
