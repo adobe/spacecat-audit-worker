@@ -495,11 +495,10 @@ export async function calculateProjectedTraffic(context, site, detectedTags, log
         rumDataMapBiMonthly,
         log,
       );
-      // Iterate only over SEO tag names (title, description, h1) - following metatags pattern
-      [TITLE, DESCRIPTION, H1].forEach((tagName) => {
-        const tagIssueDetails = tags[tagName];
-        // Skip if tag doesn't have an issue
-        if (!tagIssueDetails?.issue) return;
+      // Iterate over tag values, filtering out non-issue properties like productTags
+      Object.entries(tags).forEach(([tagName, tagIssueDetails]) => {
+        // Skip non-issue properties (like productTags) and tags without issues
+        if (tagName === 'productTags' || !tagIssueDetails?.issue) return;
 
         // Multiplying by 1% for missing tags, and 0.5% for other tag issues
         // For duplicate tags, each page's traffic is multiplied by .5% so
@@ -582,6 +581,8 @@ export async function productMetatagsAutoDetect(site, pagesMap, context) {
       const productTags = ProductSeoChecks.extractProductTags(pageTags);
       if (Object.keys(productTags).length > 0) {
         seoChecks.detectedTags[pageUrl] ??= {};
+        // Add the scraped title alongside SKU and thumbnail
+        productTags.title = pageTags.title;
         seoChecks.detectedTags[pageUrl].productTags = productTags;
         log.debug(`[PRODUCT-METATAGS] Extracted product tags for ${pageUrl}:`, Object.keys(productTags));
       }
