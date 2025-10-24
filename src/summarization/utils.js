@@ -109,7 +109,7 @@ export function getJsonSummarySuggestion(suggestions) {
     });
 
     // handle paragraph level summary
-    suggestion.sectionSummaries.forEach((section) => {
+    suggestion.sectionSummaries?.forEach((section) => {
       suggestionValues.push({
         summarizationText: section.formatted_summary,
         fullPage: false,
