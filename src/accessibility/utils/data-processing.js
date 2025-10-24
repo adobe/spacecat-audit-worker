@@ -524,17 +524,11 @@ export async function createOrUpdateDeviceSpecificSuggestion(
     const existingSuggestions = await opportunity.getSuggestions();
     const existingSuggestion = existingSuggestions.find((s) => s.getType() === 'CODE_CHANGE');
 
-    log.info(`[A11yAudit] [DEBUG] ${deviceType} suggestion - Found existing: ${!!existingSuggestion}, reportMarkdown length: ${reportMarkdown?.length || 0}`);
-
     let suggestions;
     if (existingSuggestion) {
       // Update existing suggestion with new device content
       const currentData = existingSuggestion.getData() ?? {};
       const currentSuggestionValue = currentData.suggestionValue ?? {};
-
-      log.info(`[A11yAudit] [DEBUG] Current suggestionValue keys: ${Object.keys(currentSuggestionValue).join(', ')}`);
-      log.info(`[A11yAudit] [DEBUG] Current accessibility-desktop length: ${currentSuggestionValue['accessibility-desktop']?.length || 0}`);
-      log.info(`[A11yAudit] [DEBUG] Current accessibility-mobile length: ${currentSuggestionValue['accessibility-mobile']?.length || 0}`);
 
       suggestions = createSuggestionInstance(
         currentSuggestionValue,
@@ -546,29 +540,15 @@ export async function createOrUpdateDeviceSpecificSuggestion(
       // Update only the suggestionValue field to avoid ElectroDB timestamp conflicts
       const newData = { ...currentData, suggestionValue: suggestions[0].data.suggestionValue };
 
-      log.info(`[A11yAudit] [DEBUG] New suggestionValue keys after update: ${Object.keys(newData.suggestionValue).join(', ')}`);
-      log.info(`[A11yAudit] [DEBUG] New accessibility-desktop length: ${newData.suggestionValue['accessibility-desktop']?.length || 0}`);
-      log.info(`[A11yAudit] [DEBUG] New accessibility-mobile length: ${newData.suggestionValue['accessibility-mobile']?.length || 0}`);
-      log.info(`[A11yAudit] [DEBUG] FULL new ${deviceType} suggestionValue:\n${newData.suggestionValue[`accessibility-${deviceType}`]}`);
-
       existingSuggestion.setData(newData);
       await existingSuggestion.save();
-
-      log.info(`[A11yAudit] [DEBUG] Successfully saved ${deviceType} suggestion update`);
 
       return { suggestion: existingSuggestion };
     } else {
       // Create new suggestion
       suggestions = createSuggestionInstance(null, deviceType, reportMarkdown, log);
 
-      log.info(`[A11yAudit] [DEBUG] Creating NEW suggestion for ${deviceType}`);
-      log.info(`[A11yAudit] [DEBUG] New suggestion suggestionValue keys: ${Object.keys(suggestions[0].data.suggestionValue).join(', ')}`);
-      log.info(`[A11yAudit] [DEBUG] New suggestion ${deviceType} length: ${suggestions[0].data.suggestionValue[`accessibility-${deviceType}`]?.length || 0}`);
-      log.info(`[A11yAudit] [DEBUG] FULL new ${deviceType} suggestionValue:\n${suggestions[0].data.suggestionValue[`accessibility-${deviceType}`]}`);
-
       const suggestion = await opportunity.addSuggestions(suggestions);
-
-      log.info(`[A11yAudit] [DEBUG] Successfully created ${deviceType} suggestion`);
 
       return { suggestion };
     }
@@ -787,10 +767,6 @@ export async function generateReportOpportunity(
 
   // 1.1 generate the markdown report
   const reportMarkdown = genMdFn(mdData);
-
-  // DEBUG: Log the generated markdown for debugging
-  log.info(`[A11yAudit] [DEBUG] Generated ${reportName} markdown for ${deviceType} (length: ${reportMarkdown?.length || 0} chars)`);
-  log.info(`[A11yAudit] [DEBUG] FULL ${reportName} markdown:\n${reportMarkdown}`);
 
   if (!reportMarkdown) {
     // If the markdown is empty, we don't want to create an opportunity
