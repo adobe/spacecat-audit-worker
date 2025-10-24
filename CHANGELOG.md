@@ -1,3 +1,10 @@
+## [1.217.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.217.0...v1.217.1) (2025-10-24)
+
+
+### Bug Fixes
+
+* **geo-brand-presence:** make: <… ([#1455](https://github.com/adobe/spacecat-audit-worker/issues/1455)) ([58346c4](https://github.com/adobe/spacecat-audit-worker/commit/58346c4678d3e78a4966e4deaec2153bc8495358))
+
 # [1.217.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.216.3...v1.217.0) (2025-10-24)
 
 
