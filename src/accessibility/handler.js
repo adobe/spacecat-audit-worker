@@ -325,9 +325,8 @@ export function createProcessAccessibilityOpportunitiesWithDevice(deviceType) {
       };
     }
 
-    // Step 2c and Step 3: Skip for mobile audits as requested
+    // Step 2c: Create individual opportunities (skip for mobile audits)
     if (deviceType !== 'mobile') {
-      // Step 2c: Create individual opportunities for the specific device
       try {
         await createAccessibilityIndividualOpportunities(
           aggregationResult.finalResultFiles.current,
@@ -341,35 +340,35 @@ export function createProcessAccessibilityOpportunitiesWithDevice(deviceType) {
           error: error.message,
         };
       }
-
-      // step 3 save a11y metrics to s3 for this device type
-      try {
-        // Send message to importer-worker to save a11y metrics
-        await sendRunImportMessage(
-          sqs,
-          env.IMPORT_WORKER_QUEUE_URL,
-          `${A11Y_METRICS_AGGREGATOR_IMPORT_TYPE}_${deviceType}`,
-          siteId,
-          {
-            scraperBucketName: env.S3_SCRAPER_BUCKET_NAME,
-            importerBucketName: env.S3_IMPORTER_BUCKET_NAME,
-            version,
-            urlSourceSeparator: URL_SOURCE_SEPARATOR,
-            totalChecks: WCAG_CRITERIA_COUNTS.TOTAL,
-            deviceType,
-            options: {},
-          },
-        );
-        log.debug(`[A11yAudit] Sent message to importer-worker to save a11y metrics for ${deviceType} on site ${siteId}`);
-      } catch (error) {
-        log.error(`[A11yAudit][A11yProcessingError] Error sending message to importer-worker to save a11y metrics for ${deviceType} on site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
-        return {
-          status: 'PROCESSING_FAILED',
-          error: error.message,
-        };
-      }
     } else {
-      log.info(`[A11yAudit] Skipping individual opportunities (Step 2c) and metrics import (Step 3) for mobile audit on site ${siteId}`);
+      log.info(`[A11yAudit] Skipping individual opportunities (Step 2c) for mobile audit on site ${siteId}`);
+    }
+
+    // Step 3: Save a11y metrics to s3 for ALL device types (desktop and mobile)
+    try {
+      // Send message to importer-worker to save a11y metrics
+      await sendRunImportMessage(
+        sqs,
+        env.IMPORT_WORKER_QUEUE_URL,
+        `${A11Y_METRICS_AGGREGATOR_IMPORT_TYPE}_${deviceType}`,
+        siteId,
+        {
+          scraperBucketName: env.S3_SCRAPER_BUCKET_NAME,
+          importerBucketName: env.S3_IMPORTER_BUCKET_NAME,
+          version,
+          urlSourceSeparator: URL_SOURCE_SEPARATOR,
+          totalChecks: WCAG_CRITERIA_COUNTS.TOTAL,
+          deviceType,
+          options: {},
+        },
+      );
+      log.debug(`[A11yAudit] Sent message to importer-worker to save a11y metrics for ${deviceType} on site ${siteId}`);
+    } catch (error) {
+      log.error(`[A11yAudit][A11yProcessingError] Error sending message to importer-worker to save a11y metrics for ${deviceType} on site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: error.message,
+      };
     }
 
     // Extract key metrics for the audit result summary, filtered by device type
