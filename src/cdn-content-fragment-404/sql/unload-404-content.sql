@@ -3,7 +3,7 @@ UNLOAD (
     url,
     request_user_agent,
     COALESCE(REGEXP_EXTRACT(url, '/content/dam/([^/]+)', 1), 'unknown') AS tenant,
-    count(*) AS count
+    count(*) AS request_count
   FROM {{database}}.{{rawTable}}
   WHERE year  = '{{year}}'
     AND month = '{{month}}'
