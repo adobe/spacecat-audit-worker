@@ -14,6 +14,7 @@
 
 import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
@@ -53,6 +54,11 @@ describe('Step-based Audit Tests', () => {
 
     configuration = {
       isHandlerEnabledForSite: sandbox.stub().returns(true),
+      getHandlers: sandbox.stub().returns({
+        'content-audit': {
+          productCodes: ['ASO', 'LLMO'],
+        },
+      }),
     };
 
     context = new MockContextBuilder()
@@ -61,6 +67,12 @@ describe('Step-based Audit Tests', () => {
 
     context.dataAccess.Site.findById.resolves(site);
     context.dataAccess.Configuration.findLatest.resolves(configuration);
+
+    // Mock TierClient for entitlement checks
+    const mockTierClient = {
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+    };
+    sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
     context.env = {
       CONTENT_SCRAPER_QUEUE_URL: 'https://space.cat/content-scraper',
@@ -336,11 +348,8 @@ describe('Step-based Audit Tests', () => {
         .reply(200, 'Success');
 
       // Mock ScrapeClient
-      const mockScrapeJob = {
-        getId: () => 'scrape-job-123',
-      };
       const mockScrapeClient = {
-        createScrapeJob: sandbox.stub().resolves(mockScrapeJob),
+        createScrapeJob: sandbox.stub().resolves({ id: 'scrape-job-123' }),
       };
       sandbox.stub(ScrapeClient, 'createFrom').returns(mockScrapeClient);
 
@@ -382,7 +391,7 @@ describe('Step-based Audit Tests', () => {
 
       // Verify log messages
       expect(context.log.debug).to.have.been.calledWith(sinon.match(/Creating new scrapeJob with the ScrapeClient/));
-      expect(context.log.info).to.have.been.calledWith('Created scrapeJob with id: "scrape-job-123"');
+      expect(context.log.info).to.have.been.calledWith('Created scrapeJob with id: scrape-job-123');
     });
 
     it('loads scrape result paths when scrapeJobId is provided', async () => {

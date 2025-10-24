@@ -1,3 +1,151 @@
+## [1.216.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.216.0...v1.216.1) (2025-10-23)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1448](https://github.com/adobe/spacecat-audit-worker/issues/1448)) ([f9842f2](https://github.com/adobe/spacecat-audit-worker/commit/f9842f2c7733762c3a09566b232add53286c40ae))
+
+# [1.216.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.215.3...v1.216.0) (2025-10-23)
+
+
+### Features
+
+* add FAQs audit ([#1442](https://github.com/adobe/spacecat-audit-worker/issues/1442)) ([378d76a](https://github.com/adobe/spacecat-audit-worker/commit/378d76a5554449a3a068e53fa506ef7dcf5b134d))
+
+## [1.215.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.215.2...v1.215.3) (2025-10-23)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1446](https://github.com/adobe/spacecat-audit-worker/issues/1446)) ([b6e336f](https://github.com/adobe/spacecat-audit-worker/commit/b6e336f43a3aa3d2c6918947ce6fe6de3b886f6c))
+
+## [1.215.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.215.1...v1.215.2) (2025-10-22)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.74.0 ([#1445](https://github.com/adobe/spacecat-audit-worker/issues/1445)) ([9ddb8b2](https://github.com/adobe/spacecat-audit-worker/commit/9ddb8b2a4b6462d89baa09c6f1a46e5a03e90fbd))
+
+## [1.215.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.215.0...v1.215.1) (2025-10-22)
+
+
+### Bug Fixes
+
+* **step-audit:** resolves the error during scrapeJobId logging ([#1444](https://github.com/adobe/spacecat-audit-worker/issues/1444)) ([1b15c1d](https://github.com/adobe/spacecat-audit-worker/commit/1b15c1deb056c8a88359c9c98142e7227c3c0497))
+
+# [1.215.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.214.1...v1.215.0) (2025-10-22)
+
+
+### Features
+
+* CWV Auto-Suggest - enable multi-page analysis ([#1443](https://github.com/adobe/spacecat-audit-worker/issues/1443)) ([8303854](https://github.com/adobe/spacecat-audit-worker/commit/8303854d27a9044675bd8eab2ed3d0489240cfd7))
+
+## [1.214.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.214.0...v1.214.1) (2025-10-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.60.0 ([#1438](https://github.com/adobe/spacecat-audit-worker/issues/1438)) ([514e1f9](https://github.com/adobe/spacecat-audit-worker/commit/514e1f9598c17d8be66eb1c2f3a3fbd7d14a377b))
+
+# [1.214.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.213.3...v1.214.0) (2025-10-21)
+
+
+### Features
+
+* add daily cadence support to geo-brand-presence refresh ([#1427](https://github.com/adobe/spacecat-audit-worker/issues/1427)) ([c424012](https://github.com/adobe/spacecat-audit-worker/commit/c4240125a98d57d29f9ca6c103bea927c4cde8d6))
+
+## [1.213.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.213.2...v1.213.3) (2025-10-21)
+
+
+### Bug Fixes
+
+* add for other cdn provider as table expects field ([#1441](https://github.com/adobe/spacecat-audit-worker/issues/1441)) ([7c84218](https://github.com/adobe/spacecat-audit-worker/commit/7c842180e2e74536b3640701aee25fa15542030c))
+
+## [1.213.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.213.1...v1.213.2) (2025-10-21)
+
+
+### Bug Fixes
+
+* minor issues with column order ([#1440](https://github.com/adobe/spacecat-audit-worker/issues/1440)) ([b714f6b](https://github.com/adobe/spacecat-audit-worker/commit/b714f6b51233565a7c4ea5ce7415490213d0a181))
+
+## [1.213.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.213.0...v1.213.1) (2025-10-21)
+
+
+### Bug Fixes
+
+* add column in the aggregated table ([#1439](https://github.com/adobe/spacecat-audit-worker/issues/1439)) ([ce5f5e1](https://github.com/adobe/spacecat-audit-worker/commit/ce5f5e1e951faa152537ce9f637d291db6099a05))
+
+# [1.213.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.212.1...v1.213.0) (2025-10-21)
+
+
+### Features
+
+* add support for x forwarded host ([#1437](https://github.com/adobe/spacecat-audit-worker/issues/1437)) ([07d9262](https://github.com/adobe/spacecat-audit-worker/commit/07d9262b2c2572b4b7d7c9355870d5c817cbc5aa))
+
+## [1.212.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.212.0...v1.212.1) (2025-10-20)
+
+
+### Bug Fixes
+
+* only trigger if category names changed ([#1434](https://github.com/adobe/spacecat-audit-worker/issues/1434)) ([f277a04](https://github.com/adobe/spacecat-audit-worker/commit/f277a0432e950129d033034ea0b00e4174f2f627))
+
+# [1.212.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.211.2...v1.212.0) (2025-10-20)
+
+
+### Features
+
+* PageType audit ([#1430](https://github.com/adobe/spacecat-audit-worker/issues/1430)) ([0a8cbe7](https://github.com/adobe/spacecat-audit-worker/commit/0a8cbe7d047b24653a84fcdc5b48fb39fc20334c))
+
+## [1.211.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.211.1...v1.211.2) (2025-10-18)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-rum-api-client to v2.38.3 ([#1432](https://github.com/adobe/spacecat-audit-worker/issues/1432)) ([f581e6d](https://github.com/adobe/spacecat-audit-worker/commit/f581e6d6ad2bd2f464738a7a7f413ae3abcb0924))
+
+## [1.211.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.211.0...v1.211.1) (2025-10-17)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to v2.73.1 ([#1429](https://github.com/adobe/spacecat-audit-worker/issues/1429)) ([5b24fcc](https://github.com/adobe/spacecat-audit-worker/commit/5b24fcc8b144b60554c26583663537122cfd53ec))
+
+# [1.211.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.8...v1.211.0) (2025-10-17)
+
+
+### Features
+
+* added security permission audit ([#1371](https://github.com/adobe/spacecat-audit-worker/issues/1371)) Issue [#1425](https://github.com/adobe/spacecat-audit-worker/issues/1425)  ([9f7b0ac](https://github.com/adobe/spacecat-audit-worker/commit/9f7b0acbf932c0c0ff3928c53a328bf7f5dc7b1b))
+
+## [1.210.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.7...v1.210.8) (2025-10-17)
+
+
+### Bug Fixes
+
+* remove api triggered checks to configuration based ([#1407](https://github.com/adobe/spacecat-audit-worker/issues/1407)) ([18d5bb3](https://github.com/adobe/spacecat-audit-worker/commit/18d5bb3d56d4ed6ce14890001fcb4c9f21c8d691))
+
+## [1.210.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.6...v1.210.7) (2025-10-17)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1422](https://github.com/adobe/spacecat-audit-worker/issues/1422)) ([3bd5ed9](https://github.com/adobe/spacecat-audit-worker/commit/3bd5ed9471032559aca1ddb3334eb907fadc365f))
+
+## [1.210.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.5...v1.210.6) (2025-10-16)
+
+
+### Bug Fixes
+
+* Audit tier integration ([#1395](https://github.com/adobe/spacecat-audit-worker/issues/1395)) ([84b0ff7](https://github.com/adobe/spacecat-audit-worker/commit/84b0ff7c19b6510336094339ca141508558a05aa))
+* fix CWV unit tests ([#1428](https://github.com/adobe/spacecat-audit-worker/issues/1428)) ([17b7be9](https://github.com/adobe/spacecat-audit-worker/commit/17b7be9f1899280f91d377881e73a48ea0538328))
+
+## [1.210.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.4...v1.210.5) (2025-10-16)
+
+
+### Bug Fixes
+
+* update title to match grouping criteria ([#1410](https://github.com/adobe/spacecat-audit-worker/issues/1410)) ([722f601](https://github.com/adobe/spacecat-audit-worker/commit/722f601500288cafbf08bd534b371fbfe2633fcb))
+
 ## [1.210.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.210.3...v1.210.4) (2025-10-16)
 
 
