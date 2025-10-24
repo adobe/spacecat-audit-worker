@@ -1458,4 +1458,140 @@ describe('Accessibility Audit Handler', () => {
       );
     });
   });
+
+  describe('Handler Configuration', () => {
+    let handlerModule;
+
+    beforeEach(async () => {
+      // Import the handler module with default export
+      handlerModule = await esmock('../../src/accessibility/handler.js', {
+        '../../src/accessibility/utils/data-processing.js': {
+          getUrlsForAudit: getUrlsForAuditStub,
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          generateReportOpportunities: generateReportOpportunitiesStub,
+          sendRunImportMessage: sendRunImportMessageStub,
+        },
+        '../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createAccessibilityIndividualOpportunities: createAccessibilityIndividualOpportunitiesStub,
+        },
+        '../../src/accessibility/utils/scrape-utils.js': {
+          getExistingObjectKeysFromFailedAudits: getExistingObjectKeysFromFailedAuditsStub,
+          getExistingUrlsFromFailedAudits: getExistingUrlsFromFailedAuditsStub,
+        },
+      });
+    });
+
+    it('should export a default handler with correct structure', () => {
+      const handler = handlerModule.default;
+
+      expect(handler).to.exist;
+      expect(handler).to.be.an('object');
+    });
+
+    it('should have URL resolver configured', () => {
+      const handler = handlerModule.default;
+
+      expect(handler.urlResolver).to.exist;
+      expect(handler.urlResolver).to.be.a('function');
+    });
+
+    it('should have steps configured', () => {
+      const handler = handlerModule.default;
+
+      expect(handler.steps).to.exist;
+      expect(handler.steps).to.be.an('object');
+      expect(Object.keys(handler.steps)).to.have.length.greaterThan(0);
+    });
+
+    it('should have processImport step configured', () => {
+      const handler = handlerModule.default;
+
+      expect(handler.steps.processImport).to.exist;
+      expect(handler.steps.processImport).to.have.property('handler');
+      expect(handler.steps.processImport.handler).to.be.a('function');
+    });
+
+    it('should have scrapeAccessibilityData step configured', () => {
+      const handler = handlerModule.default;
+
+      expect(handler.steps.scrapeAccessibilityData).to.exist;
+      expect(handler.steps.scrapeAccessibilityData).to.have.property('handler');
+      expect(handler.steps.scrapeAccessibilityData.handler).to.be.a('function');
+    });
+
+    it('should have processAccessibilityOpportunities step configured', () => {
+      const handler = handlerModule.default;
+
+      expect(handler.steps.processAccessibilityOpportunities).to.exist;
+      expect(handler.steps.processAccessibilityOpportunities).to.have.property('handler');
+      expect(handler.steps.processAccessibilityOpportunities.handler).to.be.a('function');
+    });
+
+    it('should use resolveFinalURL as the URL resolver', async () => {
+      const handler = handlerModule.default;
+      const mockSiteWithResolver = {
+        getId: () => 'test-site-id',
+        getBaseURL: () => 'https://example.com',
+        resolveFinalURL: sandbox.stub().resolves('https://final.example.com'),
+      };
+
+      const resolvedUrl = await handler.urlResolver(mockSiteWithResolver);
+
+      expect(mockSiteWithResolver.resolveFinalURL).to.have.been.calledOnce;
+      expect(resolvedUrl).to.equal('https://final.example.com');
+    });
+
+    it('should call site.resolveFinalURL without additional arguments', async () => {
+      const handler = handlerModule.default;
+      const mockSiteWithResolver = {
+        resolveFinalURL: sandbox.stub().resolves('https://resolved.com'),
+      };
+
+      await handler.urlResolver(mockSiteWithResolver);
+
+      expect(mockSiteWithResolver.resolveFinalURL).to.have.been.calledOnce;
+      expect(mockSiteWithResolver.resolveFinalURL).to.have.been.calledWithExactly();
+    });
+
+    it('should handle resolveFinalURL returning different URLs', async () => {
+      const handler = handlerModule.default;
+      const testUrls = [
+        'https://www.example.com',
+        'https://example.com/redirected',
+        'https://final-destination.com',
+      ];
+
+      for (const testUrl of testUrls) {
+        const mockSiteWithResolver = {
+          resolveFinalURL: sandbox.stub().resolves(testUrl),
+        };
+
+        const resolvedUrl = await handler.urlResolver(mockSiteWithResolver);
+        expect(resolvedUrl).to.equal(testUrl);
+      }
+    });
+
+    it('should handle resolveFinalURL that returns a promise', async () => {
+      const handler = handlerModule.default;
+      const mockSiteWithResolver = {
+        resolveFinalURL: () => Promise.resolve('https://async-resolved.com'),
+      };
+
+      const resolvedUrl = await handler.urlResolver(mockSiteWithResolver);
+
+      expect(resolvedUrl).to.equal('https://async-resolved.com');
+    });
+
+    it('should handle resolveFinalURL errors gracefully', async () => {
+      const handler = handlerModule.default;
+      const mockSiteWithResolver = {
+        resolveFinalURL: sandbox.stub().rejects(new Error('Resolution failed')),
+      };
+
+      await expect(handler.urlResolver(mockSiteWithResolver))
+        .to.be.rejectedWith('Resolution failed');
+
+      expect(mockSiteWithResolver.resolveFinalURL).to.have.been.calledOnce;
+    });
+  });
 });

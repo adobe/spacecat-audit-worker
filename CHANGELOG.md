@@ -1,3 +1,17 @@
+## [1.216.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.216.1...v1.216.2) (2025-10-24)
+
+
+### Bug Fixes
+
+* improve fastly onboarding ([#1452](https://github.com/adobe/spacecat-audit-worker/issues/1452)) ([c2e8fcb](https://github.com/adobe/spacecat-audit-worker/commit/c2e8fcb84853094b1352090044d9eae5f38e217f))
+
+## [1.216.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.216.0...v1.216.1) (2025-10-23)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1448](https://github.com/adobe/spacecat-audit-worker/issues/1448)) ([f9842f2](https://github.com/adobe/spacecat-audit-worker/commit/f9842f2c7733762c3a09566b232add53286c40ae))
+
 # [1.216.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.215.3...v1.216.0) (2025-10-23)
 
 
