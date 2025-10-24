@@ -17,12 +17,6 @@ import { isAssetUrl } from '../../utils/asset-utils.js';
 import { extractCustomerDomain } from '../../utils/cdn-utils.js';
 
 export class AthenaCollector {
-  // TODO: Change to a dynamic database name
-  static DATABASE_NAME = 'broken_content_paths_db';
-
-  // TODO: Change to a dynamic table name
-  static TABLE_NAME = 'broken_content_paths_test';
-
   constructor(context) {
     this.context = context;
   }
@@ -85,10 +79,12 @@ export class AthenaCollector {
   getAthenaConfig() {
     const { env } = this.context;
     const bucket = `${env.S3_BUCKET}/${this.imsOrg}`;
+    const database = `cdn_logs_${this.sanitizedHostname}`;
+    const tableName = 'content_fragment_404';
 
     return {
-      database: AthenaCollector.DATABASE_NAME,
-      tableName: AthenaCollector.TABLE_NAME,
+      database,
+      tableName,
       location: `s3://${bucket}/aggregated-404`,
       tempLocation: `s3://${env.S3_BUCKET}/temp/athena-results/`,
     };
