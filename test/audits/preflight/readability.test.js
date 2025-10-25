@@ -17,7 +17,7 @@ import sinonChai from 'sinon-chai';
 import sinon from 'sinon';
 import esmock from 'esmock';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
-import readability, { PREFLIGHT_READABILITY } from '../../../src/readability/handler.js';
+import readability, { PREFLIGHT_READABILITY } from '../../../src/readability/preflight/handler.js';
 import { PREFLIGHT_STEP_IDENTIFY } from '../../../src/preflight/handler.js';
 
 use(sinonChai);
@@ -560,8 +560,8 @@ describe('Preflight Readability Audit', () => {
     beforeEach(async () => {
       mockSendReadabilityToMystique = sinon.stub().resolves();
 
-      readabilityMocked = await esmock('../../../src/readability/handler.js', {
-        '../../../src/readability/async-mystique.js': {
+      readabilityMocked = await esmock('../../../src/readability/preflight/handler.js', {
+        '../../../src/readability/shared/async-mystique.js': {
           sendReadabilityToMystique: mockSendReadabilityToMystique,
         },
         '../../../src/preflight/utils.js': {
