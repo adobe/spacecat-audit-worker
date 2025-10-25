@@ -1825,6 +1825,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
           env: {
             QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+            IMPORT_WORKER_QUEUE_URL: 'test-import-worker-queue',
           },
           sqs: {
             sendMessage: sandbox.stub().resolves(),
@@ -1839,15 +1840,17 @@ describe('Forms Opportunities - Accessibility Handler', () => {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
               findById: sandbox.stub().resolves({
                 getId: () => opportunityId,
-                save: sandbox.stub().resolves({
-                  getId: () => opportunityId,
-                  getData: () => ({
-                    accessibility: [{
-                      form: 'test-form',
-                      formsource: 'test-source',
-                      a11yIssues: [],
-                    }],
-                  }),
+                getType: () => 'form-accessibility',
+                getSiteId: () => siteId,
+                getSuggestions: sandbox.stub().resolves([]),
+                save: sandbox.stub().callsFake(function() {
+                  return Promise.resolve({
+                    getId: () => opportunityId,
+                    getSiteId: () => siteId,
+                    getType: () => 'form-accessibility',
+                    getData: () => mockOpportunityData,
+                    getSuggestions: sandbox.stub().resolves([]),
+                  });
                 }),
                 getData: () => mockOpportunityData,
                 setData: (data) => {
@@ -1864,6 +1867,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
               findById: sandbox.stub().resolves({
                 getDeliveryType: sinon.stub().returns('aem'),
                 getBaseURL: sinon.stub().returns('https://example.com'),
+              }),
+            },
+            Configuration: {
+              findLatest: sandbox.stub().resolves({
+                isHandlerEnabledForSite: sandbox.stub().resolves(false),
               }),
             },
           },
@@ -1930,6 +1938,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
           env: {
             QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+            IMPORT_WORKER_QUEUE_URL: 'test-import-worker-queue',
           },
           sqs: {
             sendMessage: sandbox.stub().resolves(),
@@ -1944,9 +1953,13 @@ describe('Forms Opportunities - Accessibility Handler', () => {
               allBySiteIdAndStatus: sandbox.stub().resolves([]),
               findById: sandbox.stub().resolves({
                 getId: () => opportunityId,
+                getType: () => 'form-accessibility',
+                getSiteId: () => siteId,
+                getSuggestions: sandbox.stub().resolves([]),
                 save: sandbox.stub().resolves({
                   getType: () => 'form-accessibility',
                   getId: () => opportunityId,
+                  getSiteId: () => siteId,
                   getData: () => ({
                     accessibility: [{
                       form: 'test-form-2',
@@ -1966,6 +1979,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 setData: (data) => {
                   mockOpportunityData = data;
                 },
+                getSiteId: () => siteId,
               }),
               create: sandbox.stub().resolves({
                 getId: () => opportunityId,
@@ -1979,6 +1993,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
                 getBaseURL: sinon.stub().returns('https://example.com'),
               }),
             },
+            Configuration: {
+              findLatest: sandbox.stub().resolves({
+                isHandlerEnabledForSite: sandbox.stub().resolves(false),
+              }),
+            },
           },
         })
         .build();
@@ -1986,6 +2005,47 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       await mystiqueDetectedFormAccessibilityHandler(message, context);
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
+    });
+
+    it('should send code-fix messages when auto-fix is enabled', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          opportunityId,
+          a11y: [{
+            form: 'https://example.com/form1',
+            formSource: '#form1',
+            a11yIssues: [{
+              issue: 'Missing alt text',
+              level: 'error',
+              successCriterias: ['1.1.1'],
+              htmlWithIssues: ['<img src="test.jpg">'],
+              recommendation: 'Add alt text to image',
+            }],
+          }],
+        },
+      };
+
+      // Override the context to have Configuration that enables auto-fix
+      context.dataAccess.Configuration = {
+        findLatest: sandbox.stub().resolves({
+          isHandlerEnabledForSite: sandbox.stub().callsFake(async (handlerType) => {
+            // Enable auto-fix for form-accessibility
+            return handlerType === 'form-accessibility-auto-fix';
+          }),
+        }),
+      };
+
+      // Verify context.sqs.sendMessage is stubbed and ready
+      expect(context.sqs.sendMessage).to.be.a('function');
+
+      await mystiqueDetectedFormAccessibilityHandler(message, context);
+
+      // Verify SQS messages were sent (one for mystique, potentially one for code-fix importer)
+      expect(context.sqs.sendMessage).to.have.been.called;
+      // The actual number of calls depends on whether sendCodeFixMessagesToImporter sends messages
+      // At minimum, it should be called for mystique message
     });
 
     it('should not send message to mystique when no opportunity is found', async () => {

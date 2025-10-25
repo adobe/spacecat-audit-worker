@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Adobe. All rights reserved.
+ * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -10,14 +10,14 @@
  * governing permissions and limitations under the License.
  */
 
-// Export the core audit classes and default implementations
-export * from './base-audit.js';
-export { RunnerAudit } from './runner-audit.js';
-export { StepAudit } from './step-audit.js';
-export { AsyncJobRunner } from './async-job-runner.js';
+/**
+ * Forms Accessibility Code Fix Handler
+ *
+ * This is a legacy entry point that now delegates to the common code fix response handler.
+ * Kept for backward compatibility with existing message routing.
+ *
+ * @deprecated Use the common codeFixResponseHandler directly
+ */
+import codeFixResponseHandler from '../../common/codefix-response-handler.js';
 
-// Export utility functions
-export * from './audit-utils.js';
-
-// Export code fix handler utilities
-export * from './codefix-handler.js';
+export default codeFixResponseHandler;
