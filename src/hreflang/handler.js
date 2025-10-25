@@ -13,7 +13,7 @@
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { isLangCode } from 'is-language-code';
-import { JSDOM } from 'jsdom';
+import { JSDOM, VirtualConsole } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
@@ -64,7 +64,18 @@ export async function validatePageHreflang(url, log) {
   }
 
   try {
-    const response = await fetch(url);
+    log.info(`Checking hreflang for URL: ${url}`);
+
+    // Add user agent and headers to avoid bot detection
+    const fetchOptions = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; SpaceCat-Audit/1.0; +https://github.com/adobe/spacecat-audit-worker)',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    };
+
+    const response = await fetch(url, fetchOptions);
 
     if (!response.ok) {
       log.warn(`Failed to fetch ${url}: ${response.status} ${response.statusText}. Skipping hreflang validation.`);
@@ -72,7 +83,13 @@ export async function validatePageHreflang(url, log) {
     }
 
     const html = await response.text();
-    const dom = new JSDOM(html);
+
+    // Configure JSDOM to suppress CSS parsing errors
+    const virtualConsole = new VirtualConsole();
+    // Suppress error messages by not sending them anywhere
+    virtualConsole.sendTo(console, { omitJSDOMErrors: true });
+
+    const dom = new JSDOM(html, { virtualConsole });
     const { document } = dom.window;
 
     // Extract hreflang links
@@ -161,7 +178,8 @@ export async function validatePageHreflang(url, log) {
 export async function hreflangAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess } = context;
-  log.debug(`Starting Hreflang Audit with siteId: ${siteId}`);
+  log.info(`Starting Hreflang Audit with siteId: ${siteId}`);
+  log.info(`Base URL for hreflang audit: ${baseURL}`);
 
   try {
     // Get top 200 pages
@@ -182,10 +200,30 @@ export async function hreflangAuditRunner(baseURL, context, site) {
       };
     }
 
-    // Validate hreflang for each page
-    const auditPromises = topPages.map(async (page) => validatePageHreflang(page.url, log));
+    // Validate hreflang for each page with rate limiting
+    // Process in batches to avoid overwhelming the server
+    const BATCH_SIZE = 10; // Process 10 URLs at a time
+    const DELAY_BETWEEN_BATCHES = 1000; // 1 second delay between batches
 
-    const auditResultsArray = await Promise.allSettled(auditPromises);
+    const auditResultsArray = [];
+
+    /* eslint-disable no-await-in-loop */
+    for (let i = 0; i < topPages.length; i += BATCH_SIZE) {
+      const batch = topPages.slice(i, i + BATCH_SIZE);
+      log.info(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(topPages.length / BATCH_SIZE)} (pages ${i + 1}-${Math.min(i + BATCH_SIZE, topPages.length)})`);
+
+      const batchPromises = batch.map(async (page) => validatePageHreflang(page.url, log));
+      const batchResults = await Promise.allSettled(batchPromises);
+      auditResultsArray.push(...batchResults);
+
+      // Add delay between batches (except for the last batch)
+      if (i + BATCH_SIZE < topPages.length) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, DELAY_BETWEEN_BATCHES);
+        });
+      }
+    }
+    /* eslint-enable no-await-in-loop */
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
       if (result.status === 'fulfilled') {
         const { url, checks } = result.value;
