@@ -134,7 +134,7 @@ export function ensureFullUrl(url, domain = '') {
       // Neither has a slash, so add one
       reasonableUrl = `${domain}/${reasonableUrl}`;
     } else {
-      // One has a slash, so concatenate directly
+      // Only one has a slash, so concatenate directly
       reasonableUrl = domain + reasonableUrl;
     }
     addWwwSubdomain = true; // add 'www.' if needed
