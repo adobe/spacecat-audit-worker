@@ -77,6 +77,8 @@ import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
+import contentFragmentBrokenLinks from './content-fragment-broken-links/handler.js';
+import cdnContentFragment404 from './cdn-content-fragment-404/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import prerender from './prerender/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
@@ -153,6 +155,8 @@ const HANDLERS = {
   'guidance:summarization': summarizationGuidance,
   hreflang,
   headings,
+  'content-fragment-broken-links': contentFragmentBrokenLinks,
+  'cdn-content-fragment-404': cdnContentFragment404,
   prerender,
   'security-vulnerabilities': vulnerabilities,
   'security-permissions': permissions,
