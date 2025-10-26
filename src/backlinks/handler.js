@@ -219,7 +219,7 @@ export const generateSuggestionData = async (context) => {
               fixedSuggestion.getId(),
             );
             // eslint-disable-next-line no-restricted-syntax
-            for (const fixEntity of fixEntities || []) {
+            for (const fixEntity of fixEntities) {
               const deployed = FixEntity?.STATUSES?.DEPLOYED;
               const published = FixEntity?.STATUSES?.PUBLISHED;
               if (deployed && published && typeof fixEntity.getStatus === 'function'

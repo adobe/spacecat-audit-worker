@@ -134,7 +134,7 @@ const handleOutdatedSuggestions = async ({
     const { FixEntity: FixEntityModel } = context.dataAccess;
     const { site } = context;
     // Create a FixEntity for each suggestion that was marked FIXED
-    await Promise.all((existingOutdatedSuggestions || []).map(async (s) => {
+    await Promise.all(existingOutdatedSuggestions.map(async (s) => {
       try {
         await opportunity.addFixEntities([{
           opportunityId: opportunity.getId(),

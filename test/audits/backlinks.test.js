@@ -495,6 +495,132 @@ describe('Backlinks Tests', function () {
       const result = await generateSuggestionData(context);
       expect(result.status).to.equal('complete');
     });
+
+    it('does nothing when fixed suggestion has no url_to', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      // NEW suggestions for message
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(0).resolves(suggestions);
+
+      const fixedSuggestionNoUrl = {
+        getId: () => 'fixed-no-url',
+        getData: () => ({}),
+      };
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(1).resolves([
+        fixedSuggestionNoUrl,
+      ]);
+
+      // Provide full FixEntity but it should not be invoked
+      const getFixEntitiesBySuggestionId = sandbox.stub();
+      context.dataAccess.FixEntity = {
+        STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+        getFixEntitiesBySuggestionId,
+      };
+
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const result = await generateSuggestionData(context);
+      expect(result.status).to.equal('complete');
+      expect(getFixEntitiesBySuggestionId).to.not.have.been.called;
+    });
+
+    it('skips publishing when fix entity has no getStatus function', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      // NEW suggestions for message
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(0).resolves(suggestions);
+
+      const fixedSuggestionOk = {
+        getId: () => 'fixed-no-getstatus',
+        getData: () => ({ url_to: 'https://foo.com/ok-200-5' }),
+      };
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(1).resolves([
+        fixedSuggestionOk,
+      ]);
+
+      const setStatusStub = sandbox.stub();
+      const saveStub = sandbox.stub();
+      // No getStatus function provided
+      const fixEntity = {
+        getId: () => 'fe-no-getstatus',
+        setStatus: setStatusStub,
+        setUpdatedBy: sandbox.stub(),
+        save: saveStub,
+      };
+
+      context.dataAccess.FixEntity = {
+        STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+        getFixEntitiesBySuggestionId: sandbox.stub().resolves([fixEntity]),
+      };
+
+      nock('https://foo.com')
+        .get('/ok-200-5')
+        .reply(200);
+
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const result = await generateSuggestionData(context);
+      expect(result.status).to.equal('complete');
+      expect(setStatusStub).to.not.have.been.called;
+      expect(saveStub).to.not.have.been.called;
+    });
+
+    it('skips publishing when PUBLISHED status is missing', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      // NEW suggestions for message
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(0).resolves(suggestions);
+
+      const fixedSuggestionOk = {
+        getId: () => 'fixed-missing-published',
+        getData: () => ({ url_to: 'https://foo.com/ok-200-6' }),
+      };
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(1).resolves([
+        fixedSuggestionOk,
+      ]);
+
+      const setStatusStub = sandbox.stub();
+      const saveStub = sandbox.stub();
+      const fixEntity = {
+        getId: () => 'fe-missing-published',
+        getStatus: sandbox.stub().returns('DEPLOYED'),
+        setStatus: setStatusStub,
+        setUpdatedBy: sandbox.stub(),
+        save: saveStub,
+      };
+
+      // Missing PUBLISHED in STATUSES
+      context.dataAccess.FixEntity = {
+        STATUSES: { DEPLOYED: 'DEPLOYED' },
+        getFixEntitiesBySuggestionId: sandbox.stub().resolves([fixEntity]),
+      };
+
+      nock('https://foo.com')
+        .get('/ok-200-6')
+        .reply(200);
+
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const result = await generateSuggestionData(context);
+      expect(result.status).to.equal('complete');
+      expect(setStatusStub).to.not.have.been.called;
+      expect(saveStub).to.not.have.been.called;
+    });
   });
 
   describe('calculateKpiMetrics', () => {
