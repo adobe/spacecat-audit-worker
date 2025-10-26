@@ -143,6 +143,7 @@ const handleOutdatedSuggestions = async ({
           executedAt: new Date().toISOString(),
           changeDetails: {
             system: site?.getDeliveryType?.(),
+            data: s.getData?.(),
           },
           origin: FixEntityModel?.ORIGINS?.SPACECAT,
         }]);

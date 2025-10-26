@@ -399,6 +399,8 @@ describe('data-access', () => {
         origin: 'SPACECAT',
       });
       expect(payload[0].changeDetails).to.have.property('system');
+      expect(payload[0].changeDetails).to.have.property('data');
+      expect(payload[0].changeDetails.data).to.deep.equal({ key: '1' });
     });
 
     it('logs a warning when FixEntity creation fails', async () => {
@@ -539,6 +541,7 @@ describe('data-access', () => {
       expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
       const payload = mockOpportunity.addFixEntities.firstCall.args[0];
       expect(payload[0]).to.have.nested.property('changeDetails.system', 'aem_cs');
+      expect(payload[0]).to.have.nested.property('changeDetails.data');
     });
 
     it('does not create FixEntity items when statusToSetForOutdated is not FIXED', async () => {
