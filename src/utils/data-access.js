@@ -130,8 +130,10 @@ const handleOutdatedSuggestions = async ({
       statusToSetForOutdated,
     );
   }
+  if (statusToSetForOutdated === SuggestionDataAccess.STATUSES.FIXED) {
+    log.info(`Adding FixEntity items for FIXED suggestions with existingOutdatedSuggestions length: ${existingOutdatedSuggestions.length}`);
+  }
   if (statusToSetForOutdated === SuggestionDataAccess.STATUSES.FIXED && opportunity) {
-    log.info('Adding FixEntity items for FIXED suggestions with existingOutdatedSuggestions length: ', existingOutdatedSuggestions.length);
     const { FixEntity: FixEntityModel } = context.dataAccess;
     const { site } = context;
     // Create a FixEntity for each suggestion that was marked FIXED
