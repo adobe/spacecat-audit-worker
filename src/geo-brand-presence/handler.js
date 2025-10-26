@@ -289,7 +289,7 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
     }
     : { ...context, getPresignedUrl };
   const url = await asPresignedJsonUrl(prompts, bucket, s3Context);
-  log.debug('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
+  log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
 
   if (!isNonEmptyArray(providersToUse)) {
     log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
