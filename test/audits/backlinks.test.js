@@ -318,6 +318,183 @@ describe('Backlinks Tests', function () {
         },
       });
     });
+
+    it('publishes deployed fix entities for FIXED suggestions whose url_to is no longer broken', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      // First call (NEW) used to build mystique message
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(0).resolves(suggestions);
+
+      const fixedSuggestionOk = {
+        getId: () => 'fixed-1',
+        getData: () => ({ url_to: 'https://foo.com/ok-200' }),
+      };
+      const fixedSuggestionStillBroken = {
+        getId: () => 'fixed-2',
+        getData: () => ({ url_to: 'https://foo.com/returns-404' }),
+      };
+      // Second call (FIXED) returns our fixed suggestions
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(1).resolves([
+        fixedSuggestionOk,
+        fixedSuggestionStillBroken,
+      ]);
+
+      // Mock FixEntity manager and entities
+      const saveStub = sandbox.stub().resolves();
+      const setStatusStub = sandbox.stub();
+      const getStatusDeployed = sandbox.stub().returns('DEPLOYED');
+      const fixEntity = {
+        getId: () => 'fe-1',
+        getStatus: getStatusDeployed,
+        setStatus: setStatusStub,
+        setUpdatedBy: sandbox.stub(),
+        save: saveStub,
+      };
+      context.dataAccess.FixEntity = {
+        STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+        getFixEntitiesBySuggestionId: sandbox.stub().resolves([fixEntity]),
+      };
+
+      // nock for OK url and 404 already exists above
+      nock('https://foo.com')
+        .get('/ok-200')
+        .reply(200);
+
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      await generateSuggestionData(context);
+
+      // Should promote DEPLOYED -> PUBLISHED and save once for the ok URL
+      expect(setStatusStub).to.have.been.calledWith('PUBLISHED');
+      expect(saveStub).to.have.been.calledOnce;
+      // Should have been asked once for fix entities for the OK suggestion
+      expect(context.dataAccess.FixEntity.getFixEntitiesBySuggestionId)
+        .to.have.been.calledWith('fixed-1');
+    });
+
+    it('returns complete even when FixEntity publishing throws', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      // NEW suggestions for message
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(0).resolves(suggestions);
+
+      const fixedSuggestionOk = {
+        getId: () => 'fixed-err',
+        getData: () => ({ url_to: 'https://foo.com/ok-200-2' }),
+      };
+      // FIXED suggestions
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(1).resolves([
+        fixedSuggestionOk,
+      ]);
+
+      // Cause FixEntity retrieval to throw
+      context.dataAccess.FixEntity = {
+        STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+        getFixEntitiesBySuggestionId: sandbox.stub().rejects(new Error('boom')),
+      };
+
+      nock('https://foo.com')
+        .get('/ok-200-2')
+        .reply(200);
+
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const result = await generateSuggestionData(context);
+      expect(result.status).to.equal('complete');
+    });
+
+    it('does not update fix entity when status is not DEPLOYED', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      // NEW suggestions for message
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(0).resolves(suggestions);
+
+      const fixedSuggestionOk = {
+        getId: () => 'fixed-already-published',
+        getData: () => ({ url_to: 'https://foo.com/ok-200-3' }),
+      };
+      // FIXED suggestions
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(1).resolves([
+        fixedSuggestionOk,
+      ]);
+
+      // Fix entity already published -> should not update
+      const setStatusStub = sandbox.stub();
+      const saveStub = sandbox.stub();
+      const fixEntity = {
+        getId: () => 'fe-2',
+        getStatus: sandbox.stub().returns('PUBLISHED'),
+        setStatus: setStatusStub,
+        setUpdatedBy: sandbox.stub(),
+        save: saveStub,
+      };
+
+      context.dataAccess.FixEntity = {
+        STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+        getFixEntitiesBySuggestionId: sandbox.stub().resolves([fixEntity]),
+      };
+
+      nock('https://foo.com')
+        .get('/ok-200-3')
+        .reply(200);
+
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      await generateSuggestionData(context);
+
+      expect(setStatusStub).to.not.have.been.called;
+      expect(saveStub).to.not.have.been.called;
+    });
+
+    it('skips publishing if FixEntity.getFixEntitiesBySuggestionId is not a function', async () => {
+      configuration.isHandlerEnabledForSite.returns(true);
+      context.audit.getAuditResult.returns({
+        success: true,
+        brokenBacklinks: auditDataMock.auditResult.brokenBacklinks,
+      });
+
+      // NEW suggestions for message
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(0).resolves(suggestions);
+
+      const fixedSuggestionOk = {
+        getId: () => 'fixed-no-fn',
+        getData: () => ({ url_to: 'https://foo.com/ok-200-4' }),
+      };
+      // FIXED suggestions
+      context.dataAccess.Suggestion.allByOpportunityIdAndStatus.onCall(1).resolves([
+        fixedSuggestionOk,
+      ]);
+
+      // Provide FixEntity object without the function
+      context.dataAccess.FixEntity = {
+        STATUSES: { DEPLOYED: 'DEPLOYED', PUBLISHED: 'PUBLISHED' },
+      };
+
+      nock('https://foo.com')
+        .get('/ok-200-4')
+        .reply(200);
+
+      brokenBacklinksOpportunity.getSuggestions.returns([]);
+      brokenBacklinksOpportunity.addSuggestions.returns(brokenBacklinksSuggestions);
+
+      const result = await generateSuggestionData(context);
+      expect(result.status).to.equal('complete');
+    });
   });
 
   describe('calculateKpiMetrics', () => {

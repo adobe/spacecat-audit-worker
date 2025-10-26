@@ -100,6 +100,8 @@ describe('data-access', () => {
         getSuggestions: sinon.stub(),
         addSuggestions: sinon.stub(),
         getSiteId: () => 'site-id',
+        addFixEntities: sinon.stub().resolves({ createdItems: [1], errorItems: [] }),
+        getId: () => 'oppty-1',
       };
 
       mockLogger = {
@@ -353,6 +355,259 @@ describe('data-access', () => {
         buildKey,
         mapNewSuggestion,
       })).to.be.rejectedWith('Failed to create suggestions for siteId');
+    });
+
+    it('creates FixEntity items when marking suggestions as FIXED', async () => {
+      const suggestionsData = [{ key: '1' }];
+      const existingSuggestions = [
+        {
+          id: '1',
+          getId: () => 's-1',
+          data: suggestionsData[0],
+          getData: sinon.stub().returns(suggestionsData[0]),
+          getStatus: sinon.stub().returns('NEW'),
+          getType: sinon.stub().returns('TYPE'),
+        },
+      ];
+
+      const newData = []; // nothing detected now, so existing becomes outdated -> FIXED
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      // Provide FixEntity model enums on context
+      context.dataAccess.FixEntity = {
+        STATUSES: { PUBLISHED: 'PUBLISHED' },
+        ORIGINS: { SPACECAT: 'SPACECAT' },
+      };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        statusToSetForOutdated: 'FIXED',
+      });
+
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
+      const payload = mockOpportunity.addFixEntities.firstCall.args[0];
+      expect(payload).to.be.an('array').with.lengthOf(1);
+      expect(payload[0]).to.include({
+        opportunityId: 'oppty-1',
+        status: 'PUBLISHED',
+        type: 'TYPE',
+        origin: 'SPACECAT',
+      });
+      expect(payload[0].changeDetails).to.have.property('system');
+    });
+
+    it('logs a warning when FixEntity creation fails', async () => {
+      const suggestionsData = [{ key: '9' }];
+      const existingSuggestions = [
+        {
+          id: '9',
+          getId: () => 's-9',
+          data: suggestionsData[0],
+          getData: sinon.stub().returns(suggestionsData[0]),
+          getStatus: sinon.stub().returns('NEW'),
+          getType: sinon.stub().returns('TYPE'),
+        },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+      mockOpportunity.addFixEntities.rejects(new Error('db fail'));
+
+      context.dataAccess.FixEntity = {
+        STATUSES: { PUBLISHED: 'PUBLISHED' },
+        ORIGINS: { SPACECAT: 'SPACECAT' },
+      };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: [],
+        context,
+        buildKey,
+        mapNewSuggestion,
+        statusToSetForOutdated: 'FIXED',
+      });
+
+      expect(context.log.warn).to.have.been.called;
+      const warnMsg = context.log.warn.firstCall.args[0];
+      expect(warnMsg).to.include('Failed to add FixEntity for suggestion s-9');
+      expect(warnMsg).to.include('db fail');
+    });
+
+    it('creates FixEntity with undefined status/origin when FixEntity model is missing', async () => {
+      const suggestionsData = [{ key: '10' }];
+      const existingSuggestions = [
+        {
+          id: '10',
+          getId: () => 's-10',
+          data: suggestionsData[0],
+          getData: sinon.stub().returns(suggestionsData[0]),
+          getStatus: sinon.stub().returns('NEW'),
+          getType: sinon.stub().returns('TYPE'),
+        },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      // Remove FixEntity model so optional chaining yields undefined
+      context.dataAccess.FixEntity = undefined;
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: [],
+        context,
+        buildKey,
+        mapNewSuggestion,
+        statusToSetForOutdated: 'FIXED',
+      });
+
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
+      const payload = mockOpportunity.addFixEntities.firstCall.args[0];
+      expect(payload[0]).to.have.property('status', undefined);
+      expect(payload[0]).to.have.property('origin', undefined);
+    });
+
+    it('creates FixEntity with undefined changeDetails.system when site is missing', async () => {
+      const suggestionsData = [{ key: '11' }];
+      const existingSuggestions = [
+        {
+          id: '11',
+          getId: () => 's-11',
+          data: suggestionsData[0],
+          getData: sinon.stub().returns(suggestionsData[0]),
+          getStatus: sinon.stub().returns('NEW'),
+          getType: sinon.stub().returns('TYPE'),
+        },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      context.site = undefined; // triggers optional chaining to undefined
+      context.dataAccess.FixEntity = {
+        STATUSES: { PUBLISHED: 'PUBLISHED' },
+        ORIGINS: { SPACECAT: 'SPACECAT' },
+      };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: [],
+        context,
+        buildKey,
+        mapNewSuggestion,
+        statusToSetForOutdated: 'FIXED',
+      });
+
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
+      const payload = mockOpportunity.addFixEntities.firstCall.args[0];
+      expect(payload[0]).to.have.property('status', 'PUBLISHED');
+      expect(payload[0]).to.have.nested.property('changeDetails.system', undefined);
+    });
+
+    it('creates FixEntity with changeDetails.system when site is present', async () => {
+      const suggestionsData = [{ key: '12' }];
+      const existingSuggestions = [
+        {
+          id: '12',
+          getId: () => 's-12',
+          data: suggestionsData[0],
+          getData: sinon.stub().returns(suggestionsData[0]),
+          getStatus: sinon.stub().returns('NEW'),
+          getType: sinon.stub().returns('TYPE'),
+        },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      context.site = { getDeliveryType: () => 'aem_cs' };
+      context.dataAccess.FixEntity = {
+        STATUSES: { PUBLISHED: 'PUBLISHED' },
+        ORIGINS: { SPACECAT: 'SPACECAT' },
+      };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: [],
+        context,
+        buildKey,
+        mapNewSuggestion,
+        statusToSetForOutdated: 'FIXED',
+      });
+
+      expect(mockOpportunity.addFixEntities).to.have.been.calledOnce;
+      const payload = mockOpportunity.addFixEntities.firstCall.args[0];
+      expect(payload[0]).to.have.nested.property('changeDetails.system', 'aem_cs');
+    });
+
+    it('does not create FixEntity items when statusToSetForOutdated is not FIXED', async () => {
+      const suggestionsData = [{ key: '13' }];
+      const existingSuggestions = [
+        {
+          id: '13',
+          getId: () => 's-13',
+          data: suggestionsData[0],
+          getData: sinon.stub().returns(suggestionsData[0]),
+          getStatus: sinon.stub().returns('NEW'),
+          getType: sinon.stub().returns('TYPE'),
+        },
+      ];
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      context.site = { getDeliveryType: () => 'aem_cs' };
+      context.dataAccess.FixEntity = {
+        STATUSES: { PUBLISHED: 'PUBLISHED' },
+        ORIGINS: { SPACECAT: 'SPACECAT' },
+      };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: [],
+        context,
+        buildKey,
+        mapNewSuggestion,
+        statusToSetForOutdated: 'OUTDATED',
+      });
+
+      expect(mockOpportunity.addFixEntities).to.not.have.been.called;
+    });
+
+    it('does not create FixEntity when FIXED but no suggestions are outdated', async () => {
+      const existingSuggestions = [
+        {
+          id: '21',
+          getId: () => 's-21',
+          getData: sinon.stub().returns({ key: 'same' }),
+          getStatus: sinon.stub().returns('NEW'),
+          getType: sinon.stub().returns('TYPE'),
+          setData: sinon.stub(),
+          save: sinon.stub(),
+          setUpdatedBy: sinon.stub().returnsThis(),
+        },
+      ];
+      const newData = [{ key: 'same' }]; // nothing becomes outdated
+
+      mockOpportunity.getSuggestions.resolves(existingSuggestions);
+
+      context.site = { getDeliveryType: () => 'aem_cs' };
+      context.dataAccess.FixEntity = {
+        STATUSES: { PUBLISHED: 'PUBLISHED' },
+        ORIGINS: { SPACECAT: 'SPACECAT' },
+      };
+
+      await syncSuggestions({
+        opportunity: mockOpportunity,
+        newData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+        statusToSetForOutdated: 'FIXED',
+      });
+
+      expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
+      expect(mockOpportunity.addFixEntities).to.not.have.been.called;
     });
   });
 
