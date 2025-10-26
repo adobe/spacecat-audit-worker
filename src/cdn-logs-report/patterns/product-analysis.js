@@ -528,21 +528,21 @@ export async function analyzeProducts(domain, paths, context, configCategories =
     delete combinedPatterns.unclassified;
     delete combinedPatterns.other;
 
+    // If config categories provided, only keep patterns that match config categories
+    if (configCategoryCount > 0) {
+      const lowerConfigCategories = configCategories.map((cat) => cat.toLowerCase());
+      Object.keys(combinedPatterns).forEach((category) => {
+        if (!lowerConfigCategories.includes(category.toLowerCase())) {
+          delete combinedPatterns[category];
+        }
+      });
+      log.info(`Filtered patterns to only include config categories: ${configCategories.join(', ')}`);
+    }
+
     log.info(`Completed product analysis for domain: ${domain}`);
 
     const finalCategories = Object.keys(combinedPatterns);
     log.info(`Final categories (${finalCategories.length}): ${finalCategories.join(', ')}`);
-
-    // Log category breakdown if config categories were provided
-    if (configCategoryCount > 0) {
-      const matchedConfig = finalCategories.filter((c) => configCategories.includes(c));
-      const extraCategories = finalCategories.filter((c) => !configCategories.includes(c));
-      log.info(`├─ Matched config categories (${matchedConfig.length}): ${matchedConfig.join(', ') || 'none'}`);
-      if (extraCategories.length > 0) {
-        log.info(`└─ Additional LLM categories (${extraCategories.length}): ${extraCategories.join(', ')}`);
-      }
-    }
-
     log.info(`Total token usage for product analysis: ${JSON.stringify(totalTokenUsage)}`);
     return combinedPatterns;
   } catch (error) {
