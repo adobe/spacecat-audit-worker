@@ -433,8 +433,8 @@ describe('data-access', () => {
         statusToSetForOutdated: 'FIXED',
       });
 
-      expect(context.log.warn).to.have.been.called;
-      const warnMsg = context.log.warn.firstCall.args[0];
+      expect(context.log.info).to.have.been.called;
+      const warnMsg = context.log.info.secondCall.args[0];
       expect(warnMsg).to.include('Failed to add FixEntity for suggestion s-9');
       expect(warnMsg).to.include('db fail');
     });
