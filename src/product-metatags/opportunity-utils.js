@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { hasText } from '@adobe/spacecat-shared-utils';
+
 export function removeTrailingSlash(url) {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
@@ -73,11 +75,11 @@ const issueRankings = {
  */
 export function getIssueRanking(tagName, issue) {
   // Add null checks
-  if (!tagName || typeof tagName !== 'string') {
+  if (!hasText(tagName)) {
     return -1;
   }
 
-  if (!issue || typeof issue !== 'string') {
+  if (!hasText(issue)) {
     return -1;
   }
 

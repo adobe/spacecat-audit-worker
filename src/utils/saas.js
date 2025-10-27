@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { hasText } from '@adobe/spacecat-shared-utils';
 import { findBestMatchingPath } from './url-utils.js';
 import { deepMerge, deepMergeAll } from './config-utils.js';
 
@@ -117,7 +118,7 @@ export function validateConfig(config, locale) {
   const missingFields = [];
 
   for (const field of requiredConfigFields) {
-    if (!config[field]) {
+    if (!hasText(config[field])) {
       missingFields.push(`Missing required parameter: ${field}`);
     }
   }
@@ -139,7 +140,7 @@ export function validateConfig(config, locale) {
 function validateCommerceConfigShape(config, locale) {
   const missingFields = [];
 
-  if (!config.url) {
+  if (!hasText(config.url)) {
     missingFields.push('url');
   }
 
@@ -156,7 +157,7 @@ function validateCommerceConfigShape(config, locale) {
     ];
 
     for (const field of requiredHeaders) {
-      if (!config.headers[field]) {
+      if (!hasText(config.headers[field])) {
         missingFields.push(`headers.${field}`);
       }
     }
@@ -253,7 +254,7 @@ export async function extractCommerceConfigFromPAAS(params, log) {
  */
 export async function extractCommerceConfigFromACCS(params, log) {
   if (!params.config) {
-    const localePath = params.locale ? `${params.locale}/` : '';
+    const localePath = hasText(params.locale) ? `${params.locale}/` : '';
     const configPath = `${params.storeUrl}/${localePath}${params.configName || 'config'}.json`;
     log.debug(`Fetching ACCS config from ${configPath}`);
 
@@ -359,7 +360,7 @@ export async function getConfig(params, log) {
   } = params;
 
   if (!params.config) {
-    const localePath = locale ? `${locale}/` : '';
+    const localePath = hasText(locale) ? `${locale}/` : '';
     const configPath = `${storeUrl}/${localePath}${configName}.json`;
     log.debug(`Fetching config ${configName} for ${params.contentUrl}`);
     const configData = await requestSpreadsheet(configPath, configSheet);

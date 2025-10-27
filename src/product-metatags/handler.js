@@ -12,6 +12,7 @@
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
+import { hasText } from '@adobe/spacecat-shared-utils';
 import { calculateCPCValue } from '../support/utils.js';
 import { getObjectFromKey } from '../utils/s3-utils.js';
 import ProductSeoChecks from './seo-checks.js';
@@ -48,7 +49,7 @@ export function buildSuggestionKey(data) {
  * @returns {string} Extracted locale or empty string if not found
  */
 export function extractLocaleFromUrl(url, productUrlTemplate, log) {
-  if (!productUrlTemplate || !url) {
+  if (!hasText(productUrlTemplate) || !hasText(url)) {
     log.debug(`[PRODUCT-METATAGS] No product URL template or URL provided, using empty locale for url: ${url}`);
     return '';
   }
@@ -231,7 +232,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
 
           // Validate required fields
           let isValid = true;
-          if (!tagData.issue) {
+          if (!hasText(tagData.issue)) {
             log.warn(`[PRODUCT-METATAGS] Missing issue for ${fullUrl}, tag: ${tag}`);
             invalidSuggestions.push({ endpoint, tag, reason: 'missing issue' });
             isValid = false;
@@ -239,7 +240,7 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
             log.warn(`[PRODUCT-METATAGS] Invalid rank (${rank}) for ${fullUrl}, tag: ${tag}, issue: ${tagData.issue}`);
             invalidSuggestions.push({ endpoint, tag, reason: `invalid rank: ${rank}` });
             isValid = false;
-          } else if (!fullUrl || typeof fullUrl !== 'string') {
+          } else if (!hasText(fullUrl)) {
             /* c8 ignore next 3 */ // fullUrl is constructed via concatenation and is a string
             log.warn(`[PRODUCT-METATAGS] Invalid URL for endpoint: ${endpoint}, tag: ${tag}`);
             invalidSuggestions.push({ endpoint, tag, reason: 'invalid URL' });

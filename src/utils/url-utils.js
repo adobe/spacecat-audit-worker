@@ -10,7 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { prependSchema, stripWWW, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import {
+  hasText,
+  prependSchema,
+  stripWWW,
+  tracingFetch as fetch,
+} from '@adobe/spacecat-shared-utils';
 
 /**
  * Checks if a given URL is a "preview" page
@@ -53,7 +58,7 @@ export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
  * @returns {string} - The country code.
  */
 export function getCountryCodeFromLang(lang, defaultCountry = 'us') {
-  if (!lang) return defaultCountry;
+  if (!hasText(lang)) return defaultCountry;
   // Split on hyphen or underscore (both are used in the wild)
   const parts = lang.split(/[-_]/);
   if (parts.length === 2 && parts[1].length === 2) {
@@ -70,7 +75,7 @@ export function getCountryCodeFromLang(lang, defaultCountry = 'us') {
  * @returns {Array|null} Array of unique URLs or null
  */
 export function parseCustomUrls(data) {
-  if (!data || typeof data !== 'string') {
+  if (!hasText(data)) {
     return null;
   }
 
@@ -78,7 +83,7 @@ export function parseCustomUrls(data) {
     .split(',')
     .map((url) => url.trim())
     .map((url) => url.replace(/^<|>$/g, '').trim()) // Remove < at start and > at end, then trim again
-    .filter((url) => url.length > 0);
+    .filter((url) => hasText(url));
 
   return urls.length > 0 ? [...new Set(urls)] : null;
 }
@@ -92,7 +97,7 @@ export function parseCustomUrls(data) {
  * @returns {string} The best matching config key.
  */
 export function findBestMatchingPath(sectionData, contextPath) {
-  if (!contextPath || contextPath === 'default') {
+  if (!hasText(contextPath) || contextPath === 'default') {
     return 'default';
   }
 
