@@ -15,11 +15,9 @@ import {
   prependSchema,
   tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
-import {
-  extractDomainAndProtocol,
-  getUrlWithoutPath,
-} from '../support/utils.js';
+import { getUrlWithoutPath } from '../support/utils.js';
 import { AuditBuilder } from '../common/audit-builder.js';
+import { noopUrlResolver } from '../common/base-audit.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
@@ -85,7 +83,7 @@ function buildUniqueKey(result) {
  *   }
  */
 async function countRedirects(url, maxRedirects = STOP_AFTER_N_REDIRECTS) {
-  const domain = new URL(url).hostname;
+  const domain = new URL(url).hostname; // Given: https://www.example.com/subpath --> www.example.com
   let redirectUrl = url;
 
   let redirectCount = 0;
@@ -153,7 +151,7 @@ async function countRedirects(url, maxRedirects = STOP_AFTER_N_REDIRECTS) {
  *    tooQualified: boolean, // if true, this entry unnecessarily uses fully qualified URLs
  *    hasSameSrcDest: boolean, // if true, the source and destination URLs are the same
  *   }
- * @param domain - Optional. The domain to prepend if missing from the URL
+ * @param fullBaseUrl - Optional. The base URL to use for relative URLs.
  *
  * @returns {Promise<{}>} An object with the following properties:
  *  {
@@ -176,12 +174,12 @@ async function countRedirects(url, maxRedirects = STOP_AFTER_N_REDIRECTS) {
  *    error: string,         // can be an empty string
  *  }
  */
-async function followAnyRedirectForUrl(urlStruct, domain = '') {
+async function followAnyRedirectForUrl(urlStruct, fullBaseUrl = '') {
   // ensure full URLs
-  const srcUrl = ensureFullUrl(urlStruct.origSrc, domain);
+  const srcUrl = ensureFullUrl(urlStruct.origSrc, fullBaseUrl);
   let fullDest = urlStruct.origDest;
   if (fullDest) {
-    fullDest = ensureFullUrl(fullDest, domain);
+    fullDest = ensureFullUrl(fullDest, fullBaseUrl);
   } else {
     fullDest = srcUrl;
   }
@@ -359,24 +357,44 @@ export async function getJsonData(url, log) {
 
 /**
  * Processes the /redirects.json file and returns a sorted array of all the page URLs referenced.
+ *  * Filters out entries to only include those source URLs that start with the audit scope.
  *  * Duplicates are marked.  The last occurrence of a duplicate is kept as the original.
  *  * Marks any entries that are fully qualified (vs relative) as 'tooQualified'.
  *  * Marks any entries that have the same source and destination URLs as 'hasSameSrcDest'.
+ *
  * If there is no /redirects.json file, then an empty array is returned.
  *
- * @param {string} baseUrl - The site's base URL for the /redirects.json file.
- *                           Ex: https://www.example.com
+ * The function tries to find /redirects.json using the full auditScopeUrl (including subpaths).
+ * If not found, it falls back to trying the base URL without any subpaths.
+ *
+ * @param {string} auditScopeUrl - The audit scope URL defining which Source URLs to check.
+ *                                 Ex: https://www.example.com or https://www.example.com/fr
  * @param {Object} log - The logger object to use for logging.
  * @returns {Promise<Object[]>} An array of page URLs.  Might be empty.
  */
-export async function processRedirectsFile(baseUrl, log) {
-  // create the URL for the /redirects.json file
-  const redirectsUrl = `${baseUrl}/redirects.json`;
-  // retrieve the entire /redirects.json file
+export async function processRedirectsFile(auditScopeUrl, log) {
+  // Try to find /redirects.json at the full audit scope URL first (with subpaths if present)
+  // Ensure that the very end of our URL does not have a trailing slash. Defensive coding.
+  const cleanedAuditScopeUrl = auditScopeUrl.endsWith('/') ? auditScopeUrl.slice(0, -1) : auditScopeUrl;
+  let redirectsUrl = `${cleanedAuditScopeUrl}/redirects.json`;
+  log.info(`${AUDIT_LOGGING_NAME} - Looking for redirects file at: ${redirectsUrl}`);
   let redirectsJson = await getJsonData(redirectsUrl, log);
-  if (!redirectsJson || !redirectsJson.data || !redirectsJson.data.length) {
-    return []; // no /redirects.json file found, or there are no entries in the file
+  // If not found and auditScopeUrl has subpaths, try without subpaths as fallback
+  if ((!redirectsJson || !redirectsJson.data || !redirectsJson.data.length)) {
+    const urlWithoutPath = getUrlWithoutPath(cleanedAuditScopeUrl);
+    // Only try this fallback URL is different from the cleanedAuditScopeUrl
+    if (urlWithoutPath !== cleanedAuditScopeUrl) {
+      redirectsUrl = `${urlWithoutPath}/redirects.json`;
+      log.info(`${AUDIT_LOGGING_NAME} - Redirects file not found with subpaths, trying fallback at: ${redirectsUrl}`);
+      redirectsJson = await getJsonData(redirectsUrl, log);
+    }
   }
+  if (!redirectsJson || !redirectsJson.data || !redirectsJson.data.length) {
+    log.info(`${AUDIT_LOGGING_NAME} - No redirects file found or file is empty`);
+    return []; // no /redirects.json file found anywhere, or there are no entries in the file
+  }
+
+  log.info(`${AUDIT_LOGGING_NAME} - Successfully loaded redirects file from: ${redirectsUrl}`);
   // if we only received part of the entries that are available, then ask for the entire file
   const totalEntries = redirectsJson.total;
   if (redirectsJson.data.length < totalEntries) {
@@ -417,7 +435,8 @@ export async function processRedirectsFile(baseUrl, log) {
       ordinalDuplicate = 0; // reset for some future set of duplicate source URLs
     }
     // is this entry needlessly fully qualified?
-    if (pageUrls[i].origSrc.startsWith(baseUrl) || pageUrls[i].origDest.startsWith(baseUrl)) {
+    if (pageUrls[i].origSrc.startsWith(cleanedAuditScopeUrl)
+      || pageUrls[i].origDest.startsWith(cleanedAuditScopeUrl)) {
       pageUrls[i].tooQualified = true;
     }
     // does this entry have the same source and destination URLs?
@@ -428,14 +447,49 @@ export async function processRedirectsFile(baseUrl, log) {
   // special case: inspect the ~last~ entry for any problems
   //   ^^^ This is a needed due to the way we iterated over the list looking for duplicates:
   //   we did ~not~ inspect the last entry for ~additional~ problems.
-  if (pageUrls[pageUrls.length - 1].origSrc.startsWith(baseUrl)
-    || pageUrls[pageUrls.length - 1].origDest.startsWith(baseUrl)) {
+  if (pageUrls[pageUrls.length - 1].origSrc.startsWith(cleanedAuditScopeUrl)
+    || pageUrls[pageUrls.length - 1].origDest.startsWith(cleanedAuditScopeUrl)) {
     pageUrls[pageUrls.length - 1].tooQualified = true; // "too qualified"
   }
   if (pageUrls[pageUrls.length - 1].origSrc === pageUrls[pageUrls.length - 1].origDest) {
     pageUrls[pageUrls.length - 1].hasSameSrcDest = true; // "has same source and destination URLs"
   }
-  return pageUrls;
+
+  // Filter pageUrls to only include entries that match the audit scope
+  const parsedAuditScopeUrl = new URL(cleanedAuditScopeUrl);
+  const scopePath = parsedAuditScopeUrl.pathname;
+  const hasScopePath = scopePath && scopePath !== '/';
+
+  // If auditScopeUrl has no subpath, return all pageUrls
+  if (!hasScopePath) {
+    log.info(`${AUDIT_LOGGING_NAME} - No subpath in audit scope URL, returning all ${pageUrls.length} entries`);
+    return pageUrls;
+  }
+
+  // Filter to only include entries whose origSrc starts with the scope path
+  // Ensure we match with a trailing slash to avoid false positives (e.g., /fr/ not /french)
+  const scopePathWithSlash = `${scopePath}/`;
+  const auditScopeUrlWithSlash = `${cleanedAuditScopeUrl}/`;
+
+  const filteredPageUrls = pageUrls.filter((entry) => {
+    const { origSrc } = entry;
+
+    // Check if origSrc is a relative path starting with the scope path
+    if (origSrc.startsWith(scopePathWithSlash)) {
+      return true;
+    }
+
+    // Check if origSrc is a fully qualified URL containing the audit scope URL
+    if (origSrc.startsWith('http://') || origSrc.startsWith('https://')) {
+      // For fully qualified URLs, check if they start with the full auditScopeUrl
+      return origSrc.startsWith(auditScopeUrlWithSlash);
+    }
+
+    return false;
+  });
+
+  log.info(`${AUDIT_LOGGING_NAME} - Filtered entries from ${pageUrls.length} to ${filteredPageUrls.length} based on audit scope: ${scopePathWithSlash}`);
+  return filteredPageUrls;
 }
 
 /**
@@ -448,14 +502,19 @@ export async function processRedirectsFile(baseUrl, log) {
  *
  * @param {Object[]} pageUrls - An array of page URL objects to process.
  *                              See the structure returned by `processRedirectsFile`.
- * @param {string} baseUrl - The base URL to use for relative URLs.
+ * @param {string} fullBaseUrl - The base URL to use for relative URLs.
  * @param {Object} log - The logger object to use for logging.
  * @param {number} maxConcurrency - The maximum number of concurrent requests to process.
  *
  * @returns {Promise<Object[]>} An array of results for each processed page URL.
  *  Each result object has the structure as returned by `followAnyRedirectForUrl`
  */
-export async function processEntriesInParallel(pageUrls, baseUrl, log, maxConcurrency = 1000) {
+export async function processEntriesInParallel(
+  pageUrls,
+  fullBaseUrl,
+  log,
+  maxConcurrency = 1000,
+) {
   const BATCH_SIZE = maxConcurrency; // processing takes about 0.015 seconds per entry
   const allResults = [];
 
@@ -464,7 +523,7 @@ export async function processEntriesInParallel(pageUrls, baseUrl, log, maxConcur
     const batch = pageUrls.slice(i, i + BATCH_SIZE);
 
     // Process current batch in parallel
-    const batchPromises = batch.map(async (row) => followAnyRedirectForUrl(row, baseUrl));
+    const batchPromises = batch.map(async (row) => followAnyRedirectForUrl(row, fullBaseUrl));
 
     // eslint-disable-next-line no-await-in-loop
     const batchResults = await Promise.all(batchPromises);
@@ -610,7 +669,7 @@ export function filterIssuesToFitIntoSpace(issues, log) {
 
   log.info(`${AUDIT_LOGGING_NAME} - Total size of all the issues exceed space limit (${Math.round(totalSize / 1024)} KB > ${MAX_DB_OBJ_SIZE_BYTES / 1024} KB) ... filtering issues to fit within limit`);
 
-  // Categorize issues.  Later we will re-create them into specific suggestions.
+  // Categorize issues.  Later we will re-create these issues into specific suggestions.
   const categorizedIssues = {
     'duplicate-src': [], // 'duplicate-src'
     'too-qualified': [], // 'too-qualified'
@@ -619,7 +678,6 @@ export function filterIssuesToFitIntoSpace(issues, log) {
     'final-mismatch': [], // '404-page', 'src-is-final', 'final-mismatch'
     'too-many-redirects': [], // 'msx-redirects-exceeded', 'high-redirect-count'
   };
-
   issues.forEach((issue) => {
     const category = categorizeIssue(issue);
     if (categorizedIssues[category]) {
@@ -627,7 +685,7 @@ export function filterIssuesToFitIntoSpace(issues, log) {
     }
   });
 
-  // Calculate size statistics for conservative estimation
+  // Based on all the issues, calculate a conservative size to represent a randomly large issue
   const issueSizes = issues.map((issue) => {
     const issueJson = JSON.stringify(issue);
     return getStringByteLength(issueJson);
@@ -636,11 +694,12 @@ export function filterIssuesToFitIntoSpace(issues, log) {
   const largestSize = Math.max(...issueSizes);
   const conservativeSizeEstimate = Math.max(averageSize, largestSize * 0.8); // 80% of max size
 
-  // Calculate how many issues we can fit
+  // Calculate how many issues can fit into the database space
   const maxIssues = Math.floor(MAX_DB_OBJ_SIZE_BYTES / conservativeSizeEstimate);
+
+  // Determine the set of categories that have at least one issue in them
   // eslint-disable-next-line max-len,no-shadow
   const nonEmptyCategories = Object.entries(categorizedIssues).filter(([_, issues]) => issues.length > 0);
-
   if (nonEmptyCategories.length === 0) {
     return { filteredIssues: [], wasReduced: true }; // "should never happen"
   }
@@ -680,15 +739,15 @@ export function filterIssuesToFitIntoSpace(issues, log) {
  *
  * @param {Object[]} pageUrls - An array of page URL objects to process.
  *                              See the structure returned by `processRedirectsFile`.
- * @param {string} baseUrl - The base URL to use for relative URLs.
+ * @param {string} fullBaseUrl - The base URL to use for relative URLs.
  * @param {Object} log - The logger object to use for logging.
  *
  * @returns {Promise<{counts: {}, entriesWithProblems: *[]}>}
  *           See the structures returned by `analyzeResults` for details.
  */
-async function processEntries(pageUrls, baseUrl, log) {
+async function processEntries(pageUrls, fullBaseUrl, log) {
   // Step 1: Process all HTTP requests in parallel (the slow part)
-  const results = await processEntriesInParallel(pageUrls, baseUrl, log);
+  const results = await processEntriesInParallel(pageUrls, fullBaseUrl, log);
 
   // Step 2: Analyze results synchronously (the fast part)
   const { counts, entriesWithProblems } = analyzeResults(results);
@@ -721,19 +780,85 @@ function calculateProjectedMetrics(totalIssues) {
   };
 }
 
+// ----- URL resolution  ---------------------------------------------------------------------------
+
+/**
+ * Determines the audit scope URL by following redirects and finding the longest common path prefix.
+ * This URL defines which Source URLs in /redirects.json should be checked during the audit.
+ * The function intelligently handles URL paths by finding the longest common prefix path:
+ * - If the original baseUrl has NO subpath, strips all paths from the resolved URL
+ * - If the original baseUrl HAS a subpath, keeps as many matching path segments as possible
+ *
+ * Examples:
+ * - https://bulk.com → www.bulk.com/uk → returns https://www.bulk.com (strips all paths)
+ * - https://bulk.com/fr → www.bulk.com/fr → returns https://www.bulk.com/fr (all segments match)
+ * - https://kpmg.com → kpmg.com/xx/en.html → returns https://kpmg.com (strips all paths)
+ * - https://realmadrid.com/area-vip → www.realmadrid.com/sites/area-vip → returns https://www.realmadrid.com (no matching segments)
+ * - https://westjet.com/en-ca/book-trip/flights → www.westjet.com/en-ca/best-of-travel → returns https://www.westjet.com/en-ca (first segment matches)
+ *
+ * @param {string} baseUrl - The site's original base URL from site.getBaseURL()
+ * @returns {Promise<string>} The audit scope URL that defines which Source URLs to check
+ */
+export async function determineAuditScope(baseUrl) {
+  // Parse the original base URL to extract its path
+  const originalUrl = new URL(prependSchema(baseUrl));
+  const originalPath = originalUrl.pathname;
+  const hasOriginalPath = originalPath && originalPath !== '/';
+
+  // Get the audit scope URL by following redirects
+  const auditScopeUrl = await composeAuditURL(baseUrl); // ex: www.example.com/fr
+  const auditScopeUrlWithSchema = prependSchema(auditScopeUrl); // ex: https://www.example.com/fr
+  const parsedAuditScopeUrl = new URL(auditScopeUrlWithSchema);
+
+  // If the original URL has no subpath, strip all paths from the audit scope URL
+  if (!hasOriginalPath) {
+    return getUrlWithoutPath(auditScopeUrlWithSchema); // ex: https://www.example.com:4321
+  }
+
+  // Since the original URL has a subpath, find the longest common prefix path
+  const auditScopePath = parsedAuditScopeUrl.pathname;
+
+  // Split paths into segments (filter out empty strings from leading/trailing slashes)
+  const originalSegments = originalPath.split('/').filter((seg) => seg.length > 0);
+  const scopedSegments = auditScopePath.split('/').filter((seg) => seg.length > 0);
+
+  // Find the longest common prefix by comparing segments from the beginning
+  const commonSegments = [];
+  const maxDepthAvailable = Math.min(originalSegments.length, scopedSegments.length);
+
+  // eslint-disable-next-line no-plusplus
+  for (let i = 0; i < maxDepthAvailable; i++) {
+    if (originalSegments[i] === scopedSegments[i]) {
+      commonSegments.push(originalSegments[i]);
+    } else {
+      // Stop at the first non-matching segment
+      break;
+    }
+  }
+
+  // If we found matching segments, construct the path with them
+  if (commonSegments.length > 0) {
+    const commonPath = `/${commonSegments.join('/')}`;
+    return `${parsedAuditScopeUrl.protocol}//${parsedAuditScopeUrl.host}${commonPath}`;
+  }
+
+  // No matching segments, strip all paths
+  return getUrlWithoutPath(auditScopeUrlWithSchema);
+}
+
 // ----- audit runner  -----------------------------------------------------------------------------
 
 /**
  * Runs the audit for the /redirects.json file.
- * @param baseUrl
- * @param context
+ * @param baseUrl - The base URL from site.getBaseURL()
+ * @param context - The audit context containing logger, data access, etc.
  * @returns {Promise<{
  *    fullAuditRef,
- *    url,
  *    auditResult: {
  *      success: boolean,
  *      reasons: [{value: string}],
- *      details: {issues: *[]}       // see `followAnyRedirectForUrl` for structure
+ *      details: {issues: *[]},      // see `followAnyRedirectForUrl` for structure
+ *      auditScopeUrl: string,
  *    }
  *  }>}
  */
@@ -745,29 +870,39 @@ export async function redirectsAuditRunner(baseUrl, context) {
     success: true, // default
     reasons: [{ value: 'File /redirects.json checked.' }],
     details: { issues: [] },
+    auditScopeUrl: baseUrl, // use the baseUrl as the fallback URL for the audit's scope
   };
+  log.info(`${AUDIT_LOGGING_NAME} - Original base URL: ${baseUrl}`);
 
-  // run the audit
-  log.info(`${AUDIT_LOGGING_NAME} - STARTED running audit worker for /redirects.json for ${baseUrl}`);
-  if (!extractDomainAndProtocol(baseUrl)) {
+  // Determine the audit scope URL to establish which Source URLs to check
+  let auditScopeUrl;
+  try {
+    auditScopeUrl = await determineAuditScope(baseUrl);
+    auditResult.auditScopeUrl = auditScopeUrl; // update with actual audit scope URL
+    log.info(`${AUDIT_LOGGING_NAME} - Audit's scope URL determined: ${auditScopeUrl}`);
+  } catch (error) {
+    log.error(`${AUDIT_LOGGING_NAME} - Failed to determine the audit scope URL: ${error.message}`);
     auditResult.success = false;
     auditResult.reasons = [{ value: baseUrl, error: 'INVALID URL' }];
+    return {
+      fullAuditRef: baseUrl,
+      auditResult,
+    };
   }
 
   // get a pre-processed array of page URLs from the /redirects.json file
-  let pageUrls = [];
-  if (auditResult.success) {
-    log.info(`${AUDIT_LOGGING_NAME} - PROCESSING /redirects.json for ${baseUrl}`);
-    pageUrls = await processRedirectsFile(baseUrl, log);
-  }
+  log.info(`${AUDIT_LOGGING_NAME} - STARTED running audit worker for /redirects.json for ${auditScopeUrl}`);
+  const pageUrls = await processRedirectsFile(auditScopeUrl, log);
 
   // process the entries & remember the results
-  const { counts, entriesWithProblems } = await processEntries(pageUrls, baseUrl, log);
+  const fullBaseUrl = getUrlWithoutPath(auditScopeUrl);
+  log.info(`${AUDIT_LOGGING_NAME} - Using the fullBaseUrl := ${fullBaseUrl}`); // TODO: !!REMOVE!!
+  const { counts, entriesWithProblems } = await processEntries(pageUrls, fullBaseUrl, log);
   if (counts.countTotalEntriesWithProblems > 0) {
     // Filter issues to fit within size limit
     const { filteredIssues } = filterIssuesToFitIntoSpace(entriesWithProblems, log);
     auditResult.details.issues = filteredIssues;
-    log.warn(`${AUDIT_LOGGING_NAME} - Issues might be reduced from ${entriesWithProblems.length} to ${filteredIssues.length} to fit within space limit`);
+    log.warn(`${AUDIT_LOGGING_NAME} - Issues could be reduced from ${entriesWithProblems.length} to ${filteredIssues.length} to fit within space limit`);
   }
 
   // end timer
@@ -779,7 +914,7 @@ export async function redirectsAuditRunner(baseUrl, context) {
   log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json has total number of entries checked:       ${pageUrls.length}`);
   log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json has total number of entries with problems: ${counts.countTotalEntriesWithProblems}`);
   if (counts.countTotalEntriesWithProblems > 0) {
-    log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. duplicate Source URLs:        ${counts.countDuplicateSourceUrls}`);
+    log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. duplicated Source URLs:       ${counts.countDuplicateSourceUrls}`);
     log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. too qualified URLs:           ${counts.countTooQualifiedUrls}`);
     log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. same Source and Dest URLs:    ${counts.countHasSameSrcDest}`);
     log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. resulted in HTTP error:       ${counts.countHttpErrors}`);
@@ -787,10 +922,9 @@ export async function redirectsAuditRunner(baseUrl, context) {
     log.info(`${AUDIT_LOGGING_NAME} - STATS: /redirects.json .. with too many redirects:      ${counts.countTooManyRedirects}`);
   }
 
-  log.info(`${AUDIT_LOGGING_NAME} - DONE with audit worker for processing /redirects.json for ${baseUrl}. Completed in ${formattedElapsed} seconds.`);
+  log.info(`${AUDIT_LOGGING_NAME} - DONE with audit worker for processing /redirects.json for ${auditScopeUrl}. Completed in ${formattedElapsed} seconds.`);
   return {
-    fullAuditRef: baseUrl,
-    url: baseUrl,
+    fullAuditRef: auditScopeUrl,
     auditResult,
   };
 }
@@ -892,19 +1026,23 @@ export function getSuggestedFix(result) {
  * For each entry in the audit data, generates a suggested fix based on the issues found for
  * that entry.  Note that some entries may be skipped based on certain conditions.
  *
- * @param auditUrl - The URL of the audit
+ * @param auditUrl - The URL of the audit (original base URL from site.getBaseURL())
  * @param auditData - The audit data containing the audit result and additional details
  * @param context - The context object containing the logger
- * @returns {Array} The new "auditData" object containing an array of suggestions.
+ * @returns {Object} The new "auditData" object containing an array of suggestions.
  */
 export function generateSuggestedFixes(auditUrl, auditData, context) {
   const { log } = context;
+
+  // Use the audit scope URL from the audit result
+  const auditScopeUrl = auditData?.auditResult?.auditScopeUrl || auditUrl;
+  log.info(`${AUDIT_LOGGING_NAME} - Using audit scope URL: ${auditScopeUrl}`);
 
   const suggestedFixes = []; // {key: '...', fix: '...'}
   const entriesWithIssues = auditData?.auditResult?.details?.issues ?? [];
   let skippedEntriesCount = 0; // Counter for skipped entries
 
-  log.info(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has ${entriesWithIssues.length} affected entries.`);
+  log.info(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditScopeUrl} which has ${entriesWithIssues.length} affected entries.`);
   log.debug(`${AUDIT_LOGGING_NAME} - Audit data: ${JSON.stringify(auditData)}`);
 
   for (const row of entriesWithIssues) {
@@ -1002,13 +1140,17 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
  * Synchronizes existing suggestions with new data by removing outdated suggestions and adding
  * new ones.
  *
- * @param auditUrl - The URL of the audit
+ * @param auditUrl - The URL of the audit (original base URL from site.getBaseURL())
  * @param auditData - The audit data containing the audit result and additional details
  * @param context - The context object containing the logger
- * @returns {Promise<*>}
+ * @returns {Promise<Object>} The updated auditData object
  */
 export async function generateOpportunities(auditUrl, auditData, context) {
   const { log } = context;
+
+  // Use the audit scope URL from the audit result
+  const auditScopeUrl = auditData?.auditResult?.auditScopeUrl || auditUrl;
+  log.info(`${AUDIT_LOGGING_NAME} - Using audit scope URL for opportunity generation: ${auditScopeUrl}`);
 
   // check if audit itself ran successfully
   if (auditData.auditResult.success === false) {
@@ -1037,6 +1179,7 @@ export async function generateOpportunities(auditUrl, auditData, context) {
     {
       projectedTrafficLost,
       projectedTrafficValue,
+      auditScopeUrl,
     },
   );
 
@@ -1060,8 +1203,7 @@ export async function generateOpportunities(auditUrl, auditData, context) {
 }
 
 export default new AuditBuilder()
+  .withUrlResolver(noopUrlResolver) // == site.getBaseURL()
   .withRunner(redirectsAuditRunner)
-  .withUrlResolver((site) => composeAuditURL(site.getBaseURL())
-    .then((url) => getUrlWithoutPath(prependSchema(url))))
   .withPostProcessors([generateSuggestedFixes, generateOpportunities])
   .build();

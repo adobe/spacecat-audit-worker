@@ -253,6 +253,7 @@ export async function processAccessibilityOpportunities(context) {
 }
 
 export default new AuditBuilder()
+  .withUrlResolver((site) => site.resolveFinalURL())
   .addStep(
     'processImport',
     processImportStep,
