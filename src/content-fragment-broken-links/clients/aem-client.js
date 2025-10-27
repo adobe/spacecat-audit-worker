@@ -11,8 +11,7 @@
  */
 
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
-import { ContentPath } from '../domain/content/content-path.js';
-import { Locale } from '../domain/language/locale.js';
+import { NoOpCache } from '../cache/noop-cache.js';
 import { PathUtils } from '../utils/path-utils.js';
 
 export class AemClient {
@@ -26,14 +25,14 @@ export class AemClient {
   // Delay between pagination requests for rate limiting
   static PAGINATION_DELAY_MS = 100;
 
-  constructor(context, authorUrl, authToken, pathIndex = null) {
+  constructor(context, authorUrl, authToken, cache = new NoOpCache()) {
     this.context = context;
     this.authorUrl = authorUrl;
     this.authToken = authToken;
-    this.pathIndex = pathIndex;
+    this.cache = cache;
   }
 
-  static createFrom(context, pathIndex = null) {
+  static createFrom(context, cache = new NoOpCache()) {
     const { env } = context;
     const authorUrl = env.AEM_AUTHOR_URL;
     const authToken = env.AEM_AUTHOR_TOKEN;
@@ -42,7 +41,7 @@ export class AemClient {
       throw new Error('AEM Author configuration missing: AEM_AUTHOR_URL and AEM_AUTHOR_TOKEN required');
     }
 
-    return new AemClient(context, authorUrl, authToken, pathIndex);
+    return new AemClient(context, authorUrl, authToken, cache);
   }
 
   static isBreakingPoint(path) {
@@ -94,15 +93,8 @@ export class AemClient {
       const isAvailable = data?.items && data.items.length !== 0;
 
       // If there is content, cache it
-      if (data?.items && this.pathIndex) {
-        for (const item of data.items) {
-          const contentPath = new ContentPath(
-            item.path,
-            AemClient.parseContentStatus(item.status),
-            Locale.fromPath(item.path),
-          );
-          this.pathIndex.insertContentPath(contentPath);
-        }
+      if (data?.items) {
+        this.cache.cacheItems(data.items, AemClient.parseContentStatus);
       }
 
       return isAvailable;
@@ -162,16 +154,7 @@ export class AemClient {
     } while (cursor && pageCount < AemClient.MAX_PAGES);
 
     // Cache items
-    if (this.pathIndex) {
-      for (const item of allItems) {
-        const contentPath = new ContentPath(
-          item.path,
-          AemClient.parseContentStatus(item.status),
-          Locale.fromPath(item.path),
-        );
-        this.pathIndex.insertContentPath(contentPath);
-      }
-    }
+    this.cache.cacheItems(allItems, AemClient.parseContentStatus);
 
     log.info(`Complete crawl finished for path: ${path}. Found ${allItems.length} total items across ${pageCount} pages`);
     return allItems;
@@ -206,8 +189,8 @@ export class AemClient {
 
     log.debug(`Getting children paths from parent: ${parentPath}`);
 
-    if (!this.pathIndex) {
-      log.debug('PathIndex not available, returning empty list');
+    if (!this.cache.isAvailable()) {
+      log.debug('Cache not available, returning empty list');
       return [];
     }
 
@@ -216,7 +199,7 @@ export class AemClient {
       return [];
     }
 
-    const cachedChildren = this.pathIndex.findChildren(parentPath);
+    const cachedChildren = this.cache.findChildren(parentPath);
     if (cachedChildren.length > 0) {
       log.debug(`Found ${cachedChildren.length} children in cache for parent: ${parentPath}`);
       return cachedChildren;
@@ -244,7 +227,7 @@ export class AemClient {
         // Continue with cached data if available
       }
 
-      return this.pathIndex.findChildren(parentPath);
+      return this.cache.findChildren(parentPath);
     }
 
     const nextParent = PathUtils.getParentPath(parentPath);

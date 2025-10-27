@@ -17,6 +17,8 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
+import { NoOpCache } from '../../../src/content-fragment-broken-links/cache/noop-cache.js';
+import { PathIndexCache } from '../../../src/content-fragment-broken-links/cache/path-index-cache.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -26,6 +28,7 @@ describe('AemClient', () => {
   let context;
   let mockFetch;
   let mockPathIndex;
+  let mockCache;
   let mockContentPath;
   let mockLocale;
   let mockPathUtils;
@@ -57,6 +60,12 @@ describe('AemClient', () => {
       findChildren: sandbox.stub().returns([]),
     };
 
+    mockCache = {
+      cacheItems: sandbox.stub(),
+      findChildren: sandbox.stub().returns([]),
+      isAvailable: sandbox.stub().returns(true),
+    };
+
     mockContentPath = sandbox.stub();
     mockLocale = {
       fromPath: sandbox.stub().returns({ code: 'en-us' }),
@@ -69,12 +78,6 @@ describe('AemClient', () => {
     const module = await esmock('../../../src/content-fragment-broken-links/clients/aem-client.js', {
       '@adobe/spacecat-shared-utils': {
         tracingFetch: mockFetch,
-      },
-      '../../../src/content-fragment-broken-links/domain/content/content-path.js': {
-        ContentPath: mockContentPath,
-      },
-      '../../../src/content-fragment-broken-links/domain/language/locale.js': {
-        Locale: mockLocale,
       },
       '../../../src/content-fragment-broken-links/utils/path-utils.js': {
         PathUtils: mockPathUtils,
@@ -101,49 +104,51 @@ describe('AemClient', () => {
   });
 
   describe('constructor', () => {
-    it('should create client with all parameters', () => {
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+    it('should create client with cache strategy', () => {
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockCache);
 
       expect(client.authorUrl).to.equal('https://author.example.com');
       expect(client.authToken).to.equal('token-123');
       expect(client.context).to.equal(context);
-      expect(client.pathIndex).to.equal(mockPathIndex);
+      expect(client.cache).to.equal(mockCache);
     });
 
-    it('should create client without pathIndex', () => {
+    it('should create client with NoOpCache by default', () => {
       const client = new AemClient(context, 'https://author.example.com', 'token-123');
 
       expect(client.authorUrl).to.equal('https://author.example.com');
       expect(client.authToken).to.equal('token-123');
       expect(client.context).to.equal(context);
-      expect(client.pathIndex).to.be.null;
+      expect(client.cache).to.be.instanceOf(NoOpCache);
     });
 
-    it('should handle null pathIndex explicitly', () => {
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', null);
+    it('should create client with PathIndexCache', () => {
+      const cache = new PathIndexCache(mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', cache);
 
       expect(client.context).to.equal(context);
-      expect(client.pathIndex).to.be.null;
+      expect(client.cache).to.equal(cache);
+      expect(client.cache).to.be.instanceOf(PathIndexCache);
     });
   });
 
   describe('createFrom static factory method', () => {
-    it('should create client from context with environment variables', () => {
-      const client = AemClient.createFrom(context, mockPathIndex);
+    it('should create client from context with cache strategy', () => {
+      const client = AemClient.createFrom(context, mockCache);
 
       expect(client.authorUrl).to.equal('https://author.example.com');
       expect(client.authToken).to.equal('test-token-123');
       expect(client.context).to.equal(context);
-      expect(client.pathIndex).to.equal(mockPathIndex);
+      expect(client.cache).to.equal(mockCache);
     });
 
-    it('should create client without pathIndex', () => {
+    it('should create client with NoOpCache by default', () => {
       const client = AemClient.createFrom(context);
 
       expect(client.authorUrl).to.equal('https://author.example.com');
       expect(client.authToken).to.equal('test-token-123');
       expect(client.context).to.equal(context);
-      expect(client.pathIndex).to.be.null;
+      expect(client.cache).to.be.instanceOf(NoOpCache);
     });
 
     it('should throw error when AEM_AUTHOR_URL is missing', () => {
@@ -352,7 +357,7 @@ describe('AemClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockCache);
       const result = await client.isAvailable('/content/dam/test/image.jpg');
 
       expect(result).to.be.true;
@@ -401,7 +406,7 @@ describe('AemClient', () => {
       expect(result).to.be.true;
     });
 
-    it('should cache content when pathIndex is available', async () => {
+    it('should cache content when cache strategy is provided', async () => {
       const mockResponse = {
         ok: true,
         json: sandbox.stub().resolves({
@@ -410,18 +415,17 @@ describe('AemClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockCache);
       await client.isAvailable('/content/dam/test/image.jpg');
 
-      expect(mockContentPath).to.have.been.calledWith(
-        '/content/dam/test/image.jpg',
-        'PUBLISHED',
-        { code: 'en-us' },
+      expect(mockCache.cacheItems).to.have.been.calledOnce;
+      expect(mockCache.cacheItems).to.have.been.calledWith(
+        [{ path: '/content/dam/test/image.jpg', status: 'PUBLISHED' }],
+        AemClient.parseContentStatus,
       );
-      expect(mockPathIndex.insertContentPath).to.have.been.calledOnce;
     });
 
-    it('should not cache when pathIndex is not available', async () => {
+    it('should use NoOpCache when no cache is provided', async () => {
       const mockResponse = {
         ok: true,
         json: sandbox.stub().resolves({
@@ -431,9 +435,10 @@ describe('AemClient', () => {
       mockFetch.resolves(mockResponse);
 
       const client = new AemClient(context, 'https://author.example.com', 'token-123');
-      await client.isAvailable('/content/dam/test/image.jpg');
+      const result = await client.isAvailable('/content/dam/test/image.jpg');
 
-      expect(mockContentPath).to.not.have.been.called;
+      // NoOpCache doesn't throw, it just doesn't cache
+      expect(result).to.be.true;
     });
 
     it('should throw error when fetch fails', async () => {
@@ -559,7 +564,7 @@ describe('AemClient', () => {
       mockFetch.onCall(0).resolves(mockResponses[0]);
       mockFetch.onCall(1).resolves(mockResponses[1]);
 
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockCache);
       const result = await client.fetchContentWithPagination('/content/dam/test');
 
       expect(result).to.have.lengthOf(2);
@@ -605,7 +610,7 @@ describe('AemClient', () => {
       expect(result[0].path).to.equal('/content/dam/test/image1.jpg');
     });
 
-    it('should cache all fetched items when pathIndex is available', async () => {
+    it('should cache all fetched items when cache strategy is provided', async () => {
       const mockResponse = {
         ok: true,
         json: sandbox.stub().resolves({
@@ -618,11 +623,17 @@ describe('AemClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockCache);
       await client.fetchContentWithPagination('/content/dam/test');
 
-      expect(mockContentPath).to.have.been.calledTwice;
-      expect(mockPathIndex.insertContentPath).to.have.been.calledTwice;
+      expect(mockCache.cacheItems).to.have.been.calledOnce;
+      expect(mockCache.cacheItems).to.have.been.calledWith(
+        [
+          { path: '/content/dam/test/image1.jpg', status: 'PUBLISHED' },
+          { path: '/content/dam/test/image2.jpg', status: 'DRAFT' },
+        ],
+        AemClient.parseContentStatus,
+      );
     });
   });
 
@@ -646,15 +657,16 @@ describe('AemClient', () => {
   });
 
   describe('getChildrenFromPath method', () => {
-    it('should return empty array when pathIndex is not available', async () => {
-      const client = new AemClient(context, 'https://author.example.com', 'token-123');
+    it('should return empty array when cache is not available', async () => {
+      const noOpCache = new NoOpCache();
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', noOpCache);
       const result = await client.getChildrenFromPath('/content/dam/test');
 
       expect(result).to.deep.equal([]);
     });
 
     it('should return empty array for breaking point paths', async () => {
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockCache);
       const result = await client.getChildrenFromPath('/content/dam');
 
       expect(result).to.deep.equal([]);
@@ -662,18 +674,18 @@ describe('AemClient', () => {
 
     it('should return cached children when available', async () => {
       const cachedChildren = [{ path: '/content/dam/test/child1.jpg' }];
-      mockPathIndex.findChildren.returns(cachedChildren);
+      mockCache.findChildren.returns(cachedChildren);
 
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockCache);
       const result = await client.getChildrenFromPath('/content/dam/test');
 
       expect(result).to.equal(cachedChildren);
-      expect(mockPathIndex.findChildren).to.have.been.calledWith('/content/dam/test');
+      expect(mockCache.findChildren).to.have.been.calledWith('/content/dam/test');
     });
 
     it('should fetch content when parent is available but not cached', async () => {
-      mockPathIndex.findChildren.onCall(0).returns([]); // No cached children initially
-      mockPathIndex.findChildren.onCall(1).returns([{ path: '/content/dam/test/child1.jpg' }]); // After fetching
+      mockCache.findChildren.onCall(0).returns([]); // No cached children initially
+      mockCache.findChildren.onCall(1).returns([{ path: '/content/dam/test/child1.jpg' }]); // After fetching
 
       const mockResponse = {
         ok: true,
@@ -683,7 +695,7 @@ describe('AemClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockCache);
       const fetchContentStub = sandbox.stub(client, 'fetchContent').resolves();
 
       const result = await client.getChildrenFromPath('/content/dam/test');
@@ -694,8 +706,8 @@ describe('AemClient', () => {
 
     it('should traverse up hierarchy when parent is not available', async () => {
       // Setup: first path has no children, second path (parent) has children
-      mockPathIndex.findChildren.onCall(0).returns([]); // /content/dam/test/child
-      mockPathIndex.findChildren.onCall(1).returns([{ path: '/content/dam/parent/child.jpg' }]); // /content/dam/parent
+      mockCache.findChildren.onCall(0).returns([]); // /content/dam/test/child
+      mockCache.findChildren.onCall(1).returns([{ path: '/content/dam/parent/child.jpg' }]); // /content/dam/parent
 
       mockPathUtils.getParentPath.returns('/content/dam/parent');
 
@@ -710,7 +722,7 @@ describe('AemClient', () => {
       mockFetch.onCall(0).resolves(mockResponse1); // First isAvailable call
       mockFetch.onCall(1).resolves(mockResponse2); // Second isAvailable call for parent
 
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockCache);
       const result = await client.getChildrenFromPath('/content/dam/test/child');
 
       expect(mockPathUtils.getParentPath).to.have.been.calledWith('/content/dam/test/child');
@@ -718,31 +730,31 @@ describe('AemClient', () => {
     });
 
     it('should return empty array when no parent path found', async () => {
-      mockPathIndex.findChildren.returns([]);
+      mockCache.findChildren.returns([]);
       mockPathUtils.getParentPath.returns(null);
 
       const mockResponse = { ok: false };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockCache);
       const result = await client.getChildrenFromPath('/content/dam/test');
 
       expect(result).to.deep.equal([]);
     });
 
     it('should handle errors during availability check', async () => {
-      mockPathIndex.findChildren.returns([]);
+      mockCache.findChildren.returns([]);
       mockFetch.rejects(new Error('Network error'));
 
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockCache);
       const result = await client.getChildrenFromPath('/content/dam/test');
 
       expect(result).to.deep.equal([]);
     });
 
     it('should continue with cached data when fetchContent fails', async () => {
-      mockPathIndex.findChildren.onCall(0).returns([]); // No cached children initially
-      mockPathIndex.findChildren.onCall(1).returns([{ path: '/content/dam/test/child1.jpg' }]); // After failed fetch
+      mockCache.findChildren.onCall(0).returns([]); // No cached children initially
+      mockCache.findChildren.onCall(1).returns([{ path: '/content/dam/test/child1.jpg' }]); // After failed fetch
 
       const mockResponse = {
         ok: true,
@@ -752,7 +764,7 @@ describe('AemClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockPathIndex);
+      const client = new AemClient(context, 'https://author.example.com', 'token-123', mockCache);
       const fetchContentStub = sandbox.stub(client, 'fetchContent').rejects(new Error('Fetch failed'));
 
       const result = await client.getChildrenFromPath('/content/dam/test');
@@ -772,7 +784,7 @@ describe('AemClient', () => {
       };
       mockFetch.resolves(mockResponse);
 
-      const client = AemClient.createFrom(context, mockPathIndex);
+      const client = AemClient.createFrom(context, mockCache);
       const isAvailable = await client.isAvailable('/content/dam/test/image.jpg');
 
       expect(isAvailable).to.be.true;
@@ -807,20 +819,19 @@ describe('AemClient', () => {
       mockFetch.onCall(0).resolves(mockResponses[0]);
       mockFetch.onCall(1).resolves(mockResponses[1]);
 
-      const client = AemClient.createFrom(context, mockPathIndex);
+      const client = AemClient.createFrom(context, mockCache);
       const result = await client.fetchContent('/content/dam/test');
 
       expect(result).to.have.lengthOf(2);
       expect(mockFetch).to.have.been.calledTwice;
-      expect(mockContentPath).to.have.been.calledTwice;
-      expect(mockPathIndex.insertContentPath).to.have.been.calledTwice;
+      expect(mockCache.cacheItems).to.have.been.calledOnce;
     });
 
     it('should handle complete getChildrenFromPath workflow', async () => {
       const cachedChildren = [{ path: '/content/dam/test/child1.jpg' }];
-      mockPathIndex.findChildren.returns(cachedChildren);
+      mockCache.findChildren.returns(cachedChildren);
 
-      const client = AemClient.createFrom(context, mockPathIndex);
+      const client = AemClient.createFrom(context, mockCache);
       const result = await client.getChildrenFromPath('/content/dam/test');
 
       expect(result).to.equal(cachedChildren);

@@ -16,6 +16,7 @@ import { wwwUrlResolver } from '../common/index.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { AnalysisStrategy } from './analysis/analysis-strategy.js';
+import { PathIndexCache } from './cache/path-index-cache.js';
 import { AemClient } from './clients/aem-client.js';
 import { AthenaCollector } from './collectors/athena-collector.js';
 import { PathIndex } from './domain/index/path-index.js';
@@ -36,7 +37,8 @@ async function analyzeBrokenContentFragmentLinks(context, brokenPaths) {
   const { log } = context;
 
   const pathIndex = new PathIndex(context);
-  const aemClient = AemClient.createFrom(context, pathIndex);
+  const cache = new PathIndexCache(pathIndex);
+  const aemClient = AemClient.createFrom(context, cache);
   const strategy = new AnalysisStrategy(context, aemClient, pathIndex);
 
   // Extract URLs for analysis while keeping the full brokenPaths data
