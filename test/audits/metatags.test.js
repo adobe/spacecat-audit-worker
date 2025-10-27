@@ -730,11 +730,12 @@ describe('Meta Tags', () => {
         try {
           await opportunityAndSuggestions(auditUrl, auditData, context);
         } catch (err) {
-          expect(err.message).to.equal('Failed to create suggestions for siteId site-id');
+          expect(err.message).to.include('Failed to create suggestions for siteId site-id');
         }
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.error).to.be.calledWith('Suggestions for siteId site-id contains 1 items with errors');
-        expect(logStub.error).to.be.calledTwice;
+        expect(logStub.error).to.be.calledWith(sinon.match(/contains 1 items with errors/));
+        // Now logs summary + detailed error + failed item data = 3 calls
+        expect(logStub.error).to.be.calledThrice;
       });
 
       it('should take rank as -1 if issue is not known', async () => {

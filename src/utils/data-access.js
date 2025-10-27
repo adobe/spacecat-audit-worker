@@ -246,18 +246,34 @@ export async function syncSuggestions({
 
   // Add new suggestions if any
   if (newSuggestions.length > 0) {
+    const siteId = opportunity.getSiteId?.() || 'unknown';
+    log.debug(`Adding ${newSuggestions.length} new suggestions for siteId ${siteId}`);
+
     const suggestions = await opportunity.addSuggestions(newSuggestions);
     log.debug(`New suggestions = ${suggestions.length}: ${safeStringify(suggestions)}`);
 
     if (suggestions.errorItems?.length > 0) {
-      log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);
-      suggestions.errorItems.forEach((errorItem) => {
-        log.error(`Item ${safeStringify(errorItem.item, 1)} failed with error: ${errorItem.error}`);
+      log.error(`Suggestions for siteId ${siteId} contains ${suggestions.errorItems.length} items with errors out of ${newSuggestions.length} total`);
+
+      // Log first few errors with more detail
+      const errorsToLog = suggestions.errorItems.slice(0, 5);
+      errorsToLog.forEach((errorItem, index) => {
+        log.error(`Error ${index + 1}/${suggestions.errorItems.length}: ${errorItem.error}`);
+        log.error(`Failed item data: ${safeStringify(errorItem.item, 1)}`);
       });
 
-      if (suggestions.createdItems?.length <= 0) {
-        throw new Error(`Failed to create suggestions for siteId ${opportunity.getSiteId()}`);
+      if (suggestions.errorItems.length > 5) {
+        log.error(`... and ${suggestions.errorItems.length - 5} more errors`);
       }
+
+      if (suggestions.createdItems?.length <= 0) {
+        const sampleError = suggestions.errorItems[0]?.error || 'Unknown error';
+        throw new Error(`Failed to create suggestions for siteId ${siteId}. Sample error: ${sampleError}`);
+      } else {
+        log.warn(`Partial success: Created ${suggestions.createdItems.length} suggestions, ${suggestions.errorItems.length} failed`);
+      }
+    } else {
+      log.debug(`Successfully created ${suggestions.createdItems?.length || suggestions.length} suggestions for siteId ${siteId}`);
     }
   }
 }

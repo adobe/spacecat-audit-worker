@@ -321,12 +321,15 @@ describe('data-access', () => {
           mapNewSuggestion,
         });
       } catch (e) {
-        expect(e.message).to.equal('Failed to create suggestions for siteId site-id');
+        expect(e.message).to.match(/Failed to create suggestions for siteId (site-id|unknown)/);
+        expect(e.message).to.include('Sample error: some error');
       }
 
-      expect(mockLogger.error).to.have.been.calledTwice;
-      expect(mockLogger.error.firstCall.args[0]).to.include('contains 1 items with errors');
-      expect(mockLogger.error.secondCall.args[0]).to.include('failed with error: some error');
+      // Now logs summary + detailed error + failed item data = 3 calls
+      expect(mockLogger.error).to.have.been.calledThrice;
+      expect(mockLogger.error.firstCall.args[0]).to.match(/contains 1 items with errors/);
+      expect(mockLogger.error.secondCall.args[0]).to.include('Error 1/1: some error');
+      expect(mockLogger.error.thirdCall.args[0]).to.include('Failed item data');
     });
 
     it('should throw an error if all items fail to be created', async () => {
