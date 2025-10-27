@@ -22,6 +22,7 @@ import prerenderHandler, {
   submitForScraping,
   processContentAndGenerateOpportunities,
   processOpportunityAndSuggestions,
+  uploadStatusSummaryToS3,
 } from '../../src/prerender/handler.js';
 import { analyzeHtmlForPrerender } from '../../src/prerender/html-comparator-utils.js';
 import { createOpportunityData } from '../../src/prerender/opportunity-data-mapper.js';
@@ -1984,6 +1985,310 @@ describe('Prerender Audit', () => {
           msg.includes('Missing HTML data for')
         );
         expect(hasMissingDataError).to.be.true;
+      });
+    });
+  });
+
+  describe('uploadStatusSummaryToS3', () => {
+    let mockS3Client;
+    let context;
+
+    beforeEach(() => {
+      mockS3Client = {
+        send: sandbox.stub().resolves({}),
+      };
+
+      context = {
+        log: {
+          info: sandbox.stub(),
+          error: sandbox.stub(),
+        },
+        s3Client: mockS3Client,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        },
+      };
+    });
+
+    it('should upload status summary to S3 when audit is complete', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          status: 'complete',
+          totalUrlsChecked: 5,
+          urlsNeedingPrerender: 2,
+          scrapeForbidden: false,
+          results: [
+            {
+              url: 'https://example.com/page1',
+              error: false,
+              needsPrerender: true,
+              wordCountBefore: 100,
+              wordCountAfter: 250,
+              contentGainRatio: 2.5,
+              organicTraffic: 1000,
+            },
+            {
+              url: 'https://example.com/page2',
+              error: false,
+              needsPrerender: false,
+              wordCountBefore: 200,
+              wordCountAfter: 220,
+              contentGainRatio: 1.1,
+              organicTraffic: 500,
+            },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+
+      expect(command.input.Bucket).to.equal('test-bucket');
+      expect(command.input.Key).to.equal('prerender/scrapes/test-site-id/status.json');
+      expect(command.input.ContentType).to.equal('application/json');
+
+      const uploadedData = JSON.parse(command.input.Body);
+      expect(uploadedData.baseUrl).to.equal('https://example.com');
+      expect(uploadedData.siteId).to.equal('test-site-id');
+      expect(uploadedData.auditType).to.equal('prerender');
+      expect(uploadedData.lastUpdated).to.equal('2025-01-01T00:00:00.000Z');
+      expect(uploadedData.totalUrlsChecked).to.equal(5);
+      expect(uploadedData.urlsNeedingPrerender).to.equal(2);
+      expect(uploadedData.scrapeForbidden).to.equal(false);
+      expect(uploadedData.pages).to.have.lengthOf(2);
+      
+      expect(uploadedData.pages[0]).to.deep.equal({
+        url: 'https://example.com/page1',
+        scrapingStatus: 'success',
+        needsPrerender: true,
+        wordCountBefore: 100,
+        wordCountAfter: 250,
+        contentGainRatio: 2.5,
+        organicTraffic: 1000,
+      });
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Successfully uploaded status summary to S3.*for site: test-site-id/)
+      );
+    });
+
+    it('should mark pages with errors as scraping status error', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          status: 'complete',
+          totalUrlsChecked: 1,
+          urlsNeedingPrerender: 0,
+          results: [
+            {
+              url: 'https://example.com/error-page',
+              error: true,
+              needsPrerender: false,
+            },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      expect(uploadedData.pages[0].scrapingStatus).to.equal('error');
+      expect(uploadedData.pages[0].wordCountBefore).to.equal(0);
+      expect(uploadedData.pages[0].wordCountAfter).to.equal(0);
+      expect(uploadedData.pages[0].contentGainRatio).to.equal(0);
+    });
+
+    it('should skip upload when audit is not complete', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          status: 'in-progress',
+          results: [],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(mockS3Client.send).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        'Prerender - Audit not complete, skipping status summary upload'
+      );
+    });
+
+    it('should skip upload when auditResult is missing', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(mockS3Client.send).to.not.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        'Prerender - Audit not complete, skipping status summary upload'
+      );
+    });
+
+    it('should handle empty results array', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          status: 'complete',
+          totalUrlsChecked: 0,
+          urlsNeedingPrerender: 0,
+          results: [],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      expect(uploadedData.pages).to.deep.equal([]);
+      expect(uploadedData.totalUrlsChecked).to.equal(0);
+    });
+
+    it('should handle undefined results (fallback to empty array)', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          status: 'complete',
+          totalUrlsChecked: 0,
+          urlsNeedingPrerender: 0,
+          // results is undefined
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      expect(uploadedData.pages).to.deep.equal([]);
+    });
+
+    it('should handle null results (fallback to empty array)', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          status: 'complete',
+          totalUrlsChecked: 0,
+          urlsNeedingPrerender: 0,
+          results: null,
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      expect(uploadedData.pages).to.deep.equal([]);
+    });
+
+    it('should use current timestamp when auditedAt is missing', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditResult: {
+          status: 'complete',
+          results: [],
+        },
+      };
+
+      const beforeTime = Date.now();
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+      const afterTime = Date.now();
+
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      // Verify the timestamp is valid ISO string and within time range
+      const uploadedTime = new Date(uploadedData.lastUpdated).getTime();
+      expect(uploadedTime).to.be.at.least(beforeTime);
+      expect(uploadedTime).to.be.at.most(afterTime);
+    });
+
+    it('should handle S3 upload errors gracefully', async () => {
+      mockS3Client.send.rejects(new Error('S3 upload failed'));
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          status: 'complete',
+          results: [],
+        },
+      };
+
+      // Should not throw
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to upload status summary to S3/),
+        sinon.match.instanceOf(Error)
+      );
+    });
+
+    it('should handle missing optional fields in results', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          status: 'complete',
+          results: [
+            {
+              url: 'https://example.com/page1',
+              // Missing all optional fields
+            },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      expect(uploadedData.pages[0]).to.deep.equal({
+        url: 'https://example.com/page1',
+        scrapingStatus: 'success',
+        needsPrerender: false,
+        wordCountBefore: 0,
+        wordCountAfter: 0,
+        contentGainRatio: 0,
+        organicTraffic: 0,
       });
     });
   });

@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Audit, Suggestion } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { convertToOpportunity } from '../common/opportunity.js';
@@ -289,6 +290,62 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
 }
 
 /**
+ * Post processor to upload a status JSON file to S3 after audit completion
+ * @param {string} auditUrl - Audited URL (site base URL)
+ * @param {Object} auditData - Audit data with results
+ * @param {Object} context - Processing context
+ * @returns {Promise<void>}
+ */
+export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
+  const { log, s3Client, env } = context;
+
+  try {
+    const { auditResult, siteId, auditedAt } = auditData;
+
+    // Only upload if audit was successful
+    if (!auditResult || auditResult.status !== 'complete') {
+      log.info('Prerender - Audit not complete, skipping status summary upload');
+      return;
+    }
+
+    // Extract status information for all top pages
+    const statusSummary = {
+      baseUrl: auditUrl,
+      siteId,
+      auditType: AUDIT_TYPE,
+      lastUpdated: auditedAt || new Date().toISOString(),
+      totalUrlsChecked: auditResult.totalUrlsChecked || 0,
+      urlsNeedingPrerender: auditResult.urlsNeedingPrerender || 0,
+      scrapeForbidden: auditResult.scrapeForbidden || false,
+      pages: auditResult.results?.map((result) => ({
+        url: result.url,
+        scrapingStatus: result.error ? 'error' : 'success',
+        needsPrerender: result.needsPrerender || false,
+        wordCountBefore: result.wordCountBefore || 0,
+        wordCountAfter: result.wordCountAfter || 0,
+        contentGainRatio: result.contentGainRatio || 0,
+        organicTraffic: result.organicTraffic || 0,
+      })) || [],
+    };
+
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
+
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: statusKey,
+      Body: JSON.stringify(statusSummary, null, 2),
+      ContentType: 'application/json',
+    }));
+
+    log.info(`Prerender - Successfully uploaded status summary to S3: ${statusKey} for site: ${siteId}`);
+  } catch (error) {
+    log.error(`Prerender - Failed to upload status summary to S3: ${error.message}`, error);
+    // Don't throw - this is a non-critical post-processing step
+  }
+}
+
+/**
  * Step 3: Process scraped content and compare server-side vs client-side HTML
  * @param {Object} context - Audit context with site, audit, and other dependencies
  * @returns {Promise<Object>} - Audit results with opportunities
@@ -403,4 +460,5 @@ export default new AuditBuilder()
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('process-content-and-generate-opportunities', processContentAndGenerateOpportunities)
+  .withPostProcessors([uploadStatusSummaryToS3])
   .build();
