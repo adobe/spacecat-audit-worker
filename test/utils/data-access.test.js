@@ -354,6 +354,33 @@ describe('data-access', () => {
         mapNewSuggestion,
       })).to.be.rejectedWith('Failed to create suggestions for siteId');
     });
+
+    it('should handle large arrays without JSON.stringify errors', async () => {
+      // Create a very large array of suggestions (simulate the theplayers.com case)
+      const largeNewData = Array.from({ length: 1000 }, (_, i) => ({
+        key: `new${i}`,
+        textContent: 'x'.repeat(5000), // Large text content
+      }));
+
+      mockOpportunity.getSuggestions.resolves([]);
+      mockOpportunity.addSuggestions.resolves({
+        createdItems: largeNewData.map((data) => ({ id: `suggestion-${data.key}` })),
+        errorItems: [],
+        length: largeNewData.length,
+      });
+
+      // This should not throw "Invalid string length" error
+      await expect(syncSuggestions({
+        opportunity: mockOpportunity,
+        newData: largeNewData,
+        context,
+        buildKey,
+        mapNewSuggestion,
+      })).to.not.be.rejected;
+
+      // Verify that debug was called (safeStringify should have prevented the error)
+      expect(mockLogger.debug).to.have.been.called;
+    });
   });
 
   describe('getImsOrgId', () => {

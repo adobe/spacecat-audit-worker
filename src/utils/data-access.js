@@ -13,6 +13,31 @@ import { isNonEmptyArray, isObject } from '@adobe/spacecat-shared-utils';
 import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 /**
+ * Safely stringify an object for logging, truncating large arrays to prevent
+ * exceeding JavaScript's maximum string length.
+ *
+ * @param {*} data - The data to stringify.
+ * @param {number} maxArrayLength - Maximum number of array items to include (default: 10).
+ * @returns {string} - The stringified data or an error message.
+ */
+function safeStringify(data, maxArrayLength = 10) {
+  try {
+    if (Array.isArray(data) && data.length > maxArrayLength) {
+      const truncated = data.slice(0, maxArrayLength);
+      return JSON.stringify({
+        truncated: true,
+        totalLength: data.length,
+        items: truncated,
+        message: `Showing first ${maxArrayLength} of ${data.length} items`,
+      }, null, 2);
+    }
+    return JSON.stringify(data, null, 2);
+  } catch (error) {
+    return `[Unable to stringify: ${error.message}. Total items: ${Array.isArray(data) ? data.length : 'N/A'}]`;
+  }
+}
+
+/**
  * Fetches site data based on the given base URL. If no site is found for the given
  * base URL, null is returned. Otherwise, the site object is returned. If an error
  * occurs while fetching the site, an error is thrown.
@@ -121,7 +146,7 @@ const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.SKIPPED,
     ].includes(existing.getStatus()));
 
-  log.debug(`Outdated suggestions = ${existingOutdatedSuggestions.length}: ${JSON.stringify(existingOutdatedSuggestions, null, 2)}`);
+  log.debug(`Outdated suggestions = ${existingOutdatedSuggestions.length}: ${safeStringify(existingOutdatedSuggestions)}`);
 
   if (isNonEmptyArray(existingOutdatedSuggestions)) {
     await Suggestion.bulkUpdateStatus(
@@ -190,7 +215,7 @@ export async function syncSuggestions({
     statusToSetForOutdated,
   });
 
-  log.debug(`Existing suggestions = ${existingSuggestions.length}: ${JSON.stringify(existingSuggestions, null, 2)}`);
+  log.debug(`Existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
   // Update existing suggestions
   await Promise.all(
@@ -210,7 +235,7 @@ export async function syncSuggestions({
         return existing.save();
       }),
   );
-  log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${JSON.stringify(existingSuggestions, null, 2)}`);
+  log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${safeStringify(existingSuggestions)}`);
 
   // Prepare new suggestions
   const newSuggestions = newData
@@ -222,12 +247,12 @@ export async function syncSuggestions({
   // Add new suggestions if any
   if (newSuggestions.length > 0) {
     const suggestions = await opportunity.addSuggestions(newSuggestions);
-    log.debug(`New suggestions = ${suggestions.length}: ${JSON.stringify(suggestions, null, 2)}`);
+    log.debug(`New suggestions = ${suggestions.length}: ${safeStringify(suggestions)}`);
 
     if (suggestions.errorItems?.length > 0) {
       log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);
       suggestions.errorItems.forEach((errorItem) => {
-        log.error(`Item ${JSON.stringify(errorItem.item)} failed with error: ${errorItem.error}`);
+        log.error(`Item ${safeStringify(errorItem.item, 1)} failed with error: ${errorItem.error}`);
       });
 
       if (suggestions.createdItems?.length <= 0) {
