@@ -105,7 +105,10 @@ export function getJsonSummarySuggestion(suggestions) {
       summarizationText: suggestion.pageSummary?.formatted_summary,
       fullPage: true,
       url: suggestion.pageUrl,
-      insertAfter: 'h1',
+      transformRules: {
+        selector: suggestion.pageSummary?.heading_selector || 'body',
+        action: suggestion.pageSummary?.heading_selector === 'h1' ? 'insertAfter' : 'insertToParent',
+      },
     });
 
     // handle paragraph level summary
@@ -114,7 +117,10 @@ export function getJsonSummarySuggestion(suggestions) {
         summarizationText: section.formatted_summary,
         fullPage: false,
         url: suggestion.pageUrl,
-        insertAfter: section.heading_selector,
+        transformRules: {
+          selector: section.heading_selector,
+          action: 'insertAfter',
+        },
       });
     });
   });

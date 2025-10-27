@@ -178,7 +178,7 @@ export default async function handler(message, context) {
 
   try {
     await addSuggestionsToGenericOpportunity(genericOpportunity, suggestions, baseUrl, context);
-    await addSuggestionsToSpecificOpportunity(specificOpportunity, suggestions, baseUrl, context);
+    await addSuggestionsToSpecificOpportunity(specificOpportunity, suggestions, context);
   } catch (e) {
     log.error(`Failed to save summarization opportunity on Mystique callback: ${e.message}`);
     return badRequest('Failed to persist summarization opportunity');
