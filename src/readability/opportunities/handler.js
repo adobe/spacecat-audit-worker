@@ -148,6 +148,7 @@ export async function processReadabilityOpportunities(context) {
     );
 
     // Prepare suggestions data for database
+    // Keep textPreview shorter (200 chars) to avoid DynamoDB size limits with many suggestions
     const suggestions = readabilityIssues.map((issue, index) => ({
       opportunityId: opportunity.getId(),
       type: READABILITY_OPPORTUNITY_TYPE,
@@ -155,7 +156,7 @@ export async function processReadabilityOpportunities(context) {
       data: {
         id: `readability-${siteId}-${index}`,
         pageUrl: issue.pageUrl,
-        textPreview: issue.textContent?.substring(0, 500),
+        textPreview: issue.textContent?.substring(0, 200),
         fleschReadingEase: issue.fleschReadingEase,
         language: issue.language,
         category: issue.category,
@@ -166,7 +167,7 @@ export async function processReadabilityOpportunities(context) {
     }));
 
     // Sync suggestions with existing ones (preserve ignored/fixed suggestions)
-    const buildKey = (data) => `${data.pageUrl}|${data.textPreview?.substring(0, 500)}`;
+    const buildKey = (data) => `${data.pageUrl}|${data.textPreview?.substring(0, 200)}`;
 
     await syncSuggestions({
       opportunity,
