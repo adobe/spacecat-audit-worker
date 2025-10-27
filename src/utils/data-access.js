@@ -151,7 +151,7 @@ const handleOutdatedSuggestions = async ({
           origin: FixEntityModel?.ORIGINS?.SPACECAT,
         }]);
       } catch (e) {
-        log?.warn?.(`Failed to add FixEntity for suggestion ${s.getId?.()}: ${e.message}`);
+        log?.info?.(`Failed to add FixEntity for suggestion ${s.getId?.()}: ${e.message}`);
       }
     }));
   }
