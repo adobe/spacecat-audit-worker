@@ -20,7 +20,8 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import productMetatagsAutoSuggest from './product-metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { getIssueRanking, getBaseUrl } from './opportunity-utils.js';
+import { getIssueRanking } from '../utils/seo-utils.js';
+import { getBaseUrl } from '../utils/url-utils.js';
 import {
   DESCRIPTION,
   H1,

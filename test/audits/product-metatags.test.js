@@ -36,7 +36,7 @@ import {
 } from '../../src/product-metatags/constants.js';
 import ProductSeoChecks from '../../src/product-metatags/seo-checks.js';
 import productTestData from '../fixtures/product-meta-tags-data.js';
-import { removeTrailingSlash, getBaseUrl } from '../../src/product-metatags/opportunity-utils.js';
+import { removeTrailingSlash, getBaseUrl } from '../../src/utils/url-utils.js';
 import {
   importTopPages,
   submitForScraping,
@@ -1700,8 +1700,10 @@ describe('Product MetaTags', () => {
         // esmock handler with throwing getIssueRanking to hit catch block (lines 137-139)
         const opportunityObj = opportunity; // reuse from outer scope
         const mockModule = await esmock('../../src/product-metatags/handler.js', {
-          '../../src/product-metatags/opportunity-utils.js': {
+          '../../src/utils/seo-utils.js': {
             getIssueRanking: () => { throw new Error('rank boom'); },
+          },
+          '../../src/utils/url-utils.js': {
             getBaseUrl: (url) => url.replace(/\/$/, ''),
           },
           '../../src/common/opportunity.js': {
@@ -4647,9 +4649,11 @@ describe('Product MetaTags', () => {
     it('logs Empty config when getCommerceConfig returns null (covers config || {} falsy)', async () => {
       const syncSuggestionsStub = sinon.stub().resolves();
       const mockModule = await esmock('../../src/product-metatags/handler.js', {
-        '../../src/product-metatags/opportunity-utils.js': {
-          getBaseUrl: () => 'https://example.com',
+        '../../src/utils/seo-utils.js': {
           getIssueRanking: () => 1,
+        },
+        '../../src/utils/url-utils.js': {
+          getBaseUrl: () => 'https://example.com',
         },
         '../../src/common/opportunity.js': {
           convertToOpportunity: sinon.stub().resolves({ getId: () => 'opty', getSiteId: () => 'site-id' }),
@@ -4670,9 +4674,11 @@ describe('Product MetaTags', () => {
     it('logs Extracted config when getCommerceConfig returns object (covers config || {} truthy)', async () => {
       const syncSuggestionsStub = sinon.stub().resolves();
       const mockModule = await esmock('../../src/product-metatags/handler.js', {
-        '../../src/product-metatags/opportunity-utils.js': {
-          getBaseUrl: () => 'https://example.com',
+        '../../src/utils/seo-utils.js': {
           getIssueRanking: () => 1,
+        },
+        '../../src/utils/url-utils.js': {
+          getBaseUrl: () => 'https://example.com',
         },
         '../../src/common/opportunity.js': {
           convertToOpportunity: sinon.stub().resolves({ getId: () => 'opty', getSiteId: () => 'site-id' }),
@@ -4750,7 +4756,7 @@ describe('Product MetaTags', () => {
       };
 
       const mockModule = await esmock('../../src/product-metatags/handler.js', {
-        '../../src/product-metatags/opportunity-utils.js': {
+        '../../src/utils/url-utils.js': {
           getBaseUrl: () => '', // force empty base to construct empty fullUrl
           getIssueRanking: () => 1,
         },

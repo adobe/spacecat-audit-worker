@@ -118,3 +118,31 @@ export function findBestMatchingPath(sectionData, contextPath) {
 
   return 'default';
 }
+
+/**
+ * Removes trailing slash from a URL if present.
+ * @param {string} url - The URL to process
+ * @returns {string} URL without trailing slash
+ */
+export function removeTrailingSlash(url) {
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+/**
+ * Gets the base URL from a full URL, optionally returning only the hostname.
+ * @param {string} url - The full URL
+ * @param {boolean} useHostnameOnly - If true, returns protocol + host only
+ * @returns {string} Base URL (with or without path)
+ */
+export function getBaseUrl(url, useHostnameOnly = false) {
+  if (useHostnameOnly) {
+    try {
+      const urlObj = new URL(url);
+      return `${urlObj.protocol}//${urlObj.host}`; // includes port if any
+    } catch {
+      // If URL parsing fails, return the original URL with trailing slash removed
+      return removeTrailingSlash(url);
+    }
+  }
+  return removeTrailingSlash(url);
+}

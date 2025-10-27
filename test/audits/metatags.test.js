@@ -34,7 +34,7 @@ import {
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
 import testData from '../fixtures/meta-tags-data.js';
-import { removeTrailingSlash, getBaseUrl } from '../../src/metatags/opportunity-utils.js';
+import { removeTrailingSlash, getBaseUrl } from '../../src/utils/url-utils.js';
 import {
   importTopPages,
   submitForScraping,

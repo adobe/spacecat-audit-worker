@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 
 import { buildProductMetatagsAuditResult } from '../../src/product-metatags/handler.js';
-import { getIssueRanking } from '../../src/product-metatags/opportunity-utils.js';
+import { getIssueRanking } from '../../src/utils/seo-utils.js';
 
 describe('buildProductMetatagsAuditResult', () => {
   const site = { getId: () => 'site-xyz' };
