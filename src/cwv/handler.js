@@ -25,19 +25,32 @@ const INTERVAL = 7; // days
 const auditType = Audit.AUDIT_TYPES.CWV;
 
 export async function CWVRunner(auditUrl, context, site) {
+  const deliveryConfig = site?.getDeliveryConfig() || {};
+  const cwvConfig = deliveryConfig.cwv || {};
+
+  const dailyThreshold = cwvConfig.dailyThreshold || DAILY_THRESHOLD;
+  let interval = cwvConfig.interval || INTERVAL; // days
+
+  context.log.info(` CWVRunner: dailyThreshold: ${dailyThreshold}, interval: ${interval}`);
+  // Safeguard to prevent excessively large queries against the RUM API
+  if (interval > 30) {
+    context.log.warn(`Interval of ${interval} days is too large. Capping at 30 days to protect the upstream API.`);
+    interval = 30;
+  }
+
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const groupedURLs = site.getConfig().getGroupedURLs(auditType);
   const options = {
     domain: auditUrl,
-    interval: INTERVAL,
+    interval,
     granularity: 'hourly',
     groupedURLs,
   };
   const cwvData = await rumAPIClient.query(auditType, options);
   const auditResult = {
-    cwv: cwvData.filter((data) => data.pageviews >= DAILY_THRESHOLD * INTERVAL),
+    cwv: cwvData.filter((data) => data.pageviews >= dailyThreshold * interval),
     auditContext: {
-      interval: INTERVAL,
+      interval,
     },
   };
 
