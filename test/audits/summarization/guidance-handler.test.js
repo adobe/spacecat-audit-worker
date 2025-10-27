@@ -642,6 +642,7 @@ describe('summarization guidance handler', () => {
             pageSummary: {
               title: 'Page Title 1',
               formatted_summary: 'This is a formatted page summary',
+              heading_selector: 'h1',
             },
             sectionSummaries: [
               {
@@ -671,21 +672,26 @@ describe('summarization guidance handler', () => {
     expect(pageLevelSuggestion).to.have.property('summarizationText', 'This is a formatted page summary');
     expect(pageLevelSuggestion).to.have.property('fullPage', true);
     expect(pageLevelSuggestion).to.have.property('url', 'https://adobe.com/page1');
-    expect(pageLevelSuggestion).to.have.property('insertAfter', 'h1');
+    expect(pageLevelSuggestion).to.have.nested.property('transformRules.selector', 'h1');
+    expect(pageLevelSuggestion).to.have.nested.property('transformRules.action', 'insertAfter');
     
     // Test the second suggestion (section-level)
     const sectionLevelSuggestion = specificSyncArgs.newData[1];
     expect(sectionLevelSuggestion).to.have.property('summarizationText', 'Section summary 1');
     expect(sectionLevelSuggestion).to.have.property('fullPage', false);
     expect(sectionLevelSuggestion).to.have.property('url', 'https://adobe.com/page1');
-    expect(sectionLevelSuggestion).to.have.property('insertAfter', 'h2.section-heading');
+    expect(sectionLevelSuggestion).to.have.nested.property('transformRules.selector', 'h2.section-heading');
+    expect(sectionLevelSuggestion).to.have.nested.property('transformRules.action', 'insertAfter');
     
     // Test the mapNewSuggestion function for specific opportunity
     const testSuggestionData = {
       summarizationText: 'Test summary text',
       fullPage: true,
       url: 'https://adobe.com/test',
-      insertAfter: 'h1',
+      transformRules: {
+        selector: 'h1',
+        action: 'insertAfter',
+      },
     };
     
     const mappedSpecificSuggestion = await specificSyncArgs.mapNewSuggestion(testSuggestionData);

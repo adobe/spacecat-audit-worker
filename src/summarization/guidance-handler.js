@@ -76,7 +76,7 @@ async function addSuggestionsToSpecificOpportunity(
     context,
     opportunity: specificOpportunity,
     newData: suggestionValues,
-    buildKey: (suggestion) => `${suggestion.url}-${suggestion.insertAfter}`,
+    buildKey: (suggestion) => `${suggestion.url}-${suggestion.transformRules.selector}`,
     mapNewSuggestion: (suggestion) => ({
       opportunityId: specificOpportunity.getId(),
       type: 'CODE_CHANGE',
