@@ -675,7 +675,7 @@ describe('Canonical URL Tests', () => {
       const { canonicalAuditRunner: canonicalAuditRunnerInstance } = await esmock(
         '../../src/canonical/handler.js',
         {
-          '@adobe/spacecat-shared-utils': { retrievePageAuthentication: retrievePageAuthenticationStub },
+          '@adobe/spacecat-shared-ims-client': { retrievePageAuthentication: retrievePageAuthenticationStub },
         },
       );
 
@@ -709,7 +709,7 @@ describe('Canonical URL Tests', () => {
       const { canonicalAuditRunner: canonicalAuditRunnerInstance } = await esmock(
         '../../src/canonical/handler.js',
         {
-          '@adobe/spacecat-shared-utils': { retrievePageAuthentication: retrievePageAuthenticationStub },
+          '@adobe/spacecat-shared-ims-client': { retrievePageAuthentication: retrievePageAuthenticationStub },
         },
       );
 
