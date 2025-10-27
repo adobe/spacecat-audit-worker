@@ -140,6 +140,7 @@ const handleOutdatedSuggestions = async ({
     await Promise.all(existingOutdatedSuggestions.map(async (s) => {
       try {
         await opportunity.addFixEntities([{
+          suggestions: [s.getId()],
           opportunityId: opportunity.getId(),
           status: FixEntityModel?.STATUSES?.PUBLISHED,
           type: s.getType(),
