@@ -1316,6 +1316,7 @@ describe('Meta Tags', () => {
             },
           }),
         };
+        getPresignedUrlStub = sinon.stub().resolves('https://presigned.url');
         context = {
           s3Client,
           dataAccess,
@@ -1343,7 +1344,9 @@ describe('Meta Tags', () => {
               createFrom: () => genvarClientStub,
             },
           },
-          '@aws-sdk/s3-request-presigner': { getSignedUrl: getPresignedUrlStub },
+          '../../src/utils/getPresignedUrl.js': {
+            getPresignedUrl: getPresignedUrlStub,
+          },
         });
         siteStub = {
           getBaseURL: sinon.stub().returns('https://example.com'),

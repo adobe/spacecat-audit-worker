@@ -1923,8 +1923,8 @@ describe('Product MetaTags', () => {
             createFrom: sinon.stub().returns(genvarClientStub),
           },
         },
-        '@aws-sdk/s3-request-presigner': {
-          getSignedUrl: sinon.stub().resolves('https://presigned-url.com'),
+        '../../src/utils/getPresignedUrl.js': {
+          getPresignedUrl: sinon.stub().resolves('https://presigned-url.com'),
         },
       });
     });
@@ -2022,13 +2022,13 @@ describe('Product MetaTags', () => {
     });
 
     it('should handle error generating presigned URL and return empty string', async () => {
-      // Mock the getSignedUrl function to throw an error
-      const mockGetSignedUrl = sinon.stub().rejects(new Error('S3 presigned URL error'));
+      // Mock the getPresignedUrl function to return empty string (simulating error)
+      const mockGetPresignedUrl = sinon.stub().resolves('');
 
-      // Use esmock to mock the getSignedUrl import and GenvarClient
+      // Use esmock to mock the getPresignedUrl import and GenvarClient
       const productMetatagsAutoSuggestMocked = await esmock('../../src/product-metatags/product-metatags-auto-suggest.js', {
-        '@aws-sdk/s3-request-presigner': {
-          getSignedUrl: mockGetSignedUrl,
+        '../../src/utils/getPresignedUrl.js': {
+          getPresignedUrl: mockGetPresignedUrl,
         },
         '@adobe/spacecat-shared-gpt-client': {
           GenvarClient: {
@@ -2038,18 +2038,20 @@ describe('Product MetaTags', () => {
       });
 
       genvarClientStub.generateSuggestions.resolves({
-        suggestions: [{
-          url: '/product1',
-          title: 'AI Generated Title',
-          description: 'AI Generated Description',
-        }],
+        '/product1': {
+          h1: {
+            aiRationale: 'The H1 tag is catchy and product-focused...',
+            aiSuggestion: 'Amazing Product - Perfect for Your Needs',
+          },
+        },
       });
 
       const result = await productMetatagsAutoSuggestMocked.default(allTags, context, siteStub);
 
-      expect(log.error).to.have.been.calledWith('[PRODUCT-METATAGS] Error generating presigned URL for product1-key:', sinon.match.instanceOf(Error));
-      // Should still return the suggestions even if presigned URL generation fails
+      // The presigned URL will be empty string, but the suggestions should still be generated
+      expect(mockGetPresignedUrl).to.have.been.called;
       expect(result).to.have.property('/product1');
+      expect(result['/product1'].h1.aiSuggestion).to.equal('Amazing Product - Perfect for Your Needs');
     });
   });
 

@@ -10,36 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import { isObject } from '@adobe/spacecat-shared-utils';
+import { getPresignedUrl } from '../utils/getPresignedUrl.js';
 
 const EXPIRY_IN_SECONDS = 25 * 60;
-
-/**
- * Returns the pre-signed url for a AWS S3 object with a defined expiry.
- * This url will be consumed by Genvar API to access the scraped content.
- * Pre-signed URl format: https://{bucket}.s3.{region}.amazonaws.com/{object-path}?{query-params}
- * @param s3Client
- * @param log
- * @param scrapedData
- * @returns {Promise<string>} Presigned url
- */
-async function getPresignedUrl(s3Client, log, scrapedData) {
-  try {
-    const command = new GetObjectCommand({
-      Bucket: process.env.S3_SCRAPER_BUCKET_NAME,
-      Key: scrapedData.s3key,
-    });
-    return await getSignedUrl(s3Client, command, {
-      expiresIn: EXPIRY_IN_SECONDS,
-    });
-  } catch (error) {
-    log.error(`[PRODUCT-METATAGS] Error generating presigned URL for ${scrapedData.s3key}:`, error);
-    return '';
-  }
-}
 
 export default async function productMetatagsAutoSuggest(allTags, context, site, options = {
   forceAutoSuggest: false,
@@ -61,7 +36,13 @@ export default async function productMetatagsAutoSuggest(allTags, context, site,
   const tagsData = {};
   for (const endpoint of Object.keys(detectedTags)) {
     // eslint-disable-next-line no-await-in-loop
-    tagsData[endpoint] = await getPresignedUrl(s3Client, log, extractedTags[endpoint]);
+    tagsData[endpoint] = await getPresignedUrl({
+      s3Client,
+      bucket: process.env.S3_SCRAPER_BUCKET_NAME,
+      key: extractedTags[endpoint].s3key,
+      expiresIn: EXPIRY_IN_SECONDS,
+      log,
+    });
   }
   log.debug('[PRODUCT-METATAGS] Generated presigned URLs');
   const requestBody = {
