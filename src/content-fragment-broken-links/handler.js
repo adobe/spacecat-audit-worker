@@ -10,12 +10,16 @@
  * governing permissions and limitations under the License.
  */
 
+import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { AthenaCollector } from './collectors/athena-collector.js';
-import { AnalysisStrategy } from './analysis/analysis-strategy.js';
-import { PathIndex } from './domain/index/path-index.js';
-import { AemClient } from './clients/aem-client.js';
 import { wwwUrlResolver } from '../common/index.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { syncSuggestions } from '../utils/data-access.js';
+import { AnalysisStrategy } from './analysis/analysis-strategy.js';
+import { AemClient } from './clients/aem-client.js';
+import { AthenaCollector } from './collectors/athena-collector.js';
+import { PathIndex } from './domain/index/path-index.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
 
 async function fetchBrokenContentFragmentLinks(context) {
   const { log } = context;
@@ -44,6 +48,94 @@ async function analyzeBrokenContentFragmentLinks(context, brokenPaths) {
   return suggestions.map((suggestion) => suggestion.toJSON());
 }
 
+export async function enrichBrokenContentFragmentLinkSuggestions(
+  context,
+  brokenPaths,
+  suggestions,
+) {
+  const {
+    site, audit, dataAccess, log, sqs, env,
+  } = context;
+  const { Suggestion } = dataAccess;
+
+  const baseURL = site.getBaseURL();
+
+  if (!suggestions || suggestions.length === 0) {
+    log.info('No suggestions to enrich, skipping Mystique message');
+    return { status: 'complete' };
+  }
+
+  const brokenPathsMap = new Map(
+    brokenPaths.map((brokenPath) => [brokenPath.url, brokenPath]),
+  );
+
+  const opportunity = await convertToOpportunity(
+    baseURL,
+    { siteId: site.getId(), id: audit.getId() },
+    context,
+    createOpportunityData,
+    // TODO: Change to Audit.AUDIT_TYPES.BROKEN_CONTENT_FRAGMENT_LINKS
+    // See https://github.com/adobe/spacecat-shared/pull/1049
+    'broken-content-fragment-links',
+  );
+
+  const buildKey = (suggestion) => suggestion.requestedPath;
+  await syncSuggestions({
+    opportunity,
+    newData: suggestions,
+    buildKey,
+    context,
+    mapNewSuggestion: (suggestion) => {
+      const brokenPathData = brokenPathsMap.get(suggestion.requestedPath);
+      return {
+        opportunityId: opportunity.getId(),
+        type: suggestion.type,
+        data: {
+          requestedPath: suggestion.requestedPath,
+          suggestedPath: suggestion.suggestedPath,
+          type: suggestion.type,
+          reason: suggestion.reason,
+          requestCount: brokenPathData?.requestCount || 0,
+          // Array of {userAgent: string, count: number} objects
+          requestUserAgents: brokenPathData?.requestUserAgents || [],
+        },
+      };
+    },
+  });
+
+  const syncedSuggestions = await Suggestion.allByOpportunityIdAndStatus(
+    opportunity.getId(),
+    SuggestionModel.STATUSES.NEW,
+  );
+
+  const message = {
+    type: 'guidance:broken-content-fragment-links',
+    siteId: site.getId(),
+    auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    url: baseURL,
+    data: {
+      opportunityId: opportunity.getId(),
+      brokenPaths: syncedSuggestions.map((suggestion) => ({
+        suggestionId: suggestion.getId(),
+        requestedPath: suggestion.getData().requestedPath,
+        requestCount: suggestion.getData().requestCount,
+        // Array of {userAgent: string, count: number} for detailed breakdown
+        requestUserAgents: suggestion.getData().requestUserAgents,
+        suggestedPath: suggestion.getData().suggestedPath,
+        reason: suggestion.getData().reason,
+      })),
+    },
+  };
+
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+
+  log.info(`Sent ${syncedSuggestions.length} content fragment path suggestions to Mystique for enrichment`);
+
+  return { status: 'complete' };
+}
+
 /**
  * The main audit runner that orchestrates the content fragment broken links audit.
  *
@@ -60,12 +152,13 @@ export async function contentFragmentBrokenLinksAuditRunner(baseURL, context, si
     const brokenPaths = await fetchBrokenContentFragmentLinks(auditContext);
     const suggestions = await analyzeBrokenContentFragmentLinks(auditContext, brokenPaths);
 
+    await enrichBrokenContentFragmentLinkSuggestions(auditContext, brokenPaths, suggestions);
+
     return {
       fullAuditRef: baseURL,
       auditResult: {
         brokenPaths,
         suggestions,
-        success: true,
       },
     };
   } catch (error) {
@@ -75,7 +168,6 @@ export async function contentFragmentBrokenLinksAuditRunner(baseURL, context, si
       fullAuditRef: baseURL,
       auditResult: {
         error: error.message,
-        success: false,
       },
     };
   }
