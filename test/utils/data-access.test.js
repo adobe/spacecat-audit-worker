@@ -435,7 +435,7 @@ describe('data-access', () => {
 
       expect(context.log.info).to.have.been.called;
       const warnMsg = context.log.info.secondCall.args[0];
-      expect(warnMsg).to.include('Failed to add FixEntity for suggestion s-9');
+      expect(warnMsg).to.include('Failed to add FixEntity for the suggestion s-9');
       expect(warnMsg).to.include('db fail');
     });
 
