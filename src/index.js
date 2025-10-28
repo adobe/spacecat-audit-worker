@@ -156,7 +156,7 @@ const HANDLERS = {
   'guidance:summarization': summarizationGuidance,
   hreflang,
   headings,
-  'content-fragment-broken-links': contentFragmentBrokenLinks,
+  'broken-content-fragment-links': contentFragmentBrokenLinks,
   'cdn-content-fragment-404': cdnContentFragment404,
   prerender,
   'product-metatags': productMetatags,

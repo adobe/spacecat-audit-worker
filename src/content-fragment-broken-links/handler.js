@@ -118,7 +118,7 @@ export async function enrichContentFragmentLinkSuggestions(
   const { Configuration, Suggestion, Opportunity } = dataAccess;
 
   const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('content-fragment-broken-links', site)) {
+  if (!configuration.isHandlerEnabledForSite('broken-content-fragment-links', site)) {
     log.info(`Auto-Suggest is disabled for site ${site.getId()}`);
     return;
   }
