@@ -2002,6 +2002,7 @@ describe('Prerender Audit', () => {
         log: {
           info: sandbox.stub(),
           error: sandbox.stub(),
+          warn: sandbox.stub(),
         },
         s3Client: mockS3Client,
         env: {
@@ -2010,13 +2011,12 @@ describe('Prerender Audit', () => {
       };
     });
 
-    it('should upload status summary to S3 when audit is complete', async () => {
+    it('should upload status summary to S3 with complete audit data', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
         siteId: 'test-site-id',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
-          status: 'complete',
           totalUrlsChecked: 5,
           urlsNeedingPrerender: 2,
           scrapeForbidden: false,
@@ -2084,7 +2084,6 @@ describe('Prerender Audit', () => {
         siteId: 'test-site-id',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
-          status: 'complete',
           totalUrlsChecked: 1,
           urlsNeedingPrerender: 0,
           results: [
@@ -2109,25 +2108,6 @@ describe('Prerender Audit', () => {
       expect(uploadedData.pages[0].contentGainRatio).to.equal(0);
     });
 
-    it('should skip upload when audit is not complete', async () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        siteId: 'test-site-id',
-        auditedAt: '2025-01-01T00:00:00.000Z',
-        auditResult: {
-          status: 'in-progress',
-          results: [],
-        },
-      };
-
-      await uploadStatusSummaryToS3(auditUrl, auditData, context);
-
-      expect(mockS3Client.send).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(
-        'Prerender - Audit not complete, skipping status summary upload'
-      );
-    });
-
     it('should skip upload when auditResult is missing', async () => {
       const auditUrl = 'https://example.com';
       const auditData = {
@@ -2138,8 +2118,8 @@ describe('Prerender Audit', () => {
       await uploadStatusSummaryToS3(auditUrl, auditData, context);
 
       expect(mockS3Client.send).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(
-        'Prerender - Audit not complete, skipping status summary upload'
+      expect(context.log.warn).to.have.been.calledWith(
+        'Prerender - Missing auditResult, skipping status summary upload'
       );
     });
 
@@ -2149,7 +2129,6 @@ describe('Prerender Audit', () => {
         siteId: 'test-site-id',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
-          status: 'complete',
           totalUrlsChecked: 0,
           urlsNeedingPrerender: 0,
           results: [],
@@ -2173,7 +2152,6 @@ describe('Prerender Audit', () => {
         siteId: 'test-site-id',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
-          status: 'complete',
           totalUrlsChecked: 0,
           urlsNeedingPrerender: 0,
           // results is undefined
@@ -2196,7 +2174,6 @@ describe('Prerender Audit', () => {
         siteId: 'test-site-id',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
-          status: 'complete',
           totalUrlsChecked: 0,
           urlsNeedingPrerender: 0,
           results: null,
@@ -2218,7 +2195,6 @@ describe('Prerender Audit', () => {
       const auditData = {
         siteId: 'test-site-id',
         auditResult: {
-          status: 'complete',
           results: [],
         },
       };
@@ -2245,7 +2221,6 @@ describe('Prerender Audit', () => {
         siteId: 'test-site-id',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
-          status: 'complete',
           results: [],
         },
       };
@@ -2265,7 +2240,6 @@ describe('Prerender Audit', () => {
         siteId: 'test-site-id',
         auditedAt: '2025-01-01T00:00:00.000Z',
         auditResult: {
-          status: 'complete',
           results: [
             {
               url: 'https://example.com/page1',

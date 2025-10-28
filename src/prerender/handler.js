@@ -302,9 +302,8 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
   try {
     const { auditResult, siteId, auditedAt } = auditData;
 
-    // Only upload if audit was successful
-    if (!auditResult || auditResult.status !== 'complete') {
-      log.info('Prerender - Audit not complete, skipping status summary upload');
+    if (!auditResult) {
+      log.warn('Prerender - Missing auditResult, skipping status summary upload');
       return;
     }
 
@@ -415,7 +414,7 @@ export async function processContentAndGenerateOpportunities(context) {
     const scrapeForbidden = urlsWithScrapeJson.length > 0
       && urlsWithForbiddenScrape.length === urlsWithScrapeJson.length;
 
-    log.info(`Prerender - Scrape analysis: total=${comparisonResults.length}, withScrapeJson=${urlsWithScrapeJson.length}, forbidden403=${urlsWithForbiddenScrape.length}, allForbidden=${scrapeForbidden}`);
+    log.info(`Prerender - Scrape analysis for base URL ${site.getBaseURL()}, siteId ${siteId}: scrapeForbidden=${scrapeForbidden}, totalUrlsChecked=${comparisonResults.length}, urlsWithScrapeJson=${urlsWithScrapeJson.length}, urlsWithForbiddenScrape=${urlsWithForbiddenScrape.length}`);
 
     // Remove internal tracking fields from results before storing
     // eslint-disable-next-line
