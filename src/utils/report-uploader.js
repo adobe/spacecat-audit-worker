@@ -14,6 +14,7 @@ import * as helixContentSDK from '@adobe/spacecat-helix-content-sdk';
 import { sleep } from '../support/utils.js';
 
 const SHAREPOINT_URL = 'https://adobe.sharepoint.com/:x:/r/sites/HelixProjects/Shared%20Documents/sites/elmo-ui-data';
+const AUDIT_NAME = 'REPORT_UPLOADER';
 
 /**
  * @import { SharepointClient } from '@adobe/spacecat-helix-content-sdk/src/sharepoint/client.js'
@@ -56,27 +57,44 @@ export function createLLMOSharepointClient({ env, log }, options = {}) {
  * @returns {Promise<Buffer>} - The document content as a buffer
  */
 export async function readFromSharePoint(filename, outputLocation, sharepointClient, log) {
+  const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
+
   try {
-    const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
+    log.info(`%s: SharePoint download starting: ${documentPath}`, AUDIT_NAME);
+    const startTime = Date.now();
+
     const sharepointDoc = sharepointClient.getDocument(documentPath);
     const buffer = await sharepointDoc.getDocumentContent();
-    log.debug(`Document successfully downloaded from SharePoint: ${documentPath}`);
+
+    const duration = Date.now() - startTime;
+    const fileSize = buffer.byteLength || buffer.length;
+    log.info(`%s: SharePoint download successful: ${documentPath} (${fileSize} bytes in ${duration}ms)`, AUDIT_NAME);
+
     return buffer;
   } catch (error) {
-    log.error(`Failed to read from SharePoint: ${error.message}`);
+    log.error(`%s: SharePoint download failed: ${documentPath}`, AUDIT_NAME, {
+      filename,
+      outputLocation,
+      error: error.message,
+      stack: error.stack,
+      errorCode: error.code || 'UNKNOWN',
+    });
     throw error;
   }
 }
 
 export async function publishToAdminHlx(filename, outputLocation, log) {
-  try {
-    const org = 'adobe';
-    const site = 'project-elmo-ui-data';
-    const ref = 'main';
-    const jsonFilename = `${filename.replace(/\.[^/.]+$/, '')}.json`;
-    const path = `${outputLocation}/${jsonFilename}`;
-    const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}` };
+  const org = 'adobe';
+  const site = 'project-elmo-ui-data';
+  const ref = 'main';
+  const jsonFilename = `${filename.replace(/\.[^/.]+$/, '')}.json`;
+  const path = `${outputLocation}/${jsonFilename}`;
 
+  try {
+    log.info(`%s: Publishing to admin.hlx.page: ${path}`, AUDIT_NAME);
+    const startTime = Date.now();
+
+    const headers = { Cookie: `auth_token=${process.env.ADMIN_HLX_API_KEY}` };
     const baseUrl = 'https://admin.hlx.page';
     const endpoints = [
       { name: 'preview', url: `${baseUrl}/preview/${org}/${site}/${ref}/${path}` },
@@ -84,25 +102,42 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
     ];
 
     for (const [index, endpoint] of endpoints.entries()) {
-      log.debug(`Publishing Excel report via admin API (${endpoint.name}): ${endpoint.url}`);
+      log.info(`%s: Publishing to ${endpoint.name}: ${endpoint.url}`, AUDIT_NAME);
+      const endpointStartTime = Date.now();
 
       // eslint-disable-next-line no-await-in-loop
       const response = await fetch(endpoint.url, { method: 'POST', headers });
 
       if (!response.ok) {
-        throw new Error(`${endpoint.name} failed: ${response.status} ${response.statusText}`);
+        const errorMsg = `${endpoint.name} failed: ${response.status} ${response.statusText}`;
+        log.error(`%s: Publish to ${endpoint.name} failed`, AUDIT_NAME, {
+          url: endpoint.url,
+          status: response.status,
+          statusText: response.statusText,
+          path,
+        });
+        throw new Error(errorMsg);
       }
 
-      log.debug(`Excel report successfully published to ${endpoint.name}`);
+      const endpointDuration = Date.now() - endpointStartTime;
+      log.info(`%s: Successfully published to ${endpoint.name} in ${endpointDuration}ms`, AUDIT_NAME);
 
       if (index === 0) {
-        log.debug('Waiting 2 seconds before publishing to live...');
+        log.debug('%s: Waiting 2 seconds before publishing to live...', AUDIT_NAME);
         // eslint-disable-next-line no-await-in-loop
         await sleep(2000);
       }
     }
+
+    const totalDuration = Date.now() - startTime;
+    log.info(`%s: Successfully published ${path} to both preview and live in ${totalDuration}ms`, AUDIT_NAME);
   } catch (publishError) {
-    log.error(`Failed to publish via admin.hlx.page: ${publishError.message}`);
+    log.error(`%s: Failed to publish via admin.hlx.page: ${path}`, AUDIT_NAME, {
+      filename,
+      outputLocation,
+      error: publishError.message,
+      stack: publishError.stack,
+    });
   }
 }
 
@@ -114,13 +149,27 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
  * @param {Pick<Console, 'debug' | 'info' | 'warn' | 'error'>} log
  */
 export async function uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log) {
+  const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
+  const fileSize = buffer.byteLength || buffer.length;
+
   try {
-    const documentPath = `/sites/elmo-ui-data/${outputLocation}/${filename}`;
+    log.info(`%s: SharePoint upload starting: ${documentPath} (${fileSize} bytes)`, AUDIT_NAME);
+    const startTime = Date.now();
+
     const sharepointDoc = sharepointClient.getDocument(documentPath);
     await sharepointDoc.uploadRawDocument(buffer);
-    log.debug(`Excel report successfully uploaded to SharePoint: ${documentPath}`);
+
+    const duration = Date.now() - startTime;
+    log.info(`%s: SharePoint upload successful: ${documentPath} (${fileSize} bytes in ${duration}ms)`, AUDIT_NAME);
   } catch (error) {
-    log.error(`Failed to upload to SharePoint: ${error.message}`);
+    log.error(`%s: SharePoint upload failed: ${documentPath}`, AUDIT_NAME, {
+      filename,
+      outputLocation,
+      fileSize,
+      error: error.message,
+      stack: error.stack,
+      errorCode: error.code || 'UNKNOWN',
+    });
     throw error;
   }
 }
@@ -140,8 +189,27 @@ export async function uploadAndPublishFile(
   sharepointClient,
   log,
 ) {
-  await uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log);
-  await publishToAdminHlx(filename, outputLocation, log);
+  const fileSize = buffer.byteLength || buffer.length;
+  log.info(`%s: Starting upload and publish workflow for ${filename} to ${outputLocation} (${fileSize} bytes)`, AUDIT_NAME);
+  const startTime = Date.now();
+
+  try {
+    await uploadToSharePoint(buffer, filename, outputLocation, sharepointClient, log);
+    await publishToAdminHlx(filename, outputLocation, log);
+
+    const duration = Date.now() - startTime;
+    log.info(`%s: Upload and publish workflow completed for ${filename} in ${duration}ms`, AUDIT_NAME);
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    log.error(`%s: Upload and publish workflow failed for ${filename} after ${duration}ms`, AUDIT_NAME, {
+      filename,
+      outputLocation,
+      fileSize,
+      error: error.message,
+      stack: error.stack,
+    });
+    throw error;
+  }
 }
 
 export async function saveExcelReport({
@@ -152,12 +220,26 @@ export async function saveExcelReport({
   filename,
 }) {
   try {
+    log.info(`%s: Generating Excel buffer for ${filename}`, AUDIT_NAME);
+    const bufferStartTime = Date.now();
     const buffer = await workbook.xlsx.writeBuffer();
+    const bufferDuration = Date.now() - bufferStartTime;
+    const fileSize = buffer.byteLength || buffer.length;
+
+    log.info(`%s: Excel buffer generated for ${filename} (${fileSize} bytes in ${bufferDuration}ms)`, AUDIT_NAME);
+
     if (sharepointClient) {
       await uploadAndPublishFile(buffer, filename, outputLocation, sharepointClient, log);
+    } else {
+      log.warn(`%s: No SharePoint client provided for ${filename}, skipping upload`, AUDIT_NAME);
     }
   } catch (error) {
-    log.error(`Failed to save Excel report: ${error.message}`);
+    log.error(`%s: Failed to save Excel report: ${filename}`, AUDIT_NAME, {
+      filename,
+      outputLocation,
+      error: error.message,
+      stack: error.stack,
+    });
     throw error;
   }
 }

@@ -36,6 +36,8 @@ import {
  * @import { type RefreshMetadata } from './util.js'
  */
 
+const AUDIT_NAME = 'GEO_BRAND_PRESENCE';
+
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const { Audit, Site } = dataAccess;
@@ -43,24 +45,27 @@ export default async function handler(message, context) {
     auditId, siteId, type: subType, data,
   } = message;
 
-  log.debug('GEO BRAND PRESENCE: Message received:', message);
+  log.info(`%s: Message received for auditId: ${auditId}, siteId: ${siteId}, subType: ${subType}`, AUDIT_NAME);
+  log.debug('%s: Full message:', AUDIT_NAME, message);
 
   if (!subType || ![...OPPTY_TYPES, 'refresh:geo-brand-presence', 'refresh:geo-brand-presence-daily'].includes(subType)) {
-    log.error(`GEO BRAND PRESENCE: Unsupported subtype: ${subType}`);
+    log.error(`%s: Unsupported subtype: ${subType} for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
     return notFound();
   }
 
   const site = await Site.findById(siteId);
   if (!site) {
-    log.error(`GEO BRAND PRESENCE: Site not found for auditId ${auditId}, siteId: ${siteId}`);
+    log.error(`%s: Site not found for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
     return notFound();
   }
 
   const presignedURL = URL.parse(data.presigned_url);
   if (!presignedURL || !presignedURL.href) {
-    log.error(`GEO BRAND PRESENCE: Invalid presigned URL: ${data.presigned_url}`);
+    log.error(`%s: Invalid presigned URL for auditId: ${auditId}, siteId: ${siteId}, url: ${data.presigned_url}`, AUDIT_NAME);
     return badRequest('Invalid presigned URL');
   }
+
+  log.debug(`%s: Presigned URL validated for auditId: ${auditId}, url: ${presignedURL.href}`, AUDIT_NAME);
 
   // TODO: does data.config_version exist?
   const configVersion = data.config_version;
@@ -69,26 +74,53 @@ export default async function handler(message, context) {
     : `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
   const outputLocations = [mainOutputLocation, `${mainOutputLocation}/config_${configVersion || 'absent'}`];
 
+  log.info(`%s: Output locations configured for auditId: ${auditId}, siteId: ${siteId}, locations: ${outputLocations.length}, configVersion: ${configVersion || 'absent'}`, AUDIT_NAME);
+  log.debug(`%s: Output locations: ${JSON.stringify(outputLocations)}`, AUDIT_NAME);
+
   if (subType === 'refresh:geo-brand-presence' || subType === 'refresh:geo-brand-presence-daily') {
-    return handleRefresh({ auditId, outputLocations, presignedURL }, context);
+    log.info(`%s: Handling refresh for auditId: ${auditId}, siteId: ${siteId}, subType: ${subType}`, AUDIT_NAME);
+    return handleRefresh({
+      auditId, siteId, outputLocations, presignedURL,
+    }, context);
   }
 
   const audit = await Audit.findById(auditId);
   if (!audit) {
-    log.error(`GEO BRAND PRESENCE: Audit not found for auditId: ${auditId}`);
+    log.error(`%s: Audit not found for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
     return notFound();
   }
+
+  log.info(`%s: Fetching sheet from presigned URL for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
+  const fetchStartTime = Date.now();
 
   /** @type {Response} */
   const res = await fetch(presignedURL);
   const sheet = await res.arrayBuffer();
 
+  const fetchDuration = Date.now() - fetchStartTime;
+  const sheetSize = sheet.byteLength;
+  log.info(`%s: Sheet fetched successfully for auditId: ${auditId}, siteId: ${siteId} (${sheetSize} bytes in ${fetchDuration}ms)`, AUDIT_NAME);
+
   // upload to sharepoint & publish via hlx admin api
+  log.info(`%s: Creating SharePoint client for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
   const sharepointClient = await createLLMOSharepointClient(context);
+
   const xlsxName = extractXlsxName(presignedURL);
-  await Promise.all(outputLocations.map(async (outputLocation) => {
+  log.info(`%s: Starting SharePoint upload for auditId: ${auditId}, siteId: ${siteId}, file: ${xlsxName}, locations: ${outputLocations.length}`, AUDIT_NAME);
+
+  const uploadStartTime = Date.now();
+  await Promise.all(outputLocations.map(async (outputLocation, index) => {
+    log.info(`%s: Uploading to location ${index + 1}/${outputLocations.length} for auditId: ${auditId}, siteId: ${siteId}, location: ${outputLocation}`, AUDIT_NAME);
+    const locationStartTime = Date.now();
+
     await uploadAndPublishFile(sheet, xlsxName, outputLocation, sharepointClient, log);
+
+    const locationDuration = Date.now() - locationStartTime;
+    log.info(`%s: Upload completed for location ${index + 1}/${outputLocations.length} in ${locationDuration}ms, auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
   }));
+
+  const totalUploadDuration = Date.now() - uploadStartTime;
+  log.info(`%s: All SharePoint uploads completed for auditId: ${auditId}, siteId: ${siteId} (${outputLocations.length} locations in ${totalUploadDuration}ms)`, AUDIT_NAME);
 
   return ok();
 }
@@ -96,6 +128,7 @@ export default async function handler(message, context) {
 async function handleRefresh(
   {
     auditId,
+    siteId,
     outputLocations,
     presignedURL,
   },
@@ -105,14 +138,23 @@ async function handleRefresh(
   const { env, log, s3Client } = context;
   const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
 
+  log.info(`%s REFRESH: Starting refresh workflow for auditId: ${auditId}, siteId: ${siteId}, bucket: ${s3Bucket}`, AUDIT_NAME);
+
   // 1. Load refresh metadata
+  log.info(`%s REFRESH: Loading refresh metadata for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
+  const metadataStartTime = Date.now();
+
   const refreshMeta = await loadJSONFromS3(
     s3Client,
     s3Bucket,
     refreshMetadataFileS3Key(auditId),
     refreshMetadataSchema,
   );
-  log.info(`GEO BRAND PRESENCE REFRESH: Loaded refresh metadata for auditId: ${auditId} refreshMeta:`, refreshMeta);
+
+  const metadataDuration = Date.now() - metadataStartTime;
+  log.info(`%s REFRESH: Loaded refresh metadata for auditId: ${auditId}, siteId: ${siteId} in ${metadataDuration}ms`, AUDIT_NAME);
+  log.debug(`%s REFRESH: Metadata content for auditId: ${auditId}:`, AUDIT_NAME, refreshMeta);
+
   if (refreshMeta.status === 'rejected') {
     const { reason } = refreshMeta;
     let msg;
@@ -124,7 +166,12 @@ async function handleRefresh(
       throw reason;
     }
 
-    log.error(`GEO BRAND PRESENCE: ${msg} for auditId: ${auditId}`);
+    log.error(`%s REFRESH: ${msg} for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME, {
+      auditId,
+      siteId,
+      error: msg,
+      reason: reason.message || String(reason),
+    });
     return notFound();
   }
 
@@ -132,12 +179,23 @@ async function handleRefresh(
   const sheetXlsxName = extractXlsxName(presignedURL);
   const sheetName = sheetXlsxName.replace(/\.xlsx$/, '');
 
-  log.info(`GEO BRAND PRESENCE REFRESH: Processing sheet ${sheetName} for auditId: ${auditId} into ${refreshDir}`);
+  log.info(`%s REFRESH: Processing sheet ${sheetName} for auditId: ${auditId}, siteId: ${siteId}, S3 directory: ${refreshDir}`, AUDIT_NAME);
+
   // 2. Write the sheet to S3
   try {
+    log.info(`%s REFRESH: Fetching sheet from presigned URL for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}`, AUDIT_NAME);
+    const fetchStartTime = Date.now();
+
     /** @type {Response} */
     const res = await fetch(presignedURL);
     const sheet = await res.arrayBuffer();
+
+    const fetchDuration = Date.now() - fetchStartTime;
+    const sheetSize = sheet.byteLength;
+    log.info(`%s REFRESH: Sheet fetched successfully for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName} (${sheetSize} bytes in ${fetchDuration}ms)`, AUDIT_NAME);
+
+    log.info(`%s REFRESH: Uploading sheet to S3 for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, bucket: ${s3Bucket}, key: ${refreshDir}/${sheetXlsxName}`, AUDIT_NAME);
+    const s3UploadStartTime = Date.now();
 
     await s3Client.send(new PutObjectCommand({
       Bucket: s3Bucket,
@@ -145,10 +203,21 @@ async function handleRefresh(
       Body: new Uint8Array(sheet),
       ContentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }));
-    log.info(`GEO BRAND PRESENCE REFRESH: Uploaded sheet ${sheetName} for auditId: ${auditId} to S3`);
+
+    const s3UploadDuration = Date.now() - s3UploadStartTime;
+    log.info(`%s REFRESH: Sheet uploaded to S3 successfully for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName} (${sheetSize} bytes in ${s3UploadDuration}ms)`, AUDIT_NAME);
   } catch (e) {
     const message = `Failed to write sheet to S3: ${e.message}`;
-    log.error(`GEO BRAND PRESENCE REFRESH: ${message} for auditId: ${auditId}`);
+    log.error(`%s REFRESH: ${message} for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}`, AUDIT_NAME, {
+      auditId,
+      siteId,
+      sheetName,
+      bucket: s3Bucket,
+      directory: refreshDir,
+      error: e.message,
+      stack: e.stack,
+    });
+
     await writeSheetRefreshResultFailed({
       message,
       outputDir: refreshDir,
@@ -159,8 +228,10 @@ async function handleRefresh(
     return internalServerError(message);
   }
 
-  log.info(`GEO BRAND PRESENCE REFRESH: Successfully wrote sheet ${sheetName} for auditId: ${auditId} to S3`);
+  log.info(`%s REFRESH: Successfully wrote sheet ${sheetName} for auditId: ${auditId}, siteId: ${siteId} to S3`, AUDIT_NAME);
+
   // 3. Write the successful marker json to S3
+  log.debug(`%s REFRESH: Writing success marker for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}`, AUDIT_NAME);
   await writeSheetRefreshResultSuccess({
     sheetName,
     outputDir: refreshDir,
@@ -170,42 +241,84 @@ async function handleRefresh(
 
   // 4. Check whether all sheets exist and upload when ready
   const { files } = refreshMeta.value;
-  const resultFiles = await allSheetsUploaded(s3Client, s3Bucket, refreshDir, files, log);
+  log.info(
+    `%s REFRESH: Checking if all sheets are uploaded for auditId: ${auditId}, siteId: ${siteId}, expected sheets: ${files.length}`,
+    AUDIT_NAME,
+  );
+
+  const resultFiles = await allSheetsUploaded(
+    s3Client,
+    s3Bucket,
+    refreshDir,
+    files,
+    log,
+    auditId,
+    siteId,
+  );
   if (!resultFiles) {
-    log.info(`GEO BRAND PRESENCE REFRESH: Not all sheets uploaded yet for auditId: ${auditId}`);
+    log.info(`%s REFRESH: Not all sheets uploaded yet for auditId: ${auditId}, siteId: ${siteId}, expected: ${files.length}`, AUDIT_NAME);
     return ok();
   }
-  log.info(`GEO BRAND PRESENCE REFRESH: All sheets uploaded for auditId: ${auditId}, proceeding to upload to SharePoint`);
+
+  log.info(`%s REFRESH: All ${files.length} sheets uploaded for auditId: ${auditId}, siteId: ${siteId}, proceeding to upload to SharePoint`, AUDIT_NAME);
+
   try {
+    log.info(`%s REFRESH: Creating SharePoint client for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
     const sharepointClient = await createLLMOSharepointClient(context);
+
+    const sharepointStartTime = Date.now();
     await Promise.all(
       resultFiles.flatMap(async (s, i) => {
         const { name } = files[i];
+        log.info(`%s REFRESH: Processing sheet ${i + 1}/${files.length} for SharePoint upload, auditId: ${auditId}, siteId: ${siteId}, sheet: ${name}`, AUDIT_NAME);
+
         const resultFile = await s.Body.transformToString();
         const result = refreshSheetResultSchema.parse(JSON.parse(resultFile));
         if (result.status !== 'success') {
-          throw new Error(`Sheet ${name} did not complete successfully: ${result.message || 'unknown reason'}`);
+          const errorMsg = `Sheet ${name} did not complete successfully: ${result.message || 'unknown reason'}`;
+          log.error(`%s REFRESH: ${errorMsg} for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
+          throw new Error(errorMsg);
         }
 
         const xlsxKey = `${refreshDir}/${result.sheetName}.xlsx`;
+        log.debug(`%s REFRESH: Fetching XLSX from S3 for auditId: ${auditId}, siteId: ${siteId}, key: ${xlsxKey}`, AUDIT_NAME);
+
         const xlsxObj = await s3Client.send(new GetObjectCommand({
           Bucket: s3Bucket,
           Key: xlsxKey,
         }));
+
         if (!xlsxObj.Body) {
-          throw new Error(`Missing XLSX file for sheet ${name}`);
+          const errorMsg = `Missing XLSX file for sheet ${name}`;
+          log.error(`%s REFRESH: ${errorMsg} for auditId: ${auditId}, siteId: ${siteId}, key: ${xlsxKey}`, AUDIT_NAME);
+          throw new Error(errorMsg);
         }
+
         const xlsxBuffer = await xlsxObj.Body.transformToByteArray();
-        log.info(`GEO BRAND PRESENCE REFRESH: Uploading sheet ${name} for auditId: ${auditId} to SharePoint`);
-        return outputLocations.map(
-          (outDir) => uploadAndPublishFile(xlsxBuffer.buffer, name, outDir, sharepointClient, log),
-        );
+        const bufferSize = xlsxBuffer.byteLength;
+        log.info(`%s REFRESH: Uploading sheet ${name} for auditId: ${auditId}, siteId: ${siteId} to ${outputLocations.length} SharePoint locations (${bufferSize} bytes)`, AUDIT_NAME);
+
+        return outputLocations.map((outDir, locIndex) => {
+          log.debug(`%s REFRESH: Uploading sheet ${name} to location ${locIndex + 1}/${outputLocations.length}, auditId: ${auditId}, siteId: ${siteId}, location: ${outDir}`, AUDIT_NAME);
+          return uploadAndPublishFile(xlsxBuffer.buffer, name, outDir, sharepointClient, log);
+        });
       }),
     );
+
+    const sharepointDuration = Date.now() - sharepointStartTime;
+    log.info(`%s REFRESH: Successfully uploaded all ${files.length} sheets for auditId: ${auditId}, siteId: ${siteId} to SharePoint in ${sharepointDuration}ms`, AUDIT_NAME);
   } catch (e) {
+    log.error(`%s REFRESH: Failed to upload to SharePoint for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME, {
+      auditId,
+      siteId,
+      sheetCount: files.length,
+      error: e.message,
+      stack: e.stack,
+    });
     return internalServerError(`Failed to upload to SharePoint: ${e.message}`);
   }
-  log.info(`GEO BRAND PRESENCE REFRESH: Successfully uploaded all sheets for auditId: ${auditId} to SharePoint`);
+
+  log.info(`%s REFRESH: Refresh workflow completed successfully for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
   return ok();
 }
 
@@ -226,13 +339,17 @@ function extractXlsxName(sheetUrl) {
  * @param {string} outputDir
  * @param {RefreshMetadata['files']} files
  * @param {Console} log
+ * @param {string} auditId
+ * @param {string} siteId
  */
-async function allSheetsUploaded(s3Client, s3Bucket, outputDir, files, log) {
+async function allSheetsUploaded(s3Client, s3Bucket, outputDir, files, log, auditId, siteId) {
+  log.info(`%s REFRESH: Checking ${files.length} sheet result files for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
+
   const checks = await Promise.allSettled(
-    files.map((file) => {
+    files.map((file, index) => {
       const fileName = file.name.replace(/\.xlsx$/, '');
       const key = `${outputDir}/${refreshSheetResultFileName(fileName)}`;
-      log.info(`Fetching S3 object with Key: ${key}`);
+      log.debug(`%s REFRESH: Checking sheet ${index + 1}/${files.length} for auditId: ${auditId}, siteId: ${siteId}, key: ${key}`, AUDIT_NAME);
       return s3Client.send(
         new GetObjectCommand({
           Bucket: s3Bucket,
@@ -242,15 +359,32 @@ async function allSheetsUploaded(s3Client, s3Bucket, outputDir, files, log) {
     }),
   );
 
+  const fulfilledCount = checks.filter((c) => c.status === 'fulfilled').length;
+  const rejectedCount = checks.filter((c) => c.status === 'rejected').length;
+
+  log.info(`%s REFRESH: Sheet check results for auditId: ${auditId}, siteId: ${siteId} - fulfilled: ${fulfilledCount}/${files.length}, rejected: ${rejectedCount}/${files.length}`, AUDIT_NAME);
+
   checks.forEach((c, index) => {
-    log.info(`Check ${index + 1}: Status - ${c.status}`);
+    if (c.status === 'rejected') {
+      log.debug(`%s REFRESH: Sheet ${index + 1}/${files.length} not ready for auditId: ${auditId}, siteId: ${siteId}, file: ${files[index].name}, reason: ${c.reason?.message || 'unknown'}`, AUDIT_NAME);
+    } else {
+      log.debug(`%s REFRESH: Sheet ${index + 1}/${files.length} ready for auditId: ${auditId}, siteId: ${siteId}, file: ${files[index].name}`, AUDIT_NAME);
+    }
   });
 
   if (!checks.every((c) => c.status === 'fulfilled')) {
+    log.info(`%s REFRESH: Not all sheets ready yet for auditId: ${auditId}, siteId: ${siteId} (${fulfilledCount}/${files.length} ready)`, AUDIT_NAME);
     return null;
   }
-  log.info('All checks fulfilled, verifying bodies...');
-  return checks.every((c) => c.value.Body)
-    ? checks.map((c) => c.value)
-    : null;
+
+  log.info(`%s REFRESH: All ${files.length} sheet checks fulfilled for auditId: ${auditId}, siteId: ${siteId}, verifying bodies...`, AUDIT_NAME);
+
+  const allHaveBodies = checks.every((c) => c.value.Body);
+  if (!allHaveBodies) {
+    log.warn(`%s REFRESH: Some sheets missing body content for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
+    return null;
+  }
+
+  log.info(`%s REFRESH: All ${files.length} sheets verified and ready for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
+  return checks.map((c) => c.value);
 }
