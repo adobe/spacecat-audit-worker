@@ -96,6 +96,20 @@ describe('Headings Audit', () => {
   it('flags empty headings', async () => {
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
+    
+    // Mock CssSelectorGenerator using esmock
+    const MockCssSelectorGenerator = class {
+      getSelector() {
+        return 'body > h1';
+      }
+    };
+    
+    const mockedHandler = await esmock('../../src/headings/handler.js', {
+      'css-selector-generator': {
+        default: MockCssSelectorGenerator
+      }
+    });
+    
     context.dataAccess = {
       SiteTopPage: {
         allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
@@ -135,7 +149,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await mockedHandler.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
     // Check heading-h1-length (empty H1 now triggers this check instead of heading-missing-h1)
     expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check]).to.exist;
@@ -366,6 +380,20 @@ describe('Headings Audit', () => {
     const baseURL = 'https://example.com';
     const url = 'https://example.com/page';
     const longH1Text = 'This is a very long H1 heading that exceeds the maximum allowed length of 70 characters for optimal SEO and accessibility';
+    
+    // Mock CssSelectorGenerator using esmock
+    const MockCssSelectorGenerator = class {
+      getSelector() {
+        return 'body > h1';
+      }
+    };
+    
+    const mockedHandler = await esmock('../../src/headings/handler.js', {
+      'css-selector-generator': {
+        default: MockCssSelectorGenerator
+      }
+    });
+    
     context.dataAccess = {
       SiteTopPage: {
         allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
@@ -405,7 +433,7 @@ describe('Headings Audit', () => {
       throw new Error('Unexpected command passed to s3Client.send');
     });
     context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
+    const completedAudit = await mockedHandler.headingsAuditRunner(baseURL, context, site);
     const result = completedAudit.auditResult;
 
     expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check]).to.exist;
@@ -1339,6 +1367,19 @@ describe('Headings Audit', () => {
   it('handles getH1HeadingASuggestion AI errors gracefully', async () => {
     const url = 'https://example.com/page';
 
+    // Mock CssSelectorGenerator using esmock
+    const MockCssSelectorGenerator = class {
+      getSelector() {
+        return 'body > h1';
+      }
+    };
+    
+    const mockedHandler = await esmock('../../src/headings/handler.js', {
+      'css-selector-generator': {
+        default: MockCssSelectorGenerator
+      }
+    });
+
     // Mock AI client to throw an error
     const mockClient = {
       fetchChatCompletion: sinon.stub().rejects(new Error('AI service unavailable')),
@@ -1364,7 +1405,7 @@ describe('Headings Audit', () => {
     });
 
     // validatePageHeadings should return normal checks (AI is called later in headingsAuditRunner)
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
     // Should return normal checks since AI is not called during validatePageHeadings
     expect(result.url).to.equal(url);
@@ -1373,6 +1414,19 @@ describe('Headings Audit', () => {
 
   it('handles getH1HeadingASuggestion JSON parsing errors', async () => {
     const url = 'https://example.com/page';
+
+    // Mock CssSelectorGenerator using esmock
+    const MockCssSelectorGenerator = class {
+      getSelector() {
+        return 'body > h1';
+      }
+    };
+    
+    const mockedHandler = await esmock('../../src/headings/handler.js', {
+      'css-selector-generator': {
+        default: MockCssSelectorGenerator
+      }
+    });
 
     // Mock AI client to return invalid JSON
     const mockClient = {
@@ -1401,7 +1455,7 @@ describe('Headings Audit', () => {
     });
 
     // validatePageHeadings should return normal checks (AI is called later in headingsAuditRunner)
-    const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+    const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
 
     // Should return normal checks since AI is not called during validatePageHeadings
     expect(result.url).to.equal(url);
