@@ -209,7 +209,7 @@ export async function submitForScraping(context) {
   }
 
   return {
-    urls: finalUrls.map((url) => ({ url })).slice(0, 10),
+    urls: finalUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: AUDIT_TYPE,
     processingType: AUDIT_TYPE,
@@ -424,8 +424,6 @@ export async function processContentAndGenerateOpportunities(context) {
       urlsToCheck = [site.getBaseURL()];
       log.info('Prerender - No URLs found, using base URL for comparison');
     }
-
-    urlsToCheck = urlsToCheck.slice(0, 10);
 
     const comparisonResults = await Promise.all(
       urlsToCheck.map(async (url) => {
