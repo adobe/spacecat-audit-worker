@@ -16,7 +16,7 @@ import { getPresignedUrl } from '../utils/getPresignedUrl.js';
 
 const EXPIRY_IN_SECONDS = 25 * 60;
 
-export default async function metatagsAutoSuggest(allTags, context, site, options = {
+export default async function productMetatagsAutoSuggest(allTags, context, site, options = {
   forceAutoSuggest: false,
 }) {
   const { s3Client, dataAccess, log } = context;
@@ -28,11 +28,11 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
   const { forceAutoSuggest = false } = options;
   const { Configuration } = dataAccess;
   const configuration = await Configuration.findLatest();
-  if (!forceAutoSuggest && !configuration.isHandlerEnabledForSite('meta-tags-auto-suggest', site)) {
-    log.info('Metatags auto-suggest is disabled for site');
+  if (!forceAutoSuggest && !configuration.isHandlerEnabledForSite('product-metatags-auto-suggest', site)) {
+    log.info('[PRODUCT-METATAGS] Product metatags auto-suggest is disabled for site');
     return detectedTags;
   }
-  log.debug('Generating suggestions for Meta-tags using Genvar.');
+  log.debug('[PRODUCT-METATAGS] Generating suggestions for Product-metatags using Genvar.');
   const tagsData = {};
   for (const endpoint of Object.keys(detectedTags)) {
     // eslint-disable-next-line no-await-in-loop
@@ -44,7 +44,7 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
       log,
     });
   }
-  log.debug('Generated presigned URLs');
+  log.debug('[PRODUCT-METATAGS] Generated presigned URLs');
   const requestBody = {
     healthyTags,
     detectedTags: tagsData,
@@ -52,18 +52,27 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
       baseUrl: site.getBaseURL(),
     },
   };
+  log.info('[PRODUCT-METATAGS] Sending request to Genvar client:', {
+    detectedTagsCount: Object.keys(requestBody.detectedTags).length,
+    detectedTagsEndpoints: Object.keys(requestBody.detectedTags),
+    healthyTagsKeys: Object.keys(requestBody.healthyTags),
+    siteBaseUrl: requestBody.site.baseUrl,
+    requestBodyKeys: Object.keys(requestBody),
+  });
+  log.debug('[PRODUCT-METATAGS] Full request body to Genvar:', JSON.stringify(requestBody, null, 2));
   let responseWithSuggestions;
   try {
     const genvarClient = GenvarClient.createFrom(context);
+    // Use the same metatags endpoint as regular metatags audit as a fallback
     responseWithSuggestions = await genvarClient.generateSuggestions(
       JSON.stringify(requestBody),
-      context.env.GENVAR_METATAGS_API_ENDPOINT || '/api/v1/web/aem-genai-variations-appbuilder/metatags',
+      context.env.GENVAR_PRODUCT_METATAGS_API_ENDPOINT || context.env.GENVAR_METATAGS_API_ENDPOINT || '/api/v1/web/aem-genai-variations-appbuilder/metatags',
     );
     if (!isObject(responseWithSuggestions)) {
       throw new Error(`Invalid response received from Genvar API: ${JSON.stringify(responseWithSuggestions)}`);
     }
   } catch (err) {
-    log.error('Error while generating AI suggestions using Genvar', err);
+    log.error('[PRODUCT-METATAGS] Error while generating AI suggestions using Genvar for product metatags', err);
     throw err;
   }
   const updatedDetectedTags = {
@@ -79,6 +88,6 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
       }
     }
   }
-  log.debug('Generated AI suggestions for Meta-tags using Genvar.');
+  log.info('[PRODUCT-METATAGS] Generated AI suggestions for Product-metatags using Genvar.');
   return updatedDetectedTags;
 }
