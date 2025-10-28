@@ -1,3 +1,10 @@
+# [1.219.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.218.0...v1.219.0) (2025-10-28)
+
+
+### Features
+
+* **COMOPT-876:** ACO - product-metatags - detect commerce specific product meta tags ([#1271](https://github.com/adobe/spacecat-audit-worker/issues/1271)) ([9108a64](https://github.com/adobe/spacecat-audit-worker/commit/9108a64b3175e6ac2c21dd69d8b6d08880276ef2))
+
 # [1.218.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.217.3...v1.218.0) (2025-10-27)
 
 
