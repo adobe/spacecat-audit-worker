@@ -252,6 +252,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
         configChangesDetected: true,
         message: 'All audits triggered (no config version provided)',
         triggeredSteps,
+        previousConfigVersion,
+        configVersion,
       },
       fullAuditRef: finalUrl,
     };
@@ -340,6 +342,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
         status: 'completed',
         configChangesDetected: true,
         triggeredSteps,
+        previousConfigVersion,
+        configVersion,
       },
       fullAuditRef: finalUrl,
     };
@@ -351,6 +355,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     auditResult: {
       status: 'completed',
       configChangesDetected: false,
+      previousConfigVersion,
+      configVersion,
     },
     fullAuditRef: finalUrl,
   };
