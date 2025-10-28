@@ -107,7 +107,7 @@ export function getJsonSummarySuggestion(suggestions) {
       url: suggestion.pageUrl,
       transformRules: {
         selector: suggestion.pageSummary?.heading_selector || 'body',
-        action: suggestion.pageSummary?.heading_selector === 'h1' ? 'insertAfter' : 'insertToParent',
+        action: suggestion.pageSummary?.insertion_method || 'appendChild',
       },
     });
 
@@ -119,7 +119,7 @@ export function getJsonSummarySuggestion(suggestions) {
         url: suggestion.pageUrl,
         transformRules: {
           selector: section.heading_selector,
-          action: 'insertAfter',
+          action: section.insertion_method || 'insertAfter',
         },
       });
     });

@@ -643,12 +643,14 @@ describe('summarization guidance handler', () => {
               title: 'Page Title 1',
               formatted_summary: 'This is a formatted page summary',
               heading_selector: 'h1',
+              insertion_method: 'insertAfter',
             },
             sectionSummaries: [
               {
                 title: 'Section 1',
                 formatted_summary: 'Section summary 1',
                 heading_selector: 'h2.section-heading',
+                insertion_method: 'insertAfter',
               },
             ],
           },
