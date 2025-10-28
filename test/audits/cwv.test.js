@@ -49,6 +49,7 @@ describe('CWVRunner Tests', () => {
     getBaseURL: sandbox.stub().returns(baseURL),
     getConfig: () => siteConfig,
     getDeliveryType: sandbox.stub().returns('aem_cs'),
+    getDeliveryConfig: sandbox.stub().returns({}),
     hasProductEntitlement: sandbox.stub().resolves(true),
   };
 
@@ -74,15 +75,18 @@ describe('CWVRunner Tests', () => {
     log: {
       debug: sinon.stub(),
       info: sinon.stub(),
+      warn: sinon.stub(),
     },
   };
 
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
+    site.getDeliveryConfig.reset();
   });
 
   it('cwv audit runs rum api client cwv query', async () => {
+    site.getDeliveryConfig.returns({});
     const result = await CWVRunner(auditUrl, context, site);
 
     expect(siteConfig.getGroupedURLs.calledWith(Audit.AUDIT_TYPES.CWV)).to.be.true;
@@ -105,6 +109,68 @@ describe('CWVRunner Tests', () => {
       },
       fullAuditRef: auditUrl,
     });
+  });
+
+  it('uses custom delivery config if present', async () => {
+    const customConfig = { cwv: { dailyThreshold: 500, interval: 14 } };
+    site.getDeliveryConfig.returns(customConfig);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(context.rumApiClient.query).to.have.been.calledWith(
+      Audit.AUDIT_TYPES.CWV,
+      {
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        interval: customConfig.cwv.interval,
+        groupedURLs,
+      },
+    );
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= customConfig.cwv.dailyThreshold * customConfig.cwv.interval),
+    );
+    expect(result.auditResult.auditContext.interval).to.equal(customConfig.cwv.interval);
+  });
+
+  it('caps the interval at 30 days if a larger value is provided', async () => {
+    const customConfig = { cwv: { dailyThreshold: 500, interval: 90 } };
+    site.getDeliveryConfig.returns(customConfig);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(context.rumApiClient.query).to.have.been.calledWith(
+      Audit.AUDIT_TYPES.CWV,
+      {
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        interval: 30, // Capped value
+        groupedURLs,
+      },
+    );
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= customConfig.cwv.dailyThreshold * 30), // Uses capped interval
+    );
+    expect(result.auditResult.auditContext.interval).to.equal(30); // Reports capped interval
+  });
+
+  it('uses default values when delivery config is null', async () => {
+    site.getDeliveryConfig.returns(null);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(context.rumApiClient.query).to.have.been.calledWith(
+      Audit.AUDIT_TYPES.CWV,
+      {
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        interval: 7,
+        groupedURLs,
+      },
+    );
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= 1000 * 7),
+    );
+    expect(result.auditResult.auditContext.interval).to.equal(7);
   });
 
   describe('CWV audit to oppty conversion', () => {
