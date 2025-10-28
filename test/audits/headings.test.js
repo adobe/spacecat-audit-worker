@@ -1306,6 +1306,549 @@ describe('Headings Audit', () => {
     expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls[0].url).to.equal(url);
   });
 
+  describe('transformRules functionality', () => {
+    it('includes transformRules in validatePageHeadings for missing H1', async () => {
+      const url = 'https://example.com/page';
+
+      // Mock CssSelectorGenerator
+      const MockCssSelectorGenerator = class {
+        getSelector() {
+          return 'body > h1';
+        }
+      };
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        'css-selector-generator': {
+          default: MockCssSelectorGenerator
+        }
+      });
+
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapeResult: {
+              rawBody: '<h2>No H1</h2>',
+              tags: {
+                title: 'Page Title',
+                description: 'Page Description',
+                h1: [],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+
+      // Find the missing H1 check
+      const missingH1Check = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_MISSING_H1.check);
+      
+      expect(missingH1Check).to.exist;
+      expect(missingH1Check.transformRules).to.exist;
+      expect(missingH1Check.transformRules).to.deep.equal({
+        action: 'insertBefore',
+        selector: 'body > main > :first-child, body > :first-child',
+        tag: 'h1',
+      });
+    });
+
+    it('includes transformRules in validatePageHeadings for empty H1', async () => {
+      const url = 'https://example.com/page';
+
+      // Mock CssSelectorGenerator
+      const MockCssSelectorGenerator = class {
+        getSelector() {
+          return 'body > main > div > h1';
+        }
+      };
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        'css-selector-generator': {
+          default: MockCssSelectorGenerator
+        }
+      });
+
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapeResult: {
+              rawBody: '<h1></h1>',
+              tags: {
+                title: 'Page Title',
+                description: 'Page Description',
+                h1: [],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+
+      // Find the H1 length check
+      const h1LengthCheck = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
+      
+      expect(h1LengthCheck).to.exist;
+      expect(h1LengthCheck.transformRules).to.exist;
+      expect(h1LengthCheck.transformRules).to.deep.equal({
+        action: 'replace',
+        selector: 'body > main > div > h1',
+      });
+    });
+
+    it('includes transformRules in validatePageHeadings for long H1', async () => {
+      const url = 'https://example.com/page';
+      const longH1 = 'This is a very long H1 heading that exceeds the maximum allowed length of 70 characters';
+
+      // Mock CssSelectorGenerator
+      const MockCssSelectorGenerator = class {
+        getSelector() {
+          return 'header > h1.main-title';
+        }
+      };
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        'css-selector-generator': {
+          default: MockCssSelectorGenerator
+        }
+      });
+
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapeResult: {
+              rawBody: `<h1>${longH1}</h1>`,
+              tags: {
+                title: 'Page Title',
+                description: 'Page Description',
+                h1: [longH1],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+
+      // Find the H1 length check
+      const h1LengthCheck = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
+      
+      expect(h1LengthCheck).to.exist;
+      expect(h1LengthCheck.transformRules).to.exist;
+      expect(h1LengthCheck.transformRules).to.deep.equal({
+        action: 'replace',
+        selector: 'header > h1.main-title',
+      });
+    });
+
+    it('does not include transformRules for checks that do not support them', async () => {
+      const url = 'https://example.com/page';
+
+      // Mock CssSelectorGenerator
+      const MockCssSelectorGenerator = class {
+        getSelector() {
+          return 'body > h1';
+        }
+      };
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        'css-selector-generator': {
+          default: MockCssSelectorGenerator
+        }
+      });
+
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapeResult: {
+              rawBody: '<h1>Title</h1><h3>Skip H2</h3>',
+              tags: {
+                title: 'Page Title',
+                description: 'Page Description',
+                h1: ['Title'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+
+      // Find the heading order invalid check
+      const orderInvalidCheck = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_ORDER_INVALID.check);
+      
+      expect(orderInvalidCheck).to.exist;
+      expect(orderInvalidCheck.transformRules).to.be.undefined;
+    });
+
+    it('propagates transformRules from checks to aggregated results in headingsAuditRunner', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      // Mock CssSelectorGenerator
+      const MockCssSelectorGenerator = class {
+        getSelector() {
+          return 'body > h1';
+        }
+      };
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        'css-selector-generator': {
+          default: MockCssSelectorGenerator
+        },
+        '../../src/canonical/handler.js': {
+          getTopPagesForSiteId: sinon.stub().resolves([{ url }])
+        }
+      });
+
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => url },
+          ]),
+        },
+      };
+
+      const allKeys = ['scrapes/site-1/page/scrape.json'];
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h2>No H1</h2>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: [],
+                  },
+                }
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+
+        throw new Error('Unexpected command passed to s3Client.send');
+      });
+      context.s3Client = s3Client;
+
+      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+
+      // Check aggregated results contain transformRules
+      const missingH1Result = result.auditResult[HEADINGS_CHECKS.HEADING_MISSING_H1.check];
+      expect(missingH1Result).to.exist;
+      expect(missingH1Result.urls).to.be.an('array').with.lengthOf.at.least(1);
+      expect(missingH1Result.urls[0].transformRules).to.exist;
+      expect(missingH1Result.urls[0].transformRules).to.deep.equal({
+        action: 'insertBefore',
+        selector: 'body > main > :first-child, body > :first-child',
+        tag: 'h1',
+      });
+    });
+
+    it('does not add transformRules to aggregated results when check has no transformRules', async () => {
+      const baseURL = 'https://example.com';
+      const url = 'https://example.com/page';
+
+      // Mock CssSelectorGenerator
+      const MockCssSelectorGenerator = class {
+        getSelector() {
+          return 'body > h1';
+        }
+      };
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        'css-selector-generator': {
+          default: MockCssSelectorGenerator
+        },
+        '../../src/canonical/handler.js': {
+          getTopPagesForSiteId: sinon.stub().resolves([{ url }])
+        }
+      });
+
+      context.dataAccess = {
+        SiteTopPage: {
+          allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
+            { getUrl: () => url },
+          ]),
+        },
+      };
+
+      const allKeys = ['scrapes/site-1/page/scrape.json'];
+      s3Client.send.callsFake((command) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({
+            Contents: allKeys.map((key) => ({ Key: key })),
+            NextContinuationToken: undefined,
+          });
+        }
+
+        if (command instanceof GetObjectCommand) {
+          return Promise.resolve({
+            Body: {
+              transformToString: () => JSON.stringify({
+                finalUrl: url,
+                scrapeResult: {
+                  rawBody: '<h1>Title</h1><h3>Skip H2</h3>',
+                  tags: {
+                    title: 'Page Title',
+                    description: 'Page Description',
+                    h1: ['Title'],
+                  },
+                }
+              }),
+            },
+            ContentType: 'application/json',
+          });
+        }
+
+        throw new Error('Unexpected command passed to s3Client.send');
+      });
+      context.s3Client = s3Client;
+
+      const result = await mockedHandler.headingsAuditRunner(baseURL, context, site);
+
+      // Check aggregated results do not contain transformRules for order invalid
+      const orderInvalidResult = result.auditResult[HEADINGS_CHECKS.HEADING_ORDER_INVALID.check];
+      expect(orderInvalidResult).to.exist;
+      expect(orderInvalidResult.urls).to.be.an('array').with.lengthOf.at.least(1);
+      expect(orderInvalidResult.urls[0].transformRules).to.be.undefined;
+    });
+
+    it('propagates transformRules from aggregated results to suggestions in generateSuggestions', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: {
+          'heading-missing-h1': {
+            success: false,
+            explanation: 'Missing H1',
+            urls: [{
+              url: 'https://example.com/page1',
+              transformRules: {
+                action: 'insertBefore',
+                selector: 'body > main > :first-child',
+                tag: 'h1',
+              }
+            }]
+          },
+          'heading-h1-length': {
+            success: false,
+            explanation: 'H1 too long',
+            urls: [{
+              url: 'https://example.com/page2',
+              transformRules: {
+                action: 'replace',
+                selector: 'body > h1',
+              }
+            }]
+          }
+        }
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, context);
+
+      expect(result.suggestions).to.have.lengthOf(2);
+      
+      // Check first suggestion has transformRules
+      const missingH1Suggestion = result.suggestions.find(s => s.checkType === 'heading-missing-h1');
+      expect(missingH1Suggestion).to.exist;
+      expect(missingH1Suggestion.transformRules).to.exist;
+      expect(missingH1Suggestion.transformRules).to.deep.equal({
+        action: 'insertBefore',
+        selector: 'body > main > :first-child',
+        tag: 'h1',
+      });
+
+      // Check second suggestion has transformRules
+      const h1LengthSuggestion = result.suggestions.find(s => s.checkType === 'heading-h1-length');
+      expect(h1LengthSuggestion).to.exist;
+      expect(h1LengthSuggestion.transformRules).to.exist;
+      expect(h1LengthSuggestion.transformRules).to.deep.equal({
+        action: 'replace',
+        selector: 'body > h1',
+      });
+    });
+
+    it('does not add transformRules to suggestions when urlObj has no transformRules', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: {
+          'heading-order-invalid': {
+            success: false,
+            explanation: 'Invalid order',
+            urls: [{
+              url: 'https://example.com/page1'
+              // No transformRules
+            }]
+          }
+        }
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, context);
+
+      expect(result.suggestions).to.have.lengthOf(1);
+      expect(result.suggestions[0].transformRules).to.be.undefined;
+    });
+
+    it('propagates transformRules from suggestions to opportunity data in opportunityAndSuggestions', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-missing-h1',
+            explanation: 'Missing H1',
+            url: 'https://example.com/page1',
+            recommendedAction: 'Add H1',
+            transformRules: {
+              action: 'insertBefore',
+              selector: 'body > main > :first-child',
+              tag: 'h1',
+            }
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+
+      const syncCall = syncSuggestionsStub.getCall(0);
+      const mapNewSuggestionFn = syncCall.args[0].mapNewSuggestion;
+      const mappedSuggestion = mapNewSuggestionFn(auditData.suggestions[0]);
+
+      expect(mappedSuggestion.data.transformRules).to.exist;
+      expect(mappedSuggestion.data.transformRules).to.deep.equal({
+        action: 'insertBefore',
+        selector: 'body > main > :first-child',
+        tag: 'h1',
+      });
+    });
+
+    it('does not add transformRules to opportunity data when suggestion has no transformRules', async () => {
+      const convertToOpportunityStub = sinon.stub().resolves({
+        getId: () => 'test-opportunity-id'
+      });
+
+      const syncSuggestionsStub = sinon.stub().resolves();
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        '../../src/common/opportunity.js': {
+          convertToOpportunity: convertToOpportunityStub,
+        },
+        '../../src/utils/data-access.js': {
+          syncSuggestions: syncSuggestionsStub,
+        },
+      });
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        suggestions: [
+          {
+            type: 'CODE_CHANGE',
+            checkType: 'heading-order-invalid',
+            explanation: 'Invalid order',
+            url: 'https://example.com/page1',
+            recommendedAction: 'Fix order'
+            // No transformRules
+          }
+        ]
+      };
+
+      await mockedHandler.opportunityAndSuggestions(auditUrl, auditData, context);
+
+      expect(syncSuggestionsStub).to.have.been.calledOnce;
+
+      const syncCall = syncSuggestionsStub.getCall(0);
+      const mapNewSuggestionFn = syncCall.args[0].mapNewSuggestion;
+      const mappedSuggestion = mapNewSuggestionFn(auditData.suggestions[0]);
+
+      expect(mappedSuggestion.data.transformRules).to.be.undefined;
+    });
+
+    it('CSS selector is dynamically generated for different H1 elements', async () => {
+      const url = 'https://example.com/page';
+
+      // Mock CssSelectorGenerator to return different selectors on each call
+      let callCount = 0;
+      const MockCssSelectorGenerator = class {
+        getSelector() {
+          callCount++;
+          if (callCount === 1) return 'header > h1.primary';
+          if (callCount === 2) return 'main > article > h1';
+          return 'body > h1';
+        }
+      };
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        'css-selector-generator': {
+          default: MockCssSelectorGenerator
+        }
+      });
+
+      // Test first page
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapeResult: {
+              rawBody: '<h1></h1>',
+              tags: {
+                title: 'Page Title',
+                description: 'Page Description',
+                h1: [],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result1 = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const h1LengthCheck1 = result1.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
+      
+      expect(h1LengthCheck1.transformRules.selector).to.equal('header > h1.primary');
+
+      // Reset for second call
+      const result2 = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      const h1LengthCheck2 = result2.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_H1_LENGTH.check);
+      
+      expect(h1LengthCheck2.transformRules.selector).to.equal('main > article > h1');
+    });
+  });
+
   it('handles validatePageHeadings error gracefully', async () => {
     const url = 'https://example.com/page';
 
