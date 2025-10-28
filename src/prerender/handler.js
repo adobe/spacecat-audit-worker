@@ -129,6 +129,7 @@ async function compareHtmlContent(url, siteId, context) {
       needsPrerender: false,
       hasScrapeMetadata,
       scrapeForbidden,
+      scrapeError: metadata?.error,
     };
   }
 
@@ -143,6 +144,7 @@ async function compareHtmlContent(url, siteId, context) {
       error: true,
       needsPrerender: false,
       scrapeForbidden,
+      scrapeError: metadata?.error,
     };
   }
 
@@ -153,6 +155,8 @@ async function compareHtmlContent(url, siteId, context) {
     ...analysis,
     hasScrapeMetadata, // Track if scrape.json exists on S3
     scrapeForbidden, // Track if original scrape was forbidden (403)
+    /* c8 ignore next */
+    scrapeError: metadata?.error, // Include error details from scrape.json
   };
 }
 
@@ -215,6 +219,28 @@ export async function submitForScraping(context) {
       storagePrefix: AUDIT_TYPE,
     },
   };
+}
+
+/**
+ * Creates a notification opportunity when scraping is forbidden
+ * @param {string} auditUrl - Audited URL
+ * @param {Object} auditData - Audit data with results
+ * @param {Object} context - Processing context
+ * @returns {Promise<void>}
+ */
+export async function createScrapeForbiddenOpportunity(auditUrl, auditData, context) {
+  const { log } = context;
+
+  log.info('Prerender - Creating dummy opportunity for forbidden scraping');
+
+  await convertToOpportunity(
+    auditUrl,
+    auditData,
+    context,
+    createOpportunityData,
+    AUDIT_TYPE,
+    auditData, // Pass auditData as props so createOpportunityData receives it
+  );
 }
 
 /**
@@ -316,15 +342,24 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       totalUrlsChecked: auditResult.totalUrlsChecked || 0,
       urlsNeedingPrerender: auditResult.urlsNeedingPrerender || 0,
       scrapeForbidden: auditResult.scrapeForbidden || false,
-      pages: auditResult.results?.map((result) => ({
-        url: result.url,
-        scrapingStatus: result.error ? 'error' : 'success',
-        needsPrerender: result.needsPrerender || false,
-        wordCountBefore: result.wordCountBefore || 0,
-        wordCountAfter: result.wordCountAfter || 0,
-        contentGainRatio: result.contentGainRatio || 0,
-        organicTraffic: result.organicTraffic || 0,
-      })) || [],
+      pages: auditResult.results?.map((result) => {
+        const pageStatus = {
+          url: result.url,
+          scrapingStatus: result.error ? 'error' : 'success',
+          needsPrerender: result.needsPrerender || false,
+          wordCountBefore: result.wordCountBefore || 0,
+          wordCountAfter: result.wordCountAfter || 0,
+          contentGainRatio: result.contentGainRatio || 0,
+          organicTraffic: result.organicTraffic || 0,
+        };
+
+        // Include scrape error details if available
+        if (result.scrapeError) {
+          pageStatus.scrapeError = result.scrapeError;
+        }
+
+        return pageStatus;
+      }) || [],
     };
 
     const bucketName = env.S3_SCRAPER_BUCKET_NAME;
@@ -429,6 +464,14 @@ export async function processContentAndGenerateOpportunities(context) {
 
     if (urlsNeedingPrerender.length > 0) {
       await processOpportunityAndSuggestions(site.getBaseURL(), {
+        siteId,
+        auditId: audit.getId(),
+        auditResult,
+      }, context);
+    } else if (scrapeForbidden) {
+      // Create a dummy opportunity when scraping is forbidden (403)
+      // This allows the UI to display proper messaging without suggestions
+      await createScrapeForbiddenOpportunity(site.getBaseURL(), {
         siteId,
         auditId: audit.getId(),
         auditResult,
