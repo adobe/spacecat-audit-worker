@@ -441,6 +441,16 @@ export async function processContentAndGenerateOpportunities(context) {
 
     log.info(`Prerender - Audit completed in ${elapsedSeconds}s`);
 
+    // Upload status summary to S3 (post-processing)
+    const auditData = {
+      siteId,
+      auditId: audit.getId(),
+      auditedAt: new Date().toISOString(),
+      auditType: AUDIT_TYPE,
+      auditResult,
+    };
+    await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
+
     return {
       status: 'complete',
       auditResult,
@@ -462,5 +472,4 @@ export default new AuditBuilder()
   .addStep('submit-for-import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('process-content-and-generate-opportunities', processContentAndGenerateOpportunities)
-  .withPostProcessors([uploadStatusSummaryToS3])
   .build();
