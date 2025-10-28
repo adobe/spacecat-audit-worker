@@ -14,10 +14,10 @@
 
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl as getPresignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 import ExcelJS from 'exceljs';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
+import { getSignedUrl } from '../utils/getPresignedUrl.js';
 import { createMystiqueMessage } from './handler.js';
 import {
   refreshDirectoryS3Key,
@@ -210,7 +210,7 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
         ContentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       }));
 
-      const url = await getPresignedUrl(
+      const url = await getSignedUrl(
         s3Client,
         new GetObjectCommand({ Bucket: bucketName, Key: `${folderKey}/${sheetName}.xlsx` }),
         { expiresIn: 86_400 /* seconds, 24h */ },

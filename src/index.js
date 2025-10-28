@@ -81,6 +81,7 @@ import contentFragmentBrokenLinks from './content-fragment-broken-links/handler.
 import cdnContentFragment404 from './cdn-content-fragment-404/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import prerender from './prerender/handler.js';
+import productMetatags from './product-metatags/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
@@ -158,6 +159,7 @@ const HANDLERS = {
   'content-fragment-broken-links': contentFragmentBrokenLinks,
   'cdn-content-fragment-404': cdnContentFragment404,
   prerender,
+  'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
   'security-permissions': permissions,
   'security-permissions-redundant': permissionsRedundant,

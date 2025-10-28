@@ -21,8 +21,8 @@ import {
 } from '@adobe/spacecat-shared-utils';
 import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
+import { getSignedUrl } from '../utils/getPresignedUrl.js';
 import { transformWebSearchProviderForMystique } from './util.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
@@ -163,7 +163,7 @@ function deduplicatePrompts(prompts, siteId, log) {
   return deduplicatedPrompts;
 }
 
-export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
+export async function sendToMystique(context, getPresignedUrlOverride = getSignedUrl) {
   // TEMPORARY!!!!
   /* c8 ignore start */
   const {
@@ -285,9 +285,9 @@ export async function sendToMystique(context, getPresignedUrl = getSignedUrl) {
   // Use daily-specific S3 path if daily cadence
   const s3Context = isDaily
     ? {
-      ...context, getPresignedUrl, isDaily, dateContext,
+      ...context, getPresignedUrl: getPresignedUrlOverride, isDaily, dateContext,
     }
-    : { ...context, getPresignedUrl };
+    : { ...context, getPresignedUrl: getPresignedUrlOverride };
   const url = await asPresignedJsonUrl(prompts, bucket, s3Context);
   log.info('GEO BRAND PRESENCE: Presigned URL for prompts for site id %s (%s): %s', siteId, baseURL, url);
 
@@ -347,7 +347,7 @@ export async function loadParquetDataFromS3({ key, bucket, s3Client }) {
 
 export async function asPresignedJsonUrl(data, bucketName, context) {
   const {
-    s3Client, log, getPresignedUrl, isDaily, dateContext,
+    s3Client, log, getPresignedUrl: getPresignedUrlFn, isDaily, dateContext,
   } = context;
 
   // Use daily-specific path if daily cadence
@@ -362,7 +362,7 @@ export async function asPresignedJsonUrl(data, bucketName, context) {
   }));
 
   log.info('GEO BRAND PRESENCE: Data uploaded to S3 at s3://%s/%s', bucketName, key);
-  return getPresignedUrl(
+  return getPresignedUrlFn(
     s3Client,
     new GetObjectCommand({ Bucket: bucketName, Key: key }),
     { expiresIn: 86_400 /* seconds, 24h */ },
