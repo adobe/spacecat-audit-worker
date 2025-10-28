@@ -339,7 +339,6 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       auditResult: {
         status: 'completed',
         configChangesDetected: true,
-        changes,
         triggeredSteps,
       },
       fullAuditRef: finalUrl,
