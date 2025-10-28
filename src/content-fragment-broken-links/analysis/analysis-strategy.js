@@ -16,8 +16,6 @@ import { SimilarPathRule } from '../rules/similar-path-rule.js';
 import { Suggestion, SuggestionType } from '../domain/suggestion/suggestion.js';
 
 export class AnalysisStrategy {
-  static GRAPHQL_SUFFIX = /\.cfm.*\.json$/;
-
   constructor(context, aemClient, pathIndex) {
     this.context = context;
     this.aemClient = aemClient;
@@ -29,19 +27,12 @@ export class AnalysisStrategy {
     ].sort((a, b) => a.getPriority() - b.getPriority());
   }
 
-  static cleanPath(path) {
-    if (AnalysisStrategy.GRAPHQL_SUFFIX.test(path)) {
-      return path.replace(AnalysisStrategy.GRAPHQL_SUFFIX, '');
-    }
-    return path;
-  }
-
   async analyze(brokenPaths) {
     const suggestions = [];
 
     for (const path of brokenPaths) {
       // eslint-disable-next-line no-await-in-loop
-      const suggestion = await this.analyzePath(AnalysisStrategy.cleanPath(path));
+      const suggestion = await this.analyzePath(path);
       if (suggestion) {
         suggestions.push(suggestion);
       }

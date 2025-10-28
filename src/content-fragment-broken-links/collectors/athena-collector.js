@@ -17,6 +17,8 @@ import { isAssetUrl } from '../../utils/asset-utils.js';
 import { extractCustomerDomain } from '../../utils/cdn-utils.js';
 
 export class AthenaCollector {
+  static GRAPHQL_SUFFIX = /\.cfm.*\.json$/;
+
   constructor(context) {
     this.context = context;
   }
@@ -34,6 +36,13 @@ export class AthenaCollector {
     collector.sanitizedHostname = extractCustomerDomain(site);
     collector.initialize();
     return collector;
+  }
+
+  static cleanPath(path) {
+    if (AthenaCollector.GRAPHQL_SUFFIX.test(path)) {
+      return path.replace(AthenaCollector.GRAPHQL_SUFFIX, '');
+    }
+    return path;
   }
 
   static getPreviousDayParts() {
@@ -155,14 +164,17 @@ export class AthenaCollector {
         request_count: count,
       } = row;
 
+      // Clean the URL at the source (remove .cfm.gql.json suffixes, etc.)
+      const cleanedUrl = AthenaCollector.cleanPath(url);
+
       // Athena returns it as string
       const parsedCount = parseInt(count, 10) || 0;
 
-      if (!urlMap.has(url)) {
-        urlMap.set(url, { userAgents: [], totalCount: 0 });
+      if (!urlMap.has(cleanedUrl)) {
+        urlMap.set(cleanedUrl, { userAgents: [], totalCount: 0 });
       }
 
-      const entry = urlMap.get(url);
+      const entry = urlMap.get(cleanedUrl);
 
       // Find existing user agent or add new one
       const existingAgent = entry.userAgents.find((agent) => agent.userAgent === userAgent);

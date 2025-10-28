@@ -44,10 +44,10 @@ describe('AthenaCollector', () => {
     athenaClientStub = {
       execute: sandbox.stub().resolves(),
       query: sandbox.stub().resolves([
-        { url: '/content/dam/test/fragment1', request_user_agent: 'Mozilla/5.0' },
-        { url: '/content/dam/test/asset.jpg', request_user_agent: 'Mozilla/5.0' }, // Asset should be filtered
+        { url: '/content/dam/test/fragment1', request_user_agent: 'Mozilla/5.0', request_count: '10' },
+        { url: '/content/dam/test/asset.jpg', request_user_agent: 'Mozilla/5.0', request_count: '5' }, // Asset should be filtered
         { url: null }, // Should be filtered
-        { url: '/content/dam/test/fragment2', request_user_agent: 'Chrome/91.0' },
+        { url: '/content/dam/test/fragment2', request_user_agent: 'Chrome/91.0', request_count: '8' },
       ]),
     };
 
@@ -164,6 +164,39 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = 'test';
 
       expect(() => collector.validate()).to.not.throw();
+    });
+  });
+
+  describe('static constants', () => {
+    it('should have GraphQL suffix regex', () => {
+      expect(AthenaCollector.GRAPHQL_SUFFIX).to.be.a('regexp');
+      expect(AthenaCollector.GRAPHQL_SUFFIX.test('/content/dam/test.cfm.json')).to.be.true;
+      expect(AthenaCollector.GRAPHQL_SUFFIX.test('/content/dam/test.cfm.model.json')).to.be.true;
+      expect(AthenaCollector.GRAPHQL_SUFFIX.test('/content/dam/test.cfm.variant.json')).to.be.true;
+      expect(AthenaCollector.GRAPHQL_SUFFIX.test('/content/dam/test.cfm.gql.json')).to.be.true;
+      expect(AthenaCollector.GRAPHQL_SUFFIX.test('/content/dam/test.jpg')).to.be.false;
+      expect(AthenaCollector.GRAPHQL_SUFFIX.test('/content/dam/test.json')).to.be.false;
+    });
+  });
+
+  describe('cleanPath static method', () => {
+    it('should remove GraphQL suffix from paths', () => {
+      expect(AthenaCollector.cleanPath('/content/dam/test.cfm.json')).to.equal('/content/dam/test');
+      expect(AthenaCollector.cleanPath('/content/dam/test.cfm.model.json')).to.equal('/content/dam/test');
+      expect(AthenaCollector.cleanPath('/content/dam/folder/item.cfm.variant.json')).to.equal('/content/dam/folder/item');
+      expect(AthenaCollector.cleanPath('/content/dam/test.cfm.gql.json')).to.equal('/content/dam/test');
+    });
+
+    it('should return original path if no GraphQL suffix', () => {
+      expect(AthenaCollector.cleanPath('/content/dam/test.jpg')).to.equal('/content/dam/test.jpg');
+      expect(AthenaCollector.cleanPath('/content/dam/test')).to.equal('/content/dam/test');
+      expect(AthenaCollector.cleanPath('/content/dam/test.json')).to.equal('/content/dam/test.json');
+    });
+
+    it('should handle edge cases', () => {
+      expect(AthenaCollector.cleanPath('')).to.equal('');
+      expect(AthenaCollector.cleanPath('/content/dam/.cfm.json')).to.equal('/content/dam/');
+      expect(AthenaCollector.cleanPath('/content/dam/test.cfm')).to.equal('/content/dam/test.cfm');
     });
   });
 
@@ -456,11 +489,17 @@ describe('AthenaCollector', () => {
 
   describe('queryBrokenPaths', () => {
     it('should query broken paths with correct parameters and filter assets', async () => {
+      athenaClientStub.query.resolves([
+        { url: '/content/dam/test/fragment1', request_user_agent: 'Mozilla/5.0', request_count: '10' },
+        { url: '/content/dam/test/asset.jpg', request_user_agent: 'Mozilla/5.0', request_count: '5' }, // Asset should be filtered
+        { url: null }, // Should be filtered
+        { url: '/content/dam/test/fragment2', request_user_agent: 'Chrome/91.0', request_count: '20' },
+      ]);
+
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
       collector.sanitizedHostname = 'test';
       collector.initialize();
-      setTestConfig(collector);
       setTestConfig(collector);
       const result = await collector.queryBrokenPaths('2025', '01', '15');
 
@@ -484,26 +523,26 @@ describe('AthenaCollector', () => {
       expect(result).to.deep.equal([
         {
           url: '/content/dam/test/fragment1',
-          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 0 }],
-          requestCount: 0,
+          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 10 }],
+          requestCount: 10,
         },
         {
           url: '/content/dam/test/fragment2',
-          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 0 }],
-          requestCount: 0,
+          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 20 }],
+          requestCount: 20,
         },
       ]);
     });
 
     it('should filter out asset URLs (images, documents, media)', async () => {
       athenaClientStub.query.resolves([
-        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0' },
-        { url: '/content/dam/image.jpg', request_user_agent: 'Mozilla/5.0' }, // Image asset
-        { url: '/content/dam/document.pdf', request_user_agent: 'Mozilla/5.0' }, // Document asset
-        { url: '/content/dam/video.mp4', request_user_agent: 'Mozilla/5.0' }, // Media asset
-        { url: '/content/dam/font.woff', request_user_agent: 'Mozilla/5.0' }, // Font asset
-        { url: '/content/dam/archive.zip', request_user_agent: 'Mozilla/5.0' }, // Archive asset
-        { url: '/content/dam/another-fragment', request_user_agent: 'Chrome/91.0' },
+        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0', request_count: '7' },
+        { url: '/content/dam/image.jpg', request_user_agent: 'Mozilla/5.0', request_count: '12' }, // Image asset
+        { url: '/content/dam/document.pdf', request_user_agent: 'Mozilla/5.0', request_count: '3' }, // Document asset
+        { url: '/content/dam/video.mp4', request_user_agent: 'Mozilla/5.0', request_count: '9' }, // Media asset
+        { url: '/content/dam/font.woff', request_user_agent: 'Mozilla/5.0', request_count: '2' }, // Font asset
+        { url: '/content/dam/archive.zip', request_user_agent: 'Mozilla/5.0', request_count: '5' }, // Archive asset
+        { url: '/content/dam/another-fragment', request_user_agent: 'Chrome/91.0', request_count: '4' },
       ]);
 
       const collector = new AthenaCollector(context);
@@ -511,59 +550,57 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = 'test';
       collector.initialize();
       setTestConfig(collector);
-      setTestConfig(collector);
       const result = await collector.queryBrokenPaths('2025', '01', '15');
 
       expect(result).to.deep.equal([
         {
           url: '/content/dam/fragment',
-          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 0 }],
-          requestCount: 0,
+          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 7 }],
+          requestCount: 7,
         },
         {
           url: '/content/dam/another-fragment',
-          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 0 }],
-          requestCount: 0,
+          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 4 }],
+          requestCount: 4,
         },
       ]);
     });
 
     it('should filter out null URLs from results', async () => {
       athenaClientStub.query.resolves([
-        { url: '/content/dam/test/valid-fragment', request_user_agent: 'Mozilla/5.0' },
+        { url: '/content/dam/test/valid-fragment', request_user_agent: 'Mozilla/5.0', request_count: '6' },
         { url: null },
         { url: '' },
-        { url: '/content/dam/test/another-fragment', request_user_agent: 'Chrome/91.0' },
+        { url: '/content/dam/test/another-fragment', request_user_agent: 'Chrome/91.0', request_count: '9' },
       ]);
 
       const collector = new AthenaCollector(context);
       collector.imsOrg = 'test-ims-org';
       collector.sanitizedHostname = 'test';
       collector.initialize();
-      setTestConfig(collector);
       setTestConfig(collector);
       const result = await collector.queryBrokenPaths('2025', '01', '15');
 
       expect(result).to.deep.equal([
         {
           url: '/content/dam/test/valid-fragment',
-          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 0 }],
-          requestCount: 0,
+          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 6 }],
+          requestCount: 6,
         },
         {
           url: '/content/dam/test/another-fragment',
-          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 0 }],
-          requestCount: 0,
+          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 9 }],
+          requestCount: 9,
         },
       ]);
     });
 
     it('should group multiple user agents for the same URL', async () => {
       athenaClientStub.query.resolves([
-        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0' },
-        { url: '/content/dam/fragment', request_user_agent: 'Chrome/91.0' },
-        { url: '/content/dam/fragment', request_user_agent: 'Safari/14.0' },
-        { url: '/content/dam/another', request_user_agent: 'Mozilla/5.0' },
+        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0', request_count: '15' },
+        { url: '/content/dam/fragment', request_user_agent: 'Chrome/91.0', request_count: '10' },
+        { url: '/content/dam/fragment', request_user_agent: 'Safari/14.0', request_count: '5' },
+        { url: '/content/dam/another', request_user_agent: 'Mozilla/5.0', request_count: '8' },
       ]);
 
       const collector = new AthenaCollector(context);
@@ -577,25 +614,25 @@ describe('AthenaCollector', () => {
         {
           url: '/content/dam/fragment',
           requestUserAgents: [
-            { userAgent: 'Mozilla/5.0', count: 0 },
-            { userAgent: 'Chrome/91.0', count: 0 },
-            { userAgent: 'Safari/14.0', count: 0 },
+            { userAgent: 'Mozilla/5.0', count: 15 },
+            { userAgent: 'Chrome/91.0', count: 10 },
+            { userAgent: 'Safari/14.0', count: 5 },
           ],
-          requestCount: 0,
+          requestCount: 30,
         },
         {
           url: '/content/dam/another',
-          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 0 }],
-          requestCount: 0,
+          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 8 }],
+          requestCount: 8,
         },
       ]);
     });
 
-    it('should not duplicate user agents for the same URL', async () => {
+    it('should aggregate counts for duplicate user agents on the same URL', async () => {
       athenaClientStub.query.resolves([
-        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0' },
-        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0' },
-        { url: '/content/dam/fragment', request_user_agent: 'Chrome/91.0' },
+        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0', request_count: '12' },
+        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0', request_count: '8' },
+        { url: '/content/dam/fragment', request_user_agent: 'Chrome/91.0', request_count: '5' },
       ]);
 
       const collector = new AthenaCollector(context);
@@ -609,10 +646,41 @@ describe('AthenaCollector', () => {
         {
           url: '/content/dam/fragment',
           requestUserAgents: [
-            { userAgent: 'Mozilla/5.0', count: 0 },
-            { userAgent: 'Chrome/91.0', count: 0 },
+            { userAgent: 'Mozilla/5.0', count: 20 }, // 12 + 8 aggregated
+            { userAgent: 'Chrome/91.0', count: 5 },
           ],
-          requestCount: 0,
+          requestCount: 25, // Total: 20 + 5
+        },
+      ]);
+    });
+
+    it('should clean GraphQL suffixes from URLs', async () => {
+      athenaClientStub.query.resolves([
+        { url: '/content/dam/fragment.cfm.json', request_user_agent: 'Mozilla/5.0', request_count: '10' },
+        { url: '/content/dam/fragment.cfm.model.json', request_user_agent: 'Chrome/91.0', request_count: '5' },
+        { url: '/content/dam/another.cfm.gql.json', request_user_agent: 'Safari/14.0', request_count: '3' },
+      ]);
+
+      const collector = new AthenaCollector(context);
+      collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
+      collector.initialize();
+      setTestConfig(collector);
+      const result = await collector.queryBrokenPaths('2025', '01', '15');
+
+      expect(result).to.deep.equal([
+        {
+          url: '/content/dam/fragment',
+          requestUserAgents: [
+            { userAgent: 'Mozilla/5.0', count: 10 },
+            { userAgent: 'Chrome/91.0', count: 5 },
+          ],
+          requestCount: 15,
+        },
+        {
+          url: '/content/dam/another',
+          requestUserAgents: [{ userAgent: 'Safari/14.0', count: 3 }],
+          requestCount: 3,
         },
       ]);
     });
@@ -653,6 +721,51 @@ describe('AthenaCollector', () => {
       await expect(collector.queryBrokenPaths('2025', '01', '15'))
         .to.be.rejectedWith('Query execution failed');
     });
+
+    it('should handle invalid request_count values and default to 0', async () => {
+      athenaClientStub.query.resolves([
+        { url: '/content/dam/fragment1', request_user_agent: 'Mozilla/5.0', request_count: 'invalid' },
+        { url: '/content/dam/fragment2', request_user_agent: 'Chrome/91.0', request_count: null },
+        { url: '/content/dam/fragment3', request_user_agent: 'Safari/14.0', request_count: undefined },
+        { url: '/content/dam/fragment4', request_user_agent: 'Edge/90.0', request_count: '' },
+        { url: '/content/dam/fragment5', request_user_agent: 'Opera/80.0', request_count: '10' },
+      ]);
+
+      const collector = new AthenaCollector(context);
+      collector.imsOrg = 'test-ims-org';
+      collector.sanitizedHostname = 'test';
+      collector.initialize();
+      setTestConfig(collector);
+      const result = await collector.queryBrokenPaths('2025', '01', '15');
+
+      expect(result).to.deep.equal([
+        {
+          url: '/content/dam/fragment1',
+          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 0 }],
+          requestCount: 0,
+        },
+        {
+          url: '/content/dam/fragment2',
+          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 0 }],
+          requestCount: 0,
+        },
+        {
+          url: '/content/dam/fragment3',
+          requestUserAgents: [{ userAgent: 'Safari/14.0', count: 0 }],
+          requestCount: 0,
+        },
+        {
+          url: '/content/dam/fragment4',
+          requestUserAgents: [{ userAgent: 'Edge/90.0', count: 0 }],
+          requestCount: 0,
+        },
+        {
+          url: '/content/dam/fragment5',
+          requestUserAgents: [{ userAgent: 'Opera/80.0', count: 10 }],
+          requestCount: 10,
+        },
+      ]);
+    });
   });
 
   describe('fetchBrokenPaths', () => {
@@ -679,14 +792,14 @@ describe('AthenaCollector', () => {
         expect(result).to.deep.equal([
           {
             url: '/content/dam/test/fragment1',
-            requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 0 }],
-          requestCount: 0,
-        },
+            requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 10 }],
+            requestCount: 10,
+          },
           {
             url: '/content/dam/test/fragment2',
-            requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 0 }],
-          requestCount: 0,
-        },
+            requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 8 }],
+            requestCount: 8,
+          },
         ]);
       } finally {
         AthenaCollector.getPreviousDayParts = originalGetPreviousDayParts;

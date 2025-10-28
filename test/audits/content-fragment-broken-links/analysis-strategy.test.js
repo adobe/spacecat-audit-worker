@@ -129,15 +129,6 @@ describe('AnalysisStrategy', () => {
     sandbox.restore();
   });
 
-  describe('static constants', () => {
-    it('should have GraphQL suffix regex', () => {
-      expect(AnalysisStrategy.GRAPHQL_SUFFIX).to.be.a('regexp');
-      expect(AnalysisStrategy.GRAPHQL_SUFFIX.test('/content/dam/test.cfm.json')).to.be.true;
-      expect(AnalysisStrategy.GRAPHQL_SUFFIX.test('/content/dam/test.cfm.model.json')).to.be.true;
-      expect(AnalysisStrategy.GRAPHQL_SUFFIX.test('/content/dam/test.jpg')).to.be.false;
-    });
-  });
-
   describe('constructor', () => {
     it('should initialize with context, AEM client, and path index', () => {
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
@@ -161,35 +152,15 @@ describe('AnalysisStrategy', () => {
     });
   });
 
-  describe('cleanPath static method', () => {
-    it('should remove GraphQL suffix from paths', () => {
-      expect(AnalysisStrategy.cleanPath('/content/dam/test.cfm.json')).to.equal('/content/dam/test');
-      expect(AnalysisStrategy.cleanPath('/content/dam/test.cfm.model.json')).to.equal('/content/dam/test');
-      expect(AnalysisStrategy.cleanPath('/content/dam/folder/item.cfm.variant.json')).to.equal('/content/dam/folder/item');
-    });
-
-    it('should return original path if no GraphQL suffix', () => {
-      expect(AnalysisStrategy.cleanPath('/content/dam/test.jpg')).to.equal('/content/dam/test.jpg');
-      expect(AnalysisStrategy.cleanPath('/content/dam/test')).to.equal('/content/dam/test');
-      expect(AnalysisStrategy.cleanPath('/content/dam/test.json')).to.equal('/content/dam/test.json');
-    });
-
-    it('should handle edge cases', () => {
-      expect(AnalysisStrategy.cleanPath('')).to.equal('');
-      expect(AnalysisStrategy.cleanPath('/content/dam/.cfm.json')).to.equal('/content/dam/');
-      expect(AnalysisStrategy.cleanPath('/content/dam/test.cfm')).to.equal('/content/dam/test.cfm');
-    });
-  });
-
   describe('analyze method', () => {
     it('should analyze multiple broken paths', async () => {
       const brokenPaths = [
         '/content/dam/test/broken1.jpg',
-        '/content/dam/test/broken2.cfm.json',
+        '/content/dam/test/broken2.jpg',
       ];
 
       const suggestion1 = { type: 'PUBLISH', requestedPath: '/content/dam/test/broken1.jpg' };
-      const suggestion2 = { type: 'LOCALE', requestedPath: '/content/dam/test/broken2' };
+      const suggestion2 = { type: 'LOCALE', requestedPath: '/content/dam/test/broken2.jpg' };
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const analyzePathStub = sandbox.stub(strategy, 'analyzePath');
@@ -202,7 +173,7 @@ describe('AnalysisStrategy', () => {
 
       expect(analyzePathStub).to.have.been.calledTwice;
       expect(analyzePathStub.firstCall).to.have.been.calledWith('/content/dam/test/broken1.jpg');
-      expect(analyzePathStub.secondCall).to.have.been.calledWith('/content/dam/test/broken2');
+      expect(analyzePathStub.secondCall).to.have.been.calledWith('/content/dam/test/broken2.jpg');
       expect(processSuggestionsStub).to.have.been.calledWith([suggestion1, suggestion2]);
       expect(result).to.deep.equal([suggestion1, suggestion2]);
     });
@@ -239,18 +210,6 @@ describe('AnalysisStrategy', () => {
 
       expect(processSuggestionsStub).to.have.been.calledWith([]);
       expect(result).to.deep.equal([]);
-    });
-
-    it('should clean GraphQL paths before analysis', async () => {
-      const brokenPaths = ['/content/dam/test/broken.cfm.json'];
-
-      const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
-      const analyzePathStub = sandbox.stub(strategy, 'analyzePath').resolves(null);
-      sandbox.stub(strategy, 'processSuggestions').resolves([]);
-
-      await strategy.analyze(brokenPaths);
-
-      expect(analyzePathStub).to.have.been.calledWith('/content/dam/test/broken');
     });
   });
 
@@ -458,7 +417,7 @@ describe('AnalysisStrategy', () => {
 
   describe('integration scenarios', () => {
     it('should work end-to-end with successful rule application', async () => {
-      const brokenPaths = ['/content/dam/test/broken.cfm.json'];
+      const brokenPaths = ['/content/dam/test/broken'];
       const suggestion = {
         type: 'LOCALE',
         requestedPath: '/content/dam/test/broken',
@@ -506,12 +465,12 @@ describe('AnalysisStrategy', () => {
     it('should handle multiple paths with different outcomes', async () => {
       const brokenPaths = [
         '/content/dam/test/broken1.jpg',
-        '/content/dam/test/broken2.cfm.json',
+        '/content/dam/test/broken2.jpg',
         '/content/dam/test/broken3.jpg',
       ];
 
       const suggestion1 = { type: 'PUBLISH', requestedPath: '/content/dam/test/broken1.jpg' };
-      const suggestion2 = { type: 'LOCALE', requestedPath: '/content/dam/test/broken2', suggestedPath: '/content/dam/test/suggested2.jpg' };
+      const suggestion2 = { type: 'LOCALE', requestedPath: '/content/dam/test/broken2.jpg', suggestedPath: '/content/dam/test/suggested2.jpg' };
       const notFoundSuggestion = { type: 'NOT_FOUND', requestedPath: '/content/dam/test/broken3.jpg' };
 
       // Setup rule responses for different paths
