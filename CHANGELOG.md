@@ -1,3 +1,11 @@
+## [1.219.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.219.1...v1.219.2) (2025-10-28)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1458](https://github.com/adobe/spacecat-audit-worker/issues/1458)) ([a12de09](https://github.com/adobe/spacecat-audit-worker/commit/a12de0982c372a8fff94fb32fc2c0b269c68388e))
+* **llmo-customer-analysis:** remove config changes from audit result ([#1467](https://github.com/adobe/spacecat-audit-worker/issues/1467)) ([dd1b8b0](https://github.com/adobe/spacecat-audit-worker/commit/dd1b8b0105e17174a71ef3830ba98577a68d7eab))
+
 ## [1.219.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.219.0...v1.219.1) (2025-10-28)
 
 
