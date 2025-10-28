@@ -45,8 +45,29 @@ export default async function handler(message, context) {
     auditId, siteId, type: subType, data,
   } = message;
 
-  log.info(`%s: Message received for auditId: ${auditId}, siteId: ${siteId}, subType: ${subType}`, AUDIT_NAME);
-  log.debug('%s: Full message:', AUDIT_NAME, message);
+  // capture basic trigger metadata if present on message
+  const triggerSource = message.auditContext?.triggerSource || message.source || 'unknown';
+  const initiator = message.auditContext?.initiator || message.initiator || null;
+  const webSearchProvider = message.data?.web_search_provider || message.webSearchProvider || null;
+  const dateCtx = {
+    week: message.week || null,
+    year: message.year || null,
+    date: message.data?.date || null,
+  };
+
+  log.info(
+    `%s: Message received for auditId: ${auditId}, siteId: ${siteId}, subType: ${subType}, trigger: ${triggerSource}`,
+    AUDIT_NAME,
+  );
+  log.debug('%s: Full message (redacted fields may be omitted):', AUDIT_NAME, {
+    auditId,
+    siteId,
+    subType,
+    triggerSource,
+    initiator,
+    webSearchProvider,
+    dateCtx,
+  });
 
   if (!subType || ![...OPPTY_TYPES, 'refresh:geo-brand-presence', 'refresh:geo-brand-presence-daily'].includes(subType)) {
     log.error(`%s: Unsupported subtype: ${subType} for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
@@ -74,7 +95,10 @@ export default async function handler(message, context) {
     : `${site.getConfig().getLlmoDataFolder()}/brand-presence`;
   const outputLocations = [mainOutputLocation, `${mainOutputLocation}/config_${configVersion || 'absent'}`];
 
-  log.info(`%s: Output locations configured for auditId: ${auditId}, siteId: ${siteId}, locations: ${outputLocations.length}, configVersion: ${configVersion || 'absent'}`, AUDIT_NAME);
+  log.info(
+    `%s: Output locations configured for auditId: ${auditId}, siteId: ${siteId}, locations: ${outputLocations.length}, configVersion: ${configVersion || 'absent'}, provider: ${webSearchProvider || 'n/a'}, week: ${dateCtx.week || 'n/a'}, year: ${dateCtx.year || 'n/a'}, date: ${dateCtx.date || 'n/a'}`,
+    AUDIT_NAME,
+  );
   log.debug(`%s: Output locations: ${JSON.stringify(outputLocations)}`, AUDIT_NAME);
 
   if (subType === 'refresh:geo-brand-presence' || subType === 'refresh:geo-brand-presence-daily') {
@@ -110,7 +134,10 @@ export default async function handler(message, context) {
 
   const uploadStartTime = Date.now();
   await Promise.all(outputLocations.map(async (outputLocation, index) => {
-    log.info(`%s: Uploading to location ${index + 1}/${outputLocations.length} for auditId: ${auditId}, siteId: ${siteId}, location: ${outputLocation}`, AUDIT_NAME);
+    log.info(
+      `%s: Uploading to location ${index + 1}/${outputLocations.length} for auditId: ${auditId}, siteId: ${siteId}, location: ${outputLocation}, provider: ${webSearchProvider || 'n/a'}`,
+      AUDIT_NAME,
+    );
     const locationStartTime = Date.now();
 
     await uploadAndPublishFile(sheet, xlsxName, outputLocation, sharepointClient, log);

@@ -141,8 +141,15 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   const { siteId, auditContext } = message;
   let errMsg;
 
-  log.info(`%s: Handler invoked for siteId: ${siteId}`, AUDIT_NAME);
-  log.debug(`%s: Message details for siteId: ${siteId}:`, AUDIT_NAME, message);
+  const triggerSource = auditContext?.triggerSource || message.source || 'unknown';
+  const initiator = auditContext?.initiator || message.initiator || null;
+  log.info(`%s: Handler invoked for siteId: ${siteId}, trigger: ${triggerSource}`, AUDIT_NAME);
+  log.debug(`%s: Message details for siteId: ${siteId}:`, AUDIT_NAME, {
+    siteId,
+    triggerSource,
+    initiator,
+    auditContext,
+  });
 
   const site = await Site.findById(siteId);
   if (!site) {
@@ -155,7 +162,10 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
     || 'weekly';
   const isDaily = brandPresenceCadence === 'daily';
 
-  log.info(`%s: Processing refresh with cadence: ${brandPresenceCadence} for siteId: ${siteId}, isDaily: ${isDaily}`, AUDIT_NAME);
+  log.info(
+    `%s: Processing refresh with cadence: ${brandPresenceCadence} for siteId: ${siteId}, isDaily: ${isDaily}`,
+    AUDIT_NAME,
+  );
 
   // fetch sheets that need to be refreshed from SharePoint
   // Get the SharePoint client
@@ -299,7 +309,10 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
         ? 'refresh:geo-brand-presence-daily'
         : 'refresh:geo-brand-presence';
 
-      log.debug(`%s: Creating Mystique message for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, type: ${messageType}`, AUDIT_NAME);
+      log.debug(
+        `%s: Creating Mystique message for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, type: ${messageType}`,
+        AUDIT_NAME,
+      );
       const msg = createMystiqueMessage({
         type: messageType,
         auditId,
@@ -311,9 +324,14 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
         webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
         configVersion,
         date: null, // TODO support daily refreshes
+        source: triggerSource,
+        initiator,
       });
 
-      log.info(`%s: Sending message to Mystique queue for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}`, AUDIT_NAME);
+      log.info(
+        `%s: Sending message to Mystique queue for auditId: ${auditId}, siteId: ${siteId}, sheet: ${sheetName}, queue: ${env.QUEUE_SPACECAT_TO_MYSTIQUE}, provider: ${webSearchProvider}, week: ${week}, year: ${year}`,
+        AUDIT_NAME,
+      );
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, msg);
 
       const cadenceLabel = isDaily ? ' DAILY' : '';
