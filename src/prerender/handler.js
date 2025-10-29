@@ -148,7 +148,7 @@ async function compareHtmlContent(url, siteId, context) {
     };
   }
 
-  log.info(`Prerender - Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
+  log.debug(`Prerender - Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
 
   return {
     url,
@@ -199,12 +199,12 @@ export async function submitForScraping(context) {
 
   const finalUrls = [...new Set([...topPagesUrls, ...includedURLs])];
 
-  log.debug(`Prerender: Submitting ${finalUrls.length} URLs for scraping`);
+  log.info(`Prerender: Submitting ${finalUrls.length} URLs for scraping. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
 
   if (finalUrls.length === 0) {
     // Fallback to base URL if no URLs found
     const baseURL = site.getBaseURL();
-    log.info(`Prerender - No URLs found, falling back to base URL: ${baseURL}`);
+    log.info(`Prerender - No URLs found, falling back to baseUrl=${baseURL}, siteId=${site.getId()}`);
     finalUrls.push(baseURL);
   }
 
@@ -231,7 +231,7 @@ export async function submitForScraping(context) {
 export async function createScrapeForbiddenOpportunity(auditUrl, auditData, context) {
   const { log } = context;
 
-  log.info('Prerender - Creating dummy opportunity for forbidden scraping');
+  log.info(`Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
 
   await convertToOpportunity(
     auditUrl,
@@ -257,7 +257,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
   const { urlsNeedingPrerender } = auditResult;
 
   if (urlsNeedingPrerender === 0) {
-    log.info('Prerender - No prerender opportunities found, skipping opportunity creation');
+    log.info(`Prerender - No prerender opportunities found, skipping opportunity creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
     return;
   }
 
@@ -265,11 +265,11 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     .filter((result) => result.needsPrerender);
 
   if (preRenderSuggestions.length === 0) {
-    log.info('Prerender - No URLs needing prerender found, skipping opportunity creation');
+    log.info(`Prerender - No URLs needing prerender found, skipping opportunity creation. baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
     return;
   }
 
-  log.debug(`Prerender - Generated ${preRenderSuggestions.length} prerender suggestions for ${auditUrl}`);
+  log.debug(`Prerender - Generated ${preRenderSuggestions.length} prerender suggestions for baseUrl=${auditUrl}, siteId=${auditData.siteId}`);
 
   const opportunity = await convertToOpportunity(
     auditUrl,
@@ -312,7 +312,7 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
     }),
   });
 
-  log.info(`Prerender - Successfully synced opportunity and suggestions for site: ${auditData.siteId} and ${AUDIT_TYPE} audit type.`);
+  log.info(`Prerender - Successfully synced suggestions=${preRenderSuggestions.length} for baseUrl: ${auditUrl}, siteId: ${auditData.siteId}`);
 }
 
 /**
@@ -324,10 +324,9 @@ export async function processOpportunityAndSuggestions(auditUrl, auditData, cont
  */
 export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
   const { log, s3Client, env } = context;
+  const { auditResult, siteId, auditedAt } = auditData;
 
   try {
-    const { auditResult, siteId, auditedAt } = auditData;
-
     if (!auditResult) {
       log.warn('Prerender - Missing auditResult, skipping status summary upload');
       return;
@@ -372,9 +371,9 @@ export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
       ContentType: 'application/json',
     }));
 
-    log.info(`Prerender - Successfully uploaded status summary to S3: ${statusKey} for site: ${siteId}`);
+    log.info(`Prerender - Successfully uploaded status summary to S3: ${statusKey}. baseUrl=${auditUrl}, siteId=${siteId}`);
   } catch (error) {
-    log.error(`Prerender - Failed to upload status summary to S3: ${error.message}`, error);
+    log.error(`Prerender - Failed to upload status summary to S3: ${error.message}. baseUrl=${auditUrl}, siteId=${siteId}`, error);
     // Don't throw - this is a non-critical post-processing step
   }
 }
@@ -392,7 +391,7 @@ export async function processContentAndGenerateOpportunities(context) {
   const siteId = site.getId();
   const startTime = process.hrtime();
 
-  log.info(`Prerender - Generate opportunities for site: ${siteId}`);
+  log.info(`Prerender - Generate opportunities for baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
 
   try {
     let urlsToCheck = [];
@@ -416,13 +415,13 @@ export async function processContentAndGenerateOpportunities(context) {
       const includedURLs = await site?.getConfig?.()?.getIncludedURLs?.(AUDIT_TYPE) || [];
       urlsToCheck = [...new Set([...urlsToCheck, ...includedURLs])];
       /* c8 ignore stop */
-      log.info(`Prerender - Fallback: Using ${urlsToCheck.length} top pages for comparison`);
+      log.info(`Prerender - Fallback for baseUrl=${site.getBaseURL()}, siteId=${siteId}. Using topPages=${topPages.length}, includedURLs=${includedURLs.length}, total=${urlsToCheck.length}`);
     }
 
     if (urlsToCheck.length === 0) {
       // Final fallback to base URL
       urlsToCheck = [site.getBaseURL()];
-      log.info('Prerender - No URLs found, using base URL for comparison');
+      log.info(`Prerender - No URLs found for comparison. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
     }
 
     const comparisonResults = await Promise.all(
@@ -447,7 +446,7 @@ export async function processContentAndGenerateOpportunities(context) {
     const scrapeForbidden = urlsWithScrapeJson.length > 0
       && urlsWithForbiddenScrape.length === urlsWithScrapeJson.length;
 
-    log.info(`Prerender - Scrape analysis for base URL ${site.getBaseURL()}, siteId ${siteId}: scrapeForbidden=${scrapeForbidden}, totalUrlsChecked=${comparisonResults.length}, urlsWithScrapeJson=${urlsWithScrapeJson.length}, urlsWithForbiddenScrape=${urlsWithForbiddenScrape.length}`);
+    log.info(`Prerender - Scrape analysis for baseUrl=${site.getBaseURL()}, siteId=${siteId}. scrapeForbidden=${scrapeForbidden}, totalUrlsChecked=${comparisonResults.length}, urlsWithScrapeJson=${urlsWithScrapeJson.length}, urlsWithForbiddenScrape=${urlsWithForbiddenScrape.length}`);
 
     // Remove internal tracking fields from results before storing
     // eslint-disable-next-line
@@ -474,12 +473,14 @@ export async function processContentAndGenerateOpportunities(context) {
         auditId: audit.getId(),
         auditResult,
       }, context);
+    } else {
+      log.info(`Prerender - No opportunity found. baseUrl=${site.getBaseURL()}, siteId=${siteId}, scrapeForbidden=${scrapeForbidden}`);
     }
 
     const endTime = process.hrtime(startTime);
     const elapsedSeconds = (endTime[0] + endTime[1] / 1e9).toFixed(2);
 
-    log.info(`Prerender - Audit completed in ${elapsedSeconds}s`);
+    log.info(`Prerender - Audit completed in ${elapsedSeconds}s. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
 
     // Upload status summary to S3 (post-processing)
     const auditData = {
@@ -496,7 +497,7 @@ export async function processContentAndGenerateOpportunities(context) {
       auditResult,
     };
   } catch (error) {
-    log.error(`Prerender - Audit failed for site ${siteId}: ${error.message}`, error);
+    log.error(`Prerender - Audit failed for baseUrl=${site.getBaseURL()}, siteId=${siteId}: ${error.message}`, error);
 
     return {
       error: error.message,
