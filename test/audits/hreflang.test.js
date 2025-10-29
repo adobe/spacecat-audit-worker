@@ -473,11 +473,10 @@ describe('Hreflang Audit', () => {
       const endTime = Date.now();
 
       // Verify batch processing logs
-      expect(context.log.info).to.have.been.calledWith('Starting Hreflang Audit with siteId: site-id');
-      expect(context.log.info).to.have.been.calledWith(`Base URL for hreflang audit: ${baseURL}`);
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Processing batch 1\/3/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Processing batch 2\/3/));
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Processing batch 3\/3/));
+      expect(context.log.info).to.have.been.calledWith(`Starting Hreflang Audit for site: site-id (${baseURL})`);
+      expect(context.log.debug).to.have.been.calledWith(sinon.match(/Processing batch 1\/3/));
+      expect(context.log.debug).to.have.been.calledWith(sinon.match(/Processing batch 2\/3/));
+      expect(context.log.debug).to.have.been.calledWith(sinon.match(/Processing batch 3\/3/));
 
       // Verify all pages were processed
       expect(result.fullAuditRef).to.equal(baseURL);
@@ -513,7 +512,7 @@ describe('Hreflang Audit', () => {
       const endTime = Date.now();
 
       // Verify only one batch was processed
-      expect(context.log.info).to.have.been.calledWith(sinon.match(/Processing batch 1\/1/));
+      expect(context.log.debug).to.have.been.calledWith(sinon.match(/Processing batch 1\/1/));
 
       // Verify result
       expect(result.auditResult.status).to.equal('success');

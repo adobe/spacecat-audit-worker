@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { tracingFetch as fetch, getSpacecatRequestHeaders } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { isLangCode } from 'is-language-code';
 import { JSDOM, VirtualConsole } from 'jsdom';
@@ -64,18 +64,10 @@ export async function validatePageHreflang(url, log) {
   }
 
   try {
-    log.info(`Checking hreflang for URL: ${url}`);
+    log.debug(`Checking hreflang for URL: ${url}`);
 
-    // Add user agent and headers to avoid bot detection
-    const fetchOptions = {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; SpaceCat-Audit/1.0; +https://github.com/adobe/spacecat-audit-worker)',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    };
-
-    const response = await fetch(url, fetchOptions);
+    // Use standard Spacecat request headers for consistency and to avoid bot detection
+    const response = await fetch(url, { headers: getSpacecatRequestHeaders() });
 
     if (!response.ok) {
       log.warn(`Failed to fetch ${url}: ${response.status} ${response.statusText}. Skipping hreflang validation.`);
@@ -98,7 +90,7 @@ export async function validatePageHreflang(url, log) {
 
     // Skip validation if no hreflang tags exist
     if (hreflangLinks.length === 0) {
-      log.info(`No hreflang tags found for URL: ${url} - this is valid for single-language sites`);
+      log.debug(`No hreflang tags found for URL: ${url} - this is valid for single-language sites`);
       return { url, checks: [] }; // Return empty checks - no issues to report
     }
 
@@ -178,15 +170,14 @@ export async function validatePageHreflang(url, log) {
 export async function hreflangAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess } = context;
-  log.info(`Starting Hreflang Audit with siteId: ${siteId}`);
-  log.info(`Base URL for hreflang audit: ${baseURL}`);
+  log.info(`Starting Hreflang Audit for site: ${siteId} (${baseURL})`);
 
   try {
-    // Get top 200 pages
+    // Get top 200 pages from Ahrefs
     const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
     const topPages = allTopPages.slice(0, 200);
 
-    log.debug(`Processing ${topPages.length} top pages for hreflang audit (limited to 200)`);
+    log.debug(`Processing ${topPages.length} top pages for hreflang audit`);
 
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
@@ -210,7 +201,7 @@ export async function hreflangAuditRunner(baseURL, context, site) {
     /* eslint-disable no-await-in-loop */
     for (let i = 0; i < topPages.length; i += BATCH_SIZE) {
       const batch = topPages.slice(i, i + BATCH_SIZE);
-      log.info(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(topPages.length / BATCH_SIZE)} (pages ${i + 1}-${Math.min(i + BATCH_SIZE, topPages.length)})`);
+      log.debug(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(topPages.length / BATCH_SIZE)} (pages ${i + 1}-${Math.min(i + BATCH_SIZE, topPages.length)})`);
 
       const batchPromises = batch.map(async (page) => validatePageHreflang(page.url, log));
       const batchResults = await Promise.allSettled(batchPromises);
@@ -246,7 +237,7 @@ export async function hreflangAuditRunner(baseURL, context, site) {
       return acc;
     }, {});
 
-    log.debug(`Successfully completed Hreflang Audit for site: ${baseURL}`);
+    log.info(`Hreflang audit completed for site: ${siteId} (${baseURL})`);
 
     // All checks passed
     if (Object.keys(aggregatedResults).length === 0) {
