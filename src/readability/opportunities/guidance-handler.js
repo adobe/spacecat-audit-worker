@@ -11,7 +11,6 @@
  */
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { Audit } from '@adobe/spacecat-shared-data-access';
 
 /**
  * Maps Mystique readability suggestions to opportunity format
@@ -69,10 +68,10 @@ export default async function handler(message, context) {
   }
   log.info(`[readability-opportunity guidance]: Found audit with type: ${audit.getAuditType()}`);
 
-  // Find the readability opportunity for this site and audit
-  const opportunities = await Opportunity.allBySiteIdAndAuditId(siteId, auditId);
+  // Find the readability opportunity for this site
+  const opportunities = await Opportunity.allbySiteId(siteId);
   const readabilityOpportunity = opportunities.find(
-    (opp) => opp.getAuditType() === (Audit.AUDIT_TYPES.READABILITY || 'readability'),
+    (opp) => opp.getAuditId() === auditId,
   );
 
   if (!readabilityOpportunity) {
