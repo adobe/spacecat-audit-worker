@@ -171,17 +171,17 @@ describe('data-access', () => {
       expect(mockOpportunity.getSuggestions).to.have.been.calledOnce;
       const addSuggestionsCall = mockOpportunity.addSuggestions.getCall(0);
       expect(addSuggestionsCall).to.exist;
-      
+
       const actualArgs = addSuggestionsCall.args[0];
       expect(actualArgs.length).to.equal(2);
-      
+
       // Check first suggestion
       expect(actualArgs[0].opportunityId).to.equal('123');
       expect(actualArgs[0].type).to.equal('TYPE');
       expect(actualArgs[0].rank).to.equal(123);
       expect(actualArgs[0].status).to.equal('NOT_VALIDATED');
       expect(actualArgs[0].data).to.deep.equal({ key: '3' });
-      
+
       // Check second suggestion
       expect(actualArgs[1].opportunityId).to.equal('123');
       expect(actualArgs[1].type).to.equal('TYPE');

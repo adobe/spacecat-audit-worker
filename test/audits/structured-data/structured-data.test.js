@@ -307,8 +307,7 @@ describe('Structured Data Audit', () => {
               errorTitle: 'Product: issue 1',
             },
           ],
-        },
-      }]);
+        });
     });
 
     it('ensure unique error IDs for duplicate issues', async () => {
