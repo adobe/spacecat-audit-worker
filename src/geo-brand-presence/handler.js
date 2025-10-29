@@ -179,7 +179,8 @@ export async function sendToMystique(context, getPresignedUrlOverride = getSigne
   // For daily cadence, calculate date context
   let dailyDateContext;
   if (isDaily) {
-    const referenceDate = auditContext?.referenceDate || new Date();
+    // Check context.data first (Slack/API params), then auditContext
+    const referenceDate = context.data?.referenceDate || auditContext?.referenceDate || new Date();
     const date = new Date(referenceDate);
     date.setUTCDate(date.getUTCDate() - 1); // Yesterday
 
