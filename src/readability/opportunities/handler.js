@@ -147,24 +147,24 @@ export async function processReadabilityOpportunities(context) {
     );
 
     // Prepare suggestions data for database
-    // Keep textPreview shorter (200 chars) to avoid DynamoDB size limits with many suggestions
-    const suggestions = readabilityIssues.map((issue, index) => ({
-      opportunityId: opportunity.getId(),
-      type: SuggestionModel.TYPES.CONTENT_UPDATE,
-      rank: issue.rank, // Use the rank already calculated in analysis
-      data: {
-        id: `readability-${siteId}-${index}`,
-        pageUrl: issue.pageUrl,
-        originalText: issue.displayText,
-        textPreview: issue.textContent?.substring(0, 500),
-        fleschReadingEase: issue.fleschReadingEase,
-        language: issue.language,
-        category: issue.category,
-        seoImpact: issue.seoImpact,
-        seoRecommendation: issue.seoRecommendation,
-        traffic: issue.traffic,
-      },
-    }));
+    const suggestions = readabilityIssues.map((issue, index) => {
+      // Extract only the fields needed for display (exclude full textContent)
+      const {
+        textContent,
+        ...issueWithoutFullText
+      } = issue;
+
+      return {
+        opportunityId: opportunity.getId(),
+        type: SuggestionModel.TYPES.CONTENT_UPDATE,
+        rank: issue.rank, // Use the rank already calculated in analysis
+        data: {
+          ...issueWithoutFullText,
+          id: `readability-${siteId}-${index}`,
+          textPreview: textContent?.substring(0, 500),
+        },
+      };
+    });
 
     // Sync suggestions with existing ones (preserve ignored/fixed suggestions)
     const buildKey = (data) => `${data.pageUrl}|${data.textPreview?.substring(0, 200)}`;
