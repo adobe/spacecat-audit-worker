@@ -1088,6 +1088,75 @@ describe('Headings Audit', () => {
       expect(result.suggestions[3].recommendedAction).to.equal('Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.');
       expect(result.suggestions[4].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
     });
+
+    it('generates elmoSuggestions with markdown table when there are issues', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: {
+          'heading-missing-h1': {
+            success: false,
+            explanation: 'Missing H1',
+            urls: [{ url: 'https://example.com/page1' }]
+          },
+          'heading-empty': {
+            success: false,
+            explanation: 'Empty heading',
+            urls: [{ url: 'https://example.com/page2', tagName: 'h2' }]
+          }
+        }
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, context);
+
+      expect(result.elmoSuggestions).to.exist;
+      expect(result.elmoSuggestions).to.be.an('array').with.lengthOf(1);
+      expect(result.elmoSuggestions[0].type).to.equal('CODE_CHANGE');
+      expect(result.elmoSuggestions[0].recommendedAction).to.be.a('string');
+      
+      // Verify markdown table structure
+      const mdTable = result.elmoSuggestions[0].recommendedAction;
+      expect(mdTable).to.include('## Missing H1');
+      expect(mdTable).to.include('| Page Url | Explanation | Suggestion |');
+      expect(mdTable).to.include('|-------|-------|-------|');
+      expect(mdTable).to.include('https://example.com/page1');
+      expect(mdTable).to.include('## Empty Heading');
+      expect(mdTable).to.include('https://example.com/page2');
+      expect(mdTable).to.include('for tag name: H2');
+    });
+
+    it('does not generate elmoSuggestions when there are no issues', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: { status: 'success', message: 'No issues found' }
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, context);
+
+      // When audit is successful, function returns early without adding elmoSuggestions/suggestions
+      expect(result.elmoSuggestions).to.be.undefined;
+      expect(result.suggestions).to.be.undefined;
+      expect(result.auditResult).to.deep.equal(auditData.auditResult);
+    });
+
+    it('generates empty elmoSuggestions when mdTable is empty', () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        auditResult: {
+          'heading-order-invalid': {
+            success: true, // All checks passed
+            explanation: 'Heading order is valid',
+            urls: []
+          }
+        }
+      };
+
+      const result = generateSuggestions(auditUrl, auditData, context);
+
+      // When there are checks but no failures, mdTable is empty so elmoSuggestions is empty array
+      expect(result.elmoSuggestions).to.exist;
+      expect(result.elmoSuggestions).to.be.an('array').with.lengthOf(0);
+      expect(result.suggestions).to.be.an('array').with.lengthOf(0);
+    });
   });
 
   describe('opportunityAndSuggestions', () => {

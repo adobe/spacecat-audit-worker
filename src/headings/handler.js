@@ -616,10 +616,12 @@ export function generateSuggestions(auditUrl, auditData, context) {
   });
 
   const elmoSuggestions = [];
-  elmoSuggestions.push({
-    type: 'CODE_CHANGE',
-    recommendedAction: mdTable,
-  });
+  if (mdTable) {
+    elmoSuggestions.push({
+      type: 'CODE_CHANGE',
+      recommendedAction: mdTable,
+    });
+  }
 
   const suggestions = [...allSuggestions];
 
