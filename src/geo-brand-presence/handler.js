@@ -179,12 +179,16 @@ export async function sendToMystique(context, getPresignedUrlOverride = getSigne
   // Get aiPlatform and referenceDate from the audit result
   const auditResult = audit?.getAuditResult();
   const aiPlatform = auditResult?.aiPlatform;
-  
+
   // For daily cadence, calculate date context
   let dailyDateContext;
   if (isDaily) {
-    // Check audit result first (from keywordPromptsImportStep), then context.data (Slack/API params), then auditContext
-    const referenceDate = auditResult?.referenceDate || context.data?.referenceDate || auditContext?.referenceDate || new Date();
+    // Check audit result first (from keywordPromptsImportStep),
+    // then context.data (Slack/API params), then auditContext
+    const referenceDate = auditResult?.referenceDate
+      || context.data?.referenceDate
+      || auditContext?.referenceDate
+      || new Date();
     const date = new Date(referenceDate);
     date.setUTCDate(date.getUTCDate() - 1); // Yesterday
 
