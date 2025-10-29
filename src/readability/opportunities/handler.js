@@ -11,14 +11,13 @@
  */
 
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Suggestion as SuggestionModel, Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../../common/audit-builder.js';
 import { convertToOpportunity } from '../../common/opportunity.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../../utils/data-access.js';
 import { analyzePageReadability, sendReadabilityToMystique } from '../shared/analysis-utils.js';
 import {
-  READABILITY_OPPORTUNITY_TYPE,
   TOP_PAGES_LIMIT,
 } from '../shared/constants.js';
 
@@ -151,12 +150,12 @@ export async function processReadabilityOpportunities(context) {
     // Keep textPreview shorter (200 chars) to avoid DynamoDB size limits with many suggestions
     const suggestions = readabilityIssues.map((issue, index) => ({
       opportunityId: opportunity.getId(),
-      type: READABILITY_OPPORTUNITY_TYPE,
+      type: SuggestionModel.TYPES.CONTENT_UPDATE,
       rank: issue.rank, // Use the rank already calculated in analysis
       data: {
         id: `readability-${siteId}-${index}`,
         pageUrl: issue.pageUrl,
-        textPreview: issue.textContent?.substring(0, 200),
+        textPreview: issue.textContent?.substring(0, 500),
         fleschReadingEase: issue.fleschReadingEase,
         language: issue.language,
         category: issue.category,
