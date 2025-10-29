@@ -299,6 +299,7 @@ export async function validatePageHeadings(
         transformRules: {
           action: 'replace',
           selector: h1Selector,
+          currValue: h1Elements[0].textContent,
         },
         pageTags,
       });

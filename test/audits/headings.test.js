@@ -1444,6 +1444,7 @@ describe('Headings Audit', () => {
       expect(h1LengthCheck.transformRules).to.deep.equal({
         action: 'replace',
         selector: 'body > main > div > h1',
+        currValue: '',
       });
     });
 
@@ -1491,6 +1492,7 @@ describe('Headings Audit', () => {
       expect(h1LengthCheck.transformRules).to.deep.equal({
         action: 'replace',
         selector: 'header > h1.main-title',
+        currValue: longH1,
       });
     });
 
