@@ -411,15 +411,25 @@ export async function keywordPromptsImportStep(context) {
     }
   }
 
+  // For daily cadence, always set referenceDate (default to current date for traceability)
+  if (brandPresenceCadence === 'daily' && !referenceDate) {
+    referenceDate = new Date().toISOString();
+  }
+
   log.debug('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s, referenceDate: %s', finalUrl, endDate, aiPlatform, referenceDate);
   const result = {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,
     siteId: site.getId(),
-    // auditResult can't be empty, so sending empty array and include aiPlatform and referenceDate
-    auditResult: { keywordQuestions: [], aiPlatform, referenceDate },
+    // auditResult can't be empty, so sending empty array and include aiPlatform
+    auditResult: { keywordQuestions: [], aiPlatform },
     fullAuditRef: finalUrl,
   };
+
+  // Add referenceDate if specified (always present for daily audits)
+  if (referenceDate) {
+    result.auditResult.referenceDate = referenceDate;
+  }
 
   // Add cadence if specified
   if (brandPresenceCadence) {
