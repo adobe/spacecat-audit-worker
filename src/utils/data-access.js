@@ -234,7 +234,15 @@ export async function syncSuggestions({
     .filter((data) => !existingSuggestions.some(
       (existing) => buildKey(existing.getData()) === buildKey(data),
     ))
-    .map(mapNewSuggestion);
+    .map((data) => {
+      // Get the base suggestion from the provided mapping function
+      const suggestion = mapNewSuggestion(data);
+      // Add NOT_VALIDATED status to all new suggestions
+      return {
+        ...suggestion,
+        status: 'NOT_VALIDATED',
+      };
+    });
 
   // Add new suggestions if any
   if (newSuggestions.length > 0) {

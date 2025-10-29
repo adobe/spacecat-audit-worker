@@ -136,7 +136,7 @@ export async function mapToPaidSuggestion(context, siteId, opportunityId, url, p
     opportunityId,
     type: 'CONTENT_UPDATE',
     rank: 1,
-    status: 'NEW',
+    status: 'NOT_VALIDATED',
     data: {
       recommendations: [
         {

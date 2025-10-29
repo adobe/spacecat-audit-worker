@@ -95,7 +95,7 @@ export default async function handler(message, context) {
         opportunityId: opportunity.getId(),
         type: 'CONTENT_UPDATE',
         rank: 1,
-        status: 'NEW',
+        status: 'NOT_VALIDATED',
         data: {
           suggestionValue: dataItem.suggestionValue,
         },

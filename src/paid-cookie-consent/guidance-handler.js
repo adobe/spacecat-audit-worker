@@ -56,7 +56,11 @@ export default async function handler(message, context) {
     url,
     guidanceParsed,
   );
-  await Suggestion.create(suggestionData);
+  // Add NOT_VALIDATED status to the suggestion
+  await Suggestion.create({
+    ...suggestionData,
+    status: 'NOT_VALIDATED',
+  });
   log.debug(`Created suggestion for opportunity ${opportunity.getId()}`);
 
   // Only after suggestion is successfully created,
