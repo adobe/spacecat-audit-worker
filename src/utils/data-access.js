@@ -268,7 +268,8 @@ export async function syncSuggestions({
 
       if (suggestions.createdItems?.length <= 0) {
         const sampleError = suggestions.errorItems[0]?.error || 'Unknown error';
-        throw new Error(`Failed to create suggestions for siteId ${siteId}. Sample error: ${sampleError}, error items: ${safeStringify(suggestions.errorItems)}`);
+        log.error('[suggestions.errorItems]', suggestions.errorItems);
+        throw new Error(`Failed to create suggestions for siteId ${siteId}. Sample error: ${sampleError}`);
       } else {
         log.warn(`Partial success: Created ${suggestions.createdItems.length} suggestions, ${suggestions.errorItems.length} failed`);
       }
