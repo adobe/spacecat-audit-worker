@@ -579,6 +579,7 @@ describe('Preflight Audit', () => {
     let azureOpenAIClient;
     let genvarClient;
     let preflightAuditFunction;
+    let retrievePageAuthenticationStub;
 
     const sandbox = sinon.createSandbox();
 
@@ -624,11 +625,15 @@ describe('Preflight Audit', () => {
       sinon.stub(AWSXray, 'captureAWSv3Client').returns(secretsClient);
       sandbox.stub(AzureOpenAIClient, 'createFrom').returns(azureOpenAIClient);
       sandbox.stub(GenvarClient, 'createFrom').returns(genvarClient);
+      retrievePageAuthenticationStub = sinon.stub().resolves('token1234');
 
       // Mock the accessibility handler to prevent timeouts
       const { preflightAudit: mockedPreflightAudit } = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/accessibility.js': {
           default: sinon.stub().resolves(), // Mock accessibility handler as no-op
+        },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
         },
       });
       preflightAuditFunction = mockedPreflightAudit;
@@ -1483,6 +1488,9 @@ describe('Preflight Audit', () => {
         '../../src/preflight/accessibility.js': {
           default: sinon.stub().resolves(),
         },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
+        },
       });
 
       await testPreflightAudit(mockContext);
@@ -1561,6 +1569,9 @@ describe('Preflight Audit', () => {
         '../../src/preflight/links.js': { default: async () => undefined },
         '../../src/readability/handler.js': { default: async () => undefined },
         '../../src/preflight/accessibility.js': { default: async () => undefined },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
+        },
       });
 
       await testPreflightAudit(mockContext);
