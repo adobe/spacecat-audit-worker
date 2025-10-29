@@ -105,6 +105,7 @@ export function getJsonSummarySuggestion(suggestions) {
       summarizationText: suggestion.pageSummary?.formatted_summary,
       fullPage: true,
       url: suggestion.pageUrl,
+      title: suggestion.pageSummary?.title,
       transformRules: {
         selector: suggestion.pageSummary?.heading_selector || 'body',
         action: suggestion.pageSummary?.insertion_method || 'appendChild',
@@ -117,6 +118,7 @@ export function getJsonSummarySuggestion(suggestions) {
         summarizationText: section.formatted_summary,
         fullPage: false,
         url: suggestion.pageUrl,
+        title: section.title,
         transformRules: {
           selector: section.heading_selector,
           action: section.insertion_method || 'insertAfter',
