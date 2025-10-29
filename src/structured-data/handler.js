@@ -11,7 +11,9 @@
  */
 /* eslint-disable no-continue, no-await-in-loop */
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
-import { Audit, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+
+import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access/src/models/suggestion/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';

@@ -15,7 +15,9 @@ import {
   tracingFetch as fetch,
 } from '@adobe/spacecat-shared-utils';
 import { ImsClient } from '@adobe/spacecat-shared-ims-client';
-import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import { Audit } from '@adobe/spacecat-shared-data-access';
+import { Opportunity as Oppty } from '@adobe/spacecat-shared-data-access/src/models/opportunity/index.js';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access/src/models/suggestion/index.js';
 import { getImsOrgId } from '../utils/data-access.js';
 
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_PERMISSIONS;
