@@ -446,6 +446,8 @@ export function createMystiqueMessage({
   webSearchProvider,
   configVersion = null,
   date = null,
+  source = undefined,
+  initiator = undefined,
 }) {
   const data = {
     url,
@@ -469,6 +471,8 @@ export function createMystiqueMessage({
     week: calendarWeek.week,
     year: calendarWeek.year,
     data,
+    ...(source && { source }),
+    ...(initiator && { initiator }),
   };
 }
 
