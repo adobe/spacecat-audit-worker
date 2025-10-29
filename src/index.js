@@ -178,9 +178,9 @@ function getElapsedSeconds(startTime) {
  */
 async function run(message, context) {
   const { log } = context;
-  const { type, siteId, url } = message;
+  const { type, siteId } = message;
 
-  log.info(`Received ${type} audit request for siteId=${siteId}, baseUrl=${url}. Message:`, message);
+  log.info(`Received ${type} audit request for: ${siteId}. Message:`, message);
 
   const handler = HANDLERS[type];
   if (!handler) {
