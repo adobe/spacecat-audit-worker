@@ -10,9 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { isValidUrl, retrievePageAuthentication, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
+import { isValidUrl, stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
 import { JSDOM } from 'jsdom';
+import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { isAuditEnabledForSite, noopPersister, noopUrlResolver } from '../common/index.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';

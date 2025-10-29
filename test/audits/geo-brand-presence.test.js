@@ -138,10 +138,11 @@ describe('Geo Brand Presence Handler', () => {
       fullAuditRef: finalUrl,
     });
     expect(log.debug).to.have.been.calledWith(
-        'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
+        'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s, referenceDate: %s',
         finalUrl,
         '2025-09-15',
         'gemini',
+        undefined,
     );
   });
 
@@ -162,8 +163,9 @@ describe('Geo Brand Presence Handler', () => {
         invalidJson,
     );
     expect(log.debug).to.have.been.calledWith(
-        'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s',
+        'GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s, referenceDate: %s',
         finalUrl,
+        undefined,
         undefined,
         undefined,
     );
