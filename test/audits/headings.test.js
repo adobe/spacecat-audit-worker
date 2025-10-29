@@ -1349,7 +1349,54 @@ describe('Headings Audit', () => {
       expect(missingH1Check.transformRules).to.exist;
       expect(missingH1Check.transformRules).to.deep.equal({
         action: 'insertBefore',
-        selector: 'body > main > :first-child, body > :first-child',
+        selector: 'body > :first-child',
+        tag: 'h1',
+      });
+    });
+
+    it('includes transformRules with body > main selector when main element exists', async () => {
+      const url = 'https://example.com/page';
+
+      // Mock CssSelectorGenerator
+      const MockCssSelectorGenerator = class {
+        getSelector() {
+          return 'body > h1';
+        }
+      };
+
+      const mockedHandler = await esmock('../../src/headings/handler.js', {
+        'css-selector-generator': {
+          default: MockCssSelectorGenerator
+        }
+      });
+
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapeResult: {
+              rawBody: '<body><main><h2>No H1</h2></main></body>',
+              tags: {
+                title: 'Page Title',
+                description: 'Page Description',
+                h1: [],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await mockedHandler.validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+
+      // Find the missing H1 check
+      const missingH1Check = result.checks.find(c => c.check === HEADINGS_CHECKS.HEADING_MISSING_H1.check);
+      
+      expect(missingH1Check).to.exist;
+      expect(missingH1Check.transformRules).to.exist;
+      expect(missingH1Check.transformRules).to.deep.equal({
+        action: 'insertBefore',
+        selector: 'body > main > :first-child',
         tag: 'h1',
       });
     });
@@ -1558,7 +1605,7 @@ describe('Headings Audit', () => {
       expect(missingH1Result.urls[0].transformRules).to.exist;
       expect(missingH1Result.urls[0].transformRules).to.deep.equal({
         action: 'insertBefore',
-        selector: 'body > main > :first-child, body > :first-child',
+        selector: 'body > :first-child',
         tag: 'h1',
       });
     });

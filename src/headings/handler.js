@@ -270,7 +270,7 @@ export async function validatePageHeadings(
         suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
         transformRules: {
           action: 'insertBefore',
-          selector: 'body > main > :first-child, body > :first-child',
+          selector: document.querySelector('body > main') ? 'body > main > :first-child' : 'body > :first-child',
           tag: 'h1',
         },
         pageTags,
