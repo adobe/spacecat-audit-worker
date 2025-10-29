@@ -176,11 +176,19 @@ export async function sendToMystique(context, getPresignedUrlOverride = getSigne
 
   const { calendarWeek, parquetFiles, success } = auditContext ?? /* c8 ignore next */ {};
 
+  // Get aiPlatform and referenceDate from the audit result
+  const auditResult = audit?.getAuditResult();
+  const aiPlatform = auditResult?.aiPlatform;
+
   // For daily cadence, calculate date context
   let dailyDateContext;
   if (isDaily) {
-    // Check context.data first (Slack/API params), then auditContext
-    const referenceDate = context.data?.referenceDate || auditContext?.referenceDate || new Date();
+    // Check audit result first (from keywordPromptsImportStep),
+    // then context.data (Slack/API params), then auditContext
+    const referenceDate = auditResult?.referenceDate
+      || context.data?.referenceDate
+      || auditContext?.referenceDate
+      || new Date();
     const date = new Date(referenceDate);
     date.setUTCDate(date.getUTCDate() - 1); // Yesterday
 
@@ -193,9 +201,6 @@ export async function sendToMystique(context, getPresignedUrlOverride = getSigne
       year,
     };
   }
-  // Get aiPlatform from the audit result
-  const auditResult = audit?.getAuditResult();
-  const aiPlatform = auditResult?.aiPlatform;
   const providersToUse = WEB_SEARCH_PROVIDERS.includes(aiPlatform)
     ? [aiPlatform]
     : WEB_SEARCH_PROVIDERS;
@@ -381,14 +386,18 @@ export async function keywordPromptsImportStep(context) {
 
   let endDate;
   let aiPlatform;
+  let referenceDate;
 
   if (isString(data) && data.length > 0) {
     try {
-      // Try to parse as JSON first (for new format with endDate and aiPlatform)
+      // Try to parse as JSON first (for new format with endDate, aiPlatform, and referenceDate)
       const parsedData = JSON.parse(data);
       if (isNonEmptyObject(parsedData)) {
         if (parsedData.endDate && Date.parse(parsedData.endDate)) {
           endDate = parsedData.endDate;
+        }
+        if (parsedData.referenceDate && Date.parse(parsedData.referenceDate)) {
+          referenceDate = parsedData.referenceDate;
         }
         aiPlatform = parsedData.aiPlatform;
       }
@@ -402,7 +411,12 @@ export async function keywordPromptsImportStep(context) {
     }
   }
 
-  log.debug('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s', finalUrl, endDate, aiPlatform);
+  // For daily cadence, always set referenceDate (default to current date for traceability)
+  if (brandPresenceCadence === 'daily' && !referenceDate) {
+    referenceDate = new Date().toISOString();
+  }
+
+  log.debug('GEO BRAND PRESENCE: Keyword prompts import step for %s with endDate: %s, aiPlatform: %s, referenceDate: %s', finalUrl, endDate, aiPlatform, referenceDate);
   const result = {
     type: LLMO_QUESTIONS_IMPORT_TYPE,
     endDate,
@@ -411,6 +425,11 @@ export async function keywordPromptsImportStep(context) {
     auditResult: { keywordQuestions: [], aiPlatform },
     fullAuditRef: finalUrl,
   };
+
+  // Add referenceDate if specified (always present for daily audits)
+  if (referenceDate) {
+    result.auditResult.referenceDate = referenceDate;
+  }
 
   // Add cadence if specified
   if (brandPresenceCadence) {
@@ -446,6 +465,8 @@ export function createMystiqueMessage({
   webSearchProvider,
   configVersion = null,
   date = null,
+  source = undefined,
+  initiator = undefined,
 }) {
   const data = {
     url,
@@ -469,6 +490,8 @@ export function createMystiqueMessage({
     week: calendarWeek.week,
     year: calendarWeek.year,
     data,
+    ...(source && { source }),
+    ...(initiator && { initiator }),
   };
 }
 
