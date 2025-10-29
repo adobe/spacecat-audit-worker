@@ -385,7 +385,7 @@ describe('summarization guidance handler', () => {
     expect(mappedSuggestion.opportunityId).to.equal('existing-oppty-id');
     expect(mappedSuggestion.type).to.equal('CONTENT_UPDATE');
     expect(mappedSuggestion.rank).to.equal(1);
-    expect(mappedSuggestion.status).to.equal('NEW');
+    expect(mappedSuggestion.status).to.equal('NOT_VALIDATED');
     expect(mappedSuggestion.data.suggestionValue).to.equal(testData.suggestionValue);
     expect(mappedSuggestion.kpiDeltas.estimatedKPILift).to.equal(0);
   });

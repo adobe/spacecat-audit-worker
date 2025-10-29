@@ -136,7 +136,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     const firstSug = Suggestion.create.getCall(0).args[0];
     expect(firstSug).to.include({
-      opportunityId: newOpportunityId, type: 'AI_INSIGHTS', rank: 1, status: 'NEW',
+      opportunityId: newOpportunityId, type: 'AI_INSIGHTS', rank: 1, status: 'NOT_VALIDATED',
     });
     expect(firstSug.data.parentReport).to.equal('PAID_CAMPAIGN_PERFORMANCE');
     expect(firstSug.data.recommendations).to.have.length(2);

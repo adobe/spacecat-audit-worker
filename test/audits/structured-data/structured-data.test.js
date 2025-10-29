@@ -283,11 +283,16 @@ describe('Structured Data Audit', () => {
       await opportunityAndSuggestions(finalUrl, auditData, context);
 
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
-      expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledWith([{
-        opportunityId: 'opportunity-id',
-        type: 'CODE_CHANGE',
-        rank: 0,
-        data: {
+      const addSuggestionsCall = context.dataAccess.Opportunity.addSuggestions.getCall(0);
+      expect(addSuggestionsCall).to.exist;
+      
+      const actualArgs = addSuggestionsCall.args[0];
+      expect(actualArgs.length).to.equal(1);
+      expect(actualArgs[0].opportunityId).to.equal('opportunity-id');
+      expect(actualArgs[0].type).to.equal('CODE_CHANGE');
+      expect(actualArgs[0].rank).to.equal(0);
+      expect(actualArgs[0].status).to.equal('NOT_VALIDATED');
+      expect(actualArgs[0].data).to.deep.equal({
           type: 'url',
           url: 'https://www.example.com',
           errors: [

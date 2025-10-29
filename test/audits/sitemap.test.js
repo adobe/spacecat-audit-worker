@@ -1149,16 +1149,28 @@ describe('Sitemap Audit', () => {
         context.dataAccess.Opportunity.setAuditId,
       ).to.have.been.calledOnceWith('audit-id');
       expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
-      expect(
-        context.dataAccess.Opportunity.addSuggestions,
-      ).to.have.been.calledOnceWith(
-        auditDataWithSuggestions.suggestions.map((suggestion) => ({
-          opportunityId: opptyId,
-          type: 'REDIRECT_UPDATE',
-          rank: 0,
-          data: suggestion,
-        })),
-      );
+      // Use sinon.match to match objects without caring about the status field
+      const addSuggestionsCall = context.dataAccess.Opportunity.addSuggestions.getCall(0);
+      expect(addSuggestionsCall).to.exist;
+      
+      const actualArgs = addSuggestionsCall.args[0];
+      const expectedArgs = auditDataWithSuggestions.suggestions.map((suggestion) => ({
+        opportunityId: opptyId,
+        type: 'REDIRECT_UPDATE',
+        rank: 0,
+        data: suggestion,
+      }));
+      
+      // Verify that each suggestion has the expected properties plus status: 'NOT_VALIDATED'
+      expect(actualArgs.length).to.equal(expectedArgs.length);
+      actualArgs.forEach((actual, i) => {
+        const expected = expectedArgs[i];
+        expect(actual.opportunityId).to.equal(expected.opportunityId);
+        expect(actual.type).to.equal(expected.type);
+        expect(actual.rank).to.equal(expected.rank);
+        expect(actual.data).to.deep.equal(expected.data);
+        expect(actual.status).to.equal('NOT_VALIDATED');
+      });
     });
 
     it('should handle updating when opportunity was already defined with new suggestions', async () => {
@@ -1203,14 +1215,28 @@ describe('Sitemap Audit', () => {
       ).to.have.been.calledOnceWith('audit-id');
       expect(context.dataAccess.Opportunity.save).to.have.been.calledOnce;
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(existingSuggestions, 'OUTDATED');
-      expect(context.dataAccess.Opportunity.addSuggestions).to.have.been.calledOnceWith(
-        auditDataWithSuggestions.suggestions.map((suggestion) => ({
-          opportunityId: opptyId,
-          type: 'REDIRECT_UPDATE',
-          rank: 0,
-          data: suggestion,
-        })),
-      );
+      // Use sinon.match to match objects without caring about the status field
+      const addSuggestionsCall = context.dataAccess.Opportunity.addSuggestions.getCall(0);
+      expect(addSuggestionsCall).to.exist;
+      
+      const actualArgs = addSuggestionsCall.args[0];
+      const expectedArgs = auditDataWithSuggestions.suggestions.map((suggestion) => ({
+        opportunityId: opptyId,
+        type: 'REDIRECT_UPDATE',
+        rank: 0,
+        data: suggestion,
+      }));
+      
+      // Verify that each suggestion has the expected properties plus status: 'NOT_VALIDATED'
+      expect(actualArgs.length).to.equal(expectedArgs.length);
+      actualArgs.forEach((actual, i) => {
+        const expected = expectedArgs[i];
+        expect(actual.opportunityId).to.equal(expected.opportunityId);
+        expect(actual.type).to.equal(expected.type);
+        expect(actual.rank).to.equal(expected.rank);
+        expect(actual.data).to.deep.equal(expected.data);
+        expect(actual.status).to.equal('NOT_VALIDATED');
+      });
     });
   });
 });
