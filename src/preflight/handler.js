@@ -34,18 +34,28 @@ export const PREFLIGHT_STEP_SUGGEST = 'suggest';
  * List of available checks.
  * Should not be changed as it would break existing clients.
  * @type {string}
+ * NOTE: When adding a new audit check, define the constant here.
  */
+export const AUDIT_CANONICAL = 'canonical';
+export const AUDIT_LINKS = 'links';
+export const AUDIT_METATAGS = 'metatags';
 export const AUDIT_BODY_SIZE = 'body-size';
 export const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
 export const AUDIT_H1_COUNT = 'h1-count';
+export const AUDIT_ACCESSIBILITY = 'accessibility';
+export const AUDIT_READABILITY = 'readability';
 
-/**
- * NOTE: When adding a new audit check:
- * 1. Define the constant here.
- * 2. Update the AVAILABLE_CHECKS array defined in:
- *    https://github.com/adobe/spacecat-api-service/blob/main/src/controllers/preflight.js
- *    for the POST /preflight/jobs API endpoint.
- */
+const AVAILABLE_CHECKS = [
+  AUDIT_CANONICAL,
+  AUDIT_LINKS,
+  AUDIT_METATAGS,
+  AUDIT_BODY_SIZE,
+  AUDIT_LOREM_IPSUM,
+  AUDIT_H1_COUNT,
+  AUDIT_ACCESSIBILITY,
+  AUDIT_READABILITY,
+];
+
 export const PREFLIGHT_HANDLERS = {
   canonical,
   metatags,
@@ -116,6 +126,24 @@ export const preflightAudit = async (context) => {
 
   if (job.getStatus() !== AsyncJob.Status.IN_PROGRESS) {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
+  }
+
+  // Compute enabled status for all available preflight checks and persist in job metadata
+  try {
+    const checks = await Promise.all(AVAILABLE_CHECKS.map(async (audit) => ({
+      name: audit,
+      enabled: await isAuditEnabledForSite(`${audit}-preflight`, site, context),
+    })));
+
+    const jobEntity = await AsyncJobEntity.findById(jobId);
+    const currentMetadata = jobEntity.getMetadata() || {};
+    jobEntity.setMetadata({
+      ...currentMetadata,
+      checks,
+    });
+    await jobEntity.save();
+  } catch (e) {
+    log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Failed to persist enabled checks in job metadata.`, e);
   }
 
   const timeExecutionBreakdown = [];
