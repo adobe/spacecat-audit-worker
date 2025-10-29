@@ -11,8 +11,7 @@
  */
 
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { Audit } from '@adobe/spacecat-shared-data-access';
-import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
+import { Audit, Config } from '@adobe/spacecat-shared-data-access';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';

@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
+import { Config } from '@adobe/spacecat-shared-data-access';
 
 const siteData = {
   getConfig: () => Config({}),

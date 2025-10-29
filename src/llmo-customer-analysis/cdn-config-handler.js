@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import { composeBaseURL } from '@adobe/spacecat-shared-utils';
-import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
+import { Config } from '@adobe/spacecat-shared-data-access';
 import {
   startOfWeek, subWeeks, addDays, isAfter,
 } from 'date-fns';
