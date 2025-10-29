@@ -27,9 +27,9 @@ describe('LLM Error Pages Handler', function () {
   let sandbox;
   let site;
   let audit;
-  let runAuditAndGenerateReports;
+  let importTopPagesAndScrape;
   let submitForScraping;
-  let sendToMystique;
+  let runAuditAndSendToMystique;
   let mockAthenaClient;
   let mockGetS3Config;
   let mockGenerateReportingPeriods;
@@ -207,126 +207,58 @@ describe('LLM Error Pages Handler', function () {
       },
     });
 
-    runAuditAndGenerateReports = handler.runAuditAndGenerateReports;
+    importTopPagesAndScrape = handler.importTopPagesAndScrape;
     submitForScraping = handler.submitForScraping;
-    sendToMystique = handler.sendToMystique;
+    runAuditAndSendToMystique = handler.runAuditAndSendToMystique;
   });
 
   afterEach(() => {
     sandbox.restore();
   });
 
-  describe('runAuditAndGenerateReports', () => {
-    it('should run audit successfully and generate Excel reports', async () => {
-      const result = await runAuditAndGenerateReports(context);
+  describe('importTopPagesAndScrape', () => {
+    it('should import top pages successfully', async () => {
+      const result = await importTopPagesAndScrape(context);
 
-      expect(result.type).to.equal('audit-result');
+      expect(result.type).to.equal('top-pages');
       expect(result.siteId).to.equal('site-id-123');
       expect(result.auditResult.success).to.be.true;
-      expect(result.auditResult.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
-      expect(result.auditResult.totalErrors).to.equal(3);
-      expect(result.auditResult.categorizedResults).to.exist;
+      expect(result.auditResult.topPages).to.deep.equal([
+        'https://example.com/page1',
+        'https://example.com/page2',
+        'https://example.com/page3',
+      ]);
       expect(result.fullAuditRef).to.equal('https://example.com');
-
-      expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] Starting audit for https://example.com');
-      expect(mockSaveExcelReport).to.have.been.called;
+      expect(context.log.info).to.have.been.calledWith(
+        '[LLM-ERROR-PAGES] Found 3 top pages for site site-id-123',
+      );
     });
 
-    it('should handle audit failure gracefully', async () => {
-      mockAthenaClient.query.rejects(new Error('Database error'));
+    it('should handle no top pages found', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
-      const result = await runAuditAndGenerateReports(context);
+      const result = await importTopPagesAndScrape(context);
+
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.topPages).to.deep.equal([]);
+      expect(context.log.warn).to.have.been.calledWith(
+        '[LLM-ERROR-PAGES] No top pages found for site',
+      );
+    });
+
+    it('should handle errors gracefully', async () => {
+      context.dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.rejects(
+        new Error('Database error'),
+      );
+
+      const result = await importTopPagesAndScrape(context);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.equal('Database error');
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: Database error/),
+        sinon.match(/\[LLM-ERROR-PAGES\] Failed to import top pages: Database error/),
         sinon.match.instanceOf(Error),
       );
-    });
-
-    it('should skip Excel generation when no CDN data available', async () => {
-      mockDownloadExistingCdnSheet.resolves([]);
-
-      const result = await runAuditAndGenerateReports(context);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/\[LLM-ERROR-PAGES\] No existing CDN data found/),
-      );
-      expect(mockSaveExcelReport).not.to.have.been.called;
-    });
-
-    it('should handle site with no config', async () => {
-      site.getConfig = () => null;
-
-      const result = await runAuditAndGenerateReports(context);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(mockBuildSiteFilters).to.have.been.calledWith([], site);
-    });
-
-    it('should handle site with no base URL', async () => {
-      site.getBaseURL = () => null;
-
-      const result = await runAuditAndGenerateReports(context);
-
-      expect(result.auditResult.success).to.be.true;
-    });
-
-    it('should process only 404 errors and limit to 50', async () => {
-      const many404s = Array.from({ length: 100 }, (_, i) => ({
-        user_agent: 'TestBot',
-        url: `/page${i}`,
-        status: 404,
-        total_requests: 100 - i,
-      }));
-
-      mockProcessResults.returns({
-        totalErrors: 100,
-        errorPages: many404s,
-        summary: { uniqueUrls: 100, uniqueUserAgents: 1 },
-      });
-
-      const result = await runAuditAndGenerateReports(context);
-
-      expect(result.auditResult.success).to.be.true;
-      // Should only process top 50 404 errors
-      expect(mockMatchErrorsWithCdnData.firstCall.args[0]).to.have.lengthOf(50);
-    });
-
-    it('should generate separate Excel files for 404, 403, and 5xx', async () => {
-      mockProcessResults.returns({
-        totalErrors: 6,
-        errorPages: [
-          { user_agent: 'Bot1', url: '/404-1', status: 404, total_requests: 10 },
-          { user_agent: 'Bot2', url: '/404-2', status: 404, total_requests: 9 },
-          { user_agent: 'Bot3', url: '/403-1', status: 403, total_requests: 8 },
-          { user_agent: 'Bot4', url: '/403-2', status: 403, total_requests: 7 },
-          { user_agent: 'Bot5', url: '/500-1', status: 500, total_requests: 6 },
-          { user_agent: 'Bot6', url: '/503-1', status: 503, total_requests: 5 },
-        ],
-        summary: { uniqueUrls: 6, uniqueUserAgents: 6 },
-      });
-
-      const result = await runAuditAndGenerateReports(context);
-
-      expect(result.auditResult.success).to.be.true;
-      // Should call saveExcelReport 3 times (404, 403, 5xx)
-      expect(mockSaveExcelReport).to.have.been.calledThrice;
-    });
-
-    it('should not generate Excel when errors array is empty', async () => {
-      mockProcessResults.returns({
-        totalErrors: 0,
-        errorPages: [],
-        summary: { uniqueUrls: 0, uniqueUserAgents: 0 },
-      });
-
-      const result = await runAuditAndGenerateReports(context);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(mockSaveExcelReport).not.to.have.been.called;
     });
   });
 
@@ -381,147 +313,138 @@ describe('LLM Error Pages Handler', function () {
     });
   });
 
-  describe('sendToMystique', () => {
-    beforeEach(() => {
-      audit.getAuditResult.returns({
-          success: true,
-          categorizedResults: {
-            404: [
-              {
-                url: '/page1',
-              userAgent: 'ChatGPT',
-              user_agent: 'ChatGPT',
-              total_requests: 10,
-            },
-            {
-                url: '/page2',
-              userAgent: 'Perplexity',
-              user_agent: 'Perplexity',
-              total_requests: 5,
-              },
-            ],
-          },
-          periodIdentifier: 'w34-2025',
-      });
-    });
+  describe('runAuditAndSendToMystique', () => {
+    it('should run audit, generate reports, and send to Mystique successfully', async () => {
+      const result = await runAuditAndSendToMystique(context);
 
-    it('should send message to Mystique successfully', async () => {
-      const result = await sendToMystique(context);
+      expect(result.type).to.equal('audit-result');
+      expect(result.siteId).to.equal('site-id-123');
+      expect(result.auditResult.success).to.be.true;
+      expect(result.auditResult.periodIdentifier).to.match(/^w\d{2}-\d{4}$/);
+      expect(result.auditResult.totalErrors).to.equal(3);
+      expect(result.auditResult.categorizedResults).to.exist;
+      expect(result.fullAuditRef).to.equal('https://example.com');
 
-      expect(result).to.deep.equal({ status: 'complete' });
+      expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] Starting audit for https://example.com');
+      expect(mockSaveExcelReport).to.have.been.called;
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
-
-      const [queue, message] = context.sqs.sendMessage.firstCall.args;
-      expect(queue).to.equal('spacecat-to-mystique');
-      expect(message.type).to.equal('guidance:llm-error-pages');
-      expect(message.siteId).to.equal('site-id-123');
-      expect(message.auditId).to.equal('audit-id-456');
-      expect(message.data.brokenLinks).to.be.an('array');
-      expect(message.data.alternativeUrls).to.deep.equal([
-        'https://example.com/page1',
-        'https://example.com/page2',
-        'https://example.com/page3',
-      ]);
       expect(context.log.info).to.have.been.calledWith(
         sinon.match(/\[LLM-ERROR-PAGES\] Sent.*consolidated 404 URLs to Mystique/),
       );
     });
 
-    it('should limit to 50 404 errors when sending to Mystique', async () => {
-      const many404s = Array.from({ length: 100 }, (_, i) => ({
-        url: `/page${i}`,
-        userAgent: 'TestBot',
-        user_agent: 'TestBot',
-        total_requests: 100 - i,
-      }));
-      audit.getAuditResult.returns({
-          success: true,
-        categorizedResults: { 404: many404s },
-          periodIdentifier: 'w34-2025',
-      });
+    it('should handle audit failure gracefully', async () => {
+      mockAthenaClient.query.rejects(new Error('Database error'));
 
-      const result = await sendToMystique(context);
+      const result = await runAuditAndSendToMystique(context);
 
-      expect(result).to.deep.equal({ status: 'complete' });
-      const [, message] = context.sqs.sendMessage.firstCall.args;
-      // Should be limited to top 50 by traffic
-      expect(message.data.brokenLinks.length).to.be.at.most(50);
-    });
-
-    it('should throw error when audit failed', async () => {
-      audit.getAuditResult.returns({ success: false });
-
-      await expect(sendToMystique(context)).to.be.rejectedWith(
-        'Audit failed, skipping Mystique message',
-      );
-      expect(context.log.warn).to.have.been.calledWith(
-        '[LLM-ERROR-PAGES] Audit failed, skipping Mystique message',
+      expect(result.auditResult.success).to.be.false;
+      expect(result.auditResult.error).to.equal('Database error');
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/\[LLM-ERROR-PAGES\] Audit failed: Database error/),
+        sinon.match.instanceOf(Error),
       );
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
-    it('should throw error when SQS is not configured', async () => {
+    it('should skip Excel generation when no CDN data available', async () => {
+      mockDownloadExistingCdnSheet.resolves([]);
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/\[LLM-ERROR-PAGES\] No existing CDN data found/),
+      );
+      expect(mockSaveExcelReport).not.to.have.been.called;
+    });
+
+    it('should skip Mystique when SQS not configured', async () => {
       context.sqs = null;
 
-      await expect(sendToMystique(context)).to.be.rejectedWith(
-        'SQS or Mystique queue not configured',
-      );
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult.success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message',
       );
     });
 
-    it('should throw error when queue is not configured', async () => {
+    it('should skip Mystique when queue env not configured', async () => {
       context.env.QUEUE_SPACECAT_TO_MYSTIQUE = null;
 
-      await expect(sendToMystique(context)).to.be.rejectedWith(
-        'SQS or Mystique queue not configured',
-      );
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult.success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message',
       );
     });
 
-    it('should throw error when no 404 errors found', async () => {
-      audit.getAuditResult.returns({
-        success: true,
-        categorizedResults: { 403: [], 500: [] },
-        periodIdentifier: 'w34-2025',
+    it('should skip Mystique when no 404 errors found', async () => {
+      mockProcessResults.returns({
+        totalErrors: 0,
+        errorPages: [],
+        summary: { uniqueUrls: 0, uniqueUserAgents: 0 },
       });
 
-      await expect(sendToMystique(context)).to.be.rejectedWith('No 404 errors found');
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult.success).to.be.true;
       expect(context.log.warn).to.have.been.calledWith(
         '[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message',
       );
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
-    it('should consolidate URLs and combine user agents', async () => {
-      audit.getAuditResult.returns({
-        success: true,
-        categorizedResults: {
-          404: [
-            {
-              url: '/same-page',
-              userAgent: 'ChatGPT',
-              user_agent: 'ChatGPT',
-              total_requests: 10,
-            },
-            {
-              url: '/same-page',
-              userAgent: 'Perplexity',
-              user_agent: 'Perplexity',
-              total_requests: 5,
-            },
-          ],
-        },
-        periodIdentifier: 'w34-2025',
+    it('should limit 404 errors to 50 when sending to Mystique', async () => {
+      const many404s = Array.from({ length: 100 }, (_, i) => ({
+        user_agent: 'TestBot',
+        userAgent: 'TestBot',
+        url: `/page${i}`,
+        status: 404,
+        total_requests: 100 - i,
+      }));
+
+      mockProcessResults.returns({
+        totalErrors: 100,
+        errorPages: many404s,
+        summary: { uniqueUrls: 100, uniqueUserAgents: 1 },
       });
 
-      await sendToMystique(context);
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, message] = context.sqs.sendMessage.firstCall.args;
+      expect(message.data.brokenLinks.length).to.be.at.most(50);
+    });
+
+    it('should consolidate URLs and combine user agents in Mystique message', async () => {
+      mockProcessResults.returns({
+        totalErrors: 2,
+        errorPages: [
+          {
+            user_agent: 'ChatGPT',
+            userAgent: 'ChatGPT',
+            url: '/same-page',
+            status: 404,
+            total_requests: 10,
+          },
+          {
+            user_agent: 'Perplexity',
+            userAgent: 'Perplexity',
+            url: '/same-page',
+            status: 404,
+            total_requests: 5,
+          },
+        ],
+        summary: { uniqueUrls: 1, uniqueUserAgents: 2 },
+      });
+
+      await runAuditAndSendToMystique(context);
 
       const [, message] = context.sqs.sendMessage.firstCall.args;
-      // Should consolidate to single URL with multiple user agents
       expect(message.data.brokenLinks).to.have.length(1);
       const brokenLink = message.data.brokenLinks[0];
       expect(brokenLink.urlTo).to.include('/same-page');
@@ -529,20 +452,47 @@ describe('LLM Error Pages Handler', function () {
       expect(brokenLink.urlFrom).to.include('Perplexity');
     });
 
+    it('should generate separate Excel files for 404, 403, and 5xx', async () => {
+      mockProcessResults.returns({
+        totalErrors: 6,
+        errorPages: [
+          { user_agent: 'Bot1', url: '/404-1', status: 404, total_requests: 10 },
+          { user_agent: 'Bot2', url: '/404-2', status: 404, total_requests: 9 },
+          { user_agent: 'Bot3', url: '/403-1', status: 403, total_requests: 8 },
+          { user_agent: 'Bot4', url: '/403-2', status: 403, total_requests: 7 },
+          { user_agent: 'Bot5', url: '/500-1', status: 500, total_requests: 6 },
+          { user_agent: 'Bot6', url: '/503-1', status: 503, total_requests: 5 },
+        ],
+        summary: { uniqueUrls: 6, uniqueUserAgents: 6 },
+      });
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockSaveExcelReport).to.have.been.calledThrice;
+    });
+
+    it('should handle site with no config', async () => {
+      site.getConfig = () => null;
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(mockBuildSiteFilters).to.have.been.calledWith([], site);
+    });
+
     it('should handle site with no base URL', async () => {
-      site.getBaseURL = () => '';
+      site.getBaseURL = () => null;
 
-      await sendToMystique(context);
+      const result = await runAuditAndSendToMystique(context);
 
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      const [, message] = context.sqs.sendMessage.firstCall.args;
-      expect(message.data.brokenLinks[0].urlTo).to.equal('/page1');
+      expect(result.auditResult.success).to.be.true;
     });
 
     it('should use fallback delivery type when not available', async () => {
       site.getDeliveryType = () => undefined;
 
-      await sendToMystique(context);
+      await runAuditAndSendToMystique(context);
 
       const [, message] = context.sqs.sendMessage.firstCall.args;
       expect(message.deliveryType).to.equal('aem_edge');
@@ -551,10 +501,64 @@ describe('LLM Error Pages Handler', function () {
     it('should use fallback audit ID when not available', async () => {
       audit.getId = () => null;
 
-      await sendToMystique(context);
+      await runAuditAndSendToMystique(context);
 
       const [, message] = context.sqs.sendMessage.firstCall.args;
       expect(message.auditId).to.equal('llm-error-pages-audit');
+    });
+
+    it('should filter out broken links with empty user agents', async () => {
+      mockProcessResults.returns({
+        totalErrors: 2,
+        errorPages: [
+          {
+            user_agent: 'ChatGPT',
+            userAgent: 'ChatGPT',
+            url: '/page1',
+            status: 404,
+            total_requests: 10,
+          },
+          {
+            user_agent: '',
+            userAgent: '',
+            url: '/page2',
+            status: 404,
+            total_requests: 5,
+          },
+        ],
+        summary: { uniqueUrls: 2, uniqueUserAgents: 2 },
+      });
+
+      await runAuditAndSendToMystique(context);
+
+      const [, message] = context.sqs.sendMessage.firstCall.args;
+      // Should only include the link with a valid user agent
+      expect(message.data.brokenLinks.length).to.equal(1);
+      expect(message.data.brokenLinks[0].urlFrom).to.equal('ChatGPT');
+    });
+
+    it('should handle categorizedResults without 404 key', async () => {
+      mockProcessResults.returns({
+        totalErrors: 2,
+        errorPages: [
+          { user_agent: 'Bot1', url: '/403', status: 403, total_requests: 5, userAgent: 'Bot1' },
+          { user_agent: 'Bot2', url: '/500', status: 500, total_requests: 3, userAgent: 'Bot2' },
+        ],
+        summary: { uniqueUrls: 2, uniqueUserAgents: 2 },
+      });
+      mockCategorizeErrorsByStatusCode.returns({
+        403: [{ user_agent: 'Bot1', url: '/403', status: 403, total_requests: 5, userAgent: 'Bot1' }],
+        '5xx': [{ user_agent: 'Bot2', url: '/500', status: 500, total_requests: 3, userAgent: 'Bot2' }],
+        // No 404 key at all
+      });
+
+      const result = await runAuditAndSendToMystique(context);
+
+      expect(result.auditResult.success).to.be.true;
+      expect(context.log.warn).to.have.been.calledWith(
+        '[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message',
+      );
+      expect(context.sqs.sendMessage).not.to.have.been.called;
     });
   });
 });

@@ -35,9 +35,91 @@ import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 /**
- * Step 1: Run audit and generate Excel reports
+ * Step 1: Import top pages and submit for scraping
  */
-export async function runAuditAndGenerateReports(context) {
+export async function importTopPagesAndScrape(context) {
+  const {
+    site, dataAccess, log,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+
+  try {
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+    if (topPages.length === 0) {
+      log.warn('[LLM-ERROR-PAGES] No top pages found for site');
+      return {
+        type: 'top-pages',
+        siteId: site.getId(),
+        auditResult: {
+          success: false,
+          topPages: [],
+        },
+        fullAuditRef: site.getBaseURL(),
+      };
+    }
+
+    log.info(`[LLM-ERROR-PAGES] Found ${topPages.length} top pages for site ${site.getId()}`);
+
+    return {
+      type: 'top-pages',
+      siteId: site.getId(),
+      auditResult: {
+        success: true,
+        topPages: topPages.map((page) => page.getUrl()),
+      },
+      fullAuditRef: site.getBaseURL(),
+    };
+  } catch (error) {
+    log.error(`[LLM-ERROR-PAGES] Failed to import top pages: ${error.message}`, error);
+    return {
+      type: 'top-pages',
+      siteId: site.getId(),
+      auditResult: {
+        success: false,
+        error: error.message,
+        topPages: [],
+      },
+      fullAuditRef: site.getBaseURL(),
+    };
+  }
+}
+
+/**
+ * Step 2: Submit top pages for scraping
+ */
+export async function submitForScraping(context) {
+  const {
+    site, dataAccess, audit, log,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+
+  const auditResult = audit.getAuditResult();
+  if (auditResult.success === false) {
+    log.warn('[LLM-ERROR-PAGES] Audit failed, skipping scraping');
+    throw new Error('Audit failed, skipping scraping');
+  }
+
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+  if (topPages.length === 0) {
+    log.warn('[LLM-ERROR-PAGES] No top pages to submit for scraping');
+    throw new Error('No top pages to submit for scraping');
+  }
+
+  log.info(`[LLM-ERROR-PAGES] Submitting ${topPages.length} pages for scraping`);
+
+  return {
+    urls: topPages.slice(0, 100).map((topPage) => ({ url: topPage.getUrl() })),
+    siteId: site.getId(),
+    type: 'llm-error-pages',
+  };
+}
+
+/**
+ * Step 3: Run audit, generate Excel reports, and send to Mystique
+ */
+export async function runAuditAndSendToMystique(context) {
   const { log, site } = context;
   const s3Config = await getS3Config(site, context);
   const url = site.getBaseURL();
@@ -147,6 +229,60 @@ export async function runAuditAndGenerateReports(context) {
 
     log.info(`[LLM-ERROR-PAGES] Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
 
+    // Send to Mystique if configured
+    const {
+      dataAccess, sqs, env, audit,
+    } = context;
+    const { SiteTopPage } = dataAccess;
+
+    if (sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
+      const errors404 = categorizedResults[404] || [];
+
+      if (errors404.length > 0) {
+        const messageBaseUrl = site.getBaseURL?.() || '';
+        const consolidated404 = consolidateErrorsByUrl(errors404);
+        const sorted404 = sortErrorsByTrafficVolume(consolidated404).slice(0, 50);
+        const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+        // Consolidate by URL and combine user agents
+        const urlToUserAgentsMap = new Map();
+        sorted404.forEach((errorPage) => {
+          const path = toPathOnly(errorPage.url, messageBaseUrl);
+          const fullUrl = messageBaseUrl ? new URL(path, messageBaseUrl).toString() : path;
+          if (!urlToUserAgentsMap.has(fullUrl)) {
+            urlToUserAgentsMap.set(fullUrl, new Set());
+          }
+          urlToUserAgentsMap.get(fullUrl).add(errorPage.userAgent);
+        });
+
+        const message = {
+          type: 'guidance:llm-error-pages',
+          siteId: site.getId(),
+          auditId: audit.getId() || 'llm-error-pages-audit',
+          deliveryType: site?.getDeliveryType?.() || 'aem_edge',
+          time: new Date().toISOString(),
+          data: {
+            brokenLinks: Array.from(urlToUserAgentsMap.entries())
+              .map(([fullUrl, userAgents], index) => ({
+                urlFrom: Array.from(userAgents).join(', '),
+                urlTo: fullUrl,
+                suggestionId: `llm-404-suggestion-${periodIdentifier}-${index}`,
+              }))
+              .filter((link) => link.urlFrom.length > 0),
+            alternativeUrls: topPages.map((topPage) => topPage.getUrl()),
+            opportunityId: `llm-404-${periodIdentifier}`,
+          },
+        };
+
+        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+        log.info(`[LLM-ERROR-PAGES] Sent ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
+      } else {
+        log.warn('[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message');
+      }
+    } else {
+      log.warn('[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message');
+    }
+
     return {
       type: 'audit-result',
       siteId: site.getId(),
@@ -178,120 +314,18 @@ export async function runAuditAndGenerateReports(context) {
         success: false,
         timestamp: new Date().toISOString(),
         error: error.message,
-        database: s3Config.databaseName,
-        table: s3Config.tableName,
-        customer: s3Config.customerName,
+        database: s3Config?.databaseName,
+        table: s3Config?.tableName,
+        customer: s3Config?.customerName,
       },
       fullAuditRef: url,
     };
   }
 }
 
-/**
- * Step 2: Submit for scraping
- */
-export async function submitForScraping(context) {
-  const {
-    site, dataAccess, audit, log,
-  } = context;
-  const { SiteTopPage } = dataAccess;
-
-  const auditResult = audit.getAuditResult();
-  if (auditResult.success === false) {
-    log.warn('[LLM-ERROR-PAGES] Audit failed, skipping scraping');
-    throw new Error('Audit failed, skipping scraping');
-  }
-
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-
-  if (topPages.length === 0) {
-    log.warn('[LLM-ERROR-PAGES] No top pages to submit for scraping');
-    throw new Error('No top pages to submit for scraping');
-  }
-
-  log.info(`[LLM-ERROR-PAGES] Submitting ${topPages.length} pages for scraping`);
-
-  return {
-    urls: topPages.slice(0, 100).map((topPage) => ({ url: topPage.getUrl() })),
-    siteId: site.getId(),
-    type: 'llm-error-pages',
-  };
-}
-
-/**
- * Step 3: Send to Mystique for AI processing
- */
-export async function sendToMystique(context) {
-  const {
-    site, audit, dataAccess, log, sqs, env,
-  } = context;
-  const { SiteTopPage } = dataAccess;
-
-  const auditResult = audit.getAuditResult();
-  if (auditResult.success === false) {
-    log.warn('[LLM-ERROR-PAGES] Audit failed, skipping Mystique message');
-    throw new Error('Audit failed, skipping Mystique message');
-  }
-
-  if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    log.warn('[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message');
-    throw new Error('SQS or Mystique queue not configured');
-  }
-
-  const { categorizedResults, periodIdentifier } = auditResult;
-  const errors404 = categorizedResults[404] || [];
-
-  if (errors404.length === 0) {
-    log.warn('[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message');
-    throw new Error('No 404 errors found');
-  }
-
-  const messageBaseUrl = site.getBaseURL?.() || '';
-  const consolidated404 = consolidateErrorsByUrl(errors404);
-  const sorted404 = sortErrorsByTrafficVolume(consolidated404).slice(0, 50);
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-
-  // Consolidate by URL and combine user agents
-  const urlToUserAgentsMap = new Map();
-  sorted404.forEach((errorPage) => {
-    const path = toPathOnly(errorPage.url, messageBaseUrl);
-    const fullUrl = messageBaseUrl ? new URL(path, messageBaseUrl).toString() : path;
-    if (!urlToUserAgentsMap.has(fullUrl)) {
-      urlToUserAgentsMap.set(fullUrl, new Set());
-    }
-    urlToUserAgentsMap.get(fullUrl).add(errorPage.userAgent);
-  });
-
-  const message = {
-    type: 'guidance:llm-error-pages',
-    siteId: site.getId(),
-    auditId: audit.getId() || 'llm-error-pages-audit',
-    deliveryType: site?.getDeliveryType?.() || 'aem_edge',
-    time: new Date().toISOString(),
-    data: {
-      brokenLinks: Array.from(urlToUserAgentsMap.entries())
-        .map(([fullUrl, userAgents], index) => ({
-          urlFrom: Array.from(userAgents).join(', '),
-          urlTo: fullUrl,
-          suggestionId: `llm-404-suggestion-${periodIdentifier}-${index}`,
-        }))
-        .filter((link) => link.urlFrom.length > 0),
-      alternativeUrls: topPages.map((topPage) => topPage.getUrl()),
-      opportunityId: `llm-404-${periodIdentifier}`,
-    },
-  };
-
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-  log.info(`[LLM-ERROR-PAGES] Sent ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
-
-  return {
-    status: 'complete',
-  };
-}
-
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .addStep('run-audit-and-generate-reports', runAuditAndGenerateReports, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('import-top-pages', importTopPagesAndScrape, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
-  .addStep('send-to-mystique', sendToMystique)
+  .addStep('run-audit-and-send-to-mystique', runAuditAndSendToMystique)
   .build();
