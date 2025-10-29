@@ -461,7 +461,7 @@ describe('Prerender Audit', () => {
         expect(result.status).to.equal('complete');
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
         // Should have logged about fallback to base URL
-        expect(context.log.info).to.have.been.calledWith('Prerender - No URLs found, using base URL for comparison');
+        expect(context.log.info).to.have.been.calledWith('Prerender - No URLs found for comparison. baseUrl=https://example.com, siteId=test-site-id');
       });
 
       it('should trigger opportunity processing path when prerender is detected', async () => {
@@ -524,7 +524,7 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.urlsNeedingPrerender).to.be.greaterThan(0);
         expect(context.log.info).to.have.been.called;
         // Verify that the opportunity processing was logged
-        expect(context.log.info.args.some(call => call[0].includes('Successfully synced opportunity and suggestions'))).to.be.true;
+        expect(context.log.info.args.some(call => call[0].includes('Successfully synced suggestions'))).to.be.true;
       });
 
       it('should create dummy opportunity when scraping is forbidden', async () => {
@@ -647,7 +647,7 @@ describe('Prerender Audit', () => {
         expect(convertToOpportunityStub).to.have.been.calledOnce;
         expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com');
         expect(context.log.info).to.have.been.calledWith(
-          'Prerender - Creating dummy opportunity for forbidden scraping'
+          'Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=https://example.com, siteId=test-site-id'
         );
       });
     });
@@ -667,7 +667,7 @@ describe('Prerender Audit', () => {
 
         await processOpportunityAndSuggestions('https://example.com', auditData, context);
 
-        expect(logStub).to.have.been.calledWith('Prerender - No prerender opportunities found, skipping opportunity creation');
+        expect(logStub).to.have.been.calledWith('Prerender - No prerender opportunities found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
       });
 
       it('should skip processing when no URLs in results need prerender', async () => {
@@ -687,7 +687,7 @@ describe('Prerender Audit', () => {
 
         await processOpportunityAndSuggestions('https://example.com', auditData, context);
 
-        expect(logStub).to.have.been.calledWith('Prerender - No URLs needing prerender found, skipping opportunity creation');
+        expect(logStub).to.have.been.calledWith('Prerender - No URLs needing prerender found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
       });
 
       it('should attempt to process opportunities when URLs need prerender', async () => {
@@ -720,7 +720,7 @@ describe('Prerender Audit', () => {
           // But we can verify the function attempts to process
         }
 
-        expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for https://example.com');
+        expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
       });
 
       it('should call processOpportunityAndSuggestions correctly with full mock setup', async () => {
@@ -775,7 +775,7 @@ describe('Prerender Audit', () => {
         }
 
         // Verify that we logged the correct number of suggestions
-        expect(logStub).to.have.been.calledWith('Prerender - Generated 2 prerender suggestions for https://example.com');
+        expect(logStub).to.have.been.calledWith('Prerender - Generated 2 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
       });
 
       it('should successfully execute opportunity creation flow and cover syncSuggestions', async () => {
@@ -824,7 +824,7 @@ describe('Prerender Audit', () => {
         }
 
         // Should have logged about generating suggestions
-        expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for https://example.com');
+        expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
       });
     });
   });
@@ -1631,7 +1631,7 @@ describe('Prerender Audit', () => {
         // Verify that syncSuggestions was called
         expect(syncSuggestionsStub).to.have.been.calledOnce;
         // Verify that suggestion syncing was logged
-        expect(context.log.info.args.some(call => call[0].includes('Successfully synced opportunity and suggestions'))).to.be.true;
+        expect(context.log.info.args.some(call => call[0].includes('Successfully synced suggestions'))).to.be.true;
 
         // Verify the syncSuggestions was called with the correct structure including S3 keys
         const syncCall = syncSuggestionsStub.getCall(0);
@@ -2173,7 +2173,7 @@ describe('Prerender Audit', () => {
       });
 
       expect(context.log.info).to.have.been.calledWith(
-        sinon.match(/Successfully uploaded status summary to S3.*for site: test-site-id/)
+        sinon.match(/Successfully uploaded status summary to S3.*baseUrl=https:\/\/example\.com, siteId=test-site-id/)
       );
     });
 
