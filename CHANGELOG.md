@@ -1,3 +1,81 @@
+## [1.219.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.219.3...v1.219.4) (2025-10-29)
+
+
+### Bug Fixes
+
+* llmo-942 date parameter ([#1469](https://github.com/adobe/spacecat-audit-worker/issues/1469)) ([b8ebedf](https://github.com/adobe/spacecat-audit-worker/commit/b8ebedf04b9a7e36ef44618af00ae006ff4c3453))
+
+## [1.219.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.219.2...v1.219.3) (2025-10-29)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1465](https://github.com/adobe/spacecat-audit-worker/issues/1465)) ([4bb1753](https://github.com/adobe/spacecat-audit-worker/commit/4bb1753735ab13f553898deab2c867c20b6f19b6))
+
+## [1.219.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.219.1...v1.219.2) (2025-10-28)
+
+
+### Bug Fixes
+
+* **deps:** update external fixes ([#1458](https://github.com/adobe/spacecat-audit-worker/issues/1458)) ([a12de09](https://github.com/adobe/spacecat-audit-worker/commit/a12de0982c372a8fff94fb32fc2c0b269c68388e))
+* **llmo-customer-analysis:** remove config changes from audit result ([#1467](https://github.com/adobe/spacecat-audit-worker/issues/1467)) ([dd1b8b0](https://github.com/adobe/spacecat-audit-worker/commit/dd1b8b0105e17174a71ef3830ba98577a68d7eab))
+
+## [1.219.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.219.0...v1.219.1) (2025-10-28)
+
+
+### Bug Fixes
+
+* Update auth helper import ([#1463](https://github.com/adobe/spacecat-audit-worker/issues/1463)) ([b93266c](https://github.com/adobe/spacecat-audit-worker/commit/b93266ccbe967eef533045a1d087b9ced5445fad))
+
+# [1.219.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.218.0...v1.219.0) (2025-10-28)
+
+
+### Features
+
+* **COMOPT-876:** ACO - product-metatags - detect commerce specific product meta tags ([#1271](https://github.com/adobe/spacecat-audit-worker/issues/1271)) ([9108a64](https://github.com/adobe/spacecat-audit-worker/commit/9108a64b3175e6ac2c21dd69d8b6d08880276ef2))
+
+# [1.218.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.217.3...v1.218.0) (2025-10-27)
+
+
+### Features
+
+* redirect-chains audit ([#1457](https://github.com/adobe/spacecat-audit-worker/issues/1457)) ([af470f5](https://github.com/adobe/spacecat-audit-worker/commit/af470f5e90f0b951ce2b5cab63a4104099b20105))
+
+## [1.217.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.217.2...v1.217.3) (2025-10-26)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1459](https://github.com/adobe/spacecat-audit-worker/issues/1459)) ([4cd6b0e](https://github.com/adobe/spacecat-audit-worker/commit/4cd6b0e3f5e481e680cdcffbb53b3b7d5f926276))
+
+## [1.217.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.217.1...v1.217.2) (2025-10-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.65.0 ([#1454](https://github.com/adobe/spacecat-audit-worker/issues/1454)) ([539562d](https://github.com/adobe/spacecat-audit-worker/commit/539562de3d695d81d53f24e912bd4a26e43048c6))
+
+## [1.217.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.217.0...v1.217.1) (2025-10-24)
+
+
+### Bug Fixes
+
+* **geo-brand-presence:** make: <… ([#1455](https://github.com/adobe/spacecat-audit-worker/issues/1455)) ([58346c4](https://github.com/adobe/spacecat-audit-worker/commit/58346c4678d3e78a4966e4deaec2153bc8495358))
+
+# [1.217.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.216.3...v1.217.0) (2025-10-24)
+
+
+### Features
+
+* read rum threshold values from dlivery config if available ([#1423](https://github.com/adobe/spacecat-audit-worker/issues/1423)) ([4e99a57](https://github.com/adobe/spacecat-audit-worker/commit/4e99a571466040e735f0079995b1601888d09a77))
+
+## [1.216.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.216.2...v1.216.3) (2025-10-24)
+
+
+### Bug Fixes
+
+* changing heading issues ([#1453](https://github.com/adobe/spacecat-audit-worker/issues/1453)) ([d1c2496](https://github.com/adobe/spacecat-audit-worker/commit/d1c24962d7df43f26d74997ee8ad3c00ec276b8d))
+
 ## [1.216.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.216.1...v1.216.2) (2025-10-24)
 
 

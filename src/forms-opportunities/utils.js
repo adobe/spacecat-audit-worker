@@ -14,16 +14,13 @@ import {
   FORMS_AUDIT_INTERVAL,
   isNonEmptyArray, isNonEmptyObject,
 } from '@adobe/spacecat-shared-utils';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
 import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
-
-const EXPIRY_IN_SECONDS = 3600 * 24 * 7;
+import { getPresignedUrl as getPresignedUrlUtil } from '../utils/getPresignedUrl.js';
 
 function getS3PathPrefix(url, site) {
   const urlObj = new URL(url);
@@ -33,22 +30,16 @@ function getS3PathPrefix(url, site) {
 }
 
 async function getPresignedUrl(fileName, context, url, site) {
-  const { log, s3Client: s3ClientObj } = context;
+  const { log, s3Client } = context;
   const screenshotPath = `${getS3PathPrefix(url, site)}/${fileName}`;
   log.debug(`Generating presigned URL for ${screenshotPath}`);
 
-  const command = new GetObjectCommand({
-    Bucket: process.env.S3_BUCKET_NAME,
-    Key: screenshotPath,
+  return getPresignedUrlUtil({
+    s3Client,
+    bucket: process.env.S3_BUCKET_NAME,
+    key: screenshotPath,
+    log,
   });
-
-  return getSignedUrl(s3ClientObj, command, { expiresIn: EXPIRY_IN_SECONDS })
-    // eslint-disable-next-line no-shadow
-    .then((signedUrl) => signedUrl)
-    .catch((error) => {
-      log.error(`Error generating presigned URL for ${screenshotPath}:`, error);
-      return ''; // Ensure the function always returns something
-    });
 }
 
 function calculateRate(numerator, denominator) {

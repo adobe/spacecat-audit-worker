@@ -260,8 +260,7 @@ export async function validatePageHeadings(
 
     const h1Elements = headings.filter((h) => h.tagName === 'H1');
 
-    if (h1Elements.length === 0
-      || (h1Elements.length === 1 && getTextContent(h1Elements[0]).length === 0)) {
+    if (h1Elements.length === 0) {
       log.debug(`Missing h1 element detected at ${url}`);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
@@ -279,8 +278,11 @@ export async function validatePageHeadings(
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
         count: h1Elements.length,
       });
-    } else if (h1Elements[0].textContent.length > H1_LENGTH_CHARS) {
-      log.info(`H1 length too long detected at ${url}: ${h1Elements[0].textContent.length} characters`);
+    } else if (getTextContent(h1Elements[0]).length === 0
+      || getTextContent(h1Elements[0]).length > H1_LENGTH_CHARS) {
+      const h1Length = h1Elements[0].textContent.length;
+      const lengthIssue = h1Length === 0 ? 'empty' : 'too long';
+      log.info(`H1 length ${lengthIssue} detected at ${url}: ${h1Length} characters`);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_H1_LENGTH.check,
         success: false,
