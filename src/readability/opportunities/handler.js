@@ -155,6 +155,7 @@ export async function processReadabilityOpportunities(context) {
       data: {
         id: `readability-${siteId}-${index}`,
         pageUrl: issue.pageUrl,
+        originalText: issue.displayText,
         textPreview: issue.textContent?.substring(0, 500),
         fleschReadingEase: issue.fleschReadingEase,
         language: issue.language,
