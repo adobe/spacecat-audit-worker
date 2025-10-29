@@ -325,11 +325,12 @@ describe('data-access', () => {
         expect(e.message).to.include('Sample error: some error');
       }
 
-      // Now logs summary + detailed error + failed item data = 3 calls
-      expect(mockLogger.error).to.have.been.calledThrice;
+      // Now logs summary + detailed error + failed item data + error items array = 4 calls
+      expect(mockLogger.error).to.have.callCount(4);
       expect(mockLogger.error.firstCall.args[0]).to.match(/contains 1 items with errors/);
       expect(mockLogger.error.secondCall.args[0]).to.include('Error 1/1: some error');
       expect(mockLogger.error.thirdCall.args[0]).to.include('Failed item data');
+      expect(mockLogger.error.getCall(3).args[0]).to.equal('[suggestions.errorItems]');
     });
 
     it('should throw an error if all items fail to be created', async () => {

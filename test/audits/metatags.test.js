@@ -734,8 +734,8 @@ describe('Meta Tags', () => {
         }
         expect(opportunity.save).to.be.calledOnce;
         expect(logStub.error).to.be.calledWith(sinon.match(/contains 1 items with errors/));
-        // Now logs summary + detailed error + failed item data = 3 calls
-        expect(logStub.error).to.be.calledThrice;
+        // Now logs summary + detailed error + failed item data + error items array = 4 calls
+        expect(logStub.error).to.have.callCount(4);
       });
 
       it('should take rank as -1 if issue is not known', async () => {
