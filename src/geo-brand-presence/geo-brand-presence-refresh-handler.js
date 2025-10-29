@@ -113,20 +113,54 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
   throw new Error('REFRESH GEO BRAND PRESENCE: No paths found in query-index file');
 }
 
+/**
+ * Handles the refresh of geo brand presence sheets by reading from SharePoint
+ * and sending messages to Mystique for processing.
+ *
+ * This handler automatically determines the cadence (daily vs weekly) using the following priority:
+ * 1. Explicit context.brandPresenceCadence override (for testing/wrappers)
+ * 2. Per-site Configuration check (checks if 'geo-brand-presence-daily' is enabled for this site)
+ * 3. Site-specific config (site.getConfig().getBrandPresenceCadence())
+ * 4. Default to 'weekly'
+ *
+ * Based on the determined cadence, it sends either:
+ * - 'refresh:geo-brand-presence-daily' messages (for daily cadence)
+ * - 'refresh:geo-brand-presence' messages (for weekly cadence)
+ *
+ * @param {Object} message - The message object containing siteId and auditContext
+ * @param {string} message.siteId - The site ID to process
+ * @param {Object} message.auditContext - Additional audit context (e.g., configVersion)
+ * @param {Object} context - The context object containing dataAccess, log, s3Client, sqs, env
+ * @returns {Promise<Object>} HTTP response (ok or error)
+ */
 export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   const { log, dataAccess } = context;
-  const { Site } = dataAccess;
+  const { Site, Configuration } = dataAccess;
   const { siteId, auditContext } = message;
   let errMsg;
   const site = await Site.findById(siteId);
 
-  // Priority: context (for wrapper) > site config > default
+  // Check if daily audit is enabled in global Configuration
+  const configuration = await Configuration.findLatest();
+  const isDailyEnabled = configuration.isHandlerEnabledForSite(
+    'geo-brand-presence-daily',
+    site,
+  );
+
+  // Priority: explicit context override > per-site Configuration check > site config > default
   const brandPresenceCadence = context.brandPresenceCadence
+    || (isDailyEnabled ? 'daily' : null)
     || site.getConfig()?.getBrandPresenceCadence?.()
     || 'weekly';
   const isDaily = brandPresenceCadence === 'daily';
 
-  log.info('%s: Processing refresh with cadence: %s for site %s', AUDIT_NAME, brandPresenceCadence, siteId);
+  log.info(
+    '%s: Processing refresh for site %s with cadence: %s (daily enabled for this site: %s)',
+    AUDIT_NAME,
+    siteId,
+    brandPresenceCadence,
+    isDailyEnabled,
+  );
 
   // fetch sheets that need to be refreshed from SharePoint
   // Get the SharePoint client
