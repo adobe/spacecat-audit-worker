@@ -31,9 +31,9 @@ async function fetchContentFragment404s(context) {
   const { log } = context;
 
   const collector = await AthenaCollector.createFrom(context);
-  const brokenPaths = await collector.fetchBrokenPaths();
+  const brokenPaths = await collector.fetchContentFragment404s();
 
-  log.info(`Found ${brokenPaths.length} broken content fragment paths from ${collector.constructor.name}`);
+  log.info(`Found ${brokenPaths.length} content fragment 404s from ${collector.constructor.name}`);
 
   return brokenPaths;
 }
@@ -50,7 +50,7 @@ async function analyzeContentFragment404s(context, brokenPaths) {
   const urls = brokenPaths.map((item) => item.url || item);
   const suggestions = await strategy.analyze(urls);
 
-  log.info(`Found ${suggestions.length} suggestions for broken content fragment paths`);
+  log.info(`Found ${suggestions.length} suggestions for content fragment 404s`);
 
   return suggestions.map((suggestion) => suggestion.toJSON());
 }

@@ -119,19 +119,19 @@ export class AthenaCollector {
     await this.athenaClient.execute(sqlTable, this.config.database, sqlTableDescription);
   }
 
-  async fetchBrokenPaths() {
+  async fetchContentFragment404s() {
     const { log } = this.context;
     const { year, month, day } = AthenaCollector.getPreviousDayParts();
 
-    log.info(`Fetching broken content paths for ${year}-${month}-${day} from Athena`);
+    log.info(`Fetching content fragment 404s for ${year}-${month}-${day} from Athena`);
 
     try {
       await this.ensureDatabase();
       await this.ensureTable();
 
-      const brokenPaths = await this.queryBrokenPaths(year, month, day);
+      const brokenPaths = await this.queryContentFragment404s(year, month, day);
 
-      log.info(`Found ${brokenPaths.length} broken content paths from Athena`);
+      log.info(`Found ${brokenPaths.length} content fragment 404s from Athena`);
       return brokenPaths;
     } catch (error) {
       log.error(`Athena query failed: ${error.message}`);
@@ -139,7 +139,7 @@ export class AthenaCollector {
     }
   }
 
-  async queryBrokenPaths(year, month, day) {
+  async queryContentFragment404s(year, month, day) {
     const sqlQuery = await AthenaCollector.loadSql('daily-query', {
       database: this.config.database,
       tableName: this.config.tableName,
@@ -148,7 +148,7 @@ export class AthenaCollector {
       day,
     });
 
-    const sqlQueryDescription = `[Athena Query] Fetch broken content paths for ${year}-${month}-${day}`;
+    const sqlQueryDescription = `[Athena Query] Fetch content fragment 404s for ${year}-${month}-${day}`;
     const result = await this.athenaClient.query(
       sqlQuery,
       this.config.database,

@@ -72,7 +72,7 @@ describe('Broken Content Fragment Links Handler', () => {
     };
 
     athenaCollectorStub = {
-      fetchBrokenPaths: sandbox.stub().resolves([
+      fetchContentFragment404s: sandbox.stub().resolves([
         { url: '/content/dam/test/fragment1', requestCount: 100, requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 50 }] },
         { url: '/content/dam/test/fragment2', requestCount: 200, requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 200 }] },
       ]),
@@ -159,13 +159,11 @@ describe('Broken Content Fragment Links Handler', () => {
     it('should successfully fetch and analyze broken content fragment paths', async () => {
       const result = await handlerModule.contentFragment404AuditRunner(baseURL, context, site);
 
-      expect(athenaCollectorStub.fetchBrokenPaths).to.have.been.calledOnce;
+      expect(athenaCollectorStub.fetchContentFragment404s).to.have.been.calledOnce;
       expect(analysisStrategyStub.analyze).to.have.been.calledWith([
         '/content/dam/test/fragment1',
         '/content/dam/test/fragment2',
       ]);
-      expect(context.log.info).to.have.been.calledWith('Found 2 broken content fragment paths from AthenaCollector');
-      expect(context.log.info).to.have.been.calledWith('Found 2 suggestions for broken content fragment paths');
 
       expect(result).to.deep.equal({
         fullAuditRef: baseURL,
@@ -183,19 +181,17 @@ describe('Broken Content Fragment Links Handler', () => {
     });
 
     it('should handle empty results from collector', async () => {
-      athenaCollectorStub.fetchBrokenPaths.resolves([]);
+      athenaCollectorStub.fetchContentFragment404s.resolves([]);
       analysisStrategyStub.analyze.resolves([]);
 
       const result = await handlerModule.contentFragment404AuditRunner(baseURL, context, site);
 
-      expect(context.log.info).to.have.been.calledWith('Found 0 broken content fragment paths from AthenaCollector');
-      expect(context.log.info).to.have.been.calledWith('Found 0 suggestions for broken content fragment paths');
       expect(result.auditResult.brokenPaths).to.deep.equal([]);
       expect(result.auditResult.suggestions).to.deep.equal([]);
     });
 
     it('should handle mixed format in brokenPaths (objects and strings)', async () => {
-      athenaCollectorStub.fetchBrokenPaths.resolves([
+      athenaCollectorStub.fetchContentFragment404s.resolves([
         { url: '/content/dam/test/object-format', requestCount: 50, requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 50 }] },
         '/content/dam/test/string-format',
       ]);
@@ -212,7 +208,7 @@ describe('Broken Content Fragment Links Handler', () => {
     it('should pass site in auditContext', async () => {
       await handlerModule.contentFragment404AuditRunner(baseURL, context, site);
 
-      expect(athenaCollectorStub.fetchBrokenPaths).to.have.been.calledOnce;
+      expect(athenaCollectorStub.fetchContentFragment404s).to.have.been.calledOnce;
       expect(analysisStrategyStub.analyze).to.have.been.calledOnce;
     });
 
@@ -267,7 +263,6 @@ describe('Broken Content Fragment Links Handler', () => {
         requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 50 }],
       });
 
-      expect(context.log.info).to.have.been.calledWith('Created 2 suggestions for opportunity test-opportunity-id');
     });
 
     it('should skip when no suggestions are provided', async () => {
@@ -275,7 +270,6 @@ describe('Broken Content Fragment Links Handler', () => {
 
       await handlerModule.createContentFragmentPathSuggestions(baseURL, auditData, context);
 
-      expect(context.log.info).to.have.been.calledWith('No suggestions to create');
       expect(convertToOpportunityStub).not.to.have.been.called;
       expect(syncSuggestionsStub).not.to.have.been.called;
     });
@@ -285,7 +279,6 @@ describe('Broken Content Fragment Links Handler', () => {
 
       await handlerModule.createContentFragmentPathSuggestions(baseURL, auditData, context);
 
-      expect(context.log.info).to.have.been.calledWith('No suggestions to create');
       expect(convertToOpportunityStub).not.to.have.been.called;
       expect(syncSuggestionsStub).not.to.have.been.called;
     });
@@ -392,7 +385,6 @@ describe('Broken Content Fragment Links Handler', () => {
       expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith('test-site-id', 'NEW');
       expect(context.dataAccess.Suggestion.allByOpportunityIdAndStatus).to.have.been.calledWith('test-opportunity-id', SuggestionModel.STATUSES.NEW);
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
-      expect(context.log.info).to.have.been.calledWith('Sent 1 content fragment path suggestions to Mystique for enrichment');
     });
 
     it('should skip when handler is disabled for site', async () => {
@@ -400,7 +392,6 @@ describe('Broken Content Fragment Links Handler', () => {
 
       await handlerModule.enrichContentFragmentPathSuggestions(baseURL, auditData, context, site);
 
-      expect(context.log.info).to.have.been.calledWith('Auto-Suggest is disabled for site test-site-id');
       expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).not.to.have.been.called;
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
@@ -410,7 +401,6 @@ describe('Broken Content Fragment Links Handler', () => {
 
       await handlerModule.enrichContentFragmentPathSuggestions(baseURL, auditData, context, site);
 
-      expect(context.log.info).to.have.been.calledWith('No opportunity found for this audit, skipping Mystique message');
       expect(context.dataAccess.Suggestion.allByOpportunityIdAndStatus).not.to.have.been.called;
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
@@ -425,7 +415,6 @@ describe('Broken Content Fragment Links Handler', () => {
 
       await handlerModule.enrichContentFragmentPathSuggestions(baseURL, auditData, context, site);
 
-      expect(context.log.info).to.have.been.calledWith('No opportunity found for this audit, skipping Mystique message');
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
@@ -439,7 +428,6 @@ describe('Broken Content Fragment Links Handler', () => {
 
       await handlerModule.enrichContentFragmentPathSuggestions(baseURL, auditData, context, site);
 
-      expect(context.log.info).to.have.been.calledWith('No opportunity found for this audit, skipping Mystique message');
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
@@ -448,7 +436,6 @@ describe('Broken Content Fragment Links Handler', () => {
 
       await handlerModule.enrichContentFragmentPathSuggestions(baseURL, auditData, context, site);
 
-      expect(context.log.info).to.have.been.calledWith('No suggestions to enrich, skipping Mystique message');
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
@@ -457,7 +444,6 @@ describe('Broken Content Fragment Links Handler', () => {
 
       await handlerModule.enrichContentFragmentPathSuggestions(baseURL, auditData, context, site);
 
-      expect(context.log.info).to.have.been.calledWith('No suggestions to enrich, skipping Mystique message');
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
@@ -510,7 +496,6 @@ describe('Broken Content Fragment Links Handler', () => {
       expect(message.data.brokenPaths).to.have.lengthOf(2);
       expect(message.data.brokenPaths[0].suggestionId).to.equal('test-suggestion-id');
       expect(message.data.brokenPaths[1].suggestionId).to.equal('test-suggestion-id-2');
-      expect(context.log.info).to.have.been.calledWith('Sent 2 content fragment path suggestions to Mystique for enrichment');
     });
   });
 

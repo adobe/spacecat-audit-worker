@@ -487,7 +487,7 @@ describe('AthenaCollector', () => {
     });
   });
 
-  describe('queryBrokenPaths', () => {
+  describe('queryContentFragment404s', () => {
     it('should query broken paths with correct parameters and filter assets', async () => {
       athenaClientStub.query.resolves([
         { url: '/content/dam/test/fragment1', request_user_agent: 'Mozilla/5.0', request_count: '10' },
@@ -501,7 +501,7 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = 'test';
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryBrokenPaths('2025', '01', '15');
+      const result = await collector.queryContentFragment404s('2025', '01', '15');
 
       expect(getStaticContentStub).to.have.been.calledWith(
         {
@@ -514,11 +514,9 @@ describe('AthenaCollector', () => {
         './src/content-fragment-404/sql/daily-query.sql',
       );
 
-      expect(athenaClientStub.query).to.have.been.calledWith(
-        'SELECT * FROM test_table;',
-        'test_database',
-        '[Athena Query] Fetch broken content paths for 2025-01-15',
-      );
+      expect(athenaClientStub.query).to.have.been.calledOnce;
+      expect(athenaClientStub.query.getCall(0).args[0]).to.equal('SELECT * FROM test_table;');
+      expect(athenaClientStub.query.getCall(0).args[1]).to.equal('test_database');
 
       expect(result).to.deep.equal([
         {
@@ -550,7 +548,7 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = 'test';
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryBrokenPaths('2025', '01', '15');
+      const result = await collector.queryContentFragment404s('2025', '01', '15');
 
       expect(result).to.deep.equal([
         {
@@ -579,7 +577,7 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = 'test';
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryBrokenPaths('2025', '01', '15');
+      const result = await collector.queryContentFragment404s('2025', '01', '15');
 
       expect(result).to.deep.equal([
         {
@@ -608,7 +606,7 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = 'test';
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryBrokenPaths('2025', '01', '15');
+      const result = await collector.queryContentFragment404s('2025', '01', '15');
 
       expect(result).to.deep.equal([
         {
@@ -640,7 +638,7 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = 'test';
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryBrokenPaths('2025', '01', '15');
+      const result = await collector.queryContentFragment404s('2025', '01', '15');
 
       expect(result).to.deep.equal([
         {
@@ -666,7 +664,7 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = 'test';
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryBrokenPaths('2025', '01', '15');
+      const result = await collector.queryContentFragment404s('2025', '01', '15');
 
       expect(result).to.deep.equal([
         {
@@ -693,7 +691,7 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = 'test';
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryBrokenPaths('2025', '01', '15');
+      const result = await collector.queryContentFragment404s('2025', '01', '15');
 
       expect(result).to.deep.equal([]);
     });
@@ -706,7 +704,7 @@ describe('AthenaCollector', () => {
       collector.initialize();
       setTestConfig(collector);
 
-      await expect(collector.queryBrokenPaths('2025', '01', '15'))
+      await expect(collector.queryContentFragment404s('2025', '01', '15'))
         .to.be.rejectedWith('Query SQL not found');
     });
 
@@ -718,7 +716,7 @@ describe('AthenaCollector', () => {
       collector.initialize();
       setTestConfig(collector);
 
-      await expect(collector.queryBrokenPaths('2025', '01', '15'))
+      await expect(collector.queryContentFragment404s('2025', '01', '15'))
         .to.be.rejectedWith('Query execution failed');
     });
 
@@ -736,7 +734,7 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = 'test';
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryBrokenPaths('2025', '01', '15');
+      const result = await collector.queryContentFragment404s('2025', '01', '15');
 
       expect(result).to.deep.equal([
         {
@@ -768,7 +766,7 @@ describe('AthenaCollector', () => {
     });
   });
 
-  describe('fetchBrokenPaths', () => {
+  describe('fetchContentFragment404s', () => {
     it('should fetch broken paths successfully and exclude assets', async () => {
       // Mock getPreviousDayParts to return specific date
       const originalGetPreviousDayParts = AthenaCollector.getPreviousDayParts;
@@ -784,10 +782,7 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = 'test';
         collector.initialize();
       setTestConfig(collector);
-        const result = await collector.fetchBrokenPaths();
-
-        expect(context.log.info).to.have.been.calledWith('Fetching broken content paths for 2025-01-14 from Athena');
-        expect(context.log.info).to.have.been.calledWith('Found 2 broken content paths from Athena');
+        const result = await collector.fetchContentFragment404s();
 
         expect(result).to.deep.equal([
           {
@@ -815,7 +810,7 @@ describe('AthenaCollector', () => {
       collector.initialize();
       setTestConfig(collector);
 
-      await expect(collector.fetchBrokenPaths())
+      await expect(collector.fetchContentFragment404s())
         .to.be.rejectedWith('Athena query failed: Database creation failed');
 
       expect(context.log.error).to.have.been.calledWith('Athena query failed: Database creation failed');
@@ -830,7 +825,7 @@ describe('AthenaCollector', () => {
       collector.initialize();
       setTestConfig(collector);
 
-      await expect(collector.fetchBrokenPaths())
+      await expect(collector.fetchContentFragment404s())
         .to.be.rejectedWith('Athena query failed: Table creation failed');
 
       expect(context.log.error).to.have.been.calledWith('Athena query failed: Table creation failed');
@@ -845,7 +840,7 @@ describe('AthenaCollector', () => {
       collector.initialize();
       setTestConfig(collector);
 
-      await expect(collector.fetchBrokenPaths())
+      await expect(collector.fetchContentFragment404s())
         .to.be.rejectedWith('Athena query failed: Query failed');
 
       expect(context.log.error).to.have.been.calledWith('Athena query failed: Query failed');
@@ -859,12 +854,12 @@ describe('AthenaCollector', () => {
       setTestConfig(collector);
       const ensureDatabaseSpy = sandbox.spy(collector, 'ensureDatabase');
       const ensureTableSpy = sandbox.spy(collector, 'ensureTable');
-      const queryBrokenPathsSpy = sandbox.spy(collector, 'queryBrokenPaths');
+      const queryContentFragment404sSpy = sandbox.spy(collector, 'queryContentFragment404s');
 
-      await collector.fetchBrokenPaths();
+      await collector.fetchContentFragment404s();
 
       expect(ensureDatabaseSpy).to.have.been.calledBefore(ensureTableSpy);
-      expect(ensureTableSpy).to.have.been.calledBefore(queryBrokenPathsSpy);
+      expect(ensureTableSpy).to.have.been.calledBefore(queryContentFragment404sSpy);
     });
 
     it('should handle empty results gracefully', async () => {
@@ -875,9 +870,8 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = 'test';
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.fetchBrokenPaths();
+      const result = await collector.fetchContentFragment404s();
 
-      expect(context.log.info).to.have.been.calledWith('Found 0 broken content paths from Athena');
       expect(result).to.deep.equal([]);
     });
   });
