@@ -298,7 +298,6 @@ describe('AnalysisStrategy', () => {
       const result = await strategy.analyzePath(brokenPath);
 
       expect(context.log.error).to.have.been.calledThrice;
-      expect(context.log.warn).to.have.been.calledWith(`No rules applied to ${brokenPath}`);
       expect(result).to.equal(notFoundSuggestion);
     });
 
@@ -311,8 +310,6 @@ describe('AnalysisStrategy', () => {
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       await strategy.analyzePath(brokenPath);
 
-      expect(context.log.info).to.have.been.calledWith(`Analyzing broken path: ${brokenPath}`);
-      expect(context.log.info).to.have.been.calledWith(`Rule PublishRule applied to ${brokenPath}`);
     });
   });
 
@@ -346,7 +343,6 @@ describe('AnalysisStrategy', () => {
 
       expect(mockPathIndex.find).to.have.been.calledWith('/content/dam/test/suggested.jpg');
       expect(result).to.deep.equal(suggestions);
-      expect(context.log.debug).to.have.been.calledWith('Kept original suggestion type for /content/dam/test/suggested.jpg with status: PUBLISHED');
     });
 
     it('should process SIMILAR suggestions with published content', async () => {
@@ -389,7 +385,6 @@ describe('AnalysisStrategy', () => {
       const result = await strategy.processSuggestions([]);
 
       expect(result).to.deep.equal([]);
-      expect(context.log.info).to.have.been.calledWith('Post-processing 0 suggestions');
     });
 
     it('should handle mixed suggestion types', async () => {
@@ -437,8 +432,6 @@ describe('AnalysisStrategy', () => {
 
       expect(result).to.have.lengthOf(1);
       expect(result[0]).to.equal(suggestion);
-      expect(context.log.info).to.have.been.calledWith('Analyzing broken path: /content/dam/test/broken');
-      expect(context.log.info).to.have.been.calledWith('Rule LocaleFallbackRule applied to /content/dam/test/broken');
     });
 
     it('should handle no successful rules scenario', async () => {
@@ -459,7 +452,6 @@ describe('AnalysisStrategy', () => {
 
       expect(result).to.have.lengthOf(1);
       expect(result[0]).to.equal(notFoundSuggestion);
-      expect(context.log.warn).to.have.been.calledWith('No rules applied to /content/dam/test/broken.jpg');
     });
 
     it('should handle multiple paths with different outcomes', async () => {

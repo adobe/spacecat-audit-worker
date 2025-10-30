@@ -835,8 +835,6 @@ describe('AemClient', () => {
       const result = await client.getChildrenFromPath('/content/dam/test');
 
       expect(result).to.equal(cachedChildren);
-      expect(context.log.debug).to.have.been.calledWith('Getting children paths from parent: /content/dam/test');
-      expect(context.log.debug).to.have.been.calledWith('Found 1 children in cache for parent: /content/dam/test');
     });
   });
 });

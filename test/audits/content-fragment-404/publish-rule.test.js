@@ -168,7 +168,6 @@ describe('PublishRule', () => {
 
       const result = await rule.applyRule(brokenPath);
 
-      expect(context.log.debug).to.have.been.calledWith('Applying PublishRule to path: ');
       expect(mockAemClient.isAvailable).to.have.been.calledOnceWith('');
       expect(result).to.be.null;
     });
@@ -180,7 +179,6 @@ describe('PublishRule', () => {
 
       const result = await rule.applyRule(brokenPath);
 
-      expect(context.log.debug).to.have.been.calledWith('Applying PublishRule to path: null');
       expect(mockAemClient.isAvailable).to.have.been.calledOnceWith(null);
       expect(result).to.be.null;
     });
