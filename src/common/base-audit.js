@@ -146,6 +146,11 @@ export class BaseAudit {
     const { type, site } = params;
     const { auditResult, fullAuditRef } = result;
 
+    const sanitized = { ...context };
+    delete sanitized.env;
+    delete sanitized.log;
+    context.log.info(`context: ${JSON.stringify(sanitized, null, 2)}`);
+
     const auditData = {
       siteId: site.getId(),
       isLive: site.getIsLive(),
