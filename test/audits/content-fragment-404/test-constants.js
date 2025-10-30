@@ -17,6 +17,7 @@ export const TEST_AUDIT_ID = 'test-audit-id';
 export const TEST_SUGGESTION_ID = 'test-suggestion-id';
 export const TEST_SUGGESTION_ID_2 = 'test-suggestion-id-2';
 export const TEST_ORG_ID = 'test-org-id';
+export const TEST_IMS_ORG_ID = '1234567890';
 export const TEST_HOSTNAME = 'test';
 export const TEST_CURSOR = 'cursor-123';
 
@@ -24,6 +25,7 @@ export const TEST_CURSOR = 'cursor-123';
 export const TEST_BASE_URL = 'https://test-tenant.adobe.com';
 export const TEST_CUSTOM_URL = 'https://custom-tenant.adobe.com';
 export const TEST_BASE_URL_SITE = 'https://test-site.com';
+export const TEST_BASE_URL_EXAMPLE = 'https://example.com';
 export const TEST_AEM_AUTHOR_URL = 'https://author.example.com';
 export const TEST_URL_EXAMPLE_COM_CONTENT_DAM_IMAGES_PHOTO = 'https://example.com/content/dam/images/photo.jpg';
 
@@ -201,17 +203,24 @@ export const USER_AGENT_COUNT_2 = 200;
 // Dates and Date Components
 export const TEST_YEAR = '2025';
 export const TEST_MONTH = '01';
+export const TEST_MONTH_09 = '09';
 export const TEST_DAY = '15';
+export const TEST_DAY_18 = '18';
 export const TEST_DAY_PREVIOUS = '14';
 export const TEST_MONTH_MAR = '03';
 export const TEST_DAY_5 = '05';
 export const TEST_MONTH_DEC = '12';
 export const TEST_DAY_25 = '25';
 export const TEST_DAY_31 = '31';
+export const TEST_HOUR_13 = '13';
+export const TEST_HOUR_23 = '23';
 export const TEST_DATE_2025_01_14 = new Date('2025-01-14T12:00:00.000Z');
 export const TEST_DATE_2025_01_15 = new Date('2025-01-15T12:00:00.000Z');
+export const TEST_DATE_2025_01_15_14_30 = new Date('2025-01-15T14:30:00Z');
+export const TEST_DATE_2025_01_15_00_30 = new Date('2025-01-15T00:30:00Z');
 export const TEST_DATE_2025_02_01 = new Date('2025-02-01T10:30:00Z');
 export const TEST_DATE_2025_03_05 = new Date('2025-03-05T10:30:00Z');
+export const TEST_DATE_2025_09_18 = new Date('2025-09-18T14:00:00.000Z');
 export const TEST_DATE_2025_12_25 = new Date('2025-12-25T10:30:00Z');
 
 // Status Values
@@ -242,6 +251,7 @@ export const EXPECTED_COUNT_FOUR = 4;
 export const EXPECTED_SUGGESTIONS_COUNT = 2;
 export const EXPECTED_SINGLE_SUGGESTION_COUNT = 1;
 export const EXPECTED_RULES_COUNT = 3;
+export const EXPECTED_CALL_COUNT_THRICE = 3;
 
 // Levenshtein Distance Values
 export const DISTANCE_SINGLE_CHAR = 1;

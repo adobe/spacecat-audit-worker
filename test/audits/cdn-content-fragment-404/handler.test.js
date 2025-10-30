@@ -21,6 +21,26 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
+import {
+  TEST_IMS_ORG_ID,
+  TEST_ORG_ID,
+  TEST_BASE_URL_EXAMPLE,
+  TEST_BASE_URL_SITE,
+  TEST_S3_BUCKET,
+  TEST_DATE_2025_09_18,
+  TEST_DATE_2025_01_15_14_30,
+  TEST_DATE_2025_01_15_00_30,
+  TEST_YEAR,
+  TEST_MONTH_09,
+  TEST_MONTH,
+  TEST_DAY_18,
+  TEST_DAY,
+  TEST_DAY_PREVIOUS,
+  TEST_HOUR_13,
+  TEST_HOUR_23,
+  EXPECTED_CALL_COUNT_THRICE,
+} from '../content-fragment-404/test-constants.js';
+
 describe('CDN 404 Analysis Handler', () => {
   let sandbox;
   let context;
@@ -31,11 +51,10 @@ describe('CDN 404 Analysis Handler', () => {
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-    const fixedDate = new Date('2025-09-18T14:00:00.000Z');
-    sandbox.stub(Date, 'now').returns(fixedDate.getTime());
+    sandbox.stub(Date, 'now').returns(TEST_DATE_2025_09_18.getTime());
     site = {
-      getBaseURL: sandbox.stub().returns('https://example.com'),
-      getOrganizationId: sandbox.stub().returns('test-org-id'),
+      getBaseURL: sandbox.stub().returns(TEST_BASE_URL_EXAMPLE),
+      getOrganizationId: sandbox.stub().returns(TEST_ORG_ID),
     };
     context = new MockContextBuilder()
       .withSandbox(sandbox)
@@ -48,11 +67,11 @@ describe('CDN 404 Analysis Handler', () => {
           error: sandbox.spy(),
         },
         s3Client: { send: sandbox.stub() },
-        rawBucket: 'test-raw-bucket',
+        rawBucket: TEST_S3_BUCKET,
         dataAccess: {
           Organization: {
             findById: sandbox.stub().resolves({
-              getImsOrgId: () => '1234567890',
+              getImsOrgId: () => TEST_IMS_ORG_ID,
             }),
           },
         },
@@ -75,18 +94,18 @@ describe('CDN 404 Analysis Handler', () => {
   it('runs the full cdnContentFragment404Runner flow', async () => {
     const result = await handlerModule.cdnContentFragment404Runner(context);
 
-    expect(getStaticContentStub).to.have.been.calledThrice;
-    expect(athenaClientStub.execute).to.have.been.calledThrice;
+    expect(getStaticContentStub).to.have.been.callCount(EXPECTED_CALL_COUNT_THRICE);
+    expect(athenaClientStub.execute).to.have.been.callCount(EXPECTED_CALL_COUNT_THRICE);
     expect(result).to.have.property('auditResult');
     expect(result).to.have.property('fullAuditRef');
     expect(result.auditResult).to.include.keys('database', 'rawTable', 'completedAt');
     expect(result.auditResult.database).to.equal('cdn_logs_example_com');
     expect(result.auditResult.rawTable).to.equal('raw_logs_status_example_com');
-    expect(result.fullAuditRef).to.equal('s3://test-raw-bucket/1234567890/aggregated-404/2025/09/18/13/');
+    expect(result.fullAuditRef).to.equal(`s3://${TEST_S3_BUCKET}/${TEST_IMS_ORG_ID}/aggregated-404/${TEST_YEAR}/${TEST_MONTH_09}/${TEST_DAY_18}/${TEST_HOUR_13}/`);
   });
 
   it('correctly extracts and escapes customer domain', async () => {
-    site.getBaseURL.returns('https://test-site.com');
+    site.getBaseURL.returns(TEST_BASE_URL_SITE);
 
     const result = await handlerModule.cdnContentFragment404Runner(context);
 
@@ -98,17 +117,17 @@ describe('CDN 404 Analysis Handler', () => {
     const result = await handlerModule.cdnContentFragment404Runner(context);
 
     // Verify the output path includes the IMS org
-    expect(result.fullAuditRef).to.include('test-raw-bucket/1234567890/aggregated-404/');
+    expect(result.fullAuditRef).to.include(`${TEST_S3_BUCKET}/${TEST_IMS_ORG_ID}/aggregated-404/`);
 
     // Verify SQL calls were made with correct parameters
     expect(getStaticContentStub.firstCall.args[0]).to.have.property('database', 'cdn_logs_example_com');
-    expect(getStaticContentStub.secondCall.args[0]).to.have.property('rawLocation', 's3://test-raw-bucket/1234567890/raw/aem-cs-fastly');
-    expect(getStaticContentStub.thirdCall.args[0]).to.have.property('output').that.includes('test-raw-bucket/1234567890/aggregated-404/');
+    expect(getStaticContentStub.secondCall.args[0]).to.have.property('rawLocation', `s3://${TEST_S3_BUCKET}/${TEST_IMS_ORG_ID}/raw/aem-cs-fastly`);
+    expect(getStaticContentStub.thirdCall.args[0]).to.have.property('output').that.includes(`${TEST_S3_BUCKET}/${TEST_IMS_ORG_ID}/aggregated-404/`);
   });
 
   it('uses correct time partitioning for previous hour', async () => {
     // Mock Date.now to return a specific time
-    const mockTime = new Date('2025-01-15T14:30:00Z').getTime();
+    const mockTime = TEST_DATE_2025_01_15_14_30.getTime();
     const originalDateNow = Date.now;
     Date.now = sandbox.stub().returns(mockTime);
 
@@ -117,10 +136,10 @@ describe('CDN 404 Analysis Handler', () => {
 
       // Should use the previous hour (13:00)
       const unloadCall = getStaticContentStub.thirdCall.args[0];
-      expect(unloadCall).to.have.property('year', '2025');
-      expect(unloadCall).to.have.property('month', '01');
-      expect(unloadCall).to.have.property('day', '15');
-      expect(unloadCall).to.have.property('hour', '13');
+      expect(unloadCall).to.have.property('year', TEST_YEAR);
+      expect(unloadCall).to.have.property('month', TEST_MONTH);
+      expect(unloadCall).to.have.property('day', TEST_DAY);
+      expect(unloadCall).to.have.property('hour', TEST_HOUR_13);
     } finally {
       Date.now = originalDateNow;
     }
@@ -128,7 +147,7 @@ describe('CDN 404 Analysis Handler', () => {
 
   it('handles hour boundary correctly (previous day)', async () => {
     // Mock Date.now to return midnight
-    const mockTime = new Date('2025-01-15T00:30:00Z').getTime();
+    const mockTime = TEST_DATE_2025_01_15_00_30.getTime();
     const originalDateNow = Date.now;
     Date.now = sandbox.stub().returns(mockTime);
 
@@ -137,10 +156,10 @@ describe('CDN 404 Analysis Handler', () => {
 
       // Should use the previous hour (23:00 of previous day)
       const unloadCall = getStaticContentStub.thirdCall.args[0];
-      expect(unloadCall).to.have.property('year', '2025');
-      expect(unloadCall).to.have.property('month', '01');
-      expect(unloadCall).to.have.property('day', '14');
-      expect(unloadCall).to.have.property('hour', '23');
+      expect(unloadCall).to.have.property('year', TEST_YEAR);
+      expect(unloadCall).to.have.property('month', TEST_MONTH);
+      expect(unloadCall).to.have.property('day', TEST_DAY_PREVIOUS);
+      expect(unloadCall).to.have.property('hour', TEST_HOUR_23);
     } finally {
       Date.now = originalDateNow;
     }
@@ -162,7 +181,7 @@ describe('CDN 404 Analysis Handler', () => {
 
     expect(athenaClientStub.execute.firstCall.args[2]).to.equal('[Athena Query] Create database cdn_logs_example_com');
     expect(athenaClientStub.execute.secondCall.args[2]).to.equal('[Athena Query] Create raw logs table cdn_logs_example_com.raw_logs_status_example_com from s3://test-raw-bucket/1234567890/raw/aem-cs-fastly');
-    expect(athenaClientStub.execute.thirdCall.args[2]).to.include('[Athena Query] Unload 404 content data to s3://test-raw-bucket/1234567890/aggregated-404/');
+    expect(athenaClientStub.execute.thirdCall.args[2]).to.include(`[Athena Query] Unload 404 content data to s3://${TEST_S3_BUCKET}/${TEST_IMS_ORG_ID}/aggregated-404/`);
   });
 
   it('loads correct SQL files with proper variables', async () => {
@@ -237,7 +256,7 @@ describe('CDN 404 Analysis Handler', () => {
         dataAccess: {
           Organization: {
             findById: sandbox.stub().resolves({
-              getImsOrgId: () => '1234567890',
+              getImsOrgId: () => TEST_IMS_ORG_ID,
             }),
           },
         },
@@ -261,7 +280,7 @@ describe('CDN 404 Analysis Handler', () => {
           error: sandbox.spy(),
         },
         s3Client: { send: sandbox.stub() },
-        rawBucket: 'test-raw-bucket',
+        rawBucket: TEST_S3_BUCKET,
         dataAccess: {
           Organization: {
             findById: sandbox.stub().resolves(null),
