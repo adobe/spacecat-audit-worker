@@ -113,7 +113,17 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         })
         .build();
 
-      await mystiqueDetectedFormAccessibilityHandler(message, context);
+      // Stub isAuditEnabledForSite to return false (auto-fix disabled)
+      const isAuditEnabledForSiteStub = sandbox.stub().resolves(false);
+
+      // Mock the handler with stubbed isAuditEnabledForSite
+      const mystiqueDetectedFormAccessibilityHandlerMocked = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: isAuditEnabledForSiteStub,
+        },
+      });
+
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
       // Verify that allBySiteIdAndStatus was called to find opportunities to update
       expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith('test-site-id', 'NEW');
@@ -1798,8 +1808,11 @@ describe('Forms Opportunities - Accessibility Handler', () => {
     const auditId = 'test-audit-id';
     const opportunityId = 'test-opportunity-id';
     let mockOpportunityData;
+    let mystiqueDetectedFormAccessibilityHandlerMocked;
+    let isAuditEnabledForSiteStub;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+      isAuditEnabledForSiteStub = sandbox.stub().resolves(false); // Default: auto-fix disabled
       mockOpportunityData = {
         accessibility: [{
           form: 'https://example.com/form1',
@@ -1877,6 +1890,13 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           },
         })
         .build();
+
+      // Mock the handler with stubbed isAuditEnabledForSite (default: auto-fix disabled)
+      mystiqueDetectedFormAccessibilityHandlerMocked = await esmock('../../../src/forms-opportunities/oppty-handlers/accessibility-handler.js', {
+        '../../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: isAuditEnabledForSiteStub,
+        },
+      });
     });
 
     it('should process message and send to mystique for quality agent', async () => {
@@ -1899,7 +1919,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       };
 
-      await mystiqueDetectedFormAccessibilityHandler(message, context);
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
       const sqsMessage = context.sqs.sendMessage.getCall(0).args[1];
@@ -2002,7 +2022,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         })
         .build();
 
-      await mystiqueDetectedFormAccessibilityHandler(message, context);
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
@@ -2027,20 +2047,13 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       };
 
-      // Override the context to have Configuration that enables auto-fix
-      context.dataAccess.Configuration = {
-        findLatest: sandbox.stub().resolves({
-          isHandlerEnabledForSite: sandbox.stub().callsFake(async (handlerType) => {
-            // Enable auto-fix for form-accessibility
-            return handlerType === 'form-accessibility-auto-fix';
-          }),
-        }),
-      };
+      // Override stub to return true for auto-fix enabled scenario
+      isAuditEnabledForSiteStub.resolves(true);
 
       // Verify context.sqs.sendMessage is stubbed and ready
       expect(context.sqs.sendMessage).to.be.a('function');
 
-      await mystiqueDetectedFormAccessibilityHandler(message, context);
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
       // Verify SQS messages were sent (one for mystique, potentially one for code-fix importer)
       expect(context.sqs.sendMessage).to.have.been.called;
@@ -2058,7 +2071,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       };
 
-      await mystiqueDetectedFormAccessibilityHandler(message, context);
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
       expect(context.sqs.sendMessage).to.not.have.been.called;
       expect(context.log.info).to.have.been.calledWith(
         '[Form Opportunity] [Site Id: test-site-id] A11y opportunity not detected, skipping guidance',
@@ -2109,7 +2122,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       });
 
-      await mystiqueDetectedFormAccessibilityHandler(message, context);
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
       expect(context.dataAccess.Opportunity.findById).to.have.been.calledOnce;
       const existingOpportunity = await context.dataAccess.Opportunity.findById
@@ -2163,7 +2176,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       });
 
-      await mystiqueDetectedFormAccessibilityHandler(message, context);
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
       expect(context.dataAccess.Opportunity.findById).to.have.been.calledOnce;
       const existingOpportunity = await context.dataAccess.Opportunity.findById
@@ -2191,7 +2204,8 @@ describe('Forms Opportunities - Accessibility Handler', () => {
           }],
         },
       };
-      await mystiqueDetectedFormAccessibilityHandler(message, context);
+
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
       const createArgs = context.dataAccess.Opportunity.create.getCall(0).args[0];
       expect(createArgs.siteId).to.equal(siteId);
@@ -2222,7 +2236,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         },
       };
 
-      await mystiqueDetectedFormAccessibilityHandler(message, context);
+      await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
 
       // Verify updateStatusToIgnored was NOT called when updating existing opportunity
       expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.not.have.been.called;
@@ -2252,7 +2266,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       context.dataAccess.Opportunity.findById.rejects(new Error('Database error'));
 
       try {
-        await mystiqueDetectedFormAccessibilityHandler(message, context);
+        await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
       } catch (error) {
         expect(error.message).to.equal(
           '[Form Opportunity] [Site Id: test-site-id] Failed to create/update a11y opportunity with error: Database error',
