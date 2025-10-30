@@ -1,3 +1,10 @@
+## [1.220.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.220.1...v1.220.2) (2025-10-30)
+
+
+### Bug Fixes
+
+* make summarization stepped audit ([#1477](https://github.com/adobe/spacecat-audit-worker/issues/1477)) ([c599ab2](https://github.com/adobe/spacecat-audit-worker/commit/c599ab2e1f2869d87e3e462a2cb42ee55aa4e9b1))
+
 ## [1.220.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.220.0...v1.220.1) (2025-10-30)
 
 
