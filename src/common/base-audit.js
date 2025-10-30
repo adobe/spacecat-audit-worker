@@ -153,6 +153,7 @@ export class BaseAudit {
       auditType: type,
       auditResult,
       fullAuditRef,
+      invocationId: context.invocation?.id,
     };
 
     const audit = await this.persister(auditData, context);
