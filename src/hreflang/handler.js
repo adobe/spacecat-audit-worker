@@ -10,10 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import { tracingFetch as fetch, getSpacecatRequestHeaders } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { isLangCode } from 'is-language-code';
-import { JSDOM } from 'jsdom';
+import { JSDOM, VirtualConsole } from 'jsdom';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
@@ -64,7 +64,10 @@ export async function validatePageHreflang(url, log) {
   }
 
   try {
-    const response = await fetch(url);
+    log.debug(`Checking hreflang for URL: ${url}`);
+
+    // Use standard Spacecat request headers for consistency and to avoid bot detection
+    const response = await fetch(url, { headers: getSpacecatRequestHeaders() });
 
     if (!response.ok) {
       log.warn(`Failed to fetch ${url}: ${response.status} ${response.statusText}. Skipping hreflang validation.`);
@@ -72,7 +75,13 @@ export async function validatePageHreflang(url, log) {
     }
 
     const html = await response.text();
-    const dom = new JSDOM(html);
+
+    // Configure JSDOM to suppress CSS parsing errors
+    const virtualConsole = new VirtualConsole();
+    // Suppress error messages by not sending them anywhere
+    virtualConsole.sendTo(console, { omitJSDOMErrors: true });
+
+    const dom = new JSDOM(html, { virtualConsole });
     const { document } = dom.window;
 
     // Extract hreflang links
@@ -81,7 +90,7 @@ export async function validatePageHreflang(url, log) {
 
     // Skip validation if no hreflang tags exist
     if (hreflangLinks.length === 0) {
-      log.info(`No hreflang tags found for URL: ${url} - this is valid for single-language sites`);
+      log.debug(`No hreflang tags found for URL: ${url} - this is valid for single-language sites`);
       return { url, checks: [] }; // Return empty checks - no issues to report
     }
 
@@ -161,14 +170,14 @@ export async function validatePageHreflang(url, log) {
 export async function hreflangAuditRunner(baseURL, context, site) {
   const siteId = site.getId();
   const { log, dataAccess } = context;
-  log.debug(`Starting Hreflang Audit with siteId: ${siteId}`);
+  log.info(`Starting Hreflang Audit for site: ${siteId} (${baseURL})`);
 
   try {
-    // Get top 200 pages
+    // Get top 200 pages from Ahrefs
     const allTopPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
     const topPages = allTopPages.slice(0, 200);
 
-    log.debug(`Processing ${topPages.length} top pages for hreflang audit (limited to 200)`);
+    log.debug(`Processing ${topPages.length} top pages for hreflang audit`);
 
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
@@ -182,10 +191,30 @@ export async function hreflangAuditRunner(baseURL, context, site) {
       };
     }
 
-    // Validate hreflang for each page
-    const auditPromises = topPages.map(async (page) => validatePageHreflang(page.url, log));
+    // Validate hreflang for each page with rate limiting
+    // Process in batches to avoid overwhelming the server
+    const BATCH_SIZE = 10; // Process 10 URLs at a time
+    const DELAY_BETWEEN_BATCHES = 1000; // 1 second delay between batches
 
-    const auditResultsArray = await Promise.allSettled(auditPromises);
+    const auditResultsArray = [];
+
+    /* eslint-disable no-await-in-loop */
+    for (let i = 0; i < topPages.length; i += BATCH_SIZE) {
+      const batch = topPages.slice(i, i + BATCH_SIZE);
+      log.debug(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(topPages.length / BATCH_SIZE)} (pages ${i + 1}-${Math.min(i + BATCH_SIZE, topPages.length)})`);
+
+      const batchPromises = batch.map(async (page) => validatePageHreflang(page.url, log));
+      const batchResults = await Promise.allSettled(batchPromises);
+      auditResultsArray.push(...batchResults);
+
+      // Add delay between batches (except for the last batch)
+      if (i + BATCH_SIZE < topPages.length) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, DELAY_BETWEEN_BATCHES);
+        });
+      }
+    }
+    /* eslint-enable no-await-in-loop */
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
       if (result.status === 'fulfilled') {
         const { url, checks } = result.value;
@@ -208,7 +237,7 @@ export async function hreflangAuditRunner(baseURL, context, site) {
       return acc;
     }, {});
 
-    log.debug(`Successfully completed Hreflang Audit for site: ${baseURL}`);
+    log.info(`Hreflang audit completed for site: ${siteId} (${baseURL})`);
 
     // All checks passed
     if (Object.keys(aggregatedResults).length === 0) {
