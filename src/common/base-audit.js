@@ -146,8 +146,6 @@ export class BaseAudit {
     const { type, site } = params;
     const { auditResult, fullAuditRef } = result;
 
-    context.log.info(`context: ${JSON.stringify(context.invocation)}`);
-
     const auditData = {
       siteId: site.getId(),
       isLive: site.getIsLive(),
@@ -157,6 +155,8 @@ export class BaseAudit {
       fullAuditRef,
       invocationId: context.invocation?.id,
     };
+
+    context.log.info(`auditData: ${JSON.stringify(auditData)}`);
 
     const audit = await this.persister(auditData, context);
     context.audit = audit;
