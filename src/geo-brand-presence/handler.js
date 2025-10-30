@@ -262,26 +262,8 @@ export async function sendToMystique(context, getPresignedUrlOverride = getSigne
       origin: 'human',
     })));
   });
-  // Apply 200 limit with customer prompt priority (FIXED LOGIC)
-  let prompts;
-  if (!EXCLUDE_FROM_HARD_LIMIT.has(siteId)) {
-    if (customerPrompts.length >= 200) {
-      // Only use first 200 customer prompts
-      prompts = customerPrompts.slice(0, 200);
-      log.warn('GEO BRAND PRESENCE: Customer prompts exceed or meet 200 limit, using only first 200 for site id %s (%s)', siteId, baseURL);
-    } else if (parquetPrompts.length + customerPrompts.length > 200) {
-      // Use ALL customer prompts + fill remaining slots with parquet prompts
-      const remainingSlots = 200 - customerPrompts.length;
-      prompts = parquetPrompts.slice(0, remainingSlots).concat(customerPrompts);
-      log.warn('GEO BRAND PRESENCE: Total prompts exceed 200 limit, using all %d customer prompts + first %d parquet prompts for site id %s (%s)', customerPrompts.length, remainingSlots, siteId, baseURL);
-    } else {
-      // Total is <= 200, use all prompts
-      prompts = parquetPrompts.concat(customerPrompts);
-    }
-  } else {
-    // No limit for excluded sites
-    prompts = parquetPrompts.concat(customerPrompts);
-  }
+  const prompts = parquetPrompts.concat(customerPrompts);
+
   log.info('GEO BRAND PRESENCE: Found %d parquet prompts (after dedup) + %d customer prompts = %d total prompts for site id %s (%s)', parquetPrompts.length, customerPrompts.length, prompts.length, siteId, baseURL);
   if (prompts.length === 0) {
     log.warn('GEO BRAND PRESENCE: No keyword prompts found for site id %s (%s), skipping message to mystique', siteId, baseURL);
@@ -494,19 +476,6 @@ export function createMystiqueMessage({
     ...(initiator && { initiator }),
   };
 }
-
-const EXCLUDE_FROM_HARD_LIMIT = new Set([
-  '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
-  '63c38133-4991-4ed0-886b-2d0f440d81ab',
-  '1f582f10-41d3-4ff0-afaa-cd1a267ba58a',
-  'd8db1956-b24c-4ad7-bdb6-6f5a90d89edc',
-  '4b4ed67e-af44-49f7-ab24-3dda37609c9d',
-  '0f770626-6843-4fbd-897c-934a9c19f079',
-  'fdc7c65b-c0d0-40ff-ab26-fd0e16b75877',
-  '9a1cfdaf-3bb3-49a7-bbaa-995653f4c2f4',
-  '1398e8f1-90c9-4a5d-bfca-f585fa35fc69',
-  '1905ef6e-c112-477e-9fae-c22ebf21973a',
-]);
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
