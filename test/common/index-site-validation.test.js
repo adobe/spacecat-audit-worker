@@ -42,6 +42,7 @@ describe('Index siteId handling and validation flag', () => {
         },
       },
       log: {
+        debug: sandbox.spy(),
         info: sandbox.spy(),
         warn: sandbox.spy(),
         error: sandbox.spy(),
@@ -59,7 +60,7 @@ describe('Index siteId handling and validation flag', () => {
     sandbox.restore();
   });
 
-  it('sets context.site and requiresValidation=true when entitlement exists', async () => {
+  it('sets context.site and requiresValidation=false when entitlement exists', async () => {
     sandbox.stub(TierClient, 'createForSite').resolves({
       checkValidEntitlement: sandbox.stub().resolves({ entitlement: 'PAID' }),
     });
@@ -68,7 +69,7 @@ describe('Index siteId handling and validation flag', () => {
 
     expect(resp.status).to.equal(200);
     expect(context.site).to.exist;
-    expect(context.site.requiresValidation).to.equal(true);
+    expect(context.site.requiresValidation).to.equal(false);
   });
 
   it('sets requiresValidation=true when entitlement check fails and site is in legacy list', async () => {

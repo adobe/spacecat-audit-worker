@@ -159,6 +159,8 @@ describe('data-access', () => {
 
       mockOpportunity.getSuggestions.resolves(existingSuggestions);
       mockOpportunity.addSuggestions.resolves({ errorItems: [], createdItems: newData });
+      // mark site as requiring validation
+      context.site = { requiresValidation: true };
 
       await syncSuggestions({
         opportunity: mockOpportunity,
