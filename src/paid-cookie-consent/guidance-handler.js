@@ -56,10 +56,11 @@ export default async function handler(message, context) {
     url,
     guidanceParsed,
   );
-  // Add NOT_VALIDATED status to the suggestion
+  const requiresValidation = Boolean(context.site?.requiresValidation);
+
   await Suggestion.create({
     ...suggestionData,
-    status: 'NOT_VALIDATED',
+    status: requiresValidation ? 'NOT_VALIDATED' : 'NEW',
   });
   log.debug(`Created suggestion for opportunity ${opportunity.getId()}`);
 

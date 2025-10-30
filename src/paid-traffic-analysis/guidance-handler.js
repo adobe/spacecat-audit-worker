@@ -114,10 +114,11 @@ export default async function handler(message, context) {
   // Map AI Insights suggestions from guidance (already in expected structure)
   const suggestions = mapToAIInsightsSuggestions(opportunity.getId(), guidance);
   if (suggestions.length) {
-    // Create all suggestions in parallel with NOT_VALIDATED status
+    const requiresValidation = Boolean(context.site?.requiresValidation);
+
     await Promise.all(suggestions.map((s) => Suggestion.create({
       ...s,
-      status: 'NOT_VALIDATED',
+      status: requiresValidation ? 'NOT_VALIDATED' : 'NEW',
     })));
   }
 

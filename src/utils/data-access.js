@@ -230,6 +230,9 @@ export async function syncSuggestions({
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${JSON.stringify(existingSuggestions, null, 2)}`);
 
   // Prepare new suggestions
+  const { site } = context;
+  const requiresValidation = Boolean(site?.requiresValidation);
+
   const newSuggestions = newData
     .filter((data) => !existingSuggestions.some(
       (existing) => buildKey(existing.getData()) === buildKey(data),
@@ -237,10 +240,11 @@ export async function syncSuggestions({
     .map((data) => {
       // Get the base suggestion from the provided mapping function
       const suggestion = mapNewSuggestion(data);
-      // Add NOT_VALIDATED status to all new suggestions
+      // Add NOT_VALIDATED status if site requires validation, otherwise NEW
       return {
         ...suggestion,
-        status: 'NOT_VALIDATED',
+        status: requiresValidation ? SuggestionDataAccess.STATUSES.NOT_VALIDATED
+          : SuggestionDataAccess.STATUSES.NEW,
       };
     });
 

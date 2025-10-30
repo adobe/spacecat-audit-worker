@@ -80,11 +80,13 @@ export default async function handler(message, context) {
   }
 
   // map the suggestions received from M to PSS
+  const requiresValidation = Boolean(context.site?.requiresValidation);
+
   const suggestionData = {
     opportunityId: opportunity.getId(),
     type: 'CONTENT_UPDATE',
     rank: 1,
-    status: 'NOT_VALIDATED', // Use NOT_VALIDATED status for new suggestions
+    status: requiresValidation ? 'NOT_VALIDATED' : 'NEW',
     data: {
       variations: suggestions,
     },
