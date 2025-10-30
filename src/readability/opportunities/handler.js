@@ -22,8 +22,8 @@ import {
 } from '../shared/constants.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
-// Use existing audit type or create new one if needed
-const AUDIT_TYPE_READABILITY = Audit.AUDIT_TYPES.READABILITY || 'readability';
+// Use generic opportunity type consistent with other opportunities
+const AUDIT_TYPE_READABILITY = 'generic-opportunity';
 
 export async function processImportStep(context) {
   const { site, finalUrl } = context;
