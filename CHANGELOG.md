@@ -1,3 +1,10 @@
+## [1.219.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.219.8...v1.219.9) (2025-10-30)
+
+
+### Bug Fixes
+
+* **common:** include invocation id in the stored audit result ([#1480](https://github.com/adobe/spacecat-audit-worker/issues/1480)) ([015f7b3](https://github.com/adobe/spacecat-audit-worker/commit/015f7b3cc757c16db597cc95201c767c6f02509a))
+
 ## [1.219.8](https://github.com/adobe/spacecat-audit-worker/compare/v1.219.7...v1.219.8) (2025-10-29)
 
 
