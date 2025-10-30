@@ -17,15 +17,14 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
-import { LOCALE_FALLBACK_RULE_PRIORITY } from '../../../src/content-fragment-404/rules/constants.js';
 import {
   TEST_PATH_BROKEN,
   TEST_PATH_EN_US,
   TEST_PATH_EN_GB,
   TEST_PATH_FR_FR,
   TEST_PATH_BROKEN_WITH_DOUBLE_SLASHES,
-  TEST_PATH_IMAGE,
   ERROR_AEM_CONNECTION_FAILED,
+  LOCALE_FALLBACK_RULE_PRIORITY,
 } from './test-constants.js';
 
 use(sinonChai);

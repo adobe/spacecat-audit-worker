@@ -18,15 +18,13 @@ import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
 import {
-  SIMILAR_PATH_RULE_PRIORITY,
-  MAX_LEVENSHTEIN_DISTANCE,
-} from '../../../src/content-fragment-404/rules/constants.js';
-import {
   TEST_PATH_BROKEN,
   TEST_PATH_PARENT,
   TEST_PATH_FIXED,
   TEST_PATH_BROKEN_WITH_DOUBLE_SLASHES,
   ERROR_AEM_CONNECTION_FAILED,
+  SIMILAR_PATH_RULE_PRIORITY,
+  MAX_LEVENSHTEIN_DISTANCE,
 } from './test-constants.js';
 
 use(sinonChai);

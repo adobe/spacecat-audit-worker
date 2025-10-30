@@ -17,8 +17,7 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
-import { PUBLISH_RULE_PRIORITY } from '../../../src/content-fragment-404/rules/constants.js';
-import { TEST_PATH_BROKEN, ERROR_AEM_CONNECTION_FAILED } from './test-constants.js';
+import { TEST_PATH_BROKEN, ERROR_AEM_CONNECTION_FAILED, PUBLISH_RULE_PRIORITY } from './test-constants.js';
 
 use(sinonChai);
 use(chaiAsPromised);

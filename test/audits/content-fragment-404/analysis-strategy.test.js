@@ -30,9 +30,9 @@ import {
   TEST_PATH_FIXED_1,
   TEST_PATH_SUGGESTED,
   TEST_PATH_SUGGESTED_2,
-  PRIORITY_HIGH,
-  PRIORITY_MEDIUM,
-  PRIORITY_LOW,
+  PUBLISH_RULE_PRIORITY,
+  LOCALE_FALLBACK_RULE_PRIORITY,
+  SIMILAR_PATH_RULE_PRIORITY,
   STATUS_PUBLISHED,
   STATUS_DRAFT,
   SUGGESTION_TYPE_PUBLISH,
@@ -83,19 +83,19 @@ describe('AnalysisStrategy', () => {
 
     // Mock rules with priority methods
     mockPublishRule = {
-      getPriority: sandbox.stub().returns(PRIORITY_HIGH),
+      getPriority: sandbox.stub().returns(PUBLISH_RULE_PRIORITY),
       apply: sandbox.stub().resolves(null),
       constructor: { name: 'PublishRule' },
     };
 
     mockLocaleFallbackRule = {
-      getPriority: sandbox.stub().returns(PRIORITY_MEDIUM),
+      getPriority: sandbox.stub().returns(LOCALE_FALLBACK_RULE_PRIORITY),
       apply: sandbox.stub().resolves(null),
       constructor: { name: 'LocaleFallbackRule' },
     };
 
     mockSimilarPathRule = {
-      getPriority: sandbox.stub().returns(PRIORITY_LOW),
+      getPriority: sandbox.stub().returns(SIMILAR_PATH_RULE_PRIORITY),
       apply: sandbox.stub().resolves(null),
       constructor: { name: 'SimilarPathRule' },
     };
@@ -166,9 +166,9 @@ describe('AnalysisStrategy', () => {
     });
 
     it('should sort rules by priority', () => {
-      mockPublishRule.getPriority.returns(PRIORITY_LOW);
-      mockLocaleFallbackRule.getPriority.returns(PRIORITY_HIGH);
-      mockSimilarPathRule.getPriority.returns(PRIORITY_MEDIUM);
+      mockPublishRule.getPriority.returns(SIMILAR_PATH_RULE_PRIORITY);
+      mockLocaleFallbackRule.getPriority.returns(PUBLISH_RULE_PRIORITY);
+      mockSimilarPathRule.getPriority.returns(LOCALE_FALLBACK_RULE_PRIORITY);
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
 
@@ -494,7 +494,7 @@ describe('AnalysisStrategy', () => {
       // Setup rule responses for different paths
       mockPublishRule.apply.onCall(EXPECTED_EMPTY_COUNT).resolves(suggestion1);
       mockPublishRule.apply.onCall(EXPECTED_SUGGESTIONS_COUNT_1).resolves(null);
-      mockPublishRule.apply.onCall(PRIORITY_MEDIUM).resolves(null);
+      mockPublishRule.apply.onCall(LOCALE_FALLBACK_RULE_PRIORITY).resolves(null);
 
       mockLocaleFallbackRule.apply.onCall(EXPECTED_EMPTY_COUNT).resolves(suggestion2);
       mockLocaleFallbackRule.apply.onCall(EXPECTED_SUGGESTIONS_COUNT_1).resolves(null);

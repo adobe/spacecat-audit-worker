@@ -238,10 +238,14 @@ export const LOCALE_CODE_EN_US = 'en-us';
 // Error Messages
 export const ERROR_AEM_CONNECTION_FAILED = 'AEM connection failed';
 
-// Priorities
-export const PRIORITY_HIGH = 1;
-export const PRIORITY_MEDIUM = 2;
-export const PRIORITY_LOW = 3;
+// Rule Priorities
+export const PUBLISH_RULE_PRIORITY = 1;
+export const LOCALE_FALLBACK_RULE_PRIORITY = 2;
+export const SIMILAR_PATH_RULE_PRIORITY = 3;
+export const BASE_RULE_DEFAULT_PRIORITY = 42;
+
+// Levenshtein Distance
+export const MAX_LEVENSHTEIN_DISTANCE = 1;
 
 // Expected Counts
 export const EXPECTED_COUNT_ZERO = 0;

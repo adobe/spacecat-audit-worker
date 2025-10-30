@@ -16,9 +16,8 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { BaseRule } from '../../../src/content-fragment-404/rules/base-rule.js';
-import { BASE_RULE_DEFAULT_PRIORITY } from '../../../src/content-fragment-404/rules/constants.js';
 import { MockContextBuilder } from '../../shared.js';
-import { TEST_PATH_BROKEN } from './test-constants.js';
+import { TEST_PATH_BROKEN, BASE_RULE_DEFAULT_PRIORITY } from './test-constants.js';
 
 use(sinonChai);
 use(chaiAsPromised);
