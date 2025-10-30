@@ -81,8 +81,37 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
 
   try {
     log.info(`Fetching URL: ${url}`);
-    const response = await fetch(url, options);
-    // finalUrl is the URL after any redirects
+    // Use redirect: 'manual' to detect redirects and prevent following them
+    const response = await fetch(url, { ...options, redirect: 'manual' });
+
+    // Skip pages that return 4xx/5xx errors (removed or inaccessible pages)
+    if (response.status >= 400) {
+      log.info(`URL ${url} returned status ${response.status}, skipping canonical validation`);
+      return {
+        canonicalUrl: null,
+        checks: [{
+          check: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+          success: false,
+          explanation: `Page returned ${response.status} status code`,
+        }],
+      };
+    }
+
+    // Skip pages that redirect (likely removed pages redirecting to homepage or other pages)
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get('location') || 'unknown';
+      log.info(`URL ${url} redirects to ${location} with status ${response.status}, skipping canonical validation`);
+      return {
+        canonicalUrl: null,
+        checks: [{
+          check: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+          success: false,
+          explanation: `Page redirects (${response.status}), likely removed or moved`,
+        }],
+      };
+    }
+
+    // Only process pages that return 200 OK
     const finalUrl = response.url;
     const html = await response.text();
     const dom = new JSDOM(html);
@@ -426,7 +455,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
 
   try {
     const topPages = await getTopPagesForSiteId(dataAccess, siteId, context, log);
-    log.info(`Top pages for baseURL ${baseURL}: ${JSON.stringify(topPages)}`);
+    log.info(`Top pages for baseURL ${baseURL}:\n${topPages.map((page) => `  - ${page.url}`).join('\n')}`);
 
     if (topPages.length === 0) {
       log.info('No top pages found, ending audit.');
