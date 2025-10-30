@@ -104,9 +104,24 @@ export function getRemainingUrls(urlsToScrape, existingUrls) {
  * @param {Array} opportunities - Array of opportunity objects
  * @returns {Array} Filtered array of accessibility opportunities
  */
-export function filterAccessibilityOpportunities(opportunities) {
-  return opportunities.filter((oppty) => oppty.getType() === 'generic-opportunity'
-    && oppty.getTitle().includes('Accessibility report - Desktop'));
+export function filterAccessibilityOpportunities(opportunities, deviceType = null) {
+  return opportunities.filter((oppty) => {
+    if (oppty.getType() !== 'generic-opportunity') {
+      return false;
+    }
+
+    const title = oppty.getTitle();
+    const isAccessibilityReport = title.includes('Accessibility report -');
+
+    if (!deviceType) {
+      // If no device type specified, match any accessibility report
+      return isAccessibilityReport;
+    }
+
+    // Match specific device type
+    const capitalizedDevice = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
+    return isAccessibilityReport && title.includes(`- ${capitalizedDevice} -`);
+  });
 }
 
 /**
@@ -122,7 +137,7 @@ export async function updateStatusToIgnored(
   dataAccess,
   siteId,
   log,
-  filterOpportunities = filterAccessibilityOpportunities,
+  deviceType = null,
 ) {
   try {
     const { Opportunity } = dataAccess;
@@ -132,8 +147,9 @@ export async function updateStatusToIgnored(
       return { success: true, updatedCount: 0 };
     }
 
-    const accessibilityOppties = filterOpportunities(opportunities);
-    log.debug(`[A11yAudit] Found ${accessibilityOppties.length} opportunities to update to IGNORED for site ${siteId}`);
+    const accessibilityOppties = filterAccessibilityOpportunities(opportunities, deviceType);
+    const deviceStr = deviceType ? ` for ${deviceType}` : '';
+    log.debug(`[A11yAudit] Found ${accessibilityOppties.length} opportunities to update to IGNORED${deviceStr} for site ${siteId}`);
 
     if (accessibilityOppties.length === 0) {
       return { success: true, updatedCount: 0 };
