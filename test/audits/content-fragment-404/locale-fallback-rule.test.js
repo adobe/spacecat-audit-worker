@@ -17,6 +17,16 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
+import { LOCALE_FALLBACK_RULE_PRIORITY } from '../../../src/content-fragment-404/rules/constants.js';
+import {
+  TEST_PATH_BROKEN,
+  TEST_PATH_EN_US,
+  TEST_PATH_EN_GB,
+  TEST_PATH_FR_FR,
+  TEST_PATH_BROKEN_WITH_DOUBLE_SLASHES,
+  TEST_PATH_IMAGE,
+  ERROR_AEM_CONNECTION_FAILED,
+} from './test-constants.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -52,13 +62,13 @@ describe('LocaleFallbackRule', () => {
 
     mockSuggestion = {
       type: 'locale',
-      originalPath: '/content/dam/fr-fr/test/broken.jpg',
-      suggestedPath: '/content/dam/en-us/test/broken.jpg',
+      originalPath: TEST_PATH_FR_FR,
+      suggestedPath: TEST_PATH_EN_US,
     };
 
     mockLocale = {
       getCode: sandbox.stub().returns('fr-fr'),
-      replaceInPath: sandbox.stub().returns('/content/dam/en-us/test/broken.jpg'),
+      replaceInPath: sandbox.stub().returns(TEST_PATH_EN_US),
     };
 
     mockPathUtils = {
@@ -101,7 +111,7 @@ describe('LocaleFallbackRule', () => {
       const rule = new LocaleFallbackRule(context, mockAemClient);
 
       expect(rule.context).to.equal(context);
-      expect(rule.priority).to.equal(2);
+      expect(rule.priority).to.equal(LOCALE_FALLBACK_RULE_PRIORITY);
       expect(rule.aemClient).to.equal(mockAemClient);
     });
 
@@ -120,7 +130,7 @@ describe('LocaleFallbackRule', () => {
       mockAemClient.isAvailable.onFirstCall().resolves(true);
 
       const rule = new LocaleFallbackRule(context, mockAemClient);
-      const brokenPath = '/content/dam/fr-fr/test/broken.jpg';
+      const brokenPath = TEST_PATH_FR_FR;
 
       const result = await rule.applyRule(brokenPath);
 
@@ -130,13 +140,13 @@ describe('LocaleFallbackRule', () => {
     it('should try multiple fallback locales until one is found', async () => {
       // Locale.fromPath is already mocked in esmock
       mockLanguageTree.findSimilarLanguageRoots.returns(['en-us', 'en-gb', 'en']);
-      mockLocale.replaceInPath.onCall(0).returns('/content/dam/en-us/test/broken.jpg');
-      mockLocale.replaceInPath.onCall(1).returns('/content/dam/en-gb/test/broken.jpg');
+      mockLocale.replaceInPath.onCall(0).returns(TEST_PATH_EN_US);
+      mockLocale.replaceInPath.onCall(1).returns(TEST_PATH_EN_GB);
       mockAemClient.isAvailable.onCall(0).resolves(false);
       mockAemClient.isAvailable.onCall(1).resolves(true);
 
       const rule = new LocaleFallbackRule(context, mockAemClient);
-      const brokenPath = '/content/dam/fr-fr/test/broken.jpg';
+      const brokenPath = TEST_PATH_FR_FR;
 
       const result = await rule.applyRule(brokenPath);
 
@@ -149,7 +159,7 @@ describe('LocaleFallbackRule', () => {
       mockAemClient.isAvailable.resolves(false);
 
       const rule = new LocaleFallbackRule(context, mockAemClient);
-      const brokenPath = '/content/dam/fr-fr/test/broken.jpg';
+      const brokenPath = TEST_PATH_FR_FR;
 
       const result = await rule.applyRule(brokenPath);
 
@@ -162,7 +172,7 @@ describe('LocaleFallbackRule', () => {
       mockLanguageTree.findSimilarLanguageRoots.returns([]);
 
       const rule = new LocaleFallbackRule(context, mockAemClient);
-      const brokenPath = '/content/dam/fr-fr/test/broken.jpg';
+      const brokenPath = TEST_PATH_FR_FR;
 
       const result = await rule.applyRule(brokenPath);
 
@@ -188,7 +198,7 @@ describe('LocaleFallbackRule', () => {
       });
 
       const rule = new ruleModule.LocaleFallbackRule(context, mockAemClient);
-      const brokenPath = '/content/dam/test/broken.jpg';
+      const brokenPath = TEST_PATH_BROKEN;
 
       const result = await rule.applyRule(brokenPath);
 
@@ -223,9 +233,9 @@ describe('LocaleFallbackRule', () => {
       mockAemClient.isAvailable.onFirstCall().resolves(true);
 
       const rule = new ruleModule.LocaleFallbackRule(context, mockAemClient);
-      const brokenPath = '/content/dam//test/broken.jpg';
+      const brokenPath = TEST_PATH_BROKEN;
 
-      const result = await rule.applyRule(brokenPath);
+      const result = await rule.applyRule(TEST_PATH_BROKEN_WITH_DOUBLE_SLASHES);
 
       expect(result).to.equal(mockSuggestion);
     });
@@ -259,7 +269,7 @@ describe('LocaleFallbackRule', () => {
       mockAemClient.isAvailable.onCall(1).resolves(true);
 
       const rule = new ruleModule.LocaleFallbackRule(context, mockAemClient);
-      const brokenPath = '/content/dam//test/broken.jpg';
+      const brokenPath = TEST_PATH_BROKEN;
 
       const result = await rule.applyRule(brokenPath);
 
@@ -274,7 +284,7 @@ describe('LocaleFallbackRule', () => {
       mockAemClient.isAvailable.resolves(false);
 
       const rule = new LocaleFallbackRule(context, mockAemClient);
-      const brokenPath = '/content/dam//test/broken.jpg';
+      const brokenPath = TEST_PATH_BROKEN;
 
       const result = await rule.applyRule(brokenPath);
 
@@ -314,7 +324,7 @@ describe('LocaleFallbackRule', () => {
       mockLanguageTree.findEnglishFallbacks.returns([]);
 
       const rule = new LocaleFallbackRule(context, mockAemClient);
-      const brokenPath = '/content/dam//test/broken.jpg';
+      const brokenPath = TEST_PATH_BROKEN_WITH_DOUBLE_SLASHES;
 
       const result = await rule.tryLocaleInsertion(brokenPath);
 
@@ -327,31 +337,31 @@ describe('LocaleFallbackRule', () => {
     it('should handle AEM client errors during locale fallback', async () => {
       // Locale.fromPath is already mocked in esmock
       mockLanguageTree.findSimilarLanguageRoots.returns(['en-us']);
-      mockAemClient.isAvailable.rejects(new Error('AEM connection failed'));
+      mockAemClient.isAvailable.rejects(new Error(ERROR_AEM_CONNECTION_FAILED));
 
       const rule = new LocaleFallbackRule(context, mockAemClient);
-      const brokenPath = '/content/dam/fr-fr/test/broken.jpg';
+      const brokenPath = TEST_PATH_FR_FR;
 
       await expect(rule.applyRule(brokenPath))
-        .to.be.rejectedWith('AEM connection failed');
+        .to.be.rejectedWith(ERROR_AEM_CONNECTION_FAILED);
     });
 
     it('should handle AEM client errors during locale insertion', async () => {
       // Locale.fromPath is already mocked in esmock to return null
       mockPathUtils.hasDoubleSlashes.returns(true);
       mockLanguageTree.findEnglishFallbacks.returns(['en-us']);
-      mockAemClient.isAvailable.rejects(new Error('AEM connection failed'));
+      mockAemClient.isAvailable.rejects(new Error(ERROR_AEM_CONNECTION_FAILED));
 
       const rule = new LocaleFallbackRule(context, mockAemClient);
-      const brokenPath = '/content/dam//test/broken.jpg';
+      const brokenPath = TEST_PATH_BROKEN_WITH_DOUBLE_SLASHES;
 
       await expect(rule.applyRule(brokenPath))
-        .to.be.rejectedWith('AEM connection failed');
+        .to.be.rejectedWith(ERROR_AEM_CONNECTION_FAILED);
     });
 
     it('should throw error when AEM client not available', async () => {
       const rule = new LocaleFallbackRule(context, null);
-      const brokenPath = '/content/dam/fr-fr/test/broken.jpg';
+      const brokenPath = TEST_PATH_FR_FR;
 
       await expect(rule.applyRule(brokenPath))
         .to.be.rejectedWith('AemClient not injected');
@@ -365,7 +375,7 @@ describe('LocaleFallbackRule', () => {
       mockAemClient.isAvailable.resolves(true);
 
       const rule = new LocaleFallbackRule(context, mockAemClient);
-      const brokenPath = '/content/dam/fr-fr/test/broken.jpg';
+      const brokenPath = TEST_PATH_FR_FR;
 
       const result = await rule.apply(brokenPath);
 
@@ -375,7 +385,7 @@ describe('LocaleFallbackRule', () => {
     it('should return correct priority', () => {
       const rule = new LocaleFallbackRule(context, mockAemClient);
 
-      expect(rule.getPriority()).to.equal(2);
+      expect(rule.getPriority()).to.equal(LOCALE_FALLBACK_RULE_PRIORITY);
     });
 
     it('should handle edge cases with empty paths', async () => {

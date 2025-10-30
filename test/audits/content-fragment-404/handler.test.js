@@ -23,6 +23,31 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
+import {
+  TEST_SITE_ID,
+  TEST_OPPORTUNITY_ID,
+  TEST_AUDIT_ID,
+  TEST_SUGGESTION_ID,
+  TEST_SUGGESTION_ID_2,
+  TEST_BASE_URL,
+  TEST_CUSTOM_URL,
+  TEST_PATH_1,
+  TEST_PATH_2,
+  TEST_SUGGESTED_PATH_1,
+  TEST_OBJECT_FORMAT_PATH,
+  TEST_STRING_FORMAT_PATH,
+  REQUEST_COUNT_1,
+  REQUEST_COUNT_2,
+  REQUEST_COUNT_LOW,
+  REQUEST_COUNT_NONE,
+  USER_AGENT_COUNT_1,
+  USER_AGENT_COUNT_2,
+  TEST_USER_AGENT_1,
+  TEST_USER_AGENT_2,
+  EXPECTED_SUGGESTIONS_COUNT,
+  EXPECTED_SINGLE_SUGGESTION_COUNT,
+} from './test-constants.js';
+
 describe('Broken Content Fragment Links Handler', () => {
   let sandbox;
   let context;
@@ -42,28 +67,28 @@ describe('Broken Content Fragment Links Handler', () => {
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
 
-    baseURL = 'https://test-tenant.adobe.com';
+    baseURL = TEST_BASE_URL;
     site = {
-      getId: () => 'test-site-id',
+      getId: () => TEST_SITE_ID,
       getBaseURL: () => baseURL,
       getDeliveryType: () => 'aem_edge',
     };
 
     mockOpportunity = {
-      getId: () => 'test-opportunity-id',
+      getId: () => TEST_OPPORTUNITY_ID,
       getType: () => AUDIT_TYPE,
-      getAuditId: () => 'test-audit-id',
+      getAuditId: () => TEST_AUDIT_ID,
     };
 
     mockSuggestion = {
-      getId: () => 'test-suggestion-id',
+      getId: () => TEST_SUGGESTION_ID,
       getData: () => ({
-        requestedPath: '/content/dam/test/fragment1',
-        suggestedPath: '/content/dam/test/fixed1',
+        requestedPath: TEST_PATH_1,
+        suggestedPath: TEST_SUGGESTED_PATH_1,
         type: 'SIMILAR',
         reason: 'Similar path found',
-        requestCount: 100,
-        requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 50 }],
+        requestCount: REQUEST_COUNT_1,
+        requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }],
       }),
     };
 
@@ -73,8 +98,8 @@ describe('Broken Content Fragment Links Handler', () => {
 
     athenaCollectorStub = {
       fetchContentFragment404s: sandbox.stub().resolves([
-        { url: '/content/dam/test/fragment1', requestCount: 100, requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 50 }] },
-        { url: '/content/dam/test/fragment2', requestCount: 200, requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 200 }] },
+        { url: TEST_PATH_1, requestCount: REQUEST_COUNT_1, requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }] },
+        { url: TEST_PATH_2, requestCount: REQUEST_COUNT_2, requestUserAgents: [{ userAgent: TEST_USER_AGENT_2, count: USER_AGENT_COUNT_2 }] },
       ]),
       constructor: { name: 'AthenaCollector' },
     };
@@ -83,8 +108,8 @@ describe('Broken Content Fragment Links Handler', () => {
     aemClientStub = sandbox.stub();
     analysisStrategyStub = {
       analyze: sandbox.stub().resolves([
-        { toJSON: () => ({ requestedPath: '/content/dam/test/fragment1', suggestedPath: '/content/dam/test/fixed1', type: 'SIMILAR', reason: 'Similar path found' }) },
-        { toJSON: () => ({ requestedPath: '/content/dam/test/fragment2', suggestedPath: null, type: 'PUBLISH', reason: 'Content not published' }) },
+        { toJSON: () => ({ requestedPath: TEST_PATH_1, suggestedPath: TEST_SUGGESTED_PATH_1, type: 'SIMILAR', reason: 'Similar path found' }) },
+        { toJSON: () => ({ requestedPath: TEST_PATH_2, suggestedPath: null, type: 'PUBLISH', reason: 'Content not published' }) },
       ]),
     };
 
@@ -161,20 +186,20 @@ describe('Broken Content Fragment Links Handler', () => {
 
       expect(athenaCollectorStub.fetchContentFragment404s).to.have.been.calledOnce;
       expect(analysisStrategyStub.analyze).to.have.been.calledWith([
-        '/content/dam/test/fragment1',
-        '/content/dam/test/fragment2',
+        TEST_PATH_1,
+        TEST_PATH_2,
       ]);
 
       expect(result).to.deep.equal({
         fullAuditRef: baseURL,
         auditResult: {
           brokenPaths: [
-            { url: '/content/dam/test/fragment1', requestCount: 100, requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 50 }] },
-            { url: '/content/dam/test/fragment2', requestCount: 200, requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 200 }] },
+            { url: TEST_PATH_1, requestCount: REQUEST_COUNT_1, requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }] },
+            { url: TEST_PATH_2, requestCount: REQUEST_COUNT_2, requestUserAgents: [{ userAgent: TEST_USER_AGENT_2, count: USER_AGENT_COUNT_2 }] },
           ],
           suggestions: [
-            { requestedPath: '/content/dam/test/fragment1', suggestedPath: '/content/dam/test/fixed1', type: 'SIMILAR', reason: 'Similar path found' },
-            { requestedPath: '/content/dam/test/fragment2', suggestedPath: null, type: 'PUBLISH', reason: 'Content not published' },
+            { requestedPath: TEST_PATH_1, suggestedPath: TEST_SUGGESTED_PATH_1, type: 'SIMILAR', reason: 'Similar path found' },
+            { requestedPath: TEST_PATH_2, suggestedPath: null, type: 'PUBLISH', reason: 'Content not published' },
           ],
         },
       });
@@ -192,16 +217,16 @@ describe('Broken Content Fragment Links Handler', () => {
 
     it('should handle mixed format in brokenPaths (objects and strings)', async () => {
       athenaCollectorStub.fetchContentFragment404s.resolves([
-        { url: '/content/dam/test/object-format', requestCount: 50, requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 50 }] },
-        '/content/dam/test/string-format',
+        { url: TEST_OBJECT_FORMAT_PATH, requestCount: REQUEST_COUNT_LOW, requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }] },
+        TEST_STRING_FORMAT_PATH,
       ]);
       analysisStrategyStub.analyze.resolves([]);
 
       await handlerModule.contentFragment404AuditRunner(baseURL, context, site);
 
       expect(analysisStrategyStub.analyze).to.have.been.calledWith([
-        '/content/dam/test/object-format',
-        '/content/dam/test/string-format',
+        TEST_OBJECT_FORMAT_PATH,
+        TEST_STRING_FORMAT_PATH,
       ]);
     });
 
@@ -213,10 +238,9 @@ describe('Broken Content Fragment Links Handler', () => {
     });
 
     it('should use correct baseURL in response', async () => {
-      const customURL = 'https://custom-tenant.adobe.com';
-      const result = await handlerModule.contentFragment404AuditRunner(customURL, context, site);
+      const result = await handlerModule.contentFragment404AuditRunner(TEST_CUSTOM_URL, context, site);
 
-      expect(result.fullAuditRef).to.equal(customURL);
+      expect(result.fullAuditRef).to.equal(TEST_CUSTOM_URL);
     });
   });
 
@@ -225,15 +249,15 @@ describe('Broken Content Fragment Links Handler', () => {
 
     beforeEach(() => {
       auditData = {
-        id: 'test-audit-id',
+        id: TEST_AUDIT_ID,
         auditResult: {
           brokenPaths: [
-            { url: '/content/dam/test/fragment1', requestCount: 100, requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 50 }] },
-            { url: '/content/dam/test/fragment2', requestCount: 200, requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 200 }] },
+            { url: TEST_PATH_1, requestCount: REQUEST_COUNT_1, requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }] },
+            { url: TEST_PATH_2, requestCount: REQUEST_COUNT_2, requestUserAgents: [{ userAgent: TEST_USER_AGENT_2, count: USER_AGENT_COUNT_2 }] },
           ],
           suggestions: [
-            { requestedPath: '/content/dam/test/fragment1', suggestedPath: '/content/dam/test/fixed1', type: 'SIMILAR', reason: 'Similar path found' },
-            { requestedPath: '/content/dam/test/fragment2', suggestedPath: null, type: 'PUBLISH', reason: 'Content not published' },
+            { requestedPath: TEST_PATH_1, suggestedPath: TEST_SUGGESTED_PATH_1, type: 'SIMILAR', reason: 'Similar path found' },
+            { requestedPath: TEST_PATH_2, suggestedPath: null, type: 'PUBLISH', reason: 'Content not published' },
           ],
         },
       };
@@ -253,14 +277,14 @@ describe('Broken Content Fragment Links Handler', () => {
       const syncArgs = syncSuggestionsStub.firstCall.args[0];
       expect(syncArgs.context).to.equal(context);
       expect(syncArgs.opportunity).to.equal(mockOpportunity);
-      expect(syncArgs.newData).to.have.lengthOf(2);
+      expect(syncArgs.newData).to.have.lengthOf(EXPECTED_SUGGESTIONS_COUNT);
       expect(syncArgs.newData[0]).to.deep.include({
-        requestedPath: '/content/dam/test/fragment1',
-        suggestedPath: '/content/dam/test/fixed1',
+        requestedPath: TEST_PATH_1,
+        suggestedPath: TEST_SUGGESTED_PATH_1,
         type: 'SIMILAR',
         reason: 'Similar path found',
-        requestCount: 100,
-        requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 50 }],
+        requestCount: REQUEST_COUNT_1,
+        requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }],
       });
 
     });
@@ -287,24 +311,24 @@ describe('Broken Content Fragment Links Handler', () => {
       await handlerModule.createContentFragmentPathSuggestions(baseURL, auditData, context);
 
       const syncArgs = syncSuggestionsStub.firstCall.args[0];
-      expect(syncArgs.newData[0].requestCount).to.equal(100);
-      expect(syncArgs.newData[0].requestUserAgents).to.deep.equal([{ userAgent: 'Mozilla/5.0', count: 50 }]);
-      expect(syncArgs.newData[1].requestCount).to.equal(200);
-      expect(syncArgs.newData[1].requestUserAgents).to.deep.equal([{ userAgent: 'Chrome/91.0', count: 200 }]);
+      expect(syncArgs.newData[0].requestCount).to.equal(REQUEST_COUNT_1);
+      expect(syncArgs.newData[0].requestUserAgents).to.deep.equal([{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }]);
+      expect(syncArgs.newData[1].requestCount).to.equal(REQUEST_COUNT_2);
+      expect(syncArgs.newData[1].requestUserAgents).to.deep.equal([{ userAgent: TEST_USER_AGENT_2, count: USER_AGENT_COUNT_2 }]);
     });
 
     it('should handle missing requestCount and requestUserAgents in brokenPaths', async () => {
       auditData.auditResult.brokenPaths = [
-        { url: '/content/dam/test/fragment1' },
+        { url: TEST_PATH_1 },
       ];
       auditData.auditResult.suggestions = [
-        { requestedPath: '/content/dam/test/fragment1', suggestedPath: '/content/dam/test/fixed1', type: 'SIMILAR', reason: 'Similar' },
+        { requestedPath: TEST_PATH_1, suggestedPath: TEST_SUGGESTED_PATH_1, type: 'SIMILAR', reason: 'Similar' },
       ];
 
       await handlerModule.createContentFragmentPathSuggestions(baseURL, auditData, context);
 
       const syncArgs = syncSuggestionsStub.firstCall.args[0];
-      expect(syncArgs.newData[0].requestCount).to.equal(0);
+      expect(syncArgs.newData[0].requestCount).to.equal(REQUEST_COUNT_NONE);
       expect(syncArgs.newData[0].requestUserAgents).to.deep.equal([]);
     });
 
@@ -317,8 +341,8 @@ describe('Broken Content Fragment Links Handler', () => {
       const key1 = buildKey(auditData.auditResult.suggestions[0]);
       const key2 = buildKey(auditData.auditResult.suggestions[1]);
 
-      expect(key1).to.equal('/content/dam/test/fragment1|SIMILAR');
-      expect(key2).to.equal('/content/dam/test/fragment2|PUBLISH');
+      expect(key1).to.equal(`${TEST_PATH_1}|SIMILAR`);
+      expect(key2).to.equal(`${TEST_PATH_2}|PUBLISH`);
     });
 
     it('should use correct getRank function', async () => {
@@ -327,11 +351,11 @@ describe('Broken Content Fragment Links Handler', () => {
       const syncArgs = syncSuggestionsStub.firstCall.args[0];
       const { getRank } = syncArgs;
 
-      const rank1 = getRank({ requestCount: 100 });
-      const rank2 = getRank({ requestCount: 200 });
+      const rank1 = getRank({ requestCount: REQUEST_COUNT_1 });
+      const rank2 = getRank({ requestCount: REQUEST_COUNT_2 });
 
-      expect(rank1).to.equal(100);
-      expect(rank2).to.equal(200);
+      expect(rank1).to.equal(REQUEST_COUNT_1);
+      expect(rank2).to.equal(REQUEST_COUNT_2);
     });
 
     it('should map new suggestions correctly', async () => {
@@ -341,20 +365,20 @@ describe('Broken Content Fragment Links Handler', () => {
       const { mapNewSuggestion } = syncArgs;
 
       const enrichedSuggestion = {
-        requestedPath: '/content/dam/test/fragment1',
-        suggestedPath: '/content/dam/test/fixed1',
+        requestedPath: TEST_PATH_1,
+        suggestedPath: TEST_SUGGESTED_PATH_1,
         type: 'SIMILAR',
         reason: 'Similar path found',
-        requestCount: 100,
-        requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 50 }],
+        requestCount: REQUEST_COUNT_1,
+        requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }],
       };
 
       const mapped = mapNewSuggestion(enrichedSuggestion);
 
       expect(mapped).to.deep.equal({
-        opportunityId: 'test-opportunity-id',
+        opportunityId: TEST_OPPORTUNITY_ID,
         type: SuggestionModel.TYPES.AI_INSIGHTS,
-        rank: 100,
+        rank: REQUEST_COUNT_1,
         data: enrichedSuggestion,
       });
     });
@@ -365,13 +389,13 @@ describe('Broken Content Fragment Links Handler', () => {
 
     beforeEach(() => {
       auditData = {
-        id: 'test-audit-id',
+        id: TEST_AUDIT_ID,
         auditResult: {
           brokenPaths: [
-            { url: '/content/dam/test/fragment1', requestCount: 100, requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 50 }] },
+            { url: TEST_PATH_1, requestCount: REQUEST_COUNT_1, requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }] },
           ],
           suggestions: [
-            { requestedPath: '/content/dam/test/fragment1', suggestedPath: '/content/dam/test/fixed1', type: 'SIMILAR', reason: 'Similar path found' },
+            { requestedPath: TEST_PATH_1, suggestedPath: TEST_SUGGESTED_PATH_1, type: 'SIMILAR', reason: 'Similar path found' },
           ],
         },
       };
@@ -382,8 +406,8 @@ describe('Broken Content Fragment Links Handler', () => {
 
       expect(context.dataAccess.Configuration.findLatest).to.have.been.calledOnce;
       expect(mockConfiguration.isHandlerEnabledForSite).to.have.been.calledWith(AUDIT_TYPE, site);
-      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith('test-site-id', 'NEW');
-      expect(context.dataAccess.Suggestion.allByOpportunityIdAndStatus).to.have.been.calledWith('test-opportunity-id', SuggestionModel.STATUSES.NEW);
+      expect(context.dataAccess.Opportunity.allBySiteIdAndStatus).to.have.been.calledWith(TEST_SITE_ID, 'NEW');
+      expect(context.dataAccess.Suggestion.allByOpportunityIdAndStatus).to.have.been.calledWith(TEST_OPPORTUNITY_ID, SuggestionModel.STATUSES.NEW);
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
 
@@ -409,7 +433,7 @@ describe('Broken Content Fragment Links Handler', () => {
       const wrongOpportunity = {
         getId: () => 'wrong-opportunity-id',
         getType: () => 'different-type',
-        getAuditId: () => 'test-audit-id',
+        getAuditId: () => TEST_AUDIT_ID,
       };
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([wrongOpportunity]);
 
@@ -456,36 +480,36 @@ describe('Broken Content Fragment Links Handler', () => {
 
       const message = sqsCall.args[1];
       expect(message).to.have.property('type', GUIDANCE_TYPE);
-      expect(message).to.have.property('siteId', 'test-site-id');
-      expect(message).to.have.property('auditId', 'test-audit-id');
+      expect(message).to.have.property('siteId', TEST_SITE_ID);
+      expect(message).to.have.property('auditId', TEST_AUDIT_ID);
       expect(message).to.have.property('deliveryType', 'aem_edge');
       expect(message).to.have.property('url', baseURL);
       expect(message).to.have.property('time');
       expect(new Date(message.time)).to.be.a('date');
 
-      expect(message.data).to.have.property('opportunityId', 'test-opportunity-id');
-      expect(message.data.brokenPaths).to.be.an('array').with.lengthOf(1);
+      expect(message.data).to.have.property('opportunityId', TEST_OPPORTUNITY_ID);
+      expect(message.data.brokenPaths).to.be.an('array').with.lengthOf(EXPECTED_SINGLE_SUGGESTION_COUNT);
       
       const brokenPath = message.data.brokenPaths[0];
-      expect(brokenPath).to.have.property('suggestionId', 'test-suggestion-id');
-      expect(brokenPath).to.have.property('requestedPath', '/content/dam/test/fragment1');
-      expect(brokenPath).to.have.property('requestCount', 100);
+      expect(brokenPath).to.have.property('suggestionId', TEST_SUGGESTION_ID);
+      expect(brokenPath).to.have.property('requestedPath', TEST_PATH_1);
+      expect(brokenPath).to.have.property('requestCount', REQUEST_COUNT_1);
       expect(brokenPath).to.have.property('requestUserAgents');
-      expect(brokenPath.requestUserAgents).to.deep.equal([{ userAgent: 'Mozilla/5.0', count: 50 }]);
-      expect(brokenPath).to.have.property('suggestedPath', '/content/dam/test/fixed1');
+      expect(brokenPath.requestUserAgents).to.deep.equal([{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }]);
+      expect(brokenPath).to.have.property('suggestedPath', TEST_SUGGESTED_PATH_1);
       expect(brokenPath).to.have.property('reason', 'Similar path found');
     });
 
     it('should handle multiple suggestions in Mystique message', async () => {
       const mockSuggestion2 = {
-        getId: () => 'test-suggestion-id-2',
+        getId: () => TEST_SUGGESTION_ID_2,
         getData: () => ({
-          requestedPath: '/content/dam/test/fragment2',
+          requestedPath: TEST_PATH_2,
           suggestedPath: null,
           type: 'PUBLISH',
           reason: 'Content not published',
-          requestCount: 200,
-          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 200 }],
+          requestCount: REQUEST_COUNT_2,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_2, count: USER_AGENT_COUNT_2 }],
         }),
       };
       context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resolves([mockSuggestion, mockSuggestion2]);
@@ -493,9 +517,9 @@ describe('Broken Content Fragment Links Handler', () => {
       await handlerModule.enrichContentFragmentPathSuggestions(baseURL, auditData, context, site);
 
       const message = context.sqs.sendMessage.getCall(0).args[1];
-      expect(message.data.brokenPaths).to.have.lengthOf(2);
-      expect(message.data.brokenPaths[0].suggestionId).to.equal('test-suggestion-id');
-      expect(message.data.brokenPaths[1].suggestionId).to.equal('test-suggestion-id-2');
+      expect(message.data.brokenPaths).to.have.lengthOf(EXPECTED_SUGGESTIONS_COUNT);
+      expect(message.data.brokenPaths[0].suggestionId).to.equal(TEST_SUGGESTION_ID);
+      expect(message.data.brokenPaths[1].suggestionId).to.equal(TEST_SUGGESTION_ID_2);
     });
   });
 

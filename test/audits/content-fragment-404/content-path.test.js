@@ -13,6 +13,7 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import { ContentPath, ContentStatus } from '../../../src/content-fragment-404/domain/content/content-path.js';
+import { TEST_PATH_TEST_IMAGE } from './test-constants.js';
 
 describe('ContentPath', () => {
   describe('ContentStatus enum', () => {
@@ -157,52 +158,52 @@ describe('ContentPath', () => {
 
   describe('isPublished', () => {
     it('should return true when status is PUBLISHED', () => {
-      const contentPath = new ContentPath('/content/dam/test/image.jpg', ContentStatus.PUBLISHED, null);
+      const contentPath = new ContentPath(TEST_PATH_TEST_IMAGE, ContentStatus.PUBLISHED, null);
       expect(contentPath.isPublished()).to.be.true;
     });
 
     it('should return false when status is MODIFIED', () => {
-      const contentPath = new ContentPath('/content/dam/test/image.jpg', ContentStatus.MODIFIED, null);
+      const contentPath = new ContentPath(TEST_PATH_TEST_IMAGE, ContentStatus.MODIFIED, null);
       expect(contentPath.isPublished()).to.be.false;
     });
 
     it('should return false when status is DRAFT', () => {
-      const contentPath = new ContentPath('/content/dam/test/image.jpg', ContentStatus.DRAFT, null);
+      const contentPath = new ContentPath(TEST_PATH_TEST_IMAGE, ContentStatus.DRAFT, null);
       expect(contentPath.isPublished()).to.be.false;
     });
 
     it('should return false when status is ARCHIVED', () => {
-      const contentPath = new ContentPath('/content/dam/test/image.jpg', ContentStatus.ARCHIVED, null);
+      const contentPath = new ContentPath(TEST_PATH_TEST_IMAGE, ContentStatus.ARCHIVED, null);
       expect(contentPath.isPublished()).to.be.false;
     });
 
     it('should return false when status is DELETED', () => {
-      const contentPath = new ContentPath('/content/dam/test/image.jpg', ContentStatus.DELETED, null);
+      const contentPath = new ContentPath(TEST_PATH_TEST_IMAGE, ContentStatus.DELETED, null);
       expect(contentPath.isPublished()).to.be.false;
     });
 
     it('should return false when status is UNKNOWN', () => {
-      const contentPath = new ContentPath('/content/dam/test/image.jpg', ContentStatus.UNKNOWN, null);
+      const contentPath = new ContentPath(TEST_PATH_TEST_IMAGE, ContentStatus.UNKNOWN, null);
       expect(contentPath.isPublished()).to.be.false;
     });
 
     it('should return false when status is null', () => {
-      const contentPath = new ContentPath('/content/dam/test/image.jpg', null, null);
+      const contentPath = new ContentPath(TEST_PATH_TEST_IMAGE, null, null);
       expect(contentPath.isPublished()).to.be.false;
     });
 
     it('should return false when status is undefined', () => {
-      const contentPath = new ContentPath('/content/dam/test/image.jpg', undefined, null);
+      const contentPath = new ContentPath(TEST_PATH_TEST_IMAGE, undefined, null);
       expect(contentPath.isPublished()).to.be.false;
     });
 
     it('should return false when status is an invalid string', () => {
-      const contentPath = new ContentPath('/content/dam/test/image.jpg', 'INVALID_STATUS', null);
+      const contentPath = new ContentPath(TEST_PATH_TEST_IMAGE, 'INVALID_STATUS', null);
       expect(contentPath.isPublished()).to.be.false;
     });
 
     it('should use strict equality comparison', () => {
-      const contentPath = new ContentPath('/content/dam/test/image.jpg', 'published', null);
+      const contentPath = new ContentPath(TEST_PATH_TEST_IMAGE, 'published', null);
       expect(contentPath.isPublished()).to.be.false; // Case sensitive
     });
 
@@ -219,7 +220,7 @@ describe('ContentPath', () => {
 
   describe('toJSON', () => {
     it('should serialize a complete content path with locale having toJSON method', () => {
-      const path = '/content/dam/test/image.jpg';
+      const path = TEST_PATH_TEST_IMAGE;
       const status = ContentStatus.PUBLISHED;
       const locale = {
         code: 'en-us',
@@ -238,7 +239,7 @@ describe('ContentPath', () => {
     });
 
     it('should serialize a content path with locale without toJSON method', () => {
-      const path = '/content/dam/test/image.jpg';
+      const path = TEST_PATH_TEST_IMAGE;
       const status = ContentStatus.DRAFT;
       const locale = { code: 'fr-fr', name: 'French (France)' };
 
@@ -253,7 +254,7 @@ describe('ContentPath', () => {
     });
 
     it('should serialize a content path with null locale', () => {
-      const path = '/content/dam/test/image.jpg';
+      const path = TEST_PATH_TEST_IMAGE;
       const status = ContentStatus.MODIFIED;
 
       const contentPath = new ContentPath(path, status, null);
@@ -267,7 +268,7 @@ describe('ContentPath', () => {
     });
 
     it('should serialize a content path with undefined locale', () => {
-      const path = '/content/dam/test/image.jpg';
+      const path = TEST_PATH_TEST_IMAGE;
       const status = ContentStatus.ARCHIVED;
 
       const contentPath = new ContentPath(path, status, undefined);
@@ -303,7 +304,7 @@ describe('ContentPath', () => {
     });
 
     it('should handle locale with toJSON method that returns null', () => {
-      const path = '/content/dam/test/image.jpg';
+      const path = TEST_PATH_TEST_IMAGE;
       const status = ContentStatus.DELETED;
       const locale = {
         code: 'invalid',
@@ -321,7 +322,7 @@ describe('ContentPath', () => {
     });
 
     it('should handle locale with toJSON method that returns undefined', () => {
-      const path = '/content/dam/test/image.jpg';
+      const path = TEST_PATH_TEST_IMAGE;
       const status = ContentStatus.UNKNOWN;
       const locale = {
         code: 'test',
@@ -339,7 +340,7 @@ describe('ContentPath', () => {
     });
 
     it('should handle primitive locale values', () => {
-      const path = '/content/dam/test/image.jpg';
+      const path = TEST_PATH_TEST_IMAGE;
       const status = ContentStatus.PUBLISHED;
 
       const contentPath1 = new ContentPath(path, status, 'en-us');
@@ -355,7 +356,7 @@ describe('ContentPath', () => {
   describe('integration scenarios', () => {
     it('should work with JSON.stringify', () => {
       const contentPath = new ContentPath(
-        '/content/dam/test/image.jpg',
+        TEST_PATH_TEST_IMAGE,
         ContentStatus.PUBLISHED,
         { code: 'en-us', toJSON: () => ({ code: 'en-us' }) },
       );
@@ -364,14 +365,14 @@ describe('ContentPath', () => {
       const parsed = JSON.parse(jsonString);
 
       expect(parsed).to.deep.equal({
-        path: '/content/dam/test/image.jpg',
+        path: TEST_PATH_TEST_IMAGE,
         status: ContentStatus.PUBLISHED,
         locale: { code: 'en-us' },
       });
     });
 
     it('should handle all content statuses consistently', () => {
-      const path = '/content/dam/test/image.jpg';
+      const path = TEST_PATH_TEST_IMAGE;
       const locale = { code: 'en-us' };
 
       const statuses = [
@@ -414,7 +415,7 @@ describe('ContentPath', () => {
         },
       };
 
-      const contentPath = new ContentPath('/content/dam/test/image.jpg', ContentStatus.PUBLISHED, complexLocale);
+      const contentPath = new ContentPath(TEST_PATH_TEST_IMAGE, ContentStatus.PUBLISHED, complexLocale);
       const json = contentPath.toJSON();
 
       expect(json.locale).to.deep.equal({
@@ -425,7 +426,7 @@ describe('ContentPath', () => {
     });
 
     it('should be immutable after creation', () => {
-      const originalPath = '/content/dam/test/image.jpg';
+      const originalPath = TEST_PATH_TEST_IMAGE;
       const originalStatus = ContentStatus.PUBLISHED;
       const originalLocale = { code: 'en-us' };
 

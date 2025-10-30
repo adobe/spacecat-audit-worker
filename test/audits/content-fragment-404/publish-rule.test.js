@@ -17,6 +17,8 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
+import { PUBLISH_RULE_PRIORITY } from '../../../src/content-fragment-404/rules/constants.js';
+import { TEST_PATH_BROKEN, ERROR_AEM_CONNECTION_FAILED } from './test-constants.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -49,8 +51,8 @@ describe('PublishRule', () => {
 
     mockSuggestion = {
       type: 'publish',
-      path: '/content/dam/test/broken.jpg',
-      publish: sandbox.stub().returns({ type: 'publish', path: '/content/dam/test/broken.jpg' }),
+      path: TEST_PATH_BROKEN,
+      publish: sandbox.stub().returns({ type: 'publish', path: TEST_PATH_BROKEN }),
     };
 
     const module = await esmock('../../../src/content-fragment-404/rules/publish-rule.js', {
@@ -73,7 +75,7 @@ describe('PublishRule', () => {
       const rule = new PublishRule(context, mockAemClient);
 
       expect(rule.context).to.equal(context);
-      expect(rule.priority).to.equal(1);
+      expect(rule.priority).to.equal(PUBLISH_RULE_PRIORITY);
       expect(rule.aemClient).to.equal(mockAemClient);
     });
 
@@ -89,7 +91,7 @@ describe('PublishRule', () => {
       const rule = new PublishRule(context, null);
 
       expect(rule.context).to.equal(context);
-      expect(rule.priority).to.equal(1);
+      expect(rule.priority).to.equal(PUBLISH_RULE_PRIORITY);
       expect(rule.aemClient).to.be.null;
     });
   });
@@ -98,7 +100,7 @@ describe('PublishRule', () => {
     it('should return publish suggestion when content is available on Author', async () => {
       mockAemClient.isAvailable.resolves(true);
       const rule = new PublishRule(context, mockAemClient);
-      const brokenPath = '/content/dam/test/broken.jpg';
+      const brokenPath = TEST_PATH_BROKEN;
 
       const result = await rule.applyRule(brokenPath);
 
@@ -109,7 +111,7 @@ describe('PublishRule', () => {
     it('should return null when content is not available on Author', async () => {
       mockAemClient.isAvailable.resolves(false);
       const rule = new PublishRule(context, mockAemClient);
-      const brokenPath = '/content/dam/test/broken.jpg';
+      const brokenPath = TEST_PATH_BROKEN;
 
       const result = await rule.applyRule(brokenPath);
 
@@ -140,20 +142,20 @@ describe('PublishRule', () => {
     });
 
     it('should handle AEM client errors gracefully', async () => {
-      const testError = new Error('AEM connection failed');
+      const testError = new Error(ERROR_AEM_CONNECTION_FAILED);
       mockAemClient.isAvailable.rejects(testError);
       const rule = new PublishRule(context, mockAemClient);
-      const brokenPath = '/content/dam/test/broken.jpg';
+      const brokenPath = TEST_PATH_BROKEN;
 
       await expect(rule.applyRule(brokenPath))
-        .to.be.rejectedWith('AEM connection failed');
+        .to.be.rejectedWith(ERROR_AEM_CONNECTION_FAILED);
 
       expect(mockAemClient.isAvailable).to.have.been.calledOnceWith(brokenPath);
     });
 
     it('should throw error when AEM client not available', async () => {
       const rule = new PublishRule(context, null);
-      const brokenPath = '/content/dam/test/broken.jpg';
+      const brokenPath = TEST_PATH_BROKEN;
 
       await expect(rule.applyRule(brokenPath))
         .to.be.rejectedWith('AemClient not injected');
@@ -188,7 +190,7 @@ describe('PublishRule', () => {
     it('should work through apply method', async () => {
       mockAemClient.isAvailable.resolves(true);
       const rule = new PublishRule(context, mockAemClient);
-      const brokenPath = '/content/dam/test/broken.jpg';
+      const brokenPath = TEST_PATH_BROKEN;
 
       const result = await rule.apply(brokenPath);
 
@@ -198,7 +200,7 @@ describe('PublishRule', () => {
     it('should return correct priority', () => {
       const rule = new PublishRule(context, mockAemClient);
 
-      expect(rule.getPriority()).to.equal(1);
+      expect(rule.getPriority()).to.equal(PUBLISH_RULE_PRIORITY);
     });
 
     it('should return AEM client when available', () => {

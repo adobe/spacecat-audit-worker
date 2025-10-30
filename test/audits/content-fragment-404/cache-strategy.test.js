@@ -16,6 +16,7 @@ import sinon from 'sinon';
 import { CacheStrategy } from '../../../src/content-fragment-404/cache/cache-strategy.js';
 import { NoOpCache } from '../../../src/content-fragment-404/cache/noop-cache.js';
 import { PathIndexCache } from '../../../src/content-fragment-404/cache/path-index-cache.js';
+import { TEST_PATH_TEST_IMAGE, TEST_PATH_TEST } from './test-constants.js';
 
 describe('Cache Strategy', () => {
   describe('CacheStrategy (Base Class)', () => {
@@ -43,12 +44,12 @@ describe('Cache Strategy', () => {
     });
 
     it('should return empty array for findChildren', () => {
-      const result = cache.findChildren('/content/dam/test');
+      const result = cache.findChildren(TEST_PATH_TEST);
       expect(result).to.deep.equal([]);
     });
 
     it('should not throw when cacheItems is called', () => {
-      const items = [{ path: '/content/dam/test/image.jpg', status: 'PUBLISHED' }];
+      const items = [{ path: TEST_PATH_TEST_IMAGE, status: 'PUBLISHED' }];
       const statusParser = sinon.stub().returns('PUBLISHED');
       
       expect(() => cache.cacheItems(items, statusParser)).to.not.throw();
@@ -76,16 +77,16 @@ describe('Cache Strategy', () => {
         const expectedChildren = [{ path: '/content/dam/test/child1.jpg' }];
         mockPathIndex.findChildren.returns(expectedChildren);
 
-        const result = cache.findChildren('/content/dam/test');
+        const result = cache.findChildren(TEST_PATH_TEST);
 
         expect(result).to.equal(expectedChildren);
-        expect(mockPathIndex.findChildren).to.have.been.calledWith('/content/dam/test');
+        expect(mockPathIndex.findChildren).to.have.been.calledWith(TEST_PATH_TEST);
       });
 
       it('should handle empty children array', () => {
         mockPathIndex.findChildren.returns([]);
 
-        const result = cache.findChildren('/content/dam/test');
+        const result = cache.findChildren(TEST_PATH_TEST);
 
         expect(result).to.deep.equal([]);
       });
@@ -124,7 +125,7 @@ describe('Cache Strategy', () => {
 
       it('should parse status using provided statusParser', () => {
         const items = [
-          { path: '/content/dam/test/image.jpg', status: 'published' },
+          { path: TEST_PATH_TEST_IMAGE, status: 'published' },
         ];
         const statusParser = sinon.stub().returns('PUBLISHED');
 

@@ -13,6 +13,16 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import { LevenshteinDistance } from '../../../src/content-fragment-404/utils/levenshtein-distance.js';
+import {
+  DISTANCE_SINGLE_CHAR,
+  DISTANCE_TWO_CHARS,
+  DISTANCE_THREE_CHARS,
+  DISTANCE_FOUR_CHARS,
+  STRING_LENGTH_HELLO,
+  TEST_PATH_EN_US_IMAGES_PHOTO_JPG,
+  TEST_PATH_EN_US_IMAGES_PHOTO_PNG,
+  TEST_PATH_FR_FR_IMAGES_PHOTO_JPG,
+} from './test-constants.js';
 
 describe('LevenshteinDistance', () => {
   describe('calculate', () => {
@@ -29,11 +39,11 @@ describe('LevenshteinDistance', () => {
     });
 
     it('should return target length for empty source', () => {
-      expect(LevenshteinDistance.calculate('', 'hello')).to.equal(5);
+      expect(LevenshteinDistance.calculate('', 'hello')).to.equal(STRING_LENGTH_HELLO);
     });
 
     it('should return source length for empty target', () => {
-      expect(LevenshteinDistance.calculate('hello', '')).to.equal(5);
+      expect(LevenshteinDistance.calculate('hello', '')).to.equal(STRING_LENGTH_HELLO);
     });
 
     it('should return 0 for both empty strings', () => {
@@ -41,59 +51,59 @@ describe('LevenshteinDistance', () => {
     });
 
     it('should calculate distance for single character difference', () => {
-      expect(LevenshteinDistance.calculate('hello', 'helo')).to.equal(1);
-      expect(LevenshteinDistance.calculate('hello', 'hallo')).to.equal(1);
-      expect(LevenshteinDistance.calculate('hello', 'hell')).to.equal(1);
-      expect(LevenshteinDistance.calculate('hello', 'helloo')).to.equal(1);
+      expect(LevenshteinDistance.calculate('hello', 'helo')).to.equal(DISTANCE_SINGLE_CHAR);
+      expect(LevenshteinDistance.calculate('hello', 'hallo')).to.equal(DISTANCE_SINGLE_CHAR);
+      expect(LevenshteinDistance.calculate('hello', 'hell')).to.equal(DISTANCE_SINGLE_CHAR);
+      expect(LevenshteinDistance.calculate('hello', 'helloo')).to.equal(DISTANCE_SINGLE_CHAR);
     });
 
     it('should calculate distance for multiple character differences', () => {
-      expect(LevenshteinDistance.calculate('hello', 'world')).to.equal(4);
-      expect(LevenshteinDistance.calculate('kitten', 'sitting')).to.equal(3);
-      expect(LevenshteinDistance.calculate('saturday', 'sunday')).to.equal(3);
+      expect(LevenshteinDistance.calculate('hello', 'world')).to.equal(DISTANCE_FOUR_CHARS);
+      expect(LevenshteinDistance.calculate('kitten', 'sitting')).to.equal(DISTANCE_THREE_CHARS);
+      expect(LevenshteinDistance.calculate('saturday', 'sunday')).to.equal(DISTANCE_THREE_CHARS);
     });
 
     it('should handle case differences', () => {
-      expect(LevenshteinDistance.calculate('Hello', 'hello')).to.equal(1);
-      expect(LevenshteinDistance.calculate('HELLO', 'hello')).to.equal(5);
+      expect(LevenshteinDistance.calculate('Hello', 'hello')).to.equal(DISTANCE_SINGLE_CHAR);
+      expect(LevenshteinDistance.calculate('HELLO', 'hello')).to.equal(STRING_LENGTH_HELLO);
     });
 
     it('should handle special characters', () => {
-      expect(LevenshteinDistance.calculate('hello-world', 'hello_world')).to.equal(1);
-      expect(LevenshteinDistance.calculate('test@example.com', 'test.example.com')).to.equal(1);
+      expect(LevenshteinDistance.calculate('hello-world', 'hello_world')).to.equal(DISTANCE_SINGLE_CHAR);
+      expect(LevenshteinDistance.calculate('test@example.com', 'test.example.com')).to.equal(DISTANCE_SINGLE_CHAR);
     });
 
     it('should handle numbers', () => {
-      expect(LevenshteinDistance.calculate('12345', '12346')).to.equal(1);
-      expect(LevenshteinDistance.calculate('12345', '1234')).to.equal(1);
-      expect(LevenshteinDistance.calculate('12345', '123456')).to.equal(1);
+      expect(LevenshteinDistance.calculate('12345', '12346')).to.equal(DISTANCE_SINGLE_CHAR);
+      expect(LevenshteinDistance.calculate('12345', '1234')).to.equal(DISTANCE_SINGLE_CHAR);
+      expect(LevenshteinDistance.calculate('12345', '123456')).to.equal(DISTANCE_SINGLE_CHAR);
     });
 
     it('should handle mixed content', () => {
-      expect(LevenshteinDistance.calculate('test123', 'test124')).to.equal(1);
-      expect(LevenshteinDistance.calculate('user@domain.com', 'user@domain.org')).to.equal(3);
+      expect(LevenshteinDistance.calculate('test123', 'test124')).to.equal(DISTANCE_SINGLE_CHAR);
+      expect(LevenshteinDistance.calculate('user@domain.com', 'user@domain.org')).to.equal(DISTANCE_THREE_CHARS);
     });
 
     it('should handle very long strings', () => {
       const longString1 = 'a'.repeat(100);
       const longString2 = `${'a'.repeat(99)}b`;
-      expect(LevenshteinDistance.calculate(longString1, longString2)).to.equal(1);
+      expect(LevenshteinDistance.calculate(longString1, longString2)).to.equal(DISTANCE_SINGLE_CHAR);
     });
 
     it('should handle path-like strings', () => {
-      expect(LevenshteinDistance.calculate('/content/dam/en-US/images/photo.jpg', '/content/dam/en-US/images/photo.png')).to.equal(2);
-      expect(LevenshteinDistance.calculate('/content/dam/en-US/images/photo.jpg', '/content/dam/fr-FR/images/photo.jpg')).to.equal(4);
+      expect(LevenshteinDistance.calculate(TEST_PATH_EN_US_IMAGES_PHOTO_JPG, TEST_PATH_EN_US_IMAGES_PHOTO_PNG)).to.equal(DISTANCE_TWO_CHARS);
+      expect(LevenshteinDistance.calculate(TEST_PATH_EN_US_IMAGES_PHOTO_JPG, TEST_PATH_FR_FR_IMAGES_PHOTO_JPG)).to.equal(DISTANCE_FOUR_CHARS);
     });
 
     it('should handle locale variations', () => {
-      expect(LevenshteinDistance.calculate('en-US', 'en-GB')).to.equal(2);
-      expect(LevenshteinDistance.calculate('fr-FR', 'fr-CA')).to.equal(2);
-      expect(LevenshteinDistance.calculate('de-DE', 'de-AT')).to.equal(2);
+      expect(LevenshteinDistance.calculate('en-US', 'en-GB')).to.equal(DISTANCE_TWO_CHARS);
+      expect(LevenshteinDistance.calculate('fr-FR', 'fr-CA')).to.equal(DISTANCE_TWO_CHARS);
+      expect(LevenshteinDistance.calculate('de-DE', 'de-AT')).to.equal(DISTANCE_TWO_CHARS);
     });
 
     it('should handle complex transformations', () => {
-      expect(LevenshteinDistance.calculate('kitten', 'sitting')).to.equal(3);
-      expect(LevenshteinDistance.calculate('saturday', 'sunday')).to.equal(3);
+      expect(LevenshteinDistance.calculate('kitten', 'sitting')).to.equal(DISTANCE_THREE_CHARS);
+      expect(LevenshteinDistance.calculate('saturday', 'sunday')).to.equal(DISTANCE_THREE_CHARS);
     });
   });
 });

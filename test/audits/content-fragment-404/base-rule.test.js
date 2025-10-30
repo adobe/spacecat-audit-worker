@@ -16,7 +16,9 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { BaseRule } from '../../../src/content-fragment-404/rules/base-rule.js';
+import { BASE_RULE_DEFAULT_PRIORITY } from '../../../src/content-fragment-404/rules/constants.js';
 import { MockContextBuilder } from '../../shared.js';
+import { TEST_PATH_BROKEN } from './test-constants.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -56,7 +58,7 @@ describe('BaseRule', () => {
       const rule = new BaseRule(context);
 
       expect(rule.context).to.equal(context);
-      expect(rule.priority).to.equal(42);
+      expect(rule.priority).to.equal(BASE_RULE_DEFAULT_PRIORITY);
       expect(rule.aemClient).to.be.null;
     });
 
@@ -69,10 +71,10 @@ describe('BaseRule', () => {
     });
 
     it('should initialize with AEM client', () => {
-      const rule = new BaseRule(context, 42, mockAemClient);
+      const rule = new BaseRule(context, BASE_RULE_DEFAULT_PRIORITY, mockAemClient);
 
       expect(rule.context).to.equal(context);
-      expect(rule.priority).to.equal(42);
+      expect(rule.priority).to.equal(BASE_RULE_DEFAULT_PRIORITY);
       expect(rule.aemClient).to.equal(mockAemClient);
     });
 
@@ -89,7 +91,7 @@ describe('BaseRule', () => {
     it('should delegate to applyRule method', async () => {
       const rule = new BaseRule(context);
       const applyRuleSpy = sandbox.spy(rule, 'applyRule');
-      const brokenPath = '/content/dam/test/broken.jpg';
+      const brokenPath = TEST_PATH_BROKEN;
 
       await expect(rule.apply(brokenPath))
         .to.be.rejectedWith('Subclasses must implement applyRule()');
@@ -104,7 +106,7 @@ describe('BaseRule', () => {
       // Override applyRule to return a mock suggestion
       rule.applyRule = sandbox.stub().resolves(mockSuggestion);
 
-      const result = await rule.apply('/content/dam/test/broken.jpg');
+      const result = await rule.apply(TEST_PATH_BROKEN);
 
       expect(result).to.equal(mockSuggestion);
     });
@@ -116,7 +118,7 @@ describe('BaseRule', () => {
       // Override applyRule to throw an error
       rule.applyRule = sandbox.stub().rejects(testError);
 
-      await expect(rule.apply('/content/dam/test/broken.jpg'))
+      await expect(rule.apply(TEST_PATH_BROKEN))
         .to.be.rejectedWith('Test error');
     });
   });
@@ -125,7 +127,7 @@ describe('BaseRule', () => {
     it('should return default priority', () => {
       const rule = new BaseRule(context);
 
-      expect(rule.getPriority()).to.equal(42);
+      expect(rule.getPriority()).to.equal(BASE_RULE_DEFAULT_PRIORITY);
     });
 
     it('should return custom priority', () => {
@@ -149,7 +151,7 @@ describe('BaseRule', () => {
 
   describe('getAemClient', () => {
     it('should return injected AEM client when available', () => {
-      const rule = new BaseRule(context, 42, mockAemClient);
+      const rule = new BaseRule(context, BASE_RULE_DEFAULT_PRIORITY, mockAemClient);
 
       const result = rule.getAemClient();
 
@@ -167,7 +169,7 @@ describe('BaseRule', () => {
     });
 
     it('should throw error when AEM client is null', () => {
-      const rule = new BaseRule(context, 42, null);
+      const rule = new BaseRule(context, BASE_RULE_DEFAULT_PRIORITY, null);
 
       expect(() => rule.getAemClient())
         .to.throw('AemClient not injected');
@@ -176,7 +178,7 @@ describe('BaseRule', () => {
     });
 
     it('should throw error when AEM client is undefined', () => {
-      const rule = new BaseRule(context, 42, undefined);
+      const rule = new BaseRule(context, BASE_RULE_DEFAULT_PRIORITY, undefined);
 
       expect(() => rule.getAemClient())
         .to.throw('AemClient not injected');
@@ -189,7 +191,7 @@ describe('BaseRule', () => {
     it('should throw error indicating subclasses must implement', async () => {
       const rule = new BaseRule(context);
 
-      await expect(rule.applyRule('/content/dam/test/broken.jpg'))
+      await expect(rule.applyRule(TEST_PATH_BROKEN))
         .to.be.rejectedWith('Subclasses must implement applyRule()');
     });
 
@@ -225,7 +227,7 @@ describe('BaseRule', () => {
       expect(rule.getPriority()).to.equal(10);
       expect(rule.getAemClient()).to.equal(mockAemClient);
 
-      const result = await rule.apply('/content/dam/test/broken.jpg');
+      const result = await rule.apply(TEST_PATH_BROKEN);
       expect(result).to.deep.equal({ type: 'publish', path: '/test' });
     });
   });

@@ -13,6 +13,21 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import { Suggestion, SuggestionType } from '../../../src/content-fragment-404/domain/suggestion/suggestion.js';
+import {
+  TEST_PATH_TEST_IMAGE,
+  TEST_PATH_TEST_BROKEN,
+  TEST_PATH_TEST_FIXED,
+  TEST_PATH_TEST_MISSING,
+  TEST_PATH_TEST_IMAG,
+  TEST_PATH_TEST_PUBLISHED_IMAGE,
+  TEST_PATH_FR_FR_TEST_IMAGE,
+  TEST_PATH_EN_US_TEST_IMAGE,
+  TEST_PATH_DE_DE_TEST_IMAGE,
+  TEST_PATH_TEST_PHOTO,
+  TEST_PATH_TEST_PHOTOS,
+  TEST_PATH_TEST_DELETED,
+  TEST_PATH_EN_US_COMPLEX,
+} from './test-constants.js';
 
 describe('Suggestion', () => {
   describe('SuggestionType enum', () => {
@@ -26,8 +41,8 @@ describe('Suggestion', () => {
 
   describe('constructor', () => {
     it('should create a suggestion with all parameters', () => {
-      const requestedPath = '/content/dam/test/broken.jpg';
-      const suggestedPath = '/content/dam/test/fixed.jpg';
+      const requestedPath = TEST_PATH_TEST_BROKEN;
+      const suggestedPath = TEST_PATH_TEST_FIXED;
       const type = SuggestionType.SIMILAR;
       const reason = 'Test reason';
 
@@ -40,7 +55,7 @@ describe('Suggestion', () => {
     });
 
     it('should create a suggestion with null suggestedPath', () => {
-      const requestedPath = '/content/dam/test/broken.jpg';
+      const requestedPath = TEST_PATH_TEST_BROKEN;
       const type = SuggestionType.NOT_FOUND;
       const reason = 'Content not found';
 
@@ -74,7 +89,7 @@ describe('Suggestion', () => {
   describe('static factory methods', () => {
     describe('publish', () => {
       it('should create a PUBLISH suggestion with default parameters', () => {
-        const requestedPath = '/content/dam/test/image.jpg';
+        const requestedPath = TEST_PATH_TEST_IMAGE;
         const suggestion = Suggestion.publish(requestedPath);
 
         expect(suggestion.requestedPath).to.equal(requestedPath);
@@ -84,8 +99,8 @@ describe('Suggestion', () => {
       });
 
       it('should create a PUBLISH suggestion with custom suggestedPath', () => {
-        const requestedPath = '/content/dam/test/image.jpg';
-        const suggestedPath = '/content/dam/test/published-image.jpg';
+        const requestedPath = TEST_PATH_TEST_IMAGE;
+        const suggestedPath = TEST_PATH_TEST_PUBLISHED_IMAGE;
         const suggestion = Suggestion.publish(requestedPath, suggestedPath);
 
         expect(suggestion.requestedPath).to.equal(requestedPath);
@@ -95,7 +110,7 @@ describe('Suggestion', () => {
       });
 
       it('should create a PUBLISH suggestion with custom reason', () => {
-        const requestedPath = '/content/dam/test/image.jpg';
+        const requestedPath = TEST_PATH_TEST_IMAGE;
         const customReason = 'Custom publish reason';
         const suggestion = Suggestion.publish(requestedPath, null, customReason);
 
@@ -106,8 +121,8 @@ describe('Suggestion', () => {
       });
 
       it('should create a PUBLISH suggestion with all custom parameters', () => {
-        const requestedPath = '/content/dam/test/image.jpg';
-        const suggestedPath = '/content/dam/test/published-image.jpg';
+        const requestedPath = TEST_PATH_TEST_IMAGE;
+        const suggestedPath = TEST_PATH_TEST_PUBLISHED_IMAGE;
         const customReason = 'Available for publishing';
         const suggestion = Suggestion.publish(requestedPath, suggestedPath, customReason);
 
@@ -120,8 +135,8 @@ describe('Suggestion', () => {
 
     describe('locale', () => {
       it('should create a LOCALE suggestion with default reason', () => {
-        const requestedPath = '/content/dam/fr-fr/test/image.jpg';
-        const suggestedPath = '/content/dam/en-us/test/image.jpg';
+        const requestedPath = TEST_PATH_FR_FR_TEST_IMAGE;
+        const suggestedPath = TEST_PATH_EN_US_TEST_IMAGE;
         const suggestion = Suggestion.locale(requestedPath, suggestedPath);
 
         expect(suggestion.requestedPath).to.equal(requestedPath);
@@ -131,8 +146,8 @@ describe('Suggestion', () => {
       });
 
       it('should create a LOCALE suggestion with custom reason', () => {
-        const requestedPath = '/content/dam/de-de/test/image.jpg';
-        const suggestedPath = '/content/dam/en-us/test/image.jpg';
+        const requestedPath = TEST_PATH_DE_DE_TEST_IMAGE;
+        const suggestedPath = TEST_PATH_EN_US_TEST_IMAGE;
         const customReason = 'German locale not available, fallback to English';
         const suggestion = Suggestion.locale(requestedPath, suggestedPath, customReason);
 
@@ -143,7 +158,7 @@ describe('Suggestion', () => {
       });
 
       it('should handle null suggestedPath', () => {
-        const requestedPath = '/content/dam/fr-fr/test/image.jpg';
+        const requestedPath = TEST_PATH_FR_FR_TEST_IMAGE;
         const suggestion = Suggestion.locale(requestedPath, null);
 
         expect(suggestion.requestedPath).to.equal(requestedPath);
@@ -155,8 +170,8 @@ describe('Suggestion', () => {
 
     describe('similar', () => {
       it('should create a SIMILAR suggestion with default reason', () => {
-        const requestedPath = '/content/dam/test/imag.jpg';
-        const suggestedPath = '/content/dam/test/image.jpg';
+        const requestedPath = TEST_PATH_TEST_IMAG;
+        const suggestedPath = TEST_PATH_TEST_IMAGE;
         const suggestion = Suggestion.similar(requestedPath, suggestedPath);
 
         expect(suggestion.requestedPath).to.equal(requestedPath);
@@ -166,8 +181,8 @@ describe('Suggestion', () => {
       });
 
       it('should create a SIMILAR suggestion with custom reason', () => {
-        const requestedPath = '/content/dam/test/photo.jpg';
-        const suggestedPath = '/content/dam/test/photos.jpg';
+        const requestedPath = TEST_PATH_TEST_PHOTO;
+        const suggestedPath = TEST_PATH_TEST_PHOTOS;
         const customReason = 'Levenshtein distance: 1';
         const suggestion = Suggestion.similar(requestedPath, suggestedPath, customReason);
 
@@ -178,7 +193,7 @@ describe('Suggestion', () => {
       });
 
       it('should handle null suggestedPath', () => {
-        const requestedPath = '/content/dam/test/broken.jpg';
+        const requestedPath = TEST_PATH_TEST_BROKEN;
         const suggestion = Suggestion.similar(requestedPath, null);
 
         expect(suggestion.requestedPath).to.equal(requestedPath);
@@ -190,7 +205,7 @@ describe('Suggestion', () => {
 
     describe('notFound', () => {
       it('should create a NOT_FOUND suggestion with default reason', () => {
-        const requestedPath = '/content/dam/test/missing.jpg';
+        const requestedPath = TEST_PATH_TEST_MISSING;
         const suggestion = Suggestion.notFound(requestedPath);
 
         expect(suggestion.requestedPath).to.equal(requestedPath);
@@ -200,7 +215,7 @@ describe('Suggestion', () => {
       });
 
       it('should create a NOT_FOUND suggestion with custom reason', () => {
-        const requestedPath = '/content/dam/test/deleted.jpg';
+        const requestedPath = TEST_PATH_TEST_DELETED;
         const customReason = 'Content was deleted and no alternatives found';
         const suggestion = Suggestion.notFound(requestedPath, customReason);
 
@@ -232,8 +247,8 @@ describe('Suggestion', () => {
 
   describe('toJSON', () => {
     it('should serialize a complete suggestion to JSON', () => {
-      const requestedPath = '/content/dam/test/broken.jpg';
-      const suggestedPath = '/content/dam/test/fixed.jpg';
+      const requestedPath = TEST_PATH_TEST_BROKEN;
+      const suggestedPath = TEST_PATH_TEST_FIXED;
       const type = SuggestionType.SIMILAR;
       const reason = 'Similar path found';
 
@@ -249,7 +264,7 @@ describe('Suggestion', () => {
     });
 
     it('should serialize a suggestion with null suggestedPath', () => {
-      const requestedPath = '/content/dam/test/missing.jpg';
+      const requestedPath = TEST_PATH_TEST_MISSING;
       const type = SuggestionType.NOT_FOUND;
       const reason = 'Content not found';
 
@@ -265,7 +280,7 @@ describe('Suggestion', () => {
     });
 
     it('should serialize a PUBLISH suggestion created via factory method', () => {
-      const requestedPath = '/content/dam/test/image.jpg';
+      const requestedPath = TEST_PATH_TEST_IMAGE;
       const suggestion = Suggestion.publish(requestedPath);
       const json = suggestion.toJSON();
 
@@ -278,8 +293,8 @@ describe('Suggestion', () => {
     });
 
     it('should serialize a LOCALE suggestion created via factory method', () => {
-      const requestedPath = '/content/dam/fr-fr/test/image.jpg';
-      const suggestedPath = '/content/dam/en-us/test/image.jpg';
+      const requestedPath = TEST_PATH_FR_FR_TEST_IMAGE;
+      const suggestedPath = TEST_PATH_EN_US_TEST_IMAGE;
       const suggestion = Suggestion.locale(requestedPath, suggestedPath);
       const json = suggestion.toJSON();
 
@@ -292,8 +307,8 @@ describe('Suggestion', () => {
     });
 
     it('should serialize a SIMILAR suggestion created via factory method', () => {
-      const requestedPath = '/content/dam/test/imag.jpg';
-      const suggestedPath = '/content/dam/test/image.jpg';
+      const requestedPath = TEST_PATH_TEST_IMAG;
+      const suggestedPath = TEST_PATH_TEST_IMAGE;
       const suggestion = Suggestion.similar(requestedPath, suggestedPath);
       const json = suggestion.toJSON();
 
@@ -306,7 +321,7 @@ describe('Suggestion', () => {
     });
 
     it('should serialize a NOT_FOUND suggestion created via factory method', () => {
-      const requestedPath = '/content/dam/test/missing.jpg';
+      const requestedPath = TEST_PATH_TEST_MISSING;
       const suggestion = Suggestion.notFound(requestedPath);
       const json = suggestion.toJSON();
 
@@ -345,12 +360,12 @@ describe('Suggestion', () => {
 
   describe('integration scenarios', () => {
     it('should work with JSON.stringify', () => {
-      const suggestion = Suggestion.publish('/content/dam/test/image.jpg');
+      const suggestion = Suggestion.publish(TEST_PATH_TEST_IMAGE);
       const jsonString = JSON.stringify(suggestion);
       const parsed = JSON.parse(jsonString);
 
       expect(parsed).to.deep.equal({
-        requestedPath: '/content/dam/test/image.jpg',
+        requestedPath: TEST_PATH_TEST_IMAGE,
         suggestedPath: null,
         type: SuggestionType.PUBLISH,
         reason: 'Content exists on Author',
@@ -358,7 +373,7 @@ describe('Suggestion', () => {
     });
 
     it('should maintain immutability after creation', () => {
-      const suggestion = Suggestion.similar('/content/dam/test/broken.jpg', '/content/dam/test/fixed.jpg');
+      const suggestion = Suggestion.similar(TEST_PATH_TEST_BROKEN, TEST_PATH_TEST_FIXED);
       const originalPath = suggestion.requestedPath;
       const originalSuggested = suggestion.suggestedPath;
       const originalType = suggestion.type;
@@ -384,7 +399,7 @@ describe('Suggestion', () => {
     });
 
     it('should handle complex path scenarios', () => {
-      const complexPath = '/content/dam/en-us/folder with spaces/sub-folder/image%20with%20encoding.jpg';
+      const complexPath = TEST_PATH_EN_US_COMPLEX;
       const suggestion = Suggestion.locale(complexPath, complexPath.replace('en-us', 'fr-fr'));
 
       expect(suggestion.requestedPath).to.equal(complexPath);
@@ -393,7 +408,7 @@ describe('Suggestion', () => {
     });
 
     it('should work with all factory methods in sequence', () => {
-      const basePath = '/content/dam/test/image.jpg';
+      const basePath = TEST_PATH_TEST_IMAGE;
 
       const publishSuggestion = Suggestion.publish(basePath);
       const localeSuggestion = Suggestion.locale(basePath, basePath.replace('test', 'en-us'));

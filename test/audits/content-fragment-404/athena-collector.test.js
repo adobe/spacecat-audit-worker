@@ -21,6 +21,77 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
+import {
+  TEST_DATABASE,
+  TEST_TABLE,
+  TEST_IMS_ORG,
+  TEST_HOSTNAME,
+  TEST_BASE_URL_SITE as TEST_BASE_URL,
+  TEST_ORG_ID,
+  TEST_S3_BUCKET,
+  TEST_PATH_1,
+  TEST_PATH_2,
+  TEST_ASSET_PATH,
+  TEST_YEAR,
+  TEST_MONTH,
+  TEST_DAY,
+  TEST_DAY_PREVIOUS,
+  TEST_MONTH_MAR,
+  TEST_DAY_5,
+  TEST_MONTH_DEC,
+  TEST_DAY_25,
+  TEST_DAY_31,
+  TEST_USER_AGENT_1,
+  TEST_USER_AGENT_2,
+  TEST_USER_AGENT_3,
+  TEST_USER_AGENT_4,
+  TEST_USER_AGENT_5,
+  REQUEST_COUNT_SMALL,
+  REQUEST_COUNT_MEDIUM,
+  REQUEST_COUNT_TINY,
+  REQUEST_COUNT_HIGH,
+  REQUEST_COUNT_LOW_1,
+  REQUEST_COUNT_LOW_2,
+  REQUEST_COUNT_LOW_3,
+  REQUEST_COUNT_LOW_4,
+  REQUEST_COUNT_LOW_5,
+  REQUEST_COUNT_MID_1,
+  REQUEST_COUNT_MID_2,
+  REQUEST_COUNT_MID_3,
+  REQUEST_COUNT_HIGH_1,
+  REQUEST_COUNT_HIGH_2,
+  REQUEST_COUNT_NONE,
+  TEST_DATE_2025_01_14,
+  TEST_DATE_2025_01_15,
+  TEST_DATE_2025_02_01,
+  TEST_DATE_2025_03_05,
+  TEST_DATE_2025_12_25,
+  DEFAULT_DATABASE_NAME,
+  DEFAULT_TABLE_NAME,
+  S3_PATH_AGGREGATED_404,
+  S3_PATH_TEMP_ATHENA_RESULTS,
+  TEST_DATABASE_NAME,
+  TEST_SQL_RESULT,
+  ATHENA_QUERY_PREFIX,
+  CUSTOM_BUCKET_NAME,
+  CUSTOM_IMS_ORG,
+  TEST_PATH_FRAGMENT,
+  TEST_PATH_IMAGE_JPG,
+  TEST_PATH_DOCUMENT_PDF,
+  TEST_PATH_VIDEO_MP4,
+  TEST_PATH_FONT_WOFF,
+  TEST_PATH_ARCHIVE_ZIP,
+  TEST_PATH_ANOTHER_FRAGMENT,
+  TEST_PATH_ANOTHER,
+  TEST_PATH_VALID_FRAGMENT,
+  TEST_PATH_ANOTHER_FRAGMENT_2,
+  TEST_PATH_FRAGMENT1,
+  TEST_PATH_FRAGMENT2,
+  TEST_PATH_FRAGMENT3,
+  TEST_PATH_FRAGMENT4,
+  TEST_PATH_FRAGMENT5,
+} from './test-constants.js';
+
 describe('AthenaCollector', () => {
   let sandbox;
   let context;
@@ -31,8 +102,8 @@ describe('AthenaCollector', () => {
   // Helper to set test config on collector
   const setTestConfig = (collector) => {
     collector.config = {
-      database: 'test_database',
-      tableName: 'test_table',
+      database: TEST_DATABASE,
+      tableName: TEST_TABLE,
       location: collector.config.location,
       tempLocation: collector.config.tempLocation,
     };
@@ -44,10 +115,10 @@ describe('AthenaCollector', () => {
     athenaClientStub = {
       execute: sandbox.stub().resolves(),
       query: sandbox.stub().resolves([
-        { url: '/content/dam/test/fragment1', request_user_agent: 'Mozilla/5.0', request_count: '10' },
-        { url: '/content/dam/test/asset.jpg', request_user_agent: 'Mozilla/5.0', request_count: '5' }, // Asset should be filtered
-        { url: null }, // Should be filtered
-        { url: '/content/dam/test/fragment2', request_user_agent: 'Chrome/91.0', request_count: '8' },
+        { url: TEST_PATH_1, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_SMALL) },
+        { url: TEST_ASSET_PATH, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_TINY) }, // Asset URL should be filtered
+        { url: null }, // Null URL should be filtered
+        { url: TEST_PATH_2, request_user_agent: TEST_USER_AGENT_2, request_count: String(REQUEST_COUNT_MEDIUM) },
       ]),
     };
 
@@ -63,16 +134,16 @@ describe('AthenaCollector', () => {
           error: sandbox.spy(),
         },
         env: {
-          S3_BUCKET: 'test-raw-bucket',
+          S3_BUCKET: TEST_S3_BUCKET,
         },
         site: {
-          getBaseURL: () => 'https://test-site.com',
-          getOrganizationId: () => 'test-org-id',
+          getBaseURL: () => TEST_BASE_URL,
+          getOrganizationId: () => TEST_ORG_ID,
         },
         dataAccess: {
           Organization: {
             findById: sandbox.stub().resolves({
-              getImsOrgId: () => 'test-ims-org',
+              getImsOrgId: () => TEST_IMS_ORG,
             }),
           },
         },
@@ -89,7 +160,7 @@ describe('AthenaCollector', () => {
         },
       },
       '../../../src/utils/cdn-utils.js': {
-        extractCustomerDomain: sandbox.stub().returns('test'),
+        extractCustomerDomain: sandbox.stub().returns(TEST_HOSTNAME),
       },
     });
 
@@ -103,13 +174,13 @@ describe('AthenaCollector', () => {
   describe('constructor', () => {
     it('should initialize with context', () => {
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
 
       expect(collector.context).to.equal(context);
-      expect(collector.imsOrg).to.equal('test-ims-org');
+      expect(collector.imsOrg).to.equal(TEST_IMS_ORG);
       expect(collector.config).to.exist;
       expect(collector.config.location).to.include('s3://');
       expect(collector.config.tempLocation).to.include('s3://');
@@ -117,8 +188,8 @@ describe('AthenaCollector', () => {
 
     it('should create athena client with correct temp location', () => {
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
 
@@ -134,8 +205,8 @@ describe('AthenaCollector', () => {
           S3_BUCKET: undefined,
         },
       });
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
 
       expect(() => collector.validate())
         .to.throw('Raw bucket is required');
@@ -143,7 +214,7 @@ describe('AthenaCollector', () => {
 
     it('should throw error when imsOrg is missing', () => {
       const collector = new AthenaCollector(context);
-      collector.sanitizedHostname = 'test';
+      collector.sanitizedHostname = TEST_HOSTNAME;
 
       expect(() => collector.validate())
         .to.throw('IMS organization is required');
@@ -151,7 +222,7 @@ describe('AthenaCollector', () => {
 
     it('should throw error when sanitizedHostname is missing', () => {
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
+      collector.imsOrg = TEST_IMS_ORG;
       // Don't set sanitizedHostname - testing that it throws when missing
 
       expect(() => collector.validate())
@@ -160,8 +231,8 @@ describe('AthenaCollector', () => {
 
     it('should not throw when all requirements are met', () => {
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
 
       expect(() => collector.validate()).to.not.throw();
     });
@@ -206,7 +277,7 @@ describe('AthenaCollector', () => {
 
       expect(collector).to.be.instanceOf(AthenaCollector);
       expect(collector.context).to.equal(context);
-      expect(collector.imsOrg).to.equal('test-ims-org');
+      expect(collector.imsOrg).to.equal(TEST_IMS_ORG);
     });
 
     it('should throw error when IMS org cannot be retrieved', async () => {
@@ -225,38 +296,37 @@ describe('AthenaCollector', () => {
   describe('getAthenaConfig', () => {
     it('should generate correct configuration from context', () => {
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       const config = collector.getAthenaConfig();
 
       // Verify actual implementation behavior
-      expect(config.database).to.equal('cdn_logs_test');
-      expect(config.tableName).to.equal('content_fragment_404');
-      expect(config.location).to.equal('s3://test-raw-bucket/test-ims-org/aggregated-404');
-      expect(config.tempLocation).to.equal('s3://test-raw-bucket/temp/athena-results/');
+      expect(config.database).to.equal(DEFAULT_DATABASE_NAME);
+      expect(config.tableName).to.equal(DEFAULT_TABLE_NAME);
+      expect(config.location).to.equal(`s3://${TEST_S3_BUCKET}/${TEST_IMS_ORG}/${S3_PATH_AGGREGATED_404}`);
+      expect(config.tempLocation).to.equal(`s3://${TEST_S3_BUCKET}/${S3_PATH_TEMP_ATHENA_RESULTS}`);
     });
   
     it('should handle different bucket and IMS org values', () => {
       const customContext = {
         ...context,
         env: {
-          S3_BUCKET: 'custom-bucket',
+          S3_BUCKET: CUSTOM_BUCKET_NAME,
         },
       };
 
       const collector = new AthenaCollector(customContext);
-      collector.imsOrg = 'custom-ims';
+      collector.imsOrg = CUSTOM_IMS_ORG;
       const config = collector.getAthenaConfig();
 
-      expect(config.location).to.equal('s3://custom-bucket/custom-ims/aggregated-404');
-      expect(config.tempLocation).to.equal('s3://custom-bucket/temp/athena-results/');
+      expect(config.location).to.equal(`s3://${CUSTOM_BUCKET_NAME}/${CUSTOM_IMS_ORG}/${S3_PATH_AGGREGATED_404}`);
+      expect(config.tempLocation).to.equal(`s3://${CUSTOM_BUCKET_NAME}/${S3_PATH_TEMP_ATHENA_RESULTS}`);
     });
   });
 
   describe('getPreviousDayParts static method', () => {
     it('should return previous day parts', () => {
-      // Mock Date to return a specific date
-      const mockDate = new Date('2025-01-15T10:30:00Z');
+      const mockDate = TEST_DATE_2025_01_15;
       const originalDate = global.Date;
       global.Date = function MockDate(...args) {
         if (args.length === 0) {
@@ -271,9 +341,9 @@ describe('AthenaCollector', () => {
         const parts = AthenaCollector.getPreviousDayParts();
 
         expect(parts).to.deep.equal({
-          year: '2025',
-          month: '01',
-          day: '14', // Previous day
+          year: TEST_YEAR,
+          month: TEST_MONTH,
+          day: TEST_DAY_PREVIOUS, // Previous day
         });
       } finally {
         global.Date = originalDate;
@@ -282,7 +352,7 @@ describe('AthenaCollector', () => {
 
     it('should handle month boundary correctly', () => {
       // Mock Date to return first day of month
-      const mockDate = new Date('2025-02-01T10:30:00Z');
+      const mockDate = TEST_DATE_2025_02_01;
       const originalDate = global.Date;
       global.Date = function MockDate(...args) {
         if (args.length === 0) {
@@ -297,9 +367,9 @@ describe('AthenaCollector', () => {
         const parts = AthenaCollector.getPreviousDayParts();
 
         expect(parts).to.deep.equal({
-          year: '2025',
-          month: '01', // Previous month
-          day: '31', // Last day of previous month
+          year: TEST_YEAR,
+          month: TEST_MONTH,
+          day: TEST_DAY_31, // Last day of previous month (hardcoded as it's relative to TEST_DATE_2025_02_01)
         });
       } finally {
         global.Date = originalDate;
@@ -313,25 +383,25 @@ describe('AthenaCollector', () => {
       const parts = AthenaCollector.getDateParts(testDate);
 
       expect(parts).to.deep.equal({
-        year: '2025',
-        month: '01',
-        day: '15',
+        year: TEST_YEAR,
+        month: TEST_MONTH,
+        day: TEST_DAY,
       });
     });
 
     it('should pad single digit months and days with zero', () => {
-      const testDate = new Date('2025-03-05T10:30:00Z');
+      const testDate = TEST_DATE_2025_03_05;
       const parts = AthenaCollector.getDateParts(testDate);
 
       expect(parts).to.deep.equal({
-        year: '2025',
-        month: '03',
-        day: '05',
+        year: TEST_YEAR,
+        month: TEST_MONTH_MAR,
+        day: TEST_DAY_5,
       });
     });
 
     it('should use current date when no date provided', () => {
-      const mockDate = new Date('2025-12-25T10:30:00Z');
+      const mockDate = TEST_DATE_2025_12_25;
       const originalDate = global.Date;
       global.Date = function MockDate(...args) {
         if (args.length === 0) {
@@ -346,9 +416,9 @@ describe('AthenaCollector', () => {
         const parts = AthenaCollector.getDateParts();
 
         expect(parts).to.deep.equal({
-          year: '2025',
-          month: '12',
-          day: '25',
+          year: TEST_YEAR,
+          month: TEST_MONTH_DEC,
+          day: TEST_DAY_25,
         });
       } finally {
         global.Date = originalDate;
@@ -358,18 +428,18 @@ describe('AthenaCollector', () => {
 
   describe('loadSql static method', () => {
     it('should load SQL file with variables', async () => {
-      const variables = { database: 'test_db', table: 'test_table' };
+      const variables = { database: TEST_DATABASE_NAME, table: TEST_TABLE };
       const result = await AthenaCollector.loadSql('create-database', variables);
 
       expect(getStaticContentStub).to.have.been.calledWith(
         variables,
         './src/content-fragment-404/sql/create-database.sql',
       );
-      expect(result).to.equal('SELECT * FROM test_table;');
+      expect(result).to.equal(TEST_SQL_RESULT);
     });
 
     it('should handle different SQL file names', async () => {
-      const variables = { database: 'test_db' };
+      const variables = { database: TEST_DATABASE_NAME };
       await AthenaCollector.loadSql('daily-query', variables);
 
       expect(getStaticContentStub).to.have.been.calledWith(
@@ -389,8 +459,8 @@ describe('AthenaCollector', () => {
   describe('ensureDatabase', () => {
     it('should create database with correct SQL and description', async () => {
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
       setTestConfig(collector);
@@ -398,21 +468,21 @@ describe('AthenaCollector', () => {
       await collector.ensureDatabase();
 
       expect(getStaticContentStub).to.have.been.calledWith(
-        { database: 'test_database' },
+        { database: TEST_DATABASE },
         './src/content-fragment-404/sql/create-database.sql',
       );
       expect(athenaClientStub.execute).to.have.been.calledWith(
-        'SELECT * FROM test_table;',
-        'test_database',
-        '[Athena Query] Create database test_database',
+        TEST_SQL_RESULT,
+        TEST_DATABASE,
+        `${ATHENA_QUERY_PREFIX} Create database ${TEST_DATABASE}`,
       );
     });
 
     it('should handle SQL loading errors', async () => {
       getStaticContentStub.rejects(new Error('SQL file not found'));
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
 
@@ -423,8 +493,8 @@ describe('AthenaCollector', () => {
     it('should handle athena execution errors', async () => {
       athenaClientStub.execute.rejects(new Error('Athena execution failed'));
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
       setTestConfig(collector);
@@ -437,8 +507,8 @@ describe('AthenaCollector', () => {
   describe('ensureTable', () => {
     it('should create table with correct SQL and description', async () => {
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
       setTestConfig(collector);
@@ -447,24 +517,23 @@ describe('AthenaCollector', () => {
 
       expect(getStaticContentStub).to.have.been.calledWith(
         {
-          database: 'test_database',
-          tableName: 'test_table',
-          location: 's3://test-raw-bucket/test-ims-org/aggregated-404',
+          database: TEST_DATABASE,
+          tableName: TEST_TABLE,
+          location: `s3://${TEST_S3_BUCKET}/${TEST_IMS_ORG}/${S3_PATH_AGGREGATED_404}`,
         },
         './src/content-fragment-404/sql/create-table.sql',
       );
         expect(athenaClientStub.execute).to.have.been.calledWith(
-          'SELECT * FROM test_table;',
-          'test_database',
-          '[Athena Query] Create table test_database.test_table',
+          TEST_SQL_RESULT,
+          TEST_DATABASE,
         );
     });
 
     it('should handle SQL loading errors', async () => {
       getStaticContentStub.rejects(new Error('Table SQL not found'));
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
       setTestConfig(collector);
@@ -476,8 +545,8 @@ describe('AthenaCollector', () => {
     it('should handle athena execution errors', async () => {
       athenaClientStub.execute.rejects(new Error('Table creation failed'));
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
       setTestConfig(collector);
@@ -490,195 +559,199 @@ describe('AthenaCollector', () => {
   describe('queryContentFragment404s', () => {
     it('should query broken paths with correct parameters and filter assets', async () => {
       athenaClientStub.query.resolves([
-        { url: '/content/dam/test/fragment1', request_user_agent: 'Mozilla/5.0', request_count: '10' },
-        { url: '/content/dam/test/asset.jpg', request_user_agent: 'Mozilla/5.0', request_count: '5' }, // Asset should be filtered
+        { url: TEST_PATH_1, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_SMALL) },
+        { url: TEST_ASSET_PATH, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_TINY) }, // Asset should be filtered
         { url: null }, // Should be filtered
-        { url: '/content/dam/test/fragment2', request_user_agent: 'Chrome/91.0', request_count: '20' },
+        { url: TEST_PATH_2, request_user_agent: TEST_USER_AGENT_2, request_count: String(REQUEST_COUNT_HIGH) },
       ]);
 
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryContentFragment404s('2025', '01', '15');
+      const result = await collector.queryContentFragment404s(TEST_YEAR, TEST_MONTH, TEST_DAY);
 
       expect(getStaticContentStub).to.have.been.calledWith(
         {
-          database: 'test_database',
-          tableName: 'test_table',
-          year: '2025',
-          month: '01',
-          day: '15',
+          database: TEST_DATABASE,
+          tableName: TEST_TABLE,
+          year: TEST_YEAR,
+          month: TEST_MONTH,
+          day: TEST_DAY,
         },
         './src/content-fragment-404/sql/daily-query.sql',
       );
 
       expect(athenaClientStub.query).to.have.been.calledOnce;
-      expect(athenaClientStub.query.getCall(0).args[0]).to.equal('SELECT * FROM test_table;');
-      expect(athenaClientStub.query.getCall(0).args[1]).to.equal('test_database');
+      expect(athenaClientStub.query.getCall(0).args[0]).to.equal(TEST_SQL_RESULT);
+      expect(athenaClientStub.query.getCall(0).args[1]).to.equal(TEST_DATABASE);
 
       expect(result).to.deep.equal([
         {
-          url: '/content/dam/test/fragment1',
-          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 10 }],
-          requestCount: 10,
+          url: TEST_PATH_1,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: REQUEST_COUNT_SMALL }],
+          requestCount: REQUEST_COUNT_SMALL,
         },
         {
-          url: '/content/dam/test/fragment2',
-          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 20 }],
-          requestCount: 20,
+          url: TEST_PATH_2,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_2, count: REQUEST_COUNT_HIGH }],
+          requestCount: REQUEST_COUNT_HIGH,
         },
       ]);
     });
 
     it('should filter out asset URLs (images, documents, media)', async () => {
       athenaClientStub.query.resolves([
-        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0', request_count: '7' },
-        { url: '/content/dam/image.jpg', request_user_agent: 'Mozilla/5.0', request_count: '12' }, // Image asset
-        { url: '/content/dam/document.pdf', request_user_agent: 'Mozilla/5.0', request_count: '3' }, // Document asset
-        { url: '/content/dam/video.mp4', request_user_agent: 'Mozilla/5.0', request_count: '9' }, // Media asset
-        { url: '/content/dam/font.woff', request_user_agent: 'Mozilla/5.0', request_count: '2' }, // Font asset
-        { url: '/content/dam/archive.zip', request_user_agent: 'Mozilla/5.0', request_count: '5' }, // Archive asset
-        { url: '/content/dam/another-fragment', request_user_agent: 'Chrome/91.0', request_count: '4' },
+        { url: TEST_PATH_FRAGMENT, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_LOW_1) },
+        { url: TEST_PATH_IMAGE_JPG, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_MID_2) },
+        { url: TEST_PATH_DOCUMENT_PDF, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_LOW_4) },
+        { url: TEST_PATH_VIDEO_MP4, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_MID_1) },
+        { url: TEST_PATH_FONT_WOFF, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_LOW_5) },
+        { url: TEST_PATH_ARCHIVE_ZIP, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_TINY) },
+        { url: TEST_PATH_ANOTHER_FRAGMENT, request_user_agent: TEST_USER_AGENT_2, request_count: String(REQUEST_COUNT_LOW_3) },
       ]);
 
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryContentFragment404s('2025', '01', '15');
+      const result = await collector.queryContentFragment404s(TEST_YEAR, TEST_MONTH, TEST_DAY);
 
       expect(result).to.deep.equal([
         {
-          url: '/content/dam/fragment',
-          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 7 }],
-          requestCount: 7,
+          url: TEST_PATH_FRAGMENT,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: REQUEST_COUNT_LOW_1 }],
+          requestCount: REQUEST_COUNT_LOW_1,
         },
         {
-          url: '/content/dam/another-fragment',
-          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 4 }],
-          requestCount: 4,
+          url: TEST_PATH_ANOTHER_FRAGMENT,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_2, count: REQUEST_COUNT_LOW_3 }],
+          requestCount: REQUEST_COUNT_LOW_3,
         },
       ]);
     });
 
     it('should filter out null URLs from results', async () => {
       athenaClientStub.query.resolves([
-        { url: '/content/dam/test/valid-fragment', request_user_agent: 'Mozilla/5.0', request_count: '6' },
+        { url: TEST_PATH_VALID_FRAGMENT, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_LOW_2) },
         { url: null },
         { url: '' },
-        { url: '/content/dam/test/another-fragment', request_user_agent: 'Chrome/91.0', request_count: '9' },
+        { url: TEST_PATH_ANOTHER_FRAGMENT_2, request_user_agent: TEST_USER_AGENT_2, request_count: String(REQUEST_COUNT_MID_1) },
       ]);
 
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryContentFragment404s('2025', '01', '15');
+      const result = await collector.queryContentFragment404s(TEST_YEAR, TEST_MONTH, TEST_DAY);
 
       expect(result).to.deep.equal([
         {
-          url: '/content/dam/test/valid-fragment',
-          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 6 }],
-          requestCount: 6,
+          url: TEST_PATH_VALID_FRAGMENT,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: REQUEST_COUNT_LOW_2 }],
+          requestCount: REQUEST_COUNT_LOW_2,
         },
         {
-          url: '/content/dam/test/another-fragment',
-          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 9 }],
-          requestCount: 9,
+          url: TEST_PATH_ANOTHER_FRAGMENT_2,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_2, count: REQUEST_COUNT_MID_1 }],
+          requestCount: REQUEST_COUNT_MID_1,
         },
       ]);
     });
 
     it('should group multiple user agents for the same URL', async () => {
       athenaClientStub.query.resolves([
-        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0', request_count: '15' },
-        { url: '/content/dam/fragment', request_user_agent: 'Chrome/91.0', request_count: '10' },
-        { url: '/content/dam/fragment', request_user_agent: 'Safari/14.0', request_count: '5' },
-        { url: '/content/dam/another', request_user_agent: 'Mozilla/5.0', request_count: '8' },
+        { url: TEST_PATH_FRAGMENT, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_MID_3) },
+        { url: TEST_PATH_FRAGMENT, request_user_agent: TEST_USER_AGENT_2, request_count: String(REQUEST_COUNT_SMALL) },
+        { url: TEST_PATH_FRAGMENT, request_user_agent: TEST_USER_AGENT_3, request_count: String(REQUEST_COUNT_TINY) },
+        { url: TEST_PATH_ANOTHER, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_MEDIUM) },
       ]);
 
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryContentFragment404s('2025', '01', '15');
+      const result = await collector.queryContentFragment404s(TEST_YEAR, TEST_MONTH, TEST_DAY);
 
       expect(result).to.deep.equal([
         {
-          url: '/content/dam/fragment',
+          url: TEST_PATH_FRAGMENT,
           requestUserAgents: [
-            { userAgent: 'Mozilla/5.0', count: 15 },
-            { userAgent: 'Chrome/91.0', count: 10 },
-            { userAgent: 'Safari/14.0', count: 5 },
+            { userAgent: TEST_USER_AGENT_1, count: REQUEST_COUNT_MID_3 },
+            { userAgent: TEST_USER_AGENT_2, count: REQUEST_COUNT_SMALL },
+            { userAgent: TEST_USER_AGENT_3, count: REQUEST_COUNT_TINY },
           ],
-          requestCount: 30,
+          requestCount: REQUEST_COUNT_HIGH_2,
         },
         {
-          url: '/content/dam/another',
-          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 8 }],
-          requestCount: 8,
+          url: TEST_PATH_ANOTHER,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: REQUEST_COUNT_MEDIUM }],
+          requestCount: REQUEST_COUNT_MEDIUM,
         },
       ]);
     });
 
     it('should aggregate counts for duplicate user agents on the same URL', async () => {
       athenaClientStub.query.resolves([
-        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0', request_count: '12' },
-        { url: '/content/dam/fragment', request_user_agent: 'Mozilla/5.0', request_count: '8' },
-        { url: '/content/dam/fragment', request_user_agent: 'Chrome/91.0', request_count: '5' },
+        { url: TEST_PATH_FRAGMENT, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_MID_2) },
+        { url: TEST_PATH_FRAGMENT, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_MEDIUM) },
+        { url: TEST_PATH_FRAGMENT, request_user_agent: TEST_USER_AGENT_2, request_count: String(REQUEST_COUNT_TINY) },
       ]);
 
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryContentFragment404s('2025', '01', '15');
+      const result = await collector.queryContentFragment404s(TEST_YEAR, TEST_MONTH, TEST_DAY);
 
       expect(result).to.deep.equal([
         {
-          url: '/content/dam/fragment',
+          url: TEST_PATH_FRAGMENT,
           requestUserAgents: [
-            { userAgent: 'Mozilla/5.0', count: 20 }, // 12 + 8 aggregated
-            { userAgent: 'Chrome/91.0', count: 5 },
+            { userAgent: TEST_USER_AGENT_1, count: REQUEST_COUNT_HIGH }, // REQUEST_COUNT_MID_2 + REQUEST_COUNT_MEDIUM aggregated
+            { userAgent: TEST_USER_AGENT_2, count: REQUEST_COUNT_TINY },
           ],
-          requestCount: 25, // Total: 20 + 5
+          requestCount: REQUEST_COUNT_HIGH_1, // Total: REQUEST_COUNT_HIGH + REQUEST_COUNT_TINY
         },
       ]);
     });
 
     it('should clean GraphQL suffixes from URLs', async () => {
+      const TEST_PATH_FRAGMENT_CFM_JSON = '/content/dam/fragment.cfm.json';
+      const TEST_PATH_FRAGMENT_CFM_MODEL_JSON = '/content/dam/fragment.cfm.model.json';
+      const TEST_PATH_ANOTHER_CFM_GQL_JSON = '/content/dam/another.cfm.gql.json';
+
       athenaClientStub.query.resolves([
-        { url: '/content/dam/fragment.cfm.json', request_user_agent: 'Mozilla/5.0', request_count: '10' },
-        { url: '/content/dam/fragment.cfm.model.json', request_user_agent: 'Chrome/91.0', request_count: '5' },
-        { url: '/content/dam/another.cfm.gql.json', request_user_agent: 'Safari/14.0', request_count: '3' },
+        { url: TEST_PATH_FRAGMENT_CFM_JSON, request_user_agent: TEST_USER_AGENT_1, request_count: String(REQUEST_COUNT_SMALL) },
+        { url: TEST_PATH_FRAGMENT_CFM_MODEL_JSON, request_user_agent: TEST_USER_AGENT_2, request_count: String(REQUEST_COUNT_TINY) },
+        { url: TEST_PATH_ANOTHER_CFM_GQL_JSON, request_user_agent: TEST_USER_AGENT_3, request_count: String(REQUEST_COUNT_LOW_4) },
       ]);
 
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryContentFragment404s('2025', '01', '15');
+      const result = await collector.queryContentFragment404s(TEST_YEAR, TEST_MONTH, TEST_DAY);
 
       expect(result).to.deep.equal([
         {
-          url: '/content/dam/fragment',
+          url: TEST_PATH_FRAGMENT,
           requestUserAgents: [
-            { userAgent: 'Mozilla/5.0', count: 10 },
-            { userAgent: 'Chrome/91.0', count: 5 },
+            { userAgent: TEST_USER_AGENT_1, count: REQUEST_COUNT_SMALL },
+            { userAgent: TEST_USER_AGENT_2, count: REQUEST_COUNT_TINY },
           ],
-          requestCount: 15,
+          requestCount: REQUEST_COUNT_MID_3,
         },
         {
-          url: '/content/dam/another',
-          requestUserAgents: [{ userAgent: 'Safari/14.0', count: 3 }],
-          requestCount: 3,
+          url: TEST_PATH_ANOTHER,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_3, count: REQUEST_COUNT_LOW_4 }],
+          requestCount: REQUEST_COUNT_LOW_4,
         },
       ]);
     });
@@ -687,11 +760,11 @@ describe('AthenaCollector', () => {
       athenaClientStub.query.resolves([]);
 
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryContentFragment404s('2025', '01', '15');
+      const result = await collector.queryContentFragment404s(TEST_YEAR, TEST_MONTH, TEST_DAY);
 
       expect(result).to.deep.equal([]);
     });
@@ -699,68 +772,68 @@ describe('AthenaCollector', () => {
     it('should handle SQL loading errors', async () => {
       getStaticContentStub.rejects(new Error('Query SQL not found'));
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
 
-      await expect(collector.queryContentFragment404s('2025', '01', '15'))
+      await expect(collector.queryContentFragment404s(TEST_YEAR, TEST_MONTH, TEST_DAY))
         .to.be.rejectedWith('Query SQL not found');
     });
 
     it('should handle athena query errors', async () => {
       athenaClientStub.query.rejects(new Error('Query execution failed'));
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
 
-      await expect(collector.queryContentFragment404s('2025', '01', '15'))
+      await expect(collector.queryContentFragment404s(TEST_YEAR, TEST_MONTH, TEST_DAY))
         .to.be.rejectedWith('Query execution failed');
     });
 
     it('should handle invalid request_count values and default to 0', async () => {
       athenaClientStub.query.resolves([
-        { url: '/content/dam/fragment1', request_user_agent: 'Mozilla/5.0', request_count: 'invalid' },
-        { url: '/content/dam/fragment2', request_user_agent: 'Chrome/91.0', request_count: null },
-        { url: '/content/dam/fragment3', request_user_agent: 'Safari/14.0', request_count: undefined },
-        { url: '/content/dam/fragment4', request_user_agent: 'Edge/90.0', request_count: '' },
-        { url: '/content/dam/fragment5', request_user_agent: 'Opera/80.0', request_count: '10' },
+        { url: TEST_PATH_FRAGMENT1, request_user_agent: TEST_USER_AGENT_1, request_count: 'invalid' },
+        { url: TEST_PATH_FRAGMENT2, request_user_agent: TEST_USER_AGENT_2, request_count: null },
+        { url: TEST_PATH_FRAGMENT3, request_user_agent: TEST_USER_AGENT_3, request_count: undefined },
+        { url: TEST_PATH_FRAGMENT4, request_user_agent: TEST_USER_AGENT_4, request_count: '' },
+        { url: TEST_PATH_FRAGMENT5, request_user_agent: TEST_USER_AGENT_5, request_count: String(REQUEST_COUNT_SMALL) },
       ]);
 
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
-      const result = await collector.queryContentFragment404s('2025', '01', '15');
+      const result = await collector.queryContentFragment404s(TEST_YEAR, TEST_MONTH, TEST_DAY);
 
       expect(result).to.deep.equal([
         {
-          url: '/content/dam/fragment1',
-          requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 0 }],
-          requestCount: 0,
+          url: TEST_PATH_FRAGMENT1,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: REQUEST_COUNT_NONE }],
+          requestCount: REQUEST_COUNT_NONE,
         },
         {
-          url: '/content/dam/fragment2',
-          requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 0 }],
-          requestCount: 0,
+          url: TEST_PATH_FRAGMENT2,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_2, count: REQUEST_COUNT_NONE }],
+          requestCount: REQUEST_COUNT_NONE,
         },
         {
-          url: '/content/dam/fragment3',
-          requestUserAgents: [{ userAgent: 'Safari/14.0', count: 0 }],
-          requestCount: 0,
+          url: TEST_PATH_FRAGMENT3,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_3, count: REQUEST_COUNT_NONE }],
+          requestCount: REQUEST_COUNT_NONE,
         },
         {
-          url: '/content/dam/fragment4',
-          requestUserAgents: [{ userAgent: 'Edge/90.0', count: 0 }],
-          requestCount: 0,
+          url: TEST_PATH_FRAGMENT4,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_4, count: REQUEST_COUNT_NONE }],
+          requestCount: REQUEST_COUNT_NONE,
         },
         {
-          url: '/content/dam/fragment5',
-          requestUserAgents: [{ userAgent: 'Opera/80.0', count: 10 }],
-          requestCount: 10,
+          url: TEST_PATH_FRAGMENT5,
+          requestUserAgents: [{ userAgent: TEST_USER_AGENT_5, count: REQUEST_COUNT_SMALL }],
+          requestCount: REQUEST_COUNT_SMALL,
         },
       ]);
     });
@@ -771,29 +844,29 @@ describe('AthenaCollector', () => {
       // Mock getPreviousDayParts to return specific date
       const originalGetPreviousDayParts = AthenaCollector.getPreviousDayParts;
       AthenaCollector.getPreviousDayParts = sandbox.stub().returns({
-        year: '2025',
-        month: '01',
-        day: '14',
+        year: TEST_YEAR,
+        month: TEST_MONTH,
+        day: TEST_DAY_PREVIOUS,
       });
 
       try {
         const collector = new AthenaCollector(context);
-        collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+        collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
         collector.initialize();
       setTestConfig(collector);
         const result = await collector.fetchContentFragment404s();
 
         expect(result).to.deep.equal([
           {
-            url: '/content/dam/test/fragment1',
-            requestUserAgents: [{ userAgent: 'Mozilla/5.0', count: 10 }],
-            requestCount: 10,
+            url: TEST_PATH_1,
+            requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: REQUEST_COUNT_SMALL }],
+            requestCount: REQUEST_COUNT_SMALL,
           },
           {
-            url: '/content/dam/test/fragment2',
-            requestUserAgents: [{ userAgent: 'Chrome/91.0', count: 8 }],
-            requestCount: 8,
+            url: TEST_PATH_2,
+            requestUserAgents: [{ userAgent: TEST_USER_AGENT_2, count: REQUEST_COUNT_MEDIUM }],
+            requestCount: REQUEST_COUNT_MEDIUM,
           },
         ]);
       } finally {
@@ -805,8 +878,8 @@ describe('AthenaCollector', () => {
       athenaClientStub.execute.onFirstCall().rejects(new Error('Database creation failed'));
 
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
 
@@ -820,8 +893,8 @@ describe('AthenaCollector', () => {
       athenaClientStub.execute.onSecondCall().rejects(new Error('Table creation failed'));
 
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
 
@@ -835,8 +908,8 @@ describe('AthenaCollector', () => {
       athenaClientStub.query.rejects(new Error('Query failed'));
 
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
 
@@ -848,8 +921,8 @@ describe('AthenaCollector', () => {
 
     it('should call ensureDatabase and ensureTable in correct order', async () => {
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
       const ensureDatabaseSpy = sandbox.spy(collector, 'ensureDatabase');
@@ -866,8 +939,8 @@ describe('AthenaCollector', () => {
       athenaClientStub.query.resolves([]);
 
       const collector = new AthenaCollector(context);
-      collector.imsOrg = 'test-ims-org';
-      collector.sanitizedHostname = 'test';
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
       collector.initialize();
       setTestConfig(collector);
       const result = await collector.fetchContentFragment404s();

@@ -21,6 +21,32 @@ import { MockContextBuilder } from '../../shared.js';
 use(sinonChai);
 use(chaiAsPromised);
 
+import {
+  TEST_PATH_BROKEN,
+  TEST_PATH_BROKEN_1,
+  TEST_PATH_BROKEN_2,
+  TEST_PATH_BROKEN_3,
+  TEST_PATH_BROKEN_NO_EXT,
+  TEST_PATH_FIXED_1,
+  TEST_PATH_SUGGESTED,
+  TEST_PATH_SUGGESTED_2,
+  PRIORITY_HIGH,
+  PRIORITY_MEDIUM,
+  PRIORITY_LOW,
+  STATUS_PUBLISHED,
+  STATUS_DRAFT,
+  SUGGESTION_TYPE_PUBLISH,
+  SUGGESTION_TYPE_LOCALE,
+  SUGGESTION_TYPE_SIMILAR,
+  SUGGESTION_TYPE_NOT_FOUND,
+  LOCALE_CODE_EN_US,
+  EXPECTED_RULES_COUNT,
+  EXPECTED_EMPTY_COUNT,
+} from './test-constants.js';
+
+const EXPECTED_SUGGESTIONS_COUNT_3 = 3;
+const EXPECTED_SUGGESTIONS_COUNT_1 = 1;
+
 describe('AnalysisStrategy', () => {
   let sandbox;
   let context;
@@ -52,32 +78,32 @@ describe('AnalysisStrategy', () => {
     mockPathIndex = {
       find: sandbox.stub().returns(null),
       insertContentPath: sandbox.stub(),
-      parseContentStatus: sandbox.stub().returns('PUBLISHED'),
+      parseContentStatus: sandbox.stub().returns(STATUS_PUBLISHED),
     };
 
     // Mock rules with priority methods
     mockPublishRule = {
-      getPriority: sandbox.stub().returns(1),
+      getPriority: sandbox.stub().returns(PRIORITY_HIGH),
       apply: sandbox.stub().resolves(null),
       constructor: { name: 'PublishRule' },
     };
 
     mockLocaleFallbackRule = {
-      getPriority: sandbox.stub().returns(2),
+      getPriority: sandbox.stub().returns(PRIORITY_MEDIUM),
       apply: sandbox.stub().resolves(null),
       constructor: { name: 'LocaleFallbackRule' },
     };
 
     mockSimilarPathRule = {
-      getPriority: sandbox.stub().returns(3),
+      getPriority: sandbox.stub().returns(PRIORITY_LOW),
       apply: sandbox.stub().resolves(null),
       constructor: { name: 'SimilarPathRule' },
     };
 
     mockSuggestion = {
       notFound: sandbox.stub().returns({
-        type: 'NOT_FOUND',
-        requestedPath: '/content/dam/test/broken.jpg',
+        type: SUGGESTION_TYPE_NOT_FOUND,
+        requestedPath: TEST_PATH_BROKEN,
         suggestedPath: null,
         reason: 'Not found',
       }),
@@ -85,11 +111,11 @@ describe('AnalysisStrategy', () => {
 
     mockContentPath = sandbox.stub().returns({
       isPublished: sandbox.stub().returns(true),
-      status: 'PUBLISHED',
+      status: STATUS_PUBLISHED,
     });
 
     mockLocale = {
-      fromPath: sandbox.stub().returns({ code: 'en-us' }),
+      fromPath: sandbox.stub().returns({ code: LOCALE_CODE_EN_US }),
     };
 
     const module = await esmock('../../../src/content-fragment-404/analysis/analysis-strategy.js', {
@@ -136,13 +162,13 @@ describe('AnalysisStrategy', () => {
       expect(strategy.context).to.equal(context);
       expect(strategy.aemClient).to.equal(mockAemClient);
       expect(strategy.pathIndex).to.equal(mockPathIndex);
-      expect(strategy.rules).to.have.lengthOf(3);
+      expect(strategy.rules).to.have.lengthOf(EXPECTED_RULES_COUNT);
     });
 
     it('should sort rules by priority', () => {
-      mockPublishRule.getPriority.returns(3);
-      mockLocaleFallbackRule.getPriority.returns(1);
-      mockSimilarPathRule.getPriority.returns(2);
+      mockPublishRule.getPriority.returns(PRIORITY_LOW);
+      mockLocaleFallbackRule.getPriority.returns(PRIORITY_HIGH);
+      mockSimilarPathRule.getPriority.returns(PRIORITY_MEDIUM);
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
 
@@ -155,12 +181,12 @@ describe('AnalysisStrategy', () => {
   describe('analyze method', () => {
     it('should analyze multiple broken paths', async () => {
       const brokenPaths = [
-        '/content/dam/test/broken1.jpg',
-        '/content/dam/test/broken2.jpg',
+        TEST_PATH_BROKEN_1,
+        TEST_PATH_BROKEN_2,
       ];
 
-      const suggestion1 = { type: 'PUBLISH', requestedPath: '/content/dam/test/broken1.jpg' };
-      const suggestion2 = { type: 'LOCALE', requestedPath: '/content/dam/test/broken2.jpg' };
+      const suggestion1 = { type: SUGGESTION_TYPE_PUBLISH, requestedPath: TEST_PATH_BROKEN_1 };
+      const suggestion2 = { type: SUGGESTION_TYPE_LOCALE, requestedPath: TEST_PATH_BROKEN_2 };
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const analyzePathStub = sandbox.stub(strategy, 'analyzePath');
@@ -172,20 +198,20 @@ describe('AnalysisStrategy', () => {
       const result = await strategy.analyze(brokenPaths);
 
       expect(analyzePathStub).to.have.been.calledTwice;
-      expect(analyzePathStub.firstCall).to.have.been.calledWith('/content/dam/test/broken1.jpg');
-      expect(analyzePathStub.secondCall).to.have.been.calledWith('/content/dam/test/broken2.jpg');
+      expect(analyzePathStub.firstCall).to.have.been.calledWith(TEST_PATH_BROKEN_1);
+      expect(analyzePathStub.secondCall).to.have.been.calledWith(TEST_PATH_BROKEN_2);
       expect(processSuggestionsStub).to.have.been.calledWith([suggestion1, suggestion2]);
       expect(result).to.deep.equal([suggestion1, suggestion2]);
     });
 
     it('should filter out null suggestions', async () => {
       const brokenPaths = [
-        '/content/dam/test/broken1.jpg',
-        '/content/dam/test/broken2.jpg',
-        '/content/dam/test/broken3.jpg',
+        TEST_PATH_BROKEN_1,
+        TEST_PATH_BROKEN_2,
+        TEST_PATH_BROKEN_3,
       ];
 
-      const suggestion1 = { type: 'PUBLISH', requestedPath: '/content/dam/test/broken1.jpg' };
+      const suggestion1 = { type: SUGGESTION_TYPE_PUBLISH, requestedPath: TEST_PATH_BROKEN_1 };
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const analyzePathStub = sandbox.stub(strategy, 'analyzePath');
@@ -215,8 +241,8 @@ describe('AnalysisStrategy', () => {
 
   describe('analyzePath method', () => {
     it('should return first successful rule suggestion', async () => {
-      const brokenPath = '/content/dam/test/broken.jpg';
-      const suggestion = { type: 'PUBLISH', requestedPath: brokenPath };
+      const brokenPath = TEST_PATH_BROKEN;
+      const suggestion = { type: SUGGESTION_TYPE_PUBLISH, requestedPath: brokenPath };
 
       mockPublishRule.apply.resolves(suggestion);
       mockLocaleFallbackRule.apply.resolves(null);
@@ -232,8 +258,8 @@ describe('AnalysisStrategy', () => {
     });
 
     it('should try all rules until one succeeds', async () => {
-      const brokenPath = '/content/dam/test/broken.jpg';
-      const suggestion = { type: 'LOCALE', requestedPath: brokenPath };
+      const brokenPath = TEST_PATH_BROKEN;
+      const suggestion = { type: SUGGESTION_TYPE_LOCALE, requestedPath: brokenPath };
 
       mockPublishRule.apply.resolves(null);
       mockLocaleFallbackRule.apply.resolves(suggestion);
@@ -249,8 +275,8 @@ describe('AnalysisStrategy', () => {
     });
 
     it('should return notFound suggestion when no rules succeed', async () => {
-      const brokenPath = '/content/dam/test/broken.jpg';
-      const notFoundSuggestion = { type: 'NOT_FOUND', requestedPath: brokenPath };
+      const brokenPath = TEST_PATH_BROKEN;
+      const notFoundSuggestion = { type: SUGGESTION_TYPE_NOT_FOUND, requestedPath: brokenPath };
 
       mockPublishRule.apply.resolves(null);
       mockLocaleFallbackRule.apply.resolves(null);
@@ -268,8 +294,8 @@ describe('AnalysisStrategy', () => {
     });
 
     it('should handle rule errors and continue to next rule', async () => {
-      const brokenPath = '/content/dam/test/broken.jpg';
-      const suggestion = { type: 'SIMILAR', requestedPath: brokenPath };
+      const brokenPath = TEST_PATH_BROKEN;
+      const suggestion = { type: SUGGESTION_TYPE_SIMILAR, requestedPath: brokenPath };
 
       mockPublishRule.apply.rejects(new Error('Publish rule failed'));
       mockLocaleFallbackRule.apply.rejects(new Error('Locale rule failed'));
@@ -286,8 +312,8 @@ describe('AnalysisStrategy', () => {
     });
 
     it('should return notFound when all rules fail with errors', async () => {
-      const brokenPath = '/content/dam/test/broken.jpg';
-      const notFoundSuggestion = { type: 'NOT_FOUND', requestedPath: brokenPath };
+      const brokenPath = TEST_PATH_BROKEN;
+      const notFoundSuggestion = { type: SUGGESTION_TYPE_NOT_FOUND, requestedPath: brokenPath };
 
       mockPublishRule.apply.rejects(new Error('Publish rule failed'));
       mockLocaleFallbackRule.apply.rejects(new Error('Locale rule failed'));
@@ -302,8 +328,8 @@ describe('AnalysisStrategy', () => {
     });
 
     it('should log rule application success', async () => {
-      const brokenPath = '/content/dam/test/broken.jpg';
-      const suggestion = { type: 'PUBLISH', requestedPath: brokenPath };
+      const brokenPath = TEST_PATH_BROKEN;
+      const suggestion = { type: SUGGESTION_TYPE_PUBLISH, requestedPath: brokenPath };
 
       mockPublishRule.apply.resolves(suggestion);
 
@@ -316,8 +342,8 @@ describe('AnalysisStrategy', () => {
   describe('processSuggestions method', () => {
     it('should pass through PUBLISH and NOT_FOUND suggestions unchanged', async () => {
       const suggestions = [
-        { type: 'PUBLISH', requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg' },
-        { type: 'NOT_FOUND', requestedPath: '/content/dam/test/broken2.jpg', suggestedPath: null },
+        { type: SUGGESTION_TYPE_PUBLISH, requestedPath: TEST_PATH_BROKEN_1, suggestedPath: TEST_PATH_FIXED_1 },
+        { type: SUGGESTION_TYPE_NOT_FOUND, requestedPath: TEST_PATH_BROKEN_2, suggestedPath: null },
       ];
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
@@ -329,30 +355,30 @@ describe('AnalysisStrategy', () => {
 
     it('should process LOCALE suggestions with published content', async () => {
       const suggestions = [
-        { type: 'LOCALE', requestedPath: '/content/dam/test/broken.jpg', suggestedPath: '/content/dam/test/suggested.jpg' },
+        { type: SUGGESTION_TYPE_LOCALE, requestedPath: TEST_PATH_BROKEN, suggestedPath: TEST_PATH_SUGGESTED },
       ];
 
       const contentPath = {
         isPublished: sandbox.stub().returns(true),
-        status: 'PUBLISHED',
+        status: STATUS_PUBLISHED,
       };
       mockPathIndex.find.returns(contentPath);
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.processSuggestions(suggestions);
 
-      expect(mockPathIndex.find).to.have.been.calledWith('/content/dam/test/suggested.jpg');
+      expect(mockPathIndex.find).to.have.been.calledWith(TEST_PATH_SUGGESTED);
       expect(result).to.deep.equal(suggestions);
     });
 
     it('should process SIMILAR suggestions with published content', async () => {
       const suggestions = [
-        { type: 'SIMILAR', requestedPath: '/content/dam/test/broken.jpg', suggestedPath: '/content/dam/test/suggested.jpg' },
+        { type: SUGGESTION_TYPE_SIMILAR, requestedPath: TEST_PATH_BROKEN, suggestedPath: TEST_PATH_SUGGESTED },
       ];
 
       const contentPath = {
         isPublished: sandbox.stub().returns(true),
-        status: 'PUBLISHED',
+        status: STATUS_PUBLISHED,
       };
       mockPathIndex.find.returns(contentPath);
 
@@ -364,20 +390,20 @@ describe('AnalysisStrategy', () => {
 
     it('should update reason for unpublished content', async () => {
       const suggestions = [
-        { type: 'LOCALE', requestedPath: '/content/dam/test/broken.jpg', suggestedPath: '/content/dam/test/suggested.jpg' },
+        { type: SUGGESTION_TYPE_LOCALE, requestedPath: TEST_PATH_BROKEN, suggestedPath: TEST_PATH_SUGGESTED },
       ];
 
       const contentPath = {
         isPublished: sandbox.stub().returns(false),
-        status: 'DRAFT',
+        status: STATUS_DRAFT,
       };
       mockPathIndex.find.returns(contentPath);
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.processSuggestions(suggestions);
 
-      expect(result).to.have.lengthOf(1);
-      expect(result[0].reason).to.equal('Content is in DRAFT state. Suggest publishing.');
+      expect(result).to.have.lengthOf(EXPECTED_SUGGESTIONS_COUNT_1);
+      expect(result[0].reason).to.equal(`Content is in ${STATUS_DRAFT} state. Suggest publishing.`);
     });
 
     it('should handle empty suggestions array', async () => {
@@ -389,21 +415,21 @@ describe('AnalysisStrategy', () => {
 
     it('should handle mixed suggestion types', async () => {
       const suggestions = [
-        { type: 'PUBLISH', requestedPath: '/content/dam/test/broken1.jpg', suggestedPath: '/content/dam/test/fixed1.jpg' },
-        { type: 'LOCALE', requestedPath: '/content/dam/test/broken2.jpg', suggestedPath: '/content/dam/test/suggested2.jpg' },
-        { type: 'NOT_FOUND', requestedPath: '/content/dam/test/broken3.jpg', suggestedPath: null },
+        { type: SUGGESTION_TYPE_PUBLISH, requestedPath: TEST_PATH_BROKEN_1, suggestedPath: TEST_PATH_FIXED_1 },
+        { type: SUGGESTION_TYPE_LOCALE, requestedPath: TEST_PATH_BROKEN_2, suggestedPath: TEST_PATH_SUGGESTED_2 },
+        { type: SUGGESTION_TYPE_NOT_FOUND, requestedPath: TEST_PATH_BROKEN_3, suggestedPath: null },
       ];
 
       const contentPath = {
         isPublished: sandbox.stub().returns(true),
-        status: 'PUBLISHED',
+        status: STATUS_PUBLISHED,
       };
-      mockPathIndex.find.onCall(0).returns(contentPath);
+      mockPathIndex.find.onCall(EXPECTED_EMPTY_COUNT).returns(contentPath);
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.processSuggestions(suggestions);
 
-      expect(result).to.have.lengthOf(3);
+      expect(result).to.have.lengthOf(EXPECTED_SUGGESTIONS_COUNT_3);
       expect(result[0]).to.equal(suggestions[0]); // PUBLISH unchanged
       expect(result[1]).to.equal(suggestions[1]); // LOCALE processed but unchanged (published)
       expect(result[2]).to.equal(suggestions[2]); // NOT_FOUND unchanged
@@ -412,33 +438,33 @@ describe('AnalysisStrategy', () => {
 
   describe('integration scenarios', () => {
     it('should work end-to-end with successful rule application', async () => {
-      const brokenPaths = ['/content/dam/test/broken'];
+      const brokenPaths = [TEST_PATH_BROKEN_NO_EXT];
       const suggestion = {
-        type: 'LOCALE',
-        requestedPath: '/content/dam/test/broken',
-        suggestedPath: '/content/dam/test/suggested.jpg',
+        type: SUGGESTION_TYPE_LOCALE,
+        requestedPath: TEST_PATH_BROKEN_NO_EXT,
+        suggestedPath: TEST_PATH_SUGGESTED,
       };
 
       mockLocaleFallbackRule.apply.resolves(suggestion);
 
       const contentPath = {
         isPublished: sandbox.stub().returns(true),
-        status: 'PUBLISHED',
+        status: STATUS_PUBLISHED,
       };
       mockPathIndex.find.returns(contentPath);
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.analyze(brokenPaths);
 
-      expect(result).to.have.lengthOf(1);
+      expect(result).to.have.lengthOf(EXPECTED_SUGGESTIONS_COUNT_1);
       expect(result[0]).to.equal(suggestion);
     });
 
     it('should handle no successful rules scenario', async () => {
-      const brokenPaths = ['/content/dam/test/broken.jpg'];
+      const brokenPaths = [TEST_PATH_BROKEN];
       const notFoundSuggestion = {
-        type: 'NOT_FOUND',
-        requestedPath: '/content/dam/test/broken.jpg',
+        type: SUGGESTION_TYPE_NOT_FOUND,
+        requestedPath: TEST_PATH_BROKEN,
         suggestedPath: null,
       };
 
@@ -450,42 +476,42 @@ describe('AnalysisStrategy', () => {
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.analyze(brokenPaths);
 
-      expect(result).to.have.lengthOf(1);
+      expect(result).to.have.lengthOf(EXPECTED_SUGGESTIONS_COUNT_1);
       expect(result[0]).to.equal(notFoundSuggestion);
     });
 
     it('should handle multiple paths with different outcomes', async () => {
       const brokenPaths = [
-        '/content/dam/test/broken1.jpg',
-        '/content/dam/test/broken2.jpg',
-        '/content/dam/test/broken3.jpg',
+        TEST_PATH_BROKEN_1,
+        TEST_PATH_BROKEN_2,
+        TEST_PATH_BROKEN_3,
       ];
 
-      const suggestion1 = { type: 'PUBLISH', requestedPath: '/content/dam/test/broken1.jpg' };
-      const suggestion2 = { type: 'LOCALE', requestedPath: '/content/dam/test/broken2.jpg', suggestedPath: '/content/dam/test/suggested2.jpg' };
-      const notFoundSuggestion = { type: 'NOT_FOUND', requestedPath: '/content/dam/test/broken3.jpg' };
+      const suggestion1 = { type: SUGGESTION_TYPE_PUBLISH, requestedPath: TEST_PATH_BROKEN_1 };
+      const suggestion2 = { type: SUGGESTION_TYPE_LOCALE, requestedPath: TEST_PATH_BROKEN_2, suggestedPath: TEST_PATH_SUGGESTED_2 };
+      const notFoundSuggestion = { type: SUGGESTION_TYPE_NOT_FOUND, requestedPath: TEST_PATH_BROKEN_3 };
 
       // Setup rule responses for different paths
-      mockPublishRule.apply.onCall(0).resolves(suggestion1);
-      mockPublishRule.apply.onCall(1).resolves(null);
-      mockPublishRule.apply.onCall(2).resolves(null);
+      mockPublishRule.apply.onCall(EXPECTED_EMPTY_COUNT).resolves(suggestion1);
+      mockPublishRule.apply.onCall(EXPECTED_SUGGESTIONS_COUNT_1).resolves(null);
+      mockPublishRule.apply.onCall(PRIORITY_MEDIUM).resolves(null);
 
-      mockLocaleFallbackRule.apply.onCall(0).resolves(suggestion2);
-      mockLocaleFallbackRule.apply.onCall(1).resolves(null);
+      mockLocaleFallbackRule.apply.onCall(EXPECTED_EMPTY_COUNT).resolves(suggestion2);
+      mockLocaleFallbackRule.apply.onCall(EXPECTED_SUGGESTIONS_COUNT_1).resolves(null);
 
       mockSimilarPathRule.apply.resolves(null);
       mockSuggestion.notFound.returns(notFoundSuggestion);
 
       const contentPath = {
         isPublished: sandbox.stub().returns(true),
-        status: 'PUBLISHED',
+        status: STATUS_PUBLISHED,
       };
       mockPathIndex.find.returns(contentPath);
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
       const result = await strategy.analyze(brokenPaths);
 
-      expect(result).to.have.lengthOf(3);
+      expect(result).to.have.lengthOf(EXPECTED_SUGGESTIONS_COUNT_3);
       expect(result[0]).to.equal(suggestion1);
       expect(result[1]).to.equal(suggestion2);
       expect(result[2]).to.equal(notFoundSuggestion);

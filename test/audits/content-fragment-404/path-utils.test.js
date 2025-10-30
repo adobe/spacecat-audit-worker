@@ -13,6 +13,29 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import { PathUtils } from '../../../src/content-fragment-404/utils/path-utils.js';
+import {
+  TEST_PATH_CONTENT_DAM,
+  TEST_PATH_CONTENT_DAM_SLASH,
+  TEST_PATH_CONTENT_DAM_IMAGES_PHOTO,
+  TEST_PATH_CONTENT_DAM_IMAGES_SLASH,
+  TEST_PATH_CONTENT_DAM_EN_US,
+  TEST_PATH_CONTENT_DAM_EN_US_SLASH,
+  TEST_PATH_CONTENT_DAM_EN_US_IMAGES,
+  TEST_PATH_CONTENT_DAM_EN_US_IMAGES_PHOTO,
+  TEST_PATH_CONTENT_DAM_123_IMAGES_PHOTO,
+  TEST_PATH_CONTENT_DAM_123_SLASH,
+  TEST_PATH_CONTENT_DAM_US_IMAGES_PHOTO,
+  TEST_PATH_CONTENT_DAM_FR_IMAGES_PHOTO,
+  TEST_PATH_CONTENT_DAM_FR_FR_IMAGES_PHOTO,
+  TEST_PATH_CONTENT_DAM_EN_US_US_IMAGES_PHOTO,
+  TEST_PATH_CONTENT_DAM_DOUBLE_SLASH_IMAGES_PHOTO,
+  TEST_PATH_CONTENT_DOUBLE_SLASH_DAM_IMAGES_PHOTO,
+  TEST_PATH_CONTENT_DAM_IMAGES_DOUBLE_SLASH_PHOTO,
+  TEST_PATH_CONTENT_DAM_TRIPLE_SLASH_IMAGES_PHOTO,
+  TEST_PATH_CONTENT_QUAD_SLASH_DAM_IMAGES_PHOTO,
+  TEST_PATH_SIX_SLASHES_CONTENT_DAM_IMAGES_PHOTO,
+  TEST_URL_EXAMPLE_COM_CONTENT_DAM_IMAGES_PHOTO,
+} from './test-constants.js';
 
 describe('PathUtils', () => {
   describe('removeLocaleFromPath', () => {
@@ -23,36 +46,36 @@ describe('PathUtils', () => {
     });
 
     it('should remove 2-letter locale from path', () => {
-      expect(PathUtils.removeLocaleFromPath('/content/dam/US/images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
-      expect(PathUtils.removeLocaleFromPath('/content/dam/fr/images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_US_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_FR_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
     });
 
     it('should remove 5-letter locale from path', () => {
-      expect(PathUtils.removeLocaleFromPath('/content/dam/en-US/images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
-      expect(PathUtils.removeLocaleFromPath('/content/dam/fr_FR/images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_EN_US_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_FR_FR_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
     });
 
     it('should remove multiple locales from path', () => {
-      expect(PathUtils.removeLocaleFromPath('/content/dam/en-US/US/images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_EN_US_US_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
     });
 
     it('should not remove non-locale segments', () => {
-      expect(PathUtils.removeLocaleFromPath('/content/dam/images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
-      expect(PathUtils.removeLocaleFromPath('/content/dam/123/images/photo.jpg'))
-        .to.equal('/content/dam/123/images/photo.jpg');
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_123_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_123_IMAGES_PHOTO);
     });
 
     it('should handle paths with no locales', () => {
-      expect(PathUtils.removeLocaleFromPath('/content/dam/images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
-      expect(PathUtils.removeLocaleFromPath('/content/dam/'))
-        .to.equal('/content/dam/');
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_SLASH))
+        .to.equal(TEST_PATH_CONTENT_DAM_SLASH);
     });
 
     it('should return null for paths not starting with /content/dam/', () => {
@@ -65,16 +88,16 @@ describe('PathUtils', () => {
     it('should return null for root paths', () => {
       expect(PathUtils.getParentPath('/')).to.be.null;
       expect(PathUtils.getParentPath('/content')).to.be.null;
-      expect(PathUtils.getParentPath('/content/dam')).to.be.null;
+      expect(PathUtils.getParentPath(TEST_PATH_CONTENT_DAM)).to.be.null;
     });
 
     it('should return parent path for valid paths', () => {
-      expect(PathUtils.getParentPath('/content/dam/en-US'))
-        .to.equal('/content/dam');
-      expect(PathUtils.getParentPath('/content/dam/en-US/images'))
-        .to.equal('/content/dam/en-US');
-      expect(PathUtils.getParentPath('/content/dam/en-US/images/photo.jpg'))
-        .to.equal('/content/dam/en-US/images');
+      expect(PathUtils.getParentPath(TEST_PATH_CONTENT_DAM_EN_US))
+        .to.equal(TEST_PATH_CONTENT_DAM);
+      expect(PathUtils.getParentPath(TEST_PATH_CONTENT_DAM_EN_US_IMAGES))
+        .to.equal(TEST_PATH_CONTENT_DAM_EN_US);
+      expect(PathUtils.getParentPath(TEST_PATH_CONTENT_DAM_EN_US_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_EN_US_IMAGES);
     });
 
     it('should return null for segment not starting with /content/dam/', () => {
@@ -89,8 +112,8 @@ describe('PathUtils', () => {
     });
 
     it('should handle paths with trailing slash', () => {
-      expect(PathUtils.getParentPath('/content/dam/en-US/'))
-        .to.equal('/content/dam');
+      expect(PathUtils.getParentPath(TEST_PATH_CONTENT_DAM_EN_US_SLASH))
+        .to.equal(TEST_PATH_CONTENT_DAM);
     });
   });
 
@@ -102,19 +125,19 @@ describe('PathUtils', () => {
     });
 
     it('should return true for paths with double slashes', () => {
-      expect(PathUtils.hasDoubleSlashes('/content/dam//images/photo.jpg')).to.be.true;
-      expect(PathUtils.hasDoubleSlashes('/content//dam/images/photo.jpg')).to.be.true;
-      expect(PathUtils.hasDoubleSlashes('/content/dam/images//photo.jpg')).to.be.true;
+      expect(PathUtils.hasDoubleSlashes(TEST_PATH_CONTENT_DAM_DOUBLE_SLASH_IMAGES_PHOTO)).to.be.true;
+      expect(PathUtils.hasDoubleSlashes(TEST_PATH_CONTENT_DOUBLE_SLASH_DAM_IMAGES_PHOTO)).to.be.true;
+      expect(PathUtils.hasDoubleSlashes(TEST_PATH_CONTENT_DAM_IMAGES_DOUBLE_SLASH_PHOTO)).to.be.true;
     });
 
     it('should return true for paths with multiple consecutive slashes', () => {
-      expect(PathUtils.hasDoubleSlashes('/content/dam///images/photo.jpg')).to.be.true;
-      expect(PathUtils.hasDoubleSlashes('/content////dam/images/photo.jpg')).to.be.true;
+      expect(PathUtils.hasDoubleSlashes(TEST_PATH_CONTENT_DAM_TRIPLE_SLASH_IMAGES_PHOTO)).to.be.true;
+      expect(PathUtils.hasDoubleSlashes(TEST_PATH_CONTENT_QUAD_SLASH_DAM_IMAGES_PHOTO)).to.be.true;
     });
 
     it('should return false for paths without double slashes', () => {
-      expect(PathUtils.hasDoubleSlashes('/content/dam/images/photo.jpg')).to.be.false;
-      expect(PathUtils.hasDoubleSlashes('/content/dam/')).to.be.false;
+      expect(PathUtils.hasDoubleSlashes(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO)).to.be.false;
+      expect(PathUtils.hasDoubleSlashes(TEST_PATH_CONTENT_DAM_SLASH)).to.be.false;
       expect(PathUtils.hasDoubleSlashes('/')).to.be.false;
     });
 
@@ -138,21 +161,21 @@ describe('PathUtils', () => {
     });
 
     it('should remove double slashes from paths', () => {
-      expect(PathUtils.removeDoubleSlashes('/content/dam//images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
-      expect(PathUtils.removeDoubleSlashes('/content//dam/images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
-      expect(PathUtils.removeDoubleSlashes('/content/dam/images//photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeDoubleSlashes(TEST_PATH_CONTENT_DAM_DOUBLE_SLASH_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
+      expect(PathUtils.removeDoubleSlashes(TEST_PATH_CONTENT_DOUBLE_SLASH_DAM_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
+      expect(PathUtils.removeDoubleSlashes(TEST_PATH_CONTENT_DAM_IMAGES_DOUBLE_SLASH_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
     });
 
     it('should remove multiple consecutive slashes', () => {
-      expect(PathUtils.removeDoubleSlashes('/content/dam///images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
-      expect(PathUtils.removeDoubleSlashes('/content////dam/images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
-      expect(PathUtils.removeDoubleSlashes('//////content/dam/images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
+      expect(PathUtils.removeDoubleSlashes(TEST_PATH_CONTENT_DAM_TRIPLE_SLASH_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
+      expect(PathUtils.removeDoubleSlashes(TEST_PATH_CONTENT_QUAD_SLASH_DAM_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
+      expect(PathUtils.removeDoubleSlashes(TEST_PATH_SIX_SLASHES_CONTENT_DAM_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
     });
 
     it('should preserve protocol slashes', () => {
@@ -172,36 +195,36 @@ describe('PathUtils', () => {
     });
 
     it('should handle paths without double slashes', () => {
-      expect(PathUtils.removeDoubleSlashes('/content/dam/images/photo.jpg'))
-        .to.equal('/content/dam/images/photo.jpg');
-      expect(PathUtils.removeDoubleSlashes('/content/dam/'))
-        .to.equal('/content/dam/');
+      expect(PathUtils.removeDoubleSlashes(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_PHOTO);
+      expect(PathUtils.removeDoubleSlashes(TEST_PATH_CONTENT_DAM_SLASH))
+        .to.equal(TEST_PATH_CONTENT_DAM_SLASH);
       expect(PathUtils.removeDoubleSlashes('/'))
         .to.equal('/');
     });
 
     it('should handle complex mixed scenarios', () => {
       expect(PathUtils.removeDoubleSlashes('https://example.com///content//dam///images//photo.jpg'))
-        .to.equal('https://example.com/content/dam/images/photo.jpg');
+        .to.equal(TEST_URL_EXAMPLE_COM_CONTENT_DAM_IMAGES_PHOTO);
     });
   });
 
   describe('removeLocaleFromPath edge cases', () => {
     it('should preserve trailing slash when no locale is found', () => {
-      expect(PathUtils.removeLocaleFromPath('/content/dam/images/'))
-        .to.equal('/content/dam/images/');
-      expect(PathUtils.removeLocaleFromPath('/content/dam/123/'))
-        .to.equal('/content/dam/123/');
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_IMAGES_SLASH))
+        .to.equal(TEST_PATH_CONTENT_DAM_IMAGES_SLASH);
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_123_SLASH))
+        .to.equal(TEST_PATH_CONTENT_DAM_123_SLASH);
     });
 
     it('should remove trailing slash when locale is found', () => {
-      expect(PathUtils.removeLocaleFromPath('/content/dam/en-US/'))
-        .to.equal('/content/dam');
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_EN_US_SLASH))
+        .to.equal(TEST_PATH_CONTENT_DAM);
     });
 
     it('should handle edge case with just /content/dam/', () => {
-      expect(PathUtils.removeLocaleFromPath('/content/dam/'))
-        .to.equal('/content/dam/');
+      expect(PathUtils.removeLocaleFromPath(TEST_PATH_CONTENT_DAM_SLASH))
+        .to.equal(TEST_PATH_CONTENT_DAM_SLASH);
     });
   });
 });
