@@ -280,7 +280,7 @@ describe('LLM Error Pages Handler', function () {
       expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] Submitting 3 pages for scraping');
     });
 
-    it('should limit to 100 pages when submitting for scraping', async () => {
+    it('should submit all pages for scraping without limit', async () => {
       audit.getAuditResult.returns({ success: true });
       const manyPages = Array.from({ length: 150 }, (_, i) => ({
         getUrl: () => `https://example.com/page${i}`,
@@ -289,7 +289,7 @@ describe('LLM Error Pages Handler', function () {
 
       const result = await submitForScraping(context);
 
-      expect(result.urls).to.have.lengthOf(100);
+      expect(result.urls).to.have.lengthOf(150);
       expect(context.log.info).to.have.been.calledWith('[LLM-ERROR-PAGES] Submitting 150 pages for scraping');
     });
 

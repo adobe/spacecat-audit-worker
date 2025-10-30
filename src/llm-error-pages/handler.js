@@ -110,7 +110,7 @@ export async function submitForScraping(context) {
   log.info(`[LLM-ERROR-PAGES] Submitting ${topPages.length} pages for scraping`);
 
   return {
-    urls: topPages.slice(0, 100).map((topPage) => ({ url: topPage.getUrl() })),
+    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
     siteId: site.getId(),
     type: 'llm-error-pages',
   };
