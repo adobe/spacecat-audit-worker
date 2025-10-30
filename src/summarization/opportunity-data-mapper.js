@@ -12,7 +12,7 @@
 
 import { DATA_SOURCES } from '../common/constants.js';
 
-export function createOpportunityData(siteId, auditId, guidance) {
+export function createGenericOpportunityData(siteId, auditId, guidance) {
   return {
     siteId,
     auditId,
@@ -26,6 +26,24 @@ export function createOpportunityData(siteId, auditId, guidance) {
     tags: ['isElmo'],
     data: {
       subType: 'summarization',
+      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.PAGE],
+    },
+  };
+}
+
+export function createSpecificOpportunityData(siteId, auditId, guidance) {
+  return {
+    siteId,
+    auditId,
+    runbook: 'https://adobe.sharepoint.com/:w:/r/sites/aemsites-engineering/Shared%20Documents/3%20-%20Experience%20Success/SpaceCat/Runbooks/Experience_Success_Studio_Summarization_Runbook.docx?d=w5ec0880fdc7a41c786c7409157f5de48&csf=1&web=1&e=vXnRVq',
+    origin: 'AUTOMATION',
+    type: 'summarization',
+    title: 'Content Summarization Improvements for High Traffic Content Pages',
+    description: 'Content summarization elements such as summary and key points improve content discoverability and user engagement.',
+    status: 'NEW',
+    guidance,
+    tags: ['isElmo'],
+    data: {
       dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.PAGE],
     },
   };

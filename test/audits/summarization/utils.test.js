@@ -13,7 +13,7 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { getSuggestionValue } from '../../../src/summarization/utils.js';
+import { getMarkdownSummarySuggestion } from '../../../src/summarization/utils.js';
 
 use(sinonChai);
 
@@ -33,7 +33,7 @@ describe('Summarization Utils', () => {
   });
 
 
-  describe('getSuggestionValue', () => {
+  describe('getMarkdownSummarySuggestion', () => {
     it('should format suggestions with all content types', () => {
       const suggestions = [
         {
@@ -61,7 +61,7 @@ describe('Summarization Utils', () => {
         },
       ];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getMarkdownSummarySuggestion(suggestions, mockLog);
 
       expect(result).to.include('## 1. Page Title 1');
       expect(result).to.include('[/page1](https://example.com/page1)');
@@ -92,7 +92,7 @@ describe('Summarization Utils', () => {
         },
       ];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getMarkdownSummarySuggestion(suggestions, mockLog);
 
       expect(result).to.include('## 1. Valid Page');
       expect(result).to.include('[/valid](https://example.com/valid)');
@@ -112,7 +112,7 @@ describe('Summarization Utils', () => {
         },
       ];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getMarkdownSummarySuggestion(suggestions, mockLog);
 
       expect(result).to.include('## 1. Summary Only Page');
       expect(result).to.include('[/summary-only](https://example.com/summary-only)');
@@ -135,7 +135,7 @@ describe('Summarization Utils', () => {
         },
       ];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getMarkdownSummarySuggestion(suggestions, mockLog);
 
       expect(result).to.include('## 1. Page 1');
       expect(result).to.include('[/keypoints-only](https://example.com/keypoints-only)');
@@ -167,7 +167,7 @@ describe('Summarization Utils', () => {
         },
       ];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getMarkdownSummarySuggestion(suggestions, mockLog);
 
       expect(result).to.include('## 1. Page 1');
       expect(result).to.include('[/sections-only](https://example.com/sections-only)');
@@ -197,7 +197,7 @@ describe('Summarization Utils', () => {
         },
       ];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getMarkdownSummarySuggestion(suggestions, mockLog);
 
       expect(result).to.include('## 1. Page 1');
       expect(result).to.include('[/page1](https://example.com/page1)');
@@ -217,7 +217,7 @@ describe('Summarization Utils', () => {
         },
       ];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getMarkdownSummarySuggestion(suggestions, mockLog);
 
       expect(result).to.include('## 1. Valid Page');
       expect(result).to.include('[/valid](https://example.com/valid)');
@@ -228,7 +228,7 @@ describe('Summarization Utils', () => {
     it('should handle empty suggestions array', () => {
       const suggestions = [];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getMarkdownSummarySuggestion(suggestions, mockLog);
 
       expect(result).to.equal('');
     });
@@ -249,7 +249,7 @@ describe('Summarization Utils', () => {
         },
       ];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getMarkdownSummarySuggestion(suggestions, mockLog);
 
       expect(result).to.include('- Valid point');
       expect(result).to.include('- Another valid point');
@@ -272,7 +272,7 @@ describe('Summarization Utils', () => {
         },
       ];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getMarkdownSummarySuggestion(suggestions, mockLog);
 
       expect(result).to.equal('');
       expect(mockLog.info).to.have.been.calledWith('Skipping suggestion with no meaningful content for URL: https://example.com/whitespace');
@@ -307,7 +307,7 @@ describe('Summarization Utils', () => {
         },
       ];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getMarkdownSummarySuggestion(suggestions, mockLog);
 
       expect(result).to.include('## 1. Formatted Test');
       expect(result).to.include('[/formatted](https://example.com/formatted)');
