@@ -27,10 +27,10 @@ export class AnalysisStrategy {
     ].sort((a, b) => a.getPriority() - b.getPriority());
   }
 
-  async analyze(brokenPaths) {
+  async analyze(contentFragment404s) {
     const suggestions = [];
 
-    for (const path of brokenPaths) {
+    for (const path of contentFragment404s) {
       // eslint-disable-next-line no-await-in-loop
       const suggestion = await this.analyzePath(path);
       if (suggestion) {

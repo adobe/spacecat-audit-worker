@@ -31,14 +31,14 @@ async function fetchContentFragment404s(context) {
   const { log } = context;
 
   const collector = await AthenaCollector.createFrom(context);
-  const brokenPaths = await collector.fetchContentFragment404s();
+  const contentFragment404s = await collector.fetchContentFragment404s();
 
-  log.info(`Found ${brokenPaths.length} content fragment 404s from ${collector.constructor.name}`);
+  log.info(`Found ${contentFragment404s.length} content fragment 404s from ${collector.constructor.name}`);
 
-  return brokenPaths;
+  return contentFragment404s;
 }
 
-async function analyzeContentFragment404s(context, brokenPaths) {
+async function analyzeContentFragment404s(context, contentFragment404s) {
   const { log } = context;
 
   const pathIndex = new PathIndex(context);
@@ -46,8 +46,8 @@ async function analyzeContentFragment404s(context, brokenPaths) {
   const aemClient = AemClient.createFrom(context, cache);
   const strategy = new AnalysisStrategy(context, aemClient, pathIndex);
 
-  // Extract URLs for analysis while keeping the full brokenPaths data
-  const urls = brokenPaths.map((item) => item.url || item);
+  // Extract URLs for analysis while keeping the full contentFragment404s data
+  const urls = contentFragment404s.map((item) => item.url || item);
   const suggestions = await strategy.analyze(urls);
 
   log.info(`Found ${suggestions.length} suggestions for content fragment 404s`);
@@ -61,7 +61,7 @@ export async function createContentFragmentPathSuggestions(
   context,
 ) {
   const { log } = context;
-  const { brokenPaths, suggestions } = auditData.auditResult;
+  const { contentFragment404s, suggestions } = auditData.auditResult;
 
   if (!suggestions || suggestions.length === 0) {
     log.info('No suggestions to create');
@@ -76,17 +76,17 @@ export async function createContentFragmentPathSuggestions(
     AUDIT_TYPE,
   );
 
-  const brokenPathsMap = new Map(
-    brokenPaths.map((brokenPath) => [brokenPath.url, brokenPath]),
+  const contentFragment404sMap = new Map(
+    contentFragment404s.map((brokenPath) => [brokenPath.url, brokenPath]),
   );
 
   // Enrich suggestions with request metadata
   const enrichedSuggestions = suggestions.map((suggestion) => {
-    const brokenPathData = brokenPathsMap.get(suggestion.requestedPath);
+    const contentFragment404Data = contentFragment404sMap.get(suggestion.requestedPath);
     return {
       ...suggestion,
-      requestCount: brokenPathData?.requestCount || 0,
-      requestUserAgents: brokenPathData?.requestUserAgents || [],
+      requestCount: contentFragment404Data?.requestCount || 0,
+      requestUserAgents: contentFragment404Data?.requestUserAgents || [],
     };
   });
 
@@ -153,7 +153,7 @@ export async function enrichContentFragmentPathSuggestions(
     url: auditUrl,
     data: {
       opportunityId: opportunity.getId(),
-      brokenPaths: syncedSuggestions.map((suggestion) => ({
+      contentFragment404s: syncedSuggestions.map((suggestion) => ({
         suggestionId: suggestion.getId(),
         requestedPath: suggestion.getData().requestedPath,
         requestCount: suggestion.getData().requestCount,
@@ -172,13 +172,13 @@ export async function enrichContentFragmentPathSuggestions(
 export async function contentFragment404AuditRunner(baseURL, context, site) {
   const auditContext = { ...context, site };
 
-  const brokenPaths = await fetchContentFragment404s(auditContext);
-  const suggestions = await analyzeContentFragment404s(auditContext, brokenPaths);
+  const contentFragment404s = await fetchContentFragment404s(auditContext);
+  const suggestions = await analyzeContentFragment404s(auditContext, contentFragment404s);
 
   return {
     fullAuditRef: baseURL,
     auditResult: {
-      brokenPaths,
+      contentFragment404s,
       suggestions,
     },
   };

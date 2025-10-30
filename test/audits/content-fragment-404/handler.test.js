@@ -193,7 +193,7 @@ describe('Broken Content Fragment Links Handler', () => {
       expect(result).to.deep.equal({
         fullAuditRef: baseURL,
         auditResult: {
-          brokenPaths: [
+          contentFragment404s: [
             { url: TEST_PATH_1, requestCount: REQUEST_COUNT_1, requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }] },
             { url: TEST_PATH_2, requestCount: REQUEST_COUNT_2, requestUserAgents: [{ userAgent: TEST_USER_AGENT_2, count: USER_AGENT_COUNT_2 }] },
           ],
@@ -211,11 +211,11 @@ describe('Broken Content Fragment Links Handler', () => {
 
       const result = await handlerModule.contentFragment404AuditRunner(baseURL, context, site);
 
-      expect(result.auditResult.brokenPaths).to.deep.equal([]);
+      expect(result.auditResult.contentFragment404s).to.deep.equal([]);
       expect(result.auditResult.suggestions).to.deep.equal([]);
     });
 
-    it('should handle mixed format in brokenPaths (objects and strings)', async () => {
+    it('should handle mixed format in contentFragment404s (objects and strings)', async () => {
       athenaCollectorStub.fetchContentFragment404s.resolves([
         { url: TEST_OBJECT_FORMAT_PATH, requestCount: REQUEST_COUNT_LOW, requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }] },
         TEST_STRING_FORMAT_PATH,
@@ -251,7 +251,7 @@ describe('Broken Content Fragment Links Handler', () => {
       auditData = {
         id: TEST_AUDIT_ID,
         auditResult: {
-          brokenPaths: [
+          contentFragment404s: [
             { url: TEST_PATH_1, requestCount: REQUEST_COUNT_1, requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }] },
             { url: TEST_PATH_2, requestCount: REQUEST_COUNT_2, requestUserAgents: [{ userAgent: TEST_USER_AGENT_2, count: USER_AGENT_COUNT_2 }] },
           ],
@@ -307,7 +307,7 @@ describe('Broken Content Fragment Links Handler', () => {
       expect(syncSuggestionsStub).not.to.have.been.called;
     });
 
-    it('should enrich suggestions with requestCount and requestUserAgents from brokenPaths', async () => {
+    it('should enrich suggestions with requestCount and requestUserAgents from contentFragment404s', async () => {
       await handlerModule.createContentFragmentPathSuggestions(baseURL, auditData, context);
 
       const syncArgs = syncSuggestionsStub.firstCall.args[0];
@@ -317,8 +317,8 @@ describe('Broken Content Fragment Links Handler', () => {
       expect(syncArgs.newData[1].requestUserAgents).to.deep.equal([{ userAgent: TEST_USER_AGENT_2, count: USER_AGENT_COUNT_2 }]);
     });
 
-    it('should handle missing requestCount and requestUserAgents in brokenPaths', async () => {
-      auditData.auditResult.brokenPaths = [
+    it('should handle missing requestCount and requestUserAgents in contentFragment404s', async () => {
+      auditData.auditResult.contentFragment404s = [
         { url: TEST_PATH_1 },
       ];
       auditData.auditResult.suggestions = [
@@ -391,7 +391,7 @@ describe('Broken Content Fragment Links Handler', () => {
       auditData = {
         id: TEST_AUDIT_ID,
         auditResult: {
-          brokenPaths: [
+          contentFragment404s: [
             { url: TEST_PATH_1, requestCount: REQUEST_COUNT_1, requestUserAgents: [{ userAgent: TEST_USER_AGENT_1, count: USER_AGENT_COUNT_1 }] },
           ],
           suggestions: [
@@ -488,9 +488,9 @@ describe('Broken Content Fragment Links Handler', () => {
       expect(new Date(message.time)).to.be.a('date');
 
       expect(message.data).to.have.property('opportunityId', TEST_OPPORTUNITY_ID);
-      expect(message.data.brokenPaths).to.be.an('array').with.lengthOf(EXPECTED_SINGLE_SUGGESTION_COUNT);
+      expect(message.data.contentFragment404s).to.be.an('array').with.lengthOf(EXPECTED_SINGLE_SUGGESTION_COUNT);
       
-      const brokenPath = message.data.brokenPaths[0];
+      const brokenPath = message.data.contentFragment404s[0];
       expect(brokenPath).to.have.property('suggestionId', TEST_SUGGESTION_ID);
       expect(brokenPath).to.have.property('requestedPath', TEST_PATH_1);
       expect(brokenPath).to.have.property('requestCount', REQUEST_COUNT_1);
@@ -517,9 +517,9 @@ describe('Broken Content Fragment Links Handler', () => {
       await handlerModule.enrichContentFragmentPathSuggestions(baseURL, auditData, context, site);
 
       const message = context.sqs.sendMessage.getCall(0).args[1];
-      expect(message.data.brokenPaths).to.have.lengthOf(EXPECTED_SUGGESTIONS_COUNT);
-      expect(message.data.brokenPaths[0].suggestionId).to.equal(TEST_SUGGESTION_ID);
-      expect(message.data.brokenPaths[1].suggestionId).to.equal(TEST_SUGGESTION_ID_2);
+      expect(message.data.contentFragment404s).to.have.lengthOf(EXPECTED_SUGGESTIONS_COUNT);
+      expect(message.data.contentFragment404s[0].suggestionId).to.equal(TEST_SUGGESTION_ID);
+      expect(message.data.contentFragment404s[1].suggestionId).to.equal(TEST_SUGGESTION_ID_2);
     });
   });
 

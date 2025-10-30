@@ -129,10 +129,10 @@ export class AthenaCollector {
       await this.ensureDatabase();
       await this.ensureTable();
 
-      const brokenPaths = await this.queryContentFragment404s(year, month, day);
+      const contentFragment404s = await this.queryContentFragment404s(year, month, day);
 
-      log.info(`Found ${brokenPaths.length} content fragment 404s from Athena`);
-      return brokenPaths;
+      log.info(`Found ${contentFragment404s.length} content fragment 404s from Athena`);
+      return contentFragment404s;
     } catch (error) {
       log.error(`Athena query failed: ${error.message}`);
       throw new Error(`Athena query failed: ${error.message}`);
@@ -187,12 +187,12 @@ export class AthenaCollector {
       entry.totalCount += parsedCount;
     });
 
-    const brokenPaths = Array.from(urlMap.entries()).map(([url, data]) => ({
+    const contentFragment404s = Array.from(urlMap.entries()).map(([url, data]) => ({
       url,
       requestUserAgents: data.userAgents,
       requestCount: data.totalCount,
     }));
 
-    return brokenPaths;
+    return contentFragment404s;
   }
 }

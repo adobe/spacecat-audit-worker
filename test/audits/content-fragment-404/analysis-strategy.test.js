@@ -180,7 +180,7 @@ describe('AnalysisStrategy', () => {
 
   describe('analyze method', () => {
     it('should analyze multiple broken paths', async () => {
-      const brokenPaths = [
+      const contentFragment404s = [
         TEST_PATH_BROKEN_1,
         TEST_PATH_BROKEN_2,
       ];
@@ -195,7 +195,7 @@ describe('AnalysisStrategy', () => {
 
       const processSuggestionsStub = sandbox.stub(strategy, 'processSuggestions').resolves([suggestion1, suggestion2]);
 
-      const result = await strategy.analyze(brokenPaths);
+      const result = await strategy.analyze(contentFragment404s);
 
       expect(analyzePathStub).to.have.been.calledTwice;
       expect(analyzePathStub.firstCall).to.have.been.calledWith(TEST_PATH_BROKEN_1);
@@ -205,7 +205,7 @@ describe('AnalysisStrategy', () => {
     });
 
     it('should filter out null suggestions', async () => {
-      const brokenPaths = [
+      const contentFragment404s = [
         TEST_PATH_BROKEN_1,
         TEST_PATH_BROKEN_2,
         TEST_PATH_BROKEN_3,
@@ -221,7 +221,7 @@ describe('AnalysisStrategy', () => {
 
       const processSuggestionsStub = sandbox.stub(strategy, 'processSuggestions').resolves([suggestion1]);
 
-      const result = await strategy.analyze(brokenPaths);
+      const result = await strategy.analyze(contentFragment404s);
 
       expect(analyzePathStub).to.have.been.calledThrice;
       expect(processSuggestionsStub).to.have.been.calledWith([suggestion1]);
@@ -438,7 +438,7 @@ describe('AnalysisStrategy', () => {
 
   describe('integration scenarios', () => {
     it('should work end-to-end with successful rule application', async () => {
-      const brokenPaths = [TEST_PATH_BROKEN_NO_EXT];
+      const contentFragment404s = [TEST_PATH_BROKEN_NO_EXT];
       const suggestion = {
         type: SUGGESTION_TYPE_LOCALE,
         requestedPath: TEST_PATH_BROKEN_NO_EXT,
@@ -454,14 +454,14 @@ describe('AnalysisStrategy', () => {
       mockPathIndex.find.returns(contentPath);
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
-      const result = await strategy.analyze(brokenPaths);
+      const result = await strategy.analyze(contentFragment404s);
 
       expect(result).to.have.lengthOf(EXPECTED_SUGGESTIONS_COUNT_1);
       expect(result[0]).to.equal(suggestion);
     });
 
     it('should handle no successful rules scenario', async () => {
-      const brokenPaths = [TEST_PATH_BROKEN];
+      const contentFragment404s = [TEST_PATH_BROKEN];
       const notFoundSuggestion = {
         type: SUGGESTION_TYPE_NOT_FOUND,
         requestedPath: TEST_PATH_BROKEN,
@@ -474,14 +474,14 @@ describe('AnalysisStrategy', () => {
       mockSuggestion.notFound.returns(notFoundSuggestion);
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
-      const result = await strategy.analyze(brokenPaths);
+      const result = await strategy.analyze(contentFragment404s);
 
       expect(result).to.have.lengthOf(EXPECTED_SUGGESTIONS_COUNT_1);
       expect(result[0]).to.equal(notFoundSuggestion);
     });
 
     it('should handle multiple paths with different outcomes', async () => {
-      const brokenPaths = [
+      const contentFragment404s = [
         TEST_PATH_BROKEN_1,
         TEST_PATH_BROKEN_2,
         TEST_PATH_BROKEN_3,
@@ -509,7 +509,7 @@ describe('AnalysisStrategy', () => {
       mockPathIndex.find.returns(contentPath);
 
       const strategy = new AnalysisStrategy(context, mockAemClient, mockPathIndex);
-      const result = await strategy.analyze(brokenPaths);
+      const result = await strategy.analyze(contentFragment404s);
 
       expect(result).to.have.lengthOf(EXPECTED_SUGGESTIONS_COUNT_3);
       expect(result[0]).to.equal(suggestion1);
