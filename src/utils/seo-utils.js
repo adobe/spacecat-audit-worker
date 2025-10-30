@@ -41,6 +41,22 @@ const issueRankings = {
 };
 
 /**
+ * Trims whitespace from string or array of strings.
+ * Used for cleaning scraped meta tag content (title, description, h1).
+ * @param {string|string[]|null|undefined} value - Value to trim
+ * @returns {string|string[]|null} - Trimmed value(s)
+ */
+export function trimTagValue(value) {
+  if (!value) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => (typeof item === 'string' ? item.trim() : item));
+  }
+  return typeof value === 'string' ? value.trim() : value;
+}
+
+/**
  * Returns the tag issue rank based on SEO impact.
  * The rank helps in sorting issues by priority.
  * Ranking (low number means high rank):
