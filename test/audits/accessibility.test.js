@@ -44,6 +44,7 @@ describe('Accessibility Audit Handler', () => {
     mockSite = {
       getId: sandbox.stub().returns('test-site-id'),
       getBaseURL: sandbox.stub().returns('https://example.com'),
+      getConfig: sandbox.stub().resolves(null),
     };
 
     // Mock S3 client
@@ -150,6 +151,9 @@ describe('Accessibility Audit Handler', () => {
         siteId: 'test-site-id',
         jobId: 'test-site-id',
         processingType: 'accessibility',
+        options: {
+          accessibilityScrapingParams: null,
+        },
       });
     });
 
@@ -295,6 +299,184 @@ describe('Accessibility Audit Handler', () => {
       // Act & Assert
       await expect(scrapeAccessibilityData(mockContext))
         .to.be.rejectedWith('Invalid input parameters');
+    });
+
+    it('should call site.getConfig and extract accessibility scraping params', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      const mockConfig = {
+        state: {
+          handlers: {
+            accessibility: {
+              scrapingParams: {
+                timeout: 30000,
+                waitForSelector: '.content',
+                enableJS: true,
+              },
+            },
+          },
+        },
+      };
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.resolves(mockConfig);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockSite.getConfig).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Accessibility scraping params for site test-site-id (https://example.com): {\n  "timeout": 30000,\n  "waitForSelector": ".content",\n  "enableJS": true\n}',
+      );
+      expect(result.options.accessibilityScrapingParams).to.deep.equal({
+        timeout: 30000,
+        waitForSelector: '.content',
+        enableJS: true,
+      });
+    });
+
+    it('should handle null config from site.getConfig', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.resolves(null);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockSite.getConfig).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Accessibility scraping params for site test-site-id (https://example.com): null',
+      );
+      expect(result.options.accessibilityScrapingParams).to.be.null;
+    });
+
+    it('should handle undefined config from site.getConfig', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.resolves(undefined);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockSite.getConfig).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Accessibility scraping params for site test-site-id (https://example.com): null',
+      );
+      expect(result.options.accessibilityScrapingParams).to.be.null;
+    });
+
+    it('should handle config without accessibility handler configuration', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      const mockConfig = {
+        state: {
+          handlers: {
+            // No accessibility handler config
+            otherHandler: {
+              someParam: 'value',
+            },
+          },
+        },
+      };
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.resolves(mockConfig);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockSite.getConfig).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Accessibility scraping params for site test-site-id (https://example.com): null',
+      );
+      expect(result.options.accessibilityScrapingParams).to.be.null;
+    });
+
+    it('should handle config without state property', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      const mockConfig = {
+        // No state property
+        someOtherProperty: 'value',
+      };
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.resolves(mockConfig);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockSite.getConfig).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Accessibility scraping params for site test-site-id (https://example.com): null',
+      );
+      expect(result.options.accessibilityScrapingParams).to.be.null;
+    });
+
+    it('should handle config with accessibility handler but no scrapingParams', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      const mockConfig = {
+        state: {
+          handlers: {
+            accessibility: {
+              // No scrapingParams property
+              otherParam: 'value',
+            },
+          },
+        },
+      };
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.resolves(mockConfig);
+
+      // Act
+      const result = await scrapeAccessibilityData(mockContext);
+
+      // Assert
+      expect(mockSite.getConfig).to.have.been.calledOnce;
+      expect(mockContext.log.info).to.have.been.calledWith(
+        '[A11yAudit] Accessibility scraping params for site test-site-id (https://example.com): null',
+      );
+      expect(result.options.accessibilityScrapingParams).to.be.null;
+    });
+
+    it('should handle site.getConfig throwing an error', async () => {
+      // Arrange
+      const mockUrls = [
+        { url: 'https://example.com/page1', urlId: 'example.com/page1', traffic: 100 },
+      ];
+      const configError = new Error('Failed to get site config');
+      
+      getUrlsForAuditStub.resolves(mockUrls);
+      mockSite.getConfig.rejects(configError);
+
+      // Act & Assert
+      await expect(scrapeAccessibilityData(mockContext))
+        .to.be.rejectedWith('Failed to get site config');
+      
+      expect(mockSite.getConfig).to.have.been.calledOnce;
     });
 
     it('should fetch and log top pages information', async () => {
@@ -1274,6 +1456,142 @@ describe('Accessibility Audit Handler', () => {
         'test-site-id',
         sinon.match.object,
       );
+    });
+  });
+
+  describe('Handler Configuration', () => {
+    let handlerModule;
+
+    beforeEach(async () => {
+      // Import the handler module with default export
+      handlerModule = await esmock('../../src/accessibility/handler.js', {
+        '../../src/accessibility/utils/data-processing.js': {
+          getUrlsForAudit: getUrlsForAuditStub,
+          aggregateAccessibilityData: aggregateAccessibilityDataStub,
+          generateReportOpportunities: generateReportOpportunitiesStub,
+          sendRunImportMessage: sendRunImportMessageStub,
+        },
+        '../../src/accessibility/utils/generate-individual-opportunities.js': {
+          createAccessibilityIndividualOpportunities: createAccessibilityIndividualOpportunitiesStub,
+        },
+        '../../src/accessibility/utils/scrape-utils.js': {
+          getExistingObjectKeysFromFailedAudits: getExistingObjectKeysFromFailedAuditsStub,
+          getExistingUrlsFromFailedAudits: getExistingUrlsFromFailedAuditsStub,
+        },
+      });
+    });
+
+    it('should export a default handler with correct structure', () => {
+      const handler = handlerModule.default;
+
+      expect(handler).to.exist;
+      expect(handler).to.be.an('object');
+    });
+
+    it('should have URL resolver configured', () => {
+      const handler = handlerModule.default;
+
+      expect(handler.urlResolver).to.exist;
+      expect(handler.urlResolver).to.be.a('function');
+    });
+
+    it('should have steps configured', () => {
+      const handler = handlerModule.default;
+
+      expect(handler.steps).to.exist;
+      expect(handler.steps).to.be.an('object');
+      expect(Object.keys(handler.steps)).to.have.length.greaterThan(0);
+    });
+
+    it('should have processImport step configured', () => {
+      const handler = handlerModule.default;
+
+      expect(handler.steps.processImport).to.exist;
+      expect(handler.steps.processImport).to.have.property('handler');
+      expect(handler.steps.processImport.handler).to.be.a('function');
+    });
+
+    it('should have scrapeAccessibilityData step configured', () => {
+      const handler = handlerModule.default;
+
+      expect(handler.steps.scrapeAccessibilityData).to.exist;
+      expect(handler.steps.scrapeAccessibilityData).to.have.property('handler');
+      expect(handler.steps.scrapeAccessibilityData.handler).to.be.a('function');
+    });
+
+    it('should have processAccessibilityOpportunities step configured', () => {
+      const handler = handlerModule.default;
+
+      expect(handler.steps.processAccessibilityOpportunities).to.exist;
+      expect(handler.steps.processAccessibilityOpportunities).to.have.property('handler');
+      expect(handler.steps.processAccessibilityOpportunities.handler).to.be.a('function');
+    });
+
+    it('should use resolveFinalURL as the URL resolver', async () => {
+      const handler = handlerModule.default;
+      const mockSiteWithResolver = {
+        getId: () => 'test-site-id',
+        getBaseURL: () => 'https://example.com',
+        resolveFinalURL: sandbox.stub().resolves('https://final.example.com'),
+      };
+
+      const resolvedUrl = await handler.urlResolver(mockSiteWithResolver);
+
+      expect(mockSiteWithResolver.resolveFinalURL).to.have.been.calledOnce;
+      expect(resolvedUrl).to.equal('https://final.example.com');
+    });
+
+    it('should call site.resolveFinalURL without additional arguments', async () => {
+      const handler = handlerModule.default;
+      const mockSiteWithResolver = {
+        resolveFinalURL: sandbox.stub().resolves('https://resolved.com'),
+      };
+
+      await handler.urlResolver(mockSiteWithResolver);
+
+      expect(mockSiteWithResolver.resolveFinalURL).to.have.been.calledOnce;
+      expect(mockSiteWithResolver.resolveFinalURL).to.have.been.calledWithExactly();
+    });
+
+    it('should handle resolveFinalURL returning different URLs', async () => {
+      const handler = handlerModule.default;
+      const testUrls = [
+        'https://www.example.com',
+        'https://example.com/redirected',
+        'https://final-destination.com',
+      ];
+
+      for (const testUrl of testUrls) {
+        const mockSiteWithResolver = {
+          resolveFinalURL: sandbox.stub().resolves(testUrl),
+        };
+
+        const resolvedUrl = await handler.urlResolver(mockSiteWithResolver);
+        expect(resolvedUrl).to.equal(testUrl);
+      }
+    });
+
+    it('should handle resolveFinalURL that returns a promise', async () => {
+      const handler = handlerModule.default;
+      const mockSiteWithResolver = {
+        resolveFinalURL: () => Promise.resolve('https://async-resolved.com'),
+      };
+
+      const resolvedUrl = await handler.urlResolver(mockSiteWithResolver);
+
+      expect(resolvedUrl).to.equal('https://async-resolved.com');
+    });
+
+    it('should handle resolveFinalURL errors gracefully', async () => {
+      const handler = handlerModule.default;
+      const mockSiteWithResolver = {
+        resolveFinalURL: sandbox.stub().rejects(new Error('Resolution failed')),
+      };
+
+      await expect(handler.urlResolver(mockSiteWithResolver))
+        .to.be.rejectedWith('Resolution failed');
+
+      expect(mockSiteWithResolver.resolveFinalURL).to.have.been.calledOnce;
     });
   });
 });

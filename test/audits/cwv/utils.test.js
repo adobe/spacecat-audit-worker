@@ -13,20 +13,33 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { sendSQSMessageForAutoSuggest, needsAutoSuggest } from '../../../src/cwv/utils.js';
+import esmock from 'esmock';
 
-describe('sendSQSMessageForAutoSuggest', () => {
+describe('CWV Utils', () => {
+  let sendSQSMessageForAutoSuggest;
+  let shouldSendAutoSuggestForSuggestion;
+  let isAuditEnabledForSite;
   let context;
   let sqsStub;
+  let site;
   const sandbox = sinon.createSandbox();
 
-  let site;
+  beforeEach(async () => {
+    isAuditEnabledForSite = sandbox.stub().resolves(true);
 
-  beforeEach(() => {
+    ({ sendSQSMessageForAutoSuggest, shouldSendAutoSuggestForSuggestion } = await esmock('../../../src/cwv/utils.js', {
+      '../../../src/common/index.js': {
+        isAuditEnabledForSite,
+      },
+    }));
+
     site = {
+      getId: () => 'test-site-id',
       getBaseURL: sandbox.stub().returns('https://example.com'),
       getDeliveryType: sandbox.stub().returns('aem_cs'),
     };
+
+    sqsStub = sandbox.stub().resolves();
 
     context = {
       log: {
@@ -34,421 +47,335 @@ describe('sendSQSMessageForAutoSuggest', () => {
         error: sandbox.stub(),
       },
       sqs: {
-        sendMessage: sandbox.stub().resolves(),
+        sendMessage: sqsStub,
       },
       env: {
         QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
       },
     };
-    sqsStub = context.sqs.sendMessage;
   });
 
   afterEach(() => {
     sandbox.restore();
   });
 
-  it('should send CWV auto-suggest message with correct structure', async () => {
-    const opportunity = {
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      opportunityId: 'oppty-789',
-      data: {
-      },
-    };
+  describe('sendSQSMessageForAutoSuggest', () => {
+    it('should send CWV auto-suggest message with correct structure', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{
+              deviceType: 'mobile',
+              lcp: 2500,
+              cls: 0.1,
+              inp: 200,
+            }],
+            issues: [],
+          }),
+        }]),
+      };
 
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
-
-    expect(sqsStub.calledOnce).to.be.true;
-    const message = sqsStub.firstCall.args[1];
-    
-    expect(message.type).to.equal('guidance:cwv-analysis');
-    expect(message.siteId).to.equal('site-123');
-    expect(message.auditId).to.equal('audit-456');
-    expect(message.deliveryType).to.equal('aem_cs');
-    expect(message.time).to.be.a('string');
-    
-    expect(message.data.page).to.equal('https://example.com');
-    expect(message.data.opportunityId).to.equal('oppty-789');
-  });
-
-  it('should handle opportunity without siteId', async () => {
-    const opportunity = {
-      auditId: 'audit-456',
-      opportunityId: 'oppty-789',
-      data: {
-      },
-    };
-
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
-
-    expect(sqsStub.calledOnce).to.be.true;
-    const message = sqsStub.firstCall.args[1];
-    expect(message.siteId).to.be.undefined;
-  });
-
-  it('should handle opportunity without auditId', async () => {
-    const opportunity = {
-      siteId: 'site-123',
-      opportunityId: 'oppty-789',
-      data: {
-      },
-    };
-
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
-
-    expect(sqsStub.calledOnce).to.be.true;
-    const message = sqsStub.firstCall.args[1];
-    expect(message.auditId).to.be.undefined;
-  });
-
-  it('should handle opportunity without opportunityId', async () => {
-    const opportunity = {
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      data: {
-      },
-    };
-
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
-
-    expect(sqsStub.calledOnce).to.be.true;
-    const message = sqsStub.firstCall.args[1];
-    expect(message.data.opportunityId).to.equal('');
-  });
-
-  it('should handle opportunity without data', async () => {
-    const opportunity = {
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      opportunityId: 'oppty-789',
-      data: {
-      },
-    };
-
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
-
-    expect(sqsStub.calledOnce).to.be.true;
-    const message = sqsStub.firstCall.args[1];
-    expect(message.data.page).to.equal('https://example.com');
-    expect(message.data.opportunityId).to.equal('oppty-789');
-  });
-
-  it('should handle opportunity without data object', async () => {
-    const opportunity = {
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      opportunityId: 'oppty-789',
-    };
-
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
-
-    expect(sqsStub.calledOnce).to.be.true;
-  });
-
-  it('should send message with default deliveryType when site is not available', async () => {
-    const opportunity = {
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      opportunityId: 'oppty-789',
-      data: {
-      },
-    };
-
-    await sendSQSMessageForAutoSuggest(context, opportunity, null);
-
-    expect(sqsStub.calledOnce).to.be.true;
-    const message = sqsStub.firstCall.args[1];
-    expect(message.deliveryType).to.equal('aem_cs');
-    expect(message.data.page).to.equal('');
-  });
-
-  it('should handle null opportunity gracefully', async () => {
-    await sendSQSMessageForAutoSuggest(context, null);
-
-    expect(sqsStub.called).to.be.false;
-  });
-
-  it('should handle undefined opportunity gracefully', async () => {
-    await sendSQSMessageForAutoSuggest(context, undefined);
-
-    expect(sqsStub.called).to.be.false;
-  });
-
-  it('should log info messages correctly', async () => {
-    const opportunity = {
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      opportunityId: 'oppty-789',
-      data: {
-      },
-    };
-
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
-
-    expect(context.log.info.calledTwice).to.be.true;
-    expect(context.log.info.firstCall.args[0]).to.include('Received CWV opportunity for auto-suggest');
-    expect(context.log.info.firstCall.args[0]).to.include('siteId: site-123');
-    expect(context.log.info.firstCall.args[0]).to.include('opportunityId: oppty-789');
-    expect(context.log.info.secondCall.args[0]).to.include('CWV opportunity sent to Mystique for auto-suggest');
-    expect(context.log.info.secondCall.args[0]).to.include('siteId: site-123');
-    expect(context.log.info.secondCall.args[0]).to.include('opportunityId: oppty-789');
-  });
-
-  it('should handle missing opportunityId', async () => {
-    const opportunity = {
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      // opportunityId is missing/undefined
-      getId: () => 'oppty-789',
-      data: {
-      },
-    };
-
-    await sendSQSMessageForAutoSuggest(context, opportunity, site);
-
-    expect(context.sqs.sendMessage.calledOnce).to.be.true;
-    const message = context.sqs.sendMessage.firstCall.args[1];
-    expect(message.data.opportunityId).to.equal('');
-  });
-
-  it('should handle SQS sendMessage error and throw', async () => {
-    const error = new Error('SQS send failed');
-    context.sqs.sendMessage.rejects(error);
-
-    const opportunity = {
-      siteId: 'site-123',
-      auditId: 'audit-456',
-      opportunityId: 'oppty-789',
-      getId: () => 'oppty-789',
-      data: {
-      },
-    };
-
-    try {
       await sendSQSMessageForAutoSuggest(context, opportunity, site);
-      expect.fail('Should have thrown an error');
-    } catch (thrownError) {
-      expect(thrownError.message).to.equal('SQS send failed');
-      expect(context.log.error.calledOnce).to.be.true;
-      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
-      expect(context.log.error.firstCall.args[0]).to.include('siteId: site-123');
-      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-789');
-    }
-  });
 
-  it('should handle SQS sendMessage error with missing opportunityId but with getId method', async () => {
-    const error = new Error('SQS send failed');
-    context.sqs.sendMessage.rejects(error);
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
 
-    const opportunity = {
-      siteId: 'site-456',
-      auditId: 'audit-789',
-      // opportunityId is missing, but getId is available
-      getId: () => 'oppty-from-getId',
-      data: {
-      },
-    };
+      expect(message.type).to.equal('guidance:cwv-analysis');
+      expect(message.siteId).to.equal('site-123');
+      expect(message.auditId).to.equal('audit-456');
+      expect(message.deliveryType).to.equal('aem_cs');
+      expect(message.time).to.be.a('string');
 
-    try {
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
-      expect.fail('Should have thrown an error');
-    } catch (thrownError) {
-      expect(thrownError.message).to.equal('SQS send failed');
-      expect(context.log.error.calledOnce).to.be.true;
-      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
-      expect(context.log.error.firstCall.args[0]).to.include('siteId: site-456');
-      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-from-getId');
-    }
-  });
-
-  it('should handle SQS sendMessage error with missing opportunityId and no getId method', async () => {
-    const error = new Error('SQS send failed');
-    context.sqs.sendMessage.rejects(error);
-
-    const opportunity = {
-      siteId: 'site-999',
-      auditId: 'audit-888',
-      // opportunityId is missing and no getId method
-      data: {
-      },
-    };
-
-    try {
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
-      expect.fail('Should have thrown an error');
-    } catch (thrownError) {
-      expect(thrownError.message).to.equal('SQS send failed');
-      expect(context.log.error.calledOnce).to.be.true;
-      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
-      expect(context.log.error.firstCall.args[0]).to.include('siteId: site-999');
-      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: ');
-    }
-  });
-
-  it('should handle SQS sendMessage error with missing siteId', async () => {
-    const error = new Error('SQS send failed');
-    context.sqs.sendMessage.rejects(error);
-
-    const opportunity = {
-      // siteId is missing
-      auditId: 'audit-111',
-      opportunityId: 'oppty-222',
-      data: {
-      },
-    };
-
-    try {
-      await sendSQSMessageForAutoSuggest(context, opportunity, site);
-      expect.fail('Should have thrown an error');
-    } catch (thrownError) {
-      expect(thrownError.message).to.equal('SQS send failed');
-      expect(context.log.error.calledOnce).to.be.true;
-      expect(context.log.error.firstCall.args[0]).to.include('[CWV] Failed to send auto-suggest message to Mystique');
-      expect(context.log.error.firstCall.args[0]).to.include('siteId: unknown');
-      expect(context.log.error.firstCall.args[0]).to.include('opportunityId: oppty-222');
-    }
-  });
-});
-
-describe('needsAutoSuggest', () => {
-  let context;
-  let site;
-  const sandbox = sinon.createSandbox();
-
-  beforeEach(() => {
-    site = {
-      getId: sandbox.stub().returns('test-site-id'),
-      getBaseURL: sandbox.stub().returns('https://example.com'),
-      getDeliveryType: sandbox.stub().returns('aem_cs'),
-    };
-
-    context = {
-      log: {
-        info: sandbox.stub(),
-        error: sandbox.stub(),
-      },
-      dataAccess: {
-        Configuration: {
-          findLatest: sandbox.stub().resolves({ isHandlerEnabledForSite: () => true }),
-        },
-      },
-    };
-  });
-
-  afterEach(() => {
-    sandbox.restore();
-  });
-
-  it('returns true when suggestions have empty guidance values', async () => {
-    const suggestions = [
-      { getData: () => ({ issues: [{ type: 'lcp', value: '' }] }) }, // Empty string
-      { getData: () => ({ issues: [{ type: 'cls', value: '   ' }] }) }, // Whitespace only
-    ];
-
-    const opportunity = {
-      getSuggestions: () => Promise.resolve(suggestions),
-    };
-
-    const result = await needsAutoSuggest(context, opportunity, site);
-    expect(result).to.be.true;
-  });
-
-  it('returns true when some suggestions have whitespace-only guidance values', async () => {
-    const suggestions = [
-      { getData: () => ({ issues: [{ type: 'lcp', value: '# LCP Optimization...' }] }) },
-      { getData: () => ({ issues: [{ type: 'cls', value: '   ' }] }) }, // Whitespace only
-    ];
-
-    const opportunity = {
-      getSuggestions: () => Promise.resolve(suggestions),
-    };
-
-    const result = await needsAutoSuggest(context, opportunity, site);
-    expect(result).to.be.true;
-  });
-
-  it('returns true when some suggestions have empty string guidance values', async () => {
-    const suggestions = [
-      { getData: () => ({ issues: [{ type: 'lcp', value: '# LCP Optimization...' }] }) },
-      { getData: () => ({ issues: [{ type: 'cls', value: '' }] }) }, // Empty string
-      { getData: () => ({ issues: [{ type: 'inp', value: '# INP Optimization...' }] }) },
-    ];
-
-    const opportunity = {
-      getSuggestions: () => Promise.resolve(suggestions),
-    };
-
-    const result = await needsAutoSuggest(context, opportunity, site);
-    expect(result).to.be.true;
-  });
-
-  it('returns false when no suggestions exist', async () => {
-    const opportunity = {
-      getSuggestions: () => Promise.resolve([]),
-    };
-
-    const result = await needsAutoSuggest(context, opportunity, site);
-    expect(result).to.be.false;
-  });
-
-  it('returns true when suggestions have empty issues array', async () => {
-    const suggestions = [
-      { getData: () => ({ issues: [] }) },
-      { getData: () => ({ issues: [] }) },
-    ];
-
-    const opportunity = {
-      getSuggestions: () => Promise.resolve(suggestions),
-    };
-
-    const result = await needsAutoSuggest(context, opportunity, site);
-    expect(result).to.be.true;
-  });
-
-  it('returns true when suggestions have undefined or missing issues', async () => {
-    const suggestions = [
-      { getData: () => ({}) }, // No issues field
-      { getData: () => ({ issues: undefined }) }, // Issues is undefined
-    ];
-
-    const opportunity = {
-      getSuggestions: () => Promise.resolve(suggestions),
-    };
-
-    const result = await needsAutoSuggest(context, opportunity, site);
-    expect(result).to.be.true;
-  });
-
-  it('returns false when all suggestions have guidance', async () => {
-    const suggestions = [
-      { getData: () => ({ issues: [{ type: 'lcp', value: '# LCP Optimization...' }] }) },
-      { getData: () => ({ issues: [{ type: 'cls', value: '# CLS Optimization...' }] }) },
-    ];
-
-    const opportunity = {
-      getSuggestions: () => Promise.resolve(suggestions),
-    };
-
-    const result = await needsAutoSuggest(context, opportunity, site);
-    expect(result).to.be.false;
-  });
-
-  it('returns false when CWV auto-suggest feature toggle is disabled', async () => {
-    // Mock feature toggle as disabled
-    context.dataAccess.Configuration.findLatest.resolves({
-      isHandlerEnabledForSite: () => false,
+      expect(message.data.page).to.equal('https://example.com/page1');
+      expect(message.data.opportunityId).to.equal('oppty-789');
+      expect(message.data.suggestionId).to.equal('sugg-001');
+      expect(message.data.device_type).to.equal('mobile');
     });
 
-    const suggestions = [
-      { getData: () => ({ issues: [{ type: 'lcp', value: '' }] }) },
-    ];
+    it('should skip group-type suggestions and only send URL-type suggestions', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getSuggestions: () => Promise.resolve([
+          {
+            getId: () => 'sugg-group',
+            getStatus: () => 'NEW',
+            getData: () => ({
+              type: 'group',
+              pattern: 'https://example.com/products/*',
+              metrics: [{ deviceType: 'mobile' }],
+              issues: [],
+            }),
+          },
+          {
+            getId: () => 'sugg-url',
+            getStatus: () => 'NEW',
+            getData: () => ({
+              type: 'url',
+              url: 'https://example.com/page1',
+              metrics: [{ deviceType: 'desktop' }],
+              issues: [],
+            }),
+          },
+        ]),
+      };
 
-    const opportunity = {
-      getSuggestions: () => Promise.resolve(suggestions),
-    };
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
 
-    const result = await needsAutoSuggest(context, opportunity, site);
-    expect(result).to.be.false;
-    expect(context.log.info).to.have.been.calledWith('CWV auto-suggest is disabled for site test-site-id, skipping');
+      // Should only send one message (for URL, not group)
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+      expect(message.data.page).to.equal('https://example.com/page1');
+      expect(message.data.suggestionId).to.equal('sugg-url');
+    });
+
+    it('should not send messages when feature toggle is disabled', async () => {
+      isAuditEnabledForSite.resolves(false);
+
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile' }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.called).to.be.false;
+      expect(context.log.info).to.have.been.calledWith('CWV auto-suggest is disabled for site test-site-id, skipping');
+    });
+
+    it('should not send messages for suggestions with existing guidance', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile' }],
+            issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
+          }),
+        }]),
+      };
+
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.called).to.be.false;
+    });
+
+    it('should not send messages for non-NEW suggestions', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'APPROVED',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile' }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.called).to.be.false;
+    });
+
+    it('should send multiple messages for multiple URL suggestions', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getSuggestions: () => Promise.resolve([
+          {
+            getId: () => 'sugg-001',
+            getStatus: () => 'NEW',
+            getData: () => ({
+              type: 'url',
+              url: 'https://example.com/page1',
+              metrics: [{ deviceType: 'mobile' }],
+              issues: [],
+            }),
+          },
+          {
+            getId: () => 'sugg-002',
+            getStatus: () => 'NEW',
+            getData: () => ({
+              type: 'url',
+              url: 'https://example.com/page2',
+              metrics: [{ deviceType: 'desktop' }],
+              issues: [],
+            }),
+          },
+        ]),
+      };
+
+      await sendSQSMessageForAutoSuggest(context, opportunity, site);
+
+      expect(sqsStub.callCount).to.equal(2);
+      expect(sqsStub.firstCall.args[1].data.page).to.equal('https://example.com/page1');
+      expect(sqsStub.secondCall.args[1].data.page).to.equal('https://example.com/page2');
+    });
+
+    it('should handle SQS sendMessage error', async () => {
+      sqsStub.rejects(new Error('SQS send failed'));
+
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile' }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      try {
+        await sendSQSMessageForAutoSuggest(context, opportunity, site);
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error.message).to.equal('SQS send failed');
+        expect(context.log.error.calledOnce).to.be.true;
+      }
+    });
+
+    it('should use default deliveryType when site is null', async () => {
+      const opportunity = {
+        getSiteId: () => 'site-123',
+        getAuditId: () => 'audit-456',
+        getId: () => 'oppty-789',
+        getSuggestions: () => Promise.resolve([{
+          getId: () => 'sugg-001',
+          getStatus: () => 'NEW',
+          getData: () => ({
+            type: 'url',
+            url: 'https://example.com/page1',
+            metrics: [{ deviceType: 'mobile' }],
+            issues: [],
+          }),
+        }]),
+      };
+
+      await sendSQSMessageForAutoSuggest(context, opportunity, null);
+
+      expect(sqsStub.calledOnce).to.be.true;
+      const message = sqsStub.firstCall.args[1];
+      expect(message.deliveryType).to.equal('aem_cs');
+    });
+
+    it('should handle error when opportunity is undefined', async () => {
+      try {
+        await sendSQSMessageForAutoSuggest(context, undefined, site);
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(context.log.error.calledOnce).to.be.true;
+        expect(context.log.error.firstCall.args[0]).to.include('siteId: unknown');
+        expect(context.log.error.firstCall.args[0]).to.include('opportunityId: unknown');
+      }
+    });
+  });
+
+  describe('shouldSendAutoSuggestForSuggestion', () => {
+    it('should return true for NEW suggestion without guidance', () => {
+      const suggestion = {
+        getStatus: () => 'NEW',
+        getData: () => ({ issues: [] }),
+      };
+
+      const result = shouldSendAutoSuggestForSuggestion(suggestion);
+      expect(result).to.be.true;
+    });
+
+    it('should return false for non-NEW suggestion', () => {
+      const suggestion = {
+        getStatus: () => 'APPROVED',
+        getData: () => ({ issues: [] }),
+      };
+
+      const result = shouldSendAutoSuggestForSuggestion(suggestion);
+      expect(result).to.be.false;
+    });
+
+    it('should return false for NEW suggestion with guidance', () => {
+      const suggestion = {
+        getStatus: () => 'NEW',
+        getData: () => ({
+          issues: [{ type: 'lcp', value: '# LCP Optimization...' }],
+        }),
+      };
+
+      const result = shouldSendAutoSuggestForSuggestion(suggestion);
+      expect(result).to.be.false;
+    });
+
+    it('should return true for NEW suggestion with empty guidance value', () => {
+      const suggestion = {
+        getStatus: () => 'NEW',
+        getData: () => ({
+          issues: [{ type: 'lcp', value: '' }],
+        }),
+      };
+
+      const result = shouldSendAutoSuggestForSuggestion(suggestion);
+      expect(result).to.be.true;
+    });
+
+    it('should return true for NEW suggestion with whitespace-only guidance value', () => {
+      const suggestion = {
+        getStatus: () => 'NEW',
+        getData: () => ({
+          issues: [{ type: 'lcp', value: '   ' }],
+        }),
+      };
+
+      const result = shouldSendAutoSuggestForSuggestion(suggestion);
+      expect(result).to.be.true;
+    });
+
+    it('should return true when some issues have empty guidance', () => {
+      const suggestion = {
+        getStatus: () => 'NEW',
+        getData: () => ({
+          issues: [
+            { type: 'lcp', value: '# LCP Optimization...' },
+            { type: 'cls', value: '' },
+          ],
+        }),
+      };
+
+      const result = shouldSendAutoSuggestForSuggestion(suggestion);
+      expect(result).to.be.true;
+    });
   });
 });

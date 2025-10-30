@@ -105,6 +105,7 @@ SELECT
   device,
   date,
   cdn_provider,
+  COALESCE(host, '') as x_forwarded_host,
   
   -- Add partition columns as regular columns
   '{{year}}' AS year,

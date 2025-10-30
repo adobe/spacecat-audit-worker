@@ -40,6 +40,7 @@ referrals_raw AS (
         THEN 'mobile'
       ELSE 'desktop'
     END AS device,
+    COALESCE(request_x_forwarded_host, '') as x_forwarded_host,
     '{{serviceProvider}}' AS cdn_provider,
     CONCAT('{{year}}', '-', '{{month}}', '-', '{{day}}') as date
 
@@ -98,6 +99,7 @@ SELECT
   device,
   date,
   cdn_provider,
+  x_forwarded_host,
   
   -- Add partition columns as regular columns
   '{{year}}' AS year,

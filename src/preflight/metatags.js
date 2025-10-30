@@ -14,6 +14,7 @@ import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { saveIntermediateResults } from './utils.js';
 import { metatagsAutoDetect } from '../metatags/handler.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
+import { isAuditEnabledForSite } from '../common/index.js';
 
 export const PREFLIGHT_METATAGS = 'metatags';
 
@@ -22,14 +23,15 @@ export default async function metatags(context, auditContext) {
     site, job, log,
   } = context;
   const {
-    checks,
     previewUrls,
     step,
     audits,
     auditsResult,
     timeExecutionBreakdown,
   } = auditContext;
-  if (!checks || checks.includes(PREFLIGHT_METATAGS)) {
+
+  const metaTagsEnabled = await isAuditEnabledForSite(`${PREFLIGHT_METATAGS}-preflight`, site, context);
+  if (metaTagsEnabled) {
     const metatagsStartTime = Date.now();
     const metatagsStartTimestamp = new Date().toISOString();
     // Create metatags audit entries for all pages

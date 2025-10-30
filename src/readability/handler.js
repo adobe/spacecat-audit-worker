@@ -26,6 +26,7 @@ import {
   MIN_TEXT_LENGTH,
   MAX_CHARACTERS_DISPLAY,
 } from './constants.js';
+import { isAuditEnabledForSite } from '../common/index.js';
 
 export const PREFLIGHT_READABILITY = 'readability';
 
@@ -145,7 +146,6 @@ export default async function readability(context, auditContext) {
   } = context;
   let isProcessing = false;
   const {
-    checks,
     previewUrls,
     step,
     audits,
@@ -154,7 +154,8 @@ export default async function readability(context, auditContext) {
     timeExecutionBreakdown,
   } = auditContext;
 
-  if (!checks || checks.includes(PREFLIGHT_READABILITY)) {
+  const isReadabilityEnabled = await isAuditEnabledForSite(`${PREFLIGHT_READABILITY}-preflight`, site, context);
+  if (isReadabilityEnabled) {
     const readabilityStartTime = Date.now();
     const readabilityStartTimestamp = new Date().toISOString();
 

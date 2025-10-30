@@ -92,9 +92,9 @@ async function runCdnLogsReport(url, context, site, auditContext) {
     }
 
     if (reportConfig.name === 'agentic') {
-      const patternsExist = await fetchRemotePatterns(site);
+      const existingPatterns = await fetchRemotePatterns(site);
 
-      if (!patternsExist || auditContext?.categoriesUpdated) {
+      if (!existingPatterns || auditContext?.categoriesUpdated) {
         log.info('Patterns not found, generating patterns workbook...');
         const periods = generateReportingPeriods(new Date(), weekOffsets[0]);
         const configCategories = await getConfigCategories(site, context);
@@ -110,6 +110,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
           periods,
           sharepointClient,
           configCategories,
+          existingPatterns,
         });
       }
     }

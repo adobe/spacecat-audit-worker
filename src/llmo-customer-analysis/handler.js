@@ -19,7 +19,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import {
-  getLastSunday, compareConfigs,
+  getLastSunday, compareConfigs, areCategoryNamesDifferent,
 } from './utils.js';
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
@@ -252,6 +252,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
         configChangesDetected: true,
         message: 'All audits triggered (no config version provided)',
         triggeredSteps,
+        previousConfigVersion,
+        configVersion,
       },
       fullAuditRef: finalUrl,
     };
@@ -282,7 +284,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   }
 
   const changes = compareConfigs(oldConfig, newConfig);
-  const hasCdnLogsChanges = changes.categories;
+  const hasCdnLogsChanges = changes.categories
+    && areCategoryNamesDifferent(oldConfig.categories, newConfig.categories);
 
   if (changes.cdnBucketConfig) {
     try {
@@ -325,7 +328,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     await triggerGeoBrandPresence(context, site, auditContext);
     triggeredSteps.push(brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
   }
-  if (brandPresenceCadence !== 'daily' && needsBrandPresenceRefresh) {
+  if (needsBrandPresenceRefresh) {
     log.info('LLMO config changes detected in brand or competitor aliases; triggering geo-brand-presence-refresh');
     await triggerGeoBrandPresenceRefresh(context, site, configVersion);
     triggeredSteps.push('geo-brand-presence-refresh');
@@ -338,8 +341,9 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
       auditResult: {
         status: 'completed',
         configChangesDetected: true,
-        changes,
         triggeredSteps,
+        previousConfigVersion,
+        configVersion,
       },
       fullAuditRef: finalUrl,
     };
@@ -351,6 +355,8 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     auditResult: {
       status: 'completed',
       configChangesDetected: false,
+      previousConfigVersion,
+      configVersion,
     },
     fullAuditRef: finalUrl,
   };

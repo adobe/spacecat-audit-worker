@@ -108,6 +108,7 @@ describe('generateSuggestionData', async function test() {
     };
     configuration = {
       isHandlerEnabledForSite: sandbox.stub(),
+      getHandlers: sandbox.stub().returns({}),
     };
     context.dataAccess.Configuration.findLatest.resolves(configuration);
 

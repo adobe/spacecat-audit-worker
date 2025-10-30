@@ -11,6 +11,7 @@
  */
 /* c8 ignore start */
 
+import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import baseHandler from '../geo-brand-presence/detect-geo-brand-presence-handler.js';
 
 /**
@@ -18,8 +19,14 @@ import baseHandler from '../geo-brand-presence/detect-geo-brand-presence-handler
  * Extends the base handler with daily-specific path logic
  */
 export default async function handler(message, context) {
-  // Extract daily-specific information
-  const weekNumber = message.week ? String(message.week).padStart(2, '0') : '01';
+  // Extract daily-specific information from the data object
+  // Calculate week number from the date field since Mystique preserves date reliably
+  let weekNumber = '01'; // fallback
+  if (message.data?.date) {
+    const date = new Date(message.data.date);
+    const { week } = isoCalendarWeek(date);
+    weekNumber = String(week).padStart(2, '0');
+  }
 
   // Create a modified context with daily-specific path logic
   const dailyContext = {
