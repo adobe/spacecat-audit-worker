@@ -1,3 +1,16 @@
+# [1.220.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.219.9...v1.220.0) (2025-10-30)
+
+
+### Bug Fixes
+
+* **data-access:** bump data access to 2.76.1 ([#1482](https://github.com/adobe/spacecat-audit-worker/issues/1482)) ([6044002](https://github.com/adobe/spacecat-audit-worker/commit/6044002977e36bf6c933a4522e4ca20649488e13))
+* **geo-brand-presence/handler.js:** remove 200 human prompts limit ([#1481](https://github.com/adobe/spacecat-audit-worker/issues/1481)) ([5ee15d7](https://github.com/adobe/spacecat-audit-worker/commit/5ee15d7279edeffbe06c818323ea3f99cb5fd076))
+
+
+### Features
+
+* **llmo-customer-analysis:** trigger category generation ([#1479](https://github.com/adobe/spacecat-audit-worker/issues/1479)) ([cd58322](https://github.com/adobe/spacecat-audit-worker/commit/cd5832268ccf690f6719c793a3b403e7650ed93d))
+
 ## [1.219.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.219.8...v1.219.9) (2025-10-30)
 
 
