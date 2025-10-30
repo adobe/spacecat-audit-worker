@@ -89,6 +89,7 @@ describe('Paid-traffic-analysis guidance handler', () => {
         error: sandbox.stub(),
       },
       dataAccess: { Audit, Opportunity, Suggestion },
+      site: { requiresValidation: true },
     };
   });
 

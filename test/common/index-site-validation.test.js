@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { Request } from '@adobe/fetch';
-import { TierClient } from '@adobe/spacecat-shared-tier-client';
+import * as siteValidation from '../../src/utils/site-validation.js';
 import { main } from '../../src/index.js';
 import { SITES_REQUIRING_VALIDATION } from '../../src/common/constants.js';
 
@@ -61,9 +61,7 @@ describe('Index siteId handling and validation flag', () => {
   });
 
   it('sets context.site and requiresValidation=false when entitlement exists', async () => {
-    sandbox.stub(TierClient, 'createForSite').resolves({
-      checkValidEntitlement: sandbox.stub().resolves({ entitlement: 'PAID' }),
-    });
+    sandbox.stub(siteValidation, 'checkSiteRequiresValidation').resolves(false);
 
     const resp = await main(new Request('https://space.cat'), context);
 
@@ -75,7 +73,7 @@ describe('Index siteId handling and validation flag', () => {
   it('sets requiresValidation=true when entitlement check fails and site is in legacy list', async () => {
     const mustValidateId = SITES_REQUIRING_VALIDATION[0];
     context.dataAccess.Site.findById.resolves({ getId: sandbox.stub().returns(mustValidateId) });
-    sandbox.stub(TierClient, 'createForSite').rejects(new Error('boom'));
+    sandbox.stub(siteValidation, 'checkSiteRequiresValidation').resolves(true);
 
     const resp = await main(new Request('https://space.cat'), context);
 

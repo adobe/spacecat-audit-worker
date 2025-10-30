@@ -1099,6 +1099,8 @@ describe('Sitemap Audit', () => {
 
       // mark site as requiring validation
       context.site = { requiresValidation: true };
+      // mark site as requiring validation
+      context.site = { requiresValidation: true };
       await opportunityAndSuggestions(
         'https://example.com',
         auditDataWithSuggestions,
