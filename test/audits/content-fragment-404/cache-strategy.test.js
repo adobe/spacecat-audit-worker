@@ -13,9 +13,9 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { CacheStrategy } from '../../../src/content-fragment-broken-links/cache/cache-strategy.js';
-import { NoOpCache } from '../../../src/content-fragment-broken-links/cache/noop-cache.js';
-import { PathIndexCache } from '../../../src/content-fragment-broken-links/cache/path-index-cache.js';
+import { CacheStrategy } from '../../../src/content-fragment-404/cache/cache-strategy.js';
+import { NoOpCache } from '../../../src/content-fragment-404/cache/noop-cache.js';
+import { PathIndexCache } from '../../../src/content-fragment-404/cache/path-index-cache.js';
 
 describe('Cache Strategy', () => {
   describe('CacheStrategy (Base Class)', () => {

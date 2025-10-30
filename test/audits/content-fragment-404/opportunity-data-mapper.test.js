@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { createOpportunityData } from '../../../src/content-fragment-broken-links/opportunity-data-mapper.js';
+import { createOpportunityData } from '../../../src/content-fragment-404/opportunity-data-mapper.js';
 import { DATA_SOURCES } from '../../../src/common/constants.js';
 
 describe('Opportunity Data Mapper', () => {

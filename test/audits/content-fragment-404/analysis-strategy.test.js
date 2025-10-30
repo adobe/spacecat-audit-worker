@@ -92,17 +92,17 @@ describe('AnalysisStrategy', () => {
       fromPath: sandbox.stub().returns({ code: 'en-us' }),
     };
 
-    const module = await esmock('../../../src/content-fragment-broken-links/analysis/analysis-strategy.js', {
-      '../../../src/content-fragment-broken-links/rules/publish-rule.js': {
+    const module = await esmock('../../../src/content-fragment-404/analysis/analysis-strategy.js', {
+      '../../../src/content-fragment-404/rules/publish-rule.js': {
         PublishRule: function PublishRule() { return mockPublishRule; },
       },
-      '../../../src/content-fragment-broken-links/rules/locale-fallback-rule.js': {
+      '../../../src/content-fragment-404/rules/locale-fallback-rule.js': {
         LocaleFallbackRule: function LocaleFallbackRule() { return mockLocaleFallbackRule; },
       },
-      '../../../src/content-fragment-broken-links/rules/similar-path-rule.js': {
+      '../../../src/content-fragment-404/rules/similar-path-rule.js': {
         SimilarPathRule: function SimilarPathRule() { return mockSimilarPathRule; },
       },
-      '../../../src/content-fragment-broken-links/domain/suggestion/suggestion.js': {
+      '../../../src/content-fragment-404/domain/suggestion/suggestion.js': {
         Suggestion: mockSuggestion,
         SuggestionType: {
           PUBLISH: 'PUBLISH',
@@ -111,13 +111,13 @@ describe('AnalysisStrategy', () => {
           NOT_FOUND: 'NOT_FOUND',
         },
       },
-      '../../../src/content-fragment-broken-links/domain/content/content-path.js': {
+      '../../../src/content-fragment-404/domain/content/content-path.js': {
         ContentPath: mockContentPath,
       },
-      '../../../src/content-fragment-broken-links/domain/language/locale.js': {
+      '../../../src/content-fragment-404/domain/language/locale.js': {
         Locale: mockLocale,
       },
-      '../../../src/content-fragment-broken-links/domain/index/path-index.js': {
+      '../../../src/content-fragment-404/domain/index/path-index.js': {
         PathIndex: mockPathIndex,
       },
     });

@@ -17,8 +17,8 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
-import { NoOpCache } from '../../../src/content-fragment-broken-links/cache/noop-cache.js';
-import { PathIndexCache } from '../../../src/content-fragment-broken-links/cache/path-index-cache.js';
+import { NoOpCache } from '../../../src/content-fragment-404/cache/noop-cache.js';
+import { PathIndexCache } from '../../../src/content-fragment-404/cache/path-index-cache.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -75,11 +75,11 @@ describe('AemClient', () => {
       getParentPath: sandbox.stub().returns('/content/dam/parent'),
     };
 
-    const module = await esmock('../../../src/content-fragment-broken-links/clients/aem-client.js', {
+    const module = await esmock('../../../src/content-fragment-404/clients/aem-client.js', {
       '@adobe/spacecat-shared-utils': {
         tracingFetch: mockFetch,
       },
-      '../../../src/content-fragment-broken-links/utils/path-utils.js': {
+      '../../../src/content-fragment-404/utils/path-utils.js': {
         PathUtils: mockPathUtils,
       },
     });

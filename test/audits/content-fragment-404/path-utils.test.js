@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { PathUtils } from '../../../src/content-fragment-broken-links/utils/path-utils.js';
+import { PathUtils } from '../../../src/content-fragment-404/utils/path-utils.js';
 
 describe('PathUtils', () => {
   describe('removeLocaleFromPath', () => {

@@ -79,7 +79,7 @@ describe('AthenaCollector', () => {
       })
       .build();
 
-    const module = await esmock('../../../src/content-fragment-broken-links/collectors/athena-collector.js', {
+    const module = await esmock('../../../src/content-fragment-404/collectors/athena-collector.js', {
       '@adobe/spacecat-shared-utils': {
         getStaticContent: getStaticContentStub,
       },
@@ -363,7 +363,7 @@ describe('AthenaCollector', () => {
 
       expect(getStaticContentStub).to.have.been.calledWith(
         variables,
-        './src/content-fragment-broken-links/sql/create-database.sql',
+        './src/content-fragment-404/sql/create-database.sql',
       );
       expect(result).to.equal('SELECT * FROM test_table;');
     });
@@ -374,7 +374,7 @@ describe('AthenaCollector', () => {
 
       expect(getStaticContentStub).to.have.been.calledWith(
         variables,
-        './src/content-fragment-broken-links/sql/daily-query.sql',
+        './src/content-fragment-404/sql/daily-query.sql',
       );
     });
 
@@ -399,7 +399,7 @@ describe('AthenaCollector', () => {
 
       expect(getStaticContentStub).to.have.been.calledWith(
         { database: 'test_database' },
-        './src/content-fragment-broken-links/sql/create-database.sql',
+        './src/content-fragment-404/sql/create-database.sql',
       );
       expect(athenaClientStub.execute).to.have.been.calledWith(
         'SELECT * FROM test_table;',
@@ -451,7 +451,7 @@ describe('AthenaCollector', () => {
           tableName: 'test_table',
           location: 's3://test-raw-bucket/test-ims-org/aggregated-404',
         },
-        './src/content-fragment-broken-links/sql/create-table.sql',
+        './src/content-fragment-404/sql/create-table.sql',
       );
         expect(athenaClientStub.execute).to.have.been.calledWith(
           'SELECT * FROM test_table;',
@@ -511,7 +511,7 @@ describe('AthenaCollector', () => {
           month: '01',
           day: '15',
         },
-        './src/content-fragment-broken-links/sql/daily-query.sql',
+        './src/content-fragment-404/sql/daily-query.sql',
       );
 
       expect(athenaClientStub.query).to.have.been.calledWith(

@@ -22,7 +22,12 @@ import { AthenaCollector } from './collectors/athena-collector.js';
 import { PathIndex } from './domain/index/path-index.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 
-async function fetchBrokenContentFragmentLinks(context) {
+// TODO: Change to Audit.AUDIT_TYPES.CONTENT_FRAGMENT_404
+// See https://github.com/adobe/spacecat-shared/pull/1049
+export const AUDIT_TYPE = 'content-fragment-404';
+export const GUIDANCE_TYPE = `guidance:${AUDIT_TYPE}`;
+
+async function fetchContentFragment404s(context) {
   const { log } = context;
 
   const collector = await AthenaCollector.createFrom(context);
@@ -33,7 +38,7 @@ async function fetchBrokenContentFragmentLinks(context) {
   return brokenPaths;
 }
 
-async function analyzeBrokenContentFragmentLinks(context, brokenPaths) {
+async function analyzeContentFragment404s(context, brokenPaths) {
   const { log } = context;
 
   const pathIndex = new PathIndex(context);
@@ -50,7 +55,7 @@ async function analyzeBrokenContentFragmentLinks(context, brokenPaths) {
   return suggestions.map((suggestion) => suggestion.toJSON());
 }
 
-export async function createContentFragmentLinkSuggestions(
+export async function createContentFragmentPathSuggestions(
   auditUrl,
   auditData,
   context,
@@ -68,9 +73,7 @@ export async function createContentFragmentLinkSuggestions(
     auditData,
     context,
     createOpportunityData,
-    // TODO: Change to Audit.AUDIT_TYPES.BROKEN_CONTENT_FRAGMENT_LINKS
-    // See https://github.com/adobe/spacecat-shared/pull/1049
-    'broken-content-fragment-links',
+    AUDIT_TYPE,
   );
 
   const brokenPathsMap = new Map(
@@ -106,7 +109,7 @@ export async function createContentFragmentLinkSuggestions(
   log.info(`Created ${suggestions.length} suggestions for opportunity ${opportunity.getId()}`);
 }
 
-export async function enrichContentFragmentLinkSuggestions(
+export async function enrichContentFragmentPathSuggestions(
   auditUrl,
   auditData,
   context,
@@ -118,14 +121,14 @@ export async function enrichContentFragmentLinkSuggestions(
   const { Configuration, Suggestion, Opportunity } = dataAccess;
 
   const configuration = await Configuration.findLatest();
-  if (!configuration.isHandlerEnabledForSite('broken-content-fragment-links', site)) {
+  if (!configuration.isHandlerEnabledForSite(AUDIT_TYPE, site)) {
     log.info(`Auto-Suggest is disabled for site ${site.getId()}`);
     return;
   }
 
   const opportunities = await Opportunity.allBySiteIdAndStatus(site.getId(), 'NEW');
   const opportunity = opportunities.find(
-    (opp) => opp.getType() === 'broken-content-fragment-links' && opp.getAuditId() === auditData.id,
+    (opp) => opp.getType() === AUDIT_TYPE && opp.getAuditId() === auditData.id,
   );
   if (!opportunity) {
     log.info('No opportunity found for this audit, skipping Mystique message');
@@ -142,7 +145,7 @@ export async function enrichContentFragmentLinkSuggestions(
   }
 
   const message = {
-    type: 'guidance:broken-content-fragment-links',
+    type: GUIDANCE_TYPE,
     siteId: site.getId(),
     auditId: auditData.id,
     deliveryType: site.getDeliveryType(),
@@ -166,11 +169,11 @@ export async function enrichContentFragmentLinkSuggestions(
   log.info(`Sent ${syncedSuggestions.length} content fragment path suggestions to Mystique for enrichment`);
 }
 
-export async function contentFragmentBrokenLinksAuditRunner(baseURL, context, site) {
+export async function contentFragment404AuditRunner(baseURL, context, site) {
   const auditContext = { ...context, site };
 
-  const brokenPaths = await fetchBrokenContentFragmentLinks(auditContext);
-  const suggestions = await analyzeBrokenContentFragmentLinks(auditContext, brokenPaths);
+  const brokenPaths = await fetchContentFragment404s(auditContext);
+  const suggestions = await analyzeContentFragment404s(auditContext, brokenPaths);
 
   return {
     fullAuditRef: baseURL,
@@ -183,9 +186,9 @@ export async function contentFragmentBrokenLinksAuditRunner(baseURL, context, si
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(contentFragmentBrokenLinksAuditRunner)
+  .withRunner(contentFragment404AuditRunner)
   .withPostProcessors([
-    createContentFragmentLinkSuggestions,
-    enrichContentFragmentLinkSuggestions,
+    createContentFragmentPathSuggestions,
+    enrichContentFragmentPathSuggestions,
   ])
   .build();

@@ -60,7 +60,7 @@ export class AthenaCollector {
   }
 
   static async loadSql(filename, variables) {
-    return getStaticContent(variables, `./src/content-fragment-broken-links/sql/${filename}.sql`);
+    return getStaticContent(variables, `./src/content-fragment-404/sql/${filename}.sql`);
   }
 
   initialize() {
