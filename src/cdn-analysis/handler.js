@@ -17,10 +17,12 @@ import {
   resolveCdnBucketName,
   extractCustomerDomain,
   buildCdnPaths,
+  buildConsolidatedPaths,
   getBucketInfo,
   discoverCdnProviders,
   mapServiceToCdnProvider,
   CDN_TYPES,
+  resolveConsolidatedBucketName,
 } from '../utils/cdn-utils.js';
 import { getImsOrgId } from '../utils/data-access.js';
 import { wwwUrlResolver } from '../common/base-audit.js';
@@ -59,8 +61,49 @@ async function loadSql(provider, filename, variables) {
   return getStaticContent(variables, `./src/cdn-analysis/sql/${provider}/${filename}.sql`);
 }
 
-export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext) {
+/**
+ * Returns aggregated table names based on customer domain and mode.
+ */
+function getAggregatedTableNames(customerDomain, useConsolidatedBucket) {
+  const suffix = useConsolidatedBucket ? '_consolidated' : '';
+  return {
+    aggregatedTable: `aggregated_logs_${customerDomain}${suffix}`,
+    aggregatedReferralTable: `aggregated_referral_logs_${customerDomain}${suffix}`,
+  };
+}
+
+/**
+ * Builds paths for CDN logs based on processing mode.
+ */
+function buildPaths(options) {
+  const {
+    useConsolidatedBucket,
+    cdnBucketName,
+    consolidatedBucketName,
+    serviceProvider,
+    timeParts,
+    pathId,
+    siteId,
+  } = options;
+
+  if (useConsolidatedBucket) {
+    return buildConsolidatedPaths(
+      cdnBucketName,
+      consolidatedBucketName,
+      serviceProvider,
+      timeParts,
+      pathId,
+      siteId,
+    );
+  }
+
+  return buildCdnPaths(cdnBucketName, serviceProvider, timeParts, pathId);
+}
+
+export async function processCdnLogs(auditUrl, context, site, auditContext, options = {}) {
   const { log, s3Client, dataAccess } = context;
+
+  const { useConsolidatedBucket = false } = options;
 
   const bucketName = await resolveCdnBucketName(site, context);
   if (!bucketName) {
@@ -78,9 +121,9 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
   const { host } = new URL(site.getBaseURL());
   const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig() || {};
   // for non-adobe customers, use the orgId from the config
-  const imsOrgId = orgId || await getImsOrgId(site, dataAccess, log);
+  const pathId = orgId || await getImsOrgId(site, dataAccess, log);
 
-  const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName, imsOrgId);
+  const { isLegacy, providers } = await getBucketInfo(s3Client, bucketName, pathId);
   const serviceProviders = isLegacy
     ? await discoverCdnProviders(s3Client, bucketName, { year, month, day, hour })
     : providers;
@@ -88,8 +131,12 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
   log.debug(`Processing ${serviceProviders.length} service provider(s) in bucket: ${bucketName}`);
 
   const database = `cdn_logs_${customerDomain}`;
-  const aggregatedTable = `aggregated_logs_${customerDomain}`;
-  const aggregatedReferralTable = `aggregated_referral_logs_${customerDomain}`;
+  const { aggregatedTable, aggregatedReferralTable } = getAggregatedTableNames(
+    customerDomain,
+    useConsolidatedBucket,
+  );
+  const consolidatedBucket = resolveConsolidatedBucketName(context);
+  const siteId = site.getId();
   const results = [];
 
   // Create database and aggregated tables once
@@ -105,12 +152,15 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
     } else {
       log.info(`Processing service provider ${serviceProvider.toUpperCase()} (CDN: ${cdnType.toUpperCase()})`);
 
-      const paths = buildCdnPaths(
-        bucketName,
+      const paths = buildPaths({
+        useConsolidatedBucket,
+        cdnBucketName: bucketName,
+        consolidatedBucketName: consolidatedBucket,
         serviceProvider,
-        { year, month, day, hour },
-        imsOrgId,
-      );
+        timeParts: { year, month, day, hour },
+        pathId,
+        siteId,
+      });
       const rawTable = `raw_logs_${customerDomain}_${serviceProvider.replace(/-/g, '_')}`;
       const athenaClient = AWSAthenaClient.fromContext(context, paths.tempLocation, {
         maxPollAttempts: 500,
@@ -158,39 +208,49 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
       // Generate hour filter based on processing mode
       const hourFilter = auditContext?.processFullDay ? '' : `AND hour = '${hour}'`;
 
+      // Load SQL queries in parallel
       // eslint-disable-next-line no-await-in-loop
-      const sqlInsert = await loadSql(cdnType, 'insert-aggregated', {
-        database,
-        rawTable,
-        aggregatedTable,
-        year,
-        month,
-        day,
-        hour,
-        hourFilter,
-        bucket: bucketName,
-        host,
-        serviceProvider,
-      });
+      const [sqlInsert, sqlInsertReferral] = await Promise.all([
+        loadSql(cdnType, 'insert-aggregated', {
+          database,
+          rawTable,
+          aggregatedTable,
+          year,
+          month,
+          day,
+          hour,
+          hourFilter,
+          bucket: bucketName,
+          host,
+          serviceProvider,
+        }),
+        loadSql(cdnType, 'insert-aggregated-referral', {
+          database,
+          rawTable,
+          aggregatedTable: aggregatedReferralTable,
+          year,
+          month,
+          day,
+          hour,
+          hourFilter,
+          bucket: bucketName,
+          serviceProvider,
+        }),
+      ]);
+
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlInsert, database, `[Athena Query] Insert aggregated data for ${serviceProvider} into ${database}.${aggregatedTable}`);
-
-      // Insert aggregated referral data
-      // eslint-disable-next-line no-await-in-loop
-      const sqlInsertReferral = await loadSql(cdnType, 'insert-aggregated-referral', {
-        database,
-        rawTable,
-        aggregatedTable: aggregatedReferralTable,
-        year,
-        month,
-        day,
-        hour,
-        hourFilter,
-        bucket: bucketName,
-        serviceProvider,
-      });
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlInsertReferral, database, `[Athena Query] Insert aggregated referral data for ${serviceProvider} into ${database}.${aggregatedReferralTable}`);
+
+      log.info(`cdn-analysis aggregated logs successfully inserted for siteId=${siteId} with:
+        serviceProvider=${serviceProvider}
+        cdnType=${cdnType}
+        rawTable=${rawTable}
+        aggregatedTable=${aggregatedTable}
+        aggregatedReferralTable=${aggregatedReferralTable}
+        output=${paths.aggregatedOutput}
+        outputReferral=${paths.aggregatedReferralOutput}`);
 
       results.push({
         serviceProvider,
@@ -214,7 +274,22 @@ export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext
   };
 }
 
+export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext) {
+  return processCdnLogs(auditUrl, context, site, auditContext, { useConsolidatedBucket: false });
+}
+
+export async function cdnLogsAnalysisRunner(auditUrl, context, site, auditContext) {
+  return processCdnLogs(auditUrl, context, site, auditContext, { useConsolidatedBucket: true });
+}
+
+// Current handler (per-org, existing functionality)
 export default new AuditBuilder()
   .withRunner(cdnLogAnalysisRunner)
+  .withUrlResolver(wwwUrlResolver)
+  .build();
+
+// New handler (all sites, consolidated bucket)
+export const cdnLogsAnalysis = new AuditBuilder()
+  .withRunner(cdnLogsAnalysisRunner)
   .withUrlResolver(wwwUrlResolver)
   .build();
