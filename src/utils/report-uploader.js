@@ -106,12 +106,7 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 5) {
       }
 
       if (!shouldRetry) {
-        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed`, {
-          url,
-          status: error.status,
-          statusText: error.response?.statusText,
-          message: error.message,
-        });
+        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed after retries, error: ${error.message}, status: ${error.status}, statusText: ${error.response?.statusText}, URL: ${url}`);
         throw error;
       }
 
