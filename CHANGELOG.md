@@ -1,3 +1,10 @@
+# [1.223.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.222.3...v1.223.0) (2025-10-31)
+
+
+### Features
+
+* add retry for helix endpoints ([#1491](https://github.com/adobe/spacecat-audit-worker/issues/1491)) ([8d65566](https://github.com/adobe/spacecat-audit-worker/commit/8d65566efc8f829a41c7cf6098d7adc19d99792e))
+
 ## [1.222.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.222.2...v1.222.3) (2025-10-31)
 
 
