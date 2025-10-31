@@ -16,7 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { Request } from '@adobe/fetch';
-import * as siteValidation from '../../src/utils/site-validation.js';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { main } from '../../src/index.js';
 import { SITES_REQUIRING_VALIDATION } from '../../src/common/constants.js';
 
@@ -60,25 +60,36 @@ describe('Index siteId handling and validation flag', () => {
     sandbox.restore();
   });
 
-  it('sets context.site and requiresValidation=false when entitlement exists', async () => {
-    sandbox.stub(siteValidation, 'checkSiteRequiresValidation').resolves(false);
-
-    const resp = await main(new Request('https://space.cat'), context);
-
-    expect(resp.status).to.equal(200);
-    expect(context.site).to.exist;
-    expect(context.site.requiresValidation).to.equal(false);
-  });
-
-  it('sets requiresValidation=true when entitlement check fails and site is in legacy list', async () => {
-    const mustValidateId = SITES_REQUIRING_VALIDATION[0];
-    context.dataAccess.Site.findById.resolves({ getId: sandbox.stub().returns(mustValidateId) });
-    sandbox.stub(siteValidation, 'checkSiteRequiresValidation').resolves(true);
+  it('sets context.site and requiresValidation=true when entitlement exists', async () => {
+    sandbox.stub(TierClient, 'createForSite').resolves({
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: 'PAID' }),
+    });
 
     const resp = await main(new Request('https://space.cat'), context);
 
     expect(resp.status).to.equal(200);
     expect(context.site).to.exist;
     expect(context.site.requiresValidation).to.equal(true);
+  });
+
+  it('sets requiresValidation=true when entitlement check fails and site is in legacy list', async () => {
+    const mustValidateId = SITES_REQUIRING_VALIDATION[0];
+    context.dataAccess.Site.findById.resolves({ getId: sandbox.stub().returns(mustValidateId) });
+    sandbox.stub(TierClient, 'createForSite').rejects(new Error('boom'));
+
+    const resp = await main(new Request('https://space.cat'), context);
+
+    expect(resp.status).to.equal(200);
+    expect(context.site).to.exist;
+    expect(context.site.requiresValidation).to.equal(true);
+  });
+
+  it('logs a warning when site fetch fails (coverage for catch)', async () => {
+    context.dataAccess.Site.findById.rejects(new Error('db down'));
+
+    const resp = await main(new Request('https://space.cat'), context);
+
+    expect(resp.status).to.equal(200);
+    expect(context.log.warn).to.have.been.calledWithMatch('Failed to fetch site');
   });
 });

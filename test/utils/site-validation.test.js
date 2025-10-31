@@ -35,6 +35,13 @@ describe('utils/site-validation', () => {
     sandbox.restore();
   });
 
+  it('returns false when site is null/undefined', async () => {
+    const resultNull = await Promise.resolve(checkSiteRequiresValidation(null, context));
+    const resultUndef = await Promise.resolve(checkSiteRequiresValidation(undefined, context));
+    expect(resultNull).to.equal(false);
+    expect(resultUndef).to.equal(false);
+  });
+
   it('returns site.requiresValidation when explicitly set to true', async () => {
     const site = { getId: sandbox.stub().returns('site-1'), requiresValidation: true };
     const stub = sandbox.stub(TierClient, 'createForSite');

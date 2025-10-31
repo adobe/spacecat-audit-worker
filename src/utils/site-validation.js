@@ -38,6 +38,6 @@ export async function checkSiteRequiresValidation(site, context) {
     context?.log?.warn?.(`Entitlement check failed for site ${site.getId?.()}: ${e.message}`);
   }
 
-  // Fallback (inverted): if not explicitly in legacy list, require validation
-  return !SITES_REQUIRING_VALIDATION.includes(site.getId());
+  // Fallback: if explicitly in legacy list, requires validation
+  return SITES_REQUIRING_VALIDATION.includes(site.getId());
 }
