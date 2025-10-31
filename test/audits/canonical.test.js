@@ -210,48 +210,96 @@ describe('Canonical URL Tests', () => {
       expect(log.info).to.have.been.calledWith('Canonical tag is not in the head section');
     });
 
-    it('should follow redirects and validate canonical tag on the final destination page', async () => {
+    it('should skip validation when page redirects (likely removed page)', async () => {
       const originalUrl = 'http://example.com/old';
       const finalUrl = 'http://example.com/new';
-      const finalHtml = `<html lang="en"><head><link rel="canonical" href="${finalUrl}"><title>test</title></head><body></body></html>`;
 
       nock('http://example.com')
         .get('/old')
         .reply(301, undefined, { Location: finalUrl });
 
-      nock('http://example.com')
-        .get('/new')
-        .reply(200, finalHtml);
-
       const result = await validateCanonicalTag(originalUrl, log);
 
-      expect(result.canonicalUrl).to.equal(finalUrl);
+      expect(result.canonicalUrl).to.be.null;
       expect(result.checks).to.deep.include({
-        check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-        success: true,
+        check: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+        success: false,
+        explanation: 'Page redirects (301), likely removed or moved',
       });
+      expect(log.info).to.have.been.calledWith(`URL ${originalUrl} redirects to ${finalUrl} with status 301, skipping canonical validation`);
     });
 
-    it('should resolve relative canonical against the final destination after redirect', async () => {
+    it('should skip validation for 302 redirects', async () => {
       const originalUrl = 'https://example.com/a';
       const finalUrl = 'https://example.com/b';
-      const html = '<html lang="en"><head><link rel="canonical" href="/b"><title>test</title></head><body></body></html>';
 
       nock('https://example.com')
         .get('/a')
-        .reply(301, undefined, { Location: finalUrl });
-
-      nock('https://example.com')
-        .get('/b')
-        .reply(200, html);
+        .reply(302, undefined, { Location: finalUrl });
 
       const result = await validateCanonicalTag(originalUrl, log);
 
-      expect(result.canonicalUrl).to.equal(finalUrl);
+      expect(result.canonicalUrl).to.be.null;
       expect(result.checks).to.deep.include({
-        check: CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
-        success: true,
+        check: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+        success: false,
+        explanation: 'Page redirects (302), likely removed or moved',
       });
+    });
+
+    it('should skip validation for redirects without Location header', async () => {
+      const url = 'https://example.com/redirect-no-location';
+
+      nock('https://example.com')
+        .get('/redirect-no-location')
+        .reply(301);
+
+      const result = await validateCanonicalTag(url, log);
+
+      expect(result.canonicalUrl).to.be.null;
+      expect(result.checks).to.deep.include({
+        check: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+        success: false,
+        explanation: 'Page redirects (301), likely removed or moved',
+      });
+      expect(log.info).to.have.been.calledWith(`URL ${url} redirects to unknown with status 301, skipping canonical validation`);
+    });
+
+    it('should skip validation when page returns 404 (removed page)', async () => {
+      const url = 'http://example.com/removed-page';
+      const html404 = '<html lang="en"><head><title>404 Not Found</title></head><body>Page not found</body></html>';
+
+      nock('http://example.com')
+        .get('/removed-page')
+        .reply(404, html404);
+
+      const result = await validateCanonicalTag(url, log);
+
+      expect(result.canonicalUrl).to.be.null;
+      expect(result.checks).to.deep.include({
+        check: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+        success: false,
+        explanation: 'Page returned 404 status code',
+      });
+      expect(log.info).to.have.been.calledWith(`URL ${url} returned status 404, skipping canonical validation`);
+    });
+
+    it('should skip validation when page returns 500 server error', async () => {
+      const url = 'http://example.com/server-error';
+
+      nock('http://example.com')
+        .get('/server-error')
+        .reply(500);
+
+      const result = await validateCanonicalTag(url, log);
+
+      expect(result.canonicalUrl).to.be.null;
+      expect(result.checks).to.deep.include({
+        check: CANONICAL_CHECKS.CANONICAL_URL_FETCH_ERROR.check,
+        success: false,
+        explanation: 'Page returned 500 status code',
+      });
+      expect(log.info).to.have.been.calledWith(`URL ${url} returned status 500, skipping canonical validation`);
     });
   });
 
