@@ -61,7 +61,7 @@ describe('Index siteId handling and validation flag', () => {
 
   it('sets context.site and requiresValidation=true when entitlement exists', async () => {
     sandbox.stub(TierClient, 'createForSite').resolves({
-      checkValidEntitlement: sandbox.stub().resolves({ entitlement: 'PAID' }),
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: { tier: 'PAID' } }),
     });
 
     const resp = await main(new Request('https://space.cat'), context);

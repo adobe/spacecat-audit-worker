@@ -26,11 +26,16 @@ export async function checkSiteRequiresValidation(site, context) {
     return site.requiresValidation;
   }
 
-  // Entitlement-driven: ASO PAID and FREE_TRIAL → require validation
+  // Entitlement-driven: require validation only for PAID tier
   try {
     const tierClient = await TierClient.createForSite(context, site, 'ASO');
     const { entitlement } = await tierClient.checkValidEntitlement();
-    if (entitlement) {
+    context?.log?.debug?.('Entitlement check result', {
+      hasEntitlement: Boolean(entitlement),
+      tier: entitlement?.tier ?? null,
+      entitlement: entitlement.stringify(),
+    });
+    if (entitlement?.tier === 'PAID') {
       return true;
     }
   } catch (e) {
