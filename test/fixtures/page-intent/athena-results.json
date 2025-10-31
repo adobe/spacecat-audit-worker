@@ -1,0 +1,38 @@
+{
+  "referralTrafficPaths": [
+    { "path": "/blog/how-to-choose-products" },
+    { "path": "/products/category/electronics" },
+    { "path": "/about-us" },
+    { "path": "/checkout" },
+    { "path": "/compare/laptops" },
+    { "path": "/reviews/smartphone-x" },
+    { "path": "/contact" },
+    { "path": "/buy-now" },
+    { "path": "/guides/getting-started" },
+    { "path": "/faq" }
+  ],
+  "emptyResults": [],
+  "largeResults": [
+    { "path": "/page1" },
+    { "path": "/page2" },
+    { "path": "/page3" },
+    { "path": "/page4" },
+    { "path": "/page5" },
+    { "path": "/page6" },
+    { "path": "/page7" },
+    { "path": "/page8" },
+    { "path": "/page9" },
+    { "path": "/page10" },
+    { "path": "/page11" },
+    { "path": "/page12" },
+    { "path": "/page13" },
+    { "path": "/page14" },
+    { "path": "/page15" },
+    { "path": "/page16" },
+    { "path": "/page17" },
+    { "path": "/page18" },
+    { "path": "/page19" },
+    { "path": "/page20" }
+  ]
+}
+

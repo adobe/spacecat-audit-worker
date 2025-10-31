@@ -1,0 +1,36 @@
+{
+  "validInformational": {
+    "content": "{\"pageIntent\":\"INFORMATIONAL\",\"topic\":\"Product Selection Guide\"}"
+  },
+  "validNavigational": {
+    "content": "{\"pageIntent\":\"NAVIGATIONAL\",\"topic\":\"Contact Information\"}"
+  },
+  "validCommercial": {
+    "content": "{\"pageIntent\":\"COMMERCIAL\",\"topic\":\"Laptop Comparison\"}"
+  },
+  "validTransactional": {
+    "content": "{\"pageIntent\":\"TRANSACTIONAL\",\"topic\":\"Product Purchase\"}"
+  },
+  "invalidIntent": {
+    "content": "{\"pageIntent\":\"UNKNOWN_TYPE\",\"topic\":\"Something\"}"
+  },
+  "nullIntent": {
+    "content": "{\"pageIntent\":null,\"topic\":\"Insufficient Data\"}"
+  },
+  "missingTopic": {
+    "content": "{\"pageIntent\":\"INFORMATIONAL\"}"
+  },
+  "malformedJson": {
+    "content": "This is not valid JSON at all"
+  },
+  "incompleteJson": {
+    "content": "{\"pageIntent\":\"INFORMATIONAL\""
+  },
+  "emptyResponse": {
+    "content": ""
+  },
+  "withMarkdown": {
+    "content": "```json\n{\"pageIntent\":\"INFORMATIONAL\",\"topic\":\"Test\"}\n```"
+  }
+}
+
