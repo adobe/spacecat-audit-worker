@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto';
 import ExcelJS from 'exceljs';
 import { createLLMOSharepointClient, readFromSharePoint } from '../utils/report-uploader.js';
 import { getSignedUrl } from '../utils/getPresignedUrl.js';
+import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import { createMystiqueMessage } from './handler.js';
 import {
   refreshDirectoryS3Key,
@@ -157,7 +158,7 @@ async function fetchQueryIndexPaths(site, context, sharepointClient) {
  */
 export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
   const { log, dataAccess } = context;
-  const { Site, Configuration } = dataAccess;
+  const { Site } = dataAccess;
   const { siteId, auditContext } = message;
   let errMsg;
 
@@ -176,11 +177,11 @@ export async function refreshGeoBrandPresenceSheetsHandler(message, context) {
     throw new Error(`${AUDIT_NAME}: Site not found for siteId: ${siteId}`);
   }
 
-  // Check if daily audit is enabled in global Configuration
-  const configuration = await Configuration.findLatest();
-  const isDailyEnabled = configuration.isHandlerEnabledForSite(
+  // Check if daily audit is enabled using proper entitlement and configuration check
+  const isDailyEnabled = await isAuditEnabledForSite(
     'geo-brand-presence-daily',
     site,
+    context,
   );
 
   // Priority: explicit context override > per-site Configuration check > site config > default
