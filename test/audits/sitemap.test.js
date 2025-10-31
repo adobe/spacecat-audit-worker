@@ -1097,6 +1097,12 @@ describe('Sitemap Audit', () => {
         createdItems: [],
       });
 
+      // mark site as requiring validation
+      context.site = { requiresValidation: true };
+      // mark site as requiring validation
+      context.site = { requiresValidation: true };
+      // mark site as requiring validation
+      context.site = { requiresValidation: true };
       await opportunityAndSuggestions(
         'https://example.com',
         auditDataWithSuggestions,
@@ -1139,6 +1145,8 @@ describe('Sitemap Audit', () => {
       context.dataAccess.Opportunity.addSuggestions.resolves({
         createdItems: auditDataWithSuggestions.suggestions,
       });
+      // mark site as requiring validation
+      context.site = { requiresValidation: true };
       await opportunityAndSuggestions(
         'https://example.com',
         auditDataWithSuggestions,
@@ -1204,6 +1212,8 @@ describe('Sitemap Audit', () => {
       context.dataAccess.Opportunity.addSuggestions.resolves({
         createdItems: auditDataWithSuggestions.suggestions,
       });
+      // mark site as requiring validation
+      context.site = { requiresValidation: true };
       await opportunityAndSuggestions(
         'https://example.com',
         auditDataWithSuggestions,

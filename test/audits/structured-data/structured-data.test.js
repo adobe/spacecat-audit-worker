@@ -73,6 +73,7 @@ describe('Structured Data Audit', () => {
         getIncludedURLs: () => ['https://example.com/product/1', 'https://example.com/product/2', 'https://example.com/product/3'],
       }),
       getDeliveryType: () => 'other',
+      requiresValidation: true,
     };
 
     auditStub = {

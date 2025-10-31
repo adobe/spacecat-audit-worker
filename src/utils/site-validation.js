@@ -10,14 +10,14 @@
  * governing permissions and limitations under the License.
  */
 
-import { SITES_REQUIRING_VALIDATION } from '../common/constants.js';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 
 /**
  * Checks if a site requires suggestion validation before showing in UI
  * @param {Object} site - The site object
  * @returns {boolean} - True if site requires validation, false otherwise
  */
-export function checkSiteRequiresValidation(site) {
+export async function checkSiteRequiresValidation(site, context) {
   if (!site) {
     return false;
   }
@@ -25,6 +25,18 @@ export function checkSiteRequiresValidation(site) {
   if (typeof site.requiresValidation === 'boolean') {
     return site.requiresValidation;
   }
-  // For backward compatibility, check if this is a paid customer that requires validation
-  return SITES_REQUIRING_VALIDATION.includes(site.getId());
+
+  // Entitlement-driven: ASO PAID and FREE_TRIAL → require validation
+  try {
+    const tierClient = await TierClient.createForSite(context, site, 'ASO');
+    const { entitlement } = await tierClient.checkValidEntitlement();
+    if (entitlement) {
+      return true;
+    }
+  } catch (e) {
+    context?.log?.warn?.(`Entitlement check failed for site ${site.getId?.()}: ${e.message}`);
+  }
+
+  // No legacy fallback: if no valid entitlement, do not require validation
+  return false;
 }

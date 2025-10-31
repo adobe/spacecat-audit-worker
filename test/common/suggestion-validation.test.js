@@ -14,7 +14,6 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { Suggestion } from '@adobe/spacecat-shared-data-access';
 import { syncSuggestions } from '../../src/utils/data-access.js';
-import { SITES_REQUIRING_VALIDATION } from '../../src/common/constants.js';
 
 describe('Suggestion Validation Tests', () => {
   let context;
@@ -118,29 +117,5 @@ describe('Suggestion Validation Tests', () => {
     expect(suggestions[1].status).to.equal(Suggestion.STATUSES.NOT_VALIDATED);
   });
 
-  it('should set status to NOT_VALIDATED for Qualcomm site by ID', async () => {
-    // Qualcomm site ID
-    context.site.getId = sinon.stub().returns(SITES_REQUIRING_VALIDATION[0]);
-    context.site.requiresValidation = undefined; // Not explicitly set
-
-    // Override the site in the context to simulate the logic in index.js
-    context.site.requiresValidation = SITES_REQUIRING_VALIDATION.includes(context.site.getId());
-
-    await syncSuggestions({
-      context,
-      opportunity,
-      newData,
-      buildKey,
-      mapNewSuggestion,
-    });
-
-    // Check if addSuggestions was called with correct status
-    const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
-    expect(addSuggestionsCall).to.exist;
-
-    const suggestions = addSuggestionsCall.args[0];
-    expect(suggestions).to.be.an('array').with.lengthOf(2);
-    expect(suggestions[0].status).to.equal(Suggestion.STATUSES.NOT_VALIDATED);
-    expect(suggestions[1].status).to.equal(Suggestion.STATUSES.NOT_VALIDATED);
-  });
+  // Removed legacy list test; relies on entitlement-driven requiresValidation only
 });

@@ -20,9 +20,3 @@ export const DATA_SOURCES = {
   SITE: 'Site',
   PAGE: 'Page',
 };
-
-// Sites that require suggestion validation before showing in UI
-export const SITES_REQUIRING_VALIDATION = [
-  '92d24fa2-5e99-4d43-8799-84cba3385ae1', // Qualcomm
-  // Add more customer site IDs here as needed
-];

@@ -328,4 +328,21 @@ markdown`);
     expect(Opportunity.create).not.to.have.been.called;
     expect(result.status).to.equal(ok().status);
   });
+
+  it('should set suggestion status to NOT_VALIDATED when site requires validation', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(opportunityInstance);
+    context.site = { requiresValidation: true };
+
+    const guidance = [{
+      body: { markdown: 'plain\nmarkdown' },
+      insight: 'insight',
+      rationale: 'rationale',
+      recommendation: 'rec',
+      metadata: { scrape_job_id: 'test-job-id' },
+    }];
+    const message = { auditId: 'auditId', siteId: 'site', data: { url: TEST_PAGE, guidance } };
+    await handler(message, context);
+    expect(Suggestion.create).to.have.been.calledWith(sinon.match.has('status', 'NOT_VALIDATED'));
+  });
 });
