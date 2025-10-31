@@ -137,9 +137,14 @@ export const preflightAudit = async (context) => {
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     const currentMetadata = jobEntity.getMetadata() || {};
+    const currentPayload = currentMetadata?.payload || {};
+    const enabledCheckNames = checks.filter((c) => c.enabled).map((c) => c.name);
     jobEntity.setMetadata({
       ...currentMetadata,
-      checks,
+      payload: {
+        ...currentPayload,
+        checks: enabledCheckNames,
+      },
     });
     await jobEntity.save();
   } catch (e) {
