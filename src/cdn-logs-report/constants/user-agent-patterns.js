@@ -13,9 +13,8 @@ export const PROVIDER_USER_AGENT_PATTERNS = {
   chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
   perplexity: '(?i)Perplexity',
   claude: '(?i)Claude|Anthropic',
-  gemini: '(?i)Gemini|Gemini-Deep-Research',
+  google: '(?i)(^Google$|Gemini-Deep-Research)',
   copilot: '(?i)Copilot',
-  google: '(?i)Googlebot',
   bing: '(?i)Bingbot',
 };
 
@@ -32,6 +31,10 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   // Perplexity
   { pattern: '%perplexitybot%', displayName: 'PerplexityBot' },
   { pattern: '%perplexity-user%', displayName: 'Perplexity-User' },
+
+  // Google
+  { pattern: '%gemini-deep-research%', displayName: 'Gemini-Deep-Research' },
+  { pattern: 'google', displayName: 'Google-ai-mode' },
 
   // Other providers TODO: add these if needed
   // { pattern: '%googlebot%', displayName: 'Googlebot' },
@@ -68,6 +71,9 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%perplexitybot%', result: 'Web search crawlers' },
     { pattern: '%perplexity-user%', result: 'Chatbots' },
     { pattern: '%perplexity%', result: 'Chatbots' },
+    // Google
+    { pattern: '%gemini-deep-research%', result: 'Research' },
+    { pattern: 'google', result: 'Web search crawlers' },
   ];
 
   const cases = patterns.map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.result}'`).join('\n          ');

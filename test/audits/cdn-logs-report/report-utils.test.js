@@ -16,6 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
+import esmock from 'esmock';
 import * as reportUtils from '../../../src/cdn-logs-report/utils/report-utils.js';
 import { getConfigs } from '../../../src/cdn-logs-report/constants/report-configs.js';
 
@@ -89,25 +90,6 @@ describe('CDN Logs Report Utils', () => {
       expect(tempLocation).to.equal('s3://test-bucket/temp/athena-results/');
     });
   });
-
-  describe('generatePeriodIdentifier', () => {
-    it('generates week format for 7-day periods', () => {
-      const startDate = new Date('2025-01-06');
-      const endDate = new Date('2025-01-12');
-
-      const identifier = reportUtils.generatePeriodIdentifier(startDate, endDate);
-      expect(identifier).to.equal('w02-2025');
-    });
-
-    it('generates date range format for non-7-day periods', () => {
-      const startDate = new Date('2025-01-06');
-      const endDate = new Date('2025-01-20');
-
-      const identifier = reportUtils.generatePeriodIdentifier(startDate, endDate);
-      expect(identifier).to.equal('2025-01-06_to_2025-01-20');
-    });
-  });
-
   describe('generateReportingPeriods', () => {
     it('generates week periods with offset', () => {
       const refDate = new Date('2025-01-15');
@@ -115,11 +97,12 @@ describe('CDN Logs Report Utils', () => {
       const periods = reportUtils.generateReportingPeriods(refDate, -1);
 
       expect(periods).to.have.property('weeks').that.is.an('array');
-      expect(periods.weeks).to.have.length(1);
-      expect(periods.weeks[0]).to.have.property('startDate');
-      expect(periods.weeks[0]).to.have.property('endDate');
-      expect(periods.weeks[0]).to.have.property('weekLabel');
-      expect(periods).to.have.property('columns').that.is.an('array');
+      expect(periods.weeks[0].startDate.toISOString()).to.equal('2025-01-06T00:00:00.000Z');
+      expect(periods.weeks[0].endDate.toISOString()).to.equal('2025-01-12T23:59:59.999Z');
+      expect(periods.weeks[0].weekLabel).to.equal('Week 2');
+      expect(periods.weeks[0].weekNumber).to.equal(2);
+      expect(periods.weeks[0].year).to.equal(2025);
+      expect(periods.periodIdentifier).to.equal('w02-2025');
     });
 
     it('handles Sunday reference date correctly', () => {
@@ -151,11 +134,6 @@ describe('CDN Logs Report Utils', () => {
   });
 
   describe('buildSiteFilters', () => {
-    it('returns empty string for empty filters', () => {
-      expect(reportUtils.buildSiteFilters([])).to.equal('');
-      expect(reportUtils.buildSiteFilters(null)).to.equal('');
-    });
-
     it('builds include filters correctly', () => {
       const result = reportUtils.buildSiteFilters([
         { key: 'url', value: ['test'], type: 'include' },
@@ -176,6 +154,36 @@ describe('CDN Logs Report Utils', () => {
         { key: 'url', value: ['admin'], type: 'exclude' },
       ]);
       expect(result).to.include('AND');
+    });
+
+    it('falls back to baseURL when filters are empty', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://adobe.com',
+      };
+
+      const result = reportUtils.buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(adobe.com)')");
+    });
+
+    it('keeps www prefix when already present', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://www.adobe.com',
+      };
+
+      const result = reportUtils.buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(www.adobe.com)')");
+    });
+
+    it('keeps subdomain as-is without adding www', () => {
+      const mockSite = {
+        getBaseURL: () => 'https://business.adobe.com',
+      };
+
+      const result = reportUtils.buildSiteFilters([], mockSite);
+
+      expect(result).to.equal("REGEXP_LIKE(host, '(?i)(business.adobe.com)')");
     });
   });
 
@@ -204,15 +212,15 @@ describe('CDN Logs Report Utils', () => {
         aggregatedLocation: 's3://test-bucket/data/',
       };
       const mockLog = {
-        info: sandbox.stub(),
+        debug: sandbox.stub(),
         error: sandbox.stub(),
       };
 
       await reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, referralConfig, mockLog);
 
       expect(mockAthenaClient.execute).to.have.been.calledOnce;
-      expect(mockLog.info).to.have.been.calledWith('Creating or checking table: aggregated_referral_logs_example_com');
-      expect(mockLog.info).to.have.been.calledWith('Table aggregated_referral_logs_example_com is ready');
+      expect(mockLog.debug).to.have.been.calledWith('Creating or checking table: aggregated_referral_logs_example_com');
+      expect(mockLog.debug).to.have.been.calledWith('Table aggregated_referral_logs_example_com is ready');
     });
 
     it('handles table creation errors', async () => {
@@ -227,6 +235,7 @@ describe('CDN Logs Report Utils', () => {
       const mockLog = {
         info: sandbox.stub(),
         error: sandbox.stub(),
+        debug: sandbox.stub(),
       };
 
       await expect(
@@ -235,6 +244,65 @@ describe('CDN Logs Report Utils', () => {
 
       expect(mockLog.error).to.have.been.calledWith(
         'Failed to ensure table exists: Table creation failed',
+      );
+    });
+  });
+
+  describe('getConfigCategories', () => {
+    let mockLlmoConfig;
+    let mockedReportUtils;
+    const mockSite = { getSiteId: () => 'test-site-id' };
+    const mockContext = {
+      log: { info: sinon.stub(), warn: sinon.stub() },
+      s3Client: {},
+      env: { S3_IMPORTER_BUCKET_NAME: 'test-bucket' },
+    };
+
+    beforeEach(async () => {
+      mockLlmoConfig = { readConfig: sandbox.stub() };
+      mockedReportUtils = await esmock('../../../src/cdn-logs-report/utils/report-utils.js', {
+        '@adobe/spacecat-shared-utils': {
+          getStaticContent: () => Promise.resolve('SELECT * FROM table'),
+          llmoConfig: mockLlmoConfig,
+        },
+      });
+      mockContext.log.warn.resetHistory();
+    });
+
+    it('fetches and extracts category names successfully', async () => {
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          categories: {
+            'cat-id-1': { name: 'General', region: ['us'] },
+            'cat-id-2': { name: 'Products', region: ['us', 'gb'] },
+          },
+        },
+      });
+
+      const result = await mockedReportUtils.getConfigCategories(mockSite, mockContext);
+
+      expect(result).to.deep.equal(['General', 'Products']);
+    });
+
+    it('returns empty array when categories are missing, null, or empty', async () => {
+      mockLlmoConfig.readConfig.resolves({ config: { categories: null } });
+      expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
+
+      mockLlmoConfig.readConfig.resolves({ config: {} });
+      expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
+
+      mockLlmoConfig.readConfig.resolves({ config: { categories: {} } });
+      expect(await mockedReportUtils.getConfigCategories(mockSite, mockContext)).to.deep.equal([]);
+    });
+
+    it('returns empty array and logs warning on error', async () => {
+      mockLlmoConfig.readConfig.rejects(new Error('S3 fetch failed'));
+
+      const result = await mockedReportUtils.getConfigCategories(mockSite, mockContext);
+
+      expect(result).to.deep.equal([]);
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/Failed to fetch config categories:/),
       );
     });
   });

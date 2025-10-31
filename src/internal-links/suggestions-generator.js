@@ -21,8 +21,6 @@ const AUDIT_TYPE = Audit.AUDIT_TYPES.BROKEN_INTERNAL_LINKS;
 export const generateSuggestionData = async (finalUrl, brokenInternalLinks, context, site) => {
   const { log } = context;
 
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Generating suggestions for site ${finalUrl}`);
-
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const azureOpenAIOptions = { responseFormat: 'json_object' };
   const BATCH_SIZE = 300;
@@ -40,8 +38,6 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No site data found, skipping suggestions generation`);
     return brokenInternalLinks;
   }
-
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Processing ${siteData.length} alternative URLs in ${totalBatches} batches of ${BATCH_SIZE}...`);
 
   const processBatch = async (batch, urlTo) => {
     const requestBody = await getPrompt({ alternative_urls: batch, broken_url: urlTo }, 'broken-backlinks', log);
@@ -77,11 +73,9 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
      * @returns {Promise<Object>} Updated link object with suggested URLs and AI rationale
      */
   const processLink = async (link, headerSuggestions) => {
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Processing link: ${link.urlTo}`);
     const suggestions = await processBatches(dataBatches, link.urlTo);
 
     if (totalBatches > 1) {
-      log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Compiling final suggestions for: ${link.urlTo}`);
       try {
         const finalRequestBody = await getPrompt({ suggested_urls: suggestions, header_links: headerSuggestions, broken_url: link.urlTo }, 'broken-backlinks-followup', log);
         const finalResponse = await azureOpenAIClient
@@ -93,7 +87,6 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
         }
 
         const answer = JSON.parse(finalResponse.choices[0].message.content);
-        log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Final suggestion for ${link.urlTo}:, ${JSON.stringify(answer)}`, answer);
         return {
           ...link,
           urlsSuggested: answer.suggested_urls?.length > 0 ? answer.suggested_urls : [finalUrl],
@@ -105,7 +98,6 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
       }
     }
 
-    log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions for ${link.urlTo}: ${JSON.stringify(suggestions[0]?.suggested_urls)}`);
     return {
       ...link,
       urlsSuggested:
@@ -149,8 +141,6 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     const updatedLink = await processLink(link, headerSuggestions);
     updatedInternalLinks.push(updatedLink);
   }
-
-  log.info(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions generation complete.`);
   return updatedInternalLinks;
 };
 

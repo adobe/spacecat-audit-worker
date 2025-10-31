@@ -171,9 +171,9 @@ describe('Async Mystique Tests', () => {
       );
 
       // Verify logging
-      expect(log.info).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
-      expect(log.info).to.have.been.calledWithMatch('Stored readability metadata in job test-job');
-      expect(log.info).to.have.been.calledWithMatch('Successfully sent 2 messages to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('Sending 2 readability issues to Mystique');
+      expect(log.debug).to.have.been.calledWithMatch('Stored readability metadata in job test-job');
+      expect(log.debug).to.have.been.calledWithMatch('Successfully sent 2 messages to Mystique');
 
       // Verify job metadata update
       expect(mockAsyncJob.findById).to.have.been.calledWith('test-job');
@@ -234,7 +234,7 @@ describe('Async Mystique Tests', () => {
       );
 
       // Verify job metadata was updated
-      expect(log.info).to.have.been.calledWithMatch(
+      expect(log.debug).to.have.been.calledWithMatch(
         'Stored readability metadata in job test-job',
       );
 

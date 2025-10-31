@@ -25,6 +25,7 @@ describe('Guidance Accessibility Handler', () => {
   beforeEach(() => {
     mockLog = {
       info: sinon.spy(),
+      debug: sinon.spy(),
       error: sinon.spy(),
     };
 
@@ -96,7 +97,7 @@ describe('Guidance Accessibility Handler', () => {
     expect(mockOpportunity.setUpdatedBy.calledWith('system')).to.be.true;
     expect(mockOpportunity.setAuditId.calledWith('audit123')).to.be.true;
     expect(mockOpportunity.save.called).to.be.true;
-    expect(mockLog.info.called).to.be.true;
+    expect(mockLog.debug.called).to.be.true;
 
     // Verify the guidance was merged correctly
     expect(mockOpportunity.getData().accessibility[0].a11yIssues).to.deep.equal([

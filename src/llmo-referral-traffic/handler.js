@@ -96,6 +96,17 @@ export async function referralTrafficRunner(auditUrl, context, site, auditContex
   const query = await getStaticContent(variables, './src/llmo-referral-traffic/sql/referral-traffic.sql');
   const description = `[Athena Query] Fetching referral traffic data for ${site.getBaseURL()}`;
   const results = await athenaClient.query(query, databaseName, description);
+
+  // early return if no rum data available
+  if (results.length === 0) {
+    return {
+      auditResult: {
+        rowCount: results.length,
+      },
+      fullAuditRef: `No OpTel Data Found for ${site.getBaseURL()}`,
+    };
+  }
+
   const pageIntents = await site.getPageIntents();
   const pageIntentMap = pageIntents.reduce((acc, cur) => {
     acc[new URL(cur.getUrl()).pathname] = cur.getPageIntent();

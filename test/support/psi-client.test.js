@@ -31,7 +31,7 @@ describe('PSIClient', () => {
   };
 
   beforeEach(() => {
-    logMock = { info: sinon.spy(), error: sinon.spy() };
+    logMock = { info: sinon.spy(), error: sinon.spy(), debug: sinon.spy() };
     client = PSIClient(config, logMock);
   });
 
@@ -132,7 +132,7 @@ describe('PSIClient', () => {
           },
         },
       );
-      expect(logMock.info.called).to.be.true;
+      expect(logMock.debug.called).to.be.true;
     });
 
     it('throws an error if no lighthouse data is returned', async () => {

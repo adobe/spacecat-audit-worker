@@ -195,6 +195,7 @@ describe('CDN Logs Report Handler', function test() {
     nock.cleanAll();
 
     site = {
+      getSiteId: () => 'test-site',
       getId: () => 'test-site',
       getBaseURL: () => 'https://example.com',
       getConfig: () => createSiteConfig(),
@@ -231,6 +232,14 @@ describe('CDN Logs Report Handler', function test() {
         },
       })
       .build();
+
+    // Mock the patterns.json endpoint to avoid pattern generation
+    nock('https://main--project-elmo-ui-data--adobe.aem.live')
+      .get('/test-folder/agentic-traffic/patterns/patterns.json')
+      .reply(200, {
+        pagetype: { data: [] },
+        products: { data: [] },
+      });
   });
 
   afterEach(() => {
@@ -240,6 +249,10 @@ describe('CDN Logs Report Handler', function test() {
 
   describe('Cdn logs report audit handler', () => {
     it('successfully processes CDN logs report', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-07'),
+        toFake: ['Date']
+      });
       const auditContext = createAuditContext(sandbox);
       const result = await handler.runner('https://example.com', context, site, auditContext);
 
@@ -256,8 +269,9 @@ describe('CDN Logs Report Handler', function test() {
         expect(reportResult).to.have.property('customer').that.is.a('string');
       });
 
+      clock.restore();
       // Verify logging calls
-      expect(context.log.info).to.have.been.calledWith('Starting CDN logs report audit for https://example.com');
+      expect(context.log.debug).to.have.been.calledWith('Starting CDN logs report audit for https://example.com');
 
       // Verify Athena interactions
       expect(context.athenaClient.execute).to.have.been.callCount(3);
@@ -316,9 +330,51 @@ describe('CDN Logs Report Handler', function test() {
 
       expect(context.athenaClient.query).to.have.been.callCount(2);
 
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         sinon.match(`week offset: ${weekOffset}`),
       );
+    });
+
+    it('runs both week 0 and -1 on Monday when no weekOffset provided', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-06'),
+        toFake: ['Date']
+      });
+
+      context.athenaClient.query.resetHistory();
+      const auditContext = createAuditContext(sandbox);
+      await handler.runner('https://example.com', context, site, auditContext);
+      
+      clock.restore();
+      expect(context.athenaClient.query).to.have.been.callCount(4);
+    });
+
+    it('runs only week 0 on non-Monday when no weekOffset provided', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-07'),
+        toFake: ['Date']
+      });
+
+      context.athenaClient.query.resetHistory();
+      const auditContext = createAuditContext(sandbox);
+      await handler.runner('https://example.com', context, site, auditContext);
+
+      clock.restore();
+      expect(context.athenaClient.query).to.have.been.callCount(2);
+    });
+
+    it('uses provided weekOffset regardless of day', async () => {
+      const clock = sinon.useFakeTimers({
+        now: new Date('2025-01-06'),
+        toFake: ['Date']
+      });
+
+      context.athenaClient.query.resetHistory();
+      const auditContext = createAuditContext(sandbox, { weekOffset: -3 });
+      await handler.runner('https://example.com', context, site, auditContext);
+
+      clock.restore();
+      expect(context.athenaClient.query).to.have.been.callCount(2);
     });
 
     it('handles table creation errors', async () => {
@@ -389,16 +445,47 @@ describe('CDN Logs Report Handler', function test() {
     });
 
     describe('data processing edge cases', () => {
-      it('handles null data responses', async () => {
+      it('logs skipping message when no S3 data found', async () => {
+        context.s3Client = {
+          send: sandbox.stub().resolves({ Contents: [] }),
+        };
+
         context.athenaClient = setupAthenaClientWithData(sandbox, null, null);
         const auditContext = createAuditContext(sandbox);
+
+        await handler.runner('https://example.com', context, site, auditContext);
+
+        expect(context.log.info).to.have.been.calledWith('No data found for agentic report - skipping');
+        expect(context.log.info).to.have.been.calledWith('No data found for referral report - skipping');
+      });
+
+      it('logs warning when Athena query returns empty data', async () => {
+        context.athenaClient = setupAthenaClientWithData(sandbox, [], null);
+        const auditContext = createAuditContext(sandbox);
+
         const result = await handler.runner('https://example.com', context, site, auditContext);
 
-        expect(result).to.have.property('auditResult').that.is.an('array');
-        expect(result.auditResult).to.have.length.greaterThan(0);
-        expect(result).to.have.property('fullAuditRef').that.equals('test-folder');
+        expect(context.log.warn).to.have.been.calledWith(
+          sinon.match(/No data returned from Athena query for .* report \(.*\)\./)
+        );
+      });
 
-        expect(context.athenaClient.query).to.have.been.called;
+      it('handles Athena query errors gracefully', async () => {
+        const queryError = new Error('Athena query failed: Table not found');
+        context.athenaClient = {
+          execute: sandbox.stub().resolves(),
+          query: sandbox.stub().rejects(queryError),
+        };
+        const auditContext = createAuditContext(sandbox);
+
+        await handler.runner('https://example.com', context, site, auditContext);
+
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/report generation failed: Athena query failed/)
+        );
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/Failed to generate .* report: Athena query failed/)
+        );
       });
     });
 

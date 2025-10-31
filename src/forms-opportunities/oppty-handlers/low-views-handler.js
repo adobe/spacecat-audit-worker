@@ -34,7 +34,6 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
   const { Opportunity } = dataAccess;
 
   const auditData = JSON.parse(JSON.stringify(auditDataObject));
-  log.info(`Syncing high page views low form views opportunity for ${auditData.siteId}`);
   let opportunities;
 
   try {
@@ -47,11 +46,10 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
   const { formVitals } = auditData.auditResult;
   // eslint-disable-next-line max-len
   const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_VIEWS]);
-  log.debug(`forms opportunities high-page-views-low-form-views: ${JSON.stringify(formOpportunities, null, 2)}`);
 
   const filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
-  log.info(`filtered opportunities: high-page-views-low-form-views:  ${JSON.stringify(filteredOpportunities, null, 2)}`);
+  log.debug(`filtered opportunities: high-page-views-low-form-views:  ${JSON.stringify(filteredOpportunities, null, 2)}`);
   try {
     for (const opptyData of filteredOpportunities) {
       let highPageViewsLowFormViewsOptty = opportunities.find(
@@ -87,28 +85,30 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
         },
       };
 
-      log.info(`Forms Opportunity created high page views low form views ${JSON.stringify(opportunityData, null, 2)}`);
+      log.debug(`Forms Opportunity created high page views low form views ${JSON.stringify(opportunityData, null, 2)}`);
       let formsList = [];
 
       if (!highPageViewsLowFormViewsOptty) {
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormViewsOptty = await Opportunity.create(opportunityData);
-        log.debug('Forms Opportunity high page views low form views created');
-        // eslint-disable-next-line max-len
-        formsList = [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
+        formsList = [{
+          form: opportunityData.data.form,
+          formSource: opportunityData.data.formsource,
+        }];
       } else if (highPageViewsLowFormViewsOptty.getOrigin() === ORIGINS.ESS_OPS) {
-        log.debug('Forms Opportunity high page views low form views exists and is from ESS_OPS');
         opportunityData.status = 'IGNORED';
         // eslint-disable-next-line no-await-in-loop
         highPageViewsLowFormViewsOptty = await Opportunity.create(opportunityData);
-        // eslint-disable-next-line max-len
-        formsList = [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
+        formsList = [{
+          form: opportunityData.data.form,
+          formSource: opportunityData.data.formsource,
+        }];
       } else {
         const data = highPageViewsLowFormViewsOptty.getData();
         const { formDetails } = data;
-        log.info(`Form details available for data  ${JSON.stringify(data, null, 2)}`);
+        log.debug(`Form details available for data  ${JSON.stringify(data, null, 2)}`);
         formsList = (formDetails !== undefined && isNonEmptyObject(formDetails))
-          ? (log.info('Form details available for opportunity, not sending it to mystique'), [])
+          ? (log.debug('Form details available for opportunity, not sending it to mystique'), [])
           : [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
 
         highPageViewsLowFormViewsOptty.setAuditId(auditData.auditId);
@@ -133,5 +133,5 @@ export default async function createLowViewsOpportunities(auditUrl, auditDataObj
   } catch (e) {
     log.error(`Creating Forms opportunity for high page views low form views for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
   }
-  log.info(`Successfully synced Opportunity for site: ${auditData.siteId} and high page views low form views audit type.`);
+  log.debug(`Successfully synced Opportunity for site: ${auditData.siteId} and high page views low form views audit type.`);
 }

@@ -121,7 +121,13 @@ const handleOutdatedSuggestions = async ({
       SuggestionDataAccess.STATUSES.SKIPPED,
     ].includes(existing.getStatus()));
 
-  log.debug(`Outdated suggestions = ${existingOutdatedSuggestions.length}: ${JSON.stringify(existingOutdatedSuggestions, null, 2)}`);
+  // prevents JSON.stringify overflow
+  log.debug(`Outdated suggestions count: ${existingOutdatedSuggestions.length}`);
+  if (existingOutdatedSuggestions.length > 0 && existingOutdatedSuggestions.length <= 10) {
+    log.debug(`Outdated suggestions sample: ${JSON.stringify(existingOutdatedSuggestions, null, 2)}`);
+  } else if (existingOutdatedSuggestions.length > 10) {
+    log.debug(`Outdated suggestions sample (first 10): ${JSON.stringify(existingOutdatedSuggestions.slice(0, 10), null, 2)}`);
+  }
 
   if (isNonEmptyArray(existingOutdatedSuggestions)) {
     await Suggestion.bulkUpdateStatus(
@@ -132,6 +138,17 @@ const handleOutdatedSuggestions = async ({
 };
 
 export const keepSameDataFunction = (existingData) => ({ ...existingData });
+
+/**
+ * Keep latest merge function for combining existing and new data.
+ * This performs a shallow merge where new data overrides existing data.
+ * @param {Object} existingData - The existing suggestion data.
+ * @param {Object} newData - The new data to merge.
+ * @returns {Object} - The merged data object.
+ */
+export const keepLatestMergeDataFunction = (existingData, newData) => ({
+  ...newData,
+});
 
 /**
  * Default merge function for combining existing and new data.

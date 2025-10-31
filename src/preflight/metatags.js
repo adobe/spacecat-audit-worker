@@ -14,6 +14,7 @@ import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
 import { saveIntermediateResults } from './utils.js';
 import { metatagsAutoDetect } from '../metatags/handler.js';
 import metatagsAutoSuggest from '../metatags/metatags-auto-suggest.js';
+import { isAuditEnabledForSite } from '../common/index.js';
 
 export const PREFLIGHT_METATAGS = 'metatags';
 
@@ -22,15 +23,15 @@ export default async function metatags(context, auditContext) {
     site, job, log,
   } = context;
   const {
-    checks,
     previewUrls,
     step,
     audits,
     auditsResult,
-    s3Keys,
     timeExecutionBreakdown,
   } = auditContext;
-  if (!checks || checks.includes(PREFLIGHT_METATAGS)) {
+
+  const metaTagsEnabled = await isAuditEnabledForSite(`${PREFLIGHT_METATAGS}-preflight`, site, context);
+  if (metaTagsEnabled) {
     const metatagsStartTime = Date.now();
     const metatagsStartTimestamp = new Date().toISOString();
     // Create metatags audit entries for all pages
@@ -39,11 +40,19 @@ export default async function metatags(context, auditContext) {
       pageResult.audits.push({ name: PREFLIGHT_METATAGS, type: 'seo', opportunities: [] });
     });
 
+    // Workaround for the updated meta-tags audit which requires a map of URL to S3 key
+    // TODO: change as soon as preflight is migrated to the ScrapeClient
+    const pageMap = new Map(previewUrls.map((url) => {
+      const s3Key = `scrapes/${site.getId()}${new URL(url).pathname.replace(/\/$/, '')}/scrape.json`;
+      return [url, s3Key];
+    }));
+    log.debug('[preflight-audit] Starting meta tags audit with new scraper data format');
+
     const {
       seoChecks,
       detectedTags,
       extractedTags,
-    } = await metatagsAutoDetect(site, s3Keys, context);
+    } = await metatagsAutoDetect(site, pageMap, context);
     try {
       const tagCollection = step === 'suggest'
         ? await metatagsAutoSuggest({
@@ -72,7 +81,7 @@ export default async function metatags(context, auditContext) {
     const metatagsEndTime = Date.now();
     const metatagsEndTimestamp = new Date().toISOString();
     const metatagsElapsed = ((metatagsEndTime - metatagsStartTime) / 1000).toFixed(2);
-    log.info(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds`);
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Meta tags audit completed in ${metatagsElapsed} seconds`);
 
     timeExecutionBreakdown.push({
       name: 'metatags',

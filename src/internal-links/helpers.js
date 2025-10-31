@@ -82,13 +82,13 @@ export async function isLinkInaccessible(url, log) {
 
     // Log non-404, non-200 status codes
     if (status >= 400 && status < 500 && status !== 404) {
-      log.info(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
+      log.warn(`broken-internal-links audit: Warning: ${url} returned client error: ${status}`);
     }
 
     // URL is valid if status code is less than 400, otherwise it is invalid
     return status >= 400;
   } catch (error) {
-    log.info(`broken-internal-links audit: Error checking ${url}: ${error.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
+    log.error(`broken-internal-links audit: Error checking ${url}: ${error.code === 'ETIMEOUT' ? `Request timed out after ${LINK_TIMEOUT}ms` : error.message}`);
     // Any error means the URL is inaccessible
     return true;
   }

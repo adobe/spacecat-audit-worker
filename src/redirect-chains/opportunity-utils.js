@@ -134,7 +134,7 @@ export function ensureFullUrl(url, domain = '') {
       // Neither has a slash, so add one
       reasonableUrl = `${domain}/${reasonableUrl}`;
     } else {
-      // One has a slash, so concatenate directly
+      // Only one has a slash, so concatenate directly
       reasonableUrl = domain + reasonableUrl;
     }
     addWwwSubdomain = true; // add 'www.' if needed
@@ -150,4 +150,15 @@ export function ensureFullUrl(url, domain = '') {
     reasonableUrl = addWWW(reasonableUrl);
   }
   return reasonableUrl;
+}
+
+/**
+ * Calculates the byte length of a string in UTF-8 encoding.
+ * This is a utility function to standardize the calculation of string sizes.
+ *
+ * @param {string} theString - The string to measure
+ * @returns {number} The byte length of the string in UTF-8 encoding
+ */
+export function getStringByteLength(theString) {
+  return Buffer.byteLength(theString, 'utf8');
 }

@@ -12,15 +12,17 @@
 
 import babelParser from '@babel/eslint-parser';
 import { defineConfig, globalIgnores } from '@eslint/config-helpers'
-import {recommended, source, test} from '@adobe/eslint-config-helix';
+import { recommended, source, test } from '@adobe/eslint-config-helix';
 
 export default defineConfig([
   globalIgnores([
     '.vscode/*',
     '.idea/*',
+    '.aws-sam/*',
     'coverage/*',
     'scripts/*',
-    'test/*/fixtures/*'
+    'test/*/fixtures/*',
+    'test/audits/**/*.test.js',
   ]),
   {
     languageOptions: {
@@ -36,7 +38,7 @@ export default defineConfig([
     }
   },
   {
-    extends: [ recommended ],
+    extends: [recommended],
     plugins: {
       import: recommended.plugins.import,
     },

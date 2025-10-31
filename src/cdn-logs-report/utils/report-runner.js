@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { generatePeriodIdentifier, generateReportingPeriods } from './report-utils.js';
+import { generateReportingPeriods } from './report-utils.js';
 import { saveExcelReport } from '../../utils/report-uploader.js';
 import { createExcelReport } from './excel-generator.js';
 
@@ -19,16 +19,14 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
     site,
     sharepointClient,
     weekOffset,
+    context,
   } = options;
 
   const referenceDate = new Date();
   const periods = generateReportingPeriods(referenceDate, weekOffset);
-  const week = periods.weeks[0];
-  const periodStart = week.startDate;
-  const periodEnd = week.endDate;
-  const periodIdentifier = generatePeriodIdentifier(periodStart, periodEnd);
+  const { periodIdentifier } = periods;
 
-  log.info(`Running ${reportConfig.name} report for ${periodIdentifier} (week offset: ${weekOffset})`);
+  log.debug(`Running ${reportConfig.name} report for ${periodIdentifier} (week offset: ${weekOffset})`);
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();
   const outputLocation = `${llmoFolder}/${reportConfig.folderSuffix}`;
 
@@ -41,6 +39,9 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
       databaseName,
       tableName,
       site,
+      context,
+      athenaClient,
+      s3Config,
     };
 
     const query = await reportConfig.queryFunction(queryOptions);
@@ -49,6 +50,12 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
       s3Config.databaseName,
       `[Athena Query] ${reportConfig.name}_flat_data`,
     );
+
+    // Check if results are empty
+    if (!results || results.length === 0) {
+      log.warn(`No data returned from Athena query for ${reportConfig.name} report (${periodIdentifier}).`);
+      return;
+    }
 
     const reportData = { [reportConfig.sheetName]: results };
     const excelConfig = {
@@ -85,15 +92,17 @@ export async function runWeeklyReport({
   site,
   sharepointClient,
   weekOffset,
+  context,
 }) {
   try {
-    log.info(`Starting ${reportConfig.name} report for week offset: ${weekOffset}...`);
+    log.debug(`Starting ${reportConfig.name} report for week offset: ${weekOffset}...`);
     await runReport(reportConfig, athenaClient, s3Config, log, {
       site,
       sharepointClient,
       weekOffset,
+      context,
     });
-    log.info(`Successfully completed ${reportConfig.name} report`);
+    log.debug(`Successfully completed ${reportConfig.name} report`);
   } catch (error) {
     log.error(`Failed to generate ${reportConfig.name} report: ${error.message}`);
   }

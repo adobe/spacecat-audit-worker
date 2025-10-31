@@ -27,7 +27,7 @@ export const suggestionData = [
         ],
       },
       {
-        name: 'placeholder "lorem-ipsum" detection',
+        name: 'lorem-ipsum',
         type: 'seo',
         opportunities: [],
       },

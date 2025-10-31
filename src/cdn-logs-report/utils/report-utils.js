@@ -10,12 +10,10 @@
  * governing permissions and limitations under the License.
  */
 
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { getStaticContent, llmoConfig } from '@adobe/spacecat-shared-utils';
 import {
-  format,
   getWeek,
   getYear,
-  differenceInDays,
 } from 'date-fns';
 import {
   extractCustomerDomain,
@@ -77,11 +75,11 @@ export async function ensureTableExists(athenaClient, databaseName, reportConfig
       aggregatedLocation,
     });
 
-    log.info(`Creating or checking table: ${tableName}`);
+    log.debug(`Creating or checking table: ${tableName}`);
     const sqlCreateTableDescription = `[Athena Query] Create table ${databaseName}.${tableName}`;
     await athenaClient.execute(createTableQuery, databaseName, sqlCreateTableDescription);
 
-    log.info(`Table ${tableName} is ready`);
+    log.debug(`Table ${tableName} is ready`);
   } catch (error) {
     log.error(`Failed to ensure table exists: ${error.message}`);
     throw error;
@@ -89,27 +87,10 @@ export async function ensureTableExists(athenaClient, databaseName, reportConfig
 }
 
 /**
- * Generates period identifier. 7-day periods return week format (w01-2024).
- * @param {Date} startDate - Period start date
- * @param {Date} endDate - Period end date
- * @returns {string} Period identifier
- * @example generatePeriodIdentifier(new Date('2024-12-16'), new Date('2024-12-22')) // 'w51-2024'
- */
-export function generatePeriodIdentifier(startDate, endDate) {
-  if (differenceInDays(endDate, startDate) + 1 === 7) {
-    const weekNum = getWeek(startDate, { weekStartsOn: 1 });
-    const year = getYear(startDate);
-    return `w${String(weekNum).padStart(2, '0')}-${year}`;
-  }
-
-  return `${format(startDate, 'yyyy-MM-dd')}_to_${format(endDate, 'yyyy-MM-dd')}`;
-}
-
-/**
  * Generates reporting periods data for past weeks
  * @param {number|Date} [offsetOrDate=-1] - If number: weeks offset. If Date: reference date
  * @param {Date} [referenceDate=new Date()] - Reference date (when first param is number)
- * @returns {Object} Object with weeks array and columns
+ * @returns {Object} Object with weeks array and periodIdentifier
  */
 export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1) {
   const refUTC = new Date(Date.UTC(
@@ -129,19 +110,30 @@ export function generateReportingPeriods(refDate = new Date(), offsetWeeks = -1)
   weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
   weekEnd.setUTCHours(23, 59, 59, 999);
 
-  const weekNumber = getWeek(weekStart, { weekStartsOn: 1 });
-  const year = getYear(weekStart);
+  const localDate = new Date(
+    weekStart.getUTCFullYear(),
+    weekStart.getUTCMonth(),
+    weekStart.getUTCDate(),
+  );
+  const weekNumber = getWeek(localDate, { weekStartsOn: 1, firstWeekContainsDate: 4 });
+  const year = getYear(localDate);
+
+  const periodIdentifier = `w${String(weekNumber).padStart(2, '0')}-${year}`;
 
   return {
     weeks: [{
       startDate: weekStart, endDate: weekEnd, weekNumber, year, weekLabel: `Week ${weekNumber}`,
     }],
-    columns: [`Week ${weekNumber}`],
+    periodIdentifier,
   };
 }
 
-export function buildSiteFilters(filters = []) {
-  if (!filters || filters.length === 0) return '';
+export function buildSiteFilters(filters, site) {
+  if (!filters || filters.length === 0) {
+    const baseURL = site.getBaseURL();
+    const { host } = new URL(baseURL);
+    return `REGEXP_LIKE(host, '(?i)(${host})')`;
+  }
 
   const clauses = filters.map(({ key, value, type }) => {
     const regexPattern = value.join('|');
@@ -176,7 +168,7 @@ export async function fetchRemotePatterns(site) {
     });
 
     if (!res.ok) {
-      throw new Error(`Failed to fetch pattern data from ${url}: ${res.status} ${res.statusText}`);
+      return null;
     }
 
     const data = await res.json();
@@ -187,5 +179,31 @@ export async function fetchRemotePatterns(site) {
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Fetches config categories from the latest LLMO config
+ */
+export async function getConfigCategories(site, context) {
+  const { log, s3Client, env } = context;
+  const siteId = site.getSiteId();
+  const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
+
+  try {
+    const { config } = await llmoConfig.readConfig(
+      siteId,
+      s3Client,
+      { s3Bucket },
+    );
+
+    if (!config?.categories) {
+      return [];
+    }
+
+    return Object.values(config.categories).map((category) => category.name);
+  } catch (error) {
+    log.warn(`Failed to fetch config categories: ${error.message}`);
+    return [];
   }
 }

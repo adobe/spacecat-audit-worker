@@ -5,7 +5,6 @@ CREATE EXTERNAL TABLE IF NOT EXISTS {{database}}.{{rawTable}} (
   reqPath           string,
   queryStr          string,
   reqMethod         string,
-  proto             string,
   ua                string,
   statusCode        string,
   referer           string,

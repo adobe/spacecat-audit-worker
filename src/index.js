@@ -25,6 +25,7 @@ import lhsDesktop from './lhs/handler-desktop.js';
 import lhsMobile from './lhs/handler-mobile.js';
 import notfound from './notfound/handler.js';
 import sitemap from './sitemap/handler.js';
+import sitemapProductCoverage from './sitemap-product-coverage/handler.js';
 import redirectChains from './redirect-chains/handler.js';
 import paid from './paid-cookie-consent/handler.js';
 import canonical from './canonical/handler.js';
@@ -53,6 +54,8 @@ import preflight from './preflight/handler.js';
 import llmBlocked from './llm-blocked/handler.js';
 import geoBrandPresence from './geo-brand-presence/handler.js';
 import detectGeoBrandPresence from './geo-brand-presence/detect-geo-brand-presence-handler.js';
+import geoBrandPresenceDaily from './geo-brand-presence-daily/handler.js';
+import detectGeoBrandPresenceDaily from './geo-brand-presence-daily/detect-geo-brand-presence-handler.js';
 import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/guidance-accessibility.js';
 import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
@@ -68,10 +71,22 @@ import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
 import llmErrorPages from './llm-error-pages/handler.js';
 import llmErrorPagesGuidance from './llm-error-pages/guidance-handler.js';
 import { paidTrafficAnalysisWeekly, paidTrafficAnalysisMonthly } from './paid-traffic-analysis/handler.js';
+import pageTypeDetection from './page-type/handler.js';
+import pageTypeGuidance from './page-type/guidance-handler.js';
 import hreflang from './hreflang/handler.js';
 import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
+import vulnerabilities from './vulnerabilities/handler.js';
+import prerender from './prerender/handler.js';
+import productMetatags from './product-metatags/handler.js';
+import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
+import summarization from './summarization/handler.js';
+import summarizationGuidance from './summarization/guidance-handler.js';
+import permissions from './permissions/handler.js';
+import permissionsRedundant from './permissions/handler.redundant.js';
+import faqs from './faqs/handler.js';
+import faqsGuidance from './faqs/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
@@ -81,10 +96,12 @@ const HANDLERS = {
   'lhs-desktop': lhsDesktop,
   404: notfound,
   sitemap,
+  'sitemap-product-coverage': sitemapProductCoverage,
   'redirect-chains': redirectChains,
   paid,
   'paid-traffic-analysis-weekly': paidTrafficAnalysisWeekly,
   'paid-traffic-analysis-monthly': paidTrafficAnalysisMonthly,
+  'page-type-detection': pageTypeDetection,
   canonical,
   'broken-backlinks': backlinks,
   'broken-internal-links': internalLinks,
@@ -107,11 +124,17 @@ const HANDLERS = {
   'guidance:high-page-views-low-form-views': highPageViewsLowFormViewsGuidance,
   'geo-brand-presence': geoBrandPresence,
   'detect:geo-brand-presence': detectGeoBrandPresence,
+  'refresh:geo-brand-presence': detectGeoBrandPresence,
+  'geo-brand-presence-daily': geoBrandPresenceDaily,
+  'geo-brand-presence-trigger-refresh': refreshGeoBrandPresenceSheetsHandler,
+  'detect:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
+  'refresh:geo-brand-presence-daily': detectGeoBrandPresenceDaily,
   'guidance:forms-a11y': formAccessibilityGuidance,
   'detect:forms-a11y': mystiqueDetectedFormAccessibilityOpportunity,
   'guidance:accessibility-remediation': accessibilityRemediationGuidance,
   'guidance:paid-cookie-consent': paidConsentGuidance,
   'guidance:traffic-analysis': paidTrafficAnalysisGuidance,
+  'detect:page-types': pageTypeGuidance,
   'guidance:missing-alt-text': missingAltTextGuidance,
   'guidance:readability': readabilityGuidance,
   'guidance:structured-data-remediation': structuredDataGuidance,
@@ -127,8 +150,17 @@ const HANDLERS = {
   'guidance:llm-error-pages': llmErrorPagesGuidance,
   'optimization-report-callback': optimizationReportCallback,
   'llmo-customer-analysis': llmoCustomerAnalysis,
+  summarization,
+  'guidance:summarization': summarizationGuidance,
   hreflang,
   headings,
+  prerender,
+  'product-metatags': productMetatags,
+  'security-vulnerabilities': vulnerabilities,
+  'security-permissions': permissions,
+  'security-permissions-redundant': permissionsRedundant,
+  faqs,
+  'guidance:faqs': faqsGuidance,
   dummy: (message) => ok(message),
 };
 

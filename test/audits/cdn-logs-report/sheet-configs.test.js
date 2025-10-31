@@ -367,4 +367,48 @@ describe('CDN Logs Sheet Configs', () => {
         .an('array');
     });
   });
+
+  describe('patterns sheet config', () => {
+    it('generates correct headers', () => {
+      const headers = SHEET_CONFIGS.patterns.getHeaders();
+      expect(headers)
+        .to
+        .deep
+        .equal([
+          'name',
+          'regex',
+        ]);
+    });
+
+    it('processes patterns data with null fields', () => {
+      const testData = [
+        {
+          name: null,
+          regex: null,
+        },
+      ];
+
+      const result = SHEET_CONFIGS.patterns.processData(testData);
+
+      expect(result)
+        .to
+        .have
+        .length(1);
+      expect(result[0])
+        .to
+        .deep
+        .equal([
+          '',
+          '',
+        ]);
+    });
+
+    it('handles null data gracefully', () => {
+      const result = SHEET_CONFIGS.patterns.processData(null);
+      expect(result)
+        .to
+        .deep
+        .equal([]);
+    });
+  });
 });
