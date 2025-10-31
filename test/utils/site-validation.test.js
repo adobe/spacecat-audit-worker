@@ -16,7 +16,6 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { checkSiteRequiresValidation } from '../../src/utils/site-validation.js';
-import { SITES_REQUIRING_VALIDATION } from '../../src/common/constants.js';
 
 describe('utils/site-validation', () => {
   let sandbox;
@@ -73,26 +72,7 @@ describe('utils/site-validation', () => {
     expect(result).to.equal(true);
   });
 
-  it('falls back to legacy list when no entitlement and site is included', async () => {
-    const mustValidateId = SITES_REQUIRING_VALIDATION[0];
-    const site = { getId: sandbox.stub().returns(mustValidateId) };
-    sandbox.stub(TierClient, 'createForSite').resolves({
-      checkValidEntitlement: sandbox.stub().resolves({ entitlement: null }),
-    });
-
-    const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
-
-    expect(result).to.equal(true);
-  });
-
-  it('falls back to legacy list when entitlement check fails', async () => {
-    const mustValidateId = SITES_REQUIRING_VALIDATION[0];
-    const site = { getId: sandbox.stub().returns(mustValidateId) };
-    sandbox.stub(TierClient, 'createForSite').rejects(new Error('boom'));
-    const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
-    expect(result).to.equal(true);
-    expect(context.log.warn).to.have.been.called;
-  });
+  // Removed legacy fallback tests since validation is entitlement-driven only
 
   it('returns false when no entitlement and site is not included', async () => {
     const site = { getId: sandbox.stub().returns('some-other-id') };

@@ -11,7 +11,6 @@
  */
 
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
-import { SITES_REQUIRING_VALIDATION } from '../common/constants.js';
 
 /**
  * Checks if a site requires suggestion validation before showing in UI
@@ -38,6 +37,6 @@ export async function checkSiteRequiresValidation(site, context) {
     context?.log?.warn?.(`Entitlement check failed for site ${site.getId?.()}: ${e.message}`);
   }
 
-  // Fallback: if explicitly in legacy list, requires validation
-  return SITES_REQUIRING_VALIDATION.includes(site.getId());
+  // No legacy fallback: if no valid entitlement, do not require validation
+  return false;
 }
