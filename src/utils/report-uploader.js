@@ -98,7 +98,9 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 5) {
       const shouldRetry = isRetryable && attemptNumber <= maxRetries;
 
       // Log x-error header for 503 server errors
-      const xError = error.status === 503 ? error.response?.headers.get('x-error') : null;
+      const xError = error.status === 503 && error.response?.headers?.get
+        ? error.response.headers.get('x-error')
+        : null;
       if (xError) {
         log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed with server error - x-error: ${xError}, URL: ${url}`);
       }
