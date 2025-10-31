@@ -67,6 +67,7 @@ describe('Experimentation Opportunities Tests', () => {
       getBrandConfig: sinon.stub(),
       getCdnLogsConfig: sinon.stub(),
       getLlmoConfig: sinon.stub(),
+      getTokowakaConfig: sinon.stub(),
     };
     site = {
       getBaseURL: () => 'https://abc.com',
@@ -752,10 +753,12 @@ describe('Experimentation Opportunities Tests', () => {
       const result = await holcGuidanceHandler(message, context);
 
       expect(context.dataAccess.Audit.findById).to.have.been.calledWith(auditId);
-      expect(context.dataAccess.Opportunity.allBySiteId).to.have.been.calledWith(siteId);
+      expect(context.dataAccess.Opportunity.allBySiteId).to.haveBeenCalledOnce;
       expect(context.dataAccess.Opportunity.create).to.have.been.called;
       expect(context.dataAccess.Suggestion.create).to.have.been.called;
-      expect(result).to.have.property('statusCode', 200);
+      // ok() from http utils returns a Fetch Response
+      expect(result).to.have.property('ok', true);
+      expect(result).to.have.property('status', 200);
     });
 
     it('skips updates when existing suggestions were manually modified', async () => {
@@ -797,7 +800,49 @@ describe('Experimentation Opportunities Tests', () => {
       const result = await holcGuidanceHandler(message, context);
 
       expect(context.dataAccess.Suggestion.create).not.to.have.been.called;
-      expect(result).to.have.property('statusCode', 200);
+      expect(result).to.have.property('ok', true);
+      expect(result).to.have.property('status', 200);
+    });
+
+    it('creates NOT_VALIDATED suggestion when site requires validation', async () => {
+      const auditId = 'audit-3';
+      const siteId = site.getId();
+      const urlUnderTest = 'https://abc.com/oppty-three';
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          url: urlUnderTest,
+          guidance: { hello: 'world' },
+          suggestions: [{ c: 3 }],
+        },
+      };
+
+      const auditMock = {
+        getAuditResult: () => ({
+          experimentationOpportunities: [
+            { type: 'high-organic-low-ctr', page: urlUnderTest },
+          ],
+        }),
+      };
+
+      const createdOpportunity = { getId: () => 'oppty-3' };
+
+      context.site.requiresValidation = true;
+      context.dataAccess = {
+        Audit: { findById: sinon.stub().resolves(auditMock) },
+        Opportunity: {
+          allBySiteId: sinon.stub().resolves([]),
+          create: sinon.stub().resolves(createdOpportunity),
+        },
+        Suggestion: { create: sinon.stub().resolves({}) },
+      };
+
+      await holcGuidanceHandler(message, context);
+
+      expect(context.dataAccess.Suggestion.create).to.have.been.calledWith(
+        sinon.match.has('status', 'NOT_VALIDATED'),
+      );
     });
   });
 
