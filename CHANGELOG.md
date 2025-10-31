@@ -1,3 +1,10 @@
+# [1.222.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.221.0...v1.222.0) (2025-10-31)
+
+
+### Features
+
+* add a new handler to save CDN processing per site in a dedicated bucket ([#1450](https://github.com/adobe/spacecat-audit-worker/issues/1450)) ([c994bbc](https://github.com/adobe/spacecat-audit-worker/commit/c994bbc980851e223820b9f8ad800d047dad28f7))
+
 # [1.221.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.220.3...v1.221.0) (2025-10-31)
 
 
