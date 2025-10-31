@@ -14,6 +14,7 @@ import { JSDOM } from 'jsdom';
 import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
+import CssSelectorGenerator from 'css-selector-generator';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
@@ -267,6 +268,11 @@ export async function validatePageHeadings(
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
         suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
+        transformRules: {
+          action: 'insertBefore',
+          selector: document.querySelector('body > main') ? 'body > main > :first-child' : 'body > :first-child',
+          tag: 'h1',
+        },
         pageTags,
       });
     } else if (h1Elements.length > 1) {
@@ -280,14 +286,21 @@ export async function validatePageHeadings(
       });
     } else if (getTextContent(h1Elements[0]).length === 0
       || getTextContent(h1Elements[0]).length > H1_LENGTH_CHARS) {
+      const generator = new CssSelectorGenerator();
+      const h1Selector = generator.getSelector(h1Elements[0]);
       const h1Length = h1Elements[0].textContent.length;
       const lengthIssue = h1Length === 0 ? 'empty' : 'too long';
-      log.info(`H1 length ${lengthIssue} detected at ${url}: ${h1Length} characters`);
+      log.info(`H1 length ${lengthIssue} detected at ${url}: ${h1Length} characters using selector: ${h1Selector}`);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_H1_LENGTH.check,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_H1_LENGTH.explanation,
         suggestion: HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion,
+        transformRules: {
+          action: 'replace',
+          selector: h1Selector,
+          currValue: h1Elements[0].textContent,
+        },
         pageTags,
       });
     }
@@ -499,6 +512,9 @@ export async function headingsAuditRunner(baseURL, context, site) {
               if (check.tagName) {
                 urlObject.tagName = check.tagName;
               }
+              if (check.transformRules) {
+                urlObject.transformRules = check.transformRules;
+              }
               aggregatedResults[checkType].urls.push(urlObject);
             }
           }
@@ -571,6 +587,10 @@ export function generateSuggestions(auditUrl, auditData, context) {
         if (urlObj.suggestion) {
           suggestion.recommendedAction = urlObj.suggestion;
         }
+        if (urlObj.transformRules) {
+          suggestion.transformRules = urlObj.transformRules;
+        }
+
         suggestionsByType[checkType].push(suggestion);
         allSuggestions.push(suggestion);
       });
@@ -596,10 +616,12 @@ export function generateSuggestions(auditUrl, auditData, context) {
   });
 
   const elmoSuggestions = [];
-  elmoSuggestions.push({
-    type: 'CODE_CHANGE',
-    recommendedAction: mdTable,
-  });
+  if (mdTable) {
+    elmoSuggestions.push({
+      type: 'CODE_CHANGE',
+      recommendedAction: mdTable,
+    });
+  }
 
   const suggestions = [...allSuggestions];
 
@@ -654,6 +676,9 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         checkType: suggestion.checkType,
         explanation: suggestion.explanation,
         recommendedAction: suggestion.recommendedAction,
+        ...(suggestion.transformRules && {
+          transformRules: { ...suggestion.transformRules },
+        }),
       },
     }),
     log,
