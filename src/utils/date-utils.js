@@ -76,10 +76,6 @@ export function getTemporalCondition(week, year) {
   const today = new Date();
   const triples = getPreviousWeekTriples(today);
 
-  if (triples.length === 0) {
-    throw new Error(`Invalid date: ${today}`);
-  }
-
   const parts = triples.map(({ year: y, month, week: w }) => {
     const paddedMonth = String(month).padStart(2, '0');
     const paddedWeek = String(w).padStart(2, '0');
