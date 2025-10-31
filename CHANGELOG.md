@@ -1,3 +1,10 @@
+## [1.222.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.222.1...v1.222.2) (2025-10-31)
+
+
+### Bug Fixes
+
+* make llm error pages stepped audit ([#1478](https://github.com/adobe/spacecat-audit-worker/issues/1478)) ([2072664](https://github.com/adobe/spacecat-audit-worker/commit/2072664d996a7f2b866a50134bc1aaa1a7efc7b6))
+
 ## [1.222.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.222.0...v1.222.1) (2025-10-31)
 
 
