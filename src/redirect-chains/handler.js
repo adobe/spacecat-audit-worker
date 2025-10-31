@@ -1191,6 +1191,8 @@ export async function generateOpportunities(auditUrl, auditData, context) {
   );
 
   log.info(`${AUDIT_LOGGING_NAME} - Creating each suggestion for this opportunity.`);
+
+  log.info(`${AUDIT_LOGGING_NAME} - WARNING - using an alternative key generator.`);
   const buildKey = (data) => `${data.redirectsFile}${KEY_SEPARATOR}${data.sourceUrl}${KEY_SEPARATOR}${data.destinationUrl}${KEY_SEPARATOR}${data.ordinalDuplicate}${KEY_SEPARATOR}${data.mike}`;
 
   // Log the key for each suggestion
