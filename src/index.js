@@ -196,8 +196,8 @@ async function run(message, context) {
       const { Site } = context.dataAccess;
       const site = await Site.findById(siteId);
       if (site) {
-        // Set the requiresValidation flag on the site object (ASO entitlement-based)
-        site.requiresValidation = await checkSiteRequiresValidation(site, context);
+        // Set the requiresValidation flag on the site object
+        site.requiresValidation = checkSiteRequiresValidation(site);
         // Add the site to the context
         context.site = site;
         log.info(`Site ${siteId} requires validation: ${site.requiresValidation}`);
