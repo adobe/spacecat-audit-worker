@@ -33,7 +33,6 @@ export async function checkSiteRequiresValidation(site, context) {
     context?.log?.debug?.('Entitlement check result', {
       hasEntitlement: Boolean(entitlement),
       tier: entitlement?.tier ?? null,
-      entitlement: entitlement.stringify(),
     });
     if (entitlement?.tier === 'PAID') {
       return true;

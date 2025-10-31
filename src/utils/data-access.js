@@ -238,9 +238,7 @@ export async function syncSuggestions({
       (existing) => buildKey(existing.getData()) === buildKey(data),
     ))
     .map((data) => {
-      // Get the base suggestion from the provided mapping function
       const suggestion = mapNewSuggestion(data);
-      // Add NOT_VALIDATED status if site requires validation, otherwise NEW
       return {
         ...suggestion,
         status: requiresValidation ? SuggestionDataAccess.STATUSES.NOT_VALIDATED

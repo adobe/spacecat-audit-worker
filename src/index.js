@@ -198,9 +198,7 @@ async function run(message, context) {
       if (site) {
         // Set the requiresValidation flag on the site object
         site.requiresValidation = await checkSiteRequiresValidation(site, context);
-        // Add the site to the context
         context.site = site;
-        log.info(`Site ${siteId} requires validation: ${site.requiresValidation}`);
       }
     } catch (e) {
       log.warn(`Failed to fetch site ${siteId}: ${e.message}`);

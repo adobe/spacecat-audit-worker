@@ -61,7 +61,7 @@ describe('utils/site-validation', () => {
     expect(stub).to.not.have.been.called;
   });
 
-  it('returns true when entitlement tier is PAID', async () => {
+  it('returns true when tier in entitlement exists and is equal to PAID', async () => {
     const site = { getId: sandbox.stub().returns('site-2') };
     sandbox.stub(TierClient, 'createForSite').resolves({
       checkValidEntitlement: sandbox.stub().resolves({ entitlement: { tier: 'PAID' } }),
