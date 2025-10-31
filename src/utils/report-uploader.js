@@ -83,6 +83,33 @@ export async function readFromSharePoint(filename, outputLocation, sharepointCli
   }
 }
 
+async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
+  async function attemptFetch(attemptNumber) {
+    try {
+      const response = await fetch(url, options);
+      if (response.ok) return response;
+
+      const error = new Error(`${response.status} ${response.statusText}`);
+      error.status = response.status;
+      throw error;
+    } catch (error) {
+      // Retry on network errors or 5xx/429 HTTP errors
+      const isRetryable = !error.status || error.status >= 500 || error.status === 429;
+
+      if (!isRetryable || attemptNumber > maxRetries) {
+        throw new Error(`${endpointName} failed: ${error.message}`);
+      }
+
+      const delay = 2 ** (attemptNumber - 1) * 100;
+      log.warn(`%s: ${endpointName} retrying in ${delay}ms (${attemptNumber}/${maxRetries}): ${error.message}`, AUDIT_NAME);
+      await sleep(delay);
+      return attemptFetch(attemptNumber + 1);
+    }
+  }
+
+  return attemptFetch(1);
+}
+
 export async function publishToAdminHlx(filename, outputLocation, log) {
   const org = 'adobe';
   const site = 'project-elmo-ui-data';
@@ -106,7 +133,7 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
       const endpointStartTime = Date.now();
 
       // eslint-disable-next-line no-await-in-loop
-      const response = await fetch(endpoint.url, { method: 'POST', headers });
+      const response = await fetchWithRetry(endpoint.url, { method: 'POST', headers }, endpoint.name, log);
 
       if (!response.ok) {
         const errorMsg = `${endpoint.name} failed: ${response.status} ${response.statusText}`;
