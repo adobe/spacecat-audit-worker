@@ -733,6 +733,22 @@ export const accessibilityOpportunitiesMap = {
 };
 
 /**
+ * Accessibility issue types that should be sent to Mystique for automatic code fix
+ */
+export const issueTypesForCodeFix = [
+  'aria-allowed-attr',
+  'aria-prohibited-attr',
+  'aria-roles',
+  'aria-hidden-focus',
+  'aria-required-attr',
+  'aria-valid-attr-value',
+  'button-name',
+  'link-name',
+  'select-name',
+  'aria-required-parent',
+];
+
+/**
  * Accessibility issue types that should be sent to Mystique for remediation guidance
  */
 export const issueTypesForMystique = [

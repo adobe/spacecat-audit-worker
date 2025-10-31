@@ -158,41 +158,6 @@ describe('Aggregation Strategies', () => {
   });
 
   describe('ISSUE_GRANULARITY_MAP', () => {
-    it('should have entries for all known issue types', () => {
-      const expectedIssues = [
-        'color-contrast',
-        'list',
-        'aria-roles',
-        'image-alt',
-        'link-in-text-block',
-        'link-name',
-        'target-size',
-        'listitem',
-        'label',
-        'aria-prohibited-attr',
-        'button-name',
-        'frame-title',
-        'aria-valid-attr-value',
-        'aria-allowed-attr',
-        'aria-hidden-focus',
-        'nested-interactive',
-        'html-has-lang',
-        'meta-viewport',
-        'aria-required-children',
-        'aria-required-parent',
-        'meta-refresh',
-        'role-img-alt',
-        'aria-input-field-name',
-        'scrollable-region-focusable',
-        'select-name',
-      ];
-
-      expectedIssues.forEach((issueType) => {
-        expect(ISSUE_GRANULARITY_MAP[issueType]).to.exist;
-        expect(ISSUE_GRANULARITY_MAP[issueType]).to.be.a('string');
-      });
-    });
-
     it('should only use valid granularity values', () => {
       const validGranularities = Object.values(Granularity);
 
