@@ -103,7 +103,7 @@ function buildPaths(options) {
 export async function processCdnLogs(auditUrl, context, site, auditContext, options = {}) {
   const { log, s3Client, dataAccess } = context;
 
-  const { useConsolidatedBucket = false } = options;
+  const { useConsolidatedBucket = false, auditType = 'cdn-analysis' } = options;
 
   const bucketName = await resolveCdnBucketName(site, context);
   if (!bucketName) {
@@ -243,7 +243,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext, opti
       // eslint-disable-next-line no-await-in-loop
       await athenaClient.execute(sqlInsertReferral, database, `[Athena Query] Insert aggregated referral data for ${serviceProvider} into ${database}.${aggregatedReferralTable}`);
 
-      log.info(`cdn-analysis aggregated logs successfully inserted for siteId=${siteId} with:
+      log.info(`${auditType} aggregated logs successfully inserted for siteId=${siteId} with:
         serviceProvider=${serviceProvider}
         cdnType=${cdnType}
         rawTable=${rawTable}
@@ -275,11 +275,11 @@ export async function processCdnLogs(auditUrl, context, site, auditContext, opti
 }
 
 export async function cdnLogAnalysisRunner(auditUrl, context, site, auditContext) {
-  return processCdnLogs(auditUrl, context, site, auditContext, { useConsolidatedBucket: false });
+  return processCdnLogs(auditUrl, context, site, auditContext, { useConsolidatedBucket: false, auditType: 'cdn-analysis' });
 }
 
 export async function cdnLogsAnalysisRunner(auditUrl, context, site, auditContext) {
-  return processCdnLogs(auditUrl, context, site, auditContext, { useConsolidatedBucket: true });
+  return processCdnLogs(auditUrl, context, site, auditContext, { useConsolidatedBucket: true, auditType: 'cdn-logs-analysis' });
 }
 
 // Current handler (per-org, existing functionality)
