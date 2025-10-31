@@ -89,7 +89,7 @@ describe('AccessibilityCodeFixHandler', () => {
         {
           url: 'https://example.com/contact',
           source: 'form',
-          aggregation_key: 'color-contrast',
+          aggregation_key: 'https://example.com/contact|button-name|form', // PER_PAGE_PER_COMPONENT: url|type|source
         },
       ],
     },
@@ -100,14 +100,19 @@ describe('AccessibilityCodeFixHandler', () => {
       const mockReportData = {
         url: 'https://example.com/contact',
         source: 'form',
-        aggregation_key: 'color-contrast',
+        aggregation_key: 'https://example.com/contact|button-name|form',
         diff: 'mock diff content',
       };
 
       const suggestionData = {
         url: 'https://example.com/contact',
         source: 'form',
-        aggregation_key: 'color-contrast',
+        issues: [{
+          type: 'button-name',
+          htmlWithIssues: [{
+            target_selector: 'button.submit',
+          }],
+        }],
       };
 
       mockSuggestion.getData.returns(suggestionData);
@@ -125,7 +130,14 @@ describe('AccessibilityCodeFixHandler', () => {
 
       expect(result.status).to.equal(200);
       expect(mockSuggestion.setData).to.have.been.calledWith({
-        ...suggestionData,
+        url: 'https://example.com/contact',
+        source: 'form',
+        issues: [{
+          type: 'button-name',
+          htmlWithIssues: [{
+            target_selector: 'button.submit',
+          }],
+        }],
         patchContent: 'mock diff content',
         isCodeChangeAvailable: true,
       });
@@ -363,7 +375,12 @@ describe('AccessibilityCodeFixHandler', () => {
       const suggestionData = {
         url: 'https://example.com/contact',
         source: 'form',
-        aggregation_key: 'color-contrast',
+        issues: [{
+          type: 'button-name',
+          htmlWithIssues: [{
+            target_selector: 'button.submit',
+          }],
+        }],
       };
 
       mockSuggestion.getData.returns(suggestionData);
@@ -542,8 +559,12 @@ describe('AccessibilityCodeFixHandler', () => {
 
       const suggestionData = {
         url: 'https://example.com/contact',
-        source: '',
-        aggregation_key: 'color-contrast',
+        issues: [{
+          type: 'button-name',
+          htmlWithIssues: [{
+            target_selector: 'button.submit',
+          }],
+        }],
       };
 
       mockSuggestion.getData.returns(suggestionData);
@@ -564,7 +585,7 @@ describe('AccessibilityCodeFixHandler', () => {
           updates: [
             {
               url: 'https://example.com/contact',
-              aggregation_key: 'color-contrast',
+              aggregation_key: 'https://example.com/contact|button-name', // No source
             },
           ],
         },
@@ -584,7 +605,12 @@ describe('AccessibilityCodeFixHandler', () => {
       const suggestionData = {
         url: 'https://example.com/contact',
         source: 'form',
-        aggregation_key: 'color-contrast',
+        issues: [{
+          type: 'button-name',
+          htmlWithIssues: [{
+            target_selector: 'button.submit',
+          }],
+        }],
       };
 
       mockSuggestion.getData.returns(suggestionData);
@@ -606,7 +632,7 @@ describe('AccessibilityCodeFixHandler', () => {
             {
               url: 'https://example.com/contact',
               source: 'form',
-              aggregation_key: 'color-contrast',
+              aggregation_key: 'https://example.com/contact|button-name|form',
               code_fix_path: 'custom/path/to/report.json',
               code_fix_bucket: 'custom-bucket',
             },
@@ -736,7 +762,12 @@ describe('AccessibilityCodeFixHandler', () => {
       const suggestionData = {
         url: 'https://example.com/contact',
         source: 'form',
-        aggregation_key: 'color-contrast',
+        issues: [{
+          type: 'button-name',
+          htmlWithIssues: [{
+            target_selector: 'button.submit',
+          }],
+        }],
       };
 
       mockSuggestion.getData.returns(suggestionData);
@@ -758,7 +789,7 @@ describe('AccessibilityCodeFixHandler', () => {
             {
               url: 'https://example.com/contact',
               source: 'form',
-              aggregation_key: 'color-contrast',
+              aggregation_key: 'https://example.com/contact|button-name|form',
               type: ['should-be-ignored'],
             },
           ],
@@ -780,7 +811,12 @@ describe('AccessibilityCodeFixHandler', () => {
       const suggestionData = {
         url: 'https://example.com/contact',
         source: 'form',
-        aggregation_key: 'button-name',
+        issues: [{
+          type: 'button-name',
+          htmlWithIssues: [{
+            target_selector: 'button.submit',
+          }],
+        }],
       };
 
       mockSuggestion.getData.returns(suggestionData);
@@ -804,7 +840,7 @@ describe('AccessibilityCodeFixHandler', () => {
             {
               url: 'https://example.com/contact',
               source: 'form',
-              aggregation_key: 'button-name',
+              aggregation_key: 'https://example.com/contact|button-name|form',
             },
           ],
         },
@@ -814,7 +850,14 @@ describe('AccessibilityCodeFixHandler', () => {
 
       expect(result.status).to.equal(200);
       expect(mockSuggestion.setData).to.have.been.calledWith({
-        ...suggestionData,
+        url: 'https://example.com/contact',
+        source: 'form',
+        issues: [{
+          type: 'button-name',
+          htmlWithIssues: [{
+            target_selector: 'button.submit',
+          }],
+        }],
         patchContent: plainTextDiff,
         isCodeChangeAvailable: true,
       });
@@ -826,16 +869,27 @@ describe('AccessibilityCodeFixHandler', () => {
         diff: 'mock diff content for aria-prohibited-attr',
       };
 
+      // aria-prohibited-attr has PER_TYPE granularity, so aggregation key is just the type
       const suggestionData1 = {
         url: 'https://example.com/page1',
         source: 'form1',
-        aggregation_key: 'aria-prohibited-attr',
+        issues: [{
+          type: 'aria-prohibited-attr',
+          htmlWithIssues: [{
+            target_selector: 'div[aria-hidden]',
+          }],
+        }],
       };
 
       const suggestionData2 = {
         url: 'https://example.com/page2',
         source: 'form2',
-        aggregation_key: 'aria-prohibited-attr',
+        issues: [{
+          type: 'aria-prohibited-attr',
+          htmlWithIssues: [{
+            target_selector: 'span.label',
+          }],
+        }],
       };
 
       const mockSuggestion2 = {
@@ -885,12 +939,26 @@ describe('AccessibilityCodeFixHandler', () => {
       expect(result.status).to.equal(200);
       // Both suggestions should be updated
       expect(mockSuggestion.setData).to.have.been.calledWith({
-        ...suggestionData1,
+        url: 'https://example.com/page1',
+        source: 'form1',
+        issues: [{
+          type: 'aria-prohibited-attr',
+          htmlWithIssues: [{
+            target_selector: 'div[aria-hidden]',
+          }],
+        }],
         patchContent: 'mock diff content for aria-prohibited-attr',
         isCodeChangeAvailable: true,
       });
       expect(mockSuggestion2.setData).to.have.been.calledWith({
-        ...suggestionData2,
+        url: 'https://example.com/page2',
+        source: 'form2',
+        issues: [{
+          type: 'aria-prohibited-attr',
+          htmlWithIssues: [{
+            target_selector: 'span.label',
+          }],
+        }],
         patchContent: 'mock diff content for aria-prohibited-attr',
         isCodeChangeAvailable: true,
       });

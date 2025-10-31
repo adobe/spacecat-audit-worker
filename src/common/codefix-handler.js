@@ -15,6 +15,7 @@
 import { createHash } from 'crypto';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey } from '../utils/s3-utils.js';
+import { buildAggregationKey } from '../accessibility/utils/aggregation-strategies.js';
 
 /**
  * Custom error classes for code fix processing
@@ -91,6 +92,8 @@ async function readCodeChangeReport(s3Client, bucketName, reportKey, log) {
  * @param {string} source - The source to match (optional)
  * @param {string} matchKey - The key to match (aggregation_key or ruleId from type)
  * @param {Object} reportData - The code change report data
+ * @param {boolean} useAggregationKey - If true, build aggregation key from suggestion data;
+ *                                      if false, use issue type (ruleId)
  * @param {Object} log - Logger instance
  * @returns {Promise<Array>} - Array of updated suggestions
  */
@@ -100,6 +103,7 @@ async function updateSuggestionsWithCodeChange(
   source,
   matchKey,
   reportData,
+  useAggregationKey,
   log,
 ) {
   const updatedSuggestions = [];
@@ -113,9 +117,25 @@ async function updateSuggestionsWithCodeChange(
       const suggestionUrl = suggestionData.url;
       const suggestionSource = suggestionData.source;
 
-      // Try to match by aggregation_key first (new), then issues[0].type (old)
-      const suggestionMatchKey = suggestionData.aggregation_key
-        || suggestionData.issues?.[0]?.type;
+      let suggestionMatchKey;
+      if (useAggregationKey) {
+        // Build aggregation key from suggestion data
+        const issue = suggestionData.issues?.[0];
+        if (issue) {
+          const targetSelector = issue.htmlWithIssues?.[0]?.target_selector
+            || issue.htmlWithIssues?.[0]?.targetSelector
+            || '';
+          suggestionMatchKey = buildAggregationKey(
+            issue.type,
+            suggestionData.url,
+            targetSelector,
+            suggestionData.source,
+          );
+        }
+      } else {
+        // Use issue type (ruleId) for backwards compatibility
+        suggestionMatchKey = suggestionData.issues?.[0]?.type;
+      }
 
       if (suggestionUrl === url
             && (!source || suggestionSource === source)
@@ -270,6 +290,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
         source,
         aggregationKey,
         reportData,
+        true, // useAggregationKey = true for new format
         log,
       );
       totalUpdatedSuggestions += updatedSuggestions.length;
@@ -313,6 +334,7 @@ export async function processCodeFixUpdates(siteId, opportunityId, updates, cont
         source,
         ruleId,
         reportData,
+        false, // useAggregationKey = false for old format (use ruleId)
         log,
       );
       totalUpdatedSuggestions += updatedSuggestions.length;
