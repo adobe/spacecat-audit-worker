@@ -87,6 +87,23 @@ describe('Meta Tags', () => {
         expect(seoChecks.getDetectedTags()[url][TITLE][SEO_RECOMMENDATION])
           .to.equal(SHOULD_BE_PRESENT);
       });
+
+      it('should detect empty array tags and add to detectedTags', () => {
+        const url = 'https://example.com';
+        const pageTags = {
+          [TITLE]: [], // Empty array simulating missing tags
+          [DESCRIPTION]: [], // Empty array simulating missing tags
+        };
+
+        seoChecks.checkForMissingTags(url, pageTags);
+
+        expect(seoChecks.getDetectedTags()[url][TITLE][ISSUE]).to.equal('Missing Title');
+        expect(seoChecks.getDetectedTags()[url][TITLE][SEO_RECOMMENDATION])
+          .to.equal(SHOULD_BE_PRESENT);
+        expect(seoChecks.getDetectedTags()[url][DESCRIPTION][ISSUE]).to.equal('Missing Description');
+        expect(seoChecks.getDetectedTags()[url][DESCRIPTION][SEO_RECOMMENDATION])
+          .to.equal(SHOULD_BE_PRESENT);
+      });
     });
 
     describe('checkForTagsLength', () => {
