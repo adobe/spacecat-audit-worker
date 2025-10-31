@@ -208,6 +208,40 @@ describe('Utils Report Uploader', () => {
       );
     });
 
+    it('should retry on 503 error and then succeed', async function retryTest() {
+      this.timeout(10000);
+
+      const buffer = Buffer.from('test data');
+      const filename = 'test.xlsx';
+      const outputLocation = 'reports';
+
+      // First call fails with 503, second call succeeds for preview
+      fetchStub.onCall(0).resolves({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: {
+          get: sandbox.stub().returns(null),
+        },
+      });
+      fetchStub.onCall(1).resolves({ ok: true, status: 200, statusText: 'OK' });
+      // Live endpoint succeeds immediately
+      fetchStub.onCall(2).resolves({ ok: true, status: 200, statusText: 'OK' });
+
+      await uploadAndPublishFile(
+        buffer,
+        filename,
+        outputLocation,
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(fetchStub).to.have.been.calledThrice;
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/preview Helix API failed.*retrying in 4000ms/),
+      );
+    });
+
     it('should handle upload errors', async () => {
       const buffer = Buffer.from('test data');
       const filename = 'test.xlsx';
