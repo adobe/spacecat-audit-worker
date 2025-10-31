@@ -2452,6 +2452,55 @@ describe('Redirect Chains Audit', () => {
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - No suggested fixes found, skipping opportunity creation`);
       });
 
+      it('should log suggestion keys when key includes "gourde" - direct import version (covers lines 1203-1204)', async () => {
+        // Use an esmocked version just for this test
+        const localConvertToOpportunityStub = sandbox.stub().resolves({ getId: () => 'test-opportunity-id' });
+        const localSyncSuggestionsStub = sandbox.stub().resolves();
+
+        const localHandlerModule = await esmock('../../src/redirect-chains/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: localConvertToOpportunityStub,
+          },
+          '../../src/utils/data-access.js': {
+            syncSuggestions: localSyncSuggestionsStub,
+          },
+        });
+
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+        const auditData = {
+          auditResult: {
+            success: true,
+          },
+          suggestions: [
+            {
+              redirectsFile: 'https://www.example.com/redirects.json',
+              sourceUrl: '/test-gourde-page',
+              destinationUrl: '/new-page',
+              ordinalDuplicate: 0,
+              mike: 'test-value',
+            },
+            {
+              redirectsFile: 'https://www.example.com/redirects.json',
+              sourceUrl: '/other-page',
+              destinationUrl: '/another-page',
+              ordinalDuplicate: 0,
+              mike: 'test-value',
+            },
+          ],
+        };
+
+        await localHandlerModule.generateOpportunities(auditUrl, auditData, context);
+
+        // Verify that log.info was called with the expected message for the suggestion containing 'gourde'
+        const logCalls = context.log.info.getCalls();
+        const gourdeLogExists = logCalls.some((call) => {
+          const message = call.args[0];
+          return message.includes('Suggestion 1/2 key:') && message.includes('gourde');
+        });
+        expect(gourdeLogExists).to.be.true;
+      });
+
       it('should use cached resolved URL when creating opportunities', async () => {
         const baseUrl = 'https://www.example.com';
         const auditUrl = `${baseUrl}/redirects.json`;
@@ -2486,7 +2535,7 @@ describe('Redirect Chains Audit', () => {
         expect(syncSuggestionsStub).to.have.been.calledOnce;
       });
 
-      it('should use suggestion key as opportunity key', async () => {
+      it('should NOT use suggestion key as opportunity key', async () => {
         const auditUrl = 'https://www.example.com/redirects.json';
         const testKey = 'test-suggestion-key';
         const auditData = {
@@ -2507,7 +2556,7 @@ describe('Redirect Chains Audit', () => {
         const syncSuggestionsCall = syncSuggestionsStub.firstCall;
         const { buildKey } = syncSuggestionsCall.args[0];
         const testData = { key: testKey };
-        expect(buildKey(testData)).to.equal(testKey);
+        expect(buildKey(testData)).to.not.equal(testKey);
       });
 
       it('should correctly map new suggestions with opportunity ID', async () => {
