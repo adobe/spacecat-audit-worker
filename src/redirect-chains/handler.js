@@ -1066,7 +1066,7 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
       // IMPORTANT: The data format must be kept in sync with the backoffice code in
       // experience-success-studio-backoffice/src/.../opportunities/RedirectChainsOpportunity.js
       // Examples: when creating a new suggestion, and also when updating an existing suggestion.
-      suggestedFixes.push({
+      const suggestion = {
         key: buildUniqueKey(row), // string
 
         // {'duplicate-src', 'too-qualified', 'same-src-dest', 'manual-check', 'final-mismatch',
@@ -1090,7 +1090,14 @@ export function generateSuggestedFixes(auditUrl, auditData, context) {
         redirectChain: row.redirectChain || row.fullSrc, // string: 1+ full URL strings separated by ' -> '
         // eslint-disable-next-line max-len
         errorMsg: row.error || '', // string: empty if no error (note: API returns null for empty strings), otherwise the error message
-      });
+      };
+
+      // Add optional 'mike' field for all fixTypes EXCEPT 'same-src-dest'
+      if (suggestedFixResult.fixType !== 'same-src-dest') {
+        suggestion.mike = 'test';
+      }
+
+      suggestedFixes.push(suggestion);
     }
   }
   log.info(`${AUDIT_LOGGING_NAME} - Skipped ${skippedEntriesCount} entries due to exclusion criteria.`);
@@ -1184,7 +1191,17 @@ export async function generateOpportunities(auditUrl, auditData, context) {
   );
 
   log.info(`${AUDIT_LOGGING_NAME} - Creating each suggestion for this opportunity.`);
-  const buildKey = (data) => data.key; // we use this simple function since we pre-built each key
+  const buildKey = (data) => `${data.redirectsFile}${KEY_SEPARATOR}${data.sourceUrl}${KEY_SEPARATOR}${data.destinationUrl}${KEY_SEPARATOR}${data.ordinalDuplicate}${KEY_SEPARATOR}${data.mike}`;
+
+  // Log the key for each suggestion
+  auditData.suggestions.forEach((suggestion, index) => {
+    const key = buildKey(suggestion);
+    // To limit the noise, only log if the key includes "gourde"
+    if (key.includes('gourde')) {
+      log.info(`${AUDIT_LOGGING_NAME} - Suggestion ${index + 1}/${auditData.suggestions.length} key: ${key}`);
+    }
+  });
+
   await syncSuggestions({
     opportunity,
     newData: auditData.suggestions,
