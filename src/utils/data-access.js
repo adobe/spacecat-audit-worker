@@ -230,11 +230,21 @@ export async function syncSuggestions({
   log.debug(`Updated existing suggestions = ${existingSuggestions.length}: ${JSON.stringify(existingSuggestions, null, 2)}`);
 
   // Prepare new suggestions
+  const { site } = context;
+  const requiresValidation = Boolean(site?.requiresValidation);
+
   const newSuggestions = newData
     .filter((data) => !existingSuggestions.some(
       (existing) => buildKey(existing.getData()) === buildKey(data),
     ))
-    .map(mapNewSuggestion);
+    .map((data) => {
+      const suggestion = mapNewSuggestion(data);
+      return {
+        ...suggestion,
+        status: requiresValidation ? SuggestionDataAccess.STATUSES.NOT_VALIDATED
+          : SuggestionDataAccess.STATUSES.NEW,
+      };
+    });
 
   // Add new suggestions if any
   if (newSuggestions.length > 0) {

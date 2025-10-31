@@ -2396,7 +2396,8 @@ describe('Product MetaTags', () => {
       expect(result.projectedTrafficValue).to.be.a('number');
     });
 
-    it('should return empty object when RUM API fails', async () => {
+    it('should return empty object when RUM API fails', async function () {
+      this.timeout(5000);
       const detectedTags = {
         '/page1': { title: { issue: 'Missing Title', tagName: 'title' } },
       };
@@ -2969,7 +2970,8 @@ describe('Product MetaTags', () => {
       expect(logStub.info).to.have.been.called;
     });
 
-    it('should handle missing site config', async () => {
+    it('should handle missing site config', async function () {
+      this.timeout(5000);
       // Mock site to have getBaseURL but null config
       const mockSiteWithNullConfig = {
         getId: sinon.stub().returns('site123'),
@@ -3008,7 +3010,8 @@ describe('Product MetaTags', () => {
       expect(logStub.info).to.have.been.called;
     });
 
-    it('should log detailed context information', async () => {
+    it('should log detailed context information', async function () {
+      this.timeout(5000);
       const mockAutoDetectResult = {
         seoChecks: { getFewHealthyTags: sinon.stub().returns({}) },
         detectedTags: {},

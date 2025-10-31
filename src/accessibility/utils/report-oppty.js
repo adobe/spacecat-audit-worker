@@ -71,7 +71,7 @@ export function createReportOpportunitySuggestionInstance(suggestionValue) {
     {
       type: 'CODE_CHANGE',
       rank: 1,
-      status: 'NEW',
+      status: 'NOT_VALIDATED',
       data: {
         suggestionValue,
       },
