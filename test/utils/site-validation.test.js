@@ -72,6 +72,16 @@ describe('utils/site-validation', () => {
     expect(result).to.equal(true);
   });
 
+  it('returns false and logs warn when entitlement check throws', async () => {
+    const site = { getId: sandbox.stub().returns('site-err') };
+    sandbox.stub(TierClient, 'createForSite').rejects(new Error('boom'));
+
+    const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
+
+    expect(result).to.equal(false);
+    expect(context.log.warn).to.have.been.called;
+  });
+
   // Removed legacy fallback tests since validation is entitlement-driven only
 
   it('returns false when no entitlement and site is not included', async () => {

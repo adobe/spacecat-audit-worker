@@ -71,6 +71,18 @@ describe('Index siteId handling and validation flag', () => {
     expect(context.site.requiresValidation).to.equal(true);
   });
 
+  it('sets requiresValidation=false when entitlement is absent', async () => {
+    sandbox.stub(TierClient, 'createForSite').resolves({
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: null }),
+    });
+
+    const resp = await main(new Request('https://space.cat'), context);
+
+    expect(resp.status).to.equal(200);
+    expect(context.site).to.exist;
+    expect(context.site.requiresValidation).to.equal(false);
+  });
+
   // Removed legacy fallback test: validation is driven solely by entitlements
 
   it('logs a warning when site fetch fails (coverage for catch)', async () => {
