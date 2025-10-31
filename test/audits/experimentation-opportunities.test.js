@@ -753,7 +753,7 @@ describe('Experimentation Opportunities Tests', () => {
       const result = await holcGuidanceHandler(message, context);
 
       expect(context.dataAccess.Audit.findById).to.have.been.calledWith(auditId);
-      expect(context.dataAccess.Opportunity.allBySiteId).to.haveBeenCalledOnce;
+      expect(context.dataAccess.Opportunity.allBySiteId).to.have.been.calledOnce;
       expect(context.dataAccess.Opportunity.create).to.have.been.called;
       expect(context.dataAccess.Suggestion.create).to.have.been.called;
       // ok() from http utils returns a Fetch Response

@@ -346,4 +346,22 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     expect(old.setStatus).to.not.have.been.called;
   });
+
+  it('creates suggestions with status NEW when site does not require validation', async () => {
+    // Set requiresValidation to false
+    context.site = { requiresValidation: false };
+    const message = {
+      auditId,
+      siteId,
+      data: {
+        url: 'https://example.com', guidance: guidancePayload,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(Suggestion.create).to.have.been.called;
+    const firstCall = Suggestion.create.getCall(0).args[0];
+    expect(firstCall).to.have.property('status', 'NEW');
+  });
 });
