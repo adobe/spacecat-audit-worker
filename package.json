@@ -91,7 +91,7 @@
     "@adobe/spacecat-shared-scrape-client": "2.2.1",
     "@adobe/spacecat-shared-slack-client": "1.5.28",
     "@adobe/spacecat-shared-tier-client": "1.2.2",
-    "@adobe/spacecat-shared-utils": "1.69.1",
+    "@adobe/spacecat-shared-utils": "1.69.2",
     "@adobe/structured-data-validator": "1.5.0",
     "@aws-sdk/client-athena": "3.918.0",
     "@aws-sdk/client-lambda": "3.918.0",
