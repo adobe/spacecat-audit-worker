@@ -19,7 +19,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { getIssueRanking } from '../utils/seo-utils.js';
+import { getIssueRanking, trimTagValue } from '../utils/seo-utils.js';
 import { getBaseUrl } from '../utils/url-utils.js';
 import {
   DESCRIPTION,
@@ -107,9 +107,9 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
   // handling for homepage
   return {
     [pageUrl]: {
-      title: object.scrapeResult.tags.title,
-      description: object.scrapeResult.tags.description,
-      h1: object.scrapeResult.tags.h1 || [],
+      title: trimTagValue(object.scrapeResult.tags.title),
+      description: trimTagValue(object.scrapeResult.tags.description),
+      h1: trimTagValue(object.scrapeResult.tags.h1) || [],
       s3key: key,
     },
   };
