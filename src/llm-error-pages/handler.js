@@ -11,6 +11,7 @@
  */
 
 import ExcelJS from 'exceljs';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import {
@@ -31,23 +32,107 @@ import {
 import { wwwUrlResolver } from '../common/index.js';
 import { createLLMOSharepointClient, saveExcelReport, readFromSharePoint } from '../utils/report-uploader.js';
 
-async function runLlmErrorPagesAudit(url, context, site) {
-  const {
-    log, audit,
-  } = context;
-  const s3Config = await getS3Config(site, context);
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-  log.debug(`Starting LLM error pages audit for ${url}`);
-  log.debug(`Running LLM error pages audit ${audit}`);
+/**
+ * Step 1: Import top pages and submit for scraping
+ */
+export async function importTopPagesAndScrape(context) {
+  const {
+    site, dataAccess, log,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+
+  try {
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+    if (topPages.length === 0) {
+      log.warn('[LLM-ERROR-PAGES] No top pages found for site');
+      return {
+        type: 'top-pages',
+        siteId: site.getId(),
+        auditResult: {
+          success: false,
+          topPages: [],
+        },
+        fullAuditRef: site.getBaseURL(),
+      };
+    }
+
+    log.info(`[LLM-ERROR-PAGES] Found ${topPages.length} top pages for site ${site.getId()}`);
+
+    return {
+      type: 'top-pages',
+      siteId: site.getId(),
+      auditResult: {
+        success: true,
+        topPages: topPages.map((page) => page.getUrl()),
+      },
+      fullAuditRef: site.getBaseURL(),
+    };
+  } catch (error) {
+    log.error(`[LLM-ERROR-PAGES] Failed to import top pages: ${error.message}`, error);
+    return {
+      type: 'top-pages',
+      siteId: site.getId(),
+      auditResult: {
+        success: false,
+        error: error.message,
+        topPages: [],
+      },
+      fullAuditRef: site.getBaseURL(),
+    };
+  }
+}
+
+/**
+ * Step 2: Submit top pages for scraping
+ */
+export async function submitForScraping(context) {
+  const {
+    site, dataAccess, audit, log,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+
+  const auditResult = audit.getAuditResult();
+  if (auditResult.success === false) {
+    log.warn('[LLM-ERROR-PAGES] Audit failed, skipping scraping');
+    throw new Error('Audit failed, skipping scraping');
+  }
+
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+  if (topPages.length === 0) {
+    log.warn('[LLM-ERROR-PAGES] No top pages to submit for scraping');
+    throw new Error('No top pages to submit for scraping');
+  }
+
+  log.info(`[LLM-ERROR-PAGES] Submitting ${topPages.length} pages for scraping`);
+
+  return {
+    urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
+    siteId: site.getId(),
+    type: 'llm-error-pages',
+  };
+}
+
+/**
+ * Step 3: Run audit, generate Excel reports, and send to Mystique
+ */
+export async function runAuditAndSendToMystique(context) {
+  const { log, site } = context;
+  const s3Config = await getS3Config(site, context);
+  const url = site.getBaseURL();
+
+  log.info(`[LLM-ERROR-PAGES] Starting audit for ${url}`);
 
   try {
     const athenaClient = AWSAthenaClient.fromContext(context, s3Config.getAthenaTempLocation());
 
     const week = generateReportingPeriods().weeks[0];
-    const { startDate } = week;
-    const { endDate } = week;
+    const { startDate, endDate } = week;
     const periodIdentifier = `w${week.weekNumber}-${week.year}`;
-    log.debug(`Running weekly audit for ${periodIdentifier}`);
+    log.info(`[LLM-ERROR-PAGES] Running weekly audit for ${periodIdentifier}`);
 
     // Get site configuration
     const filters = site.getConfig()?.getLlmoCdnlogsFilter?.() || [];
@@ -59,11 +144,11 @@ async function runLlmErrorPagesAudit(url, context, site) {
       tableName: s3Config.tableName,
       startDate,
       endDate,
-      llmProviders: getAllLlmProviders(), // Query all LLM providers
+      llmProviders: getAllLlmProviders(),
       siteFilters,
     });
 
-    log.debug('Executing LLM error pages query...');
+    log.info('[LLM-ERROR-PAGES] Executing query...');
     const sqlQueryDescription = '[Athena Query] LLM error pages analysis';
     const results = await athenaClient.query(
       query,
@@ -81,7 +166,6 @@ async function runLlmErrorPagesAudit(url, context, site) {
     const outputLocation = `${llmoFolder}/agentic-traffic`;
 
     const baseUrl = site.getBaseURL?.() || 'https://example.com';
-
     const buildFilename = (code) => `agentictraffic-errors-${code}-${periodIdentifier}.xlsx`;
 
     const writeCategoryExcel = async (code, errors) => {
@@ -97,18 +181,16 @@ async function runLlmErrorPagesAudit(url, context, site) {
       );
 
       if (!existingCdnData || existingCdnData.length === 0) {
-        log.warn(`No existing CDN data found for ${periodIdentifier}, skipping ${code} error report`);
+        log.warn(`[LLM-ERROR-PAGES] No existing CDN data found for ${periodIdentifier}, skipping ${code} error report`);
         return;
       }
 
-      log.debug(`Found existing CDN data with ${existingCdnData.length} rows, enriching error data`);
+      log.info(`[LLM-ERROR-PAGES] Found existing CDN data with ${existingCdnData.length} rows, enriching error data`);
       const enrichedErrors = matchErrorsWithCdnData(errors, existingCdnData, baseUrl);
-
       const sorted = enrichedErrors.sort((a, b) => b.number_of_hits - a.number_of_hits);
 
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('data');
-
       sheet.addRow(SPREADSHEET_COLUMNS);
 
       sorted.forEach((e) => {
@@ -121,9 +203,9 @@ async function runLlmErrorPagesAudit(url, context, site) {
           e.url,
           e.product,
           e.category,
-          '', // Suggested URLs
-          '', // AI Rationale
-          '', // Confidence score
+          '',
+          '',
+          '',
         ]);
       });
 
@@ -135,7 +217,7 @@ async function runLlmErrorPagesAudit(url, context, site) {
         sharepointClient,
         filename,
       });
-      log.debug(`Uploaded Excel for ${code}: ${filename} (${sorted.length} rows)`);
+      log.info(`[LLM-ERROR-PAGES] Uploaded Excel for ${code}: ${filename} (${sorted.length} rows)`);
     };
 
     // Generate and upload Excel files for each category
@@ -145,128 +227,105 @@ async function runLlmErrorPagesAudit(url, context, site) {
       writeCategoryExcel('5xx', categorizedResults['5xx']),
     ]);
 
-    log.debug(`Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
+    log.info(`[LLM-ERROR-PAGES] Found ${processedResults.totalErrors} total errors across ${processedResults.summary.uniqueUrls} unique URLs`);
 
-    const auditResult = {
-      success: true,
-      timestamp: new Date().toISOString(),
-      periodIdentifier,
-      dateRange: {
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-      },
-      database: s3Config.databaseName,
-      table: s3Config.tableName,
-      customer: s3Config.customerName,
-      totalErrors: processedResults.totalErrors,
-      summary: processedResults.summary,
-      errorPages: processedResults.errorPages,
-      categorizedResults,
-    };
+    // Send to Mystique if configured
+    const {
+      dataAccess, sqs, env, audit,
+    } = context;
+    const { SiteTopPage } = dataAccess;
+
+    if (sqs && env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
+      const errors404 = categorizedResults[404] || [];
+
+      if (errors404.length > 0) {
+        const messageBaseUrl = site.getBaseURL?.() || '';
+        const consolidated404 = consolidateErrorsByUrl(errors404);
+        const sorted404 = sortErrorsByTrafficVolume(consolidated404).slice(0, 50);
+        const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+        // Consolidate by URL and combine user agents
+        const urlToUserAgentsMap = new Map();
+        sorted404.forEach((errorPage) => {
+          const path = toPathOnly(errorPage.url, messageBaseUrl);
+          const fullUrl = messageBaseUrl ? new URL(path, messageBaseUrl).toString() : path;
+          if (!urlToUserAgentsMap.has(fullUrl)) {
+            urlToUserAgentsMap.set(fullUrl, new Set());
+          }
+          urlToUserAgentsMap.get(fullUrl).add(errorPage.userAgent);
+        });
+
+        const message = {
+          type: 'guidance:llm-error-pages',
+          siteId: site.getId(),
+          auditId: audit.getId() || 'llm-error-pages-audit',
+          deliveryType: site?.getDeliveryType?.() || 'aem_edge',
+          time: new Date().toISOString(),
+          data: {
+            brokenLinks: Array.from(urlToUserAgentsMap.entries())
+              .map(([fullUrl, userAgents], index) => ({
+                urlFrom: Array.from(userAgents).join(', '),
+                urlTo: fullUrl,
+                suggestionId: `llm-404-suggestion-${periodIdentifier}-${index}`,
+              }))
+              .filter((link) => link.urlFrom.length > 0),
+            alternativeUrls: topPages.map((topPage) => topPage.getUrl()),
+            opportunityId: `llm-404-${periodIdentifier}`,
+          },
+        };
+
+        await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+        log.info(`[LLM-ERROR-PAGES] Sent ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
+      } else {
+        log.warn('[LLM-ERROR-PAGES] No 404 errors found, skipping Mystique message');
+      }
+    } else {
+      log.warn('[LLM-ERROR-PAGES] SQS or Mystique queue not configured, skipping message');
+    }
 
     return {
-      auditResult,
+      type: 'audit-result',
+      siteId: site.getId(),
+      auditResult: {
+        success: true,
+        timestamp: new Date().toISOString(),
+        periodIdentifier,
+        dateRange: {
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+        },
+        database: s3Config.databaseName,
+        table: s3Config.tableName,
+        customer: s3Config.customerName,
+        totalErrors: processedResults.totalErrors,
+        summary: processedResults.summary,
+        errorPages: processedResults.errorPages,
+        categorizedResults,
+      },
       fullAuditRef: url,
     };
   } catch (error) {
-    log.error(`LLM error pages audit failed: ${error.message}`);
+    log.error(`[LLM-ERROR-PAGES] Audit failed: ${error.message}`, error);
 
     return {
+      type: 'audit-result',
+      siteId: site.getId(),
       auditResult: {
         success: false,
         timestamp: new Date().toISOString(),
         error: error.message,
-        database: s3Config.databaseName,
-        table: s3Config.tableName,
-        customer: s3Config.customerName,
+        database: s3Config?.databaseName,
+        table: s3Config?.tableName,
+        customer: s3Config?.customerName,
       },
       fullAuditRef: url,
     };
   }
 }
 
-// Post processor for sending message to Mystique
-async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
-  const {
-    log, sqs, env, dataAccess, audit,
-  } = context;
-  const { siteId, auditResult } = auditData;
-
-  // Skip if audit failed
-  if (!auditResult.success) {
-    log.info('Audit failed, skipping Mystique message');
-    return auditData;
-  }
-
-  const { categorizedResults, periodIdentifier } = auditResult;
-  const errors404 = categorizedResults[404] || [];
-
-  if (errors404.length === 0) {
-    log.info('No 404 errors found, skipping Mystique message');
-    return auditData;
-  }
-
-  if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    log.warn('SQS or Mystique queue not configured, skipping message');
-    return auditData;
-  }
-
-  try {
-    // Get site for additional data
-    const { Site } = dataAccess;
-    const site = await Site.findById(siteId);
-    if (!site) {
-      log.warn('Site not found, skipping Mystique message');
-      return auditData;
-    }
-
-    const messageBaseUrl = site.getBaseURL?.() || '';
-    const consolidated404 = consolidateErrorsByUrl(errors404);
-    const sorted404 = sortErrorsByTrafficVolume(consolidated404).slice(0, 50);
-    const { SiteTopPage } = dataAccess;
-    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(siteId, 'ahrefs', 'global');
-
-    // Consolidate by URL and combine user agents
-    const urlToUserAgentsMap = new Map();
-    sorted404.forEach((errorPage) => {
-      const path = toPathOnly(errorPage.url, messageBaseUrl);
-      const fullUrl = messageBaseUrl ? new URL(path, messageBaseUrl).toString() : path;
-      if (!urlToUserAgentsMap.has(fullUrl)) {
-        urlToUserAgentsMap.set(fullUrl, new Set());
-      }
-      urlToUserAgentsMap.get(fullUrl).add(errorPage.userAgent);
-    });
-
-    const message = {
-      type: 'guidance:llm-error-pages',
-      siteId,
-      auditId: audit.getId() || 'llm-error-pages-audit',
-      deliveryType: site?.getDeliveryType?.() || 'aem_edge',
-      time: new Date().toISOString(),
-      data: {
-        brokenLinks: Array.from(urlToUserAgentsMap.entries())
-          .map(([fullUrl, userAgents], index) => ({
-            urlFrom: Array.from(userAgents).join(', '),
-            urlTo: fullUrl,
-            suggestionId: `llm-404-suggestion-${periodIdentifier}-${index}`,
-          }))
-          .filter((link) => link.urlFrom.length > 0),
-        alternativeUrls: topPages.map((topPage) => topPage.getUrl()),
-        opportunityId: `llm-404-${periodIdentifier}`,
-      },
-    };
-
-    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-    log.debug(`Queued ${urlToUserAgentsMap.size} consolidated 404 URLs to Mystique for AI processing`);
-  } catch (error) {
-    log.error(`Failed to send Mystique message: ${error.message}`);
-  }
-
-  return auditData;
-}
-
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(runLlmErrorPagesAudit)
-  .withPostProcessors([sendMystiqueMessagePostProcessor])
+  .addStep('import-top-pages', importTopPagesAndScrape, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+  .addStep('run-audit-and-send-to-mystique', runAuditAndSendToMystique)
   .build();
