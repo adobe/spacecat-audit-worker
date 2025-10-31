@@ -1,3 +1,10 @@
+## [1.223.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.223.0...v1.223.1) (2025-10-31)
+
+
+### Bug Fixes
+
+* **llmo-referral-traffic:** llm driven traffic only ([#1493](https://github.com/adobe/spacecat-audit-worker/issues/1493)) ([c7c8d29](https://github.com/adobe/spacecat-audit-worker/commit/c7c8d29899b327982469f2640865b36b158193c3))
+
 # [1.223.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.222.3...v1.223.0) (2025-10-31)
 
 
