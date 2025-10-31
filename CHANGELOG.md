@@ -1,3 +1,10 @@
+# [1.221.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.220.3...v1.221.0) (2025-10-31)
+
+
+### Features
+
+* codefix handler to update suggestions with patch content ([#1343](https://github.com/adobe/spacecat-audit-worker/issues/1343)) ([977fb1e](https://github.com/adobe/spacecat-audit-worker/commit/977fb1eafd59e82be45b98b0c9583281d176836b))
+
 ## [1.220.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.220.2...v1.220.3) (2025-10-30)
 
 
