@@ -13,7 +13,7 @@
 ## Installation
 
 ```bash
-$ npm install @adobe/spacecat-audit-worker
+$ npm install @adobe/spacecat-audit-worker 
 ```
 
 ## Usage
