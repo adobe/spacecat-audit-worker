@@ -83,7 +83,7 @@ export async function readFromSharePoint(filename, outputLocation, sharepointCli
   }
 }
 
-async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
+async function fetchWithRetry(url, options, endpointName, log, maxRetries = 5) {
   async function attemptFetch(attemptNumber) {
     try {
       const response = await fetch(url, options);
@@ -91,18 +91,30 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 3) {
 
       const error = new Error(`${response.status} ${response.statusText}`);
       error.status = response.status;
+      error.response = response;
       throw error;
     } catch (error) {
-      // Retry on network errors or 5xx/429 HTTP errors
       const isRetryable = !error.status || error.status >= 500 || error.status === 429;
+      const shouldRetry = isRetryable && attemptNumber <= maxRetries;
 
-      if (!isRetryable || attemptNumber > maxRetries) {
-        throw new Error(`${endpointName} failed: ${error.message}`);
+      // Log x-error header for 503 server errors
+      const xError = error.status === 503 ? error.response?.headers.get('x-error') : null;
+      if (xError) {
+        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed with server error - x-error: ${xError}, URL: ${url}`);
       }
 
-      const delay = 2 ** (attemptNumber - 1) * 100;
-      log.warn(`%s: ${endpointName} retrying in ${delay}ms (${attemptNumber}/${maxRetries}): ${error.message}`, AUDIT_NAME);
-      await sleep(delay);
+      if (!shouldRetry) {
+        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed`, {
+          url,
+          status: error.status,
+          statusText: error.response?.statusText,
+          message: error.message,
+        });
+        throw error;
+      }
+
+      log.warn(`${AUDIT_NAME}: ${endpointName} Helix API failed with error ${error.message}, retrying in 4000ms (attempt ${attemptNumber}/${maxRetries}), URL: ${url}`);
+      await sleep(4000);
       return attemptFetch(attemptNumber + 1);
     }
   }
@@ -133,18 +145,7 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
       const endpointStartTime = Date.now();
 
       // eslint-disable-next-line no-await-in-loop
-      const response = await fetchWithRetry(endpoint.url, { method: 'POST', headers }, endpoint.name, log);
-
-      if (!response.ok) {
-        const errorMsg = `${endpoint.name} failed: ${response.status} ${response.statusText}`;
-        log.error(`%s: Publish to ${endpoint.name} failed`, AUDIT_NAME, {
-          url: endpoint.url,
-          status: response.status,
-          statusText: response.statusText,
-          path,
-        });
-        throw new Error(errorMsg);
-      }
+      await fetchWithRetry(endpoint.url, { method: 'POST', headers }, endpoint.name, log);
 
       const endpointDuration = Date.now() - endpointStartTime;
       log.info(`%s: Successfully published to ${endpoint.name} in ${endpointDuration}ms`, AUDIT_NAME);
