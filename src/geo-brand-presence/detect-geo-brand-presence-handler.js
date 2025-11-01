@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* eslint-disable no-use-before-define */
+/* eslint-disable no-use-before-define,no-await-in-loop */
 /* c8 ignore start */
 
 import {
@@ -294,43 +294,43 @@ async function handleRefresh(
     const sharepointClient = await createLLMOSharepointClient(context);
 
     const sharepointStartTime = Date.now();
-    await Promise.all(
-      resultFiles.flatMap(async (s, i) => {
-        const { name } = files[i];
-        log.info(`%s REFRESH: Processing sheet ${i + 1}/${files.length} for SharePoint upload, auditId: ${auditId}, siteId: ${siteId}, sheet: ${name}`, AUDIT_NAME);
+    for (let i = 0; i < resultFiles.length; i += 1) {
+      const s = resultFiles[i];
+      const { name } = files[i];
+      log.info(`%s REFRESH: Processing sheet ${i + 1}/${files.length} for SharePoint upload, auditId: ${auditId}, siteId: ${siteId}, sheet: ${name}`, AUDIT_NAME);
 
-        const resultFile = await s.Body.transformToString();
-        const result = refreshSheetResultSchema.parse(JSON.parse(resultFile));
-        if (result.status !== 'success') {
-          const errorMsg = `Sheet ${name} did not complete successfully: ${result.message || 'unknown reason'}`;
-          log.error(`%s REFRESH: ${errorMsg} for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
-          throw new Error(errorMsg);
-        }
+      const resultFile = await s.Body.transformToString();
+      const result = refreshSheetResultSchema.parse(JSON.parse(resultFile));
+      if (result.status !== 'success') {
+        const errorMsg = `Sheet ${name} did not complete successfully: ${result.message || 'unknown reason'}`;
+        log.error(`%s REFRESH: ${errorMsg} for auditId: ${auditId}, siteId: ${siteId}`, AUDIT_NAME);
+        throw new Error(errorMsg);
+      }
 
-        const xlsxKey = `${refreshDir}/${result.sheetName}.xlsx`;
-        log.debug(`%s REFRESH: Fetching XLSX from S3 for auditId: ${auditId}, siteId: ${siteId}, key: ${xlsxKey}`, AUDIT_NAME);
+      const xlsxKey = `${refreshDir}/${result.sheetName}.xlsx`;
+      log.debug(`%s REFRESH: Fetching XLSX from S3 for auditId: ${auditId}, siteId: ${siteId}, key: ${xlsxKey}`, AUDIT_NAME);
 
-        const xlsxObj = await s3Client.send(new GetObjectCommand({
-          Bucket: s3Bucket,
-          Key: xlsxKey,
-        }));
+      const xlsxObj = await s3Client.send(new GetObjectCommand({
+        Bucket: s3Bucket,
+        Key: xlsxKey,
+      }));
 
-        if (!xlsxObj.Body) {
-          const errorMsg = `Missing XLSX file for sheet ${name}`;
-          log.error(`%s REFRESH: ${errorMsg} for auditId: ${auditId}, siteId: ${siteId}, key: ${xlsxKey}`, AUDIT_NAME);
-          throw new Error(errorMsg);
-        }
+      if (!xlsxObj.Body) {
+        const errorMsg = `Missing XLSX file for sheet ${name}`;
+        log.error(`%s REFRESH: ${errorMsg} for auditId: ${auditId}, siteId: ${siteId}, key: ${xlsxKey}`, AUDIT_NAME);
+        throw new Error(errorMsg);
+      }
 
-        const xlsxBuffer = await xlsxObj.Body.transformToByteArray();
-        const bufferSize = xlsxBuffer.byteLength;
-        log.info(`%s REFRESH: Uploading sheet ${name} for auditId: ${auditId}, siteId: ${siteId} to ${outputLocations.length} SharePoint locations (${bufferSize} bytes)`, AUDIT_NAME);
+      const xlsxBuffer = await xlsxObj.Body.transformToByteArray();
+      const bufferSize = xlsxBuffer.byteLength;
+      log.info(`%s REFRESH: Uploading sheet ${name} for auditId: ${auditId}, siteId: ${siteId} to ${outputLocations.length} SharePoint locations (${bufferSize} bytes)`, AUDIT_NAME);
 
-        return outputLocations.map((outDir, locIndex) => {
-          log.debug(`%s REFRESH: Uploading sheet ${name} to location ${locIndex + 1}/${outputLocations.length}, auditId: ${auditId}, siteId: ${siteId}, location: ${outDir}`, AUDIT_NAME);
-          return uploadAndPublishFile(xlsxBuffer.buffer, name, outDir, sharepointClient, log);
-        });
-      }),
-    );
+      for (let locIndex = 0; locIndex < outputLocations.length; locIndex += 1) {
+        const outDir = outputLocations[locIndex];
+        log.debug(`%s REFRESH: Uploading sheet ${name} to location ${locIndex + 1}/${outputLocations.length}, auditId: ${auditId}, siteId: ${siteId}, location: ${outDir}`, AUDIT_NAME);
+        await uploadAndPublishFile(xlsxBuffer.buffer, name, outDir, sharepointClient, log);
+      }
+    }
 
     const sharepointDuration = Date.now() - sharepointStartTime;
     log.info(`%s REFRESH: Successfully uploaded all ${files.length} sheets for auditId: ${auditId}, siteId: ${siteId} to SharePoint in ${sharepointDuration}ms`, AUDIT_NAME);
