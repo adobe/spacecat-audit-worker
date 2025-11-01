@@ -97,12 +97,17 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 5) {
       const isRetryable = !error.status || error.status >= 500 || error.status === 429;
       const shouldRetry = isRetryable && attemptNumber <= maxRetries;
 
-      // Log x-error header for 503 server errors
-      const xError = error.status === 503 && error.response?.headers?.get
-        ? error.response.headers.get('x-error')
-        : null;
-      if (xError) {
-        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed with server error - x-error: ${xError}, URL: ${url}`);
+      // Log x-error and retry-after headers for 503 server errors
+      if (error.status === 503 && error.response?.headers?.get && typeof error.response.headers.get === 'function') {
+        const xError = error.response.headers.get('x-error');
+        const retryAfter = error.response.headers.get('retry-after');
+
+        if (xError || retryAfter) {
+          const parts = [];
+          if (xError) parts.push(`x-error: ${xError}`);
+          if (retryAfter) parts.push(`retry-after: ${retryAfter}`);
+          log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed with server error - ${parts.join(', ')}, URL: ${url}`);
+        }
       }
 
       if (!shouldRetry) {
