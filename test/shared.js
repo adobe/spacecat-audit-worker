@@ -81,6 +81,9 @@ export class MockContextBuilder {
       dataAccess: mockDataAccess,
       sqs: mockSqs,
       env: mockEnv,
+      invocation: {
+        id: 'some-id',
+      },
     };
 
     if (this.contextOverrides) {
