@@ -120,9 +120,31 @@ async function compareHtmlContent(url, siteId, context) {
   const hasScrapeMetadata = metadata !== null;
   const scrapeForbidden = metadata?.error?.statusCode === 403;
 
-  if (!serverSideHtml || !clientSideHtml) {
-    log.error(`Prerender - Missing HTML data for ${url} (server-side: ${!!serverSideHtml}, client-side: ${!!clientSideHtml})`);
+  try {
+    // Validate HTML data availability
+    if (!serverSideHtml || !clientSideHtml) {
+      throw new Error(`Missing HTML data for ${url} (server-side: ${!!serverSideHtml}, client-side: ${!!clientSideHtml})`);
+    }
 
+    // Even if original scrape was forbidden, we might have HTML uploaded from local scraping
+    const analysis = await analyzeHtmlForPrerender(
+      serverSideHtml,
+      clientSideHtml,
+      CONTENT_GAIN_THRESHOLD,
+    );
+
+    log.debug(`Prerender - Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
+
+    return {
+      url,
+      ...analysis,
+      hasScrapeMetadata, // Track if scrape.json exists on S3
+      scrapeForbidden, // Track if original scrape was forbidden (403)
+      /* c8 ignore next */
+      scrapeError: metadata?.error, // Include error details from scrape.json
+    };
+  } catch (error) {
+    log.error(`Prerender - HTML analysis failed for ${url}: ${error.message}`);
     return {
       url,
       error: true,
@@ -132,32 +154,6 @@ async function compareHtmlContent(url, siteId, context) {
       scrapeError: metadata?.error,
     };
   }
-
-  // Even if original scrape was forbidden, we might have HTML uploaded from local scraping
-  // eslint-disable-next-line
-  const analysis = analyzeHtmlForPrerender(serverSideHtml, clientSideHtml, CONTENT_GAIN_THRESHOLD);
-
-  if (analysis.error) {
-    log.error(`Prerender - HTML analysis failed for ${url}: ${analysis.error}`);
-    return {
-      url,
-      error: true,
-      needsPrerender: false,
-      scrapeForbidden,
-      scrapeError: metadata?.error,
-    };
-  }
-
-  log.debug(`Prerender - Content analysis for ${url}: contentGainRatio=${analysis.contentGainRatio}, wordCountBefore=${analysis.wordCountBefore}, wordCountAfter=${analysis.wordCountAfter}`);
-
-  return {
-    url,
-    ...analysis,
-    hasScrapeMetadata, // Track if scrape.json exists on S3
-    scrapeForbidden, // Track if original scrape was forbidden (403)
-    /* c8 ignore next */
-    scrapeError: metadata?.error, // Include error details from scrape.json
-  };
 }
 
 /**
