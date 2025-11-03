@@ -70,6 +70,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       const newOpportunity = {
         getId: () => 'new-opportunity-id',
+        getType: () => 'form-accessibility',
         getTags: () => ['Forms Accessibility'],
         getData: () => ({
           accessibility: [{
@@ -93,19 +94,23 @@ describe('Forms Opportunities - Accessibility Handler', () => {
         addSuggestions: sandbox.stub().resolves({ id: 'sugg-1' }),
       };
 
+      const mockSite = {
+        getId: sinon.stub().returns('test-site-id'),
+        getDeliveryType: sinon.stub().returns('aem'),
+        getBaseURL: sinon.stub().returns('https://example.com'),
+      };
+
       const context = new MockContextBuilder()
         .withSandbox(sandbox)
         .withOverrides({
+          site: mockSite,
           dataAccess: {
             Opportunity: {
               create: sandbox.stub().resolves(newOpportunity),
               findById: sandbox.stub().resolves(null), // No existing opportunity with this ID
             },
             Site: {
-              findById: sandbox.stub().resolves({
-                getDeliveryType: sinon.stub().returns('aem'),
-                getBaseURL: sinon.stub().returns('https://example.com'),
-              }),
+              findById: sandbox.stub().resolves(mockSite),
             },
           },
           sqs: {
