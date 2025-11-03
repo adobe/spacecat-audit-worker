@@ -309,7 +309,12 @@ describe('Meta Tags', () => {
             { url: 'http://example.com/page2' },
           ],
           siteId: 'site-id',
-          type: 'meta-tags',
+          type: 'default',
+          allowCache: false,
+          maxScrapeAge: 0,
+          options: {
+            waitTimeoutForMetaTags: 5000,
+          },
         });
       });
 
@@ -336,7 +341,12 @@ describe('Meta Tags', () => {
             { url: 'http://example.com/page2' },
           ],
           siteId: 'site-id',
-          type: 'meta-tags',
+          type: 'default',
+          allowCache: false,
+          maxScrapeAge: 0,
+          options: {
+            waitTimeoutForMetaTags: 5000,
+          },
         });
       });
     });
@@ -1118,8 +1128,12 @@ describe('Meta Tags', () => {
       });
 
       it('should successfully run audit and generate suggestions', async () => {
-        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
-        const mockCalculateCPCValue = sinon.stub().resolves(5000);
+        const mockGetRUMDomainkey = sinon.stub()
+          .resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub()
+          .resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
@@ -1138,6 +1152,9 @@ describe('Meta Tags', () => {
               },
             },
           }),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
         });
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
@@ -1147,13 +1164,21 @@ describe('Meta Tags', () => {
       });
 
       it('should handle case when no tags are extracted', async () => {
-        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
-        const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const mockGetRUMDomainkey = sinon.stub()
+          .resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub()
+          .resolves(2);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
-          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub()
+            .resolves({}),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
         });
 
         // Override all S3 responses to have null tags
@@ -1178,13 +1203,21 @@ describe('Meta Tags', () => {
       }).timeout(10000);
 
       it('should handle RUM API errors gracefully', async () => {
-        const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
-        const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const mockGetRUMDomainkey = sinon.stub()
+          .resolves('mockedDomainKey');
+        const mockCalculateCPCValue = sinon.stub()
+          .resolves(2);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
         const auditStub = await esmock('../../src/metatags/handler.js', {
           '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
-          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub()
+            .resolves({}),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
         });
         // Override RUM API response to simulate error
         RUMAPIClientStub.createFrom().query.rejects(new Error('RUM API Error'));
@@ -1198,6 +1231,8 @@ describe('Meta Tags', () => {
       it('should submit top pages for scraping when getIncludedURLs returns null', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
         const getConfigStub = sinon.stub().returns({
           getIncludedURLs: sinon.stub().returns(null),
         });
@@ -1207,6 +1242,9 @@ describe('Meta Tags', () => {
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
           '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
         });
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
         expect(result).to.deep.equal({ status: 'complete' });

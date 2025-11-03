@@ -53,11 +53,11 @@ describe('Prerender Audit', () => {
   });
 
   describe('HTML Analysis', () => {
-    it('should analyze HTML and detect prerender opportunities', () => {
+    it('should analyze HTML and detect prerender opportunities', async () => {
       const directHtml = '<html><body><h1>Simple content</h1></body></html>';
       const scrapedHtml = '<html><body><h1>Simple content</h1><div>Lots of additional content loaded by JavaScript</div><p>More dynamic content</p></body></html>';
 
-      const result = analyzeHtmlForPrerender(directHtml, scrapedHtml, 1.2);
+      const result = await analyzeHtmlForPrerender(directHtml, scrapedHtml, 1.2);
 
       expect(result).to.be.an('object');
       expect(result.needsPrerender).to.be.a('boolean');
@@ -66,28 +66,31 @@ describe('Prerender Audit', () => {
       expect(result.wordCountAfter).to.be.a('number');
     });
 
-    it('should not recommend prerender for similar content', () => {
+    it('should not recommend prerender for similar content', async () => {
       const directHtml = '<html><body><h1>Content</h1><p>Same content</p></body></html>';
       const scrapedHtml = '<html><body><h1>Content</h1><p>Same content</p></body></html>';
 
-      const result = analyzeHtmlForPrerender(directHtml, scrapedHtml, 1.2);
+      const result = await analyzeHtmlForPrerender(directHtml, scrapedHtml, 1.2);
 
       expect(result.needsPrerender).to.be.false;
       expect(result.contentGainRatio).to.be.at.most(1.2);
     });
 
-    it('should handle missing HTML gracefully', () => {
-      const result = analyzeHtmlForPrerender(null, null, 1.2);
-
-      expect(result.error).to.be.a('string');
-      expect(result.needsPrerender).to.be.false;
+    it('should throw error for missing HTML', async () => {
+      try {
+        await analyzeHtmlForPrerender(null, null, 1.2);
+        expect.fail('Should have thrown an error');
+      } catch (error) {
+        expect(error).to.be.an('error');
+        expect(error.message).to.equal('Missing HTML content for comparison');
+      }
     });
 
-    it('should handle HTML with no content', () => {
+    it('should handle HTML with no content', async () => {
       const directHtml = '<html><head><title>Test</title></head><body></body></html>';
       const scrapedHtml = '<html><head><title>Test</title></head><body><p>Some content</p></body></html>';
 
-      const result = analyzeHtmlForPrerender(directHtml, scrapedHtml, 1.2);
+      const result = await analyzeHtmlForPrerender(directHtml, scrapedHtml, 1.2);
 
       expect(result).to.be.an('object');
       expect(result.needsPrerender).to.be.a('boolean');
@@ -95,10 +98,10 @@ describe('Prerender Audit', () => {
       expect(result.wordCountAfter).to.be.greaterThan(result.wordCountBefore);
     });
 
-    it('should handle content gain ratio calculation edge cases', () => {
+    it('should handle content gain ratio calculation edge cases', async () => {
       // Test case where both have zero content
       const emptyHtml = '<html><body></body></html>';
-      const result1 = analyzeHtmlForPrerender(emptyHtml, emptyHtml, 1.2);
+      const result1 = await analyzeHtmlForPrerender(emptyHtml, emptyHtml, 1.2);
 
       expect(result1.contentGainRatio).to.equal(1);
       expect(result1.wordCountBefore).to.equal(0);
@@ -106,14 +109,14 @@ describe('Prerender Audit', () => {
 
       // Test case where original has zero content but scraped has content
       const contentHtml = '<html><body><p>Some content here</p></body></html>';
-      const result2 = analyzeHtmlForPrerender(emptyHtml, contentHtml, 1.2);
+      const result2 = await analyzeHtmlForPrerender(emptyHtml, contentHtml, 1.2);
 
       expect(result2.contentGainRatio).to.be.greaterThan(1);
       expect(result2.wordCountBefore).to.equal(0);
       expect(result2.wordCountAfter).to.be.greaterThan(0);
     });
 
-    it('should handle HTML with complex elements', () => {
+    it('should handle HTML with complex elements', async () => {
       const directHtml = `
         <html>
           <head><title>Test</title></head>
@@ -141,7 +144,7 @@ describe('Prerender Audit', () => {
         </html>
       `;
 
-      const result = analyzeHtmlForPrerender(directHtml, scrapedHtml, 1.2);
+      const result = await analyzeHtmlForPrerender(directHtml, scrapedHtml, 1.2);
 
       expect(result).to.be.an('object');
       expect(result.wordCountBefore).to.be.greaterThan(0);
@@ -831,31 +834,37 @@ describe('Prerender Audit', () => {
 
   describe('Edge Cases and Error Handling', () => {
     describe('HTML Content Processing', () => {
-      it('should handle missing server-side HTML', () => {
-        const result = analyzeHtmlForPrerender('', '<html><body>content</body></html>', 1.2);
-
-        expect(result.error).to.equal('Missing HTML content for comparison');
-        expect(result.needsPrerender).to.be.false;
+      it('should throw error for missing server-side HTML', async () => {
+        try {
+          await analyzeHtmlForPrerender('', '<html><body>content</body></html>', 1.2);
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error).to.be.an('error');
+          expect(error.message).to.equal('Missing HTML content for comparison');
+        }
       });
 
-      it('should handle missing client-side HTML', () => {
-        const result = analyzeHtmlForPrerender('<html><body>content</body></html>', '', 1.2);
-
-        expect(result.error).to.equal('Missing HTML content for comparison');
-        expect(result.needsPrerender).to.be.false;
+      it('should throw error for missing client-side HTML', async () => {
+        try {
+          await analyzeHtmlForPrerender('<html><body>content</body></html>', '', 1.2);
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error).to.be.an('error');
+          expect(error.message).to.equal('Missing HTML content for comparison');
+        }
       });
 
-      it('should handle analysis errors gracefully', () => {
-        // Test with invalid HTML that might cause analysis to fail
-        const invalidHtml = '<html><body><script>throw new Error("test");</script></body></html>';
-        const result = analyzeHtmlForPrerender(invalidHtml, invalidHtml, 1.2);
+      it('should not throw for valid HTML (even if complex)', async () => {
+        // Test with valid HTML that has scripts
+        const validHtml = '<html><body><script>throw new Error("test");</script></body></html>';
+        const result = await analyzeHtmlForPrerender(validHtml, validHtml, 1.2);
 
-        // The function should handle errors and return a structured result
+        // The function should process successfully
         expect(result).to.be.an('object');
         expect(result.needsPrerender).to.be.a('boolean');
       });
 
-      it('should handle HTML with complex whitespace', () => {
+      it('should handle HTML with complex whitespace', async () => {
         // Create HTML with complex whitespace scenarios
         const htmlWithComplexWhitespace = `<html><body>
         
@@ -868,47 +877,31 @@ describe('Prerender Audit', () => {
         <p>Final content</p>
         </body></html>`;
 
-        const result = analyzeHtmlForPrerender(htmlWithComplexWhitespace, htmlWithComplexWhitespace, 1.2);
+        const result = await analyzeHtmlForPrerender(htmlWithComplexWhitespace, htmlWithComplexWhitespace, 1.2);
         expect(result.contentGainRatio).to.equal(1);
         expect(result.wordCountBefore).to.be.greaterThan(0);
       });
 
-      it('should trigger error handling in HTML analysis with malformed input', () => {
-        // Try to trigger the catch block in analyzeHtmlForPrerender by causing an error during stats calculation
+      it('should throw error for undefined/null input', async () => {
+        // Malformed input should throw
         try {
-          // This might trigger an error in the internal processing
-          const result = analyzeHtmlForPrerender(undefined, null, 1.2);
-          expect(result).to.have.property('error');
-          expect(result.needsPrerender).to.be.false;
+          await analyzeHtmlForPrerender(undefined, null, 1.2);
+          expect.fail('Should have thrown an error');
         } catch (error) {
-          // If an error is thrown, it should be handled gracefully
           expect(error).to.be.an('error');
+          expect(error.message).to.equal('Missing HTML content for comparison');
         }
       });
 
-      it('should handle error conditions during stats calculation', () => {
-        // Force an error by mocking a problematic scenario during calculateStats
+      it('should process HTML even with edge case threshold values', async () => {
+        // Test with NaN threshold - should still work or throw a clear error
         const htmlContent = '<html><body>Test content</body></html>';
 
-        // Test with a scenario that might trigger the catch block in analyzeHtmlForPrerender
-        try {
-          // Since analyzeHtmlForPrerender wraps calculateStats in try-catch,
-          // we need to simulate an error that could occur during processing
-          const originalCheerio = require.cache[require.resolve('cheerio')];
+        const result = await analyzeHtmlForPrerender(htmlContent, htmlContent, NaN);
 
-          // Create a result that exercises the error handling path
-          const result = analyzeHtmlForPrerender(htmlContent, htmlContent, NaN);
-
-          // Should handle the error gracefully
-          expect(result).to.be.an('object');
-          if (result.error) {
-            expect(result.error).to.include('HTML analysis failed');
-            expect(result.needsPrerender).to.be.false;
-          }
-        } catch (error) {
-          // Handle any unexpected errors gracefully
-          expect(error).to.be.an('error');
-        }
+        // Should process successfully - NaN comparison will just make needsPrerender false
+        expect(result).to.be.an('object');
+        expect(result.needsPrerender).to.be.false;
       });
     });
 
@@ -1087,23 +1080,32 @@ describe('Prerender Audit', () => {
         expect(hasMissingDataError).to.be.true;
       });
 
-      it('should test compareHtmlContent with empty HTML strings directly', () => {
+      it('should throw for empty HTML strings', async () => {
         // Test empty HTML handling through analyzeHtmlForPrerender
 
         // Test with empty server-side HTML
-        const result1 = analyzeHtmlForPrerender('', '<html><body><p>Client content</p></body></html>', 1.2);
-        expect(result1.error).to.equal('Missing HTML content for comparison');
-        expect(result1.needsPrerender).to.be.false;
+        try {
+          await analyzeHtmlForPrerender('', '<html><body><p>Client content</p></body></html>', 1.2);
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.equal('Missing HTML content for comparison');
+        }
 
         // Test with empty client-side HTML
-        const result2 = analyzeHtmlForPrerender('<html><body><p>Server content</p></body></html>', '', 1.2);
-        expect(result2.error).to.equal('Missing HTML content for comparison');
-        expect(result2.needsPrerender).to.be.false;
+        try {
+          await analyzeHtmlForPrerender('<html><body><p>Server content</p></body></html>', '', 1.2);
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.equal('Missing HTML content for comparison');
+        }
 
         // Test with both empty
-        const result3 = analyzeHtmlForPrerender('', '', 1.2);
-        expect(result3.error).to.equal('Missing HTML content for comparison');
-        expect(result3.needsPrerender).to.be.false;
+        try {
+          await analyzeHtmlForPrerender('', '', 1.2);
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error.message).to.equal('Missing HTML content for comparison');
+        }
       });
 
       it('should trigger opportunity processing when URLs need prerender', async () => {
@@ -1249,12 +1251,12 @@ describe('Prerender Audit', () => {
     });
 
     describe('HTML Comparator Utils Edge Cases', () => {
-      it('should handle HTML content filtering correctly', () => {
+      it('should handle HTML content filtering correctly', async () => {
         // Test the HTML content filtering functionality
         const htmlContent = '<html><body><p>Test content</p><script>console.log("test");</script></body></html>';
         const moreContent = '<html><body><p>Test content</p><div>Additional content</div></body></html>';
 
-        const result = analyzeHtmlForPrerender(htmlContent, moreContent, 1.2);
+        const result = await analyzeHtmlForPrerender(htmlContent, moreContent, 1.2);
 
         expect(result).to.be.an('object');
         expect(result.needsPrerender).to.be.a('boolean');
@@ -1262,7 +1264,7 @@ describe('Prerender Audit', () => {
         expect(result.wordCountAfter).to.be.greaterThan(0);
       });
 
-      it('should handle tokenization with URL preservation', () => {
+      it('should handle tokenization with URL preservation', async () => {
         // Test URL preservation in tokenization
         const textWithUrls = 'Visit https://example.com for more info, or email test@domain.com for support';
 
@@ -1270,14 +1272,14 @@ describe('Prerender Audit', () => {
         const htmlWithUrls = `<html><body><p>${textWithUrls}</p></body></html>`;
         const htmlWithMoreUrls = `<html><body><p>${textWithUrls} and check www.test.org</p></body></html>`;
 
-        const result = analyzeHtmlForPrerender(htmlWithUrls, htmlWithMoreUrls, 1.2);
+        const result = await analyzeHtmlForPrerender(htmlWithUrls, htmlWithMoreUrls, 1.2);
 
         expect(result).to.be.an('object');
         expect(result.wordCountBefore).to.be.greaterThan(0);
         expect(result.wordCountAfter).to.be.greaterThan(result.wordCountBefore);
       });
 
-      it('should handle complex line break scenarios', () => {
+      it('should handle complex line break scenarios', async () => {
         // Test complex line break handling
         const htmlWithComplexLineBreaks = `<html><body>
         Line one\r\n
@@ -1289,47 +1291,45 @@ describe('Prerender Audit', () => {
         Windows line ending above
         </body></html>`;
 
-        const result = analyzeHtmlForPrerender(htmlWithComplexLineBreaks, htmlWithComplexLineBreaks, 1.2);
+        const result = await analyzeHtmlForPrerender(htmlWithComplexLineBreaks, htmlWithComplexLineBreaks, 1.2);
 
         expect(result.contentGainRatio).to.equal(1);
         expect(result.wordCountBefore).to.equal(result.wordCountAfter);
       });
 
-      it('should handle empty content scenarios', () => {
+      it('should throw error for empty content scenarios', async () => {
         // Test empty content handling
-        const result = analyzeHtmlForPrerender('', '', 1.2);
-
-        expect(result.error).to.equal('Missing HTML content for comparison');
-        expect(result.needsPrerender).to.be.false;
-      });
-
-      it('should handle HTML content processing', () => {
-        // Test HTML content processing
-        const htmlContent = '<html><body><script>console.log("test");</script><p>Content</p></body></html>';
-
-        const result = analyzeHtmlForPrerender(htmlContent, htmlContent, 1.2);
-
-        expect(result.contentGainRatio).to.equal(1);
-        expect(result.wordCountBefore).to.equal(result.wordCountAfter);
-      });
-
-      it('should handle edge case inputs gracefully', () => {
-        // Test edge case inputs that might cause processing errors
-        const malformedHtml = '<html><body><p>Test content</p>';
-
-        const result = analyzeHtmlForPrerender(malformedHtml, malformedHtml, NaN);
-
-        // Should either work normally or handle errors gracefully
-        expect(result).to.be.an('object');
-        if (result.error) {
-          expect(result.error).to.include('HTML analysis failed');
-          expect(result.needsPrerender).to.be.false;
-        } else {
-          expect(result.needsPrerender).to.be.a('boolean');
+        try {
+          await analyzeHtmlForPrerender('', '', 1.2);
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error).to.be.an('error');
+          expect(error.message).to.equal('Missing HTML content for comparison');
         }
       });
 
-      it('should handle comprehensive URL and punctuation scenarios', () => {
+      it('should handle HTML content processing', async () => {
+        // Test HTML content processing
+        const htmlContent = '<html><body><script>console.log("test");</script><p>Content</p></body></html>';
+
+        const result = await analyzeHtmlForPrerender(htmlContent, htmlContent, 1.2);
+
+        expect(result.contentGainRatio).to.equal(1);
+        expect(result.wordCountBefore).to.equal(result.wordCountAfter);
+      });
+
+      it('should process malformed HTML without throwing', async () => {
+        // Test edge case inputs - malformed HTML should still be processed
+        const malformedHtml = '<html><body><p>Test content</p>';
+
+        const result = await analyzeHtmlForPrerender(malformedHtml, malformedHtml, NaN);
+
+        // Should process successfully (cheerio is tolerant of malformed HTML)
+        expect(result).to.be.an('object');
+        expect(result.needsPrerender).to.be.a('boolean');
+      });
+
+      it('should handle comprehensive URL and punctuation scenarios', async () => {
         // Test complex tokenization scenarios
         const complexText = `Check out https://example.com, www.test.org, and admin@company.edu.
         Multiple     spaces   between    words , and ; punctuation : everywhere !
@@ -1338,14 +1338,14 @@ describe('Prerender Audit', () => {
         const htmlBefore = `<html><body><p>${complexText}</p></body></html>`;
         const htmlAfter = `<html><body><p>${complexText}</p><div>Additional content here</div></body></html>`;
 
-        const result = analyzeHtmlForPrerender(htmlBefore, htmlAfter, 1.2);
+        const result = await analyzeHtmlForPrerender(htmlBefore, htmlAfter, 1.2);
 
         expect(result).to.be.an('object');
         expect(result.wordCountBefore).to.be.greaterThan(0);
         expect(result.wordCountAfter).to.be.greaterThan(result.wordCountBefore);
       });
 
-      it('should cover edge cases in content gain ratio calculation', () => {
+      it('should cover edge cases in content gain ratio calculation', async () => {
         // Test various edge cases for content gain ratio
         const scenarios = [
           // Test zero to content scenario
@@ -1356,14 +1356,14 @@ describe('Prerender Audit', () => {
           { before: '<html><body></body></html>', after: '<html><body></body></html>' }
         ];
 
-        scenarios.forEach((scenario, index) => {
-          const result = analyzeHtmlForPrerender(scenario.before, scenario.after, 1.2);
+        for (const [index, scenario] of scenarios.entries()) {
+          const result = await analyzeHtmlForPrerender(scenario.before, scenario.after, 1.2);
           expect(result).to.be.an('object', `Scenario ${index} failed`);
           expect(result.contentGainRatio).to.be.a('number', `Scenario ${index} ratio not a number`);
-        });
+        }
       });
 
-      it('should handle browser environment simulation', () => {
+      it('should handle browser environment simulation', async () => {
         // Test browser environment simulation
         const originalDocument = global.document;
         const originalGlobalThis = global.globalThis;
@@ -1397,10 +1397,10 @@ describe('Prerender Audit', () => {
           };
 
           // Test browser environment behavior
-          const result1 = analyzeHtmlForPrerender('<html><body><p>Test</p></body></html>', '<html><body><p>Test content</p></body></html>', 1.2);
+          const result1 = await analyzeHtmlForPrerender('<html><body><p>Test</p></body></html>', '<html><body><p>Test content</p></body></html>', 1.2);
           expect(result1).to.be.an('object');
 
-          const result2 = analyzeHtmlForPrerender('<html><body><p>Test</p></body></html>', '<html><body><p>Test content</p></body></html>', 1.2);
+          const result2 = await analyzeHtmlForPrerender('<html><body><p>Test</p></body></html>', '<html><body><p>Test content</p></body></html>', 1.2);
           expect(result2).to.be.an('object');
 
         } finally {
@@ -1410,17 +1410,17 @@ describe('Prerender Audit', () => {
         }
       });
 
-      it('should handle Node.js environment processing', () => {
+      it('should handle Node.js environment processing', async () => {
         // Test Node.js environment HTML processing
         const htmlContent = '<html><body><p>Some content</p><script>alert("test");</script></body></html>';
 
-        const result = analyzeHtmlForPrerender(htmlContent, htmlContent, 1.2);
+        const result = await analyzeHtmlForPrerender(htmlContent, htmlContent, 1.2);
 
         expect(result).to.be.an('object');
         expect(result.contentGainRatio).to.equal(1);
       });
 
-      it('should handle complex line break processing', () => {
+      it('should handle complex line break processing', async () => {
         // Test complex line break scenarios
         const htmlWithLines = `<html><body>
         Line one content here
@@ -1430,22 +1430,23 @@ describe('Prerender Audit', () => {
         Line three with carriage return
         </body></html>`;
 
-        const result = analyzeHtmlForPrerender(htmlWithLines, htmlWithLines, 1.2);
+        const result = await analyzeHtmlForPrerender(htmlWithLines, htmlWithLines, 1.2);
 
         expect(result).to.be.an('object');
         expect(result.wordCountBefore).to.be.greaterThan(0);
       });
 
-      it('should handle malformed input gracefully', () => {
-        // Test handling of malformed input
-        const maliciousHtml = '<html><body><script>throw new Error("Simulated parsing error");</script></body></html>';
+      it('should throw error for null input', async () => {
+        // Test handling of null input
+        const validHtml = '<html><body><script>throw new Error("Simulated parsing error");</script></body></html>';
 
-        // Try to trigger the catch block by causing an internal error
-        const result = analyzeHtmlForPrerender(null, maliciousHtml, 1.2);
-
-        expect(result).to.be.an('object');
-        expect(result.error).to.equal('Missing HTML content for comparison');
-        expect(result.needsPrerender).to.be.false;
+        try {
+          await analyzeHtmlForPrerender(null, validHtml, 1.2);
+          expect.fail('Should have thrown an error');
+        } catch (error) {
+          expect(error).to.be.an('error');
+          expect(error.message).to.equal('Missing HTML content for comparison');
+        }
       });
 
     });
@@ -1539,7 +1540,7 @@ describe('Prerender Audit', () => {
       });
 
       it('should trigger HTML analysis error handling', async () => {
-        // Mock analyzeHtmlForPrerender to return an error
+        // Mock analyzeHtmlForPrerender to throw an error
         const mockHandler = await esmock('../../src/prerender/handler.js', {
           '../../src/utils/s3-utils.js': {
             getObjectFromKey: sinon.stub()
@@ -1547,10 +1548,7 @@ describe('Prerender Audit', () => {
               .onSecondCall().resolves('<html><body>Valid content too</body></html>'),
           },
           '../../src/prerender/html-comparator-utils.js': {
-            analyzeHtmlForPrerender: sinon.stub().returns({
-              error: 'Mocked analysis error',
-              needsPrerender: false,
-            }),
+            analyzeHtmlForPrerender: sinon.stub().throws(new Error('Mocked analysis error')),
           },
         });
 
@@ -1733,11 +1731,11 @@ describe('Prerender Audit', () => {
         expect(existingOpportunity.save).to.have.been.calledOnce;
       });
 
-        it('should test simplified text extraction', () => {
+        it('should test simplified text extraction', async () => {
         // Test that the simplified stripTagsToText function works correctly
         const htmlContent = '<html><body><p>Test content with <script>alert("evil")</script> scripts</p></body></html>';
 
-        const result = analyzeHtmlForPrerender(htmlContent, htmlContent, 1.2);
+        const result = await analyzeHtmlForPrerender(htmlContent, htmlContent, 1.2);
 
         expect(result).to.be.an('object');
         expect(result.contentGainRatio).to.equal(1);
@@ -1745,27 +1743,24 @@ describe('Prerender Audit', () => {
         expect(result.wordCountAfter).to.equal(4);
       });
 
-      it('should trigger catch block in analyzeHtmlForPrerender', async () => {
+      it('should throw when calculateStats fails', async () => {
         // Mock the HTML analysis to throw an error during processing
         const mockAnalyze = await esmock('../../src/prerender/html-comparator-utils.js', {
-          'cheerio': {
-            load: sinon.stub().throws(new Error('Cheerio processing failed')),
+          '@adobe/spacecat-shared-html-analyzer': {
+            calculateStats: sinon.stub().throws(new Error('Stats calculation failed')),
           },
         });
 
         try {
-          const result = mockAnalyze.analyzeHtmlForPrerender(
+          await mockAnalyze.analyzeHtmlForPrerender(
             '<html><body>content</body></html>',
             '<html><body>content</body></html>',
             1.2
           );
-
-          expect(result).to.be.an('object');
-          expect(result.error).to.include('HTML analysis failed');
-          expect(result.needsPrerender).to.be.false;
+          expect.fail('Should have thrown an error');
         } catch (error) {
-          // If it throws, the function should have caught it
-          expect.fail('analyzeHtmlForPrerender should handle errors internally');
+          expect(error).to.be.an('error');
+          expect(error.message).to.equal('Stats calculation failed');
         }
       });
     });
@@ -2062,11 +2057,11 @@ describe('Prerender Audit', () => {
         getObjectFromKeyStub.onCall(1).resolves('<html><body>After</body></html>');
         getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata);
 
-        // Mock analyzeHtmlForPrerender to return an error
+        // Mock analyzeHtmlForPrerender to throw an error
         const mockHandler = await esmock('../../src/prerender/handler.js', {
           '../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
           '../../src/prerender/html-comparator-utils.js': {
-            analyzeHtmlForPrerender: sandbox.stub().returns({ error: 'Analysis failed' }),
+            analyzeHtmlForPrerender: sandbox.stub().throws(new Error('Analysis failed')),
           },
         });
 
