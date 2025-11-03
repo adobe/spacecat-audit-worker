@@ -18,31 +18,22 @@ import { calculateStats } from '@adobe/spacecat-shared-html-analyzer';
  * @param {string} scrapedHtml - Scraped HTML (client-side rendered)
  * @param {number} threshold - Content increase threshold (default: 1.2)
  * @returns {Object} - Analysis result with needsPrerender, stats, and recommendation
+ * @throws {Error} If HTML content is missing or analysis fails
  */
 async function analyzeHtmlForPrerender(directHtml, scrapedHtml, threshold = 1.2) {
   if (!directHtml || !scrapedHtml) {
-    return {
-      error: 'Missing HTML content for comparison',
-      needsPrerender: false,
-    };
+    throw new Error('Missing HTML content for comparison');
   }
 
-  try {
-    const stats = await calculateStats(directHtml, scrapedHtml, true);
-    const needsPrerender = typeof stats.contentIncreaseRatio === 'number' && stats.contentIncreaseRatio >= threshold;
+  const stats = await calculateStats(directHtml, scrapedHtml, true);
+  const needsPrerender = typeof stats.contentIncreaseRatio === 'number' && stats.contentIncreaseRatio >= threshold;
 
-    return {
-      needsPrerender,
-      contentGainRatio: stats.contentIncreaseRatio,
-      wordCountBefore: stats.wordCountBefore,
-      wordCountAfter: stats.wordCountAfter,
-    };
-  } catch (error) {
-    return {
-      error: `HTML analysis failed: ${error.message}`,
-      needsPrerender: false,
-    };
-  }
+  return {
+    needsPrerender,
+    contentGainRatio: stats.contentIncreaseRatio,
+    wordCountBefore: stats.wordCountBefore,
+    wordCountAfter: stats.wordCountAfter,
+  };
 }
 
 export {
