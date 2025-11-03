@@ -13,11 +13,17 @@
 /* eslint-env mocha */
 
 import { expect, use } from 'chai';
+import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
-import { summarizationAudit, sendMystiqueMessagePostProcessor } from '../../../src/summarization/handler.js';
+import {
+  importTopPages,
+  submitForScraping,
+  sendToMystique,
+} from '../../../src/summarization/handler.js';
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('Summarization Handler', () => {
   let context;
@@ -28,6 +34,11 @@ describe('Summarization Handler', () => {
   let sqs;
   let env;
   let dataAccess;
+  const topPages = [
+    { getUrl: () => 'https://adobe.com/page1' },
+    { getUrl: () => 'https://adobe.com/page2' },
+    { getUrl: () => 'https://adobe.com/page3' },
+  ];
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -42,6 +53,7 @@ describe('Summarization Handler', () => {
       getId: () => 'audit-id-456',
       getAuditType: () => 'summarization',
       getFullAuditRef: () => 'https://adobe.com',
+      getAuditResult: sandbox.stub(),
     };
 
     log = {
@@ -60,7 +72,7 @@ describe('Summarization Handler', () => {
 
     dataAccess = {
       SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sandbox.stub(),
+        allBySiteIdAndSourceAndGeo: sandbox.stub().resolves(topPages),
       },
       Site: {
         findById: sandbox.stub(),
@@ -75,81 +87,19 @@ describe('Summarization Handler', () => {
       audit,
       dataAccess,
     };
-
-    // Functions are imported directly, no need for esmock
   });
 
   afterEach(() => {
     sandbox.restore();
   });
 
-  describe('summarizationAudit', () => {
-    it('should return audit result with top pages when pages are found', async () => {
-      const mockTopPages = [
-        { getUrl: () => 'https://adobe.com/page1' },
-        { getUrl: () => 'https://adobe.com/page2' },
-        { getUrl: () => 'https://adobe.com/page3' },
-      ];
-
-      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
-
-      const result = await summarizationAudit('https://adobe.com', context, site);
+  describe('importTopPages', () => {
+    it('should import top pages successfully', async () => {
+      const result = await importTopPages(context);
 
       expect(result).to.deep.equal({
-        auditResult: {
-          topPages: ['https://adobe.com/page1', 'https://adobe.com/page2', 'https://adobe.com/page3'],
-          success: true,
-        },
-        fullAuditRef: 'https://adobe.com',
-      });
-
-      expect(dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
-        site.getId(),
-        'ahrefs',
-        'global',
-      );
-    });
-
-    it('should return success false when no top pages are found', async () => {
-      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
-
-      const result = await summarizationAudit('https://adobe.com', context, site);
-
-      expect(result.auditResult.success).to.equal(false);
-      expect(result.auditResult.topPages).to.deep.equal([]);
-      expect(result.fullAuditRef).to.equal('https://adobe.com');
-      expect(dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
-        site.getId(),
-        'ahrefs',
-        'global',
-      );
-    });
-
-    it('should handle single top page', async () => {
-      const mockTopPages = [
-        { getUrl: () => 'https://adobe.com/single-page' },
-      ];
-
-      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(mockTopPages);
-
-      const result = await summarizationAudit('https://adobe.com', context, site);
-
-      expect(result).to.deep.equal({
-        auditResult: {
-          topPages: ['https://adobe.com/single-page'],
-          success: true,
-        },
-        fullAuditRef: 'https://adobe.com',
-      });
-    });
-  });
-
-  describe('sendMystiqueMessagePostProcessor', () => {
-    let auditData;
-
-    beforeEach(() => {
-      auditData = {
-        siteId: site.getId(),
+        type: 'top-pages',
+        siteId: 'site-id-123',
         auditResult: {
           success: true,
           topPages: [
@@ -158,181 +108,206 @@ describe('Summarization Handler', () => {
             'https://adobe.com/page3',
           ],
         },
-      };
-
-      // Mock Site.findById to return the site
-      dataAccess.Site.findById.resolves(site);
-    });
-
-    it('should send message to Mystique when audit is successful', async () => {
-      const result = await sendMystiqueMessagePostProcessor(
-        'https://adobe.com',
-        auditData,
-        context,
-      );
-
-      expect(sqs.sendMessage).to.have.been.calledOnce;
-      const [queue, message] = sqs.sendMessage.firstCall.args;
-
-      expect(queue).to.equal(env.QUEUE_SPACECAT_TO_MYSTIQUE);
-      expect(message).to.include({
-        type: 'guidance:summarization',
-        siteId: site.getId(),
-        url: site.getBaseURL(),
-        auditId: audit.getId(),
-        deliveryType: site.getDeliveryType(),
+        fullAuditRef: 'https://adobe.com',
       });
-      expect(message.data).to.have.property('pages');
-      expect(message.data.pages).to.have.length(3); // All pages included
-      expect(result).to.equal(auditData);
-    });
-
-    it('should skip sending message when audit failed', async () => {
-      auditData.auditResult.success = false;
-
-      const result = await sendMystiqueMessagePostProcessor(
-        'https://adobe.com',
-        auditData,
-        context,
+      expect(dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo).to.have.been.calledWith(
+        'site-id-123',
+        'ahrefs',
+        'global',
       );
-
-      expect(sqs.sendMessage).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith('Audit failed, skipping Mystique message');
-      expect(result).to.equal(auditData);
+      expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Found 3 top pages for site site-id-123');
     });
 
-    it('should skip sending message when no top pages found', async () => {
-      auditData.auditResult.topPages = [];
+    it('should handle when no top pages are found', async () => {
+      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
-      const result = await sendMystiqueMessagePostProcessor(
-        'https://adobe.com',
-        auditData,
-        context,
+      const result = await importTopPages(context);
+
+      expect(result).to.deep.equal({
+        type: 'top-pages',
+        siteId: 'site-id-123',
+        auditResult: {
+          success: false,
+          topPages: [],
+        },
+        fullAuditRef: 'https://adobe.com',
+      });
+      expect(log.warn).to.have.been.calledWith('[SUMMARIZATION] No top pages found for site');
+    });
+
+    it('should handle errors gracefully', async () => {
+      const error = new Error('Database error');
+      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.rejects(error);
+
+      const result = await importTopPages(context);
+
+      expect(result).to.deep.equal({
+        type: 'top-pages',
+        siteId: 'site-id-123',
+        auditResult: {
+          success: false,
+          error: 'Database error',
+          topPages: [],
+        },
+        fullAuditRef: 'https://adobe.com',
+      });
+      expect(log.error).to.have.been.calledWith(
+        '[SUMMARIZATION] Failed to import top pages: Database error',
+        error,
       );
+    });
+  });
 
-      expect(sqs.sendMessage).to.not.have.been.called;
-      expect(log.info).to.have.been.calledWith('No top pages found, skipping Mystique message');
-      expect(result).to.equal(auditData);
+  describe('submitForScraping', () => {
+    it('should submit top pages for scraping successfully', async () => {
+      audit.getAuditResult.returns({ success: true });
+
+      const result = await submitForScraping(context);
+
+      expect(result).to.deep.equal({
+        urls: [
+          { url: 'https://adobe.com/page1' },
+          { url: 'https://adobe.com/page2' },
+          { url: 'https://adobe.com/page3' },
+        ],
+        siteId: 'site-id-123',
+        type: 'summarization',
+      });
+      expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Submitting 3 pages for scraping');
     });
 
-    it('should skip sending message when SQS is not configured', async () => {
+    it('should limit to 100 pages when submitting for scraping', async () => {
+      audit.getAuditResult.returns({ success: true });
+      const manyPages = Array.from({ length: 150 }, (_, i) => ({
+        getUrl: () => `https://adobe.com/page${i}`,
+      }));
+      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyPages);
+
+      const result = await submitForScraping(context);
+
+      expect(result.urls).to.have.lengthOf(100);
+      expect(log.info).to.have.been.calledWith('[SUMMARIZATION] Submitting 150 pages for scraping');
+    });
+
+    it('should throw error when audit failed', async () => {
+      audit.getAuditResult.returns({ success: false });
+
+      await expect(submitForScraping(context)).to.be.rejectedWith(
+        'Audit failed, skipping scraping',
+      );
+      expect(log.warn).to.have.been.calledWith('[SUMMARIZATION] Audit failed, skipping scraping');
+    });
+
+    it('should throw error when no top pages to submit', async () => {
+      audit.getAuditResult.returns({ success: true });
+      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
+
+      await expect(submitForScraping(context)).to.be.rejectedWith(
+        'No top pages to submit for scraping',
+      );
+      expect(log.warn).to.have.been.calledWith('[SUMMARIZATION] No top pages to submit for scraping');
+    });
+  });
+
+  describe('sendToMystique', () => {
+    beforeEach(() => {
+      audit.getAuditResult.returns({ success: true });
+    });
+
+    it('should send message to Mystique successfully', async () => {
+      const result = await sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      expect(sqs.sendMessage).to.have.been.calledWithMatch('spacecat-to-mystique', {
+        type: 'guidance:summarization',
+        siteId: 'site-id-123',
+        url: 'https://adobe.com',
+        auditId: 'audit-id-456',
+        deliveryType: 'aem',
+        time: sinon.match.string,
+        data: {
+          pages: [
+            { page_url: 'https://adobe.com/page1', keyword: '', questions: [] },
+            { page_url: 'https://adobe.com/page2', keyword: '', questions: [] },
+            { page_url: 'https://adobe.com/page3', keyword: '', questions: [] },
+          ],
+        },
+      });
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] Sent 3 pages to Mystique for site site-id-123',
+      );
+    });
+
+    it('should limit to 100 pages when sending to Mystique', async () => {
+      const manyPages = Array.from({ length: 150 }, (_, i) => ({
+        getUrl: () => `https://adobe.com/page${i}`,
+      }));
+      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(manyPages);
+
+      const result = await sendToMystique(context);
+
+      expect(result).to.deep.equal({ status: 'complete' });
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      expect(sentMessage.data.pages).to.have.lengthOf(100);
+      expect(log.info).to.have.been.calledWith(
+        '[SUMMARIZATION] Sent 100 pages to Mystique for site site-id-123',
+      );
+    });
+
+    it('should throw error when audit failed', async () => {
+      audit.getAuditResult.returns({ success: false });
+
+      await expect(sendToMystique(context)).to.be.rejectedWith(
+        'Audit failed, skipping Mystique message',
+      );
+      expect(log.warn).to.have.been.calledWith(
+        '[SUMMARIZATION] Audit failed, skipping Mystique message',
+      );
+      expect(sqs.sendMessage).not.to.have.been.called;
+    });
+
+    it('should throw error when SQS is not configured', async () => {
       context.sqs = null;
 
-      const result = await sendMystiqueMessagePostProcessor(
-        'https://adobe.com',
-        auditData,
-        context,
+      await expect(sendToMystique(context)).to.be.rejectedWith(
+        'SQS or Mystique queue not configured',
       );
-
-      expect(log.warn).to.have.been.calledWith('SQS or Mystique queue not configured, skipping message');
-      expect(result).to.equal(auditData);
+      expect(log.warn).to.have.been.calledWith(
+        '[SUMMARIZATION] SQS or Mystique queue not configured, skipping message',
+      );
     });
 
-    it('should skip sending message when queue environment variable is not set', async () => {
+    it('should throw error when queue is not configured', async () => {
       context.env.QUEUE_SPACECAT_TO_MYSTIQUE = null;
 
-      const result = await sendMystiqueMessagePostProcessor(
-        'https://adobe.com',
-        auditData,
-        context,
+      await expect(sendToMystique(context)).to.be.rejectedWith(
+        'SQS or Mystique queue not configured',
       );
-
-      expect(log.warn).to.have.been.calledWith('SQS or Mystique queue not configured, skipping message');
-      expect(result).to.equal(auditData);
-    });
-
-    it('should limit pages to 100 when more than 100 pages are available', async () => {
-      auditData.auditResult.topPages = Array.from({ length: 150 }, (_, i) => `https://adobe.com/page${i + 1}`);
-
-      await sendMystiqueMessagePostProcessor(
-        'https://adobe.com',
-        auditData,
-        context,
-      );
-
-      expect(sqs.sendMessage).to.have.been.calledOnce;
-      const [, message] = sqs.sendMessage.firstCall.args;
-      expect(message.data.pages).to.have.length(100);
-      expect(message.data.pages[0]).to.deep.equal({ page_url: 'https://adobe.com/page1', keyword: '', questions: [] });
-      expect(message.data.pages[99]).to.deep.equal({ page_url: 'https://adobe.com/page100', keyword: '', questions: [] });
-    });
-
-    it('should handle exactly 100 pages', async () => {
-      auditData.auditResult.topPages = Array.from({ length: 100 }, (_, i) => `https://adobe.com/page${i + 1}`);
-
-      await sendMystiqueMessagePostProcessor(
-        'https://adobe.com',
-        auditData,
-        context,
-      );
-
-      expect(sqs.sendMessage).to.have.been.calledOnce;
-      const [, message] = sqs.sendMessage.firstCall.args;
-      expect(message.data.pages).to.have.length(100);
-    });
-
-    it('should handle fewer than 100 pages', async () => {
-      auditData.auditResult.topPages = [
-        'https://adobe.com/page1',
-        'https://adobe.com/page2',
-      ];
-
-      await sendMystiqueMessagePostProcessor(
-        'https://adobe.com',
-        auditData,
-        context,
-      );
-
-      expect(sqs.sendMessage).to.have.been.calledOnce;
-      const [, message] = sqs.sendMessage.firstCall.args;
-      expect(message.data.pages).to.have.length(2);
-      expect(message.data.pages).to.deep.equal([
-        { page_url: 'https://adobe.com/page1', keyword: '', questions: [] },
-        { page_url: 'https://adobe.com/page2', keyword: '', questions: [] },
-      ]);
-    });
-
-    it('should log successful message sending', async () => {
-      await sendMystiqueMessagePostProcessor(
-        'https://adobe.com',
-        auditData,
-        context,
-      );
-
-      expect(log.info).to.have.been.calledWith(
-        'SUMMARIZATION: %s Message sent to Mystique for site id %s:',
-        'summarization',
-        site.getId(),
+      expect(log.warn).to.have.been.calledWith(
+        '[SUMMARIZATION] SQS or Mystique queue not configured, skipping message',
       );
     });
 
-    it('should handle SQS sendMessage failure', async () => {
-      const error = new Error('SQS send failed');
-      sqs.sendMessage.rejects(error);
+    it('should throw error when no top pages found', async () => {
+      dataAccess.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves([]);
 
-      try {
-        await sendMystiqueMessagePostProcessor('https://adobe.com', auditData, context);
-        expect.fail('Should have thrown error');
-      } catch (err) {
-        expect(err.message).to.equal('SQS send failed');
-      }
-
-      expect(sqs.sendMessage).to.have.been.calledOnce;
-    });
-
-    it('should skip sending message when site is not found', async () => {
-      // Mock Site.findById to return null (site not found)
-      dataAccess.Site.findById.resolves(null);
-
-      const result = await sendMystiqueMessagePostProcessor(
-        'https://adobe.com',
-        auditData,
-        context,
+      await expect(sendToMystique(context)).to.be.rejectedWith('No top pages found');
+      expect(log.warn).to.have.been.calledWith(
+        '[SUMMARIZATION] No top pages found, skipping Mystique message',
       );
-
-      expect(result).to.equal(auditData);
-      expect(log.warn).to.have.been.calledWith('Site not found, skipping Mystique message');
       expect(sqs.sendMessage).not.to.have.been.called;
+    });
+
+    it('should format page URLs correctly', async () => {
+      await sendToMystique(context);
+
+      const sentMessage = sqs.sendMessage.getCall(0).args[1];
+      sentMessage.data.pages.forEach((page) => {
+        expect(page).to.have.all.keys('page_url', 'keyword', 'questions');
+        expect(page.keyword).to.equal('');
+        expect(page.questions).to.deep.equal([]);
+        expect(page.page_url).to.be.a('string');
+      });
     });
   });
 });
