@@ -13,14 +13,19 @@
 import { ok } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES, formOpportunitiesMap } from '../constants.js';
-import { getSuccessCriteriaDetails, sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance } from '../utils.js';
+import {
+  getSuccessCriteriaDetails,
+  sendMessageToFormsQualityAgent,
+  sendMessageToMystiqueForGuidance,
+} from '../utils.js';
 import { updateStatusToIgnored } from '../../accessibility/utils/scrape-utils.js';
 import {
   aggregateAccessibilityIssues,
   createIndividualOpportunitySuggestions,
 } from '../../accessibility/utils/generate-individual-opportunities.js';
-import { aggregateAccessibilityData, sendRunImportMessage } from '../../accessibility/utils/data-processing.js';
+import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToImporter } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from '../../accessibility/utils/constants.js';
+import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 
 const filterAccessibilityOpportunities = (opportunities) => opportunities.filter((opportunity) => opportunity.getTags()?.includes('Forms Accessibility'));
 
@@ -443,7 +448,7 @@ export async function createAccessibilityOpportunity(auditData, context) {
 }
 
 export default async function handler(message, context) {
-  const { log } = context;
+  const { log, site } = context;
   const { auditId, siteId, data } = message;
   const { opportunityId, a11y } = data;
   log.debug(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
@@ -462,6 +467,18 @@ export default async function handler(message, context) {
 
     // Create individual suggestions from Mystique data
     await createFormAccessibilitySuggestionsFromMystique(a11y, opportunity, context);
+
+    // send message to importer for code-fix generation
+    const isAutoFixEnabled = await isAuditEnabledForSite(`${opportunity.getType()}-auto-fix`, site, context);
+    if (isAutoFixEnabled) {
+      await sendCodeFixMessagesToImporter(
+        opportunity,
+        auditId,
+        context,
+      );
+    } else {
+      log.info(`[Form Opportunity] [Site Id: ${siteId}] ${opportunity.getType()}-auto-fix is disabled for site, skipping code-fix generation`);
+    }
 
     log.info(`[Form Opportunity] [Site Id: ${siteId}] a11y opportunity: ${JSON.stringify(opportunity, null, 2)}`);
     const opportunityData = opportunity.getData();

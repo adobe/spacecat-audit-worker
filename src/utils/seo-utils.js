@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Adobe. All rights reserved.
+ * Copyright 2025 Adobe. All rights reserved.
  * This file is licensed to you under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License. You may obtain a copy
  * of the License at http://www.apache.org/licenses/LICENSE-2.0
@@ -10,23 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-export function removeTrailingSlash(url) {
-  return url.endsWith('/') ? url.slice(0, -1) : url;
-}
+import { hasText } from '@adobe/spacecat-shared-utils';
 
-export function getBaseUrl(url, useHostnameOnly = false) {
-  if (useHostnameOnly) {
-    try {
-      const urlObj = new URL(url);
-      return `${urlObj.protocol}//${urlObj.host}`; // includes port if any
-    } catch {
-      // If URL parsing fails, return the original URL with trailing slash removed
-      return removeTrailingSlash(url);
-    }
-  }
-  return removeTrailingSlash(url);
-}
-
+/**
+ * Issue rankings for SEO metatags audit.
+ * Lower number = higher priority/impact.
+ */
 const issueRankings = {
   title: {
     missing: 1,
@@ -52,13 +41,13 @@ const issueRankings = {
 };
 
 /**
- * Returns the tag issues rank as per below ranking based on seo impact.
- * The rank can help in sorting by impact.
- * Rankling (low number means high rank):
+ * Returns the tag issue rank based on SEO impact.
+ * The rank helps in sorting issues by priority.
+ * Ranking (low number means high rank):
  * 1. Missing Title
  * 2. Empty Title
- * 3. Missing Description
- * 4. Missing H1
+ * 3. Missing Description / Empty Description
+ * 4. Missing H1 / Empty H1
  * 5. Duplicate Title
  * 6. Duplicate Description
  * 7. Duplicate H1
@@ -66,11 +55,26 @@ const issueRankings = {
  * 9. Description Too Long/Short
  * 10. H1 Too Long
  * 11. Multiple H1 on a Page
- * @param issue
- * @param tagName
+ * @param {string} tagName - The tag name (title, description, h1)
+ * @param {string} issue - The issue description
+ * @returns {number} Ranking number (-1 if not found)
  */
 export function getIssueRanking(tagName, issue) {
-  const tagIssues = issueRankings[tagName];
+  // Add null checks
+  if (!hasText(tagName)) {
+    return -1;
+  }
+
+  if (!hasText(issue)) {
+    return -1;
+  }
+
+  const tagIssues = issueRankings[tagName.toLowerCase()];
+
+  if (!tagIssues) {
+    return -1;
+  }
+
   const issueWords = issue.toLowerCase().split(' ');
   for (const word of issueWords) {
     if (tagIssues[word]) {

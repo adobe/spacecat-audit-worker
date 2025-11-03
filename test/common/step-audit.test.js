@@ -188,6 +188,7 @@ describe('Step-based Audit Tests', () => {
         auditType: 'content-audit',
         auditResult: { status: 'preparing' },
         fullAuditRef: 's3://test/123',
+        invocationId: 'some-id',
       });
 
       // Update verification to match actual implementation
