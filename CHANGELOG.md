@@ -1,3 +1,10 @@
+## [1.225.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.225.0...v1.225.1) (2025-11-03)
+
+
+### Bug Fixes
+
+* prerender audit using spacecat-shared-html-analyzer pkg ([#1501](https://github.com/adobe/spacecat-audit-worker/issues/1501)) ([66d0cf4](https://github.com/adobe/spacecat-audit-worker/commit/66d0cf41555439762fdab8619e5e7251e4429363))
+
 # [1.225.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.224.0...v1.225.0) (2025-11-03)
 
 
