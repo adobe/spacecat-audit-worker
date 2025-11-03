@@ -135,7 +135,7 @@ async function compareHtmlContent(url, siteId, context) {
 
   // Even if original scrape was forbidden, we might have HTML uploaded from local scraping
   // eslint-disable-next-line
-  const analysis = analyzeHtmlForPrerender(serverSideHtml, clientSideHtml, CONTENT_GAIN_THRESHOLD);
+  const analysis = await analyzeHtmlForPrerender(serverSideHtml, clientSideHtml, CONTENT_GAIN_THRESHOLD);
 
   if (analysis.error) {
     log.error(`Prerender - HTML analysis failed for ${url}: ${analysis.error}`);
