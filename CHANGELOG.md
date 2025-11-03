@@ -1,3 +1,10 @@
+## [1.225.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.225.1...v1.225.2) (2025-11-03)
+
+
+### Bug Fixes
+
+* send wait timeout for scraping metatags ([#1391](https://github.com/adobe/spacecat-audit-worker/issues/1391)) ([eb72c7a](https://github.com/adobe/spacecat-audit-worker/commit/eb72c7a386866e5bbda72d353a1e6ad917f62009))
+
 ## [1.225.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.225.0...v1.225.1) (2025-11-03)
 
 
