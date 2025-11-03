@@ -251,6 +251,20 @@ async function triggerMystiqueCategorization(context, siteId, domain) {
   }
 }
 
+async function getBaseUrlBySiteId(siteId, context) {
+  const { dataAccess, log } = context;
+  const { Site } = dataAccess;
+
+  try {
+    const site = await Site.findById(siteId);
+    /* c8 ignore next */
+    return site?.getBaseURL() || '';
+  } catch {
+    log.info(`Unable to fetch base URL for siteId: ${siteId}`);
+    return '';
+  }
+}
+
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
   const {
     env, log, s3Client,
@@ -383,12 +397,15 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const needsBrandPresenceRefresh = previousConfigVersion
     && (changes.brands || changes.competitors);
 
-  if (hasBrandPresenceChanges) {
+  const baseUrl = await getBaseUrlBySiteId(siteId, context);
+  const isAdobe = baseUrl.startsWith('https://adobe.com');
+
+  if (hasBrandPresenceChanges && !isAdobe) {
     log.info('LLMO config changes detected in topics, categories, or entities; triggering geo-brand-presence audit');
     await triggerGeoBrandPresence(context, site, auditContext);
     triggeredSteps.push(brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
   }
-  if (needsBrandPresenceRefresh) {
+  if (needsBrandPresenceRefresh && !isAdobe) {
     log.info('LLMO config changes detected in brand or competitor aliases; triggering geo-brand-presence-refresh');
     await triggerGeoBrandPresenceRefresh(context, site, configVersion);
     triggeredSteps.push('geo-brand-presence-refresh');
