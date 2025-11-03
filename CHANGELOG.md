@@ -1,3 +1,10 @@
+# [1.224.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.223.3...v1.224.0) (2025-11-03)
+
+
+### Features
+
+* **llmo-customer-analysis:** remove geo-brand-presence triggers for acom ([#1499](https://github.com/adobe/spacecat-audit-worker/issues/1499)) ([0517d20](https://github.com/adobe/spacecat-audit-worker/commit/0517d20e0138c29d2100802c1e3b35f3ae98435b))
+
 ## [1.223.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.223.2...v1.223.3) (2025-11-02)
 
 
