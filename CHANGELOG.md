@@ -1,3 +1,10 @@
+# [1.225.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.224.0...v1.225.0) (2025-11-03)
+
+
+### Features
+
+* implement accessibility mobile audit data processing (V1) ([#1412](https://github.com/adobe/spacecat-audit-worker/issues/1412)) ([ae0b920](https://github.com/adobe/spacecat-audit-worker/commit/ae0b9201863613a1c235cf01b905cddeb53d4082))
+
 # [1.224.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.223.3...v1.224.0) (2025-11-03)
 
 
