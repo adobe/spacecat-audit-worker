@@ -119,7 +119,7 @@ jobs:
           AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
 
       - name: Upload ZIP File
-        run: aws s3 cp spacecat-services--audit-worker-latest.zip s3://spacecat-sam-artifacts-dev/spacecat-services--audit-worker-latest.zip
+        run: aws s3 cp spacecat-services--audit-worker-latest.zip s3://spacecat-artifacts-dev/spacecat-services--audit-worker-latest.zip
         env:
           AWS_REGION: us-east-1
           AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
