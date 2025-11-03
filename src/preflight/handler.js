@@ -136,9 +136,13 @@ export const preflightAudit = async (context) => {
     })));
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
+    log.debug(`radhika [preflight-audit] job: ${jobId}, jobEntity: ${JSON.stringify(jobEntity)}.`);
     const currentMetadata = jobEntity.getMetadata() || {};
+    log.debug(`radhika[preflight-audit] job: ${jobId}, currentMetadata: ${JSON.stringify(currentMetadata)}.`);
     const currentPayload = currentMetadata?.payload || {};
+    log.debug(`radhika [preflight-audit] job: ${jobId}, currentPayload: ${JSON.stringify(currentPayload)}.`);
     const enabledCheckNames = checks.filter((c) => c.enabled).map((c) => c.name);
+    log.debug(`radhika [preflight-audit] job: ${jobId}, enabledCheckNames: ${JSON.stringify(enabledCheckNames)}.`);
     jobEntity.setMetadata({
       ...currentMetadata,
       payload: {
@@ -146,6 +150,7 @@ export const preflightAudit = async (context) => {
         checks: enabledCheckNames,
       },
     });
+    log.debug(`radhika [preflight-audit] job: ${jobId}, jobEntity after setting metadata: ${JSON.stringify(jobEntity)}.`);
     await jobEntity.save();
   } catch (e) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Failed to persist enabled checks in job metadata.`, e);
