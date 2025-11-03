@@ -237,6 +237,7 @@ export async function runAuditAndGenerateSuggestions(context) {
   const {
     site, audit, finalUrl, log, scrapeResultPaths,
   } = context;
+  log.info(`===Start=== ${site.getId()}`);
   log.debug(`scrapeResultPaths: ${JSON.stringify(scrapeResultPaths)}`);
   const {
     seoChecks,
@@ -284,6 +285,8 @@ export async function runAuditAndGenerateSuggestions(context) {
     auditId: audit.getId(),
     auditResult,
   }, context);
+
+  log.info(`===Finish=== ${site.getId()}`);
 
   return {
     status: 'complete',
