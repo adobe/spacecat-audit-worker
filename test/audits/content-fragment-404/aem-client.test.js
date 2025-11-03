@@ -77,6 +77,12 @@ describe('AemClient', () => {
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
 
+    const mockSite = {
+      getDeliveryConfig: sandbox.stub().returns({
+        authorURL: TEST_AEM_AUTHOR_URL,
+      }),
+    };
+
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
@@ -87,9 +93,9 @@ describe('AemClient', () => {
           error: sandbox.spy(),
         },
         env: {
-          AEM_AUTHOR_URL: TEST_AEM_AUTHOR_URL,
           AEM_AUTHOR_TOKEN: TEST_AEM_AUTHOR_TOKEN,
         },
+        site: mockSite,
       })
       .build();
 
@@ -192,12 +198,19 @@ describe('AemClient', () => {
     });
 
     it('should throw error when AEM_AUTHOR_URL is missing', () => {
+      const mockSiteWithoutUrl = {
+        getDeliveryConfig: sandbox.stub().returns({
+          authorURL: null,
+        }),
+      };
+
       const contextWithoutUrl = new MockContextBuilder()
         .withSandbox(sandbox)
         .withOverrides({
           env: {
             AEM_AUTHOR_TOKEN: TEST_AEM_AUTHOR_TOKEN,
           },
+          site: mockSiteWithoutUrl,
         })
         .build();
 
@@ -206,12 +219,19 @@ describe('AemClient', () => {
     });
 
     it('should throw error when AEM_AUTHOR_TOKEN is missing', () => {
+      const mockSiteWithUrl = {
+        getDeliveryConfig: sandbox.stub().returns({
+          authorURL: TEST_AEM_AUTHOR_URL,
+        }),
+      };
+
       const contextWithoutToken = new MockContextBuilder()
         .withSandbox(sandbox)
         .withOverrides({
           env: {
-            AEM_AUTHOR_URL: TEST_AEM_AUTHOR_URL,
+            AEM_AUTHOR_TOKEN: null,
           },
+          site: mockSiteWithUrl,
         })
         .build();
 
@@ -220,14 +240,105 @@ describe('AemClient', () => {
     });
 
     it('should throw error when both environment variables are missing', () => {
+      const mockSiteWithoutUrl = {
+        getDeliveryConfig: sandbox.stub().returns({
+          authorURL: null,
+        }),
+      };
+
       const contextWithoutConfig = new MockContextBuilder()
         .withSandbox(sandbox)
         .withOverrides({
           env: {},
+          site: mockSiteWithoutUrl,
         })
         .build();
 
       expect(() => AemClient.createFrom(contextWithoutConfig))
+        .to.throw('AEM Author configuration missing: AEM_AUTHOR_URL and AEM_AUTHOR_TOKEN required');
+    });
+
+    it('should throw error when authorURL is undefined', () => {
+      const mockSiteWithUndefinedUrl = {
+        getDeliveryConfig: sandbox.stub().returns({
+          authorURL: undefined,
+        }),
+      };
+
+      const contextWithUndefinedUrl = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          env: {
+            AEM_AUTHOR_TOKEN: TEST_AEM_AUTHOR_TOKEN,
+          },
+          site: mockSiteWithUndefinedUrl,
+        })
+        .build();
+
+      expect(() => AemClient.createFrom(contextWithUndefinedUrl))
+        .to.throw('AEM Author configuration missing: AEM_AUTHOR_URL and AEM_AUTHOR_TOKEN required');
+    });
+
+    it('should throw error when authorURL is empty string', () => {
+      const mockSiteWithEmptyUrl = {
+        getDeliveryConfig: sandbox.stub().returns({
+          authorURL: '',
+        }),
+      };
+
+      const contextWithEmptyUrl = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          env: {
+            AEM_AUTHOR_TOKEN: TEST_AEM_AUTHOR_TOKEN,
+          },
+          site: mockSiteWithEmptyUrl,
+        })
+        .build();
+
+      expect(() => AemClient.createFrom(contextWithEmptyUrl))
+        .to.throw('AEM Author configuration missing: AEM_AUTHOR_URL and AEM_AUTHOR_TOKEN required');
+    });
+
+    it('should throw error when authToken is undefined', () => {
+      const mockSiteWithUrl = {
+        getDeliveryConfig: sandbox.stub().returns({
+          authorURL: TEST_AEM_AUTHOR_URL,
+        }),
+      };
+
+      const contextWithUndefinedToken = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          env: {
+            AEM_AUTHOR_TOKEN: undefined,
+          },
+          site: mockSiteWithUrl,
+        })
+        .build();
+
+      expect(() => AemClient.createFrom(contextWithUndefinedToken))
+        .to.throw('AEM Author configuration missing: AEM_AUTHOR_URL and AEM_AUTHOR_TOKEN required');
+    });
+
+    it('should throw error when authToken is empty string', () => {
+      const mockSiteWithUrl = {
+        getDeliveryConfig: sandbox.stub().returns({
+          authorURL: TEST_AEM_AUTHOR_URL,
+        }),
+      };
+
+      const contextWithEmptyToken = new MockContextBuilder()
+        .withSandbox(sandbox)
+        .withOverrides({
+          env: {
+            AEM_AUTHOR_TOKEN: '',
+          },
+          site: mockSiteWithUrl,
+        })
+        .build();
+
+      expect(() => AemClient.createFrom(contextWithEmptyToken))
         .to.throw('AEM Author configuration missing: AEM_AUTHOR_URL and AEM_AUTHOR_TOKEN required');
     });
   });
