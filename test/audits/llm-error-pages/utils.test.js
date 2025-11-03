@@ -31,6 +31,8 @@ import {
   consolidateErrorsByUrl,
   sortErrorsByTrafficVolume,
   toPathOnly,
+  downloadExistingCdnSheet,
+  matchErrorsWithCdnData,
 } from '../../../src/llm-error-pages/utils.js';
 import { extractCustomerDomain } from '../../../src/utils/cdn-utils.js';
 
@@ -924,6 +926,16 @@ describe('LLM Error Pages Utils', () => {
       const result = toPathOnly('https://example.com/path');
       expect(result).to.equal('/path');
     });
+
+    it('returns original string when URL construction fails', () => {
+      // Invalid baseUrl triggers catch block
+      const result1 = toPathOnly('relative/path', 'not-a-valid-base-url');
+      expect(result1).to.equal('relative/path');
+
+      // Null input also triggers catch block
+      const result2 = toPathOnly(null, 'invalid');
+      expect(result2).to.equal(null);
+    });
   });
 
   // ============================================================================
@@ -1130,6 +1142,490 @@ describe('LLM Error Pages Utils', () => {
       const processed = processErrorPagesResults(results);
       expect(processed.totalErrors).to.equal(2);
       expect(processed.summary.statusCodes).to.deep.equal({ Unknown: 2 });
+    });
+  });
+
+  // ============================================================================
+  // EXCEL/CDN DATA HELPERS TESTS
+  // ============================================================================
+
+  describe('downloadExistingCdnSheet', () => {
+    let mockLog;
+    let mockSharepointClient;
+    let mockReadFromSharePoint;
+    let mockExcelJS;
+    let mockWorkbook;
+
+    beforeEach(() => {
+      mockLog = {
+        debug: sinon.stub(),
+        warn: sinon.stub(),
+      };
+
+      mockSharepointClient = {};
+
+      mockReadFromSharePoint = sinon.stub();
+
+      mockWorkbook = {
+        xlsx: {
+          load: sinon.stub().resolves(),
+        },
+        worksheets: [],
+      };
+
+      mockExcelJS = {
+        Workbook: sinon.stub().returns(mockWorkbook),
+      };
+    });
+
+    it('should download and parse existing CDN sheet successfully', async () => {
+      const mockBuffer = Buffer.from('mock-excel-data');
+      mockReadFromSharePoint.resolves(mockBuffer);
+
+      const mockRow1 = {
+        values: [
+          null, // Excel arrays are 1-based, index 0 is always empty
+          'Chatbot',
+          'ChatGPT',
+          '404',
+          '100',
+          '250',
+          'US',
+          '/page1',
+          'Product A',
+          'Category X',
+        ],
+      };
+
+      const mockRow2 = {
+        values: [
+          null,
+          'Search Engine',
+          'Perplexity',
+          '403',
+          '50',
+          '300',
+          'UK',
+          '/page2',
+          'Product B',
+          'Category Y',
+        ],
+      };
+
+      const mockWorksheet = {
+        eachRow: sinon.stub().callsFake((options, callback) => {
+          callback(mockRow1, 1); // Header row (will be skipped)
+          callback(mockRow2, 2); // Data row
+        }),
+      };
+
+      mockWorkbook.worksheets = [mockWorksheet];
+
+      const { downloadExistingCdnSheet } = await esmock(
+        '../../../src/llm-error-pages/utils.js',
+      );
+
+      const result = await downloadExistingCdnSheet(
+        'w35-2025',
+        'test-folder',
+        mockSharepointClient,
+        mockLog,
+        mockReadFromSharePoint,
+        mockExcelJS,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(1);
+      expect(result[0]).to.deep.equal({
+        agent_type: 'Search Engine',
+        user_agent_display: 'Perplexity',
+        status: '403',
+        number_of_hits: 50,
+        avg_ttfb_ms: 300,
+        country_code: 'UK',
+        url: '/page2',
+        product: 'Product B',
+        category: 'Category Y',
+      });
+
+      expect(mockLog.debug).to.have.been.calledWith(
+        'Attempting to download existing CDN sheet: agentictraffic-w35-2025.xlsx',
+      );
+      expect(mockLog.debug).to.have.been.calledWith(
+        'Successfully loaded 1 rows from existing CDN sheet',
+      );
+    });
+
+    it('should handle errors gracefully and return null', async () => {
+      mockReadFromSharePoint.rejects(new Error('File not found'));
+
+      const { downloadExistingCdnSheet } = await esmock(
+        '../../../src/llm-error-pages/utils.js',
+      );
+
+      const result = await downloadExistingCdnSheet(
+        'w35-2025',
+        'test-folder',
+        mockSharepointClient,
+        mockLog,
+        mockReadFromSharePoint,
+        mockExcelJS,
+      );
+
+      expect(result).to.be.null;
+      expect(mockLog.warn).to.have.been.calledWith(
+        'Could not download existing CDN sheet: File not found',
+      );
+    });
+
+    it('should handle empty worksheet', async () => {
+      const mockBuffer = Buffer.from('mock-excel-data');
+      mockReadFromSharePoint.resolves(mockBuffer);
+
+      const mockWorksheet = {
+        eachRow: sinon.stub().callsFake((options, callback) => {
+          callback({ values: [] }, 1); // Only header row
+        }),
+      };
+
+      mockWorkbook.worksheets = [mockWorksheet];
+
+      const { downloadExistingCdnSheet } = await esmock(
+        '../../../src/llm-error-pages/utils.js',
+      );
+
+      const result = await downloadExistingCdnSheet(
+        'w35-2025',
+        'test-folder',
+        mockSharepointClient,
+        mockLog,
+        mockReadFromSharePoint,
+        mockExcelJS,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(0);
+    });
+
+    it('should handle missing or invalid numeric values', async () => {
+      const mockBuffer = Buffer.from('mock-excel-data');
+      mockReadFromSharePoint.resolves(mockBuffer);
+
+      const mockRow = {
+        values: [
+          null,
+          'Chatbot',
+          'ChatGPT',
+          '404',
+          'invalid', // Invalid number_of_hits
+          null, // Missing avg_ttfb_ms
+          'US',
+          '/page1',
+          'Product A',
+          'Category X',
+        ],
+      };
+
+      const mockWorksheet = {
+        eachRow: sinon.stub().callsFake((options, callback) => {
+          callback({ values: [] }, 1); // Header
+          callback(mockRow, 2); // Data row
+        }),
+      };
+
+      mockWorkbook.worksheets = [mockWorksheet];
+
+      const { downloadExistingCdnSheet } = await esmock(
+        '../../../src/llm-error-pages/utils.js',
+      );
+
+      const result = await downloadExistingCdnSheet(
+        'w35-2025',
+        'test-folder',
+        mockSharepointClient,
+        mockLog,
+        mockReadFromSharePoint,
+        mockExcelJS,
+      );
+
+      expect(result).to.be.an('array');
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].number_of_hits).to.equal(0); // Invalid coerced to 0
+      expect(result[0].avg_ttfb_ms).to.equal(0); // Null coerced to 0
+    });
+  });
+
+  describe('matchErrorsWithCdnData', () => {
+    it('should match errors with CDN data by URL and user agent', async () => {
+      const errors = [
+        {
+          url: '/page1',
+          user_agent: 'ChatGPT',
+          total_requests: 100,
+        },
+        {
+          url: '/page2',
+          user_agent: 'Perplexity',
+          total_requests: 50,
+        },
+      ];
+
+      const cdnData = [
+        {
+          url: '/page1',
+          user_agent_display: 'ChatGPT',
+          agent_type: 'Chatbot',
+          number_of_hits: 200,
+          avg_ttfb_ms: 250,
+          country_code: 'US',
+          product: 'Product A',
+          category: 'Category X',
+        },
+        {
+          url: '/page2',
+          user_agent_display: 'Perplexity',
+          agent_type: 'Search Engine',
+          number_of_hits: 150,
+          avg_ttfb_ms: 300,
+          country_code: 'UK',
+          product: 'Product B',
+          category: 'Category Y',
+        },
+      ];
+
+      const { matchErrorsWithCdnData } = await esmock(
+        '../../../src/llm-error-pages/utils.js',
+      );
+
+      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
+
+      expect(result).to.have.lengthOf(2);
+      expect(result[0]).to.deep.equal({
+        agent_type: 'Chatbot',
+        user_agent_display: 'ChatGPT',
+        number_of_hits: 100, // Uses error's total_requests
+        avg_ttfb_ms: 250,
+        country_code: 'US',
+        url: '/page1',
+        product: 'Product A',
+        category: 'Category X',
+      });
+      expect(result[1]).to.deep.equal({
+        agent_type: 'Search Engine',
+        user_agent_display: 'Perplexity',
+        number_of_hits: 50,
+        avg_ttfb_ms: 300,
+        country_code: 'UK',
+        url: '/page2',
+        product: 'Product B',
+        category: 'Category Y',
+      });
+    });
+
+    it('should handle partial URL matches', async () => {
+      const errors = [
+        {
+          url: '/page1/subpage',
+          user_agent: 'ChatGPT',
+          total_requests: 100,
+        },
+      ];
+
+      const cdnData = [
+        {
+          url: '/page1',
+          user_agent_display: 'ChatGPT',
+          agent_type: 'Chatbot',
+          number_of_hits: 200,
+          avg_ttfb_ms: 250,
+          country_code: 'US',
+          product: 'Product A',
+          category: 'Category X',
+        },
+      ];
+
+      const { matchErrorsWithCdnData } = await esmock(
+        '../../../src/llm-error-pages/utils.js',
+      );
+
+      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].url).to.equal('/page1/subpage');
+    });
+
+    it('should handle partial user agent matches (case-insensitive)', async () => {
+      const errors = [
+        {
+          url: '/page1',
+          user_agent: 'chatgpt-user',
+          total_requests: 100,
+        },
+      ];
+
+      const cdnData = [
+        {
+          url: '/page1',
+          user_agent_display: 'ChatGPT',
+          agent_type: 'Chatbot',
+          number_of_hits: 200,
+          avg_ttfb_ms: 250,
+          country_code: 'US',
+          product: 'Product A',
+          category: 'Category X',
+        },
+      ];
+
+      const { matchErrorsWithCdnData } = await esmock(
+        '../../../src/llm-error-pages/utils.js',
+      );
+
+      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].user_agent_display).to.equal('ChatGPT');
+    });
+
+    it('should handle root path specially', async () => {
+      const errors = [
+        {
+          url: '/',
+          user_agent: 'ChatGPT',
+          total_requests: 100,
+        },
+      ];
+
+      const cdnData = [
+        {
+          url: '/',
+          user_agent_display: 'ChatGPT',
+          agent_type: 'Chatbot',
+          number_of_hits: 200,
+          avg_ttfb_ms: 250,
+          country_code: 'US',
+          product: 'Product A',
+          category: 'Category X',
+        },
+      ];
+
+      const { matchErrorsWithCdnData } = await esmock(
+        '../../../src/llm-error-pages/utils.js',
+      );
+
+      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
+
+      expect(result).to.have.lengthOf(1);
+      expect(result[0].url).to.equal('/');
+    });
+
+    it('should handle no matches and empty arrays', async () => {
+      const { matchErrorsWithCdnData } = await esmock(
+        '../../../src/llm-error-pages/utils.js',
+      );
+
+      // No matches found
+      const noMatchResult = matchErrorsWithCdnData(
+        [{ url: '/page1', user_agent: 'ChatGPT', total_requests: 100 }],
+        [{ url: '/different-page', user_agent_display: 'DifferentBot', agent_type: 'Chatbot', number_of_hits: 200, avg_ttfb_ms: 250, country_code: 'US', product: 'A', category: 'X' }],
+        'https://example.com',
+      );
+      expect(noMatchResult).to.have.lengthOf(0);
+
+      // Empty errors array
+      const emptyErrorsResult = matchErrorsWithCdnData(
+        [],
+        [{ url: '/page1', user_agent_display: 'ChatGPT', agent_type: 'Chatbot', number_of_hits: 200, avg_ttfb_ms: 250, country_code: 'US', product: 'A', category: 'X' }],
+        'https://example.com',
+      );
+      expect(emptyErrorsResult).to.have.lengthOf(0);
+
+      // Empty CDN data array
+      const emptyCdnResult = matchErrorsWithCdnData(
+        [{ url: '/page1', user_agent: 'ChatGPT', total_requests: 100 }],
+        [],
+        'https://example.com',
+      );
+      expect(emptyCdnResult).to.have.lengthOf(0);
+    });
+
+    it('should use error total_requests when available, CDN number_of_hits otherwise', async () => {
+      const errors = [
+        {
+          url: '/page1',
+          user_agent: 'ChatGPT',
+          total_requests: 100,
+        },
+        {
+          url: '/page2',
+          user_agent: 'Perplexity',
+          // No total_requests
+        },
+      ];
+
+      const cdnData = [
+        {
+          url: '/page1',
+          user_agent_display: 'ChatGPT',
+          agent_type: 'Chatbot',
+          number_of_hits: 200,
+          avg_ttfb_ms: 250,
+          country_code: 'US',
+          product: 'Product A',
+          category: 'Category X',
+        },
+        {
+          url: '/page2',
+          user_agent_display: 'Perplexity',
+          agent_type: 'Search Engine',
+          number_of_hits: 150,
+          avg_ttfb_ms: 300,
+          country_code: 'UK',
+          product: 'Product B',
+          category: 'Category Y',
+        },
+      ];
+
+      const { matchErrorsWithCdnData } = await esmock(
+        '../../../src/llm-error-pages/utils.js',
+      );
+
+      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
+
+      expect(result).to.have.lengthOf(2);
+      expect(result[0].number_of_hits).to.equal(100); // From error
+      expect(result[1].number_of_hits).to.equal(150); // From CDN
+    });
+
+    it('should handle CDN data with null or undefined URL', async () => {
+      const errors = [
+        {
+          url: '',
+          user_agent: 'ChatGPT',
+          total_requests: 100,
+        },
+      ];
+
+      const cdnData = [
+        {
+          url: null, // Null URL
+          user_agent_display: 'ChatGPT',
+          agent_type: 'Chatbot',
+          number_of_hits: 200,
+          avg_ttfb_ms: 250,
+          country_code: 'US',
+          product: 'Product A',
+          category: 'Category X',
+        },
+      ];
+
+      const { matchErrorsWithCdnData } = await esmock(
+        '../../../src/llm-error-pages/utils.js',
+      );
+
+      const result = matchErrorsWithCdnData(errors, cdnData, 'https://example.com');
+
+      // Should match because empty string matches empty string
+      expect(result).to.have.lengthOf(1);
     });
   });
 });

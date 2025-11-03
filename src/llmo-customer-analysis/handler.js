@@ -11,10 +11,11 @@
  */
 
 import {
-  getLastNumberOfWeeks, llmoConfig,
+  getLastNumberOfWeeks, isNonEmptyObject, llmoConfig,
 } from '@adobe/spacecat-shared-utils';
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
+import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { isAuditEnabledForSite } from '../common/audit-utils.js';
@@ -196,6 +197,60 @@ async function triggerAllSteps(context, site, log, triggeredSteps, auditContext 
   triggeredSteps.push(auditContext?.brandPresenceCadence === 'daily' ? 'geo-brand-presence-daily' : 'geo-brand-presence');
 }
 
+async function triggerMystiqueCategorization(context, siteId, domain) {
+  const {
+    env, log, s3Client,
+  } = context;
+
+  const s3Bucket = env.S3_IMPORTER_BUCKET_NAME;
+  const mystiqueApiBaseUrl = env.MYSTIQUE_API_BASE_URL;
+  const categorizationEndpoint = `${mystiqueApiBaseUrl}/v1/categorization/site`;
+
+  const {
+    config,
+    exists,
+  } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket });
+
+  if (exists && isNonEmptyObject(config.categories)) {
+    log.info('Config categories already exist; skipping Mystique categorization');
+    return;
+  }
+
+  log.info(`Triggering Mystique categorization for siteId: ${siteId}, domain: ${domain}`);
+  const imsContext = {
+    log,
+    env: {
+      IMS_HOST: env.IMS_HOST,
+      IMS_CLIENT_ID: env.IMS_CLIENT_ID,
+      IMS_CLIENT_CODE: env.IMS_CLIENT_CODE,
+      IMS_CLIENT_SECRET: env.IMS_CLIENT_SECRET,
+    },
+  };
+  const imsClient = ImsClient.createFrom(imsContext);
+  const { access_token: accessToken } = await imsClient.getServiceAccessToken();
+
+  try {
+    const response = await fetch(categorizationEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: accessToken,
+      },
+      body: JSON.stringify({
+        url: domain,
+      }),
+      timeout: 60000,
+    });
+
+    const data = await response.json();
+    const { categories } = data.categories;
+    config.categories = categories;
+    await llmoConfig.writeConfig(siteId, config, s3Client, { s3Bucket });
+  } catch (error) {
+    log.error(`Failed to trigger Mystique categorization: ${error.message}`);
+  }
+}
+
 export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditContext = {}) {
   const {
     env, log, s3Client,
@@ -213,6 +268,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     'hreflang',
     'summarization',
     REFERRAL_TRAFFIC_AUDIT,
+    'cdn-logs-analysis',
     'cdn-logs-report',
     'geo-brand-presence',
   ]);
@@ -229,6 +285,10 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   const hasOptelData = await checkOptelData(domain, context);
   const { configVersion, previousConfigVersion } = auditContext;
   const isFirstTimeOnboarding = !previousConfigVersion;
+
+  if (isFirstTimeOnboarding) {
+    await triggerMystiqueCategorization(context, siteId, domain);
+  }
 
   // Handle referral traffic imports for first-time onboarding
   if (hasOptelData && isFirstTimeOnboarding) {

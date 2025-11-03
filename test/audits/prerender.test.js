@@ -22,6 +22,8 @@ import prerenderHandler, {
   submitForScraping,
   processContentAndGenerateOpportunities,
   processOpportunityAndSuggestions,
+  createScrapeForbiddenOpportunity,
+  uploadStatusSummaryToS3,
 } from '../../src/prerender/handler.js';
 import { analyzeHtmlForPrerender } from '../../src/prerender/html-comparator-utils.js';
 import { createOpportunityData } from '../../src/prerender/opportunity-data-mapper.js';
@@ -459,7 +461,7 @@ describe('Prerender Audit', () => {
         expect(result.status).to.equal('complete');
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
         // Should have logged about fallback to base URL
-        expect(context.log.info).to.have.been.calledWith('Prerender - No URLs found, using base URL for comparison');
+        expect(context.log.info).to.have.been.calledWith('Prerender - No URLs found for comparison. baseUrl=https://example.com, siteId=test-site-id');
       });
 
       it('should trigger opportunity processing path when prerender is detected', async () => {
@@ -522,7 +524,131 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.urlsNeedingPrerender).to.be.greaterThan(0);
         expect(context.log.info).to.have.been.called;
         // Verify that the opportunity processing was logged
-        expect(context.log.info.args.some(call => call[0].includes('Successfully synced opportunity and suggestions'))).to.be.true;
+        expect(context.log.info.args.some(call => call[0].includes('Successfully synced suggestions'))).to.be.true;
+      });
+
+      it('should create dummy opportunity when scraping is forbidden', async () => {
+        // Test that a dummy opportunity is created when all scrapes return 403
+        const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        const convertToOpportunityStub = sinon.stub().resolves(mockOpportunity);
+        const createScrapeForbiddenOpportunityStub = sinon.stub().resolves();
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: convertToOpportunityStub,
+          },
+        });
+
+        const mockSiteTopPage = {
+          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+          ]),
+        };
+
+        // Simulate 403 error in scrape.json
+        const scrapeMetadata = {
+          url: 'https://example.com/page1',
+          status: 'FAILED',
+          error: {
+            message: 'HTTP 403 error for URL: https://example.com/page1',
+            statusCode: 403,
+            type: 'HttpError',
+          },
+        };
+
+        const getObjectFromKeyStub = sinon.stub();
+        getObjectFromKeyStub.onCall(0).resolves(null); // No server HTML
+        getObjectFromKeyStub.onCall(1).resolves(null); // No client HTML
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata); // scrape.json with 403 error
+
+        const mockHandlerWithS3 = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: convertToOpportunityStub,
+          },
+          '../../src/utils/s3-utils.js': {
+            getObjectFromKey: getObjectFromKeyStub,
+          },
+        });
+
+        const mockS3Client = {
+          send: sandbox.stub().resolves({}),
+        };
+
+        const context = {
+          site: {
+            getId: () => 'test-site-id',
+            getBaseURL: () => 'https://example.com',
+          },
+          audit: { getId: () => 'audit-id' },
+          dataAccess: {
+            SiteTopPage: mockSiteTopPage,
+          },
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          s3Client: mockS3Client,
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        };
+
+        const result = await mockHandlerWithS3.processContentAndGenerateOpportunities(context);
+
+        expect(result.status).to.equal('complete');
+        expect(result.auditResult.scrapeForbidden).to.be.true;
+        expect(result.auditResult.urlsNeedingPrerender).to.equal(0);
+        
+        // Verify that convertToOpportunity was called for notification
+        expect(convertToOpportunityStub).to.have.been.calledOnce;
+        
+        // Verify log message for dummy opportunity
+        const infoLogs = context.log.info.args.map(call => call[0]);
+        expect(infoLogs.some(msg => msg.includes('Creating dummy opportunity for forbidden scraping'))).to.be.true;
+        
+        // Verify that convertToOpportunity was called with correct parameters
+        expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com'); // auditUrl
+      });
+    });
+
+    describe('createScrapeForbiddenOpportunity', () => {
+      it('should create opportunity without suggestions when scraping is forbidden', async () => {
+        const mockOpportunity = { getId: () => 'test-opportunity-id' };
+        const convertToOpportunityStub = sandbox.stub().resolves(mockOpportunity);
+
+        const mockHandler = await esmock('../../src/prerender/handler.js', {
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: convertToOpportunityStub,
+          },
+        });
+
+        const auditData = {
+          siteId: 'test-site-id',
+          auditId: 'test-audit-id',
+          auditResult: {
+            totalUrlsChecked: 5,
+            urlsNeedingPrerender: 0,
+            scrapeForbidden: true,
+            results: [],
+          },
+        };
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            error: sandbox.stub(),
+            warn: sandbox.stub(),
+            debug: sandbox.stub(),
+          },
+        };
+
+        await mockHandler.createScrapeForbiddenOpportunity('https://example.com', auditData, context);
+
+        expect(convertToOpportunityStub).to.have.been.calledOnce;
+        expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com');
+        expect(context.log.info).to.have.been.calledWith(
+          'Prerender - Creating dummy opportunity for forbidden scraping. baseUrl=https://example.com, siteId=test-site-id'
+        );
       });
     });
 
@@ -541,7 +667,7 @@ describe('Prerender Audit', () => {
 
         await processOpportunityAndSuggestions('https://example.com', auditData, context);
 
-        expect(logStub).to.have.been.calledWith('Prerender - No prerender opportunities found, skipping opportunity creation');
+        expect(logStub).to.have.been.calledWith('Prerender - No prerender opportunities found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
       });
 
       it('should skip processing when no URLs in results need prerender', async () => {
@@ -561,7 +687,7 @@ describe('Prerender Audit', () => {
 
         await processOpportunityAndSuggestions('https://example.com', auditData, context);
 
-        expect(logStub).to.have.been.calledWith('Prerender - No URLs needing prerender found, skipping opportunity creation');
+        expect(logStub).to.have.been.calledWith('Prerender - No URLs needing prerender found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
       });
 
       it('should attempt to process opportunities when URLs need prerender', async () => {
@@ -594,7 +720,7 @@ describe('Prerender Audit', () => {
           // But we can verify the function attempts to process
         }
 
-        expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for https://example.com');
+        expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
       });
 
       it('should call processOpportunityAndSuggestions correctly with full mock setup', async () => {
@@ -649,7 +775,7 @@ describe('Prerender Audit', () => {
         }
 
         // Verify that we logged the correct number of suggestions
-        expect(logStub).to.have.been.calledWith('Prerender - Generated 2 prerender suggestions for https://example.com');
+        expect(logStub).to.have.been.calledWith('Prerender - Generated 2 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
       });
 
       it('should successfully execute opportunity creation flow and cover syncSuggestions', async () => {
@@ -698,7 +824,7 @@ describe('Prerender Audit', () => {
         }
 
         // Should have logged about generating suggestions
-        expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for https://example.com');
+        expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
       });
     });
   });
@@ -1505,7 +1631,7 @@ describe('Prerender Audit', () => {
         // Verify that syncSuggestions was called
         expect(syncSuggestionsStub).to.have.been.calledOnce;
         // Verify that suggestion syncing was logged
-        expect(context.log.info.args.some(call => call[0].includes('Successfully synced opportunity and suggestions'))).to.be.true;
+        expect(context.log.info.args.some(call => call[0].includes('Successfully synced suggestions'))).to.be.true;
 
         // Verify the syncSuggestions was called with the correct structure including S3 keys
         const syncCall = syncSuggestionsStub.getCall(0);
@@ -1927,63 +2053,367 @@ describe('Prerender Audit', () => {
         expect(result.auditResult.results).to.be.an('array');
       });
 
-      it('should handle metadata with error information', async () => {
-        // Test when metadata contains error information (missing HTML data)
-        // Note: getObjectFromKey returns parsed objects, not strings
-        const scrapeMetadata = {
-          url: 'https://example.com/page1',
-          status: 'FAILED',
-          error: {
-            message: 'HTTP 403 error for URL: https://example.com/page1',
-            statusCode: 403,
-            type: 'HttpError',
-          },
-        };
+      it('should handle metadata without error field', async () => {
+        // Test when metadata exists but has no error field (scrapeError should be undefined)
+        const scrapeMetadata = { status: 'SUCCESS' }; // No error field
 
         const getObjectFromKeyStub = sinon.stub();
-        getObjectFromKeyStub.onCall(0).resolves(null); // No server HTML
-        getObjectFromKeyStub.onCall(1).resolves(null); // No client HTML
-        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata); // scrape.json with error
+        getObjectFromKeyStub.onCall(0).resolves('<html><body>Before</body></html>');
+        getObjectFromKeyStub.onCall(1).resolves('<html><body>After</body></html>');
+        getObjectFromKeyStub.onCall(2).resolves(scrapeMetadata);
 
+        // Mock analyzeHtmlForPrerender to return an error
         const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/utils/s3-utils.js': {
-            getObjectFromKey: getObjectFromKeyStub,
+          '../../src/utils/s3-utils.js': { getObjectFromKey: getObjectFromKeyStub },
+          '../../src/prerender/html-comparator-utils.js': {
+            analyzeHtmlForPrerender: sandbox.stub().returns({ error: 'Analysis failed' }),
           },
         });
 
-        const mockSiteTopPage = {
-          allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
-            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
-          ]),
-        };
-
         const context = {
-          site: {
-            getId: () => 'test-site-id',
-            getBaseURL: () => 'https://example.com',
-          },
+          site: { getId: () => 'test-site', getBaseURL: () => 'https://example.com' },
           audit: { getId: () => 'audit-id' },
-          dataAccess: { SiteTopPage: mockSiteTopPage },
-          log: {
-            info: sandbox.stub(),
-            warn: sandbox.stub(),
-            error: sandbox.stub(),
-            debug: sandbox.stub(),
-          },
-          s3Client: {},
+          dataAccess: { SiteTopPage: { allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
+            { getUrl: () => 'https://example.com/page1', getTraffic: () => 100 },
+          ]) } },
+          log: { info: sandbox.stub(), warn: sandbox.stub(), error: sandbox.stub(), debug: sandbox.stub() },
+          s3Client: { send: sandbox.stub().resolves({}) },
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
         const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        
+        expect(result.auditResult.results[0].scrapeError).to.be.undefined;
+      });
+    });
+  });
 
-        expect(result.status).to.equal('complete');
-        // Should log error about missing HTML data
-        expect(context.log.error).to.have.been.called;
-        const errorMessages = context.log.error.args.map(call => call[0]);
-        const hasMissingDataError = errorMessages.some(msg => 
-          msg.includes('Missing HTML data for')
-        );
-        expect(hasMissingDataError).to.be.true;
+  describe('uploadStatusSummaryToS3', () => {
+    let mockS3Client;
+    let context;
+
+    beforeEach(() => {
+      mockS3Client = {
+        send: sandbox.stub().resolves({}),
+      };
+
+      context = {
+        log: {
+          info: sandbox.stub(),
+          error: sandbox.stub(),
+          warn: sandbox.stub(),
+        },
+        s3Client: mockS3Client,
+        env: {
+          S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+        },
+      };
+    });
+
+    it('should upload status summary to S3 with complete audit data', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 5,
+          urlsNeedingPrerender: 2,
+          scrapeForbidden: false,
+          results: [
+            {
+              url: 'https://example.com/page1',
+              error: false,
+              needsPrerender: true,
+              wordCountBefore: 100,
+              wordCountAfter: 250,
+              contentGainRatio: 2.5,
+              organicTraffic: 1000,
+            },
+            {
+              url: 'https://example.com/page2',
+              error: false,
+              needsPrerender: false,
+              wordCountBefore: 200,
+              wordCountAfter: 220,
+              contentGainRatio: 1.1,
+              organicTraffic: 500,
+            },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+
+      expect(command.input.Bucket).to.equal('test-bucket');
+      expect(command.input.Key).to.equal('prerender/scrapes/test-site-id/status.json');
+      expect(command.input.ContentType).to.equal('application/json');
+
+      const uploadedData = JSON.parse(command.input.Body);
+      expect(uploadedData.baseUrl).to.equal('https://example.com');
+      expect(uploadedData.siteId).to.equal('test-site-id');
+      expect(uploadedData.auditType).to.equal('prerender');
+      expect(uploadedData.lastUpdated).to.equal('2025-01-01T00:00:00.000Z');
+      expect(uploadedData.totalUrlsChecked).to.equal(5);
+      expect(uploadedData.urlsNeedingPrerender).to.equal(2);
+      expect(uploadedData.scrapeForbidden).to.equal(false);
+      expect(uploadedData.pages).to.have.lengthOf(2);
+      
+      expect(uploadedData.pages[0]).to.deep.equal({
+        url: 'https://example.com/page1',
+        scrapingStatus: 'success',
+        needsPrerender: true,
+        wordCountBefore: 100,
+        wordCountAfter: 250,
+        contentGainRatio: 2.5,
+        organicTraffic: 1000,
+      });
+
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Successfully uploaded status summary to S3.*baseUrl=https:\/\/example\.com, siteId=test-site-id/)
+      );
+    });
+
+    it('should mark pages with errors as scraping status error', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 1,
+          urlsNeedingPrerender: 0,
+          results: [
+            {
+              url: 'https://example.com/error-page',
+              error: true,
+              needsPrerender: false,
+            },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      expect(uploadedData.pages[0].scrapingStatus).to.equal('error');
+      expect(uploadedData.pages[0].wordCountBefore).to.equal(0);
+      expect(uploadedData.pages[0].wordCountAfter).to.equal(0);
+      expect(uploadedData.pages[0].contentGainRatio).to.equal(0);
+    });
+
+    it('should include scrape error details when available', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 2,
+          urlsNeedingPrerender: 0,
+          results: [
+            {
+              url: 'https://example.com/forbidden-page',
+              error: true,
+              needsPrerender: false,
+              scrapeError: {
+                statusCode: 403,
+                message: 'Forbidden',
+              },
+            },
+            {
+              url: 'https://example.com/success-page',
+              error: false,
+              needsPrerender: false,
+              wordCountBefore: 100,
+              wordCountAfter: 110,
+              contentGainRatio: 1.1,
+              organicTraffic: 500,
+              scrapeError: null,
+            },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      // First page should have scrape error
+      expect(uploadedData.pages[0].url).to.equal('https://example.com/forbidden-page');
+      expect(uploadedData.pages[0].scrapingStatus).to.equal('error');
+      expect(uploadedData.pages[0].scrapeError).to.deep.equal({
+        statusCode: 403,
+        message: 'Forbidden',
+      });
+
+      // Second page should not have scrapeError property (null is filtered out)
+      expect(uploadedData.pages[1].url).to.equal('https://example.com/success-page');
+      expect(uploadedData.pages[1].scrapingStatus).to.equal('success');
+      expect(uploadedData.pages[1]).to.not.have.property('scrapeError');
+    });
+
+    it('should skip upload when auditResult is missing', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(mockS3Client.send).to.not.have.been.called;
+      expect(context.log.warn).to.have.been.calledWith(
+        'Prerender - Missing auditResult, skipping status summary upload'
+      );
+    });
+
+    it('should handle empty results array', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 0,
+          urlsNeedingPrerender: 0,
+          results: [],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      expect(uploadedData.pages).to.deep.equal([]);
+      expect(uploadedData.totalUrlsChecked).to.equal(0);
+    });
+
+    it('should handle undefined results (fallback to empty array)', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 0,
+          urlsNeedingPrerender: 0,
+          // results is undefined
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      expect(uploadedData.pages).to.deep.equal([]);
+    });
+
+    it('should handle null results (fallback to empty array)', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          totalUrlsChecked: 0,
+          urlsNeedingPrerender: 0,
+          results: null,
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(mockS3Client.send).to.have.been.calledOnce;
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      expect(uploadedData.pages).to.deep.equal([]);
+    });
+
+    it('should use current timestamp when auditedAt is missing', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditResult: {
+          results: [],
+        },
+      };
+
+      const beforeTime = Date.now();
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+      const afterTime = Date.now();
+
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      // Verify the timestamp is valid ISO string and within time range
+      const uploadedTime = new Date(uploadedData.lastUpdated).getTime();
+      expect(uploadedTime).to.be.at.least(beforeTime);
+      expect(uploadedTime).to.be.at.most(afterTime);
+    });
+
+    it('should handle S3 upload errors gracefully', async () => {
+      mockS3Client.send.rejects(new Error('S3 upload failed'));
+
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          results: [],
+        },
+      };
+
+      // Should not throw
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to upload status summary to S3/),
+        sinon.match.instanceOf(Error)
+      );
+    });
+
+    it('should handle missing optional fields in results', async () => {
+      const auditUrl = 'https://example.com';
+      const auditData = {
+        siteId: 'test-site-id',
+        auditedAt: '2025-01-01T00:00:00.000Z',
+        auditResult: {
+          results: [
+            {
+              url: 'https://example.com/page1',
+              // Missing all optional fields
+            },
+          ],
+        },
+      };
+
+      await uploadStatusSummaryToS3(auditUrl, auditData, context);
+
+      const call = mockS3Client.send.getCall(0);
+      const command = call.args[0];
+      const uploadedData = JSON.parse(command.input.Body);
+
+      expect(uploadedData.pages[0]).to.deep.equal({
+        url: 'https://example.com/page1',
+        scrapingStatus: 'success',
+        needsPrerender: false,
+        wordCountBefore: 0,
+        wordCountAfter: 0,
+        contentGainRatio: 0,
+        organicTraffic: 0,
       });
     });
   });
