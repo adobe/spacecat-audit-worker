@@ -1670,6 +1670,278 @@ describe('Meta Tags', () => {
         expect(log.info).to.have.been.calledWith('Removing title tag from /page1 as it doesn\'t have aiSuggestion.');
         expect(log.info).to.have.been.calledWith('Removing description tag from /page1 as it doesn\'t have aiSuggestion.');
       });
+
+      it('should remove all duplicate tag instances when one instance lacks AI suggestion', async () => {
+        // Setup detectedTags with duplicate titles across multiple pages
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+          },
+          '/page2': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+          },
+          '/page3': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+          '/page3': { s3key: 'page3-key' },
+        };
+
+        // Setup Genvar response with AI suggestion for only some duplicate instances
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            title: {
+              aiSuggestion: 'AI Suggested Title',
+              aiRationale: 'AI Rationale for title',
+            },
+          },
+          // /page2 and /page3 don't have AI suggestions
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that ALL duplicate instances are removed (even the one with AI suggestion)
+        expect(response['/page1'].title).to.be.undefined;
+        expect(response['/page2'].title).to.be.undefined;
+        expect(response['/page3'].title).to.be.undefined;
+
+        // Verify logging for removed duplicate tags
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page1 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page2 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page3 (duplicate group without complete AI suggestions).');
+      });
+
+      it('should keep all duplicate tag instances when all have AI suggestions', async () => {
+        // Setup detectedTags with duplicate descriptions across multiple pages
+        allTags.detectedTags = {
+          '/page1': {
+            description: { tagContent: 'Duplicate Description', issue: 'Duplicate Description' },
+          },
+          '/page2': {
+            description: { tagContent: 'Duplicate Description', issue: 'Duplicate Description' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+        };
+
+        // Setup Genvar response with AI suggestions for ALL duplicate instances
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            description: {
+              aiSuggestion: 'AI Suggested Description 1',
+              aiRationale: 'AI Rationale for description 1',
+            },
+          },
+          '/page2': {
+            description: {
+              aiSuggestion: 'AI Suggested Description 2',
+              aiRationale: 'AI Rationale for description 2',
+            },
+          },
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that ALL duplicate instances are kept since all have AI suggestions
+        expect(response['/page1'].description.aiSuggestion).to.equal('AI Suggested Description 1');
+        expect(response['/page2'].description.aiSuggestion).to.equal('AI Suggested Description 2');
+      });
+
+      it('should handle mixed duplicate and non-duplicate tags correctly', async () => {
+        // Setup detectedTags with both duplicate and non-duplicate tags
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+            description: { tagContent: 'Unique Description 1', issue: 'Description too short' },
+          },
+          '/page2': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+            h1: { tagContent: 'Unique H1 2', issue: 'H1 too short' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+        };
+
+        // Setup Genvar response with AI suggestions only for page1's title (duplicate)
+        // and page2's h1 (non-duplicate)
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            title: {
+              aiSuggestion: 'AI Suggested Title',
+              aiRationale: 'AI Rationale for title',
+            },
+            // description doesn't have AI suggestion
+          },
+          '/page2': {
+            // title doesn't have AI suggestion
+            h1: {
+              aiSuggestion: 'AI Suggested H1',
+              aiRationale: 'AI Rationale for h1',
+            },
+          },
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that duplicate titles are removed from both pages
+        // (because one instance lacks AI suggestion)
+        expect(response['/page1'].title).to.be.undefined;
+        expect(response['/page2'].title).to.be.undefined;
+
+        // Verify that non-duplicate description is removed from page1 only
+        expect(response['/page1'].description).to.be.undefined;
+
+        // Verify that non-duplicate h1 with AI suggestion is kept
+        expect(response['/page2'].h1.aiSuggestion).to.equal('AI Suggested H1');
+
+        // Verify logging
+        expect(log.info).to.have.been.calledWith('Removing description tag from /page1 as it doesn\'t have aiSuggestion.');
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page1 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page2 (duplicate group without complete AI suggestions).');
+      });
+
+      it('should handle multiple different duplicate groups correctly', async () => {
+        // Setup detectedTags with two different duplicate groups
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Duplicate Title A', issue: 'Duplicate Title' },
+            h1: { tagContent: 'Duplicate H1 B', issue: 'Duplicate H1' },
+          },
+          '/page2': {
+            title: { tagContent: 'Duplicate Title A', issue: 'Duplicate Title' },
+          },
+          '/page3': {
+            h1: { tagContent: 'Duplicate H1 B', issue: 'Duplicate H1' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+          '/page3': { s3key: 'page3-key' },
+        };
+
+        // Setup Genvar response with AI suggestions for all titles but not h1s
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            title: {
+              aiSuggestion: 'AI Suggested Title A1',
+              aiRationale: 'AI Rationale for title A1',
+            },
+            // h1 doesn't have AI suggestion
+          },
+          '/page2': {
+            title: {
+              aiSuggestion: 'AI Suggested Title A2',
+              aiRationale: 'AI Rationale for title A2',
+            },
+          },
+          '/page3': {
+            h1: {
+              aiSuggestion: 'AI Suggested H1 B',
+              aiRationale: 'AI Rationale for h1 B',
+            },
+          },
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that duplicate titles with all AI suggestions are kept
+        expect(response['/page1'].title.aiSuggestion).to.equal('AI Suggested Title A1');
+        expect(response['/page2'].title.aiSuggestion).to.equal('AI Suggested Title A2');
+
+        // Verify that duplicate h1s are removed from all pages
+        // (because page1's h1 lacks AI suggestion)
+        expect(response['/page1'].h1).to.be.undefined;
+        expect(response['/page3'].h1).to.be.undefined;
+
+        // Verify logging for removed duplicate h1 group
+        expect(log.debug).to.have.been.calledWith('Removing h1 tag from /page1 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith('Removing h1 tag from /page3 (duplicate group without complete AI suggestions).');
+      });
+
+      it('should handle duplicate tags with empty tagContent gracefully', async () => {
+        // Setup detectedTags with duplicate tags that have no tagContent
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: '', issue: 'Duplicate Title' },
+          },
+          '/page2': {
+            title: { tagContent: '', issue: 'Duplicate Title' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+        };
+
+        // Setup Genvar response with no AI suggestions
+        genvarClientStub.generateSuggestions.resolves({});
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that tags without tagContent are removed individually (not as duplicate group)
+        expect(response['/page1'].title).to.be.undefined;
+        expect(response['/page2'].title).to.be.undefined;
+
+        // Should log as individual removals since tagContent is empty
+        expect(log.debug).to.not.have.been.calledWith(sinon.match(/duplicate group/));
+      });
+
+      it('should handle case-insensitive duplicate detection', async () => {
+        // Setup detectedTags with duplicates that have different casing
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+          },
+          '/page2': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+        };
+
+        // Setup Genvar response with AI suggestion for only one instance
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            title: {
+              aiSuggestion: 'AI Suggested Title',
+              aiRationale: 'AI Rationale',
+            },
+          },
+          // /page2 doesn't have AI suggestion
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that both instances are removed since they share the same tagContent
+        expect(response['/page1'].title).to.be.undefined;
+        expect(response['/page2'].title).to.be.undefined;
+
+        // Verify logging for duplicate group removal
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page1 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page2 (duplicate group without complete AI suggestions).');
+      });
     });
   });
 });
