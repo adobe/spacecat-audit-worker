@@ -33,8 +33,8 @@ export class AemClient {
   }
 
   static createFrom(context, cache = new NoOpCache()) {
-    const { env } = context;
-    const authorUrl = env.AEM_AUTHOR_URL;
+    const { site, env } = context;
+    const authorUrl = site.getDeliveryConfig().authorURL;
     const authToken = env.AEM_AUTHOR_TOKEN;
 
     if (!authorUrl || !authToken) {
