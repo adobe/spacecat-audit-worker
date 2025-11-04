@@ -1,3 +1,10 @@
+# [1.226.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.225.5...v1.226.0) (2025-11-04)
+
+
+### Features
+
+* Added additional logs for metatags ([#1512](https://github.com/adobe/spacecat-audit-worker/issues/1512)) ([e572101](https://github.com/adobe/spacecat-audit-worker/commit/e57210158e3f8e792a6b8e01e6155deec7d732ef))
+
 ## [1.225.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.225.4...v1.225.5) (2025-11-04)
 
 
