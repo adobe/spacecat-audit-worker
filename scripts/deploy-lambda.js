@@ -116,17 +116,6 @@ async function main() {
 
   console.log(`📦 Package version: ${version}`);
 
-  // Check if secrets exist
-  console.log('🔐 Checking for required secrets...');
-  for (const secretName of Object.values(SECRET_NAMES)) {
-    if (!secretExists(secretName)) {
-      console.error(`❌ Error: Secret ${secretName} does not exist`);
-      console.error('   Please create this secret in LocalStack first.');
-      process.exit(1);
-    }
-    console.log(`✅ Secret ${secretName} exists`);
-  }
-
   // Build Lambda function with helix-deploy
   console.log('🔨 Building Lambda function...');
   try {
@@ -147,26 +136,9 @@ async function main() {
   // Check if lambda function already exists
   const functionExists = lambdaExists(LAMBDA_CONFIG.functionName);
   if (!functionExists) {
-    // Create Lambda function
-    console.log(`🚀 Creating Lambda function ${LAMBDA_CONFIG.functionName}...`);
-    try {
-      execSync(
-        `awslocal lambda create-function \
-          --function-name ${LAMBDA_CONFIG.functionName} \
-          --runtime ${LAMBDA_CONFIG.runtime} \
-          --zip-file fileb://${zipFilePath} \
-          --handler ${LAMBDA_CONFIG.handler} \
-          --role ${LAMBDA_CONFIG.role} \
-          --timeout ${LAMBDA_CONFIG.timeout} \
-          --memory-size ${LAMBDA_CONFIG.memorySize} \
-          --no-cli-pager`,
-        { stdio: 'inherit' },
-      );
-      console.log('✅ Lambda function created successfully');
-    } catch (error) {
-      console.error('❌ Failed to create Lambda function');
-      process.exit(1);
-    }
+    console.error(`❌ Error: Lambda function ${LAMBDA_CONFIG.functionName} does not exist`);
+    console.error('   Please follow instructions on https://github.com/adobe/spacecat-infrastructure to configure LocalStack using Terraform first.');
+    process.exit(1);
   } else {
     // Update Lambda function code
     console.log(`🔄 Updating Lambda function code for ${LAMBDA_CONFIG.functionName}...`);
@@ -183,6 +155,17 @@ async function main() {
       console.error('❌ Failed to update Lambda function code');
       process.exit(1);
     }
+  }
+
+  // Check if secrets exist
+  console.log('🔐 Checking for required secrets...');
+  for (const secretName of Object.values(SECRET_NAMES)) {
+    if (!secretExists(secretName)) {
+      console.error(`❌ Error: Secret ${secretName} does not exist`);
+      console.error('   Please create this secret in LocalStack first.');
+      process.exit(1);
+    }
+    console.log(`✅ Secret ${secretName} exists`);
   }
 
   // Check and create alias if needed
