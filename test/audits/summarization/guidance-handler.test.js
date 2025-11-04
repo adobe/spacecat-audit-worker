@@ -62,6 +62,7 @@ describe('summarization guidance handler', () => {
 
     dummyOpportunity = {
       getId: sinon.stub().returns('existing-oppty-id'),
+      getType: sinon.stub().returns('summarization'),
       getSuggestions: sinon.stub().resolves([]),
       getData: sinon.stub().returns({ subType: 'summarization' }),
       setAuditId: sinon.stub(),
@@ -73,6 +74,7 @@ describe('summarization guidance handler', () => {
     Opportunity = {
       create: sinon.stub().resolves(dummyOpportunity),
       allBySiteId: sinon.stub().resolves([]),
+      allBySiteIdAndStatus: sinon.stub().resolves([]),
     };
     Suggestion = {
       create: sinon.stub().resolves(),
@@ -158,23 +160,9 @@ describe('summarization guidance handler', () => {
   });
 
   it('should create a new summarization opportunity if no existing opportunity is found', async () => {
-    // Mock for generic opportunity creation (allBySiteId)
+    // Mock for opportunity creation
     Opportunity.allBySiteId.resolves([]);
-    // Mock for specific opportunity creation (allBySiteIdAndStatus)
-    Opportunity.allBySiteIdAndStatus = sinon.stub().resolves([]);
-    
-    // Create a mock specific opportunity
-    const specificOpportunity = {
-      getId: () => 'specific-oppty-id',
-      setAuditId: sinon.stub(),
-      setData: sinon.stub(),
-      setUpdatedBy: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
-    };
-    
-    // Setup create to return different opportunities
-    Opportunity.create.onFirstCall().resolves(dummyOpportunity);
-    Opportunity.create.onSecondCall().resolves(specificOpportunity);
+    Opportunity.create.resolves(dummyOpportunity);
     
     const message = {
       auditId: 'audit-id',
@@ -193,22 +181,16 @@ describe('summarization guidance handler', () => {
             pageUrl: 'https://adobe.com/page1',
             pageSummary: {
               title: 'Page Title 1',
-              summary: 'This is a page summary',
-              readability_score: 70.5,
-              word_count: 25,
-              brand_consistency_score: 85,
-            },
-            keyPoints: {
-              items: ['Key point 1', 'Key point 2'],
-              brand_consistency_score: 90,
+              formatted_summary: 'This is a page summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
             },
             sectionSummaries: [
               {
                 title: 'Section 1',
-                summary: 'Section summary 1',
-                readability_score: 65.2,
-                word_count: 15,
-                brand_consistency_score: 88,
+                formatted_summary: 'Section summary 1',
+                heading_selector: 'h2',
+                insertion_method: 'insertAfter',
               },
             ],
           },
@@ -217,35 +199,18 @@ describe('summarization guidance handler', () => {
     };
     await handler(message, context);
     
-    // Verify generic opportunity was created
-    expect(Opportunity.create).to.have.been.calledTwice;
-    const genericOpptyArg = Opportunity.create.getCall(0).args[0];
-    expect(genericOpptyArg.type).to.equal('generic-opportunity');
-    expect(genericOpptyArg.data.subType).to.equal('summarization');
+    // Verify opportunity was created
+    expect(Opportunity.create).to.have.been.calledOnce;
+    const opptyArg = Opportunity.create.getCall(0).args[0];
+    expect(opptyArg.type).to.equal('summarization');
     
-    // Verify specific opportunity was created
-    const specificOpptyArg = Opportunity.create.getCall(1).args[0];
-    expect(specificOpptyArg.type).to.equal('summarization');
-    
-    // Verify suggestions were synced for both opportunities (twice)
-    expect(syncSuggestionsStub).to.have.been.calledTwice;
+    // Verify suggestions were synced once
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
   });
 
   it('should update existing summarization opportunity if found', async () => {
-    // Mock existing generic opportunity
-    Opportunity.allBySiteId.resolves([dummyOpportunity]);
-    
-    // Mock existing specific opportunity
-    const existingSpecificOpportunity = {
-      getId: () => 'existing-specific-oppty-id',
-      getType: () => 'summarization',
-      setAuditId: sinon.stub(),
-      setData: sinon.stub(),
-      getData: sinon.stub().returns({}),
-      setUpdatedBy: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
-    };
-    Opportunity.allBySiteIdAndStatus = sinon.stub().resolves([existingSpecificOpportunity]);
+    // Mock existing opportunity
+    Opportunity.allBySiteIdAndStatus.resolves([dummyOpportunity]);
     
     const message = {
       auditId: 'audit-id',
@@ -264,15 +229,16 @@ describe('summarization guidance handler', () => {
             pageUrl: 'https://adobe.com/page1',
             pageSummary: {
               title: 'Page Title 1',
-              summary: 'This is a page summary',
-            },
-            keyPoints: {
-              items: ['Key point 1', 'Key point 2'],
+              formatted_summary: 'This is a page summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
             },
             sectionSummaries: [
               {
                 title: 'Section 1',
-                summary: 'Section summary 1',
+                formatted_summary: 'Section summary 1',
+                heading_selector: 'h2',
+                insertion_method: 'insertAfter',
               },
             ],
           },
@@ -281,23 +247,15 @@ describe('summarization guidance handler', () => {
     };
     await handler(message, context);
     
-    // Verify no new opportunities were created
+    // Verify no new opportunities were created (convertToOpportunity handles existing)
     expect(Opportunity.create).not.to.have.been.called;
     
-    // Verify generic opportunity was updated
-    expect(dummyOpportunity.setAuditId).to.have.been.calledWith('audit-id');
-    expect(dummyOpportunity.setData).to.have.been.called;
-    expect(dummyOpportunity.setUpdatedBy).to.have.been.calledWith('system');
+    // Verify opportunity was updated
+    expect(dummyOpportunity.setAuditId).to.have.been.called;
     expect(dummyOpportunity.save).to.have.been.called;
     
-    // Verify specific opportunity was updated
-    expect(existingSpecificOpportunity.setAuditId).to.have.been.calledWith('audit-id');
-    expect(existingSpecificOpportunity.setData).to.have.been.called;
-    expect(existingSpecificOpportunity.setUpdatedBy).to.have.been.calledWith('system');
-    expect(existingSpecificOpportunity.save).to.have.been.called;
-    
-    // Verify suggestions were synced for both opportunities (twice)
-    expect(syncSuggestionsStub).to.have.been.calledTwice;
+    // Verify suggestions were synced once
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
   });
 
   it('removes previous suggestions if any', async () => {
@@ -305,18 +263,6 @@ describe('summarization guidance handler', () => {
     dummyOpportunity.getSuggestions.resolves([oldSuggestion, oldSuggestion]);
     Opportunity.allBySiteId.resolves([dummyOpportunity]);
     
-    // Mock existing specific opportunity
-    const existingSpecificOpportunity = {
-      getId: () => 'existing-specific-oppty-id',
-      getType: () => 'summarization',
-      setAuditId: sinon.stub(),
-      setData: sinon.stub(),
-      getData: sinon.stub().returns({}),
-      setUpdatedBy: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
-    };
-    Opportunity.allBySiteIdAndStatus = sinon.stub().resolves([existingSpecificOpportunity]);
-    
     const message = {
       auditId: 'audit-id',
       siteId: 'site-id',
@@ -327,10 +273,9 @@ describe('summarization guidance handler', () => {
             pageUrl: 'https://adobe.com/page1',
             pageSummary: {
               title: 'Page Title 1',
-              summary: 'This is a page summary',
-            },
-            keyPoints: {
-              items: ['Key point 1'],
+              formatted_summary: 'This is a page summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
             },
             sectionSummaries: [],
           },
@@ -338,62 +283,10 @@ describe('summarization guidance handler', () => {
       },
     };
     await handler(message, context);
-    expect(syncSuggestionsStub).to.have.been.calledTwice;
+    // syncSuggestions is called once and handles outdated suggestions internally
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
   });
 
-  it('should skip suggestions with no meaningful content', async () => {
-    // Mock for specific opportunity creation
-    Opportunity.allBySiteIdAndStatus = sinon.stub().resolves([]);
-    
-    // Create a mock specific opportunity
-    const specificOpportunity = {
-      getId: () => 'specific-oppty-id',
-      setAuditId: sinon.stub(),
-      setData: sinon.stub(),
-      setUpdatedBy: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
-    };
-    
-    // Setup create to return both generic and specific opportunities
-    Opportunity.create.onFirstCall().resolves(dummyOpportunity);
-    Opportunity.create.onSecondCall().resolves(specificOpportunity);
-    
-    const message = {
-      auditId: 'audit-id',
-      siteId: 'site-id',
-      data: {
-        guidance: [],
-        suggestions: [
-          {
-            pageUrl: 'https://adobe.com/page1',
-            pageSummary: {
-              title: 'Page Title 1',
-              summary: 'This is a page summary',
-            },
-            keyPoints: {
-              items: ['Key point 1'],
-            },
-            sectionSummaries: [],
-          },
-          {
-            pageUrl: 'https://adobe.com/page2',
-            pageSummary: { title: '', summary: '' },
-            keyPoints: { items: [] },
-            sectionSummaries: [],
-          },
-        ],
-      },
-    };
-    await handler(message, context);
-    expect(log.info).to.have.been.calledWithMatch(/Skipping suggestion with no meaningful content for URL: https:\/\/adobe\.com\/page2/);
-    expect(syncSuggestionsStub).to.have.been.calledTwice;
-    // First call is for generic opportunity
-    expect(syncSuggestionsStub.getCall(0).args[0].newData).to.be.an('array');
-    expect(syncSuggestionsStub.getCall(0).args[0].newData).to.have.length(1);
-    expect(syncSuggestionsStub.getCall(0).args[0].newData[0]).to.have.property('suggestionValue');
-    expect(syncSuggestionsStub.getCall(0).args[0].newData[0]).to.have.property('bKey');
-    expect(syncSuggestionsStub.getCall(0).args[0].newData[0].suggestionValue).to.include('https://adobe.com/page1');
-  });
 
   it('should handle empty suggestions array', async () => {
     const message = {
@@ -411,21 +304,8 @@ describe('summarization guidance handler', () => {
   });
 
   it('should create suggestion with correct data structure', async () => {
-    // Mock for specific opportunity creation
-    Opportunity.allBySiteIdAndStatus = sinon.stub().resolves([]);
-    
-    // Create a mock specific opportunity
-    const specificOpportunity = {
-      getId: () => 'specific-oppty-id',
-      setAuditId: sinon.stub(),
-      setData: sinon.stub(),
-      setUpdatedBy: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
-    };
-    
-    // Setup create to return both generic and specific opportunities
-    Opportunity.create.onFirstCall().resolves(dummyOpportunity);
-    Opportunity.create.onSecondCall().resolves(specificOpportunity);
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(dummyOpportunity);
     
     const message = {
       auditId: 'audit-id',
@@ -444,22 +324,16 @@ describe('summarization guidance handler', () => {
             pageUrl: 'https://adobe.com/page1',
             pageSummary: {
               title: 'Page Title 1',
-              summary: 'This is a page summary',
-              readability_score: 70.5,
-              word_count: 25,
-              brand_consistency_score: 85,
-            },
-            keyPoints: {
-              items: ['Key point 1', 'Key point 2'],
-              brand_consistency_score: 90,
+              formatted_summary: 'This is a page summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
             },
             sectionSummaries: [
               {
                 title: 'Section 1',
-                summary: 'Section summary 1',
-                readability_score: 65.2,
-                word_count: 15,
-                brand_consistency_score: 88,
+                formatted_summary: 'Section summary 1',
+                heading_selector: 'h2',
+                insertion_method: 'insertAfter',
               },
             ],
           },
@@ -467,25 +341,33 @@ describe('summarization guidance handler', () => {
       },
     };
     await handler(message, context);
-    expect(syncSuggestionsStub).to.have.been.calledTwice;
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
 
-    // Get the arguments passed to syncSuggestions for generic opportunity (first call)
+    // Get the arguments passed to syncSuggestions
     const syncCall = syncSuggestionsStub.getCall(0);
     const syncArgs = syncCall.args[0];
 
+    // Verify newData structure contains page and section suggestions
+    expect(syncArgs.newData).to.be.an('array');
+    expect(syncArgs.newData).to.have.length(2); // page + section
+
     // Test the mapNewSuggestion function
     const testData = {
-      suggestionValue: '## 1. https://adobe.com/page1\n\n### Page Title\n\nPage Title 1\n\n### Page Summary (AI generated)\n\n> This is a page summary\n\n### Key Points (AI generated)\n\n> - Key point 1\n> - Key point 2\n\n### Section Summaries (AI generated)\n\n#### Section 1\n\n> Section summary 1\n\n---\n\n',
-      bKey: 'summarization:https://adobe.com'
+      summarizationText: 'Test summary',
+      fullPage: true,
+      url: 'https://adobe.com/test',
+      title: 'Test Title',
+      transformRules: {
+        selector: 'h1',
+        action: 'insertAfter',
+      },
     };
 
     const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
     expect(mappedSuggestion.opportunityId).to.equal('existing-oppty-id');
-    expect(mappedSuggestion.type).to.equal('CONTENT_UPDATE');
-    expect(mappedSuggestion.rank).to.equal(1);
-    expect(mappedSuggestion.status).to.equal('NEW');
-    expect(mappedSuggestion.data.suggestionValue).to.equal(testData.suggestionValue);
-    expect(mappedSuggestion.kpiDeltas.estimatedKPILift).to.equal(0);
+    expect(mappedSuggestion.type).to.equal('CODE_CHANGE');
+    expect(mappedSuggestion.rank).to.equal(10);
+    expect(mappedSuggestion.data).to.deep.equal(testData);
   });
 
   it('should handle error when saving opportunity fails', async () => {
@@ -505,17 +387,16 @@ describe('summarization guidance handler', () => {
             pageUrl: 'https://example.com/page1',
             pageSummary: {
               title: 'Page Title 1',
-              summary: 'This is a page summary',
-              readability_score: 70.5,
-              word_count: 25,
-              brand_consistency_score: 85,
+              formatted_summary: 'This is a page summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
             },
           },
         ],
       },
     };
 
-    // Mock existing generic opportunity
+    // Mock existing opportunity
     const existingOpportunity = {
       getId: () => 'existing-opportunity-id',
       getData: () => ({ subType: 'summarization' }),
@@ -528,20 +409,6 @@ describe('summarization guidance handler', () => {
     };
 
     Opportunity.allBySiteId.resolves([existingOpportunity]);
-
-    // Mock existing specific opportunity
-    const existingSpecificOpportunity = {
-      getId: () => 'existing-specific-opportunity-id',
-      getType: () => 'summarization',
-      setAuditId: sinon.stub(),
-      setData: sinon.stub(),
-      getData: sinon.stub().returns({}),
-      setUpdatedBy: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
-    };
-    Opportunity.allBySiteIdAndStatus = sinon.stub().resolves([existingSpecificOpportunity]);
-
-    // Mock Opportunity.create (shouldn't be called since opportunities exist)
     Opportunity.create.resolves(existingOpportunity);
 
     // Mock syncSuggestions to throw an error
@@ -568,68 +435,43 @@ describe('summarization guidance handler', () => {
             pageUrl: 'https://example.com/page1',
             pageSummary: {
               title: 'Page Title 1',
-              summary: 'This is a page summary',
+              formatted_summary: 'This is a page summary',
+              heading_selector: 'h1',
+              insertion_method: 'insertAfter',
             },
           },
         ],
       },
     };
 
-    // Mock for generic opportunity
     Opportunity.allBySiteId.resolves([]);
-    
-    // Mock for specific opportunity
-    Opportunity.allBySiteIdAndStatus = sinon.stub().resolves([]);
-    
-    const genericOpportunity = {
-      getId: () => 'new-generic-opportunity-id',
-      setAuditId: sinon.stub(),
-      setUpdatedBy: sinon.stub(),
-    };
-    
-    const specificOpportunity = {
-      getId: () => 'new-specific-opportunity-id',
-      setAuditId: sinon.stub(),
-      setData: sinon.stub(),
-      setUpdatedBy: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
-    };
-    
-    Opportunity.create.onFirstCall().resolves(genericOpportunity);
-    Opportunity.create.onSecondCall().resolves(specificOpportunity);
+    Opportunity.create.resolves(dummyOpportunity);
 
     const result = await handler(message, context);
 
     expect(result.status).to.equal(200);
-    expect(syncSuggestionsStub).to.have.been.calledTwice;
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
 
-    // Test buildKey for generic opportunity (first call)
+    // Test buildKey function
     const syncCall = syncSuggestionsStub.getCall(0);
     const syncArgs = syncCall.args[0];
     const testData = {
-      suggestionValue: 'test suggestion value',
-      bKey: 'summarization:https://example.com'
+      summarizationText: 'test summary',
+      fullPage: true,
+      url: 'https://example.com/page1',
+      title: 'Page Title 1',
+      transformRules: {
+        selector: 'h1',
+        action: 'insertAfter',
+      },
     };
     const buildKeyResult = syncArgs.buildKey(testData);
-    expect(buildKeyResult).to.equal('summarization:https://example.com');
+    expect(buildKeyResult).to.equal('https://example.com/page1-h1');
   });
 
-  it('should correctly map new specific suggestion with CODE_CHANGE type', async () => {
-    // Mock for specific opportunity creation
-    Opportunity.allBySiteIdAndStatus = sinon.stub().resolves([]);
-    
-    // Create a mock specific opportunity
-    const specificOpportunity = {
-      getId: () => 'specific-oppty-id-123',
-      setAuditId: sinon.stub(),
-      setData: sinon.stub(),
-      setUpdatedBy: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
-    };
-    
-    // Setup create to return both generic and specific opportunities
-    Opportunity.create.onFirstCall().resolves(dummyOpportunity);
-    Opportunity.create.onSecondCall().resolves(specificOpportunity);
+  it('should correctly map new suggestion with CODE_CHANGE type', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    Opportunity.create.resolves(dummyOpportunity);
     
     const message = {
       auditId: 'audit-id',
@@ -660,17 +502,17 @@ describe('summarization guidance handler', () => {
     
     await handler(message, context);
     
-    // Get the arguments passed to syncSuggestions for specific opportunity (second call)
-    expect(syncSuggestionsStub).to.have.been.calledTwice;
-    const specificSyncCall = syncSuggestionsStub.getCall(1);
-    const specificSyncArgs = specificSyncCall.args[0];
+    // Get the arguments passed to syncSuggestions
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const syncArgs = syncCall.args[0];
     
     // Verify the newData structure (from getJsonSummarySuggestion)
-    expect(specificSyncArgs.newData).to.be.an('array');
-    expect(specificSyncArgs.newData).to.have.length(2); // page summary + section summary
+    expect(syncArgs.newData).to.be.an('array');
+    expect(syncArgs.newData).to.have.length(2); // page summary + section summary
     
     // Test the first suggestion (page-level)
-    const pageLevelSuggestion = specificSyncArgs.newData[0];
+    const pageLevelSuggestion = syncArgs.newData[0];
     expect(pageLevelSuggestion).to.have.property('summarizationText', 'This is a formatted page summary');
     expect(pageLevelSuggestion).to.have.property('fullPage', true);
     expect(pageLevelSuggestion).to.have.property('url', 'https://adobe.com/page1');
@@ -678,14 +520,14 @@ describe('summarization guidance handler', () => {
     expect(pageLevelSuggestion).to.have.nested.property('transformRules.action', 'insertAfter');
     
     // Test the second suggestion (section-level)
-    const sectionLevelSuggestion = specificSyncArgs.newData[1];
+    const sectionLevelSuggestion = syncArgs.newData[1];
     expect(sectionLevelSuggestion).to.have.property('summarizationText', 'Section summary 1');
     expect(sectionLevelSuggestion).to.have.property('fullPage', false);
     expect(sectionLevelSuggestion).to.have.property('url', 'https://adobe.com/page1');
     expect(sectionLevelSuggestion).to.have.nested.property('transformRules.selector', 'h2.section-heading');
     expect(sectionLevelSuggestion).to.have.nested.property('transformRules.action', 'insertAfter');
     
-    // Test the mapNewSuggestion function for specific opportunity
+    // Test the mapNewSuggestion function
     const testSuggestionData = {
       summarizationText: 'Test summary text',
       fullPage: true,
@@ -696,14 +538,14 @@ describe('summarization guidance handler', () => {
       },
     };
     
-    const mappedSpecificSuggestion = await specificSyncArgs.mapNewSuggestion(testSuggestionData);
-    expect(mappedSpecificSuggestion.opportunityId).to.equal('specific-oppty-id-123');
-    expect(mappedSpecificSuggestion.type).to.equal('CODE_CHANGE');
-    expect(mappedSpecificSuggestion.rank).to.equal(10);
-    expect(mappedSpecificSuggestion.data).to.deep.equal(testSuggestionData);
+    const mappedSuggestion = syncArgs.mapNewSuggestion(testSuggestionData);
+    expect(mappedSuggestion.opportunityId).to.equal('existing-oppty-id');
+    expect(mappedSuggestion.type).to.equal('CODE_CHANGE');
+    expect(mappedSuggestion.rank).to.equal(10);
+    expect(mappedSuggestion.data).to.deep.equal(testSuggestionData);
     
     // Test the buildKey function
-    const buildKeyResult = specificSyncArgs.buildKey(testSuggestionData);
+    const buildKeyResult = syncArgs.buildKey(testSuggestionData);
     expect(buildKeyResult).to.equal('https://adobe.com/test-h1');
   });
 

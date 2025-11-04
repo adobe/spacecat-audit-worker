@@ -13,12 +13,12 @@
 import {
   badRequest, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
-import { createGenericOpportunityData, createSpecificOpportunityData } from './opportunity-data-mapper.js';
-import { getJsonSummarySuggestion, getMarkdownSummarySuggestion } from './utils.js';
+import { createOpportunityData } from './opportunity-data-mapper.js';
+import { getJsonSummarySuggestion } from './utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 
-async function createSpecificOpportunity(siteId, auditId, baseUrl, guidance, context) {
+async function createOpportunity(siteId, auditId, baseUrl, guidance, context) {
   const opportunity = await convertToOpportunity(
     baseUrl,
     {
@@ -27,46 +27,15 @@ async function createSpecificOpportunity(siteId, auditId, baseUrl, guidance, con
       id: auditId,
     },
     context,
-    createSpecificOpportunityData,
+    createOpportunityData,
     'summarization',
     { guidance },
   );
   return opportunity;
 }
 
-async function createGenericOpportunity(siteId, auditId, guidance, context) {
-  const { dataAccess } = context;
-  const { Opportunity } = dataAccess;
-  const wrappedGuidance = {
-    recommendations: guidance.map((g) => ({
-      insight: g.insight,
-      rationale: g.rationale,
-      recommendation: g.recommendation,
-      type: 'CONTENT_UPDATE',
-    })),
-  };
-  const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  let opportunity = existingOpportunities.find(
-    (oppty) => oppty.getData()?.subType === 'summarization',
-  );
-  const entity = createGenericOpportunityData(siteId, auditId, wrappedGuidance);
-  if (!opportunity) {
-    opportunity = await Opportunity.create(entity);
-  } else {
-    opportunity.setAuditId(auditId);
-    opportunity.setData({
-      ...opportunity.getData(),
-      ...entity.data,
-    });
-    opportunity.setGuidance(wrappedGuidance);
-    opportunity.setUpdatedBy('system');
-    opportunity = await opportunity.save();
-  }
-  return opportunity;
-}
-
-async function addSuggestionsToSpecificOpportunity(
-  specificOpportunity,
+async function addSuggestions(
+  opportunity,
   suggestions,
   context,
 ) {
@@ -74,56 +43,16 @@ async function addSuggestionsToSpecificOpportunity(
 
   await syncSuggestions({
     context,
-    opportunity: specificOpportunity,
+    opportunity,
     newData: suggestionValues,
     buildKey: (suggestion) => `${suggestion.url}-${suggestion.transformRules.selector}`,
     mapNewSuggestion: (suggestion) => ({
-      opportunityId: specificOpportunity.getId(),
+      opportunityId: opportunity.getId(),
       type: 'CODE_CHANGE',
       rank: 10,
       data: suggestion,
     }),
   });
-}
-
-async function addSuggestionsToGenericOpportunity(
-  genericOpportunity,
-  suggestions,
-  baseUrl,
-  context,
-) {
-  const { auditId } = context;
-  const { log } = context;
-
-  genericOpportunity.setAuditId(auditId);
-  genericOpportunity.setUpdatedBy('system');
-
-  const suggestionValue = getMarkdownSummarySuggestion(suggestions, log);
-  const newData = [{
-    suggestionValue,
-    bKey: `summarization:${baseUrl}`,
-  }];
-
-  await syncSuggestions({
-    context,
-    opportunity: genericOpportunity,
-    newData,
-    buildKey: (dataItem) => dataItem.bKey,
-    mapNewSuggestion: (dataItem) => ({
-      opportunityId: genericOpportunity.getId(),
-      type: 'CONTENT_UPDATE',
-      rank: 1,
-      status: 'NEW',
-      data: {
-        suggestionValue: dataItem.suggestionValue,
-      },
-      kpiDeltas: {
-        estimatedKPILift: 0,
-      },
-    }),
-  });
-
-  log.info(`Saved summarization opportunity: ${genericOpportunity.getId()}`);
 }
 
 /**
@@ -162,13 +91,7 @@ export default async function handler(message, context) {
     return noContent();
   }
 
-  const genericOpportunity = await createGenericOpportunity(
-    siteId,
-    auditId,
-    guidance,
-    context,
-  );
-  const specificOpportunity = await createSpecificOpportunity(
+  const opportunity = await createOpportunity(
     siteId,
     auditId,
     baseUrl,
@@ -177,8 +100,7 @@ export default async function handler(message, context) {
   );
 
   try {
-    await addSuggestionsToGenericOpportunity(genericOpportunity, suggestions, baseUrl, context);
-    await addSuggestionsToSpecificOpportunity(specificOpportunity, suggestions, context);
+    await addSuggestions(opportunity, suggestions, context);
   } catch (e) {
     log.error(`Failed to save summarization opportunity on Mystique callback: ${e.message}`);
     return badRequest('Failed to persist summarization opportunity');
