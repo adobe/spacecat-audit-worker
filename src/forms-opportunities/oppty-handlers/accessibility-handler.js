@@ -203,7 +203,7 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
     // If no existing opportunity, create new opportunity
     if (!opportunity) {
       // change status to IGNORED for older opportunities
-      await updateStatusToIgnored(dataAccess, siteId, log, filterAccessibilityOpportunities);
+      await updateStatusToIgnored(dataAccess, siteId, log, null, filterAccessibilityOpportunities);
 
       const opportunityData = {
         siteId,

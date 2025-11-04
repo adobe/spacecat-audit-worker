@@ -138,6 +138,7 @@ export async function updateStatusToIgnored(
   siteId,
   log,
   deviceType = null,
+  filterOpportunities = filterAccessibilityOpportunities,
 ) {
   try {
     const { Opportunity } = dataAccess;
@@ -147,7 +148,7 @@ export async function updateStatusToIgnored(
       return { success: true, updatedCount: 0 };
     }
 
-    const accessibilityOppties = filterAccessibilityOpportunities(opportunities, deviceType);
+    const accessibilityOppties = filterOpportunities(opportunities, deviceType);
     const deviceStr = deviceType ? ` for ${deviceType}` : '';
     log.debug(`[A11yAudit] Found ${accessibilityOppties.length} opportunities to update to IGNORED${deviceStr} for site ${siteId}`);
 
