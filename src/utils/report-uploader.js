@@ -83,6 +83,42 @@ export async function readFromSharePoint(filename, outputLocation, sharepointCli
   }
 }
 
+async function fetchWithRetry(url, options, endpointName, log, maxRetries = 5) {
+  async function attemptFetch(attemptNumber) {
+    try {
+      const response = await fetch(url, options);
+      if (response.ok) return response;
+
+      const error = new Error(`${response.status} ${response.statusText}`);
+      error.status = response.status;
+      error.response = response;
+      throw error;
+    } catch (error) {
+      const isRetryable = !error.status || error.status >= 500 || error.status === 429;
+      const shouldRetry = isRetryable && attemptNumber <= maxRetries;
+
+      // Log x-error header for 503 server errors
+      const xError = error.status === 503 && error.response?.headers?.get
+        ? error.response.headers.get('x-error')
+        : null;
+      if (xError) {
+        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed with server error - x-error: ${xError}, URL: ${url}`);
+      }
+
+      if (!shouldRetry) {
+        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed after retries, error: ${error.message}, status: ${error.status}, statusText: ${error.response?.statusText}, URL: ${url}`);
+        throw error;
+      }
+
+      log.warn(`${AUDIT_NAME}: ${endpointName} Helix API failed with error ${error.message}, retrying in 4000ms (attempt ${attemptNumber}/${maxRetries}), URL: ${url}`);
+      await sleep(4000);
+      return attemptFetch(attemptNumber + 1);
+    }
+  }
+
+  return attemptFetch(1);
+}
+
 export async function publishToAdminHlx(filename, outputLocation, log) {
   const org = 'adobe';
   const site = 'project-elmo-ui-data';
@@ -106,18 +142,7 @@ export async function publishToAdminHlx(filename, outputLocation, log) {
       const endpointStartTime = Date.now();
 
       // eslint-disable-next-line no-await-in-loop
-      const response = await fetch(endpoint.url, { method: 'POST', headers });
-
-      if (!response.ok) {
-        const errorMsg = `${endpoint.name} failed: ${response.status} ${response.statusText}`;
-        log.error(`%s: Publish to ${endpoint.name} failed`, AUDIT_NAME, {
-          url: endpoint.url,
-          status: response.status,
-          statusText: response.statusText,
-          path,
-        });
-        throw new Error(errorMsg);
-      }
+      await fetchWithRetry(endpoint.url, { method: 'POST', headers }, endpoint.name, log);
 
       const endpointDuration = Date.now() - endpointStartTime;
       log.info(`%s: Successfully published to ${endpoint.name} in ${endpointDuration}ms`, AUDIT_NAME);

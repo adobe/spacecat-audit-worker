@@ -1167,6 +1167,35 @@ describe('aggregateAccessibilityIssues', () => {
     expect(result.data).to.have.lengthOf(1);
     expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com:port');
   });
+
+  it('should extract source parameter from URL (covers lines 37-39)', () => {
+    const input = {
+      'https://example.com?source=test-source': {
+        violations: {
+          critical: {
+            items: {
+              'aria-hidden-focus': {
+                description: 'Test issue',
+                successCriteriaTags: ['wcag412'],
+                count: 1,
+                htmlWithIssues: ['<div aria-hidden="true"><button>Click</button></div>'],
+                target: ['div[aria-hidden] button'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const result = aggregateAccessibilityIssues(input);
+    expect(result.data).to.have.lengthOf(1);
+    expect(result.data[0]['a11y-assistive']).to.have.lengthOf(1);
+    // URL should be cleaned
+    expect(result.data[0]['a11y-assistive'][0].url).to.equal('https://example.com');
+    // Source should be extracted
+    expect(result.data[0]['a11y-assistive'][0].source).to.equal('test-source');
+    expect(result.data[0]['a11y-assistive'][0].issues).to.have.lengthOf(1);
+  });
 });
 
 describe('createIndividualOpportunity', () => {
@@ -1742,6 +1771,46 @@ describe('createIndividualOpportunitySuggestions', () => {
         jiraLink: '',
       },
     });
+  });
+
+  it('should include source in buildKey when data has source property (covers lines 410-411)', async () => {
+    const aggregatedDataWithSource = {
+      data: [
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          source: 'test-source',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div.test',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(
+      mockOpportunity,
+      aggregatedDataWithSource,
+      mockContext,
+      mockLog,
+    );
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const { buildKey } = mockSyncSuggestions.firstCall.args[0];
+
+    // Test the buildKey function with source
+    const key = buildKey(aggregatedDataWithSource.data[0]);
+
+    // Key should include the source parameter appended
+    expect(key).to.include('|test-source');
+    expect(key).to.equal('https://example.com/page1|color-contrast|div.test|test-source');
   });
 });
 
