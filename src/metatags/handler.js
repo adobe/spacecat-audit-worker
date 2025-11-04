@@ -104,6 +104,7 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
 
   const pageUrl = object.finalUrl ? new URL(object.finalUrl).pathname
     : new URL(url).pathname;
+  log.info(`Trimming metatags in metatags handler for page ${pageUrl}`);
   // handling for homepage
   return {
     [pageUrl]: {

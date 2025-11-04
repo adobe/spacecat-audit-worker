@@ -412,6 +412,7 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
   }
 
   log.debug(`[PRODUCT-METATAGS] Product page detected: ${pageUrl} (SKU: ${productTags.sku})`);
+  log.info(`Trimming metatags in product-metatags handler for page ${pageUrl}`);
 
   return {
     [pageUrl]: {
