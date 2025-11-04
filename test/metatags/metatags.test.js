@@ -1388,6 +1388,7 @@ describe('Meta Tags', () => {
           },
         });
         siteStub = {
+          getId: sinon.stub().returns('site-id'),
           getBaseURL: sinon.stub().returns('https://example.com'),
         };
       });
