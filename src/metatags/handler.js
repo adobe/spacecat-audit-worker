@@ -237,8 +237,8 @@ export async function runAuditAndGenerateSuggestions(context) {
   const {
     site, audit, finalUrl, log, scrapeResultPaths,
   } = context;
-  log.info(`===Start=== ${site.getId()}`);
-  log.debug(`scrapeResultPaths: ${JSON.stringify(scrapeResultPaths)}`);
+  log.info(`===Start runAuditAndGenerateSuggestions=== ${site.getId()}`);
+  log.info(`scrapeResultPaths: ${JSON.stringify(scrapeResultPaths)}`);
   const {
     seoChecks,
     detectedTags,
@@ -286,7 +286,7 @@ export async function runAuditAndGenerateSuggestions(context) {
     auditResult,
   }, context);
 
-  log.info(`===Finish=== ${site.getId()}`);
+  log.info(`===Finish runAuditAndGenerateSuggestions=== ${site.getId()}`);
 
   return {
     status: 'complete',
