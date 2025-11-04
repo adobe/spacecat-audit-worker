@@ -14,8 +14,46 @@ import {
   badRequest, noContent, notFound, ok,
 } from '@adobe/spacecat-shared-http-utils';
 import { createOpportunityData } from './opportunity-data-mapper.js';
-import { getSuggestionValue } from './utils.js';
+import { getJsonSummarySuggestion } from './utils.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+
+async function createOpportunity(siteId, auditId, baseUrl, guidance, context) {
+  const opportunity = await convertToOpportunity(
+    baseUrl,
+    {
+      siteId,
+      auditId,
+      id: auditId,
+    },
+    context,
+    createOpportunityData,
+    'summarization',
+    { guidance },
+  );
+  return opportunity;
+}
+
+async function addSuggestions(
+  opportunity,
+  suggestions,
+  context,
+) {
+  const suggestionValues = getJsonSummarySuggestion(suggestions);
+
+  await syncSuggestions({
+    context,
+    opportunity,
+    newData: suggestionValues,
+    buildKey: (suggestion) => `${suggestion.url}-${suggestion.transformRules.selector}`,
+    mapNewSuggestion: (suggestion) => ({
+      opportunityId: opportunity.getId(),
+      type: 'CODE_CHANGE',
+      rank: 10,
+      data: suggestion,
+    }),
+  });
+}
 
 /**
  * Handles Mystique response for summarization and updates pages with AI suggestions
@@ -26,7 +64,8 @@ import { syncSuggestions } from '../utils/data-access.js';
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const {
-    Site, Audit, Opportunity,
+    Audit,
+    Site,
   } = dataAccess;
   const { siteId, data, auditId } = message;
   const { guidance, suggestions } = data;
@@ -39,6 +78,8 @@ export default async function handler(message, context) {
     return notFound('Site not found');
   }
 
+  const baseUrl = site.getBaseURL();
+
   const audit = await Audit.findById(auditId);
   if (!audit) {
     log.warn(`No audit found for auditId: ${auditId}`);
@@ -50,62 +91,16 @@ export default async function handler(message, context) {
     return noContent();
   }
 
-  const wrappedGuidance = {
-    recommendations: guidance.map((g) => ({
-      insight: g.insight,
-      rationale: g.rationale,
-      recommendation: g.recommendation,
-      type: 'CONTENT_UPDATE',
-    })),
-  };
-  const existingOpportunities = await Opportunity.allBySiteId(siteId);
-  let opportunity = existingOpportunities.find(
-    (oppty) => oppty.getData()?.subType === 'summarization',
+  const opportunity = await createOpportunity(
+    siteId,
+    auditId,
+    baseUrl,
+    guidance,
+    context,
   );
-  const entity = createOpportunityData(siteId, auditId, wrappedGuidance);
-  if (!opportunity) {
-    opportunity = await Opportunity.create(entity);
-  } else {
-    opportunity.setAuditId(auditId);
-    opportunity.setData({
-      ...opportunity.getData(),
-      ...entity.data,
-    });
-    opportunity.setGuidance(wrappedGuidance);
-    opportunity.setUpdatedBy('system');
-    opportunity = await opportunity.save();
-  }
 
   try {
-    opportunity.setAuditId(auditId);
-    opportunity.setUpdatedBy('system');
-
-    const suggestionValue = getSuggestionValue(suggestions, log);
-    const newData = [{
-      suggestionValue,
-      bKey: `summarization:${site.getBaseURL()}`,
-    }];
-
-    await syncSuggestions({
-      context,
-      opportunity,
-      newData,
-      buildKey: (dataItem) => dataItem.bKey,
-      mapNewSuggestion: (dataItem) => ({
-        opportunityId: opportunity.getId(),
-        type: 'CONTENT_UPDATE',
-        rank: 1,
-        status: 'NEW',
-        data: {
-          suggestionValue: dataItem.suggestionValue,
-        },
-        kpiDeltas: {
-          estimatedKPILift: 0,
-        },
-      }),
-    });
-
-    log.info(`Saved summarization opportunity: ${opportunity.getId()}`);
+    await addSuggestions(opportunity, suggestions, context);
   } catch (e) {
     log.error(`Failed to save summarization opportunity on Mystique callback: ${e.message}`);
     return badRequest('Failed to persist summarization opportunity');
