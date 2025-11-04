@@ -254,9 +254,15 @@ export async function syncSuggestions({
   // Add new suggestions if any
   if (newSuggestions.length > 0) {
     const suggestions = await opportunity.addSuggestions(newSuggestions);
-    const sample = Array.isArray(suggestions) ? suggestions.slice(0, 3)
-      : suggestions.createdItems || [];
-    log.debug(`sugandhg - New suggestions = ${Array.isArray(suggestions) ? suggestions.length : (suggestions.createdItems?.length || 0)} (sample up to 3): ${JSON.stringify(sample, null, 2)}`);
+    const suggestionsArray = Array.isArray(suggestions)
+      ? suggestions
+      : (suggestions.createdItems || []);
+    const newCount = suggestionsArray.length;
+    if (newCount <= 10) {
+      log.debug(`New suggestions = ${newCount}: ${JSON.stringify(suggestionsArray, null, 2)}`);
+    } else {
+      log.debug(`New suggestions = ${newCount}: ${JSON.stringify(suggestionsArray.slice(0, 10), null, 2)}`);
+    }
 
     if (suggestions.errorItems?.length > 0) {
       log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);

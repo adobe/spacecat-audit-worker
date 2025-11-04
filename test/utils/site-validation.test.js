@@ -41,6 +41,13 @@ describe('utils/site-validation', () => {
     expect(resultUndef).to.equal(false);
   });
 
+  it('covers debug log when site is missing', async () => {
+    context.log.debug = sandbox.spy();
+    const resultNull = await Promise.resolve(checkSiteRequiresValidation(null, context));
+    expect(resultNull).to.equal(false);
+    expect(context.log.debug).to.have.been.called;
+  });
+
   it('returns site.requiresValidation when explicitly set to true', async () => {
     const site = { getId: sandbox.stub().returns('site-1'), requiresValidation: true };
     const stub = sandbox.stub(TierClient, 'createForSite');
@@ -93,5 +100,29 @@ describe('utils/site-validation', () => {
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
 
     expect(result).to.equal(true);
+  });
+
+  it('covers debug logging when explicit requiresValidation flag is set', async () => {
+    const site = { getId: sandbox.stub().returns('site-debug'), requiresValidation: true };
+    context.log.debug = sandbox.spy();
+    const stub = sandbox.stub(TierClient, 'createForSite');
+
+    const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
+
+    expect(result).to.equal(true);
+    expect(stub).to.not.have.been.called;
+    expect(context.log.debug).to.have.been.called;
+  });
+
+  it('logs info in fallback when entitlement check throws', async () => {
+    const site = { getId: sandbox.stub().returns('site-warn-info') };
+    context.log.info = sandbox.spy();
+    sandbox.stub(TierClient, 'createForSite').rejects(new Error('boom'));
+
+    const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
+
+    expect(result).to.equal(false);
+    expect(context.log.warn).to.have.been.called;
+    expect(context.log.info).to.have.been.called;
   });
 });

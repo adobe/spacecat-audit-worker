@@ -31,7 +31,7 @@ export async function checkSiteRequiresValidation(site, context) {
     return site.requiresValidation;
   }
 
-  // Entitlement-driven: require validation only for PAID tier
+  // Entitlement-driven: require validation only for PAID tier of ASO
   try {
     context?.log?.debug?.('sugandhg - checkSiteRequiresValidation: calling TierClient.createForSite', {
       siteId: site.getId?.(),
@@ -43,19 +43,19 @@ export async function checkSiteRequiresValidation(site, context) {
       hasEntitlement: Boolean(entitlement),
       tier: entitlement?.tier ?? null,
     });
-    // if (entitlement?.tier === 'PAID') {
-    context?.log?.info?.('sugandhg - checkSiteRequiresValidation: entitlement found, returning true (requires validation)', {
-      siteId: site.getId?.(),
-      tier: entitlement?.tier ?? null,
-    });
-    return true;
-    // }
+    if (entitlement?.tier === 'PAID') {
+      context?.log?.info?.('sugandhg - checkSiteRequiresValidation: PAID entitlement for ASO, returning true (requires validation)', {
+        siteId: site.getId?.(),
+        tier: entitlement?.tier ?? null,
+      });
+      return true;
+    }
   } catch (e) {
     context?.log?.warn?.(`sugandhg - Entitlement check failed for site ${site.getId?.()}: ${e.message}`);
   }
 
-  // No legacy fallback: if no valid entitlement, do not require validation
-  context?.log?.info?.('sugandhg - checkSiteRequiresValidation: no entitlement, returning false (no validation required)', {
+  // No PAID ASO entitlement: do not require validation
+  context?.log?.info?.('sugandhg - checkSiteRequiresValidation: no PAID ASO entitlement, returning false (no validation required)', {
     siteId: site.getId?.(),
   });
   return false;
