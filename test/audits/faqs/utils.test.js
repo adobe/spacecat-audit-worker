@@ -12,126 +12,74 @@
 
 /* eslint-env mocha */
 
-import { expect, use } from 'chai';
-import sinon from 'sinon';
-import sinonChai from 'sinon-chai';
-import { getFaqMarkdown } from '../../../src/faqs/utils.js';
-
-use(sinonChai);
+import { expect } from 'chai';
+import { getJsonFaqSuggestion } from '../../../src/faqs/utils.js';
 
 describe('FAQ Utils', () => {
-  describe('getFaqMarkdown', () => {
-    let log;
-
-    beforeEach(() => {
-      log = {
-        info: sinon.stub(),
-        warn: sinon.stub(),
-        error: sinon.stub(),
-      };
-    });
-
-    it('should generate markdown for FAQ with URL and topic', () => {
+  describe('getJsonFaqSuggestion', () => {
+    it('should generate JSON suggestions with markdown text and data items', () => {
       const faqs = [
         {
           url: 'https://www.adobe.com/products/photoshop',
           topic: 'photoshop',
-          prompts: ['How to use Photoshop?'],
           suggestions: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
               question: 'How to use Photoshop?',
               answer: 'Photoshop is a powerful image editing tool.',
-              sources: [
-                { url: 'https://www.adobe.com/products/photoshop/guides' },
-              ],
+              sources: [{ url: 'https://www.adobe.com/guides' }],
             },
           ],
         },
       ];
 
-      const markdown = getFaqMarkdown(faqs, log);
+      const suggestions = getJsonFaqSuggestion(faqs);
 
-      expect(markdown).to.include('## 1. Target URL: [/products/photoshop](https://www.adobe.com/products/photoshop)');
-      expect(markdown).to.include('**Topic:** photoshop');
-      expect(markdown).to.include('<details>\n<summary>Related Search Queries</summary>');
-      expect(markdown).to.include('- How to use Photoshop?');
-      expect(markdown).to.include('### Suggested FAQs');
-      expect(markdown).to.include('#### How to use Photoshop?');
-      expect(markdown).to.include('*AI suggested answer:* Photoshop is a powerful image editing tool.');
-      expect(markdown).to.include('**Sources:**');
-      expect(markdown).to.include('- https://www.adobe.com/products/photoshop/guides');
-    });
-
-    it('should generate markdown with topic as heading when no URL', () => {
-      const faqs = [
+      expect(suggestions).to.be.an('array').with.lengthOf(1);
+      expect(suggestions[0].text).to.equal('## FAQs\n\n### How to use Photoshop?\n\nPhotoshop is a powerful image editing tool.');
+      expect(suggestions[0].url).to.equal('https://www.adobe.com/products/photoshop');
+      expect(suggestions[0].data.items).to.deep.equal([
         {
-          topic: 'general nutrition',
-          prompts: ['What is protein?'],
-          suggestions: [
-            {
-              isAnswerSuitable: true,
-              isQuestionRelevant: true,
-              question: 'What is protein?',
-              answer: 'Protein is an essential macronutrient.',
-              sources: [],
-            },
-          ],
+          question: 'How to use Photoshop?',
+          answer: 'Photoshop is a powerful image editing tool.',
+          sources: [{ url: 'https://www.adobe.com/guides' }],
         },
-      ];
-
-      const markdown = getFaqMarkdown(faqs, log);
-
-      expect(markdown).to.include('## 1. Topic: general nutrition');
-      expect(markdown).to.include('#### What is protein?');
-      expect(markdown).to.include('*AI suggested answer:* Protein is an essential macronutrient.');
+      ]);
+      expect(suggestions[0].transformRules).to.deep.equal({
+        selector: 'body',
+        action: 'appendChild',
+      });
     });
 
-    it('should skip heading when no URL and no topic', () => {
-      const faqs = [
-        {
-          prompts: ['Generic question?'],
-          suggestions: [
-            {
-              isAnswerSuitable: true,
-              isQuestionRelevant: true,
-              question: 'Generic question?',
-              answer: 'Generic answer.',
-              sources: [],
-            },
-          ],
-        },
-      ];
-
-      const markdown = getFaqMarkdown(faqs, log);
-
-      expect(markdown).not.to.include('## 1.');
-      expect(markdown).to.include('<details>\n<summary>Related Search Queries</summary>');
-      expect(markdown).to.include('#### Generic question?');
-    });
-
-    it('should not show topic subtitle if URL exists but topic is empty', () => {
+    it('should generate markdown with multiple FAQs', () => {
       const faqs = [
         {
           url: 'https://www.adobe.com/products/test',
-          prompts: ['Test question?'],
+          topic: 'test',
           suggestions: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
-              question: 'Test question?',
-              answer: 'Test answer.',
+              question: 'Question 1?',
+              answer: 'Answer 1.',
+              sources: [],
+            },
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question 2?',
+              answer: 'Answer 2.',
               sources: [],
             },
           ],
         },
       ];
 
-      const markdown = getFaqMarkdown(faqs, log);
+      const suggestions = getJsonFaqSuggestion(faqs);
 
-      expect(markdown).to.include('## 1. Target URL: [/products/test](https://www.adobe.com/products/test)');
-      expect(markdown).not.to.include('**Topic:**');
+      expect(suggestions[0].text).to.equal('## FAQs\n\n### Question 1?\n\nAnswer 1.\n\n### Question 2?\n\nAnswer 2.');
+      expect(suggestions[0].data.items).to.have.lengthOf(2);
     });
 
     it('should filter out unsuitable suggestions', () => {
@@ -139,30 +87,30 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/test',
           topic: 'test',
-          prompts: ['Question 1', 'Question 2'],
           suggestions: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
               question: 'Good question?',
               answer: 'Good answer.',
+              sources: [],
             },
             {
               isAnswerSuitable: false,
               isQuestionRelevant: true,
               question: 'Bad answer question?',
               answer: 'Bad answer.',
+              sources: [],
             },
           ],
         },
       ];
 
-      const markdown = getFaqMarkdown(faqs, log);
+      const suggestions = getJsonFaqSuggestion(faqs);
 
-      expect(markdown).to.include('Good question?');
-      expect(markdown).not.to.include('Bad answer question?');
-      expect(markdown).to.include('Good answer.');
-      expect(markdown).not.to.include('Bad answer.');
+      expect(suggestions[0].data.items).to.have.lengthOf(1);
+      expect(suggestions[0].text).to.include('Good question?');
+      expect(suggestions[0].text).not.to.include('Bad answer question?');
     });
 
     it('should filter out irrelevant suggestions', () => {
@@ -170,200 +118,24 @@ describe('FAQ Utils', () => {
         {
           url: 'https://www.adobe.com/products/test',
           topic: 'test',
-          prompts: ['Question 1'],
           suggestions: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: false,
               question: 'Irrelevant question?',
               answer: 'Good answer.',
-            },
-          ],
-        },
-      ];
-
-      const markdown = getFaqMarkdown(faqs, log);
-
-      expect(markdown).not.to.include('Irrelevant question?');
-      expect(log.info).to.have.been.calledWith(sinon.match(/Skipping FAQ topic "test" - no suitable suggestions/));
-    });
-
-    it('should handle sources with title and URL', () => {
-      const faqs = [
-        {
-          topic: 'test',
-          prompts: ['Question?'],
-          suggestions: [
-            {
-              isAnswerSuitable: true,
-              isQuestionRelevant: true,
-              question: 'Question?',
-              answer: 'Answer.',
-              sources: [
-                { title: 'Source Title', url: 'https://example.com/source' },
-              ],
-            },
-          ],
-        },
-      ];
-
-      const markdown = getFaqMarkdown(faqs, log);
-
-      expect(markdown).to.include('**Sources:**');
-      expect(markdown).to.include('- [Source Title](https://example.com/source)');
-    });
-
-    it('should handle sources with only URL', () => {
-      const faqs = [
-        {
-          topic: 'test',
-          prompts: ['Question?'],
-          suggestions: [
-            {
-              isAnswerSuitable: true,
-              isQuestionRelevant: true,
-              question: 'Question?',
-              answer: 'Answer.',
-              sources: [
-                { url: 'https://example.com/source' },
-              ],
-            },
-          ],
-        },
-      ];
-
-      const markdown = getFaqMarkdown(faqs, log);
-
-      expect(markdown).to.include('**Sources:**');
-      expect(markdown).to.include('- https://example.com/source');
-    });
-
-    it('should include AI analysis in collapsible section', () => {
-      const faqs = [
-        {
-          topic: 'test',
-          prompts: ['Question?'],
-          suggestions: [
-            {
-              isAnswerSuitable: true,
-              isQuestionRelevant: true,
-              question: 'Question?',
-              answer: 'Answer.',
-              answerSuitabilityReason: 'The answer is well-structured.',
-              questionRelevanceReason: 'The question is directly related.',
               sources: [],
             },
           ],
         },
       ];
 
-      const markdown = getFaqMarkdown(faqs, log);
+      const suggestions = getJsonFaqSuggestion(faqs);
 
-      expect(markdown).to.include('<details>');
-      expect(markdown).to.include('<summary>AI Analysis</summary>');
-      expect(markdown).to.include('**Answer Suitability:** The answer is well-structured.');
-      expect(markdown).to.include('**Question Relevance:** The question is directly related.');
-      expect(markdown).to.include('</details>');
+      expect(suggestions).to.be.an('array').with.lengthOf(0);
     });
 
-    it('should not include AI analysis section if no reasons provided', () => {
-      const faqs = [
-        {
-          topic: 'test',
-          prompts: ['Question?'],
-          suggestions: [
-            {
-              isAnswerSuitable: true,
-              isQuestionRelevant: true,
-              question: 'Question?',
-              answer: 'Answer.',
-              sources: [],
-            },
-          ],
-        },
-      ];
-
-      const markdown = getFaqMarkdown(faqs, log);
-
-      expect(markdown).to.include('Related Search Queries'); // Should have prompts accordion
-      expect(markdown).not.to.include('AI Analysis'); // Should not have AI analysis
-      expect(markdown).not.to.include('Answer Suitability');
-      expect(markdown).not.to.include('Question Relevance');
-    });
-
-    it('should handle multiple FAQs with incrementing numbers', () => {
-      const faqs = [
-        {
-          url: 'https://www.adobe.com/products/page1',
-          topic: 'topic1',
-          prompts: ['Question 1?'],
-          suggestions: [
-            {
-              isAnswerSuitable: true,
-              isQuestionRelevant: true,
-              question: 'Question 1?',
-              answer: 'Answer 1.',
-              sources: [],
-            },
-          ],
-        },
-        {
-          url: 'https://www.adobe.com/products/page2',
-          topic: 'topic2',
-          prompts: ['Question 2?'],
-          suggestions: [
-            {
-              isAnswerSuitable: true,
-              isQuestionRelevant: true,
-              question: 'Question 2?',
-              answer: 'Answer 2.',
-              sources: [],
-            },
-          ],
-        },
-      ];
-
-      const markdown = getFaqMarkdown(faqs, log);
-
-      expect(markdown).to.include('## 1. Target URL: [/products/page1]');
-      expect(markdown).to.include('## 2. Target URL: [/products/page2]');
-      expect(markdown).to.include('**Topic:** topic1');
-      expect(markdown).to.include('**Topic:** topic2');
-    });
-
-    it('should handle multiple suggestions per FAQ', () => {
-      const faqs = [
-        {
-          topic: 'test',
-          prompts: ['Q1?', 'Q2?'],
-          suggestions: [
-            {
-              isAnswerSuitable: true,
-              isQuestionRelevant: true,
-              question: 'Question 1?',
-              answer: 'Answer 1.',
-              sources: [],
-            },
-            {
-              isAnswerSuitable: true,
-              isQuestionRelevant: true,
-              question: 'Question 2?',
-              answer: 'Answer 2.',
-              sources: [],
-            },
-          ],
-        },
-      ];
-
-      const markdown = getFaqMarkdown(faqs, log);
-
-      expect(markdown).to.include('#### Question 1?');
-      expect(markdown).to.include('*AI suggested answer:* Answer 1.');
-      expect(markdown).to.include('#### Question 2?');
-      expect(markdown).to.include('*AI suggested answer:* Answer 2.');
-    });
-
-    it('should skip prompts section if no prompts provided', () => {
+    it('should skip FAQs with no URL', () => {
       const faqs = [
         {
           topic: 'test',
@@ -379,59 +151,88 @@ describe('FAQ Utils', () => {
         },
       ];
 
-      const markdown = getFaqMarkdown(faqs, log);
+      const suggestions = getJsonFaqSuggestion(faqs);
 
-      expect(markdown).not.to.include('Related Search Queries');
+      expect(suggestions).to.be.an('array').with.lengthOf(0);
     });
 
-    it('should return empty string for empty FAQ array', () => {
-      const faqs = [];
-
-      const markdown = getFaqMarkdown(faqs, log);
-
-      expect(markdown).to.equal('');
-    });
-
-    it('should skip FAQ topics with no suitable suggestions', () => {
+    it('should skip FAQs with no suitable suggestions', () => {
       const faqs = [
         {
-          topic: 'skipped topic',
-          prompts: ['Question?'],
+          url: 'https://www.adobe.com/products/test',
+          topic: 'test',
           suggestions: [
             {
               isAnswerSuitable: false,
               isQuestionRelevant: false,
               question: 'Bad question?',
               answer: 'Bad answer.',
+              sources: [],
             },
           ],
         },
       ];
 
-      const markdown = getFaqMarkdown(faqs, log);
+      const suggestions = getJsonFaqSuggestion(faqs);
 
-      expect(markdown).to.equal('');
-      expect(log.info).to.have.been.calledWith('[FAQ] Skipping FAQ topic "skipped topic" - no suitable suggestions');
+      expect(suggestions).to.be.an('array').with.lengthOf(0);
     });
 
-    it('should add separators between FAQ sections', () => {
+    it('should handle multiple FAQs with different URLs', () => {
       const faqs = [
         {
-          topic: 'topic1',
-          prompts: ['Q1?'],
+          url: 'https://www.adobe.com/products/photoshop',
+          topic: 'photoshop',
           suggestions: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
-              question: 'Q1?',
-              answer: 'A1.',
+              question: 'Photoshop question?',
+              answer: 'Photoshop answer.',
               sources: [],
             },
           ],
         },
         {
-          topic: 'topic2',
-          prompts: ['Q2?'],
+          url: 'https://www.adobe.com/products/illustrator',
+          topic: 'illustrator',
+          suggestions: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Illustrator question?',
+              answer: 'Illustrator answer.',
+              sources: [],
+            },
+          ],
+        },
+      ];
+
+      const suggestions = getJsonFaqSuggestion(faqs);
+
+      expect(suggestions).to.be.an('array').with.lengthOf(2);
+      expect(suggestions[0].url).to.equal('https://www.adobe.com/products/photoshop');
+      expect(suggestions[1].url).to.equal('https://www.adobe.com/products/illustrator');
+    });
+
+    it('should handle empty FAQ array', () => {
+      const faqs = [];
+
+      const suggestions = getJsonFaqSuggestion(faqs);
+
+      expect(suggestions).to.be.an('array').with.lengthOf(0);
+    });
+
+    it('should handle FAQs with undefined suggestions', () => {
+      const faqs = [
+        {
+          url: 'https://www.adobe.com/products/test1',
+          topic: 'test1',
+          // No suggestions property
+        },
+        {
+          url: 'https://www.adobe.com/products/test2',
+          topic: 'test2',
           suggestions: [
             {
               isAnswerSuitable: true,
@@ -444,43 +245,84 @@ describe('FAQ Utils', () => {
         },
       ];
 
-      const markdown = getFaqMarkdown(faqs, log);
+      const suggestions = getJsonFaqSuggestion(faqs);
 
-      const sections = markdown.split('---\n\n');
-      // Should have 2 sections plus empty string after final separator
-      expect(sections.length).to.equal(3);
+      expect(suggestions).to.be.an('array').with.lengthOf(1);
+      expect(suggestions[0].url).to.equal('https://www.adobe.com/products/test2');
     });
 
-    it('should handle FAQs with undefined suggestions', async () => {
+    it('should preserve sources in data.items', () => {
       const faqs = [
         {
-          url: 'https://adobe.com/test1',
-          topic: 'test1',
-          prompts: ['Q1?'],
+          url: 'https://www.adobe.com/products/test',
+          topic: 'test',
           suggestions: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
-              question: 'Q1?',
-              answer: 'A1.',
+              question: 'Question?',
+              answer: 'Answer.',
+              sources: [
+                { title: 'Source 1', url: 'https://example.com/1' },
+                { url: 'https://example.com/2' },
+              ],
             },
           ],
         },
+      ];
+
+      const suggestions = getJsonFaqSuggestion(faqs);
+
+      expect(suggestions[0].data.items[0].sources).to.deep.equal([
+        { title: 'Source 1', url: 'https://example.com/1' },
+        { url: 'https://example.com/2' },
+      ]);
+    });
+
+    it('should handle suggestions with missing sources', () => {
+      const faqs = [
         {
-          url: 'https://adobe.com/test2',
-          topic: 'test2',
-          prompts: ['Q2?'],
-          // No suggestions property - this tests the || [] fallback
+          url: 'https://www.adobe.com/products/test',
+          topic: 'test',
+          suggestions: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
+              // No sources property
+            },
+          ],
         },
       ];
 
-      const markdown = getFaqMarkdown(faqs, log);
+      const suggestions = getJsonFaqSuggestion(faqs);
 
-      // Should only include test1, not test2 (which has no suggestions)
-      expect(markdown).to.include('test1');
-      expect(markdown).to.not.include('test2');
-      expect(markdown).to.include('Q1?');
-      expect(markdown).to.include('A1.');
+      expect(suggestions[0].data.items[0].sources).to.deep.equal([]);
+    });
+
+    it('should trim markdown text correctly', () => {
+      const faqs = [
+        {
+          url: 'https://www.adobe.com/products/test',
+          topic: 'test',
+          suggestions: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
+              sources: [],
+            },
+          ],
+        },
+      ];
+
+      const suggestions = getJsonFaqSuggestion(faqs);
+
+      // Check that there's no trailing whitespace
+      expect(suggestions[0].text).to.equal('## FAQs\n\n### Question?\n\nAnswer.');
+      expect(suggestions[0].text.endsWith('\n\n')).to.be.false;
     });
   });
 });
