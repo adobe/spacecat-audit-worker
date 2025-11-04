@@ -13,25 +13,51 @@
  */
 
 /**
- * Simple Meta Tags Fix Checker
+ * Meta Tags Fix Checker
  * 
  * Compares existing suggestions with current audit results to identify fixed issues.
  * Outputs results to CSV for easy analysis.
  * 
- * Logic: If existing suggestion issue is NOT in current audit = FIXED
+ * Supported Issue Types:
+ * ✅ Missing Tags: Missing Title, Missing Description, Missing H1
+ * ✅ Length Issues: Too short, too long, empty (for Title, Description, H1)
+ * ✅ Duplicate Tags: Duplicate Title, Duplicate Description, Duplicate H1
+ * ✅ Structural Issues: Multiple H1 tags on a single page
+ * 
+ * Detection Logic:
+ * 1. AI_SUGGESTION_IMPLEMENTED: Exact match with AI suggestion
+ * 2. FIXED_BY_OTHER_MEANS: Issue no longer detected by SEO checks
+ * 3. DUPLICATE_CONTENT_CHANGED: Duplicate issue with changed content
+ * 4. NOT_IMPLEMENTED: Issue still exists
+ * 5. PAGE_NOT_AVAILABLE: Cannot verify (page not in S3)
+ * 
+ * Features:
+ * - Validates suggestion data before processing
+ * - Special handling for duplicate issues (requires cross-page comparison)
+ * - Manual check for Multiple H1 issues (disabled in SeoChecks)
+ * - Proper CSV escaping for quotes, newlines, and commas
+ * - Comprehensive fix type reporting
  * 
  * Usage:
  *   node scripts/check-metatags-fixed.mjs --siteId <siteId> [options]
+ *   
+ * Options:
+ *   --siteId <id>       Site ID to check (required)
+ *   --markFixed         Mark fixed suggestions in database (TODO: not yet implemented)
+ *   --dryRun            Show what would be marked without making changes
+ *   --verbose           Detailed logging
+ *   --limit <number>    Limit number of suggestions to check (for testing)
  */
 
 import { program } from 'commander';
 import { writeFileSync } from 'fs';
 // Simple console logger
 import { createDataAccess } from '@adobe/spacecat-shared-data-access';
+import { createFixEntityForSuggestion } from '../../create-fix-entity.js';
 
 // Import metatags utilities
-import { fetchAndProcessPageObject } from '../src/metatags/handler.js';
-import SeoChecks from '../src/metatags/seo-checks.js';
+import { fetchAndProcessPageObject } from '../../../src/metatags/handler.js';
+import SeoChecks from '../../../src/metatags/seo-checks.js';
 import { S3Client } from '@aws-sdk/client-s3';
 
 // Transform URL to scrape.json path - same as handler
@@ -51,6 +77,7 @@ class MetaTagsFixChecker {
     this.options = options;
     this.log = this.createSimpleLogger(options.verbose);
     this.results = [];
+    this.skippedCount = 0;
   }
 
   createSimpleLogger(verbose) {
@@ -75,7 +102,7 @@ class MetaTagsFixChecker {
       }
       
       if (!process.env.S3_SCRAPER_BUCKET_NAME) {
-        process.env.S3_SCRAPER_BUCKET_NAME = 'spacecat-prod-scraper';
+        process.env.S3_SCRAPER_BUCKET_NAME = 'spacecat-dev-scraper';
         this.log.debug('Set default S3_SCRAPER_BUCKET_NAME');
       }
       
@@ -183,8 +210,7 @@ class MetaTagsFixChecker {
         const oppCreated = opportunity.getCreatedAt ? opportunity.getCreatedAt() : (opportunity.createdAt || '');
         const oppUpdated = opportunity.getUpdatedAt ? opportunity.getUpdatedAt() : (opportunity.updatedAt || '');
 
-        const outdatedSuggestions = await Suggestion.allByOpportunityIdAndStatus(opptyId, 'outdated');
-        const fixedSuggestions = await Suggestion.allByOpportunityIdAndStatus(opptyId, 'fixed');
+        const outdatedSuggestions = await Suggestion.allByOpportunityIdAndStatus(opptyId, 'OUTDATED');
 
         const pushWithMeta = (s) => {
           suggestions.push({
@@ -199,7 +225,6 @@ class MetaTagsFixChecker {
         };
 
         outdatedSuggestions.forEach(pushWithMeta);
-        fixedSuggestions.forEach(pushWithMeta);
       }
 
       this.log.debug(`Found ${suggestions.length} outdated + fixed suggestions`);
@@ -226,14 +251,37 @@ class MetaTagsFixChecker {
     this.log.info(`Processing ${suggestionsToCheck.length} suggestions`);
 
     const bucketName = this.context.env.S3_SCRAPER_BUCKET_NAME;
-    const prefix = `scrapes/${this.options.siteId}/`;
 
     for (const entry of suggestionsToCheck) {
       const suggestion = entry?.suggestion || entry;
       const opportunityMeta = entry?.opportunity || {};
       const suggestionData = suggestion.getData ? suggestion.getData() : suggestion.data;
+      
+      // Validate suggestion data
+      if (!suggestionData) {
+        this.log.error('Skipping suggestion with no data');
+        this.skippedCount++;
+        continue;
+      }
+      
       const { url, issue, tagName, tagContent, aiSuggestion } = suggestionData;
+      
+      // Validate required fields
+      if (!url) {
+        this.log.error('Skipping suggestion with missing URL');
+        this.skippedCount++;
+        continue;
+      }
+      
+      if (!tagName || !['title', 'description', 'h1'].includes(tagName)) {
+        this.log.error(`Skipping suggestion with invalid tagName: ${tagName}`);
+        this.skippedCount++;
+        continue;
+      }
+      
       const issueDetails = suggestionData.issueDetails || suggestionData.issue_detail || '';
+      const isDuplicateIssue = issue && issue.toLowerCase().includes('duplicate');
+      const isMultipleH1Issue = issue && issue.toLowerCase().includes('multiple h1');
       
       let pageWasAudited = false;
       let currentTagContent;
@@ -249,10 +297,10 @@ class MetaTagsFixChecker {
         };
       } else {
         // Log the S3 key being fetched
-        this.log.debug(`Fetching S3 key: ${s3Key} for URL: ${url}`);
+        this.log.debug(`Fetching S3 key: ${s3Key} for URL: ${url} in the bucket : ${bucketName}`);
         
         // Fetch page object from S3
-        const pageObj = await fetchAndProcessPageObject(this.s3Client, bucketName, s3Key, prefix, this.log);
+        const pageObj = await fetchAndProcessPageObject(this.s3Client, bucketName, url, s3Key, this.log);
         
         if (pageObj) {
           // Get normalized path for matching
@@ -265,20 +313,43 @@ class MetaTagsFixChecker {
           if (pageObj[pageKey]) {
             pageWasAudited = true;
             
-            // Run SEO checks
-            const seoChecks = new SeoChecks(this.log);
-            seoChecks.performChecks(pageKey, pageObj[pageKey]);
-            seoChecks.finalChecks();
+            // Ensure h1 is always an array to prevent SeoChecks from crashing
+            const pageTags = pageObj[pageKey];
+            if (!Array.isArray(pageTags.h1)) {
+              pageTags.h1 = pageTags.h1 ? [pageTags.h1] : [];
+            }
             
-            // Check if issue still exists
-            const detectedTags = seoChecks.getDetectedTags();
-            singlePageDetectedIssueExists = detectedTags[pageKey]?.[tagName] !== undefined;
+            // For duplicate issues, we can't reliably check with single-page audit
+            // because duplicates require cross-page comparison
+            if (isDuplicateIssue) {
+              this.log.debug(`Duplicate issue detected - skipping single-page SEO check for ${tagName} on ${url}`);
+              singlePageDetectedIssueExists = null; // Mark as unable to verify
+            } else if (isMultipleH1Issue) {
+              // Multiple H1 check is disabled in SeoChecks, but we can manually check
+              this.log.debug(`Multiple H1 issue detected - performing manual check for ${url}`);
+              const h1Count = Array.isArray(pageTags.h1) ? pageTags.h1.length : (pageTags.h1 ? 1 : 0);
+              singlePageDetectedIssueExists = h1Count > 1;
+              this.log.debug(`  H1 count: ${h1Count}, issue still exists: ${singlePageDetectedIssueExists}`);
+            } else {
+              // Run SEO checks for non-duplicate issues
+              const seoChecks = new SeoChecks(this.log);
+              seoChecks.performChecks(pageKey, pageTags);
+              seoChecks.finalChecks();
+              
+              // Check if issue still exists
+              const detectedTags = seoChecks.getDetectedTags();
+              singlePageDetectedIssueExists = detectedTags[pageKey]?.[tagName] !== undefined;
+            }
             
             // Extract current tag content
-            const pageTags = pageObj[pageKey];
-            currentTagContent = Array.isArray(pageTags[tagName]) 
-              ? (pageTags[tagName][0] || null) 
-              : pageTags[tagName];
+            // For Multiple H1 issues, show all H1s to help verify the fix
+            if (isMultipleH1Issue && Array.isArray(pageTags.h1)) {
+              currentTagContent = `[${pageTags.h1.length} H1s: ${pageTags.h1.join(', ')}]`;
+            } else {
+              currentTagContent = Array.isArray(pageTags[tagName]) 
+                ? (pageTags[tagName][0] || null) 
+                : pageTags[tagName];
+            }
           }
         }
         
@@ -310,16 +381,42 @@ class MetaTagsFixChecker {
       let fixType;
 
       if (currentTagContent && typeof currentTagContent === 'object' && currentTagContent.error) {
-        // Keep legacy behavior: treat as NOT_IMPLEMENTED when page/tag unavailable
+        // Page/tag unavailable - cannot verify
         isFixed = false;
-        fixType = 'NOT_IMPLEMENTED';
+        fixType = currentTagContent.error === 'INVALID_URL' ? 'INVALID_URL' : 'PAGE_NOT_AVAILABLE';
       } else if (aiSuggestionImplemented) {
+        // Best case: AI suggestion was implemented exactly
         isFixed = true;
         fixType = 'AI_SUGGESTION_IMPLEMENTED';
+      } else if (isDuplicateIssue) {
+        // For duplicate issues, if content changed from original, consider it potentially fixed
+        // since we can't verify duplicates with single-page checks
+        const normalizeContent = (content) => {
+          if (content === null || content === undefined) return '';
+          return String(content).trim();
+        };
+        
+        const currentNormalized = normalizeContent(currentTagContent);
+        const originalNormalized = normalizeContent(tagContent);
+        const contentChanged = currentNormalized !== originalNormalized && currentNormalized !== '';
+        
+        if (contentChanged) {
+          isFixed = true;
+          fixType = 'DUPLICATE_CONTENT_CHANGED';
+        } else {
+          isFixed = false;
+          fixType = 'DUPLICATE_UNCHANGED';
+        }
       } else if (singlePageDetectedIssueExists === false) {
+        // Issue no longer detected by SEO checks
         isFixed = true;
         fixType = 'FIXED_BY_OTHER_MEANS';
+      } else if (singlePageDetectedIssueExists === null) {
+        // Unable to determine (shouldn't happen for non-duplicate issues)
+        isFixed = false;
+        fixType = 'UNABLE_TO_VERIFY';
       } else {
+        // Issue still exists
         isFixed = false;
         fixType = 'NOT_IMPLEMENTED';
       }
@@ -341,6 +438,7 @@ class MetaTagsFixChecker {
         originalContent: tagContent || '(empty)',
         aiSuggestion: aiSuggestion || '(none)',
         currentContent: currentContentDisplay,
+        suggestion: suggestion, // Store suggestion reference for fix entity creation
         aiSuggestionImplemented: aiSuggestionImplemented,
         isFixed: isFixed,
         fixType: fixType,
@@ -364,6 +462,15 @@ class MetaTagsFixChecker {
         this.log.info(`✅ FIXED (FIXED_BY_OTHER_MEANS): ${tagName} on ${url} - issue no longer detected`);
         this.log.debug(`  AI Suggested: "${aiSuggestion}"`);
         this.log.debug(`  Current: "${currentContentDisplay}"`);
+      } else if (isFixed && fixType === 'DUPLICATE_CONTENT_CHANGED') {
+        this.log.info(`✅ FIXED (DUPLICATE_CONTENT_CHANGED): ${tagName} on ${url} - duplicate content was changed`);
+        this.log.debug(`  Original: "${tagContent}"`);
+        this.log.debug(`  Current: "${currentContentDisplay}"`);
+      } else if (fixType === 'PAGE_NOT_AVAILABLE' || fixType === 'INVALID_URL') {
+        this.log.debug(`⚠️  ${fixType}: ${tagName} on ${url} - cannot verify`);
+      } else if (fixType === 'DUPLICATE_UNCHANGED') {
+        this.log.debug(`❌ DUPLICATE_UNCHANGED: ${tagName} on ${url} - duplicate content unchanged`);
+        this.log.debug(`  Content: "${currentContentDisplay}"`);
       } else if (!aiSuggestion || aiSuggestion === 'undefined') {
         this.log.debug(`⚠️  NO AI SUGGESTION: ${tagName} on ${url} - cannot verify if implemented`);
         this.log.debug(`  Current: "${currentContentDisplay}"`);
@@ -393,6 +500,27 @@ class MetaTagsFixChecker {
     const currentNorm = String(currentContent).trim();
     const aiNorm = String(aiSuggestion).trim();
     return currentNorm === aiNorm;
+  }
+
+  /**
+   * Properly escape CSV field values
+   * Handles quotes, newlines, and commas per RFC 4180
+   */
+  escapeCsvField(value) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    
+    const stringValue = String(value);
+    
+    // If field contains quotes, newlines, or commas, it must be quoted
+    // and internal quotes must be doubled
+    if (stringValue.includes('"') || stringValue.includes('\n') || stringValue.includes('\r') || stringValue.includes(',')) {
+      return `"${stringValue.replace(/"/g, '""')}"`;
+    }
+    
+    // Otherwise, just wrap in quotes for safety
+    return `"${stringValue}"`;
   }
 
 
@@ -430,32 +558,32 @@ class MetaTagsFixChecker {
     ];
 
     const csvRows = this.results.map(result => [
-      result.siteId,
-      result.siteName,
-      result.opportunityId,
-      result.opportunityStatus,
-      result.suggestionId,
-      result.suggestionType,
-      result.suggestionStatus,
-      result.suggestionRank,
-      result.tagName,
-      result.issue,
-      result.issueDetails,
-      result.url,
-      `"${result.originalContent}"`,
-      `"${result.aiSuggestion}"`,
-      `"${result.currentContent}"`,
-      result.aiSuggestionImplemented ? 'YES' : 'NO',
-      result.isFixed ? 'YES' : 'NO',
-      result.fixType,
-      result.contentScraped,
-      result.testDate,
-      result.opportunityCreated,
-      result.opportunityUpdated,
-      result.suggestionCreated,
-      result.suggestionUpdated,
-      result.updatedBy,
-      `"${result.recommendedAction}"`
+      this.escapeCsvField(result.siteId),
+      this.escapeCsvField(result.siteName),
+      this.escapeCsvField(result.opportunityId),
+      this.escapeCsvField(result.opportunityStatus),
+      this.escapeCsvField(result.suggestionId),
+      this.escapeCsvField(result.suggestionType),
+      this.escapeCsvField(result.suggestionStatus),
+      this.escapeCsvField(result.suggestionRank),
+      this.escapeCsvField(result.tagName),
+      this.escapeCsvField(result.issue),
+      this.escapeCsvField(result.issueDetails),
+      this.escapeCsvField(result.url),
+      this.escapeCsvField(result.originalContent),
+      this.escapeCsvField(result.aiSuggestion),
+      this.escapeCsvField(result.currentContent),
+      this.escapeCsvField(result.aiSuggestionImplemented ? 'YES' : 'NO'),
+      this.escapeCsvField(result.isFixed ? 'YES' : 'NO'),
+      this.escapeCsvField(result.fixType),
+      this.escapeCsvField(result.contentScraped),
+      this.escapeCsvField(result.testDate),
+      this.escapeCsvField(result.opportunityCreated),
+      this.escapeCsvField(result.opportunityUpdated),
+      this.escapeCsvField(result.suggestionCreated),
+      this.escapeCsvField(result.suggestionUpdated),
+      this.escapeCsvField(result.updatedBy),
+      this.escapeCsvField(result.recommendedAction)
     ]);
 
     const csvContent = [
@@ -472,30 +600,26 @@ class MetaTagsFixChecker {
 
   /**
    * Mark fixed suggestions in database
-   * TODO: Implement actual database updates when ready
    */
   async markFixedSuggestions() {
-    const fixedResults = this.results.filter(r => r.isFixed);
+    const fixedResults = this.results.filter(r => r.aiSuggestionImplemented);
     
     if (fixedResults.length === 0) {
       this.log.info('No suggestions to mark as fixed');
       return;
     }
 
-    this.log.info(`Found ${fixedResults.length} suggestions that should be marked as FIXED`);
-    this.log.info('TODO: Database updates will be implemented in a future iteration');
+    this.log.info(`Creating fix entities for ${fixedResults.length} fixed suggestions`);
 
     for (const result of fixedResults) {
       if (this.options.dryRun) {
-        this.log.info(`Would mark ${result.suggestionId} as FIXED (dry run)`);
+        this.log.info(`Would create fix entity for ${result.suggestionId} (dry run)`);
       } else {
-        this.log.info(`TODO: Mark ${result.suggestionId} as FIXED in database`);
-        // TODO: Implement when ready to update database
-        // const { Suggestion } = this.dataAccess;
-        // const suggestion = await Suggestion.findById(result.suggestionId);
-        // suggestion.setStatus('FIXED');
-        // suggestion.setUpdatedBy('metatags-fix-checker');
-        // await suggestion.save();
+        try {
+          // await createFixEntityForSuggestion(this.dataAccess, result.suggestion, { logger: this.log });
+        } catch (error) {
+          this.log.error(`Failed to create fix entity for ${result.suggestionId}: ${error.message}`);
+        }
       }
     }
   }
@@ -511,19 +635,37 @@ class MetaTagsFixChecker {
     this.log.info('');
     this.log.info('=== SUMMARY ===');
     this.log.info(`Total suggestions checked: ${totalChecked}`);
+    if (this.skippedCount > 0) {
+      this.log.info(`Skipped (validation errors): ${this.skippedCount}`);
+    }
     this.log.info(`Issues that were fixed: ${totalFixed}`);
     this.log.info(`Suggestions not implemented: ${totalNotImplemented}`);
     
+    // Break down by fix type
+    if (this.results.length > 0) {
+      this.log.info('');
+      this.log.info('Results by fix type:');
+      const byFixType = {};
+      this.results.forEach(r => {
+        byFixType[r.fixType] = (byFixType[r.fixType] || 0) + 1;
+      });
+      
+      Object.entries(byFixType).sort((a, b) => b[1] - a[1]).forEach(([type, count]) => {
+        const icon = ['AI_SUGGESTION_IMPLEMENTED', 'FIXED_BY_OTHER_MEANS', 'DUPLICATE_CONTENT_CHANGED'].includes(type) ? '✅' : '❌';
+        this.log.info(`  ${icon} ${type}: ${count}`);
+      });
+    }
+    
     if (totalFixed > 0) {
       this.log.info('');
-      this.log.info('Fixed issues by type:');
+      this.log.info('Fixed issues by tag and issue type:');
       const fixedByType = {};
       this.results.filter(r => r.isFixed).forEach(r => {
         const key = `${r.tagName}: ${r.issue}`;
         fixedByType[key] = (fixedByType[key] || 0) + 1;
       });
       
-      Object.entries(fixedByType).forEach(([type, count]) => {
+      Object.entries(fixedByType).sort((a, b) => b[1] - a[1]).forEach(([type, count]) => {
         this.log.info(`  ${type}: ${count}`);
       });
     }

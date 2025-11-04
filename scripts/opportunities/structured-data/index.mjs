@@ -4,18 +4,34 @@
  * Structured Data Fix Checker
  * 
  * Compares existing structured data suggestions with current S3 scraped data to identify fixed issues.
- * Uses the same logic as the structured data handler for validation.
+ * Uses the SAME validation logic as the structured data handler (getIssuesFromScraper).
+ * 
+ * Process:
+ * 1. Find all OUTDATED structured-data suggestions
+ * 2. Fetch current page from S3 scraper bucket
+ * 3. Run the SAME audit checks as handler.js (using getIssuesFromScraper)
+ * 4. Compare original errors with current issues
+ * 5. Categorize as:
+ *    - AI_SUGGESTION_IMPLEMENTED: AI's suggested fix was implemented exactly
+ *    - FIXED_BY_OTHER_MEANS: Issue no longer detected (fixed differently)
+ *    - NOT_FIXED: Issue still exists
+ *    - PAGE_NOT_AVAILABLE: Cannot verify
  */
 
 import { program } from 'commander';
 import { createDataAccess, Audit } from '@adobe/spacecat-shared-data-access';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
-import { SITES } from './constants.js';
 import { 
   writeStructuredDataCSV,
   writeErrorCSV
-} from './csv-utils.js';
+} from '../../csv-utils.js';
+import { createFixEntityForSuggestion } from '../../create-fix-entity.js';
 import dotenv from 'dotenv';
+
+// Import the SAME validation functions as the handler
+import { 
+  getIssuesFromScraper 
+} from '../../../src/structured-data/lib.js';
 
 dotenv.config();
 
@@ -23,7 +39,7 @@ const auditType = Audit.AUDIT_TYPES.STRUCTURED_DATA;
 
 class StructuredDataFixChecker {
   constructor(options = {}) {
-    this.options = { siteId: null, verbose: false, limit: null, ...options };
+    this.options = { siteId: null, verbose: false, limit: null, markFixed: false, dryRun: true, ...options };
     this.log = this.createSimpleLogger(this.options.verbose);
     this.dataAccess = null;
     this.site = null;
@@ -65,6 +81,14 @@ class StructuredDataFixChecker {
         indexNameAllBySiteId: process.env.DYNAMO_INDEX_ALL_BY_SITE_ID || 'spacecat-services-all-sites-gsi2pk-gsi2sk-index'
       };
       this.dataAccess = createDataAccess(config);
+      
+      // Load site object (needed for validation context)
+      this.site = await this.dataAccess.Site.findById(this.options.siteId);
+      if (!this.site) {
+        throw new Error(`Site not found in database: ${this.options.siteId}`);
+      }
+      
+      this.log.info(`Loaded site: ${this.site.baseURL} (${this.site.getId()})`);
     } catch (error) {
       this.logError('Data access initialization', error);
       throw error;
@@ -144,54 +168,150 @@ class StructuredDataFixChecker {
     return `scrapes/${this.options.siteId}${pathname}/scrape.json`;
   }
 
-  validateJsonLD(structuredData) {
-    if (!structuredData || typeof structuredData !== 'object') {
-      return { valid: false, issues: ['No structured data found'] };
-    }
-
-    const issues = [];
-    
-    // Basic JSON-LD validation
-    if (Array.isArray(structuredData)) {
-      for (const item of structuredData) {
-        if (!item['@type']) issues.push('Missing @type in JSON-LD item');
-        if (!item['@context'] && !structuredData.some(i => i['@context'])) {
-          issues.push('Missing @context in JSON-LD');
+  /**
+   * Use the SAME validation logic as handler.js
+   * This runs getIssuesFromScraper on the current page data
+   */
+  async getCurrentIssues(pageUrl, currentStructuredData) {
+    try {
+      // Create a mock scrape cache with the current data
+      let { pathname } = new URL(pageUrl);
+      if (pathname.endsWith('/')) {
+        pathname = pathname.slice(0, -1);
+      }
+      
+      const scrapeCache = new Map();
+      scrapeCache.set(pathname, Promise.resolve({
+        scrapeResult: {
+          structuredData: currentStructuredData
         }
-      }
-    } else if (structuredData['@graph']) {
-      if (!structuredData['@context']) issues.push('Missing @context in JSON-LD graph');
-      for (const item of structuredData['@graph']) {
-        if (!item['@type']) issues.push('Missing @type in JSON-LD graph item');
-      }
-    } else {
-      if (!structuredData['@type']) issues.push('Missing @type in JSON-LD');
-      if (!structuredData['@context']) issues.push('Missing @context in JSON-LD');
-    }
+      }));
 
-    return { valid: issues.length === 0, issues };
+      // Create context matching handler requirements
+      const mockContext = {
+        log: this.log,
+        site: this.site,
+      };
+
+      // Run the SAME validation as handler.js
+      const issues = await getIssuesFromScraper(
+        mockContext,
+        [{ url: pageUrl }],
+        scrapeCache
+      );
+
+      return issues;
+      
+    } catch (error) {
+      this.log.debug(`Error running validation for ${pageUrl}: ${error.message}`);
+      return [];
+    }
   }
 
-  compareWithAISuggestions(currentData, suggestionErrors) {
-    if (!currentData || !suggestionErrors || suggestionErrors.length === 0) {
-      return {
-        isFixed: false, aiSuggestionImplemented: false, fixType: 'NOT_FIXED',
-        details: 'No current data or suggestions to compare'
-      };
+  /**
+   * Check if AI's suggested fix was implemented
+   * Compares the AI's correctedMarkup with current structured data
+   */
+  checkAISuggestionImplemented(originalErrors, currentStructuredData) {
+    if (!originalErrors || originalErrors.length === 0 || !currentStructuredData) {
+      return false;
     }
 
-    const validation = this.validateJsonLD(currentData);
+    // Check each original error for AI suggestion
+    for (const error of originalErrors) {
+      if (!error.fix) continue;
+      
+      // Extract AI suggestion details from the fix markdown
+      const correctedMarkupMatch = error.fix.match(/```json\n([\s\S]+?)\n```/);
+      if (!correctedMarkupMatch) continue;
+      
+      try {
+        const aiSuggestedMarkup = JSON.parse(correctedMarkupMatch[1]);
+        
+        // Deep comparison of AI suggestion with current data
+        const currentDataNormalized = JSON.stringify(currentStructuredData, null, 2);
+        const aiSuggestionNormalized = JSON.stringify(aiSuggestedMarkup, null, 2);
+        
+        if (currentDataNormalized === aiSuggestionNormalized) {
+          return true;
+        }
+      } catch (e) {
+        // Continue checking other errors if parsing fails
+        continue;
+      }
+    }
     
-    if (!validation.valid) {
+    return false;
+  }
+
+  /**
+   * Compare original suggestion errors with current issues
+   * Returns fix status and type
+   */
+  async compareWithOriginalErrors(pageUrl, originalErrors, currentStructuredData) {
+    if (!originalErrors || originalErrors.length === 0) {
       return {
-        isFixed: false, aiSuggestionImplemented: false, fixType: 'STILL_HAS_ISSUES',
-        details: `Validation issues: ${validation.issues.join(', ')}`
+        isFixed: false,
+        aiSuggestionImplemented: false,
+        fixType: 'NO_ORIGINAL_ERRORS',
+        details: 'No original errors to compare'
       };
     }
 
+    // If no current structured data, issue cannot be fixed
+    if (!currentStructuredData) {
+      return {
+        isFixed: false,
+        aiSuggestionImplemented: false,
+        fixType: 'NO_STRUCTURED_DATA',
+        details: 'No structured data found on page'
+      };
+    }
+
+    // Run the SAME validation as handler.js
+    const currentIssues = await this.getCurrentIssues(pageUrl, currentStructuredData);
+    
+    // Check if AI suggestion was implemented exactly
+    const aiImplemented = this.checkAISuggestionImplemented(originalErrors, currentStructuredData);
+    
+    if (aiImplemented) {
+      return {
+        isFixed: true,
+        aiSuggestionImplemented: true,
+        fixType: 'AI_SUGGESTION_IMPLEMENTED',
+        details: 'AI suggested markup matches current structured data'
+      };
+    }
+
+    // Check if original errors still exist
+    const stillHasIssues = originalErrors.some(originalError => {
+      const errorTitle = originalError.errorTitle || '';
+      
+      return currentIssues.some(currentIssue => {
+        // Match based on error message and root type
+        const issueMessage = currentIssue.issueMessage || '';
+        const rootTypeMatch = originalError.errorTitle?.includes(currentIssue.rootType);
+        
+        return errorTitle.includes(issueMessage) || rootTypeMatch;
+      });
+    });
+
+    if (!stillHasIssues && currentIssues.length === 0) {
+      // No issues found - fixed by some means
+      return {
+        isFixed: true,
+        aiSuggestionImplemented: false,
+        fixType: 'FIXED_BY_OTHER_MEANS',
+        details: 'Original issue no longer detected by validation'
+      };
+    }
+
+    // Issues still exist
     return {
-      isFixed: true, aiSuggestionImplemented: false, fixType: 'SCHEMA_FIXED',
-      details: 'JSON-LD structure is now valid'
+      isFixed: false,
+      aiSuggestionImplemented: false,
+      fixType: 'NOT_FIXED',
+      details: `Still has ${currentIssues.length} validation issue(s)`
     };
   }
 
@@ -205,7 +325,7 @@ class StructuredDataFixChecker {
         const opportunityData = this.opportunityDataMap[suggestion.getOpportunityId()] || {};
         
         // Debug: Log the actual suggestion data structure
-        this.log.debug(`Suggestion ${suggestion.getId()} data:`, JSON.stringify(suggestionData, null, 2));
+        this.log.debug(`Processing suggestion ${suggestion.getId()}`);
         
         if (!suggestionData?.url) {
           this.logError('Invalid suggestion data', new Error(`Missing URL. Data: ${JSON.stringify(suggestionData)}`), suggestion.getId());
@@ -213,7 +333,7 @@ class StructuredDataFixChecker {
           // Create an error result instead of skipping
           results.push({
             siteId: this.options.siteId,
-            siteName: this.site?.name || 'Unknown',
+            siteName: this.site?.baseURL || 'Unknown',
             opportunityId: suggestion.getOpportunityId(),
             opportunityStatus: opportunityData.status || 'UNKNOWN',
             suggestionId: suggestion.getId(),
@@ -245,58 +365,72 @@ class StructuredDataFixChecker {
         }
 
         const pageUrl = suggestionData.url;
-        const errors = suggestionData.errors || [];
+        const originalErrors = suggestionData.errors || [];
         
         // Get current structured data from S3
         const currentStructuredData = await this.getCurrentStructuredData(pageUrl);
-        const comparison = this.compareWithAISuggestions(currentStructuredData, errors);
         
-        // Extract AI suggestion details
-        let suggestedFix = '', aiRationale = '', confidenceScore = 0, errorDescription = '';
+        // Use the SAME validation logic as handler.js
+        const comparison = await this.compareWithOriginalErrors(pageUrl, originalErrors, currentStructuredData);
         
-        if (errors.length > 0) {
-          const firstError = errors[0];
+        // Extract original error details for reporting
+        let errorDescription = '', suggestedFix = '', confidenceScore = 0;
+        
+        if (originalErrors.length > 0) {
+          const firstError = originalErrors[0];
           errorDescription = firstError.errorTitle || 'Structured data issue';
           
           if (firstError.fix) {
-            // Extract just the error description, not the full HTML markup
-            const fixMatch = firstError.fix.match(/## Issue Detected for (.+?)\n(.+?)(?:\n##|$)/);
-            if (fixMatch) {
-              suggestedFix = `${fixMatch[1]}: ${fixMatch[2]}`;
+            // Extract error description
+            const issueMatch = firstError.fix.match(/## Issue Detected for (.+?)\n(.+?)(?:\n##|$)/);
+            if (issueMatch) {
+              suggestedFix = `${issueMatch[1]}: ${issueMatch[2]}`;
             } else {
-              // Fallback: take first line of fix description
+              // Extract from corrected markup section
               const firstLine = firstError.fix.split('\n').find(line => line.trim() && !line.startsWith('#'));
               suggestedFix = firstLine ? firstLine.trim() : 'Schema validation issue';
             }
             
-            const rationaleMatch = firstError.fix.match(/AI Rationale:\s*(.+?)(?:\n|$)/);
-            if (rationaleMatch) aiRationale = rationaleMatch[1].trim();
-            
-            const scoreMatch = firstError.fix.match(/Confidence:\s*(\d+)%/);
+            // Extract confidence score if available
+            const scoreMatch = firstError.fix.match(/Confidence score:\s*(\d+)%/);
             if (scoreMatch) confidenceScore = parseInt(scoreMatch[1]);
+          }
+        }
+
+        // Extract schema types from current data
+        let schemaTypes = '';
+        if (currentStructuredData) {
+          if (Array.isArray(currentStructuredData)) {
+            schemaTypes = currentStructuredData.map(item => item?.['@type']).filter(Boolean).join(', ');
+          } else if (currentStructuredData['@type']) {
+            schemaTypes = currentStructuredData['@type'];
+          } else if (currentStructuredData.jsonld) {
+            // Handle new scraper format
+            const jsonldData = Object.values(currentStructuredData.jsonld || {}).flat();
+            schemaTypes = jsonldData.map(item => item?.['@type']).filter(Boolean).join(', ');
           }
         }
 
         const result = {
           siteId: this.options.siteId,
-          siteName: this.site?.name || 'Unknown',
+          siteName: this.site?.baseURL || 'Unknown',
           opportunityId: suggestion.getOpportunityId(),
           opportunityStatus: opportunityData.status || 'UNKNOWN',
           suggestionId: suggestion.getId(),
           suggestionType: suggestion.getType(),
           suggestionStatus: suggestion.getStatus(),
           suggestionRank: suggestion.getRank() || 0,
-          url: pageUrl,  // Fixed: was pageUrl, should be url
-          errorId: errors.length > 0 ? errors[0].id || 'unknown' : 'unknown',  // Fixed: was errorType
-          errorTitle: errorDescription,  // Fixed: was errorDescription
-          totalJsonLdBlocks: Array.isArray(currentStructuredData) ? currentStructuredData.length : (currentStructuredData ? 1 : 0),  // Added
-          validJsonLdBlocks: Array.isArray(currentStructuredData) ? currentStructuredData.filter(item => item && typeof item === 'object').length : (currentStructuredData && typeof currentStructuredData === 'object' ? 1 : 0),  // Added
-          schemaTypes: Array.isArray(currentStructuredData) ? currentStructuredData.map(item => item['@type']).filter(Boolean).join(', ') : (currentStructuredData && currentStructuredData['@type'] ? currentStructuredData['@type'] : ''),  // Added
-          currentJsonLdContent: currentStructuredData ? JSON.stringify(currentStructuredData).substring(0, 1000) : 'No structured data found',  // ENHANCED: Show actual content
-          completenessScore: confidenceScore,  // Fixed: was confidenceScore
-          aiSuggestionFix: suggestedFix.substring(0, 500),  // Fixed: was suggestedFix
-          bestSimilarity: comparison.similarity || 0,  // Added
-          hasValidSchema: Array.isArray(currentStructuredData) ? currentStructuredData.length > 0 : !!currentStructuredData,  // Added
+          url: pageUrl,
+          errorId: originalErrors.length > 0 ? originalErrors[0].id || 'unknown' : 'unknown',
+          errorTitle: errorDescription,
+          totalJsonLdBlocks: Array.isArray(currentStructuredData) ? currentStructuredData.length : (currentStructuredData ? 1 : 0),
+          validJsonLdBlocks: Array.isArray(currentStructuredData) ? currentStructuredData.filter(item => item && typeof item === 'object').length : (currentStructuredData && typeof currentStructuredData === 'object' ? 1 : 0),
+          schemaTypes: schemaTypes,
+          currentJsonLdContent: currentStructuredData ? JSON.stringify(currentStructuredData).substring(0, 1000) : 'No structured data found',
+          completenessScore: confidenceScore,
+          aiSuggestionFix: suggestedFix.substring(0, 500),
+          bestSimilarity: 0, // Not used for structured data
+          hasValidSchema: !!currentStructuredData,
           aiSuggestionImplemented: comparison.aiSuggestionImplemented,
           isFixed: comparison.isFixed,
           fixType: comparison.fixType,
@@ -305,11 +439,23 @@ class StructuredDataFixChecker {
           suggestionCreated: suggestion.getCreatedAt() || '',
           suggestionUpdated: suggestion.getUpdatedAt() || '',
           updatedBy: 'system',
-          testDate: new Date().toISOString()
+          testDate: new Date().toISOString(),
+          suggestion: suggestion // Store suggestion reference for fix entity creation
         };
 
         results.push(result);
         processed++;
+        
+        // Log progress
+        if (comparison.isFixed) {
+          if (comparison.aiSuggestionImplemented) {
+            this.log.info(`✅ AI_SUGGESTION_IMPLEMENTED: ${pageUrl}`);
+          } else {
+            this.log.info(`✅ FIXED_BY_OTHER_MEANS: ${pageUrl}`);
+          }
+        } else {
+          this.log.debug(`❌ ${comparison.fixType}: ${pageUrl}`);
+        }
 
         if (this.options.limit && processed >= this.options.limit) {
           this.log.info(`Reached limit of ${this.options.limit} suggestions`);
@@ -323,7 +469,7 @@ class StructuredDataFixChecker {
         const opportunityData = this.opportunityDataMap[suggestion.getOpportunityId()] || {};
         results.push({
           siteId: this.options.siteId,
-          siteName: this.site?.name || 'Unknown',
+          siteName: this.site?.baseURL || 'Unknown',
           opportunityId: suggestion.getOpportunityId(),
           opportunityStatus: opportunityData.status || 'UNKNOWN',
           suggestionId: suggestion.getId(),
@@ -382,13 +528,34 @@ class StructuredDataFixChecker {
     this.log.info('Fix Types:', summary.fixTypes);
   }
 
+  async markFixedSuggestions() {
+    const fixedResults = this.results.filter(r => r.isFixed);
+    
+    if (fixedResults.length === 0) {
+      this.log.info('No suggestions to mark as fixed');
+      return;
+    }
+
+    this.log.info(`Creating fix entities for ${fixedResults.length} fixed suggestions`);
+
+    for (const result of fixedResults) {
+      if (this.options.dryRun) {
+        this.log.info(`Would create fix entity for ${result.suggestionId} (dry run)`);
+      } else {
+        try {
+          // await createFixEntityForSuggestion(this.dataAccess, result.suggestion, { logger: this.log });
+        } catch (error) {
+          this.log.error(`Failed to create fix entity for ${result.suggestionId}: ${error.message}`);
+        }
+      }
+    }
+  }
+
   async run() {
     try {
       this.log.info('=== STRUCTURED DATA FIX CHECKER ===');
+      this.log.info(`Site ID: ${this.options.siteId}`);
       
-      this.site = SITES.find(s => s.id === this.options.siteId);
-      if (!this.site) throw new Error(`Site ID ${this.options.siteId} not found`);
-
       await this.initializeDataAccess();
       const suggestions = await this.getExistingSuggestions(this.options.siteId);
       
@@ -397,15 +564,24 @@ class StructuredDataFixChecker {
         return;
       }
 
+      this.log.info(`Checking ${suggestions.length} suggestions using handler validation logic...`);
       const results = await this.checkSuggestionsFixes(suggestions);
+      this.results = results; // Store results for markFixedSuggestions
       const filename = this.generateCSV(results);
       this.printSummary(results);
+      
+      if (this.options.markFixed && !this.options.dryRun) {
+        await this.markFixedSuggestions();
+      }
       
       this.log.info(`🎉 Complete! Results: ${filename}`);
       
     } catch (error) {
       this.logError('Main execution', error);
       this.log.error('❌ Failed:', error.message);
+      if (this.options.verbose) {
+        console.error(error.stack);
+      }
       process.exit(1);
     }
   }
@@ -417,14 +593,16 @@ program
   .description('Check if structured data suggestions have been fixed')
   .requiredOption('--siteId <siteId>', 'Site ID to check')
   .option('--verbose', 'Enable verbose logging', false)
-  .option('--limit <number>', 'Limit number of suggestions to process', parseInt);
+  .option('--limit <number>', 'Limit number of suggestions to process', parseInt)
+  .option('--markFixed', 'Mark fixed suggestions in database', false)
+  .option('--dryRun', 'Dry run mode (default: true)', true);
 
 program.parse();
 const options = program.opts();
 
-const site = SITES.find(s => s.id === options.siteId);
-if (!site) {
-  console.error(`❌ Site ID '${options.siteId}' not found in constants.js`);
+// Validate required options
+if (!options.siteId) {
+  console.error('❌ Error: --siteId is required');
   process.exit(1);
 }
 

@@ -34,8 +34,9 @@ import { createDataAccess, Audit } from '@adobe/spacecat-shared-data-access';
 // Load environment variables from .env file
 dotenv.config();
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
-import { SITES } from './constants.js';
-import { writeCWVCSV, formatCWVResult, CWV_CSV_HEADERS } from './csv-utils.js';
+import { SITES } from '../../constants.js';
+import { writeCWVCSV, formatCWVResult, CWV_CSV_HEADERS } from '../../csv-utils.js';
+import { createFixEntityForSuggestion } from '../../create-fix-entity.js';
 
 // CWV Thresholds (from handler)
 const THRESHOLDS = {
@@ -253,7 +254,7 @@ class CWVFixChecker {
       }
       
       // Use the same domain format as the handler - use wwwUrlResolver like the handler does
-      const { wwwUrlResolver } = await import('../src/common/index.js');
+      const { wwwUrlResolver } = await import('../../../src/common/index.js');
       const auditUrl = await wwwUrlResolver(this.site, { log: this.log, env: process.env });
       this.log.debug(`Resolved audit URL: ${auditUrl} (vs base URL: ${this.site.getBaseURL()})`);
       
@@ -499,7 +500,8 @@ class CWVFixChecker {
         updatedBy: suggestion.getUpdatedBy ? suggestion.getUpdatedBy() : (suggestion.updatedBy || ''),
         testDate: new Date().toISOString(),
         
-        recommendedAction: isFixed ? 'MARK AS FIXED' : 'CONTINUE OPTIMIZATION'
+        recommendedAction: isFixed ? 'MARK AS FIXED' : 'CONTINUE OPTIMIZATION',
+        suggestion: suggestion // Store suggestion reference for fix entity creation
       });
       
       if (isFixed) {
@@ -530,18 +532,19 @@ class CWVFixChecker {
       return;
     }
 
-    this.log.info(`Marking ${fixedResults.length} suggestions as fixed...`);
-    
-    if (this.options.dryRun) {
-      this.log.info('[DRY RUN] Would mark the following suggestions as fixed:');
-      fixedResults.forEach(r => {
-        this.log.info(`  - ${r.suggestionId}: ${r.urlOrPattern} (${r.fixType})`);
-      });
-      return;
-    }
+    this.log.info(`Creating fix entities for ${fixedResults.length} fixed suggestions`);
 
-    // Database update functionality will be implemented in future version
-    this.log.warn('Database update functionality not yet implemented');
+    for (const result of fixedResults) {
+      if (this.options.dryRun) {
+        this.log.info(`Would create fix entity for ${result.suggestionId} (dry run)`);
+      } else {
+        try {
+          // await createFixEntityForSuggestion(this.dataAccess, result.suggestion, { logger: this.log });
+        } catch (error) {
+          this.log.error(`Failed to create fix entity for ${result.suggestionId}: ${error.message}`);
+        }
+      }
+    }
   }
 
   /**

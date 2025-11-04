@@ -21,17 +21,29 @@
  * Features:
  * - Comprehensive 24-column raw data schema
  * - Tests current URL status (200 OK, redirects, etc.)
- * - Checks if AI-suggested URLs were implemented
+ * - Checks if AI-suggested URLs were implemented via:
+ *   1. Direct redirects to suggested URLs
+ *   2. Source page link updates to suggested URLs
+ * - Detects link removal from source pages via S3 scraping
  * - Multi-site processing with consolidation
  * - Efficient database queries (outdated + fixed suggestions)
+ * 
+ * Fix Types:
+ * - AI_SUGGESTION_IMPLEMENTED: Redirect or link update matches AI suggestion
+ * - URL_NOW_WORKS: URL is directly accessible (200 OK)
+ * - URL_ACCESSIBLE: URL returns success status (< 400)
+ * - URL_REDIRECTS_ELSEWHERE: Redirect exists but not to suggested URL
+ * - LINK_REMOVED_FROM_SOURCE: Broken link removed from source page
+ * - STILL_BROKEN: URL still returns error (>= 400) or unreachable
  */
 
 import { writeFileSync } from 'fs';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 // Using simple console logger instead of shared-utils dependency
 import { createDataAccess } from '@adobe/spacecat-shared-data-access';
-import { SITES } from './constants.js';
-import { writeInternalLinksCSV, formatInternalLinksResult, INTERNAL_LINKS_CSV_HEADERS } from './csv-utils.js';
+import { SITES } from '../../constants.js';
+import { writeInternalLinksCSV, formatInternalLinksResult, INTERNAL_LINKS_CSV_HEADERS } from '../../csv-utils.js';
+import { createFixEntityForSuggestion } from '../../create-fix-entity.js';
 
 /**
  * Internal Links Fix Checker Class
@@ -232,19 +244,40 @@ class InternalLinksFixChecker {
       let currentStatusDisplay = currentStatus.success ? currentStatus.statusCode : 'ERROR';
       let aiSuggestionImplemented = false;
       
+      let linkRemovedFromSource = false;
+      let detectionMethod = '';
+      
       if (currentStatus.success) {
-        // Check if URL is now accessible (same logic as internal links handler)
-        if (currentStatus.isAccessible) {
-          isFixed = true;
-          fixType = 'URL_NOW_WORKS';
-        }
-        // Check if redirect was implemented to suggested URL (for redirects)
-        else if (urlsSuggested && Array.isArray(urlsSuggested) && (currentStatus.statusCode === 301 || currentStatus.statusCode === 302)) {
+        // FIRST: Check if redirect was implemented to AI-suggested URL (priority check)
+        if (urlsSuggested && Array.isArray(urlsSuggested) && urlsSuggested.length > 0 && 
+            (currentStatus.statusCode === 301 || currentStatus.statusCode === 302)) {
           aiSuggestionImplemented = await this.checkRedirectToSuggested(urlTo, urlsSuggested);
           if (aiSuggestionImplemented) {
             isFixed = true;
             fixType = 'AI_SUGGESTION_IMPLEMENTED';
+            detectionMethod = 'REDIRECT_TO_SUGGESTED_URL';
+          } else {
+            // Redirect exists but not to suggested URL
+            isFixed = true;
+            fixType = 'URL_REDIRECTS_ELSEWHERE';
           }
+        }
+        // SECOND: Check if URL is now directly accessible (200 OK, or other success codes)
+        else if (currentStatus.isAccessible) {
+          // Check if it's a 200 OK specifically
+          if (currentStatus.statusCode === 200) {
+            isFixed = true;
+            fixType = 'URL_NOW_WORKS';
+          } else {
+            // Other success status codes (e.g., 204, 206, etc.)
+            isFixed = true;
+            fixType = 'URL_ACCESSIBLE';
+          }
+        }
+        // THIRD: Still broken (status >= 400)
+        else {
+          isFixed = false;
+          fixType = 'STILL_BROKEN';
         }
       } else {
         // If we couldn't test the URL, it's still broken
@@ -252,17 +285,32 @@ class InternalLinksFixChecker {
         fixType = 'STILL_BROKEN';
       }
 
-      // Enhancement: detect link removal from source page (urlFrom) via S3 scrape
-      let linkRemovedFromSource = false;
-      let detectionMethod = '';
+      // Enhancement: detect link removal/update in source page (urlFrom) via S3 scrape
       if (!isFixed) {
         try {
           const removed = await this.wasLinkRemovedFromSource(urlFrom, urlTo);
           if (removed === true) {
-            isFixed = true;
-            linkRemovedFromSource = true;
-            fixType = 'LINK_REMOVED_FROM_SOURCE';
-            detectionMethod = 'SOURCE_PAGE_SCRAPING';
+            // Link was removed - check if it was replaced with AI suggestion
+            if (urlsSuggested && Array.isArray(urlsSuggested) && urlsSuggested.length > 0) {
+              const updatedToSuggestion = await this.wasLinkUpdatedToSuggestion(urlFrom, urlsSuggested);
+              if (updatedToSuggestion) {
+                isFixed = true;
+                aiSuggestionImplemented = true;
+                fixType = 'AI_SUGGESTION_IMPLEMENTED';
+                detectionMethod = 'SOURCE_PAGE_LINK_UPDATED';
+              } else {
+                isFixed = true;
+                linkRemovedFromSource = true;
+                fixType = 'LINK_REMOVED_FROM_SOURCE';
+                detectionMethod = 'SOURCE_PAGE_SCRAPING';
+              }
+            } else {
+              // No AI suggestions to check, just mark as removed
+              isFixed = true;
+              linkRemovedFromSource = true;
+              fixType = 'LINK_REMOVED_FROM_SOURCE';
+              detectionMethod = 'SOURCE_PAGE_SCRAPING';
+            }
           }
         } catch (err) {
           this.log.debug(`Source page scraping check failed for ${urlFrom}: ${err.message}`);
@@ -311,11 +359,14 @@ class InternalLinksFixChecker {
         suggestionCreated: suggestion.getCreatedAt ? suggestion.getCreatedAt() : (suggestion.createdAt || ''),
         suggestionUpdated: suggestion.getUpdatedAt ? suggestion.getUpdatedAt() : (suggestion.updatedAt || ''),
         updatedBy: suggestion.getUpdatedBy ? suggestion.getUpdatedBy() : (suggestion.updatedBy || ''),
-        testDate: new Date().toISOString()
+        testDate: new Date().toISOString(),
+        suggestion: suggestion // Store suggestion reference for fix entity creation
       });
       
       if (isFixed) {
-        this.log.info(`✅ FIXED: ${urlTo} (${fixType})`);
+        const methodInfo = detectionMethod ? ` via ${detectionMethod}` : '';
+        const aiInfo = aiSuggestionImplemented ? ' [AI IMPLEMENTED]' : '';
+        this.log.info(`✅ FIXED: ${urlTo} (${fixType}${methodInfo}${aiInfo})`);
       } else {
         this.log.debug(`❌ NOT FIXED: ${urlTo} (still ${currentStatusDisplay})`);
       }
@@ -443,6 +494,32 @@ class InternalLinksFixChecker {
     return true; // No candidate hrefs found → treated as removed
   }
 
+  async wasLinkUpdatedToSuggestion(urlFrom, urlsSuggested) {
+    const key = this.getScrapeJsonPath(urlFrom, this.options.siteId);
+    if (!key) return false;
+    try {
+      const obj = await this.getObjectJson(this.s3Bucket, key);
+      const html = obj?.scrapeResult?.rawBody;
+      if (!html || typeof html !== 'string' || html.length < 50) return false;
+      const lower = html.toLowerCase();
+      
+      // Check if any suggested URL is now present in the source page
+      for (const suggestedUrl of urlsSuggested) {
+        const candidates = this.normalizeHrefCandidates(urlFrom, suggestedUrl).map(s => s.toLowerCase());
+        for (const c of candidates) {
+          const pattern = new RegExp(`href\\s*=\\s*(["'])${this.escapeForRegex(c)}\\1`, 'i');
+          if (pattern.test(lower)) {
+            return true; // Found AI-suggested URL in source page
+          }
+        }
+      }
+      return false; // No suggested URLs found
+    } catch (err) {
+      this.log.debug(`Error checking if link was updated to suggestion: ${err.message}`);
+      return false;
+    }
+  }
+
   /**
    * Add delay to avoid overwhelming servers
    */
@@ -463,25 +540,26 @@ class InternalLinksFixChecker {
    * Mark fixed suggestions in database
    */
   async markFixedSuggestions() {
-    const fixedResults = this.results.filter(r => r.linkFixed);
+    const fixedResults = this.results.filter(r => r.aiSuggestionImplemented);
     
     if (fixedResults.length === 0) {
       this.log.info('No suggestions to mark as fixed');
       return;
     }
 
-    this.log.info(`Marking ${fixedResults.length} suggestions as fixed...`);
-    
-    if (this.options.dryRun) {
-      this.log.info('[DRY RUN] Would mark the following suggestions as fixed:');
-      fixedResults.forEach(r => {
-        this.log.info(`  - ${r.suggestionId}: ${r.urlTo}`);
-      });
-      return;
-    }
+    this.log.info(`Creating fix entities for ${fixedResults.length} fixed suggestions`);
 
-    // TODO: Implement actual database updates when ready
-    this.log.warn('Database update functionality not yet implemented');
+    for (const result of fixedResults) {
+      if (this.options.dryRun) {
+        this.log.info(`Would create fix entity for ${result.suggestionId} (dry run)`);
+      } else {
+        try {
+          await createFixEntityForSuggestion(this.dataAccess, result.suggestion, { logger: this.log });
+        } catch (error) {
+          this.log.error(`Failed to create fix entity for ${result.suggestionId}: ${error.message}`);
+        }
+      }
+    }
   }
 
   /**

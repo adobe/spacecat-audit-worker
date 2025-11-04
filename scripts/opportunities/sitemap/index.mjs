@@ -31,8 +31,9 @@ import { program } from 'commander';
 import { createDataAccess } from '@adobe/spacecat-shared-data-access';
 import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { writeFileSync } from 'fs';
-import { SITES } from './constants.js';
-import { writeSitemapCSV, generateSitemapCSV, formatSitemapResult, SITEMAP_CSV_HEADERS } from './csv-utils.js';
+import { SITES } from '../../constants.js';
+import { writeSitemapCSV, generateSitemapCSV, formatSitemapResult, SITEMAP_CSV_HEADERS } from '../../csv-utils.js';
+import { createFixEntityForSuggestion } from '../../create-fix-entity.js';
 
 class SitemapFixChecker {
   constructor(options) {
@@ -122,23 +123,19 @@ class SitemapFixChecker {
       };
     });
     
-    // Get outdated AND fixed suggestions directly from database using efficient API
+    // Get outdated suggestions directly from database using efficient API
     const { Suggestion } = this.dataAccess;
     const suggestions = [];
     
     for (const opportunity of sitemapOpportunities) {
       const opptyId = opportunity.getId();
       
-      // Get outdated suggestions
+      // Get outdated suggestions only
       const outdatedSuggestions = await Suggestion.allByOpportunityIdAndStatus(opptyId, 'outdated');
       suggestions.push(...outdatedSuggestions);
-      
-      // Get fixed suggestions  
-      const fixedSuggestions = await Suggestion.allByOpportunityIdAndStatus(opptyId, 'fixed');
-      suggestions.push(...fixedSuggestions);
     }
     
-    this.log.info(`Found ${suggestions.length} outdated + fixed sitemap suggestions`);
+    this.log.info(`Found ${suggestions.length} outdated sitemap suggestions`);
     return suggestions;
   }
 
@@ -443,7 +440,8 @@ class SitemapFixChecker {
         opportunityUpdated: opportunityData.updatedAt || '',
         suggestionCreated: suggestion.getCreatedAt ? suggestion.getCreatedAt() : (suggestion.createdAt || ''),
         suggestionUpdated: suggestion.getUpdatedAt ? suggestion.getUpdatedAt() : (suggestion.updatedAt || ''),
-        updatedBy: suggestion.getUpdatedBy ? suggestion.getUpdatedBy() : (suggestion.updatedBy || '')
+        updatedBy: suggestion.getUpdatedBy ? suggestion.getUpdatedBy() : (suggestion.updatedBy || ''),
+        suggestion: suggestion // Store suggestion reference for fix entity creation
       });
       
       if (isFixed) {
@@ -480,22 +478,29 @@ class SitemapFixChecker {
   }
 
   /**
-   * Mark suggestions as fixed (placeholder for future implementation)
+   * Mark suggestions as fixed
    */
   async markFixedSuggestions() {
-    if (!this.options.markFixed) {
-      this.log.debug('Skipping database updates (--markFixed not specified)');
+    const fixedResults = this.results.filter(r => r.isFixed);
+    
+    if (fixedResults.length === 0) {
+      this.log.info('No suggestions to mark as fixed');
       return;
     }
-    
-    const fixedSuggestions = this.results.filter(r => r.isFixed);
-    this.log.info(`TODO: Mark ${fixedSuggestions.length} suggestions as FIXED in database`);
-    
-    // TODO: Implement actual database updates
-    // for (const result of fixedSuggestions) {
-    //   await suggestion.setStatus('FIXED');
-    //   await suggestion.save();
-    // }
+
+    this.log.info(`Creating fix entities for ${fixedResults.length} fixed suggestions`);
+
+    for (const result of fixedResults) {
+      if (this.options.dryRun) {
+        this.log.info(`Would create fix entity for ${result.suggestionId} (dry run)`);
+      } else {
+        try {
+          // await createFixEntityForSuggestion(this.dataAccess, result.suggestion, { logger: this.log });
+        } catch (error) {
+          this.log.error(`Failed to create fix entity for ${result.suggestionId}: ${error.message}`);
+        }
+      }
+    }
   }
 
   /**

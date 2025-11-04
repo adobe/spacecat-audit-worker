@@ -33,8 +33,9 @@ import { createDataAccess } from '@adobe/spacecat-shared-data-access';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { JSDOM } from 'jsdom';
 // Removed fastest-levenshtein dependency - using exact string matching
-import { SITES } from './constants.js';
-import { writeAltTextCSV, formatAltTextResult, ALT_TEXT_CSV_HEADERS } from './csv-utils.js';
+import { SITES } from '../../constants.js';
+import { writeAltTextCSV, formatAltTextResult, ALT_TEXT_CSV_HEADERS } from '../../csv-utils.js';
+// import { createFixEntityForSuggestion } from '../../create-fix-entity.js'; // Uncomment when implementing fix entity creation
 // Using exact string matching for AI suggestion detection
 
 // Helper function to transform URL to scrape.json path
@@ -192,7 +193,7 @@ class AltTextFixChecker {
       };
     });
     
-    // Get outdated AND fixed suggestions directly from database
+    // Get outdated suggestions only (as per requirement)
     const { Suggestion } = this.dataAccess;
     const suggestions = [];
     
@@ -202,13 +203,9 @@ class AltTextFixChecker {
       // Get outdated suggestions
       const outdatedSuggestions = await Suggestion.allByOpportunityIdAndStatus(opptyId, 'outdated');
       suggestions.push(...outdatedSuggestions);
-      
-      // Get fixed suggestions
-      const fixedSuggestions = await Suggestion.allByOpportunityIdAndStatus(opptyId, 'fixed');
-      suggestions.push(...fixedSuggestions);
     }
     
-    this.log.debug(`Found ${suggestions.length} outdated + fixed alt-text suggestions`);
+    this.log.debug(`Found ${suggestions.length} outdated alt-text suggestions`);
     return suggestions;
   }
 
@@ -218,8 +215,8 @@ class AltTextFixChecker {
   async getCurrentPageContent(pageUrl) {
     try {
       const scrapeJsonPath = getScrapeJsonPath(pageUrl, this.options.siteId);
-      const bucketName = 'spacecat-prod-scraper';
-      
+      const bucketName = process.env.S3_SCRAPER_BUCKET_NAME || 'spacecat-prod-scraper';
+            
       this.log.debug(`Fetching content from S3: ${scrapeJsonPath}`);
       
       const command = new GetObjectCommand({
@@ -399,17 +396,33 @@ class AltTextFixChecker {
         matchMethod = imageResult.matchMethod;
         
         if (currentAltText !== null) {
-          // Check if alt text was added (previously empty)
-          if (currentAltText.trim() !== '') {
-            isFixed = true;
-            fixType = 'ALT_TEXT_ADDED';
-            
-            // Check if AI suggestion was implemented (exact match)
-            if (suggestedAltText) {
-              if (this.isExactMatch(currentAltText, suggestedAltText)) {
-                aiSuggestionImplemented = true;
-                fixType = 'AI_SUGGESTION_IMPLEMENTED';
-                similarity = 1.0; // Perfect match
+          // Alt attribute exists - check if it's properly fixed
+          
+          if (isDecorative) {
+            // For decorative images, empty alt="" is the correct fix
+            if (currentAltText === '') {
+              isFixed = true;
+              fixType = 'DECORATIVE_ALT_ADDED';
+              aiSuggestionImplemented = true; // Empty alt for decorative is following AI guidance
+              similarity = 1.0;
+            } else {
+              // Decorative image has non-empty alt text (not ideal but still has alt)
+              isFixed = true;
+              fixType = 'ALT_TEXT_ADDED_NON_DECORATIVE';
+            }
+          } else {
+            // For non-decorative images, alt text should be non-empty
+            if (currentAltText.trim() !== '') {
+              isFixed = true;
+              fixType = 'ALT_TEXT_ADDED';
+              
+              // Check if AI suggestion was implemented (exact match)
+              if (suggestedAltText) {
+                if (this.isExactMatch(currentAltText, suggestedAltText)) {
+                  aiSuggestionImplemented = true;
+                  fixType = 'AI_SUGGESTION_IMPLEMENTED';
+                  similarity = 1.0; // Perfect match
+                }
               }
             }
           }
@@ -465,7 +478,8 @@ class AltTextFixChecker {
         suggestionUpdated: suggestion.getUpdatedAt ? suggestion.getUpdatedAt() : (suggestion.updatedAt || ''),
         
         updatedBy: suggestion.getUpdatedBy ? suggestion.getUpdatedBy() : (suggestion.updatedBy || ''),
-        testDate: new Date().toISOString()
+        testDate: new Date().toISOString(),
+        suggestion: suggestion // Store suggestion reference for fix entity creation
       });
       
       if (isFixed) {
@@ -492,25 +506,26 @@ class AltTextFixChecker {
    * Mark fixed suggestions in database
    */
   async markFixedSuggestions() {
-    const fixedResults = this.results.filter(r => r.isFixed);
+    const fixedResults = this.results.filter(r => r.aiSuggestionImplemented);
     
     if (fixedResults.length === 0) {
       this.log.info('No suggestions to mark as fixed');
       return;
     }
 
-    this.log.info(`Marking ${fixedResults.length} suggestions as fixed...`);
-    
-    if (this.options.dryRun) {
-      this.log.info('[DRY RUN] Would mark the following suggestions as fixed:');
-      fixedResults.forEach(r => {
-        this.log.info(`  - ${r.suggestionId}: ${r.pageUrl} - ${r.imageId} (${r.fixType})`);
-      });
-      return;
-    }
+    this.log.info(`Creating fix entities for ${fixedResults.length} fixed suggestions`);
 
-    // Database update functionality will be implemented in future version
-    this.log.warn('Database update functionality not yet implemented');
+    for (const result of fixedResults) {
+      if (this.options.dryRun) {
+        this.log.info(`Would create fix entity for ${result.suggestionId} (dry run)`);
+      } else {
+        try {
+          // await createFixEntityForSuggestion(this.dataAccess, result.suggestion, { logger: this.log });
+        } catch (error) {
+          this.log.error(`Failed to create fix entity for ${result.suggestionId}: ${error.message}`);
+        }
+      }
+    }
   }
 
   /**

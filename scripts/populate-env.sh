@@ -1,6 +1,12 @@
 #!/bin/bash
 
 # Define the secret name and region
+unset AWS_ACCESS_KEY_ID    
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+
+aws sts get-caller-identity
+
 SECRET_NAME="/helix-deploy/spacecat-services/audit-worker/latest"
 REGION="us-east-1"
 
