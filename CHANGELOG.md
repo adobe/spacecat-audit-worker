@@ -1,3 +1,31 @@
+## [1.225.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.225.1...v1.225.2) (2025-11-03)
+
+
+### Bug Fixes
+
+* send wait timeout for scraping metatags ([#1391](https://github.com/adobe/spacecat-audit-worker/issues/1391)) ([eb72c7a](https://github.com/adobe/spacecat-audit-worker/commit/eb72c7a386866e5bbda72d353a1e6ad917f62009))
+
+## [1.225.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.225.0...v1.225.1) (2025-11-03)
+
+
+### Bug Fixes
+
+* prerender audit using spacecat-shared-html-analyzer pkg ([#1501](https://github.com/adobe/spacecat-audit-worker/issues/1501)) ([66d0cf4](https://github.com/adobe/spacecat-audit-worker/commit/66d0cf41555439762fdab8619e5e7251e4429363))
+
+# [1.225.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.224.0...v1.225.0) (2025-11-03)
+
+
+### Features
+
+* implement accessibility mobile audit data processing (V1) ([#1412](https://github.com/adobe/spacecat-audit-worker/issues/1412)) ([ae0b920](https://github.com/adobe/spacecat-audit-worker/commit/ae0b9201863613a1c235cf01b905cddeb53d4082))
+
+# [1.224.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.223.3...v1.224.0) (2025-11-03)
+
+
+### Features
+
+* **llmo-customer-analysis:** remove geo-brand-presence triggers for acom ([#1499](https://github.com/adobe/spacecat-audit-worker/issues/1499)) ([0517d20](https://github.com/adobe/spacecat-audit-worker/commit/0517d20e0138c29d2100802c1e3b35f3ae98435b))
+
 ## [1.223.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.223.2...v1.223.3) (2025-11-02)
 
 

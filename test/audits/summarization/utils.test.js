@@ -10,317 +10,166 @@
  * governing permissions and limitations under the License.
  */
 
-import { expect, use } from 'chai';
-import sinon from 'sinon';
-import sinonChai from 'sinon-chai';
-import { getSuggestionValue } from '../../../src/summarization/utils.js';
+/* eslint-env mocha */
 
-use(sinonChai);
+import { expect } from 'chai';
+import { getJsonSummarySuggestion } from '../../../src/summarization/utils.js';
 
-describe('Summarization Utils', () => {
-  let mockLog;
-
-  beforeEach(() => {
-    mockLog = {
-      info: sinon.stub(),
-      warn: sinon.stub(),
-      error: sinon.stub(),
-    };
-  });
-
-  afterEach(() => {
-    sinon.restore();
-  });
-
-
-  describe('getSuggestionValue', () => {
-    it('should format suggestions with all content types', () => {
+describe('summarization utils', () => {
+  describe('getJsonSummarySuggestion', () => {
+    it('should use default values when heading_selector and insertion_method are not provided for page summary', () => {
       const suggestions = [
         {
           pageUrl: 'https://example.com/page1',
           pageSummary: {
-            title: 'Page Title 1',
-            summary: 'This is a page summary',
-            readability_score: 70.5,
-            word_count: 25,
-            brand_consistency_score: 85,
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            // heading_selector is missing
+            // insertion_method is missing
           },
-          keyPoints: {
-            items: ['Key point 1', 'Key point 2'],
-            brand_consistency_score: 90,
+          sectionSummaries: [],
+        },
+      ];
+
+      const result = getJsonSummarySuggestion(suggestions);
+
+      expect(result).to.be.an('array');
+      expect(result).to.have.length(1);
+      
+      // Verify default values are used
+      expect(result[0].transformRules.selector).to.equal('body');
+      expect(result[0].transformRules.action).to.equal('appendChild');
+      expect(result[0].summarizationText).to.equal('Test summary');
+      expect(result[0].fullPage).to.be.true;
+      expect(result[0].url).to.equal('https://example.com/page1');
+      expect(result[0].title).to.equal('Test Page');
+    });
+
+    it('should use default value when insertion_method is not provided for section summary', () => {
+      const suggestions = [
+        {
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
           },
           sectionSummaries: [
             {
               title: 'Section 1',
-              summary: 'Section summary 1',
-              readability_score: 65.2,
-              word_count: 15,
-              brand_consistency_score: 88,
+              formatted_summary: 'Section summary',
+              heading_selector: 'h2',
+              // insertion_method is missing
             },
           ],
         },
       ];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getJsonSummarySuggestion(suggestions);
 
-      expect(result).to.include('## 1. Page Title 1');
-      expect(result).to.include('[/page1](https://example.com/page1)');
-      expect(result).to.include('### Add summary ideally before the main content starts');
-      expect(result).to.include('**Summary**');
-      expect(result).to.include('This is a page summary');
-      expect(result).to.include('**Key points**');
-      expect(result).to.include('- Key point 1');
-      expect(result).to.include('- Key point 2');
-      expect(result).to.include('### Add section summaries above or below section content');
-      expect(result).to.include('*Section:* **Section 1**\n\nSection summary 1');
+      expect(result).to.be.an('array');
+      expect(result).to.have.length(2);
+      
+      // Check page-level suggestion
+      expect(result[0].transformRules.selector).to.equal('h1');
+      expect(result[0].transformRules.action).to.equal('insertAfter');
+      
+      // Check section-level suggestion uses default
+      expect(result[1].transformRules.selector).to.equal('h2');
+      expect(result[1].transformRules.action).to.equal('insertAfter'); // default value
+      expect(result[1].summarizationText).to.equal('Section summary');
+      expect(result[1].fullPage).to.be.false;
+      expect(result[1].url).to.equal('https://example.com/page1');
+      expect(result[1].title).to.equal('Section 1');
     });
 
-    it('should skip suggestions with no meaningful content', () => {
-      const suggestions = [
-        {
-          pageUrl: 'https://example.com/empty',
-          pageSummary: { title: '', summary: '' },
-          keyPoints: { items: [] },
-          sectionSummaries: [],
-        },
-        {
-          pageUrl: 'https://example.com/valid',
-          pageSummary: {
-            title: 'Valid Page',
-            summary: 'Valid summary',
-          },
-        },
-      ];
-
-      const result = getSuggestionValue(suggestions, mockLog);
-
-      expect(result).to.include('## 1. Valid Page');
-      expect(result).to.include('[/valid](https://example.com/valid)');
-      expect(result).to.not.include('https://example.com/empty');
-      expect(mockLog.info).to.have.been.calledWith('Skipping suggestion with no meaningful content for URL: https://example.com/empty');
-    });
-
-    it('should handle suggestions with only page summary', () => {
-      const suggestions = [
-        {
-          pageUrl: 'https://example.com/summary-only',
-          pageSummary: {
-            title: 'Summary Only Page',
-            summary: 'This page has only a summary',
-            readability_score: 80,
-          },
-        },
-      ];
-
-      const result = getSuggestionValue(suggestions, mockLog);
-
-      expect(result).to.include('## 1. Summary Only Page');
-      expect(result).to.include('[/summary-only](https://example.com/summary-only)');
-      expect(result).to.include('### Add summary ideally before the main content starts');
-      expect(result).to.include('**Summary**');
-      expect(result).to.include('This page has only a summary');
-      expect(result).to.not.include('**Key points:**');
-      expect(result).to.not.include('### Add section summaries above or below section content');
-    });
-
-    it('should handle suggestions with only key points', () => {
-      const suggestions = [
-        {
-          pageUrl: 'https://example.com/keypoints-only',
-          keyPoints: {
-            items: ['Point 1', 'Point 2', 'Point 3'],
-            word_count: 20,
-            readability_score: 60,
-          },
-        },
-      ];
-
-      const result = getSuggestionValue(suggestions, mockLog);
-
-      expect(result).to.include('## 1. Page 1');
-      expect(result).to.include('[/keypoints-only](https://example.com/keypoints-only)');
-      expect(result).to.include('### Add summary ideally before the main content starts');
-      expect(result).to.include('**Key points**');
-      expect(result).to.include('- Point 1');
-      expect(result).to.include('- Point 2');
-      expect(result).to.include('- Point 3');
-      expect(result).to.not.include('**Summary:**');
-      expect(result).to.not.include('### Add section summaries above or below section content');
-    });
-
-    it('should handle suggestions with only section summaries', () => {
-      const suggestions = [
-        {
-          pageUrl: 'https://example.com/sections-only',
-          sectionSummaries: [
-            {
-              title: 'Section A',
-              summary: 'Summary A',
-              readability_score: 60,
-            },
-            {
-              title: 'Section B',
-              summary: 'Summary B',
-              word_count: 20,
-            },
-          ],
-        },
-      ];
-
-      const result = getSuggestionValue(suggestions, mockLog);
-
-      expect(result).to.include('## 1. Page 1');
-      expect(result).to.include('[/sections-only](https://example.com/sections-only)');
-      expect(result).to.include('### Add summary ideally before the main content starts');
-      expect(result).to.include('### Add section summaries above or below section content');
-      expect(result).to.include('*Section:* **Section A**\n\nSummary A');
-      expect(result).to.include('*Section:* **Section B**\n\nSummary B');
-      expect(result).to.not.include('**Summary:**');
-      expect(result).to.not.include('**Key points:**');
-    });
-
-    it('should handle multiple suggestions with correct numbering', () => {
+    it('should handle suggestions with all properties provided', () => {
       const suggestions = [
         {
           pageUrl: 'https://example.com/page1',
-          pageSummary: { title: 'Page 1', summary: 'Summary 1' },
+          pageSummary: {
+            title: 'Test Page',
+            formatted_summary: 'Test summary',
+            heading_selector: 'h1',
+            insertion_method: 'insertBefore',
+          },
+          sectionSummaries: [
+            {
+              title: 'Section 1',
+              formatted_summary: 'Section summary',
+              heading_selector: 'h2',
+              insertion_method: 'appendChild',
+            },
+          ],
         },
+      ];
+
+      const result = getJsonSummarySuggestion(suggestions);
+
+      expect(result).to.be.an('array');
+      expect(result).to.have.length(2);
+      
+      // Check all values are used as provided
+      expect(result[0].transformRules.selector).to.equal('h1');
+      expect(result[0].transformRules.action).to.equal('insertBefore');
+      expect(result[1].transformRules.selector).to.equal('h2');
+      expect(result[1].transformRules.action).to.equal('appendChild');
+    });
+
+    it('should handle empty suggestions array', () => {
+      const result = getJsonSummarySuggestion([]);
+      
+      expect(result).to.be.an('array');
+      expect(result).to.have.length(0);
+    });
+
+    it('should handle multiple suggestions with mixed defaults', () => {
+      const suggestions = [
         {
-          pageUrl: 'https://example.com/empty',
-          pageSummary: { title: '', summary: '' },
-          keyPoints: { items: [] },
+          pageUrl: 'https://example.com/page1',
+          pageSummary: {
+            title: 'Page 1',
+            formatted_summary: 'Summary 1',
+            // No heading_selector or insertion_method
+          },
           sectionSummaries: [],
         },
         {
           pageUrl: 'https://example.com/page2',
-          pageSummary: { title: 'Page 2', summary: 'Summary 2' },
-        },
-      ];
-
-      const result = getSuggestionValue(suggestions, mockLog);
-
-      expect(result).to.include('## 1. Page 1');
-      expect(result).to.include('[/page1](https://example.com/page1)');
-      expect(result).to.include('## 2. Page 2');
-      expect(result).to.include('[/page2](https://example.com/page2)');
-      expect(result).to.not.include('https://example.com/empty');
-    });
-
-    it('should handle suggestions with missing pageUrl', () => {
-      const suggestions = [
-        {
-          pageSummary: { title: 'No URL Page', summary: 'This has no URL' },
-        },
-        {
-          pageUrl: 'https://example.com/valid',
-          pageSummary: { title: 'Valid Page', summary: 'Valid summary' },
-        },
-      ];
-
-      const result = getSuggestionValue(suggestions, mockLog);
-
-      expect(result).to.include('## 1. Valid Page');
-      expect(result).to.include('[/valid](https://example.com/valid)');
-      expect(result).to.not.include('No URL Page');
-      expect(mockLog.warn).to.have.been.calledWith(sinon.match(/No pageUrl found for suggestion/));
-    });
-
-    it('should handle empty suggestions array', () => {
-      const suggestions = [];
-
-      const result = getSuggestionValue(suggestions, mockLog);
-
-      expect(result).to.equal('');
-    });
-
-    it('should filter out empty key points and section summaries', () => {
-      const suggestions = [
-        {
-          pageUrl: 'https://example.com/mixed',
-          keyPoints: {
-            items: ['Valid point', '', '   ', 'Another valid point'],
-          },
-          sectionSummaries: [
-            { title: 'Valid Section', summary: 'Valid summary' },
-            { title: '', summary: 'Empty title' },
-            { title: 'Empty Summary', summary: '' },
-            { title: '   ', summary: '   ' },
-          ],
-        },
-      ];
-
-      const result = getSuggestionValue(suggestions, mockLog);
-
-      expect(result).to.include('- Valid point');
-      expect(result).to.include('- Another valid point');
-      expect(result).to.not.include('- \n');
-      expect(result).to.not.include('-    \n');
-      expect(result).to.include('*Section:* **Valid Section**\n\nValid summary');
-      expect(result).to.not.include('*Section:* **:** Empty title');
-      expect(result).to.not.include('####    \n');
-    });
-
-    it('should handle suggestions with whitespace-only content', () => {
-      const suggestions = [
-        {
-          pageUrl: 'https://example.com/whitespace',
-          pageSummary: { title: '   ', summary: '   ' },
-          keyPoints: { items: ['   ', '\t', '\n'] },
-          sectionSummaries: [
-            { title: '   ', summary: '   ' },
-          ],
-        },
-      ];
-
-      const result = getSuggestionValue(suggestions, mockLog);
-
-      expect(result).to.equal('');
-      expect(mockLog.info).to.have.been.calledWith('Skipping suggestion with no meaningful content for URL: https://example.com/whitespace');
-    });
-
-    it('should use formatted content when available', () => {
-      const suggestions = [
-        {
-          pageUrl: 'https://example.com/formatted',
           pageSummary: {
-            title: 'Formatted Test',
-            summary: 'Plain text summary',
-            formatted_summary: '**Bold** text summary with *emphasis*',
-            readability_score: 70,
-            word_count: 6,
-          },
-          keyPoints: {
-            items: ['Plain key point'],
-            formatted_items: ['**Bold** key point with *emphasis*'],
-            readability_score: 65,
-            word_count: 4,
+            title: 'Page 2',
+            formatted_summary: 'Summary 2',
+            heading_selector: 'h1',
+            insertion_method: 'insertAfter',
           },
           sectionSummaries: [
             {
-              title: 'Formatted Section',
-              summary: 'Plain section summary',
-              formatted_summary: '**Bold** section summary with *emphasis*',
-              readability_score: 60,
-              word_count: 5,
+              title: 'Section A',
+              formatted_summary: 'Section A summary',
+              heading_selector: 'h3',
+              // No insertion_method
             },
           ],
         },
       ];
 
-      const result = getSuggestionValue(suggestions, mockLog);
+      const result = getJsonSummarySuggestion(suggestions);
 
-      expect(result).to.include('## 1. Formatted Test');
-      expect(result).to.include('[/formatted](https://example.com/formatted)');
-      expect(result).to.include('### Add summary ideally before the main content starts');
-      expect(result).to.include('**Summary**');
-      expect(result).to.include('**Bold** text summary with *emphasis*');
-      expect(result).to.not.include('Plain text summary');
-      expect(result).to.include('**Key points**');
-      expect(result).to.include('- **Bold** key point with *emphasis*');
-      expect(result).to.not.include('- Plain key point');
-      expect(result).to.include('### Add section summaries above or below section content');
-      expect(result).to.include('*Section:* **Formatted Section**\n\n**Bold** section summary with *emphasis*');
-      expect(result).to.not.include('*Section:* **Formatted Section**\n\nPlain section summary');
+      expect(result).to.have.length(3);
+      
+      // First page uses defaults
+      expect(result[0].transformRules.selector).to.equal('body');
+      expect(result[0].transformRules.action).to.equal('appendChild');
+      
+      // Second page uses provided values
+      expect(result[1].transformRules.selector).to.equal('h1');
+      expect(result[1].transformRules.action).to.equal('insertAfter');
+      
+      // Section uses default for insertion_method
+      expect(result[2].transformRules.selector).to.equal('h3');
+      expect(result[2].transformRules.action).to.equal('insertAfter');
     });
   });
 });
+
