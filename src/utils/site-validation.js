@@ -39,14 +39,15 @@ export async function checkSiteRequiresValidation(site, context) {
     });
     const tierClient = await TierClient.createForSite(context, site, 'ASO');
     const { entitlement } = await tierClient.checkValidEntitlement();
+    const tier = entitlement?.tier ?? entitlement?.record?.tier ?? null;
     context?.log?.debug?.('sugandhg - Entitlement check result', {
       hasEntitlement: Boolean(entitlement),
-      tier: entitlement?.tier ?? null,
+      tier,
     });
-    if (entitlement?.tier === 'PAID') {
+    if (tier === 'PAID') {
       context?.log?.info?.('sugandhg - checkSiteRequiresValidation: PAID entitlement for ASO, returning true (requires validation)', {
         siteId: site.getId?.(),
-        tier: entitlement?.tier ?? null,
+        tier,
       });
       return true;
     }

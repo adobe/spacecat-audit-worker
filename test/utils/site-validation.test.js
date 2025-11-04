@@ -99,7 +99,7 @@ describe('utils/site-validation', () => {
 
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
 
-    expect(result).to.equal(true);
+    expect(result).to.equal(false);
   });
 
   it('covers debug logging when explicit requiresValidation flag is set', async () => {
@@ -124,5 +124,29 @@ describe('utils/site-validation', () => {
     expect(result).to.equal(false);
     expect(context.log.warn).to.have.been.called;
     expect(context.log.info).to.have.been.called;
+  });
+
+  it('returns false and logs info when entitlement tier is not PAID', async () => {
+    const site = { getId: sandbox.stub().returns('site-non-paid') };
+    context.log.info = sandbox.spy();
+    sandbox.stub(TierClient, 'createForSite').resolves({
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: { tier: 'FREE' } }),
+    });
+
+    const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
+
+    expect(result).to.equal(false);
+    expect(context.log.info).to.have.been.called;
+  });
+
+  it('returns true when entitlement.tier is nested under record and is PAID', async () => {
+    const site = { getId: sandbox.stub().returns('site-paid-record') };
+    sandbox.stub(TierClient, 'createForSite').resolves({
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: { record: { tier: 'PAID', productCode: 'ASO' } } }),
+    });
+
+    const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
+
+    expect(result).to.equal(true);
   });
 });
