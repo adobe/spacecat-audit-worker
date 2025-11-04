@@ -73,9 +73,10 @@
   },
   "dependencies": {
     "@adobe/fetch": "4.2.3",
-    "@adobe/helix-shared-secrets": "https://gitpkg.vercel.app/adobe/helix-shared/packages/helix-shared-secrets?sm-custom-endpoint",
+    "@adobe/helix-shared-secrets": "2.3.0",
     "@adobe/helix-shared-wrap": "2.0.2",
     "@adobe/helix-status": "10.1.5",
+    "@adobe/helix-universal": "5.3.0",
     "@adobe/helix-universal-logger": "3.0.28",
     "@adobe/spacecat-helix-content-sdk": "1.4.26",
     "@adobe/spacecat-shared-ahrefs-client": "1.9.12",
@@ -120,7 +121,7 @@
   "devDependencies": {
     "@adobe/eslint-config-helix": "3.0.12",
     "@adobe/helix-deploy": "https://gitpkg.now.sh/alinarublea/helix-deploy?main",
-    "@adobe/helix-universal": "github:adobe/helix-universal#sm-custom-endpoint",
+    "@adobe/helix-universal": "5.3.0",
     "@adobe/helix-universal-devserver": "1.1.141",
     "@adobe/semantic-release-coralogix": "1.1.40",
     "@adobe/semantic-release-skms-cmr": "1.1.5",
