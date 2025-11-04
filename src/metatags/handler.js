@@ -238,6 +238,7 @@ export async function runAuditAndGenerateSuggestions(context) {
     site, audit, finalUrl, log, scrapeResultPaths,
   } = context;
 
+  log.debug(`scrapeResultPaths: ${JSON.stringify(scrapeResultPaths)}`);
   log.info(`Start runAuditAndGenerateSuggestions step for: ${site.getId()}`);
 
   const {
@@ -297,7 +298,9 @@ export async function runAuditAndGenerateSuggestions(context) {
 export async function importTopPages(context) {
   const { site, log, finalUrl } = context;
   const s3BucketPath = `scrapes/${site.getId()}/`;
+
   log.info(`importTopPages step requested scraping for ${site.getId()}, bucket path: ${s3BucketPath}`);
+
   return {
     type: 'top-pages',
     siteId: site.getId(),
@@ -313,7 +316,9 @@ export async function submitForScraping(context) {
     log,
   } = context;
   const { SiteTopPage } = dataAccess;
+
   log.info(`Start submitForScraping step for: ${site.getId()}`);
+
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
