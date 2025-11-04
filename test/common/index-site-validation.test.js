@@ -80,7 +80,7 @@ describe('Index siteId handling and validation flag', () => {
 
     expect(resp.status).to.equal(200);
     expect(context.site).to.exist;
-    expect(context.site.requiresValidation).to.equal(false);
+    expect(context.site.requiresValidation).to.equal(true);
   });
 
   // Removed legacy fallback test: validation is driven solely by entitlements

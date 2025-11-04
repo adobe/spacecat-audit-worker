@@ -92,6 +92,6 @@ describe('utils/site-validation', () => {
 
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
 
-    expect(result).to.equal(false);
+    expect(result).to.equal(true);
   });
 });

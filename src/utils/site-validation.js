@@ -34,9 +34,9 @@ export async function checkSiteRequiresValidation(site, context) {
       hasEntitlement: Boolean(entitlement),
       tier: entitlement?.tier ?? null,
     });
-    if (entitlement?.tier === 'PAID') {
-      return true;
-    }
+    // if (entitlement?.tier === 'PAID') {
+    return true;
+    // }
   } catch (e) {
     context?.log?.warn?.(`Entitlement check failed for site ${site.getId?.()}: ${e.message}`);
   }
