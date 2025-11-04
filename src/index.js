@@ -13,7 +13,7 @@ import wrap from '@adobe/helix-shared-wrap';
 import { helixStatus } from '@adobe/helix-status';
 import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
-import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-utils';
+import { resolveSecretsName, sqsEventAdapter, logWrapper } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 
 import sqs from './support/sqs.js';
@@ -155,15 +155,15 @@ function getElapsedSeconds(startTime) {
  * @returns {Response} a response
  */
 async function run(message, context) {
-  const { log } = context;
+  const { contextualLog } = context;
   const { type, siteId } = message;
 
-  log.info(`Received ${type} audit request for: ${siteId}. Message:`, message);
+  contextualLog.info(`Received ${type} audit request for: ${siteId}. Message:`, message);
 
   const handler = HANDLERS[type];
   if (!handler) {
     const msg = `no such audit type: ${type}`;
-    log.error(msg);
+    contextualLog.error(msg);
     return notFound();
   }
 
@@ -172,18 +172,19 @@ async function run(message, context) {
   try {
     const result = await (typeof handler.run === 'function' ? handler.run(message, context) : handler(message, context));
 
-    log.info(`${type} audit for ${siteId} completed in ${getElapsedSeconds(startTime)} seconds`);
+    contextualLog.info(`${type} audit for ${siteId} completed in ${getElapsedSeconds(startTime)} seconds`);
 
     return result;
   } catch (e) {
-    log.error(`${type} audit for ${siteId} failed after ${getElapsedSeconds(startTime)} seconds. `, e);
+    contextualLog.error(`${type} audit for ${siteId} failed after ${getElapsedSeconds(startTime)} seconds. `, e);
     return internalServerError();
   }
 }
 
 export const main = wrap(run)
-  .with(dataAccess)
   .with(sqsEventAdapter)
+  .with(logWrapper)
+  .with(dataAccess)
   .with(sqs)
   .with(s3Client)
   .with(secrets, { name: resolveSecretsName })
