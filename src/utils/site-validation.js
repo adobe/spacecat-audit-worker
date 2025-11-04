@@ -19,28 +19,44 @@ import { TierClient } from '@adobe/spacecat-shared-tier-client';
  */
 export async function checkSiteRequiresValidation(site, context) {
   if (!site) {
+    context?.log?.debug?.('sugandhg - checkSiteRequiresValidation: no site provided, return false');
     return false;
   }
   // Check if the site has the requiresValidation flag set directly
   if (typeof site.requiresValidation === 'boolean') {
+    context?.log?.debug?.('sugandhg - checkSiteRequiresValidation: explicit flag present on site', {
+      siteId: site.getId?.(),
+      requiresValidation: site.requiresValidation,
+    });
     return site.requiresValidation;
   }
 
   // Entitlement-driven: require validation only for PAID tier
   try {
+    context?.log?.debug?.('sugandhg - checkSiteRequiresValidation: calling TierClient.createForSite', {
+      siteId: site.getId?.(),
+      productCode: 'ASO',
+    });
     const tierClient = await TierClient.createForSite(context, site, 'ASO');
     const { entitlement } = await tierClient.checkValidEntitlement();
-    context?.log?.debug?.('Entitlement check result', {
+    context?.log?.debug?.('sugandhg - Entitlement check result', {
       hasEntitlement: Boolean(entitlement),
       tier: entitlement?.tier ?? null,
     });
     // if (entitlement?.tier === 'PAID') {
+    context?.log?.info?.('sugandhg - checkSiteRequiresValidation: entitlement found, returning true (requires validation)', {
+      siteId: site.getId?.(),
+      tier: entitlement?.tier ?? null,
+    });
     return true;
     // }
   } catch (e) {
-    context?.log?.warn?.(`Entitlement check failed for site ${site.getId?.()}: ${e.message}`);
+    context?.log?.warn?.(`sugandhg - Entitlement check failed for site ${site.getId?.()}: ${e.message}`);
   }
 
   // No legacy fallback: if no valid entitlement, do not require validation
+  context?.log?.info?.('sugandhg - checkSiteRequiresValidation: no entitlement, returning false (no validation required)', {
+    siteId: site.getId?.(),
+  });
   return false;
 }

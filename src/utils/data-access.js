@@ -232,6 +232,11 @@ export async function syncSuggestions({
   // Prepare new suggestions
   const { site } = context;
   const requiresValidation = Boolean(site?.requiresValidation);
+  log.debug('sugandhg - syncSuggestions: preparing new suggestions', {
+    siteId: site?.getId?.(),
+    requiresValidation,
+    newDataCount: newData.length,
+  });
 
   const newSuggestions = newData
     .filter((data) => !existingSuggestions.some(
@@ -249,7 +254,9 @@ export async function syncSuggestions({
   // Add new suggestions if any
   if (newSuggestions.length > 0) {
     const suggestions = await opportunity.addSuggestions(newSuggestions);
-    log.debug(`New suggestions = ${suggestions.length}: ${JSON.stringify(suggestions, null, 2)}`);
+    const sample = Array.isArray(suggestions) ? suggestions.slice(0, 3)
+      : suggestions.createdItems || [];
+    log.debug(`sugandhg - New suggestions = ${Array.isArray(suggestions) ? suggestions.length : (suggestions.createdItems?.length || 0)} (sample up to 3): ${JSON.stringify(sample, null, 2)}`);
 
     if (suggestions.errorItems?.length > 0) {
       log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);
