@@ -20,7 +20,7 @@ export function createOpportunityData() {
     description: 'Fixing broken Content Fragment requests by publishing missing content or setting up proper redirects ensures seamless API responses, prevents application errors and maintains consistent digital experiences across all touchpoints.',
     guidance: {
       steps: [
-        'Review the requested Content Fragment paths grouped by suggestion type.',
+        'Review the requested content fragment paths and their suggested alternatives.',
         'Compare each requested path with its suggested path to identify the issue and what changed.',
         'Generate a short, user-friendly description of the difference.',
       ],
