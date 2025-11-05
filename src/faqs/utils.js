@@ -39,6 +39,30 @@ export const SPREADSHEET_COLUMNS = {
 };
 
 /**
+ * Normalizes sources to an array of URL strings
+ * Sources can be strings, objects with 'url' key, or objects with 'link' key
+ * @param {Array} sources - Array of source objects or strings
+ * @returns {Array} Array of URL strings
+ */
+function normalizeSources(sources) {
+  if (!sources || !Array.isArray(sources)) {
+    return [];
+  }
+
+  return sources
+    .map((source) => {
+      if (typeof source === 'string') {
+        return source;
+      }
+      if (source && typeof source === 'object') {
+        return source.url || source.link || null;
+      }
+      return null;
+    })
+    .filter((url) => url !== null);
+}
+
+/**
  * Generates JSON FAQ suggestions with transform rules for code changes
  * Each question becomes a separate suggestion
  * @param {Array} faqs - Array of FAQ objects from Mystique
@@ -73,7 +97,7 @@ export function getJsonFaqSuggestion(faqs) {
         item: {
           question: suggestion.question,
           answer: suggestion.answer,
-          sources: suggestion.sources || [],
+          sources: normalizeSources(suggestion.sources),
           questionRelevanceReason: suggestion.questionRelevanceReason,
           answerSuitabilityReason: suggestion.answerSuitabilityReason,
         },

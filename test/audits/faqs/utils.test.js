@@ -45,7 +45,7 @@ describe('FAQ Utils', () => {
       expect(suggestions[0].topic).to.equal('photoshop');
       expect(suggestions[0].item.question).to.equal('How to use Photoshop?');
       expect(suggestions[0].item.answer).to.equal('Photoshop is a powerful image editing tool.');
-      expect(suggestions[0].item.sources).to.deep.equal([{ url: 'https://www.adobe.com/guides' }]);
+      expect(suggestions[0].item.sources).to.deep.equal(['https://www.adobe.com/guides']);
       expect(suggestions[0].item.questionRelevanceReason).to.equal('Relevant to photoshop');
       expect(suggestions[0].item.answerSuitabilityReason).to.equal('Good answer quality');
       expect(suggestions[0].transformRules).to.deep.equal({
@@ -258,7 +258,7 @@ describe('FAQ Utils', () => {
       expect(suggestions[0].url).to.equal('https://www.adobe.com/products/test2');
     });
 
-    it('should preserve sources in suggestions', () => {
+    it('should normalize sources to array of URL strings', () => {
       const faqs = [
         {
           url: 'https://www.adobe.com/products/test',
@@ -272,6 +272,8 @@ describe('FAQ Utils', () => {
               sources: [
                 { title: 'Source 1', url: 'https://example.com/1' },
                 { url: 'https://example.com/2' },
+                { link: 'https://example.com/3' },
+                'https://example.com/4',
               ],
             },
           ],
@@ -281,8 +283,10 @@ describe('FAQ Utils', () => {
       const suggestions = getJsonFaqSuggestion(faqs);
 
       expect(suggestions[0].item.sources).to.deep.equal([
-        { title: 'Source 1', url: 'https://example.com/1' },
-        { url: 'https://example.com/2' },
+        'https://example.com/1',
+        'https://example.com/2',
+        'https://example.com/3',
+        'https://example.com/4',
       ]);
     });
 
@@ -306,6 +310,66 @@ describe('FAQ Utils', () => {
       const suggestions = getJsonFaqSuggestion(faqs);
 
       expect(suggestions[0].item.sources).to.deep.equal([]);
+    });
+
+    it('should handle sources with only link key', () => {
+      const faqs = [
+        {
+          url: 'https://www.adobe.com/products/test',
+          topic: 'test',
+          suggestions: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
+              sources: [
+                { link: 'https://example.com/1' },
+                { link: 'https://example.com/2' },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const suggestions = getJsonFaqSuggestion(faqs);
+
+      expect(suggestions[0].item.sources).to.deep.equal([
+        'https://example.com/1',
+        'https://example.com/2',
+      ]);
+    });
+
+    it('should filter out invalid source entries', () => {
+      const faqs = [
+        {
+          url: 'https://www.adobe.com/products/test',
+          topic: 'test',
+          suggestions: [
+            {
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
+              sources: [
+                { url: 'https://example.com/1' },
+                null,
+                undefined,
+                {},
+                { title: 'No URL' },
+                'https://example.com/2',
+              ],
+            },
+          ],
+        },
+      ];
+
+      const suggestions = getJsonFaqSuggestion(faqs);
+
+      expect(suggestions[0].item.sources).to.deep.equal([
+        'https://example.com/1',
+        'https://example.com/2',
+      ]);
     });
 
   });
