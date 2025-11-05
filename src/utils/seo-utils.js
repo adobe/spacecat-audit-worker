@@ -44,10 +44,11 @@ const issueRankings = {
  * Trims whitespace from string or array of strings.
  * Used for cleaning scraped meta tag content (title, description, h1).
  * @param {string|string[]|null|undefined} value - Value to trim
- * @returns {string|string[]|null} - Trimmed value(s)
+ * @returns {string|string[]|null|undefined|*} - Trimmed value(s), or original value
+ * if not a string/array
  */
 export function trimTagValue(value) {
-  if (!value) {
+  if (value === null || value === undefined) {
     return value;
   }
   if (Array.isArray(value)) {
