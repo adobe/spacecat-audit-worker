@@ -112,13 +112,13 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
 
-      - name: Create ZIP File
-        run: zip -r spacecat-services--audit-worker-latest.zip .
+      - name: Copy Build Artifact
+        run: cp dist/spacecat-services/audit-worker@*.zip spacecat-services--audit-worker-latest.zip
         env:
           AWS_REGION: us-east-1
           AWS_ACCOUNT_ID: ${{secrets.AWS_ACCOUNT_ID_DEV}}
 
-      - name: Upload ZIP File
+      - name: Upload Build Artifact
         run: aws s3 cp spacecat-services--audit-worker-latest.zip s3://spacecat-artifacts-dev/spacecat-services--audit-worker-latest.zip
         env:
           AWS_REGION: us-east-1
