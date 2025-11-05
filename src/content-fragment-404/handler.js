@@ -25,6 +25,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 // TODO: Change to Audit.AUDIT_TYPES.CONTENT_FRAGMENT_404
 // See https://github.com/adobe/spacecat-shared/pull/1049
 export const AUDIT_TYPE = 'content-fragment-404';
+export const AUDIT_TYPE_AUTO_SUGGEST = 'content-fragment-404-auto-suggest';
 export const GUIDANCE_TYPE = `guidance:${AUDIT_TYPE}`;
 
 async function fetchContentFragment404s(context) {
@@ -33,7 +34,7 @@ async function fetchContentFragment404s(context) {
   const collector = await AthenaCollector.createFrom(context);
   const contentFragment404s = await collector.fetchContentFragment404s();
 
-  log.info(`Found ${contentFragment404s.length} content fragment 404s from ${collector.constructor.name}`);
+  log.info(`[Content Fragment 404] Found ${contentFragment404s.length} content fragment 404s from ${collector.constructor.name}`);
 
   return contentFragment404s;
 }
@@ -50,7 +51,7 @@ async function analyzeContentFragment404s(context, contentFragment404s) {
   const urls = contentFragment404s.map((item) => item.url || item);
   const suggestions = await strategy.analyze(urls);
 
-  log.info(`Found ${suggestions.length} suggestions for content fragment 404s`);
+  log.info(`[Content Fragment 404] Found ${suggestions.length} suggestions for content fragment 404s`);
 
   return suggestions.map((suggestion) => suggestion.toJSON());
 }
@@ -64,7 +65,7 @@ export async function createContentFragmentPathSuggestions(
   const { contentFragment404s, suggestions } = auditData.auditResult;
 
   if (!suggestions || suggestions.length === 0) {
-    log.info('No suggestions to create');
+    log.info('[Content Fragment 404] No suggestions to create');
     return;
   }
 
@@ -106,7 +107,7 @@ export async function createContentFragmentPathSuggestions(
     }),
   });
 
-  log.info(`Created ${suggestions.length} suggestions for opportunity ${opportunity.getId()}`);
+  log.info(`[Content Fragment 404] Created ${suggestions.length} suggestions for opportunity ${opportunity.getId()}`);
 }
 
 export async function enrichContentFragmentPathSuggestions(
@@ -122,7 +123,7 @@ export async function enrichContentFragmentPathSuggestions(
 
   const configuration = await Configuration.findLatest();
   if (!configuration.isHandlerEnabledForSite(AUDIT_TYPE, site)) {
-    log.info(`Auto-Suggest is disabled for site ${site.getId()}`);
+    log.info(`[Content Fragment 404] Auto-Suggest is disabled for site ${site.getId()}`);
     return;
   }
 
@@ -131,7 +132,7 @@ export async function enrichContentFragmentPathSuggestions(
     (opp) => opp.getType() === AUDIT_TYPE && opp.getAuditId() === auditData.id,
   );
   if (!opportunity) {
-    log.info('No opportunity found for this audit, skipping Mystique message');
+    log.info('[Content Fragment 404] No opportunity found for this audit, skipping Mystique message');
     return;
   }
 
@@ -140,7 +141,7 @@ export async function enrichContentFragmentPathSuggestions(
     SuggestionModel.STATUSES.NEW,
   );
   if (!syncedSuggestions || syncedSuggestions.length === 0) {
-    log.info('No suggestions to enrich, skipping Mystique message');
+    log.info('[Content Fragment 404] No suggestions to enrich, skipping Mystique message');
     return;
   }
 
@@ -166,7 +167,7 @@ export async function enrichContentFragmentPathSuggestions(
   };
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
 
-  log.info(`Sent ${syncedSuggestions.length} content fragment path suggestions to Mystique for enrichment`);
+  log.info(`[Content Fragment 404] Sent ${syncedSuggestions.length} content fragment path suggestions to Mystique for enrichment`);
 }
 
 export async function contentFragment404AuditRunner(baseURL, context, site) {
