@@ -1,3 +1,10 @@
+# [1.227.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.226.0...v1.227.0) (2025-11-05)
+
+
+### Features
+
+* github action for uploading sam build artifacts ([#1489](https://github.com/adobe/spacecat-audit-worker/issues/1489)) ([d0ee838](https://github.com/adobe/spacecat-audit-worker/commit/d0ee8380ea726779932980cb62e23ced9364138f))
+
 # [1.226.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.225.5...v1.226.0) (2025-11-04)
 
 
