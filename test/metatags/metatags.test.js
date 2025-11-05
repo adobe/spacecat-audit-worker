@@ -349,6 +349,29 @@ describe('Meta Tags', () => {
           },
         });
       });
+
+      it('should skip PDF files from scraping', async () => {
+        const topPages = [
+          { getUrl: () => 'http://example.com/document.pdf' },
+          { getUrl: () => 'http://example.com/guide.PDF' },
+          { getUrl: () => 'http://example.com/files/report.pdf' },
+          { getUrl: () => 'http://example.com/page1' },
+        ];
+        dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+        const result = await submitForScraping(context);
+
+        // Should only include the non-PDF page
+        expect(result.urls).to.have.lengthOf(1);
+        expect(result.urls[0]).to.deep.equal({ url: 'http://example.com/page1' });
+        expect(result).to.have.property('siteId', 'site-id');
+        expect(result).to.have.property('type', 'default');
+
+        // Verify log entries for skipped PDF files
+        expect(context.log.info).to.have.been.calledWith('[metatags 7a13fe74-d721-4b7e-9464-2c1fadc4f821] Skipping PDF file from scraping: http://example.com/document.pdf');
+        expect(context.log.info).to.have.been.calledWith('[metatags 7a13fe74-d721-4b7e-9464-2c1fadc4f821] Skipping PDF file from scraping: http://example.com/guide.PDF');
+        expect(context.log.info).to.have.been.calledWith('[metatags 7a13fe74-d721-4b7e-9464-2c1fadc4f821] Skipping PDF file from scraping: http://example.com/files/report.pdf');
+      });
     });
 
     describe('fetchAndProcessPageObject', () => {
@@ -519,6 +542,96 @@ describe('Meta Tags', () => {
           },
         });
         expect(logStub.error).to.not.have.been.called;
+      });
+
+      it('should skip pages with scraper error 403', async () => {
+        const mockScrapeResultWith403 = {
+          error: {
+            statusCode: 403,
+            message: 'Forbidden',
+          },
+          scrapeResult: {
+            tags: {},
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResultWith403),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/forbidden',
+          'scrapes/site-id/forbidden/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.warn).to.have.been.calledWith(
+          sinon.match(/Skipping page due to scraper error 403/),
+        );
+      });
+
+      it('should skip pages with scraper error 404', async () => {
+        const mockScrapeResultWith404 = {
+          error: {
+            statusCode: 404,
+            message: 'Not Found',
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResultWith404),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/notfound',
+          'scrapes/site-id/notfound/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.warn).to.have.been.calledWith(
+          sinon.match(/Skipping page due to scraper error 404/),
+        );
+      });
+
+      it('should skip pages with scraper error 500', async () => {
+        const mockScrapeResultWith500 = {
+          error: {
+            statusCode: 500,
+            message: 'Internal Server Error',
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResultWith500),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/error',
+          'scrapes/site-id/error/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.warn).to.have.been.calledWith(
+          sinon.match(/Skipping page due to scraper error 500/),
+        );
       });
     });
 

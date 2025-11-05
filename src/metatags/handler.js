@@ -34,6 +34,62 @@ import { validateDetectedIssues } from './ssr-meta-validator.js';
 const auditType = Audit.AUDIT_TYPES.META_TAGS;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
+/**
+ * Detects if scraped content is a CDN/server error page using deterministic signals.
+ * Only uses 100% deterministic combinations with no size assumptions.
+ * @param {Object} scrapeResult - The scrape result object from S3
+ * @param {string} url - The URL being checked
+ * @param {Object} log - Logger instance
+ * @returns {Object} { isError: boolean, reason: string|null }
+ */
+function isErrorPageContent(scrapeResult, url, log) {
+  log.info('[metatags] 7a13fe74-d721-4b7e-9464-2c1fadc4f821 - isErrorPageContent called');
+
+  const { tags, structuredData, canonical } = scrapeResult;
+
+  // If tags is undefined, return false (can't check for error)
+  if (!tags) {
+    return { isError: false, reason: null };
+  }
+
+  const title = tags.title?.toLowerCase() || '';
+  const h1Text = Array.isArray(tags.h1)
+    ? tags.h1.join(' ').toLowerCase()
+    : (tags.h1?.toLowerCase() || '');
+
+  // Check for HTTP status codes in title/h1
+  const httpStatusCodes = ['400', '401', '403', '404', '405', '500', '502', '503', '504'];
+  const hasStatusCodeInTitle = httpStatusCodes.some(
+    (code) => title.includes(code) || h1Text.includes(code),
+  );
+
+  if (!hasStatusCodeInTitle) {
+    return { isError: false, reason: null };
+  }
+
+  // Status code detected - check if ALL SEO elements are missing
+  // Error pages never have structured data, descriptions, or canonical tags
+
+  const hasNoMicrodata = !structuredData?.microdata
+    || Object.keys(structuredData.microdata).length === 0;
+  const hasNoRdfa = !structuredData?.rdfa
+    || Object.keys(structuredData.rdfa).length === 0;
+  const hasNoJsonld = !structuredData?.jsonld
+    || Object.keys(structuredData.jsonld).length === 0;
+  const hasNoStructuredData = hasNoMicrodata && hasNoRdfa && hasNoJsonld;
+
+  const hasNoDescription = !tags.description || tags.description.length < 10;
+  const hasNoCanonical = !canonical?.exists;
+
+  // Only flag as error if status code + ALL SEO elements missing
+  if (hasStatusCodeInTitle && hasNoStructuredData && hasNoDescription && hasNoCanonical) {
+    log.info(`[metatags 7a13fe74-d721-4b7e-9464-2c1fadc4f821] Error page detected for ${url}: HTTP status code in title/H1 + no SEO elements`);
+    return { isError: true, reason: 'HTTP status code in title + no SEO elements (no structured data, no description, no canonical)' };
+  }
+
+  return { isError: false, reason: null };
+}
+
 export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const opportunity = await convertToOpportunity(
     finalUrl,
@@ -93,8 +149,27 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
 
 export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, log) {
   const object = await getObjectFromKey(s3Client, bucketName, key, log);
+
+  // Check for scraper errors (403, 404, 5xx, etc.)
+  if (object?.error?.statusCode) {
+    log.warn(`[metatags] Skipping page due to scraper error ${object.error.statusCode} for ${url}: ${object.error.message || 'Unknown error'}`);
+    return null;
+  }
+
   if (!object?.scrapeResult?.tags || typeof object.scrapeResult.tags !== 'object') {
     log.error(`No Scraped tags found in S3 ${key} object`);
+    return null;
+  }
+
+  // Check if the page content is an error page (CloudFront, Cloudflare, Nginx, etc.)
+  // These pages get successfully scraped but contain error messages
+  const errorCheck = isErrorPageContent(object.scrapeResult, url, log);
+  if (errorCheck.isError) {
+    const title = object.scrapeResult.tags.title || 'N/A';
+    const h1 = Array.isArray(object.scrapeResult.tags.h1)
+      ? object.scrapeResult.tags.h1.join(', ')
+      : (object.scrapeResult.tags.h1 || 'N/A');
+    log.warn(`[metatags] Skipping error page for ${url}. Reason: ${errorCheck.reason}. Title: "${title}", H1: "${h1}", Size: ${object.scrapeResult.rawBody?.length || 0}B`);
     return null;
   }
   // if the scrape result is empty, skip the page for metatags audit
@@ -321,7 +396,26 @@ export async function submitForScraping(context) {
 
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  const topPagesUrls = topPages.map((page) => page.getUrl());
+  // Filter out PDF files before scraping
+  const isPdfUrl = (url) => {
+    try {
+      const pathname = new URL(url).pathname.toLowerCase();
+      return pathname.endsWith('.pdf');
+    } catch {
+      return false;
+    }
+  };
+
+  const filteredTopPages = topPages.filter((page) => {
+    const url = page.getUrl();
+    if (isPdfUrl(url)) {
+      log.info(`[metatags 7a13fe74-d721-4b7e-9464-2c1fadc4f821] Skipping PDF file from scraping: ${url}`);
+      return false;
+    }
+    return true;
+  });
+
+  const topPagesUrls = filteredTopPages.map((page) => page.getUrl());
   // Combine includedURLs and topPages URLs to scrape
   const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
 
