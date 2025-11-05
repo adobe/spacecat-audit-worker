@@ -15,7 +15,7 @@ import { Audit, AsyncJob } from '@adobe/spacecat-shared-data-access';
 import { JSDOM } from 'jsdom';
 import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
 import { AuditBuilder } from '../common/audit-builder.js';
-import { isAuditEnabledForSite, noopPersister, noopUrlResolver } from '../common/index.js';
+import { getEnabledAuditsForSite, noopPersister, noopUrlResolver } from '../common/index.js';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../utils/s3-utils.js';
 import {
   getPrefixedPageAuthToken, isValidUrls, saveIntermediateResults,
@@ -34,27 +34,17 @@ export const PREFLIGHT_STEP_SUGGEST = 'suggest';
  * List of available checks.
  * Should not be changed as it would break existing clients.
  * @type {string}
- * NOTE: When adding a new audit check, define the constant here.
+ * NOTE: When adding a new audit check, define the constant here, add handler to PREFLIGHT_HANDLERS
+ * and make sure the handler function has the same name as the constant.
  */
-export const AUDIT_CANONICAL = 'canonical';
-export const AUDIT_LINKS = 'links';
-export const AUDIT_METATAGS = 'metatags';
 export const AUDIT_BODY_SIZE = 'body-size';
 export const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
 export const AUDIT_H1_COUNT = 'h1-count';
+export const AUDIT_CANONICAL = 'canonical';
+export const AUDIT_LINKS = 'links';
+export const AUDIT_METATAGS = 'metatags';
 export const AUDIT_ACCESSIBILITY = 'accessibility';
 export const AUDIT_READABILITY = 'readability';
-
-const AVAILABLE_CHECKS = [
-  AUDIT_CANONICAL,
-  AUDIT_LINKS,
-  AUDIT_METATAGS,
-  AUDIT_BODY_SIZE,
-  AUDIT_LOREM_IPSUM,
-  AUDIT_H1_COUNT,
-  AUDIT_ACCESSIBILITY,
-  AUDIT_READABILITY,
-];
 
 export const PREFLIGHT_HANDLERS = {
   canonical,
@@ -128,12 +118,17 @@ export const preflightAudit = async (context) => {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
+  let enabledPreflightChecks = [];
+
   // Compute enabled status for all available preflight checks and persist in job metadata
   try {
-    const checks = await Promise.all(AVAILABLE_CHECKS.map(async (audit) => ({
-      name: audit,
-      enabled: await isAuditEnabledForSite(`${audit}-preflight`, site, context),
-    })));
+    // Fetch enabled audits once and reduce to preflight checks
+    const enabledAuditsForSite = await getEnabledAuditsForSite(site, context);
+    enabledPreflightChecks = (enabledAuditsForSite || [])
+      .filter((audit) => audit.endsWith('-preflight'))
+      .map((audit) => audit.replace(/-preflight$/, ''));
+
+    log.debug(`radhika [preflight-audit] job: ${jobId}, enabledPreflightChecks: ${JSON.stringify(enabledPreflightChecks)}.`);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
     log.debug(`radhika [preflight-audit] job: ${jobId}, jobEntity: ${JSON.stringify(jobEntity)}.`);
@@ -141,13 +136,11 @@ export const preflightAudit = async (context) => {
     log.debug(`radhika[preflight-audit] job: ${jobId}, currentMetadata: ${JSON.stringify(currentMetadata)}.`);
     const currentPayload = currentMetadata?.payload || {};
     log.debug(`radhika [preflight-audit] job: ${jobId}, currentPayload: ${JSON.stringify(currentPayload)}.`);
-    const enabledCheckNames = checks.filter((c) => c.enabled).map((c) => c.name);
-    log.debug(`radhika [preflight-audit] job: ${jobId}, enabledCheckNames: ${JSON.stringify(enabledCheckNames)}.`);
     jobEntity.setMetadata({
       ...currentMetadata,
       payload: {
         ...currentPayload,
-        checks: enabledCheckNames,
+        checks: enabledPreflightChecks,
       },
     });
     log.debug(`radhika [preflight-audit] job: ${jobId}, jobEntity after setting metadata: ${JSON.stringify(jobEntity)}.`);
@@ -191,9 +184,11 @@ export const preflightAudit = async (context) => {
     }));
     const audits = new Map(auditsResult.map((r) => [r.pageUrl, r]));
 
-    const bodySizeEnabled = await isAuditEnabledForSite(`${AUDIT_BODY_SIZE}-preflight`, site, context);
-    const loremIpsumEnabled = await isAuditEnabledForSite(`${AUDIT_LOREM_IPSUM}-preflight`, site, context);
-    const h1CountEnabled = await isAuditEnabledForSite(`${AUDIT_H1_COUNT}-preflight`, site, context);
+    // Use enabled checks derived from configuration to avoid per-check lookups
+    const bodySizeEnabled = enabledPreflightChecks.includes(AUDIT_BODY_SIZE);
+    const loremIpsumEnabled = enabledPreflightChecks.includes(AUDIT_LOREM_IPSUM);
+    const h1CountEnabled = enabledPreflightChecks.includes(AUDIT_H1_COUNT);
+    log.debug(`radhika [preflight-audit] job: ${jobId}, bodySizeEnabled: ${bodySizeEnabled}, loremIpsumEnabled: ${loremIpsumEnabled}, h1CountEnabled: ${h1CountEnabled}.`);
     // DOM-based checks: body size, lorem ipsum, h1 count
     if (bodySizeEnabled || loremIpsumEnabled || h1CountEnabled) {
       const domStartTime = Date.now();
@@ -269,8 +264,10 @@ export const preflightAudit = async (context) => {
       await saveIntermediateResults(context, auditsResult, 'DOM-based audit');
     }
 
-    // Execute all preflight handlers
-    const handlerResults = await Object.keys(PREFLIGHT_HANDLERS).reduce(
+    // Execute only enabled preflight handlers
+    const handlerToRun = Object.keys(PREFLIGHT_HANDLERS)
+      .filter((key) => enabledPreflightChecks.includes(key));
+    const handlerResults = await handlerToRun.reduce(
       async (accPromise, handler) => {
         const acc = await accPromise;
         const res = await PREFLIGHT_HANDLERS[handler](context, {
