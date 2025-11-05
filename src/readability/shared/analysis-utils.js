@@ -166,7 +166,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
       })
       .filter(({ element }) => {
         const textContent = element.textContent?.trim();
-        return textContent && textContent.length >= MIN_TEXT_LENGTH;
+        return textContent && textContent.length >= MIN_TEXT_LENGTH && textContent.includes(' ');
       });
 
     // Process each element and collect analysis promises
