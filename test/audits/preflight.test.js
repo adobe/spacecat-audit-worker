@@ -1049,7 +1049,7 @@ describe('Preflight Audit', () => {
 
     it('completes successfully on the happy path for the identify step with readability check', async () => {
       const head = '<head><title>Readability Test Page</title></head>';
-      const body = '<body><p>The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience.</p></body>';
+      const body = '<body><p>The reputation of the city as a cultural nucleus is bolstered by its extensive network of galleries, theaters, and institutions that cater to a discerning international audience. Furthermore, the multifaceted infrastructure exemplifies sophisticated aesthetic considerations. Such complex arrangements require meticulous coordination.</p></body>';
       const html = `<!DOCTYPE html> <html lang="en">${head}${body}</html>`;
 
       s3Client.send.callsFake((command) => {
