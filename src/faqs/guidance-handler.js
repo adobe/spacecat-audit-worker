@@ -55,11 +55,11 @@ function isFaqHeading(text) {
  * @param {Object} s3Client - S3 client
  * @param {string} bucketName - S3 bucket name
  * @param {Object} log - Logger
- * @returns {Promise<Object>} Analysis result with optimizeIgnored flag and selector
+ * @returns {Promise<Object>} Analysis result with shouldOptimize flag and selector
  */
 async function analyzeScrapeData(url, siteId, allKeys, s3Client, bucketName, log) {
   const defaultResult = {
-    optimizeIgnored: false,
+    shouldOptimize: true, // Default: should optimize
     selector: 'body', // Default fallback
   };
 
@@ -102,7 +102,7 @@ async function analyzeScrapeData(url, siteId, allKeys, s3Client, bucketName, log
     }
 
     return {
-      optimizeIgnored: hasFaqHeading,
+      shouldOptimize: !hasFaqHeading, // Don't optimize if FAQ heading already exists
       selector,
     };
   } catch (error) {
@@ -111,7 +111,7 @@ async function analyzeScrapeData(url, siteId, allKeys, s3Client, bucketName, log
   }
 }
 
-async function createSpecificOpportunity(siteId, auditId, baseUrl, guidance, context) {
+async function createOpportunity(siteId, auditId, baseUrl, guidance, context) {
   const opportunity = await convertToOpportunity(
     baseUrl,
     {
@@ -127,8 +127,8 @@ async function createSpecificOpportunity(siteId, auditId, baseUrl, guidance, con
   return opportunity;
 }
 
-async function addSuggestionsToSpecificOpportunity(
-  specificOpportunity,
+async function addSuggestions(
+  opportunity,
   faqs,
   context,
   site,
@@ -152,6 +152,14 @@ async function addSuggestionsToSpecificOpportunity(
 
   // Enhance each suggestion with scrape data analysis
   const enhancedSuggestions = await Promise.all(suggestionValues.map(async (suggestion) => {
+    // If no URL (topic only), should not optimize
+    if (!suggestion.url) {
+      return {
+        ...suggestion,
+        shouldOptimize: false,
+      };
+    }
+
     const analysis = await analyzeScrapeData(
       suggestion.url,
       siteId,
@@ -164,7 +172,7 @@ async function addSuggestionsToSpecificOpportunity(
     // Update transform rules with analyzed selector
     return {
       ...suggestion,
-      optimizeIgnored: analysis.optimizeIgnored,
+      shouldOptimize: analysis.shouldOptimize,
       transformRules: {
         ...suggestion.transformRules,
         selector: analysis.selector,
@@ -174,11 +182,11 @@ async function addSuggestionsToSpecificOpportunity(
 
   await syncSuggestions({
     context,
-    opportunity: specificOpportunity,
+    opportunity,
     newData: enhancedSuggestions,
-    buildKey: (suggestion) => `${suggestion.url}-${suggestion.transformRules.selector}`,
+    buildKey: (suggestion) => `${suggestion.url}::${suggestion.topic}::${suggestion.item.question}`,
     mapNewSuggestion: (suggestion) => ({
-      opportunityId: specificOpportunity.getId(),
+      opportunityId: opportunity.getId(),
       type: 'CONTENT_UPDATE',
       rank: 10,
       data: suggestion,
@@ -255,8 +263,8 @@ export default async function handler(message, context) {
       type: 'CONTENT_UPDATE',
     }];
 
-    // Create specific opportunity
-    const specificOpportunity = await createSpecificOpportunity(
+    // Create opportunity
+    const opportunity = await createOpportunity(
       siteId,
       auditId,
       baseUrl,
@@ -265,7 +273,7 @@ export default async function handler(message, context) {
     );
 
     try {
-      await addSuggestionsToSpecificOpportunity(specificOpportunity, faqs, context, site);
+      await addSuggestions(opportunity, faqs, context, site);
     } catch (e) {
       log.error(`[FAQ] Failed to save FAQ opportunity on Mystique callback: ${e.message}`);
       return badRequest('Failed to persist FAQ opportunity');

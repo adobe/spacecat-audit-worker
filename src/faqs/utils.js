@@ -40,6 +40,7 @@ export const SPREADSHEET_COLUMNS = {
 
 /**
  * Generates JSON FAQ suggestions with transform rules for code changes
+ * Each question becomes a separate suggestion
  * @param {Array} faqs - Array of FAQ objects from Mystique
  * @returns {Array} Array of FAQ suggestion objects with transform rules
  */
@@ -47,41 +48,36 @@ export function getJsonFaqSuggestion(faqs) {
   const suggestionValues = [];
 
   faqs.forEach((faq) => {
-    const { url, suggestions } = faq;
+    const { url, topic, suggestions } = faq;
 
     // Filter only suitable suggestions
     const suitableSuggestions = (suggestions || []).filter(
       (s) => s.isAnswerSuitable && s.isQuestionRelevant,
     );
 
-    if (suitableSuggestions.length === 0 || !url) {
+    if (suitableSuggestions.length === 0) {
       return;
     }
 
-    // Group all FAQs for this URL into a single suggestion
-    const faqContent = suitableSuggestions.map((suggestion) => ({
-      question: suggestion.question,
-      answer: suggestion.answer,
-      sources: suggestion.sources || [],
-    }));
-
-    // Generate markdown text
-    let markdown = '## FAQs\n\n';
-    faqContent.forEach((item) => {
-      markdown += `### ${item.question}\n\n`;
-      markdown += `${item.answer}\n\n`;
-    });
-
-    suggestionValues.push({
-      text: markdown.trim(),
-      data: {
-        items: faqContent,
-      },
-      url,
-      transformRules: {
-        selector: 'body',
-        action: 'appendChild',
-      },
+    // Create one suggestion per FAQ question
+    suitableSuggestions.forEach((suggestion) => {
+      suggestionValues.push({
+        headingText: 'FAQs',
+        shouldOptimize: true, // Default to true, will be updated based on analysis
+        url: url || '',
+        topic: topic || '',
+        transformRules: {
+          selector: 'body',
+          action: 'appendChild',
+        },
+        item: {
+          question: suggestion.question,
+          answer: suggestion.answer,
+          sources: suggestion.sources || [],
+          questionRelevanceReason: suggestion.questionRelevanceReason,
+          answerSuitabilityReason: suggestion.answerSuitabilityReason,
+        },
+      });
     });
   });
 

@@ -17,7 +17,7 @@ import { getJsonFaqSuggestion } from '../../../src/faqs/utils.js';
 
 describe('FAQ Utils', () => {
   describe('getJsonFaqSuggestion', () => {
-    it('should generate JSON suggestions with markdown text and data items', () => {
+    it('should generate one suggestion per question with url and topic', () => {
       const faqs = [
         {
           url: 'https://www.adobe.com/products/photoshop',
@@ -29,6 +29,8 @@ describe('FAQ Utils', () => {
               question: 'How to use Photoshop?',
               answer: 'Photoshop is a powerful image editing tool.',
               sources: [{ url: 'https://www.adobe.com/guides' }],
+              questionRelevanceReason: 'Relevant to photoshop',
+              answerSuitabilityReason: 'Good answer quality',
             },
           ],
         },
@@ -37,22 +39,22 @@ describe('FAQ Utils', () => {
       const suggestions = getJsonFaqSuggestion(faqs);
 
       expect(suggestions).to.be.an('array').with.lengthOf(1);
-      expect(suggestions[0].text).to.equal('## FAQs\n\n### How to use Photoshop?\n\nPhotoshop is a powerful image editing tool.');
+      expect(suggestions[0].headingText).to.equal('FAQs');
+      expect(suggestions[0].shouldOptimize).to.equal(true);
       expect(suggestions[0].url).to.equal('https://www.adobe.com/products/photoshop');
-      expect(suggestions[0].data.items).to.deep.equal([
-        {
-          question: 'How to use Photoshop?',
-          answer: 'Photoshop is a powerful image editing tool.',
-          sources: [{ url: 'https://www.adobe.com/guides' }],
-        },
-      ]);
+      expect(suggestions[0].topic).to.equal('photoshop');
+      expect(suggestions[0].item.question).to.equal('How to use Photoshop?');
+      expect(suggestions[0].item.answer).to.equal('Photoshop is a powerful image editing tool.');
+      expect(suggestions[0].item.sources).to.deep.equal([{ url: 'https://www.adobe.com/guides' }]);
+      expect(suggestions[0].item.questionRelevanceReason).to.equal('Relevant to photoshop');
+      expect(suggestions[0].item.answerSuitabilityReason).to.equal('Good answer quality');
       expect(suggestions[0].transformRules).to.deep.equal({
         selector: 'body',
         action: 'appendChild',
       });
     });
 
-    it('should generate markdown with multiple FAQs', () => {
+    it('should create separate suggestions for multiple FAQs per URL', () => {
       const faqs = [
         {
           url: 'https://www.adobe.com/products/test',
@@ -78,8 +80,11 @@ describe('FAQ Utils', () => {
 
       const suggestions = getJsonFaqSuggestion(faqs);
 
-      expect(suggestions[0].text).to.equal('## FAQs\n\n### Question 1?\n\nAnswer 1.\n\n### Question 2?\n\nAnswer 2.');
-      expect(suggestions[0].data.items).to.have.lengthOf(2);
+      expect(suggestions).to.have.lengthOf(2);
+      expect(suggestions[0].item.question).to.equal('Question 1?');
+      expect(suggestions[0].item.answer).to.equal('Answer 1.');
+      expect(suggestions[1].item.question).to.equal('Question 2?');
+      expect(suggestions[1].item.answer).to.equal('Answer 2.');
     });
 
     it('should filter out unsuitable suggestions', () => {
@@ -108,9 +113,8 @@ describe('FAQ Utils', () => {
 
       const suggestions = getJsonFaqSuggestion(faqs);
 
-      expect(suggestions[0].data.items).to.have.lengthOf(1);
-      expect(suggestions[0].text).to.include('Good question?');
-      expect(suggestions[0].text).not.to.include('Bad answer question?');
+      expect(suggestions).to.have.lengthOf(1);
+      expect(suggestions[0].item.question).to.equal('Good question?');
     });
 
     it('should filter out irrelevant suggestions', () => {
@@ -135,7 +139,7 @@ describe('FAQ Utils', () => {
       expect(suggestions).to.be.an('array').with.lengthOf(0);
     });
 
-    it('should skip FAQs with no URL', () => {
+    it('should handle FAQs with no URL (empty string)', () => {
       const faqs = [
         {
           topic: 'test',
@@ -153,20 +157,21 @@ describe('FAQ Utils', () => {
 
       const suggestions = getJsonFaqSuggestion(faqs);
 
-      expect(suggestions).to.be.an('array').with.lengthOf(0);
+      expect(suggestions).to.be.an('array').with.lengthOf(1);
+      expect(suggestions[0].url).to.equal('');
+      expect(suggestions[0].topic).to.equal('test');
     });
 
-    it('should skip FAQs with no suitable suggestions', () => {
+    it('should handle FAQs with no topic (empty string)', () => {
       const faqs = [
         {
           url: 'https://www.adobe.com/products/test',
-          topic: 'test',
           suggestions: [
             {
-              isAnswerSuitable: false,
-              isQuestionRelevant: false,
-              question: 'Bad question?',
-              answer: 'Bad answer.',
+              isAnswerSuitable: true,
+              isQuestionRelevant: true,
+              question: 'Question?',
+              answer: 'Answer.',
               sources: [],
             },
           ],
@@ -175,7 +180,9 @@ describe('FAQ Utils', () => {
 
       const suggestions = getJsonFaqSuggestion(faqs);
 
-      expect(suggestions).to.be.an('array').with.lengthOf(0);
+      expect(suggestions).to.be.an('array').with.lengthOf(1);
+      expect(suggestions[0].url).to.equal('https://www.adobe.com/products/test');
+      expect(suggestions[0].topic).to.equal('');
     });
 
     it('should handle multiple FAQs with different URLs', () => {
@@ -251,7 +258,7 @@ describe('FAQ Utils', () => {
       expect(suggestions[0].url).to.equal('https://www.adobe.com/products/test2');
     });
 
-    it('should preserve sources in data.items', () => {
+    it('should preserve sources in suggestions', () => {
       const faqs = [
         {
           url: 'https://www.adobe.com/products/test',
@@ -273,7 +280,7 @@ describe('FAQ Utils', () => {
 
       const suggestions = getJsonFaqSuggestion(faqs);
 
-      expect(suggestions[0].data.items[0].sources).to.deep.equal([
+      expect(suggestions[0].item.sources).to.deep.equal([
         { title: 'Source 1', url: 'https://example.com/1' },
         { url: 'https://example.com/2' },
       ]);
@@ -298,32 +305,9 @@ describe('FAQ Utils', () => {
 
       const suggestions = getJsonFaqSuggestion(faqs);
 
-      expect(suggestions[0].data.items[0].sources).to.deep.equal([]);
+      expect(suggestions[0].item.sources).to.deep.equal([]);
     });
 
-    it('should trim markdown text correctly', () => {
-      const faqs = [
-        {
-          url: 'https://www.adobe.com/products/test',
-          topic: 'test',
-          suggestions: [
-            {
-              isAnswerSuitable: true,
-              isQuestionRelevant: true,
-              question: 'Question?',
-              answer: 'Answer.',
-              sources: [],
-            },
-          ],
-        },
-      ];
-
-      const suggestions = getJsonFaqSuggestion(faqs);
-
-      // Check that there's no trailing whitespace
-      expect(suggestions[0].text).to.equal('## FAQs\n\n### Question?\n\nAnswer.');
-      expect(suggestions[0].text.endsWith('\n\n')).to.be.false;
-    });
   });
 });
 

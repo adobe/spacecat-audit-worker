@@ -268,7 +268,7 @@ describe('FAQs guidance handler', () => {
     expect(log.info).to.have.been.calledWith('[FAQ] No suitable FAQ suggestions found after filtering');
   });
 
-  it('should create a specific FAQ opportunity', async () => {
+  it('should create an FAQ opportunity', async () => {
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
@@ -291,7 +291,7 @@ describe('FAQs guidance handler', () => {
     expect(syncSuggestionsStub).to.have.been.calledOnce;
   });
 
-  it('should create suggestion with correct data structure for specific opportunity', async () => {
+  it('should create suggestion with correct data structure', async () => {
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
@@ -309,14 +309,19 @@ describe('FAQs guidance handler', () => {
 
     // Test the mapNewSuggestion function
     const testData = {
-      text: '## FAQs\n\n### Question?\n\nAnswer.',
-      data: {
-        items: [{ question: 'Question?', answer: 'Answer.', sources: [] }],
-      },
+      headingText: 'FAQs',
       url: 'https://adobe.com/test',
+      topic: 'test',
       transformRules: {
         selector: 'body',
         action: 'appendChild',
+      },
+      item: {
+        question: 'Question?',
+        answer: 'Answer.',
+        sources: [],
+        questionRelevanceReason: 'Reason',
+        answerSuitabilityReason: 'Reason',
       },
     };
 
@@ -327,7 +332,7 @@ describe('FAQs guidance handler', () => {
     expect(mappedSuggestion.data).to.deep.equal(testData);
   });
 
-  it('should call buildKey function correctly with URL and selector', async () => {
+  it('should call buildKey function correctly with URL and question', async () => {
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
@@ -344,10 +349,12 @@ describe('FAQs guidance handler', () => {
     const syncArgs = syncCall.args[0];
     const testData = {
       url: 'https://adobe.com/test',
-      transformRules: { selector: 'main' },
+      item: {
+        question: 'How to use Photoshop?',
+      },
     };
     const buildKeyResult = syncArgs.buildKey(testData);
-    expect(buildKeyResult).to.equal('https://adobe.com/test-main');
+    expect(buildKeyResult).to.equal('https://adobe.com/test-How to use Photoshop?');
   });
 
   it('should create correct guidance object with recommendation count', async () => {
@@ -573,7 +580,7 @@ describe('FAQs guidance handler', () => {
     expect(newData[0].transformRules.selector).to.equal('body');
   });
 
-  it('should detect FAQ headings and set optimizeIgnored flag', async () => {
+  it('should detect FAQ headings and set shouldOptimize to false', async () => {
     // Mock scrape data with FAQ heading
     const mockScrapeData = {
       scrapeResult: {
@@ -599,8 +606,8 @@ describe('FAQs guidance handler', () => {
     const syncCall = syncSuggestionsStub.getCall(0);
     const newData = syncCall.args[0].newData;
     
-    // Check that optimizeIgnored flag is set
-    expect(newData[0].optimizeIgnored).to.equal(true);
+    // Check that shouldOptimize is false when FAQ heading exists
+    expect(newData[0].shouldOptimize).to.equal(false);
     expect(log.info).to.have.been.calledWith(sinon.match(/Found FAQ heading in h2: "Frequently Asked Questions"/));
   });
 
@@ -629,10 +636,10 @@ describe('FAQs guidance handler', () => {
     const syncCall = syncSuggestionsStub.getCall(0);
     const newData = syncCall.args[0].newData;
     
-    expect(newData[0].optimizeIgnored).to.equal(true);
+    expect(newData[0].shouldOptimize).to.equal(false);
   });
 
-  it('should not set optimizeIgnored when no FAQ headings found', async () => {
+  it('should set shouldOptimize to true when no FAQ headings found', async () => {
     const mockScrapeData = {
       scrapeResult: {
         rawBody: '<html><body><main><h1>Product Information</h1></main></body></html>',
@@ -657,7 +664,7 @@ describe('FAQs guidance handler', () => {
     const syncCall = syncSuggestionsStub.getCall(0);
     const newData = syncCall.args[0].newData;
     
-    expect(newData[0].optimizeIgnored).to.equal(false);
+    expect(newData[0].shouldOptimize).to.equal(true);
   });
 
   it('should handle headings with empty textContent', async () => {
@@ -688,7 +695,49 @@ describe('FAQs guidance handler', () => {
     
     // Should still work correctly
     expect(newData[0].transformRules.selector).to.equal('main');
-    expect(newData[0].optimizeIgnored).to.equal(false);
+    expect(newData[0].shouldOptimize).to.equal(true);
+  });
+
+  it('should set shouldOptimize to false when FAQ has topic only (no URL)', async () => {
+    // Mock FAQ data with no URL (topic only)
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        faqs: [
+          {
+            topic: 'general-topic',
+            // No URL provided
+            suggestions: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'General question?',
+                answer: 'General answer.',
+                sources: [],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    // Should set shouldOptimize to false for topic-only FAQs
+    expect(newData[0].shouldOptimize).to.equal(false);
+    expect(newData[0].url).to.equal('');
+    expect(newData[0].topic).to.equal('general-topic');
   });
 
   it('should handle missing scrape data gracefully', async () => {
@@ -710,7 +759,7 @@ describe('FAQs guidance handler', () => {
     const newData = syncCall.args[0].newData;
     
     expect(newData[0].transformRules.selector).to.equal('body');
-    expect(newData[0].optimizeIgnored).to.equal(false);
+    expect(newData[0].shouldOptimize).to.equal(true);
     expect(log.warn).to.have.been.calledWith(sinon.match(/Scrape JSON path not found/));
   });
 
@@ -736,7 +785,7 @@ describe('FAQs guidance handler', () => {
     const newData = syncCall.args[0].newData;
     
     expect(newData[0].transformRules.selector).to.equal('body');
-    expect(newData[0].optimizeIgnored).to.equal(false);
+    expect(newData[0].shouldOptimize).to.equal(true);
     expect(log.warn).to.have.been.calledWith(sinon.match(/Scrape JSON object not found/));
   });
 
@@ -758,7 +807,7 @@ describe('FAQs guidance handler', () => {
     const newData = syncCall.args[0].newData;
     
     expect(newData[0].transformRules.selector).to.equal('body');
-    expect(newData[0].optimizeIgnored).to.equal(false);
+    expect(newData[0].shouldOptimize).to.equal(true);
     expect(log.error).to.have.been.calledWith(sinon.match(/Error fetching S3 keys/));
   });
 
@@ -787,7 +836,7 @@ describe('FAQs guidance handler', () => {
     const newData = syncCall.args[0].newData;
     
     expect(newData[0].transformRules.selector).to.equal('body');
-    expect(newData[0].optimizeIgnored).to.equal(false);
+    expect(newData[0].shouldOptimize).to.equal(true);
     expect(log.error).to.have.been.calledWith(sinon.match(/Error analyzing scrape data/));
   });
 });
