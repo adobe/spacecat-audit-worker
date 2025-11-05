@@ -124,6 +124,7 @@ export const preflightAudit = async (context) => {
   try {
     // Fetch enabled audits once and reduce to preflight checks
     const enabledAuditsForSite = await getEnabledAuditsForSite(site, context);
+    log.debug(`radhika [preflight-audit] job: ${jobId}, enabledAuditsForSite: ${JSON.stringify(enabledAuditsForSite)}.`);
     enabledPreflightChecks = (enabledAuditsForSite || [])
       .filter((audit) => audit.endsWith('-preflight'))
       .map((audit) => audit.replace(/-preflight$/, ''));
