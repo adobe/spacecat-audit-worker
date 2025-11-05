@@ -40,6 +40,7 @@ import {
   submitForScraping,
   fetchAndProcessPageObject,
   opportunityAndSuggestions,
+  buildKey,
 } from '../../src/metatags/handler.js';
 
 use(sinonChai);
@@ -201,6 +202,199 @@ describe('Meta Tags', () => {
         const detectedTags = seoChecks.getDetectedTags();
         expect(detectedTags).to.deep.equal({});
       });
+    });
+  });
+
+  describe('buildKey', () => {
+    it('should create a key with all fields present', () => {
+      const data = {
+        url: 'https://example.com/page1',
+        issue: 'Title too short',
+        tagContent: 'Example Title',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page1|Title too short|Example Title');
+    });
+
+    it('should handle undefined tagContent by defaulting to empty string', () => {
+      const data = {
+        url: 'https://example.com/page2',
+        issue: 'Missing Description',
+        tagContent: undefined,
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page2|Missing Description|');
+    });
+
+    it('should handle null tagContent by defaulting to empty string', () => {
+      const data = {
+        url: 'https://example.com/page3',
+        issue: 'Empty Title',
+        tagContent: null,
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page3|Empty Title|');
+    });
+
+    it('should handle false tagContent by defaulting to empty string', () => {
+      const data = {
+        url: 'https://example.com/page4',
+        issue: 'Invalid Tag',
+        tagContent: false,
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page4|Invalid Tag|');
+    });
+
+    it('should handle empty string tagContent', () => {
+      const data = {
+        url: 'https://example.com/page5',
+        issue: 'Empty H1',
+        tagContent: '',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page5|Empty H1|');
+    });
+
+    it('should handle 0 as tagContent by defaulting to empty string', () => {
+      const data = {
+        url: 'https://example.com/page6',
+        issue: 'Numeric Tag',
+        tagContent: 0,
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page6|Numeric Tag|');
+    });
+
+    it('should handle missing tagContent property by defaulting to empty string', () => {
+      const data = {
+        url: 'https://example.com/page7',
+        issue: 'Missing H1',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page7|Missing H1|');
+    });
+
+    it('should handle tagContent with pipe characters', () => {
+      const data = {
+        url: 'https://example.com/page8',
+        issue: 'Title too long',
+        tagContent: 'Title with | pipe | characters',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page8|Title too long|Title with | pipe | characters');
+    });
+
+    it('should handle tagContent with special characters', () => {
+      const data = {
+        url: 'https://example.com/page9',
+        issue: 'Duplicate Title',
+        tagContent: 'Special chars: @#$%^&*()',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page9|Duplicate Title|Special chars: @#$%^&*()');
+    });
+
+    it('should create unique keys for different URLs with same issue and tagContent', () => {
+      const data1 = {
+        url: 'https://example.com/page1',
+        issue: 'Title too short',
+        tagContent: 'Same Title',
+      };
+      const data2 = {
+        url: 'https://example.com/page2',
+        issue: 'Title too short',
+        tagContent: 'Same Title',
+      };
+
+      const result1 = buildKey(data1);
+      const result2 = buildKey(data2);
+
+      expect(result1).to.not.equal(result2);
+      expect(result1).to.equal('https://example.com/page1|Title too short|Same Title');
+      expect(result2).to.equal('https://example.com/page2|Title too short|Same Title');
+    });
+
+    it('should create unique keys for same URL with different issues', () => {
+      const data1 = {
+        url: 'https://example.com/page1',
+        issue: 'Title too short',
+        tagContent: 'Example Title',
+      };
+      const data2 = {
+        url: 'https://example.com/page1',
+        issue: 'Title too long',
+        tagContent: 'Example Title',
+      };
+
+      const result1 = buildKey(data1);
+      const result2 = buildKey(data2);
+
+      expect(result1).to.not.equal(result2);
+      expect(result1).to.equal('https://example.com/page1|Title too short|Example Title');
+      expect(result2).to.equal('https://example.com/page1|Title too long|Example Title');
+    });
+
+    it('should handle whitespace in tagContent', () => {
+      const data = {
+        url: 'https://example.com/page10',
+        issue: 'Title formatting',
+        tagContent: '  Title with spaces  ',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page10|Title formatting|  Title with spaces  ');
+    });
+
+    it('should handle multiline tagContent', () => {
+      const data = {
+        url: 'https://example.com/page11',
+        issue: 'Description formatting',
+        tagContent: 'Line 1\nLine 2\nLine 3',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page11|Description formatting|Line 1\nLine 2\nLine 3');
+    });
+
+    it('should differentiate between missing and empty tagContent', () => {
+      const dataMissing = {
+        url: 'https://example.com/page12',
+        issue: 'Missing Tag',
+        tagContent: undefined,
+      };
+      const dataEmpty = {
+        url: 'https://example.com/page12',
+        issue: 'Missing Tag',
+        tagContent: '',
+      };
+
+      const resultMissing = buildKey(dataMissing);
+      const resultEmpty = buildKey(dataEmpty);
+
+      // Both should result in the same key since empty string is the fallback
+      expect(resultMissing).to.equal(resultEmpty);
+      expect(resultMissing).to.equal('https://example.com/page12|Missing Tag|');
     });
   });
 

@@ -34,6 +34,8 @@ import { validateDetectedIssues } from './ssr-meta-validator.js';
 const auditType = Audit.AUDIT_TYPES.META_TAGS;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
+export const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent || ''}`;
+
 export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const opportunity = await convertToOpportunity(
     finalUrl,
@@ -72,8 +74,6 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
         }
       });
     });
-
-  const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent}`;
 
   // Sync the suggestions from new audit with old ones
   await syncSuggestions({
