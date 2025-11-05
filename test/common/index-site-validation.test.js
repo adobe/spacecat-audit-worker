@@ -57,22 +57,16 @@ describe('Index siteId handling and validation flag', () => {
 
   afterEach(() => {
     sandbox.restore();
-  });
-
-  it('sets context.site and requiresValidation=true when entitlement exists', async () => {
-    sandbox.stub(TierClient, 'createForSite').resolves({
-      checkValidEntitlement: sandbox.stub().resolves({ entitlement: { tier: 'PAID' } }),
-    });
-
-    const resp = await main(new Request('https://space.cat'), context);
-
-    expect(resp.status).to.equal(200);
-    expect(context.site).to.exist;
-    expect(context.site.requiresValidation).to.equal(true);
+    delete global.HANDLERS;
   });
 
   it('sets requiresValidation=false when entitlement is absent', async () => {
-    sandbox.stub(TierClient, 'createForSite').resolves({
+    // Add a dummy handler for testing
+    global.HANDLERS = {
+      dummy: async () => ({ status: 200, body: 'OK' }),
+    };
+
+    sandbox.stub(TierClient, 'createForSite').returns({
       checkValidEntitlement: sandbox.stub().resolves({ entitlement: null }),
     });
 

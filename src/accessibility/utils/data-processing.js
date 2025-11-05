@@ -489,8 +489,9 @@ export async function createReportOpportunitySuggestion(
   reportMarkdown,
   auditData,
   log,
+  context,
 ) {
-  const suggestions = createReportOpportunitySuggestionInstance(reportMarkdown);
+  const suggestions = createReportOpportunitySuggestionInstance(reportMarkdown, context);
 
   try {
     const suggestion = await opportunity.addSuggestions(suggestions);
@@ -516,6 +517,7 @@ export async function createOrUpdateDeviceSpecificSuggestion(
   deviceType,
   auditData,
   log,
+  context = {},
 ) {
   const createSuggestionInstance = createDeviceSpecificSuggestionInstance;
 
@@ -534,7 +536,7 @@ export async function createOrUpdateDeviceSpecificSuggestion(
         currentSuggestionValue,
         deviceType,
         reportMarkdown,
-        log,
+        context,
       );
 
       // Update only the suggestionValue field to avoid ElectroDB timestamp conflicts
@@ -546,7 +548,7 @@ export async function createOrUpdateDeviceSpecificSuggestion(
       return { suggestion: existingSuggestion };
     } else {
       // Create new suggestion
-      suggestions = createSuggestionInstance(null, deviceType, reportMarkdown, log);
+      suggestions = createSuggestionInstance(null, deviceType, reportMarkdown, context);
 
       const suggestion = await opportunity.addSuggestions(suggestions);
 
@@ -834,6 +836,7 @@ export async function generateReportOpportunity(
       deviceType.toLowerCase(),
       auditData,
       log,
+      context,
     );
   } catch (error) {
     log.error(`[A11yProcessingError] Failed to create/update device-specific suggestion for ${reportName}`, error.message);

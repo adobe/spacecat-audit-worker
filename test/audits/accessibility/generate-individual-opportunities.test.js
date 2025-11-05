@@ -1352,6 +1352,88 @@ describe('createIndividualOpportunitySuggestions', () => {
     sandbox.restore();
   });
 
+  it('should set suggestion status to NEW when site does not require validation', async () => {
+    // Set up context without requiresValidation flag
+    const contextWithoutValidation = {
+      ...context,
+      site: {
+        requiresValidation: false,
+      },
+    };
+
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(mockOpportunity, aggregatedData, contextWithoutValidation, mockLog);
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const syncCall = mockSyncSuggestions.getCall(0).args[0];
+    
+    // Create a suggestion with the mapNewSuggestion function
+    const newSuggestion = syncCall.mapNewSuggestion(aggregatedData.data[0]);
+    
+    // Verify status is set to NEW
+    expect(newSuggestion.status).to.equal('NEW');
+  });
+
+  it('should set suggestion status to NOT_VALIDATED when site requires validation', async () => {
+    // Set up context with requiresValidation flag
+    const contextWithValidation = {
+      ...context,
+      site: {
+        requiresValidation: true,
+      },
+    };
+
+    const aggregatedData = {
+      data: [
+        {
+          url: 'https://example.com/page1',
+          type: 'url',
+          issues: [
+            {
+              type: 'color-contrast',
+              occurrences: 5,
+              htmlWithIssues: [
+                {
+                  target_selector: 'div[aria-fake]',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    await createIndividualOpportunitySuggestions(mockOpportunity, aggregatedData, contextWithValidation, mockLog);
+
+    expect(mockSyncSuggestions).to.have.been.calledOnce;
+    const syncCall = mockSyncSuggestions.getCall(0).args[0];
+    
+    // Create a suggestion with the mapNewSuggestion function
+    const newSuggestion = syncCall.mapNewSuggestion(aggregatedData.data[0]);
+    
+    // Verify status is set to NOT_VALIDATED
+    expect(newSuggestion.status).to.equal('NOT_VALIDATED');
+  });
+
   it('should create suggestions for each URL with issues', async () => {
     const aggregatedData = {
       data: [
@@ -1472,35 +1554,37 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the mapNewSuggestion function
     const result = mapNewSuggestion(aggregatedData.data[0]);
 
-    expect(result).to.deep.equal({
+    // Check all properties except status which depends on context.site.requiresValidation
+    expect(result).to.include({
       opportunityId: 'test-id',
       type: 'CODE_CHANGE',
       rank: 8, // 5 + 3 occurrences
-      data: {
-        url: 'https://example.com/page1',
-        type: 'url',
-        issues: [
-          {
-            type: 'color-contrast',
-            occurrences: 5,
-            htmlWithIssues: [
-              {
-                target_selector: 'div[aria-fake]',
-              },
-            ],
-          },
-          {
-            type: 'image-alt',
-            occurrences: 3,
-            htmlWithIssues: [
-              {
-                target_selector: 'div[aria-invalid-attr]',
-              },
-            ],
-          },
-        ],
-        jiraLink: '',
-      },
+    });
+    
+    expect(result.data).to.deep.equal({
+      url: 'https://example.com/page1',
+      type: 'url',
+      issues: [
+        {
+          type: 'color-contrast',
+          occurrences: 5,
+          htmlWithIssues: [
+            {
+              target_selector: 'div[aria-fake]',
+            },
+          ],
+        },
+        {
+          type: 'image-alt',
+          occurrences: 3,
+          htmlWithIssues: [
+            {
+              target_selector: 'div[aria-invalid-attr]',
+            },
+          ],
+        },
+      ],
+      jiraLink: '',
     });
   });
 
@@ -1749,7 +1833,7 @@ describe('createIndividualOpportunitySuggestions', () => {
     // Test the mapNewSuggestion function
     const result = mapNewSuggestion(aggregatedData.data[0]);
 
-    expect(result).to.deep.equal({
+    expect(result).to.deep.include({
       opportunityId: 'test-id',
       type: 'CODE_CHANGE',
       rank: 1,

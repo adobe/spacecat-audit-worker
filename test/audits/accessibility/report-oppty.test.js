@@ -112,10 +112,11 @@ describe('Accessibility Report Opportunity Utils', () => {
   });
 
   describe('createReportOpportunitySuggestionInstance', () => {
-    it('should create correct suggestion instance structure', () => {
+    it('should create correct suggestion instance structure with requiresValidation=true', () => {
       const suggestionValue = 'Test accessibility suggestion content';
+      const context = { site: { requiresValidation: true } };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
 
       expect(suggestion).to.deep.equal([
         {
@@ -128,19 +129,56 @@ describe('Accessibility Report Opportunity Utils', () => {
         },
       ]);
     });
+    
+    it('should create correct suggestion instance structure with requiresValidation=false', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      const context = { site: { requiresValidation: false } };
+
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'NEW',
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should create correct suggestion instance structure with no context', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'NEW',
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
 
     it('should handle empty suggestion value', () => {
       const suggestionValue = '';
+      const context = { site: { requiresValidation: true } };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
 
       expect(suggestion[0].data.suggestionValue).to.equal('');
     });
 
     it('should handle null suggestion value', () => {
       const suggestionValue = null;
+      const context = { site: { requiresValidation: true } };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
 
       expect(suggestion[0].data.suggestionValue).to.be.null;
     });
@@ -151,8 +189,9 @@ describe('Accessibility Report Opportunity Utils', () => {
         description: 'Ensure text has sufficient contrast ratio',
         priority: 'high',
       };
+      const context = { site: { requiresValidation: true } };
 
-      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue);
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
 
       expect(suggestion[0].data.suggestionValue).to.deep.equal(suggestionValue);
     });
@@ -452,7 +491,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -473,7 +512,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -496,7 +535,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -519,7 +558,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -538,7 +577,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -556,7 +595,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -575,6 +614,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
+        { site: { requiresValidation: true } }
       )).to.not.throw();
     });
 
@@ -589,7 +629,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result[0].data.suggestionValue['accessibility-desktop']).to.equal('# Desktop Content\nImportant desktop info');
@@ -607,7 +647,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -626,7 +666,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -646,7 +686,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result[0].data.suggestionValue['accessibility-desktop']).to.equal(longContent);
@@ -666,7 +706,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -685,7 +725,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         markdownContent,
-        mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -777,6 +817,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         mobileContent,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');
@@ -797,6 +838,7 @@ describe('Accessibility Report Opportunity Utils', () => {
         suggestionValue,
         deviceType,
         mobileContent,
+        { site: { requiresValidation: true } }
       );
 
       expect(result).to.be.an('array');

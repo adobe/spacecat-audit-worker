@@ -297,7 +297,7 @@ describe('FAQs guidance handler', () => {
     expect(syncSuggestionsStub).to.have.been.calledOnce;
   });
 
-  it('should create suggestion with correct data structure', async () => {
+  it('should create suggestion with correct data structure when site requires validation', async () => {
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
@@ -305,6 +305,9 @@ describe('FAQs guidance handler', () => {
         presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
+
+    // Set requiresValidation to true in context
+    context.site = { requiresValidation: true };
 
     await handler(message, context);
 
@@ -326,6 +329,35 @@ describe('FAQs guidance handler', () => {
     expect(mappedSuggestion.status).to.equal('NOT_VALIDATED');
     expect(mappedSuggestion.data.suggestionValue).to.equal(testData.suggestionValue);
     expect(mappedSuggestion.kpiDeltas.estimatedKPILift).to.equal(0);
+  });
+
+  it('should create suggestion with NEW status when site does not require validation', async () => {
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    // Set requiresValidation to false in context
+    context.site = { requiresValidation: false };
+
+    await handler(message, context);
+
+    expect(syncSuggestionsStub).to.have.been.calledOnce;
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const syncArgs = syncCall.args[0];
+
+    // Test the mapNewSuggestion function
+    const testData = {
+      suggestionValue: '## FAQ Markdown Content',
+      bKey: 'faqs:https://adobe.com',
+    };
+
+    const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
+    expect(mappedSuggestion.status).to.equal('NEW');
   });
 
   it('should call buildKey function correctly', async () => {

@@ -424,6 +424,8 @@ export async function createIndividualOpportunitySuggestions(
         type: 'CODE_CHANGE', // Indicates this requires code updates
         // Rank by total occurrences across all issues for this URL
         rank: urlData.issues.reduce((total, issue) => total + issue.occurrences, 0),
+        status: context.site?.requiresValidation ? SuggestionDataAccess.STATUSES.NOT_VALIDATED
+          : SuggestionDataAccess.STATUSES.NEW,
         data: {
           url: urlData.url,
           type: urlData.type,

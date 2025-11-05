@@ -19,45 +19,50 @@ import { TierClient } from '@adobe/spacecat-shared-tier-client';
  */
 export async function checkSiteRequiresValidation(site, context) {
   if (!site) {
-    context?.log?.debug?.('sugandhg - checkSiteRequiresValidation: no site provided, return false');
     return false;
   }
   // Check if the site has the requiresValidation flag set directly
   if (typeof site.requiresValidation === 'boolean') {
-    context?.log?.debug?.('sugandhg - checkSiteRequiresValidation: explicit flag present on site', {
-      siteId: site.getId?.(),
-      requiresValidation: site.requiresValidation,
-    });
     return site.requiresValidation;
+  }
+
+  // LA customers override via env (comma-separated IDs)
+  let laSiteIds = [];
+  let laOrgIds = [];
+
+  if (process.env.LA_VALIDATION_SITE_IDS) {
+    laSiteIds = process.env.LA_VALIDATION_SITE_IDS.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+  }
+
+  if (process.env.LA_VALIDATION_ORG_IDS) {
+    laOrgIds = process.env.LA_VALIDATION_ORG_IDS.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+  }
+  const siteId = site.getId?.();
+  const orgId = site.getOrganizationId?.();
+  const isLABySite = siteId && laSiteIds.includes(siteId);
+  const isLAByOrg = orgId && laOrgIds.includes(orgId);
+
+  context?.log?.debug?.(`LA validation check: siteId=${siteId}, orgId=${orgId}, laSiteIds=${JSON.stringify(laSiteIds)}, laOrgIds=${JSON.stringify(laOrgIds)}, isLABySite=${isLABySite}, isLAByOrg=${isLAByOrg}`);
+
+  if (isLABySite || isLAByOrg) {
+    context?.log?.debug?.(`LA customer detected! Site ${siteId} requires validation.`);
+    return true;
   }
 
   // Entitlement-driven: require validation only for PAID tier of ASO
   try {
-    context?.log?.debug?.('sugandhg - checkSiteRequiresValidation: calling TierClient.createForSite', {
-      siteId: site.getId?.(),
-      productCode: 'ASO',
-    });
-    const tierClient = await TierClient.createForSite(context, site, 'ASO');
+    const tierClient = TierClient.createForSite(context, site, 'ASO');
     const { entitlement } = await tierClient.checkValidEntitlement();
     const tier = entitlement?.tier ?? entitlement?.record?.tier ?? null;
-    context?.log?.debug?.('sugandhg - Entitlement check result', {
-      hasEntitlement: Boolean(entitlement),
-      tier,
-    });
-    if (tier === 'PAID') {
-      context?.log?.info?.('sugandhg - checkSiteRequiresValidation: PAID entitlement for ASO, returning true (requires validation)', {
-        siteId: site.getId?.(),
-        tier,
-      });
+    const productCode = entitlement?.record?.productCode ?? null;
+
+    if (tier === 'PAID' && (productCode === 'ASO' || entitlement?.record?.productCode === 'ASO')) {
       return true;
     }
   } catch (e) {
-    context?.log?.warn?.(`sugandhg - Entitlement check failed for site ${site.getId?.()}: ${e.message}`);
+    context?.log?.warn?.(`Entitlement check failed for site ${site.getId?.()}: ${e.message}`);
   }
 
   // No PAID ASO entitlement: do not require validation
-  context?.log?.info?.('sugandhg - checkSiteRequiresValidation: no PAID ASO entitlement, returning false (no validation required)', {
-    siteId: site.getId?.(),
-  });
   return false;
 }

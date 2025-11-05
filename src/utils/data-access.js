@@ -232,12 +232,6 @@ export async function syncSuggestions({
   // Prepare new suggestions
   const { site } = context;
   const requiresValidation = Boolean(site?.requiresValidation);
-  log.debug('sugandhg - syncSuggestions: preparing new suggestions', {
-    siteId: site?.getId?.(),
-    requiresValidation,
-    newDataCount: newData.length,
-  });
-
   const newSuggestions = newData
     .filter((data) => !existingSuggestions.some(
       (existing) => buildKey(existing.getData()) === buildKey(data),
