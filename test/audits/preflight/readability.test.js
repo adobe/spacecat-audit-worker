@@ -2081,8 +2081,8 @@ describe('Preflight Readability Audit', () => {
       };
 
       // Mock sendReadabilityToMystique to throw an error
-      const readabilityModuleFailing = await esmock('../../../src/readability/handler.js', {
-        '../../../src/readability/async-mystique.js': {
+      const readabilityModuleFailing = await esmock('../../../src/readability/preflight/handler.js', {
+        '../../../src/readability/shared/async-mystique.js': {
           sendReadabilityToMystique: sinon.stub().rejects(new TypeError('Network error connecting to Mystique')),
         },
       });

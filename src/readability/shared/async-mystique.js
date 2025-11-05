@@ -87,10 +87,10 @@ export async function sendReadabilityToMystique(
         },
       });
       await jobEntity.save();
-      log.info(`[readability-suggest async] Stored readability metadata in job ${jobId}`);
+      log.debug(`[readability-suggest async] Stored readability metadata in job ${jobId}`);
     } else {
       // Opportunities: No need to store metadata in AsyncJob
-      log.info(`[readability-suggest async] Sending ${readabilityIssues.length} readability issues for opportunity audit ${jobId}`);
+      log.debug(`[readability-suggest async] Sending ${readabilityIssues.length} readability issues for opportunity audit ${jobId}`);
     }
 
     // Send each readability issue as a separate message to Mystique
