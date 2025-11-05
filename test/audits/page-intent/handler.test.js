@@ -79,7 +79,14 @@ describe('Page Intent Handler', () => {
     // Stubs for utility functions
     getStaticContentStub = sandbox.stub().resolves('SELECT * FROM table');
     getObjectFromKeyStub = sandbox.stub().resolves(null);
-    promptStub = sandbox.stub().resolves({ content: '{"pageIntent":"INFORMATIONAL","topic":"test"}' });
+    promptStub = sandbox.stub().resolves({
+      content: '{\"pageIntent\":\"INFORMATIONAL\",\"topic\":\"test\"}',
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 50,
+        total_tokens: 150,
+      },
+    });
 
     // Setup context
     context = new MockContextBuilder()
@@ -159,14 +166,14 @@ describe('Page Intent Handler', () => {
       expect(result.urls[1].url).to.equal(`${baseURL}/page4`);
     });
 
-    it('should limit results to MAX_PAGES_PER_RUN', async () => {
+    it('should limit results to PAGE_INTENT_BATCH_SIZE', async () => {
       const paths = Array.from({ length: 20 }, (_, i) => ({ path: `/page${i}` }));
       mockAthenaClient.query.resolves(paths);
 
       const result = await handlerModule.getPathsOfLastWeek(context);
 
-      expect(result.urls).to.have.lengthOf(10); // MAX_PAGES_PER_RUN = 10
-      expect(result.auditResult.missingPageIntents).to.equal(10); // Limited to MAX_PAGES_PER_RUN
+      // PAGE_INTENT_BATCH_SIZE = 10
+      expect(result.urls).to.have.lengthOf(10);
     });
 
     it('should return correct audit result structure', async () => {
@@ -193,8 +200,9 @@ describe('Page Intent Handler', () => {
       expect(result.urls).to.have.lengthOf(0);
       expect(result.auditResult.missingPageIntents).to.equal(0);
     });
+  });
 
-    describe('generatePageIntent', () => {
+  describe('generatePageIntent', () => {
       beforeEach(() => {
         context.scrapeResultPaths = new Map([
           [`${baseURL}/page1`, 's3-key-1'],
@@ -216,6 +224,59 @@ describe('Page Intent Handler', () => {
         expect(mockPageIntent.create).to.have.been.calledTwice;
         expect(result.auditResult.successfulPages).to.equal(2);
         expect(result.auditResult.failedPages).to.equal(0);
+      });
+
+      it('should track token usage across all prompts', async () => {
+        getObjectFromKeyStub.resolves({
+          scrapeResult: {
+            minimalContent: 'Test content for page',
+          },
+        });
+
+        promptStub.onFirstCall().resolves({
+          content: '{"pageIntent":"INFORMATIONAL","topic":"test"}',
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 50,
+            total_tokens: 150,
+          },
+        });
+
+        promptStub.onSecondCall().resolves({
+          content: '{"pageIntent":"COMMERCIAL","topic":"product"}',
+          usage: {
+            prompt_tokens: 120,
+            completion_tokens: 60,
+            total_tokens: 180,
+          },
+        });
+
+        const result = await handlerModule.generatePageIntent(context);
+
+        expect(result.auditResult).to.have.property('tokenUsage');
+        expect(result.auditResult.tokenUsage.totalPromptTokens).to.equal(220);
+        expect(result.auditResult.tokenUsage.totalCompletionTokens).to.equal(110);
+        expect(result.auditResult.tokenUsage.totalTokens).to.equal(330);
+        expect(result.auditResult.tokenUsage.promptCount).to.equal(2);
+      });
+
+      it('should handle missing usage information gracefully', async () => {
+        getObjectFromKeyStub.resolves({
+          scrapeResult: {
+            minimalContent: 'Test content for page',
+          },
+        });
+
+        promptStub.resolves({
+          content: '{"pageIntent":"INFORMATIONAL","topic":"test"}',
+          usage: null,
+        });
+
+        const result = await handlerModule.generatePageIntent(context);
+
+        expect(result.auditResult).to.have.property('tokenUsage');
+        expect(result.auditResult.tokenUsage.totalTokens).to.equal(0);
+        expect(result.auditResult.tokenUsage.promptCount).to.equal(0);
       });
 
       it('should skip pages with no scrape data', async () => {
@@ -380,7 +441,7 @@ describe('Page Intent Handler', () => {
       });
     });
 
-    describe('Edge Cases', () => {
+  describe('Edge Cases', () => {
       it('should handle missing topic in LLM response', async () => {
         context.scrapeResultPaths = new Map([
           [`${baseURL}/page1`, 's3-key-1'],
@@ -426,19 +487,18 @@ describe('Page Intent Handler', () => {
         expect(promptCall.args[1]).to.include('[content truncated]');
         expect(promptCall.args[1]).not.to.include('a'.repeat(50000));
       });
-    });
+  });
 
-    describe('Module Export', () => {
-      it('should export an audit builder with correct structure', async () => {
-        const defaultExport = handlerModule.default;
+  describe('Module Export', () => {
+    it('should export an audit builder with correct structure', async () => {
+      const defaultExport = handlerModule.default;
 
-        expect(defaultExport).to.be.an('object');
-        expect(defaultExport).to.have.property('steps');
-        expect(defaultExport.steps).to.be.an('object');
-        expect(Object.keys(defaultExport.steps)).to.have.lengthOf(2);
-        expect(defaultExport.steps).to.have.property('extract-urls');
-        expect(defaultExport.steps).to.have.property('generate-intent');
-      });
+      expect(defaultExport).to.be.an('object');
+      expect(defaultExport).to.have.property('steps');
+      expect(defaultExport.steps).to.be.an('object');
+      expect(Object.keys(defaultExport.steps)).to.have.lengthOf(2);
+      expect(defaultExport.steps).to.have.property('extract-urls');
+      expect(defaultExport.steps).to.have.property('generate-intent');
     });
   });
 });

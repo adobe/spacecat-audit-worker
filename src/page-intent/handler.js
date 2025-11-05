@@ -35,11 +35,12 @@ export async function getPathsOfLastWeek(context) {
   const baseURL = site.getBaseURL();
   const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
   const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
+  const today = new Date();
 
   const variables = {
     tableName: `${ATHENA_DATABASE}.${ATHENA_TABLE}`,
     siteId: site.getSiteId(),
-    temporalCondition: getTemporalCondition(),
+    temporalCondition: getTemporalCondition(today, 10),
   };
 
   log.info(`${LOG_PREFIX} Step 1: Extracting URLs for page intent analysis for site ${baseURL}`);
@@ -52,12 +53,11 @@ export async function getPathsOfLastWeek(context) {
 
   const missingPageIntents = paths
     .map(({ path }) => path)
-    .filter((path) => !existingUrls.has(`${baseURL}${path}`))
-    .slice(0, batchSize);
+    .filter((path) => !existingUrls.has(`${baseURL}${path}`));
 
-  log.info(`${LOG_PREFIX} Found ${missingPageIntents.length} pages missing page intent (limited to ${batchSize})`);
+  log.info(`${LOG_PREFIX} Found ${missingPageIntents.length} pages missing page intent; processing batch of ${batchSize} pages`);
 
-  const urlsToScrape = missingPageIntents.map((path) => ({
+  const urlsToScrape = missingPageIntents.slice(0, batchSize).map((path) => ({
     url: `${baseURL}${path}`,
   }));
 
@@ -106,10 +106,10 @@ export async function analyzePageIntent(url, textContent, context, log) {
   const validIntents = Object.values(PageIntentModel.PAGE_INTENTS);
   if (!analysis.pageIntent || !validIntents.includes(analysis.pageIntent)) {
     log.warn(`${LOG_PREFIX} Invalid or null page intent '${analysis.pageIntent}' returned by LLM for ${url}`);
-    return null;
+    return { analysis: null, usage: response.usage };
   }
 
-  return analysis;
+  return { analysis, usage: response.usage };
 }
 
 export async function processPage(url, s3Path, processingContext) {
@@ -127,16 +127,18 @@ export async function processPage(url, s3Path, processingContext) {
         url,
         success: false,
         error: 'No scrape data or minimal content found',
+        usage: null,
       };
     }
 
-    const analysis = await analyzePageIntent(url, scrapeContent, context, log);
+    const { analysis, usage } = await analyzePageIntent(url, scrapeContent, context, log);
 
     if (!analysis) {
       return {
         url,
         success: false,
         error: 'Invalid or insufficient data for page intent classification',
+        usage,
       };
     }
 
@@ -154,6 +156,7 @@ export async function processPage(url, s3Path, processingContext) {
       pageIntent: analysis.pageIntent,
       topic: analysis.topic,
       success: true,
+      usage,
     };
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to process ${url}:`, error);
@@ -161,6 +164,7 @@ export async function processPage(url, s3Path, processingContext) {
       url,
       success: false,
       error: error.message,
+      usage: null,
     };
   }
 }
@@ -193,21 +197,38 @@ export async function generatePageIntent(context) {
 
   // Sequential processing is intentional here to prevent overwhelming the Azure OpenAI API
   const results = [];
+  const tokenUsage = {
+    totalPromptTokens: 0,
+    totalCompletionTokens: 0,
+    totalTokens: 0,
+    promptCount: 0,
+  };
+
   for (const [url, s3Path] of scrapeResultPaths.entries()) {
     // eslint-disable-next-line no-await-in-loop
     const result = await processPage(url, s3Path, processingContext);
     results.push(result);
+
+    // Track token usage
+    if (result.usage) {
+      tokenUsage.totalPromptTokens += result.usage.prompt_tokens || 0;
+      tokenUsage.totalCompletionTokens += result.usage.completion_tokens || 0;
+      tokenUsage.totalTokens += result.usage.total_tokens || 0;
+      tokenUsage.promptCount += 1;
+    }
   }
 
   const successfulPages = results.filter((r) => r.success).length;
   const failedPages = results.filter((r) => !r.success).length;
 
   log.info(`${LOG_PREFIX} Completed: ${successfulPages} successful, ${failedPages} failed out of ${results.length} total`);
+  log.info(`${LOG_PREFIX} Token usage: ${tokenUsage.totalTokens} total tokens across ${tokenUsage.promptCount} prompts (${tokenUsage.totalPromptTokens} prompt + ${tokenUsage.totalCompletionTokens} completion)`);
 
   return {
     auditResult: {
       successfulPages,
       failedPages,
+      tokenUsage,
     },
     fullAuditRef: audit.getFullAuditRef(),
   };
