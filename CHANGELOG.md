@@ -1,3 +1,10 @@
+# [1.228.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.227.0...v1.228.0) (2025-11-05)
+
+
+### Features
+
+* **page-intent:** generate page intent within audit worker ([#1510](https://github.com/adobe/spacecat-audit-worker/issues/1510)) ([b020cda](https://github.com/adobe/spacecat-audit-worker/commit/b020cda174f1700feed86fe9126b1478abb63cd2))
+
 # [1.227.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.226.0...v1.227.0) (2025-11-05)
 
 
