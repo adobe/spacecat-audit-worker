@@ -1899,6 +1899,41 @@ describe('Forms Opportunities - Accessibility Handler', () => {
       });
     });
 
+    it('should return notFound when site is not found', async () => {
+      const message = {
+        auditId,
+        siteId,
+        data: {
+          opportunityId,
+          a11y: [{
+            form: 'https://example.com/form1',
+            formSource: '#form1',
+            a11yIssues: [{
+              issue: 'Missing alt text',
+              level: 'error',
+              successCriterias: ['1.1.1'],
+              htmlWithIssues: ['<img src="test.jpg">'],
+              recommendation: 'Add alt text to image',
+            }],
+          }],
+        },
+      };
+
+      // Override the Site.findById to return null (site not found)
+      const siteFindByIdStub = sandbox.stub().resolves(null);
+      context.dataAccess.Site.findById = siteFindByIdStub;
+
+      const result = await mystiqueDetectedFormAccessibilityHandlerMocked.default(message, context);
+
+      expect(result.status).to.equal(404);
+      expect(siteFindByIdStub).to.have.been.calledOnceWith(siteId);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Site not found/),
+      );
+      // Verify that no opportunity operations were attempted
+      expect(context.dataAccess.Opportunity.findById).to.not.have.been.called;
+    });
+
     it('should process message and send to mystique for quality agent', async () => {
       const message = {
         auditId,
