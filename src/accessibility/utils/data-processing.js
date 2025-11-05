@@ -16,6 +16,7 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
+import { isoCalendarWeek } from '@adobe/spacecat-shared-utils';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../../utils/s3-utils.js';
 import {
   createReportOpportunitySuggestionInstance,
@@ -23,6 +24,7 @@ import {
   createEnhancedReportOpportunity,
   createFixedVsNewReportOpportunity,
   createBaseReportOpportunity,
+  createOrUpdateDeviceSpecificSuggestion as createDeviceSpecificSuggestionInstance,
 } from './report-oppty.js';
 import {
   generateInDepthReportMarkdown,
@@ -68,7 +70,7 @@ export async function deleteOriginalFiles(s3Client, bucketName, objectKeys, log)
       deletedCount = 1;
     }
 
-    log.info(`Deleted ${deletedCount} original files after aggregation`);
+    log.debug(`Deleted ${deletedCount} original files after aggregation`);
   } catch (error) {
     log.error('[A11yProcessingError] Error deleting original files', error);
   }
@@ -100,7 +102,7 @@ export async function getSubfoldersUsingPrefixAndDelimiter(
     };
     const data = await s3Client.send(new ListObjectsV2Command(params));
     const commonPrefixes = data.CommonPrefixes || [];
-    log.info(
+    log.debug(
       `Fetched ${commonPrefixes.length} keys from S3 for bucket ${bucketName} and prefix ${prefix} with delimiter ${delimiter}`,
     );
     return commonPrefixes.map((subfolder) => subfolder.Prefix);
@@ -160,7 +162,6 @@ export async function getObjectKeysFromSubfolders(
 ) {
   const prefix = `${storagePrefix}/${siteId}/`;
   const delimiter = '/';
-  log.info(`Fetching accessibility data for site ${siteId} from bucket ${bucketName}`);
 
   // Get all subfolders for this site that have reports per url
   // up to 3 depending on the total no of urls (content-scraper has a batch size of 40 urls)
@@ -173,10 +174,9 @@ export async function getObjectKeysFromSubfolders(
   );
   if (subfolders.length === 0) {
     const message = `No accessibility data found in bucket ${bucketName} at prefix ${prefix} for site ${siteId} with delimiter ${delimiter}`;
-    log.info(message);
+    log.debug(message);
     return { success: false, objectKeys: [], message };
   }
-  log.info(`Found ${subfolders.length} subfolders for site ${siteId} in bucket ${bucketName} with delimiter ${delimiter} and value ${subfolders}`);
 
   // filter subfolders to match the current date because the name of the subfolder is a timestamp
   // we do this in case there are leftover subfolders from previous runs that fail to be deleted
@@ -187,7 +187,7 @@ export async function getObjectKeysFromSubfolders(
   });
   if (getCurrentSubfolders.length === 0) {
     const message = `No accessibility data found for today's date in bucket ${bucketName} at prefix ${prefix} for site ${siteId} with delimiter ${delimiter}`;
-    log.info(message);
+    log.debug(message);
     return { success: false, objectKeys: [], message };
   }
 
@@ -201,12 +201,12 @@ export async function getObjectKeysFromSubfolders(
 
   if (!objectKeys || objectKeys.length === 0) {
     const message = `No accessibility data found in bucket ${bucketName} at prefix ${prefix} for site ${siteId}`;
-    log.info(message);
+    log.debug(message);
     return { success: false, objectKeys: [], message };
   }
 
   // return the object keys for the JSON files that have the reports per url
-  log.info(`Found ${objectKeys.length} data files for site ${siteId}`);
+  log.debug(`Found ${objectKeys.length} data files for site ${siteId}`);
   return { success: true, objectKeys, message: `Found ${objectKeys.length} data files` };
 }
 
@@ -222,13 +222,13 @@ export async function cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekO
       return timestampA.getTime() > timestampB.getTime() ? 1 : -1;
     });
     const objectKeyToDelete = lastWeekObjectKeys[0];
-    const deletedCountOldestFile = await deleteOriginalFiles(
+    await deleteOriginalFiles(
       s3Client,
       bucketName,
       [objectKeyToDelete],
       log,
     );
-    log.info(`Deleted ${deletedCountOldestFile} oldest final result file: ${objectKeyToDelete}`);
+    log.debug(`Deleted oldest final result file: ${objectKeyToDelete}`);
   }
 }
 
@@ -295,7 +295,7 @@ export async function processFilesWithRetry(s3Client, bucketName, objectKeys, lo
     log.warn(`${failedCount} out of ${objectKeys.length} files failed to process, continuing with ${results.length} successful files`);
   }
 
-  log.info(`File processing completed: ${results.length} successful, ${failedCount} failed out of ${objectKeys.length} total files`);
+  log.debug(`File processing completed: ${results.length} successful, ${failedCount} failed out of ${objectKeys.length} total files`);
 
   return { results };
 }
@@ -422,12 +422,12 @@ export async function aggregateAccessibilityData(
       ContentType: 'application/json',
     }));
 
-    log.info(`[${logIdentifier}] Saved aggregated accessibility data to ${outputKey}`);
+    log.debug(`[${logIdentifier}] Saved aggregated accessibility data to ${outputKey}`);
 
     // check if there are any other final-result files in the {storagePrefix}/siteId folder
     // if there are, we will use the latest one for comparison later on
     const lastWeekObjectKeys = await getObjectKeysUsingPrefix(s3Client, bucketName, `${storagePrefix}/${siteId}/`, log, 10, '-final-result.json');
-    log.info(`[${logIdentifier}] Found ${lastWeekObjectKeys.length} final-result files in the ${storagePrefix}/siteId folder with keys: ${lastWeekObjectKeys}`);
+    log.debug(`[${logIdentifier}] Found ${lastWeekObjectKeys.length} final-result files in the ${storagePrefix}/siteId folder with keys: ${lastWeekObjectKeys}`);
 
     // get last week file and start creating the report
     const lastWeekFile = lastWeekObjectKeys.length < 2
@@ -439,7 +439,7 @@ export async function aggregateAccessibilityData(
         log,
       );
     if (lastWeekFile) {
-      log.info(`[${logIdentifier}] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
+      log.debug(`[${logIdentifier}] Last week file key:${lastWeekObjectKeys[1]} with content: ${JSON.stringify(lastWeekFile, null, 2)}`);
     }
 
     await cleanupS3Files(s3Client, bucketName, objectKeys, lastWeekObjectKeys, log);
@@ -499,6 +499,177 @@ export async function createReportOpportunitySuggestion(
     log.error(`[A11yProcessingError] Failed to create new suggestion for siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
     throw new Error(e.message);
   }
+}
+
+/**
+ * Creates or updates device-specific report opportunity suggestion
+ * @param {Object} opportunity - The opportunity instance
+ * @param {string} reportMarkdown - The markdown content for this device
+ * @param {string} deviceType - 'desktop' or 'mobile'
+ * @param {Object} auditData - Audit data
+ * @param {Object} log - Logger instance
+ * @returns {Object} Created or updated suggestion
+ */
+export async function createOrUpdateDeviceSpecificSuggestion(
+  opportunity,
+  reportMarkdown,
+  deviceType,
+  auditData,
+  log,
+) {
+  const createSuggestionInstance = createDeviceSpecificSuggestionInstance;
+
+  try {
+    // Get existing suggestions to check if we need to update
+    const existingSuggestions = await opportunity.getSuggestions();
+    const existingSuggestion = existingSuggestions.find((s) => s.getType() === 'CODE_CHANGE');
+
+    let suggestions;
+    if (existingSuggestion) {
+      // Update existing suggestion with new device content
+      const currentData = existingSuggestion.getData() ?? {};
+      const currentSuggestionValue = currentData.suggestionValue ?? {};
+
+      suggestions = createSuggestionInstance(
+        currentSuggestionValue,
+        deviceType,
+        reportMarkdown,
+        log,
+      );
+
+      // Update only the suggestionValue field to avoid ElectroDB timestamp conflicts
+      const newData = { ...currentData, suggestionValue: suggestions[0].data.suggestionValue };
+
+      existingSuggestion.setData(newData);
+      await existingSuggestion.save();
+
+      return { suggestion: existingSuggestion };
+    } else {
+      // Create new suggestion
+      suggestions = createSuggestionInstance(null, deviceType, reportMarkdown, log);
+
+      const suggestion = await opportunity.addSuggestions(suggestions);
+
+      return { suggestion };
+    }
+  } catch (e) {
+    log.error(`[A11yProcessingError] Failed to create/update device-specific suggestion for ${deviceType} on siteId ${auditData.siteId} and auditId ${auditData.auditId}: ${e.message}`);
+    throw new Error(e.message);
+  }
+}
+
+/**
+ * Builds the expected opportunity title pattern based on device type and report type
+ * @param {string} deviceType - 'Desktop' or 'Mobile'
+ * @param {number} week - The week number
+ * @param {number} year - The year
+ * @param {string} reportType - The report type ('in-depth', 'enhanced', 'fixed', '' for base)
+ * @returns {string} The expected opportunity title pattern
+ */
+function buildOpportunityTitlePattern(deviceType, week, year, reportType) {
+  const capitalizedDevice = deviceType.charAt(0).toUpperCase() + deviceType.slice(1).toLowerCase();
+  const basePattern = `Accessibility report - ${capitalizedDevice} - Week ${week} - ${year}`;
+
+  if (reportType === 'in-depth') {
+    return `${basePattern} - in-depth`;
+  }
+  if (reportType === 'fixed') {
+    return `Accessibility report Fixed vs New Issues - ${capitalizedDevice} - Week ${week} - ${year}`;
+  }
+  if (reportType === 'enhanced') {
+    return `Enhancing accessibility for the top 10 most-visited pages - ${capitalizedDevice} - Week ${week} - ${year}`;
+  }
+  // Base report (no suffix)
+  return basePattern;
+}
+
+/**
+ * Finds existing accessibility opportunity for a specific device, week, year, and report type
+ * @param {string} deviceType - 'Desktop' or 'Mobile'
+ * @param {string} siteId - The site ID
+ * @param {number} week - The week number
+ * @param {number} year - The year
+ * @param {Object} dataAccess - Data access object
+ * @param {Object} log - Logger instance
+ * @param {string} reportType - The report type ('in-depth', 'enhanced', 'fixed', '' for base)
+ * @returns {Object|null} Existing opportunity or null
+ */
+async function findExistingAccessibilityOpportunity(
+  deviceType,
+  siteId,
+  week,
+  year,
+  dataAccess,
+  log,
+  reportType = '',
+) {
+  try {
+    const { Opportunity } = dataAccess;
+    const opportunities = await Opportunity.allBySiteId(siteId);
+
+    const titlePattern = buildOpportunityTitlePattern(deviceType, week, year, reportType);
+    const deviceLabel = deviceType.toLowerCase();
+
+    const opportunity = opportunities.find((oppty) => {
+      const title = oppty.getTitle();
+      const isMatchingOpportunity = title === titlePattern;
+      const isActiveStatus = oppty.getStatus() === 'NEW' || oppty.getStatus() === 'IGNORED';
+      return isMatchingOpportunity && isActiveStatus;
+    });
+
+    if (opportunity) {
+      log.info(`[A11yAudit] Found existing ${deviceLabel} ${reportType || 'base'} opportunity for week ${week}, year ${year}: ${opportunity.getId()}`);
+      return opportunity;
+    }
+
+    log.info(`[A11yAudit] No existing ${deviceLabel} ${reportType || 'base'} opportunity found for week ${week}, year ${year}`);
+    return null;
+  } catch (error) {
+    log.error(`[A11yAudit] Error searching for existing ${deviceType.toLowerCase()} opportunity: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Finds existing desktop accessibility opportunity for the same week and report type
+ * @param {string} siteId - The site ID
+ * @param {number} week - The week number
+ * @param {number} year - The year
+ * @param {Object} dataAccess - Data access object
+ * @param {Object} log - Logger instance
+ * @param {string} reportType - The report type suffix (e.g., 'in-depth', 'base', empty for base)
+ * @returns {Object|null} Existing desktop opportunity or null
+ */
+export async function findExistingDesktopOpportunity(
+  siteId,
+  week,
+  year,
+  dataAccess,
+  log,
+  reportType = '',
+) {
+  return findExistingAccessibilityOpportunity('Desktop', siteId, week, year, dataAccess, log, reportType);
+}
+
+/**
+ * Finds existing mobile accessibility opportunity for the same week and report type
+ * @param {string} siteId - The site ID
+ * @param {number} week - The week number
+ * @param {number} year - The year
+ * @param {Object} dataAccess - Data access object
+ * @param {Object} log - Logger instance
+ * @param {string} reportType - The report type suffix (e.g., 'in-depth', 'base', empty for base)
+ * @returns {Object|null} Existing mobile opportunity or null
+ */
+export async function findExistingMobileOpportunity(
+  siteId,
+  week,
+  year,
+  dataAccess,
+  log,
+  reportType = '',
+) {
+  return findExistingAccessibilityOpportunity('Mobile', siteId, week, year, dataAccess, log, reportType);
 }
 
 /**
@@ -570,6 +741,8 @@ export function linkBuilder(linkData, opptyId) {
  * @param {function} createOpportunityFn - the function to create the opportunity
  * @param {string} reportName - the name of the report
  * @param {boolean} shouldIgnore - whether to ignore the opportunity
+ * @param {string} deviceType - the device type (Desktop/Mobile)
+ * @param {string} reportType - the report type ('in-depth', 'enhanced', 'fixed', '' for base)
  * @returns {Promise<string>} - the URL of the opportunity
  */
 export async function generateReportOpportunity(
@@ -578,6 +751,8 @@ export async function generateReportOpportunity(
   createOpportunityFn,
   reportName,
   shouldIgnore = true,
+  deviceType = 'Desktop',
+  reportType = '',
 ) {
   const {
     mdData,
@@ -587,7 +762,8 @@ export async function generateReportOpportunity(
     context,
   } = reportData;
   const { week, year } = opptyData;
-  const { log } = context;
+  const { log, dataAccess } = context;
+  const { siteId } = auditData;
 
   // 1.1 generate the markdown report
   const reportMarkdown = genMdFn(mdData);
@@ -598,34 +774,74 @@ export async function generateReportOpportunity(
     return '';
   }
 
-  // 1.2 create the opportunity for the report
-  const opportunityInstance = createOpportunityFn(week, year);
-  let opportunityRes;
+  let opportunity;
+  let isExistingOpportunity = false;
 
-  try {
-    opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
-  } catch (error) {
-    log.error(`[A11yProcessingError] Failed to create report opportunity for ${reportName}`, error.message);
-    throw new Error(error.message);
+  // 1.2 Handle device-specific logic
+  if (deviceType.toLowerCase() === 'mobile') {
+    // Mobile audit: look for existing desktop opportunity to merge with
+    const existingDesktopOpportunity = await findExistingDesktopOpportunity(
+      siteId,
+      week,
+      year,
+      dataAccess,
+      log,
+      reportType,
+    );
+
+    if (existingDesktopOpportunity) {
+      // Use existing desktop opportunity and add mobile content to it
+      opportunity = existingDesktopOpportunity;
+      isExistingOpportunity = true;
+      log.info(`[A11yAudit] Mobile audit will update existing desktop ${reportType || 'base'} opportunity: ${opportunity.getId()}`);
+    } else {
+      // No existing desktop opportunity, create new mobile-only opportunity
+      const opportunityInstance = createOpportunityFn(week, year, deviceType);
+      const opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
+      opportunity = opportunityRes.opportunity;
+      log.info(`[A11yAudit] Created new mobile-only ${reportType || 'base'} opportunity: ${opportunity.getId()}`);
+    }
+  } else {
+    // Desktop audit: look for existing mobile opportunity to merge with
+    const existingMobileOpportunity = await findExistingMobileOpportunity(
+      siteId,
+      week,
+      year,
+      dataAccess,
+      log,
+      reportType,
+    );
+
+    if (existingMobileOpportunity) {
+      // Use existing mobile opportunity and add desktop content to it
+      opportunity = existingMobileOpportunity;
+      isExistingOpportunity = true;
+      log.info(`[A11yAudit] Desktop audit will update existing mobile ${reportType || 'base'} opportunity: ${opportunity.getId()}`);
+    } else {
+      // No existing mobile opportunity, create new desktop-only opportunity
+      const opportunityInstance = createOpportunityFn(week, year, deviceType);
+      const opportunityRes = await createReportOpportunity(opportunityInstance, auditData, context);
+      opportunity = opportunityRes.opportunity;
+      log.info(`[A11yAudit] Created new desktop ${reportType || 'base'} opportunity: ${opportunity.getId()}`);
+    }
   }
 
-  const { opportunity } = opportunityRes;
-
-  // 1.3 create the suggestions for the report oppty
+  // 1.3 create or update the suggestions for the report oppty with device-specific content
   try {
-    await createReportOpportunitySuggestion(
+    await createOrUpdateDeviceSpecificSuggestion(
       opportunity,
       reportMarkdown,
+      deviceType.toLowerCase(),
       auditData,
       log,
     );
   } catch (error) {
-    log.error(`[A11yProcessingError] Failed to create report opportunity suggestion for ${reportName}`, error.message);
+    log.error(`[A11yProcessingError] Failed to create/update device-specific suggestion for ${reportName}`, error.message);
     throw new Error(error.message);
   }
 
-  // 1.4 update status to ignored
-  if (shouldIgnore) {
+  // 1.4 update status to ignored (only for new opportunities or if explicitly requested)
+  if (shouldIgnore && !isExistingOpportunity) {
     await opportunity.setStatus('IGNORED');
     await opportunity.save();
   }
@@ -645,24 +861,10 @@ export function getEnvAsoDomain(env) {
   return isProd ? 'experience' : 'experience-stage';
 }
 
-export function getWeekNumber(date) {
-  // Calculate ISO 8601 week number
-  const target = new Date(date.valueOf());
-  const dayNumber = (date.getDay() + 6) % 7;
-  target.setDate(target.getDate() - dayNumber + 3);
-  const firstThursday = target.valueOf();
-  target.setMonth(0, 1);
-  if (target.getDay() !== 4) {
-    target.setMonth(0, 1 + (((4 - target.getDay()) + 7) % 7));
-  }
-  const week = 1 + Math.ceil((firstThursday - target) / 604800000);
-  return week;
-}
-
 export function getWeekNumberAndYear() {
   const date = new Date();
-  const week = getWeekNumber(date);
-  const year = date.getFullYear();
+  // Use ISO calendar week and year from shared utility
+  const { week, year } = isoCalendarWeek(date);
   return { week, year };
 }
 
@@ -678,6 +880,7 @@ export async function generateReportOpportunities(
   aggregationResult,
   context,
   auditType,
+  deviceType = 'Desktop',
 ) {
   const siteId = site.getId();
   const { log, env } = context;
@@ -712,21 +915,21 @@ export async function generateReportOpportunities(
   };
 
   try {
-    relatedReportsUrls.inDepthReportUrl = await generateReportOpportunity(reportData, generateInDepthReportMarkdown, createInDepthReportOpportunity, 'in-depth report');
+    relatedReportsUrls.inDepthReportUrl = await generateReportOpportunity(reportData, generateInDepthReportMarkdown, createInDepthReportOpportunity, 'in-depth report', true, deviceType, 'in-depth');
   } catch (error) {
     log.error('[A11yProcessingError] Failed to generate in-depth report opportunity', error.message);
     throw new Error(error.message);
   }
 
   try {
-    relatedReportsUrls.enhancedReportUrl = await generateReportOpportunity(reportData, generateEnhancedReportMarkdown, createEnhancedReportOpportunity, 'enhanced report');
+    relatedReportsUrls.enhancedReportUrl = await generateReportOpportunity(reportData, generateEnhancedReportMarkdown, createEnhancedReportOpportunity, 'enhanced report', true, deviceType, 'enhanced');
   } catch (error) {
     log.error('[A11yProcessingError] Failed to generate enhanced report opportunity', error.message);
     throw new Error(error.message);
   }
 
   try {
-    relatedReportsUrls.fixedVsNewReportUrl = await generateReportOpportunity(reportData, generateFixedNewReportMarkdown, createFixedVsNewReportOpportunity, 'fixed vs new report');
+    relatedReportsUrls.fixedVsNewReportUrl = await generateReportOpportunity(reportData, generateFixedNewReportMarkdown, createFixedVsNewReportOpportunity, 'fixed vs new report', true, deviceType, 'fixed');
   } catch (error) {
     log.error('[A11yProcessingError] Failed to generate fixed vs new report opportunity', error.message);
     throw new Error(error.message);
@@ -734,7 +937,7 @@ export async function generateReportOpportunities(
 
   try {
     reportData.mdData.relatedReportsUrls = relatedReportsUrls;
-    await generateReportOpportunity(reportData, generateBaseReportMarkdown, createBaseReportOpportunity, 'base report', false);
+    await generateReportOpportunity(reportData, generateBaseReportMarkdown, createBaseReportOpportunity, 'base report', false, deviceType, '');
   } catch (error) {
     log.error('[A11yProcessingError] Failed to generate base report opportunity', error.message);
     throw new Error(error.message);
@@ -768,4 +971,90 @@ export async function sendRunImportMessage(
     siteId,
     ...(data && { data }),
   });
+}
+
+/**
+ * Groups suggestions by URL, source, and issue type, then sends messages
+ * to the importer worker for code-fix generation
+ *
+ * @param {Object} opportunity - The opportunity object containing suggestions
+ * @param {string} auditId - The audit ID
+ * @param {Object} context - The context object containing log, sqs, env, and site
+ * @returns {Promise<void>}
+ */
+export async function sendCodeFixMessagesToImporter(opportunity, auditId, context) {
+  const {
+    log, sqs, env, site,
+  } = context;
+
+  const siteId = opportunity.getSiteId();
+  const baseUrl = site.getBaseURL();
+  const opportunityType = opportunity.getType();
+
+  try {
+    // Get all suggestions from the opportunity
+    const suggestions = await opportunity.getSuggestions();
+    if (!suggestions || suggestions.length === 0) {
+      log.info(`[${opportunityType}] [Site Id: ${siteId}] No suggestions found for code-fix generation`);
+      return;
+    }
+
+    // Group suggestions by URL, source, and issueType
+    const groupedSuggestions = new Map();
+
+    suggestions.forEach((suggestion) => {
+      const suggestionData = suggestion.getData();
+      const { url, source = 'default', issues } = suggestionData;
+
+      // By design, data.issues will always have length 1
+      if (issues && issues.length > 0) {
+        const issueType = issues[0].type;
+        const groupKey = `${url}|${source}|${issueType}`;
+        if (!groupedSuggestions.has(groupKey)) {
+          groupedSuggestions.set(groupKey, {
+            url,
+            source,
+            issueType,
+            suggestionIds: [],
+          });
+        }
+
+        // Add the suggestion ID to the group
+        groupedSuggestions.get(groupKey).suggestionIds.push(suggestion.getId());
+      }
+    });
+
+    log.info(`[${opportunityType}] [Site Id: ${siteId}] Grouped suggestions into ${groupedSuggestions.size} groups for code-fix generation`);
+
+    const messagePromises = Array.from(groupedSuggestions.values()).map(async (group) => {
+      const message = {
+        type: 'code',
+        siteId,
+        forward: {
+          queue: env.QUEUE_SPACECAT_TO_MYSTIQUE,
+          type: `codefix:${opportunityType}`,
+          siteId,
+          auditId,
+          url: baseUrl,
+          deliveryType: site.getDeliveryType(),
+          data: {
+            opportunityId: opportunity.getId(),
+            suggestionIds: group.suggestionIds,
+          },
+        },
+      };
+
+      try {
+        await sqs.sendMessage(env.IMPORT_WORKER_QUEUE_URL, message);
+        log.info(`[${opportunityType}] [Site Id: ${siteId}] Sent code-fix message to importer for URL: ${group.url}, source: ${group.source}, issueType: ${group.issueType}, suggestions: ${group.suggestionIds.length}`);
+      } catch (error) {
+        log.error(`[${opportunityType}] [Site Id: ${siteId}] Failed to send code-fix message for URL: ${group.url}, error: ${error.message}`);
+      }
+    });
+
+    await Promise.all(messagePromises);
+    log.info(`[${opportunityType}] [Site Id: ${siteId}] Completed sending ${messagePromises.length} code-fix messages to importer`);
+  } catch (error) {
+    log.error(`[${opportunityType}] [Site Id: ${siteId}] Error in sendCodeFixMessagesToImporter: ${error.message}`);
+  }
 }

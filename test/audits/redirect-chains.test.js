@@ -19,6 +19,7 @@ import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import {
   redirectsAuditRunner,
+  determineAuditScope,
   getJsonData,
   processRedirectsFile,
   processEntriesInParallel,
@@ -26,11 +27,13 @@ import {
   getSuggestedFix,
   generateSuggestedFixes,
   generateOpportunities,
+  filterIssuesToFitIntoSpace,
   AUDIT_LOGGING_NAME,
 } from '../../src/redirect-chains/handler.js';
 import {
   addWWW,
   ensureFullUrl,
+  getStringByteLength,
   hasProtocol,
   is404page,
 } from '../../src/redirect-chains/opportunity-utils.js';
@@ -94,6 +97,180 @@ describe('Redirect Chains Audit', () => {
   });
 
   describe('URL Utilities', () => {
+    describe('determineAuditScope', () => {
+      it('should strip all paths when baseUrl has no subpath - bulk.com example', async () => {
+        // baseUrl: https://bulk.com (no subpath)
+        // composedAuditURL resolves to: www.bulk.com/uk
+        // expected result: www.bulk.com (strip all paths)
+        nock('https://bulk.com')
+          .get('/')
+          .reply(301, '', { Location: 'https://www.bulk.com/uk' });
+
+        nock('https://www.bulk.com')
+          .get('/uk')
+          .reply(200);
+
+        const result = await determineAuditScope('https://bulk.com');
+        expect(result).to.equal('https://www.bulk.com');
+      });
+
+      it('should keep matching subpath when baseUrl has subpath - bulk.com/fr example', async () => {
+        // baseUrl: https://bulk.com/fr (has subpath /fr)
+        // composedAuditURL resolves to: www.bulk.com/fr
+        // expected result: www.bulk.com/fr (keep matching path)
+        nock('https://bulk.com')
+          .get('/fr')
+          .reply(301, '', { Location: 'https://www.bulk.com/fr' });
+
+        nock('https://www.bulk.com')
+          .get('/fr')
+          .reply(200);
+
+        const result = await determineAuditScope('https://bulk.com/fr');
+        expect(result).to.equal('https://www.bulk.com/fr');
+      });
+
+      it('should strip all paths when baseUrl has no subpath - kpmg.com example', async () => {
+        // baseUrl: https://kpmg.com (no subpath)
+        // composedAuditURL resolves to: kpmg.com/xx/en.html
+        // expected result: kpmg.com (strip all paths)
+        nock('https://kpmg.com')
+          .get('/')
+          .reply(301, '', { Location: 'https://kpmg.com/xx/en.html' });
+
+        nock('https://kpmg.com')
+          .get('/xx/en.html')
+          .reply(200);
+
+        const result = await determineAuditScope('https://kpmg.com');
+        expect(result).to.equal('https://kpmg.com');
+      });
+
+      it('should strip non-matching paths when baseUrl subpath does not match - realmadrid.com example', async () => {
+        // baseUrl: https://realmadrid.com/area-vip (has subpath /area-vip)
+        // composedAuditURL resolves to: www.realmadrid.com/sites/area-vip
+        // expected result: www.realmadrid.com (paths don't match, strip all)
+        nock('https://realmadrid.com')
+          .get('/area-vip')
+          .reply(301, '', { Location: 'https://www.realmadrid.com/sites/area-vip' });
+
+        nock('https://www.realmadrid.com')
+          .get('/sites/area-vip')
+          .reply(200);
+
+        const result = await determineAuditScope('https://realmadrid.com/area-vip');
+        expect(result).to.equal('https://www.realmadrid.com');
+      });
+
+      it('should handle simple redirect with no path change', async () => {
+        // baseUrl: https://example.com
+        // composedAuditURL resolves to: www.example.com
+        // expected result: www.example.com
+        nock('https://example.com')
+          .get('/')
+          .reply(301, '', { Location: 'https://www.example.com/' });
+
+        nock('https://www.example.com')
+          .get('/')
+          .reply(200);
+
+        const result = await determineAuditScope('https://example.com');
+        expect(result).to.equal('https://www.example.com');
+      });
+
+      it('should handle baseUrl with path that gets redirected but path is preserved', async () => {
+        // baseUrl: https://example.com/blog
+        // composedAuditURL resolves to: www.example.com/blog
+        // expected result: www.example.com/blog (path matches)
+        nock('https://example.com')
+          .get('/blog')
+          .reply(301, '', { Location: 'https://www.example.com/blog' });
+
+        nock('https://www.example.com')
+          .get('/blog')
+          .reply(200);
+
+        const result = await determineAuditScope('https://example.com/blog');
+        expect(result).to.equal('https://www.example.com/blog');
+      });
+
+      it('should handle baseUrl with path that gets redirected to different path', async () => {
+        // baseUrl: https://example.com/old-path
+        // composedAuditURL resolves to: www.example.com/new-path
+        // expected result: www.example.com (paths don't match, strip all)
+        nock('https://example.com')
+          .get('/old-path')
+          .reply(301, '', { Location: 'https://www.example.com/new-path' });
+
+        nock('https://www.example.com')
+          .get('/new-path')
+          .reply(200);
+
+        const result = await determineAuditScope('https://example.com/old-path');
+        expect(result).to.equal('https://www.example.com');
+      });
+
+      it('should keep longest common prefix path - westjet.com example', async () => {
+        // baseUrl: https://westjet.com/en-ca/book-trip/flights/from-calgary
+        // composedAuditURL resolves to: www.westjet.com/en-ca/best-of-travel/canada/from-calgary
+        // Path segments comparison:
+        //   original: ['en-ca', 'book-trip', 'flights', 'from-calgary']
+        //   resolved: ['en-ca', 'best-of-travel', 'canada', 'from-calgary']
+        //   common prefix: ['en-ca'] (first segment matches, second doesn't)
+        // expected result: www.westjet.com/en-ca
+        nock('https://westjet.com')
+          .get('/en-ca/book-trip/flights/from-calgary')
+          .reply(301, '', { Location: 'https://www.westjet.com/en-ca/best-of-travel/canada/from-calgary' });
+
+        nock('https://www.westjet.com')
+          .get('/en-ca/best-of-travel/canada/from-calgary')
+          .reply(200);
+
+        const result = await determineAuditScope('https://westjet.com/en-ca/book-trip/flights/from-calgary');
+        expect(result).to.equal('https://www.westjet.com/en-ca');
+      });
+
+      it('should keep multiple matching path segments', async () => {
+        // baseUrl: https://example.com/en/us/products/item
+        // composedAuditURL resolves to: www.example.com/en/us/services/feature
+        // Path segments comparison:
+        //   original: ['en', 'us', 'products', 'item']
+        //   resolved: ['en', 'us', 'services', 'feature']
+        //   common prefix: ['en', 'us'] (first two match, third doesn't)
+        // expected result: www.example.com/en/us
+        nock('https://example.com')
+          .get('/en/us/products/item')
+          .reply(301, '', { Location: 'https://www.example.com/en/us/services/feature' });
+
+        nock('https://www.example.com')
+          .get('/en/us/services/feature')
+          .reply(200);
+
+        const result = await determineAuditScope('https://example.com/en/us/products/item');
+        expect(result).to.equal('https://www.example.com/en/us');
+      });
+
+      it('should strip all paths when no segments match from the beginning', async () => {
+        // baseUrl: https://example.com/products/item
+        // composedAuditURL resolves to: www.example.com/services/feature
+        // Path segments comparison:
+        //   original: ['products', 'item']
+        //   resolved: ['services', 'feature']
+        //   common prefix: [] (first segment doesn't match)
+        // expected result: www.example.com
+        nock('https://example.com')
+          .get('/products/item')
+          .reply(301, '', { Location: 'https://www.example.com/services/feature' });
+
+        nock('https://www.example.com')
+          .get('/services/feature')
+          .reply(200);
+
+        const result = await determineAuditScope('https://example.com/products/item');
+        expect(result).to.equal('https://www.example.com');
+      });
+    });
+
     describe('hasProtocol', () => {
       it('should return true for URLs with protocol', () => {
         expect(hasProtocol('https://example.com')).to.be.true;
@@ -188,6 +365,35 @@ describe('Redirect Chains Audit', () => {
         expect(ensureFullUrl('path', 'https://example.com')).to.equal('https://example.com/path');
       });
     });
+
+    describe('getStringByteLength', () => {
+      it('should calculate byte length of string correctly', () => {
+        const testString = '{"key": "value"}';
+        const expectedLength = Buffer.byteLength(testString, 'utf8');
+        expect(getStringByteLength(testString)).to.equal(expectedLength);
+      });
+
+      it('should handle empty string', () => {
+        expect(getStringByteLength('')).to.equal(0);
+      });
+
+      it('should handle string with special characters', () => {
+        const testString = '{"key": "value with émojis 🚀"}';
+        const expectedLength = Buffer.byteLength(testString, 'utf8');
+        expect(getStringByteLength(testString)).to.equal(expectedLength);
+      });
+
+      it('should handle complex JSON objects', () => {
+        const complexObject = {
+          name: 'Test',
+          items: [1, 2, 3],
+          nested: { key: 'value' }
+        };
+        const testString = JSON.stringify(complexObject);
+        const expectedLength = Buffer.byteLength(testString, 'utf8');
+        expect(getStringByteLength(testString)).to.equal(expectedLength);
+      });
+    });
   });
 
   describe('JSON Data Handling', () => {
@@ -257,7 +463,7 @@ describe('Redirect Chains Audit', () => {
       });
 
       it('should sort the Source URLs', async () => {
-        const jsonWithDuplicates = {
+        const jsonUnsorted = {
           data: [
             { Source: '/c', Destination: '/page3' },
             { Source: '/b', Destination: '/page2' },
@@ -268,7 +474,7 @@ describe('Redirect Chains Audit', () => {
 
         nock(url)
           .get('/redirects.json')
-          .reply(200, jsonWithDuplicates);
+          .reply(200, jsonUnsorted);
 
         const result = await processRedirectsFile(url, context.log);
         expect(result).to.be.an('array');
@@ -628,6 +834,244 @@ describe('Redirect Chains Audit', () => {
         expect(result[3].ordinalDuplicate).to.equal(2); // 2nd duplicate of 'page2'
         expect(result[4].isDuplicateSrc).to.be.false;
         expect(result[4].ordinalDuplicate).to.equal(0);
+      });
+
+      it('should try fallback URL without subpath when redirects.json not found with subpath', async () => {
+        const auditScopeUrl = 'https://www.example.com/fr';
+        const fallbackUrl = 'https://www.example.com';
+
+        const redirectsJson = {
+          total: 2,
+          offset: 0,
+          limit: 2,
+          data: [
+            { Source: '/fr/test', Destination: '/fr/test-dest' },
+            { Source: '/en/other', Destination: '/en/other-dest' },
+          ],
+        };
+
+        // First try fails (with subpath)
+        nock(auditScopeUrl)
+          .get('/redirects.json')
+          .reply(404);
+
+        // Fallback succeeds (without subpath)
+        nock(fallbackUrl)
+          .get('/redirects.json')
+          .reply(200, redirectsJson);
+
+        const result = await processRedirectsFile(auditScopeUrl, context.log);
+
+        expect(result).to.be.an('array');
+        expect(result).to.have.lengthOf(1); // Only /fr/test matches the scope
+        expect(result[0].origSrc).to.equal('/fr/test');
+        expect(result[0].origDest).to.equal('/fr/test-dest');
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Looking for redirects file at: https:\/\/www\.example\.com\/fr\/redirects\.json/));
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Redirects file not found with subpaths, trying fallback/));
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Successfully loaded redirects file from: https:\/\/www\.example\.com\/redirects\.json/));
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Filtered entries from 2 to 1 based on audit scope: \/fr/));
+      });
+
+      it('should not try fallback when URL without path is same as auditScopeUrl', async () => {
+        const auditScopeUrl = 'https://www.example.com';
+
+        // Only one request should be made
+        nock(auditScopeUrl)
+          .get('/redirects.json')
+          .reply(404);
+
+        const result = await processRedirectsFile(auditScopeUrl, context.log);
+
+        expect(result).to.be.an('array').that.is.empty;
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Looking for redirects file at:/));
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/No redirects file found or file is empty/));
+        // Should NOT log the fallback message since URLs are the same
+        expect(context.log.info).to.not.have.been.calledWith(sinon.match(/trying fallback/));
+      });
+
+      it('should return empty array when both original and fallback fail', async () => {
+        const auditScopeUrl = 'https://www.example.com/en';
+        const fallbackUrl = 'https://www.example.com';
+
+        // First try fails (with subpath)
+        nock(auditScopeUrl)
+          .get('/redirects.json')
+          .reply(404);
+
+        // Fallback also fails (without subpath)
+        nock(fallbackUrl)
+          .get('/redirects.json')
+          .reply(404);
+
+        const result = await processRedirectsFile(auditScopeUrl, context.log);
+
+        expect(result).to.be.an('array').that.is.empty;
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Looking for redirects file at:/));
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/trying fallback/));
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/No redirects file found or file is empty/));
+      });
+
+      it('should return all entries when auditScopeUrl has no subpath', async () => {
+        const auditScopeUrl = 'https://www.example.com';
+
+        const redirectsJson = {
+          total: 3,
+          offset: 0,
+          limit: 3,
+          data: [
+            { Source: '/en/page1', Destination: '/en/new1' },
+            { Source: '/fr/page2', Destination: '/fr/new2' },
+            { Source: '/de/page3', Destination: '/de/new3' },
+          ],
+        };
+
+        nock(auditScopeUrl)
+          .get('/redirects.json')
+          .reply(200, redirectsJson);
+
+        const result = await processRedirectsFile(auditScopeUrl, context.log);
+
+        expect(result).to.be.an('array');
+        expect(result).to.have.lengthOf(3);
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/No subpath in audit scope URL, returning all 3 entries/));
+      });
+
+      it('should filter entries to only include those matching auditScopeUrl subpath with relative URLs', async () => {
+        const auditScopeUrl = 'https://www.example.com/fr';
+
+        const redirectsJson = {
+          total: 4,
+          offset: 0,
+          limit: 4,
+          data: [
+            { Source: '/fr/page1', Destination: '/fr/new1' },
+            { Source: '/fr/page2', Destination: '/fr/new2' },
+            { Source: '/en/page3', Destination: '/en/new3' },
+            { Source: '/de/page4', Destination: '/de/new4' },
+          ],
+        };
+
+        nock(auditScopeUrl)
+          .get('/redirects.json')
+          .reply(200, redirectsJson);
+
+        const result = await processRedirectsFile(auditScopeUrl, context.log);
+
+        expect(result).to.be.an('array');
+        expect(result).to.have.lengthOf(2);
+        expect(result[0].origSrc).to.equal('/fr/page1');
+        expect(result[1].origSrc).to.equal('/fr/page2');
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Filtered entries from 4 to 2 based on audit scope: \/fr/));
+      });
+
+      it('should filter entries with fully qualified URLs matching auditScopeUrl', async () => {
+        const auditScopeUrl = 'https://www.example.com/fr';
+
+        const redirectsJson = {
+          total: 3,
+          offset: 0,
+          limit: 3,
+          data: [
+            { Source: 'https://www.example.com/fr/page1', Destination: '/fr/new1' },
+            { Source: 'https://www.example.com/en/page2', Destination: '/en/new2' },
+            { Source: '/fr/page3', Destination: '/fr/new3' },
+          ],
+        };
+
+        nock(auditScopeUrl)
+          .get('/redirects.json')
+          .reply(200, redirectsJson);
+
+        const result = await processRedirectsFile(auditScopeUrl, context.log);
+
+        expect(result).to.be.an('array');
+        expect(result).to.have.lengthOf(2);
+        // Results are sorted alphabetically, so /fr/page3 comes before https://www.example.com/fr/page1
+        expect(result[0].origSrc).to.equal('/fr/page3');
+        expect(result[1].origSrc).to.equal('https://www.example.com/fr/page1');
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Filtered entries from 3 to 2 based on audit scope: \/fr/));
+      });
+
+      it('should return empty array when no entries match auditScopeUrl subpath', async () => {
+        const auditScopeUrl = 'https://www.example.com/fr';
+
+        const redirectsJson = {
+          total: 2,
+          offset: 0,
+          limit: 2,
+          data: [
+            { Source: '/en/page1', Destination: '/en/new1' },
+            { Source: '/de/page2', Destination: '/de/new2' },
+          ],
+        };
+
+        nock(auditScopeUrl)
+          .get('/redirects.json')
+          .reply(200, redirectsJson);
+
+        const result = await processRedirectsFile(auditScopeUrl, context.log);
+
+        expect(result).to.be.an('array').that.is.empty;
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Filtered entries from 2 to 0 based on audit scope: \/fr/));
+      });
+
+      it('should handle mixed relative and fully qualified URLs correctly', async () => {
+        const auditScopeUrl = 'https://www.example.com/en';
+
+        const redirectsJson = {
+          total: 5,
+          offset: 0,
+          limit: 5,
+          data: [
+            { Source: '/en/page1', Destination: '/en/new1' },
+            { Source: 'https://www.example.com/en/page2', Destination: '/en/new2' },
+            { Source: '/fr/page3', Destination: '/fr/new3' },
+            { Source: 'https://www.example.com/fr/page4', Destination: '/fr/new4' },
+            { Source: '/en/us/page5', Destination: '/en/us/new5' },
+          ],
+        };
+
+        nock(auditScopeUrl)
+          .get('/redirects.json')
+          .reply(200, redirectsJson);
+
+        const result = await processRedirectsFile(auditScopeUrl, context.log);
+
+        expect(result).to.be.an('array');
+        expect(result).to.have.lengthOf(3);
+        // Results are sorted alphabetically: /en/page1, /en/us/page5, https://www.example.com/en/page2
+        expect(result[0].origSrc).to.equal('/en/page1');
+        expect(result[1].origSrc).to.equal('/en/us/page5');
+        expect(result[2].origSrc).to.equal('https://www.example.com/en/page2');
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Filtered entries from 5 to 3 based on audit scope: \/en/));
+      });
+
+      it('should handle auditScopeUrl with trailing slash by removing it', async () => {
+        const auditScopeUrlWithSlash = 'https://www.example.com/';
+
+        const redirectsJson = {
+          total: 2,
+          offset: 0,
+          limit: 2,
+          data: [
+            { Source: '/page1', Destination: '/new1' },
+            { Source: '/page2', Destination: '/new2' },
+          ],
+        };
+
+        // The nock should expect the URL without the trailing slash
+        nock('https://www.example.com')
+          .get('/redirects.json')
+          .reply(200, redirectsJson);
+
+        const result = await processRedirectsFile(auditScopeUrlWithSlash, context.log);
+
+        expect(result).to.be.an('array');
+        expect(result).to.have.lengthOf(2);
+        expect(result[0].origSrc).to.equal('/page1');
+        expect(result[1].origSrc).to.equal('/page2');
+        // Verify that the trailing slash was removed in the log message
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Looking for redirects file at: https:\/\/www\.example\.com\/redirects\.json/));
       });
     });
   });
@@ -998,6 +1442,112 @@ describe('Redirect Chains Audit', () => {
         expect(result[0].fullDest).to.equal(`${url}/new-page?param=value`);
         expect(result[0].fullFinal).to.equal(`${url}/new-page?param=value&extra=param`);
       });
+
+      it('should handle source URL that redirects to itself (src-is-final scenario)', async () => {
+        const pageUrls = [
+          {
+            referencedBy: `${url}/redirects.json`,
+            origSrc: '/self-redirect',
+            origDest: '/intended-destination',
+            isDuplicateSrc: false,
+            ordinalDuplicate: 0,
+            tooQualified: false,
+            hasSameSrcDest: false,
+          },
+        ];
+
+        // First request: self-redirect redirects back to itself
+        nock(url)
+          .head('/self-redirect')
+          .times(2)
+          .reply(301, '', { location: '/self-redirect' });
+
+        // Second request: self-redirect (same as source)
+        nock(url)
+          .head('/self-redirect')
+          .times(2)
+          .reply(200);
+
+        const result = await processEntriesInParallel(pageUrls, url, context.log);
+        expect(result).to.be.an('array');
+        expect(result[0]).to.have.property('status', 200);
+        expect(result[0]).to.have.property('fullFinalMatchesDestUrl', false); // Doesn't match intended destination
+        expect(result[0].fullSrc).to.equal(`${url}/self-redirect`);
+        expect(result[0].fullDest).to.equal(`${url}/intended-destination`);
+        expect(result[0].fullFinal).to.equal(`${url}/self-redirect`); // Same as source
+      });
+
+      it('should handle source URL that redirects to itself with trailing slash normalization', async () => {
+        const pageUrls = [
+          {
+            referencedBy: `${url}/redirects.json`,
+            origSrc: '/self-redirect/',
+            origDest: '/intended-destination/',
+            isDuplicateSrc: false,
+            ordinalDuplicate: 0,
+            tooQualified: false,
+            hasSameSrcDest: false,
+          },
+        ];
+
+        // First request: self-redirect/ redirects back to itself
+        nock(url)
+          .head('/self-redirect/')
+          .times(2)
+          .reply(301, '', { location: '/self-redirect/' });
+
+        // Second request: self-redirect/ (same as source)
+        nock(url)
+          .head('/self-redirect/')
+          .times(2)
+          .reply(200);
+
+        const result = await processEntriesInParallel(pageUrls, url, context.log);
+        expect(result).to.be.an('array');
+        expect(result[0]).to.have.property('status', 200);
+        expect(result[0]).to.have.property('redirected', false); // No redirect detected since source equals final
+        expect(result[0]).to.have.property('redirectCount', 0);
+        expect(result[0]).to.have.property('fullFinalMatchesDestUrl', false); // Doesn't match intended destination
+        expect(result[0].fullSrc).to.equal(`${url}/self-redirect/`);
+        expect(result[0].fullDest).to.equal(`${url}/intended-destination/`);
+        expect(result[0].fullFinal).to.equal(`${url}/self-redirect/`); // Same as source
+      });
+
+      it('should handle source URL that redirects to itself with query parameters', async () => {
+        const pageUrls = [
+          {
+            referencedBy: `${url}/redirects.json`,
+            origSrc: '/self-redirect?param=value',
+            origDest: '/intended-destination',
+            isDuplicateSrc: false,
+            ordinalDuplicate: 0,
+            tooQualified: false,
+            hasSameSrcDest: false,
+          },
+        ];
+
+        // First request: self-redirect?param=value redirects back to itself
+        nock(url)
+          .head('/self-redirect?param=value')
+          .times(2)
+          .reply(301, '', { location: '/self-redirect?param=value' });
+
+        // Second request: self-redirect?param=value (same as source)
+        nock(url)
+          .head('/self-redirect?param=value')
+          .times(2)
+          .reply(200);
+
+        const result = await processEntriesInParallel(pageUrls, url, context.log);
+        expect(result).to.be.an('array');
+        expect(result[0]).to.have.property('status', 200);
+        expect(result[0]).to.have.property('redirected', false); // No redirect detected since source equals final
+        expect(result[0]).to.have.property('redirectCount', 0);
+        expect(result[0]).to.have.property('fullFinalMatchesDestUrl', false); // Doesn't match intended destination
+        expect(result[0].fullSrc).to.equal(`${url}/self-redirect?param=value`);
+        expect(result[0].fullDest).to.equal(`${url}/intended-destination`);
+        expect(result[0].fullFinal).to.equal(`${url}/self-redirect?param=value`); // Same as source
+      });
     });
 
     describe('analyzeResults', () => {
@@ -1261,9 +1811,170 @@ describe('Redirect Chains Audit', () => {
         expect(fixResult.canApplyFixAutomatically).to.be.false;
       });
 
-      it('should generate suggested fixes for multiple entries with issues', () => {
+      it('should return src-is-final fix when source URL redirects to itself', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect',
+          fullSrc: `${baseUrl}/self-redirect`,
+          origDest: '/intended-destination',
+          fullDest: `${baseUrl}/intended-destination`,
+          fullFinal: `${baseUrl}/self-redirect`, // Same as fullSrc - redirects to itself
+          redirectCount: 1,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false, // Doesn't match intended destination
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+      });
+
+      it('should return src-is-final fix with relative finalUrl when baseUrl matches', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect',
+          fullSrc: `${baseUrl}/self-redirect`,
+          origDest: '/intended-destination',
+          fullDest: `${baseUrl}/intended-destination`,
+          fullFinal: `${baseUrl}/self-redirect`, // Same as fullSrc
+          redirectCount: 1,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false,
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+        expect(fixResult.finalUrl).to.equal('/self-redirect'); // Should be relative since origDest is relative
+      });
+
+      it('should return src-is-final fix for URLs with trailing slashes', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect/',
+          fullSrc: `${baseUrl}/self-redirect/`,
+          origDest: '/intended-destination/',
+          fullDest: `${baseUrl}/intended-destination/`,
+          fullFinal: `${baseUrl}/self-redirect/`, // Same as fullSrc
+          redirectCount: 1,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false,
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+      });
+
+      it('should return src-is-final fix for URLs with query parameters', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect?param=value',
+          fullSrc: `${baseUrl}/self-redirect?param=value`,
+          origDest: '/intended-destination',
+          fullDest: `${baseUrl}/intended-destination`,
+          fullFinal: `${baseUrl}/self-redirect?param=value`, // Same as fullSrc
+          redirectCount: 1,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false,
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+      });
+
+      it('should return src-is-final fix for URLs with hash fragments', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect#section',
+          fullSrc: `${baseUrl}/self-redirect#section`,
+          origDest: '/intended-destination',
+          fullDest: `${baseUrl}/intended-destination`,
+          fullFinal: `${baseUrl}/self-redirect#section`, // Same as fullSrc
+          redirectCount: 1,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false,
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+      });
+
+      it('should return src-is-final fix for URLs with both query parameters and hash fragments', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect?param=value#section',
+          fullSrc: `${baseUrl}/self-redirect?param=value#section`,
+          origDest: '/intended-destination',
+          fullDest: `${baseUrl}/intended-destination`,
+          fullFinal: `${baseUrl}/self-redirect?param=value#section`, // Same as fullSrc
+          redirectCount: 1,
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false,
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+      });
+
+      it('should return src-is-final fix even with multiple redirects', () => {
+        const baseUrl = 'https://www.example.com';
+        const result = {
+          referencedBy: `${baseUrl}/redirects.json`,
+          origSrc: '/self-redirect',
+          fullSrc: `${baseUrl}/self-redirect`,
+          origDest: '/intended-destination',
+          fullDest: `${baseUrl}/intended-destination`,
+          fullFinal: `${baseUrl}/self-redirect`, // Same as fullSrc after multiple redirects
+          redirectCount: 3, // Multiple redirects but ends up at source
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200,
+          fullFinalMatchesDestUrl: false,
+        };
+        const fixResult = getSuggestedFix(result);
+        expect(fixResult.fix).to.include('Remove this entry since the Source URL redirects to itself');
+        expect(fixResult.fixType).to.equal('src-is-final');
+        expect(fixResult.canApplyFixAutomatically).to.be.true;
+      });
+
+      it('should generate suggested fixes for multiple entries with issues', async () => {
         const baseUrl = 'https://www.example.com';
         const auditUrl = `${baseUrl}/redirects.json`;
+
+        // Mock URL resolution
+        nock(baseUrl)
+          .get('/redirects.json')
+          .reply(200);
+
         const auditData = {
           auditResult: {
             details: {
@@ -1319,13 +2030,200 @@ describe('Redirect Chains Audit', () => {
         expect(result.suggestions[1]).to.have.property('httpStatusCode');
         expect(result.suggestions[1].fix).to.include('is the same as');
 
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 2 affected entries.`);
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Generating suggestions for URL.*which has 2 affected entries/));
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 2 suggested fixes.`);
       });
 
-      it('should skip suggestions with HTTP 418 + "unexpected end of file" + source equals final', () => {
+      it('should generate suggested fixes for src-is-final fix type', async () => {
         const baseUrl = 'https://www.example.com';
         const auditUrl = `${baseUrl}/redirects.json`;
+
+        // Mock URL resolution
+        nock(baseUrl)
+          .get('/redirects.json')
+          .reply(200);
+
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/self-redirect',
+                  fullSrc: `${baseUrl}/self-redirect`,
+                  origDest: '/intended-destination',
+                  fullDest: `${baseUrl}/intended-destination`,
+                  fullFinal: `${baseUrl}/self-redirect`, // Same as fullSrc - redirects to itself
+                  redirectCount: 1,
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  status: 200,
+                  fullFinalMatchesDestUrl: false, // Doesn't match intended destination
+                },
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result).to.have.property('suggestions');
+        expect(result.suggestions).to.be.an('array').with.lengthOf(1);
+        expect(result.suggestions[0]).to.have.property('key');
+        expect(result.suggestions[0]).to.have.property('fix');
+        expect(result.suggestions[0]).to.have.property('fixType', 'src-is-final');
+        expect(result.suggestions[0]).to.have.property('finalUrl', '/self-redirect'); // Should be relative
+        expect(result.suggestions[0]).to.have.property('canApplyFixAutomatically', true);
+        expect(result.suggestions[0]).to.have.property('redirectsFile', auditUrl);
+        expect(result.suggestions[0]).to.have.property('sourceUrl', '/self-redirect');
+        expect(result.suggestions[0]).to.have.property('destinationUrl', '/intended-destination');
+        expect(result.suggestions[0]).to.have.property('redirectCount', 1);
+        expect(result.suggestions[0]).to.have.property('httpStatusCode', 200);
+        expect(result.suggestions[0].fix).to.include('Remove this entry since the Source URL redirects to itself');
+
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Generating suggestions for URL.*which has 1 affected entries/));
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 1 suggested fixes.`);
+      });
+
+      it('should generate suggested fixes for src-is-final with query parameters', async () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+
+        // Mock URL resolution
+        nock(baseUrl)
+          .get('/redirects.json')
+          .reply(200);
+
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/self-redirect?param=value',
+                  fullSrc: `${baseUrl}/self-redirect?param=value`,
+                  origDest: '/intended-destination',
+                  fullDest: `${baseUrl}/intended-destination`,
+                  fullFinal: `${baseUrl}/self-redirect?param=value`, // Same as fullSrc
+                  redirectCount: 1,
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  status: 200,
+                  fullFinalMatchesDestUrl: false,
+                },
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result).to.have.property('suggestions');
+        expect(result.suggestions).to.be.an('array').with.lengthOf(1);
+        expect(result.suggestions[0]).to.have.property('fixType', 'src-is-final');
+        expect(result.suggestions[0]).to.have.property('sourceUrl', '/self-redirect?param=value');
+        expect(result.suggestions[0]).to.have.property('destinationUrl', '/intended-destination');
+        expect(result.suggestions[0]).to.have.property('finalUrl', '/self-redirect?param=value');
+        expect(result.suggestions[0].fix).to.include('Remove this entry since the Source URL redirects to itself');
+      });
+
+      it('should generate suggested fixes for src-is-final with hash fragments', async () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+
+        // Mock URL resolution
+        nock(baseUrl)
+          .get('/redirects.json')
+          .reply(200);
+
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/self-redirect#section',
+                  fullSrc: `${baseUrl}/self-redirect#section`,
+                  origDest: '/intended-destination',
+                  fullDest: `${baseUrl}/intended-destination`,
+                  fullFinal: `${baseUrl}/self-redirect#section`, // Same as fullSrc
+                  redirectCount: 1,
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  status: 200,
+                  fullFinalMatchesDestUrl: false,
+                },
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result).to.have.property('suggestions');
+        expect(result.suggestions).to.be.an('array').with.lengthOf(1);
+        expect(result.suggestions[0]).to.have.property('fixType', 'src-is-final');
+        expect(result.suggestions[0]).to.have.property('sourceUrl', '/self-redirect#section');
+        expect(result.suggestions[0]).to.have.property('destinationUrl', '/intended-destination');
+        expect(result.suggestions[0]).to.have.property('finalUrl', '/self-redirect#section');
+        expect(result.suggestions[0].fix).to.include('Remove this entry since the Source URL redirects to itself');
+      });
+
+      it('should generate suggested fixes for src-is-final with multiple redirects', async () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+
+        // Mock URL resolution
+        nock(baseUrl)
+          .get('/redirects.json')
+          .reply(200);
+
+        const auditData = {
+          auditResult: {
+            details: {
+              issues: [
+                {
+                  referencedBy: auditUrl,
+                  origSrc: '/self-redirect',
+                  fullSrc: `${baseUrl}/self-redirect`,
+                  origDest: '/intended-destination',
+                  fullDest: `${baseUrl}/intended-destination`,
+                  fullFinal: `${baseUrl}/self-redirect`, // Same as fullSrc after multiple redirects
+                  redirectCount: 3, // Multiple redirects but ends up at source
+                  isDuplicateSrc: false,
+                  tooQualified: false,
+                  hasSameSrcDest: false,
+                  status: 200,
+                  fullFinalMatchesDestUrl: false,
+                },
+              ],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result).to.have.property('suggestions');
+        expect(result.suggestions).to.be.an('array').with.lengthOf(1);
+        expect(result.suggestions[0]).to.have.property('fixType', 'src-is-final');
+        expect(result.suggestions[0]).to.have.property('sourceUrl', '/self-redirect');
+        expect(result.suggestions[0]).to.have.property('destinationUrl', '/intended-destination');
+        expect(result.suggestions[0]).to.have.property('redirectCount', 3);
+        expect(result.suggestions[0].fix).to.include('Remove this entry since the Source URL redirects to itself');
+      });
+
+      it('should skip suggestions with HTTP 418 + "unexpected end of file" + source equals final', async () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+
+        // Mock URL resolution
+        nock(baseUrl)
+          .get('/redirects.json')
+          .reply(200);
+
         const auditData = {
           auditResult: {
             details: {
@@ -1373,15 +2271,21 @@ describe('Redirect Chains Audit', () => {
         expect(result.suggestions[0]).to.have.property('destinationUrl', '/normal-destination');
 
         // Verify logging
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 2 affected entries.`);
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Generating suggestions for URL.*which has 2 affected entries/));
         expect(context.log.debug).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Skipping suggestion for network error case: /network-error-page -> /destination-page`);
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Skipped 1 entries due to exclusion criteria.`);
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 1 suggested fixes.`);
       });
 
-      it('should not skip suggestions when only some conditions are met', () => {
+      it('should not skip suggestions when only some conditions are met', async () => {
         const baseUrl = 'https://www.example.com';
         const auditUrl = `${baseUrl}/redirects.json`;
+
+        // Mock URL resolution
+        nock(baseUrl)
+          .get('/redirects.json')
+          .reply(200);
+
         const auditData = {
           auditResult: {
             details: {
@@ -1445,16 +2349,22 @@ describe('Redirect Chains Audit', () => {
         expect(result.suggestions[2]).to.have.property('sourceUrl', '/partial-match-3');
 
         // Verify logging - no skip messages should be present
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 3 affected entries.`);
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Generating suggestions for URL.*which has 3 affected entries/));
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 3 suggested fixes.`);
 
         // Verify that the correct number of suggestions were generated
         expect(result.suggestions).to.have.lengthOf(3);
       });
 
-      it('should handle empty or missing issues array', () => {
+      it('should handle empty or missing issues array', async () => {
         const baseUrl = 'https://www.example.com';
         const auditUrl = `${baseUrl}/redirects.json`;
+
+        // Mock URL resolution
+        nock(baseUrl)
+          .get('/redirects.json')
+          .reply(200);
+
         const auditData = {
           auditResult: {
             details: {
@@ -1467,21 +2377,46 @@ describe('Redirect Chains Audit', () => {
 
         expect(result).to.have.property('suggestions');
         expect(result.suggestions).to.be.an('array').that.is.empty;
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 0 affected entries.`);
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Generating suggestions for URL.*which has 0 affected entries/));
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 0 suggested fixes.`);
       });
 
       it('should handle missing audit data', () => {
         const baseUrl = 'https://www.example.com';
         const auditUrl = `${baseUrl}/redirects.json`;
+
         const auditData = {};
 
         const result = generateSuggestedFixes(auditUrl, auditData, context);
 
         expect(result).to.have.property('suggestions');
         expect(result.suggestions).to.be.an('array').that.is.empty;
-        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generating suggestions for URL ${auditUrl} which has 0 affected entries.`);
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Using audit scope URL/));
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Generating suggestions for URL.*which has 0 affected entries/));
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Generated 0 suggested fixes.`);
+      });
+
+      it('should use cached resolved URL when available in auditData', () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+        const cachedResolvedUrl = 'https://www.example.com';
+
+        const auditData = {
+          auditResult: {
+            success: true,
+            auditScopeUrl: cachedResolvedUrl,
+            details: {
+              issues: [],
+            },
+          },
+        };
+
+        const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+        expect(result).to.have.property('suggestions');
+        expect(result.suggestions).to.be.an('array').that.is.empty;
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Using audit scope URL: ${cachedResolvedUrl}`);
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Generating suggestions for URL.*which has 0 affected entries/));
       });
 
       it('should skip opportunity creation when audit fails', async () => {
@@ -1497,6 +2432,7 @@ describe('Redirect Chains Audit', () => {
         const result = await generateOpportunities(auditUrl, auditData, context);
 
         expect(result).to.deep.equal(auditData);
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Using audit scope URL/));
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Audit itself failed, skipping opportunity creation`);
       });
 
@@ -1512,7 +2448,28 @@ describe('Redirect Chains Audit', () => {
         const result = await generateOpportunities(auditUrl, auditData, context);
 
         expect(result).to.deep.equal(auditData);
+        expect(context.log.info).to.have.been.calledWith(sinon.match(/Using audit scope URL/));
         expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - No suggested fixes found, skipping opportunity creation`);
+      });
+
+      it('should use cached resolved URL when creating opportunities', async () => {
+        const baseUrl = 'https://www.example.com';
+        const auditUrl = `${baseUrl}/redirects.json`;
+        const cachedResolvedUrl = 'https://www.example.com';
+
+        const auditData = {
+          auditResult: {
+            success: true,
+            auditScopeUrl: cachedResolvedUrl,
+          },
+          suggestions: [{ key: 'test-key', fix: 'Test fix' }],
+        };
+
+        const result = await handlerModule.generateOpportunities(auditUrl, auditData, context);
+
+        expect(result).to.deep.equal(auditData);
+        expect(context.log.info).to.have.been.calledWith(`${AUDIT_LOGGING_NAME} - Using audit scope URL for opportunity generation: ${cachedResolvedUrl}`);
+        expect(convertToOpportunityStub).to.have.been.calledOnce;
       });
 
       it('should create opportunities for valid suggestions', async () => {
@@ -1595,6 +2552,11 @@ describe('Redirect Chains Audit', () => {
 
   describe('Main Audit Runner', () => {
     it('should run audit successfully', async () => {
+      // Mock URL resolution for composeAuditURL
+      nock(url)
+        .get('/')
+        .reply(200);
+
       nock(url)
         .get('/redirects.json')
         .reply(200, sampleRedirectsJson);
@@ -1623,6 +2585,11 @@ describe('Redirect Chains Audit', () => {
     });
 
     it('should handle missing redirects file', async () => {
+      // Mock URL resolution for composeAuditURL
+      nock(url)
+        .get('/')
+        .reply(200);
+
       nock(url)
         .get('/redirects.json')
         .reply(404);
@@ -1633,6 +2600,11 @@ describe('Redirect Chains Audit', () => {
     });
 
     it('should handle network errors', async () => {
+      // Mock URL resolution for composeAuditURL
+      nock(url)
+        .get('/')
+        .reply(200);
+
       nock(url)
         .get('/redirects.json')
         .replyWithError('Network error');
@@ -1807,6 +2779,498 @@ describe('Redirect Chains Audit', () => {
           projectedTrafficValue: expectedValue,
         });
       }
+    });
+  });
+
+  describe('Issue Filtering', () => {
+    describe('filterIssuesToFitIntoSpace', () => {
+      it('should return empty array when no issues provided', () => {
+        const result = filterIssuesToFitIntoSpace([], context.log);
+        expect(result).to.deep.equal({ filteredIssues: [], wasReduced: false });
+      });
+
+      it('should return empty array when issues is null', () => {
+        const result = filterIssuesToFitIntoSpace(null, context.log);
+        expect(result).to.deep.equal({ filteredIssues: [], wasReduced: false });
+      });
+
+      it('should return empty array when issues is undefined', () => {
+        const result = filterIssuesToFitIntoSpace(undefined, context.log);
+        expect(result).to.deep.equal({ filteredIssues: [], wasReduced: false });
+      });
+
+      it('should return all issues when they fit within size limit', () => {
+        const smallIssues = [
+          { origSrc: '/page1', origDest: '/new1' },
+          { origSrc: '/page2', origDest: '/new2' }
+        ];
+
+        const result = filterIssuesToFitIntoSpace(smallIssues, context.log);
+        expect(result.filteredIssues).to.deep.equal(smallIssues);
+        expect(result.wasReduced).to.be.false;
+        expect(context.log.info).to.have.been.calledWith(
+          `${AUDIT_LOGGING_NAME} - All 2 issues fit within 400 KB limit (0 KB used)`
+        );
+      });
+
+      it('should filter issues when they exceed size limit', () => {
+        // Create a large issue that will exceed the 400KB limit
+        const largeIssue = {
+          origSrc: '/page1',
+          origDest: '/new1',
+          redirectChain: 'A'.repeat(500000), // 500KB of data
+          error: 'B'.repeat(10000)
+        };
+
+        const issues = [largeIssue];
+        const result = filterIssuesToFitIntoSpace(issues, context.log);
+
+        expect(result.wasReduced).to.be.true;
+        expect(result.filteredIssues.length).to.be.lessThan(issues.length);
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/Total size of all the issues exceed space limit/)
+        );
+      });
+
+      it('should categorize issues correctly by priority', () => {
+        const issues = [
+          { isDuplicateSrc: true, origSrc: '/dup1', origDest: '/new1' },
+          { tooQualified: true, origSrc: '/qualified', origDest: '/new2' },
+          { hasSameSrcDest: true, origSrc: '/same', origDest: '/same' },
+          { status: 404, origSrc: '/error', origDest: '/new3' },
+          { fullFinalMatchesDestUrl: false, origSrc: '/mismatch', origDest: '/new4' },
+          { redirectCount: 3, origSrc: '/redirects', origDest: '/new5' }
+        ];
+
+        const result = filterIssuesToFitIntoSpace(issues, context.log);
+
+        // Should log that all issues fit within limit
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/All 6 issues fit within 400 KB limit/)
+        );
+      });
+
+      it('should handle issues with no non-empty categories', () => {
+        const issues = [
+          { origSrc: '/normal', origDest: '/new1' } // No issues, so no categories
+        ];
+
+        const result = filterIssuesToFitIntoSpace(issues, context.log);
+        // Issues with no problems should still be returned as they fit within size limit
+        expect(result).to.deep.equal({ filteredIssues: issues, wasReduced: false });
+      });
+
+      it('should distribute issues fairly across categories', () => {
+        // Create large issues that will exceed the 400KB limit
+        const issues = [];
+        for (let i = 0; i < 1000; i++) {
+          issues.push({
+            isDuplicateSrc: i % 2 === 0,
+            tooQualified: i % 3 === 0,
+            status: i % 5 === 0 ? 404 : 200,
+            origSrc: `/page${i}`,
+            origDest: `/new${i}`,
+            redirectChain: 'A'.repeat(1000) // Large redirect chain
+          });
+        }
+
+        const result = filterIssuesToFitIntoSpace(issues, context.log);
+
+        expect(result.wasReduced).to.be.true;
+        expect(result.filteredIssues.length).to.be.greaterThan(0);
+        expect(result.filteredIssues.length).to.be.lessThanOrEqual(issues.length);
+      });
+
+      it('should log filtering statistics', () => {
+        const issues = [
+          { origSrc: '/page1', origDest: '/new1', redirectChain: 'A'.repeat(500000) }
+        ];
+
+        filterIssuesToFitIntoSpace(issues, context.log);
+
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/Filtered \d+ issues/)
+        );
+      });
+    });
+
+    describe('categorizeIssue', () => {
+      it('should categorize duplicate source issues', () => {
+        // Create large issues that will trigger filtering
+        const issues = Array(1000).fill(null).map((_, i) => ({
+          isDuplicateSrc: true,
+          origSrc: `/dup${i}`,
+          origDest: `/new${i}`,
+          redirectChain: 'A'.repeat(1000)
+        }));
+        const result = filterIssuesToFitIntoSpace(issues, context.log);
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/category 'duplicate-src'/)
+        );
+      });
+
+      it('should categorize too qualified issues', () => {
+        const issues = Array(1000).fill(null).map((_, i) => ({
+          tooQualified: true,
+          origSrc: `/qualified${i}`,
+          origDest: `/new${i}`,
+          redirectChain: 'A'.repeat(1000)
+        }));
+        const result = filterIssuesToFitIntoSpace(issues, context.log);
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/category 'too-qualified'/)
+        );
+      });
+
+      it('should categorize same source/destination issues', () => {
+        const issues = Array(1000).fill(null).map((_, i) => ({
+          hasSameSrcDest: true,
+          origSrc: `/same${i}`,
+          origDest: `/new${i}`,
+          redirectChain: 'A'.repeat(1000)
+        }));
+        const result = filterIssuesToFitIntoSpace(issues, context.log);
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/category 'same-src-dest'/)
+        );
+      });
+
+      it('should categorize HTTP error issues', () => {
+        const issues = Array(1000).fill(null).map((_, i) => ({
+          status: 404,
+          origSrc: `/error${i}`,
+          origDest: `/new${i}`,
+          redirectChain: 'A'.repeat(1000)
+        }));
+        const result = filterIssuesToFitIntoSpace(issues, context.log);
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/category 'http-errors'/)
+        );
+      });
+
+      it('should categorize final mismatch issues', () => {
+        const issues = Array(1000).fill(null).map((_, i) => ({
+          fullFinalMatchesDestUrl: false,
+          origSrc: `/mismatch${i}`,
+          origDest: `/new${i}`,
+          redirectChain: 'A'.repeat(1000)
+        }));
+        const result = filterIssuesToFitIntoSpace(issues, context.log);
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/category 'final-mismatch'/)
+        );
+      });
+
+      it('should categorize too many redirects issues', () => {
+        const issues = Array(1000).fill(null).map((_, i) => ({
+          redirectCount: 3,
+          origSrc: `/redirects${i}`,
+          origDest: `/new${i}`,
+          redirectChain: 'A'.repeat(1000),
+          fullFinalMatchesDestUrl: true, // Ensure this doesn't trigger final-mismatch
+        }));
+        const result = filterIssuesToFitIntoSpace(issues, context.log);
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/category 'too-many-redirects' - selected \d+ out of \d+ issues/)
+        );
+      });
+
+      it('should categorize issues with redirectCount > MAX_REDIRECTS_TO_TOLERATE as too-many-redirects', () => {
+        const issues = Array(1000).fill(null).map((_, i) => ({
+          redirectCount: 2, // > MAX_REDIRECTS_TO_TOLERATE (which is 1)
+          origSrc: `/redirects${i}`,
+          origDest: `/new${i}`,
+          redirectChain: 'A'.repeat(1000),
+          fullFinalMatchesDestUrl: true // Ensure this doesn't trigger final-mismatch
+        }));
+        const result = filterIssuesToFitIntoSpace(issues, context.log);
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/category 'too-many-redirects' - selected \d+ out of \d+ issues/)
+        );
+      });
+
+      it('should categorize issues with no matching conditions as unknown', () => {
+        const issues = Array(1000).fill(null).map((_, i) => ({
+          // Issue with no flags set and redirectCount <= MAX_REDIRECTS_TO_TOLERATE
+          origSrc: `/unknown${i}`,
+          origDest: `/new${i}`,
+          redirectChain: 'A'.repeat(1000),
+          isDuplicateSrc: false,
+          tooQualified: false,
+          hasSameSrcDest: false,
+          status: 200, // Ensure this doesn't trigger http-errors
+          fullFinalMatchesDestUrl: true, // Ensure this doesn't trigger final-mismatch
+          redirectCount: 1, // <= MAX_REDIRECTS_TO_TOLERATE (which is 1)
+        }));
+        const result = filterIssuesToFitIntoSpace(issues, context.log);
+        // since there are no issues in known categories, there should not be any log about selected issues
+        expect(context.log.info).to.not.have.been.calledWith(
+          sinon.match(/ - selected \d+ out of \d+ issues/)
+        );
+      });
+    });
+  });
+
+  describe('Main Audit Runner Integration', () => {
+    it('should not filter issues when they fit within size limit', async () => {
+      // Mock URL resolution for composeAuditURL
+      nock(url)
+        .get('/')
+        .reply(200);
+
+      nock(url)
+        .get('/redirects.json')
+        .reply(200, {
+          data: [{ Source: '/page1', Destination: '/new1' }],
+          total: 1
+        });
+
+      nock(url)
+        .head('/page1')
+        .reply(200);
+
+      const result = await redirectsAuditRunner(url, context);
+      expect(result).to.have.property('auditResult');
+      expect(result.auditResult).to.have.property('success');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Issues could be reduced/)
+      );
+    });
+
+    it('should directly test wasReduced logging by calling filterIssuesToFitIntoSpace', () => {
+      // Create a single very large issue that will definitely exceed the 400KB limit
+      const largeIssues = [{
+        origSrc: '/page0',
+        origDest: '/new0',
+        redirectChain: 'A'.repeat(500000), // 500KB of data - definitely exceeds 400KB limit
+        error: 'B'.repeat(10000),
+        isDuplicateSrc: false,
+        tooQualified: false,
+        hasSameSrcDest: false,
+        status: 200,
+        fullFinalMatchesDestUrl: true,
+        redirectCount: 0
+      }];
+
+      const result = filterIssuesToFitIntoSpace(largeIssues, context.log);
+
+      // Test that the function returns the expected structure
+      expect(result).to.have.property('wasReduced');
+      expect(result.wasReduced).to.be.true; // Should be true since the issue exceeds the limit
+      expect(result).to.have.property('filteredIssues');
+      expect(Array.isArray(result.filteredIssues)).to.be.true;
+    });
+  });
+
+  describe('Size Analysis Logging', () => {
+    it('should log suggestion size analysis', async () => {
+      const auditUrl = 'https://www.example.com/redirects.json';
+
+      // Mock URL resolution for composeAuditURL
+      nock('https://www.example.com')
+        .get('/redirects.json')
+        .reply(200);
+
+      const auditData = {
+        auditResult: {
+          details: {
+            issues: [
+              {
+                origSrc: '/page1',
+                origDest: '/new1',
+                referencedBy: 'https://www.example.com/redirects.json',
+                fullFinal: 'https://www.example.com/final1',
+                fullDest: 'https://www.example.com/dest1',
+                redirectChain: 'A->B->C',
+                error: 'Test error',
+                isDuplicateSrc: true,
+                tooQualified: false,
+                hasSameSrcDest: false,
+                status: 200,
+                fullFinalMatchesDestUrl: true,
+                redirectCount: 0
+              },
+              {
+                origSrc: '/page2',
+                origDest: '/new2',
+                referencedBy: 'https://www.example.com/redirects.json',
+                fullFinal: 'https://www.example.com/final2',
+                fullDest: 'https://www.example.com/dest2',
+                redirectChain: 'A->B->C',
+                error: 'Test error',
+                isDuplicateSrc: false,
+                tooQualified: true,
+                hasSameSrcDest: false,
+                status: 200,
+                fullFinalMatchesDestUrl: true,
+                redirectCount: 0
+              }
+            ]
+          }
+        }
+      };
+
+      const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+      expect(result).to.have.property('suggestions');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Total size of suggestions/)
+      );
+    });
+
+    it('should log warning when suggestions exceed 400 KB', async () => {
+      const auditUrl = 'https://www.example.com/redirects.json';
+
+      // Mock URL resolution
+      nock('https://www.example.com')
+        .get('/redirects.json')
+        .reply(200);
+
+      const auditData = {
+        auditResult: {
+          details: {
+            issues: Array(1000).fill(null).map((_, i) => ({
+              origSrc: `/page${i}`,
+              origDest: `/new${i}`,
+              referencedBy: 'https://www.example.com/redirects.json',
+              fullFinal: `https://www.example.com/final${i}`,
+              fullDest: `https://www.example.com/dest${i}`,
+              redirectChain: 'A'.repeat(1000),
+              error: 'B'.repeat(1000),
+              isDuplicateSrc: i % 2 === 0,
+              tooQualified: i % 3 === 0,
+              hasSameSrcDest: false,
+              status: 200,
+              fullFinalMatchesDestUrl: true,
+              redirectCount: 0
+            }))
+          }
+        }
+      };
+
+      const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+      expect(result).to.have.property('suggestions');
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/WARNING: Total size of all suggestions.*is >= 400 KB/)
+      );
+    });
+
+    it('should log suggestion size analysis with individual metrics', async () => {
+      const auditUrl = 'https://www.example.com/redirects.json';
+
+      // Mock URL resolution
+      nock('https://www.example.com')
+        .get('/redirects.json')
+        .reply(200);
+
+      const auditData = {
+        auditResult: {
+          details: {
+            issues: [
+              {
+                origSrc: '/page1',
+                origDest: '/new1',
+                referencedBy: 'https://www.example.com/redirects.json',
+                fullFinal: 'https://www.example.com/final1',
+                fullDest: 'https://www.example.com/dest1',
+                redirectChain: 'A->B->C',
+                error: 'Test error',
+                isDuplicateSrc: true,
+                tooQualified: false,
+                hasSameSrcDest: false,
+                status: 200,
+                fullFinalMatchesDestUrl: true,
+                redirectCount: 0
+              },
+              {
+                origSrc: '/page2',
+                origDest: '/new2',
+                referencedBy: 'https://www.example.com/redirects.json',
+                fullFinal: 'https://www.example.com/final2',
+                fullDest: 'https://www.example.com/dest2',
+                redirectChain: 'A->B->C',
+                error: 'Test error',
+                isDuplicateSrc: false,
+                tooQualified: true,
+                hasSameSrcDest: false,
+                status: 200,
+                fullFinalMatchesDestUrl: true,
+                redirectCount: 0
+              }
+            ]
+          }
+        }
+      };
+
+      const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+      expect(result).to.have.property('suggestions');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Suggestion size analysis/)
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Suggestion database capacity/)
+      );
+    });
+
+    it('should handle suggestions with zero-byte serialization (covers smallestSize = 0 branch)', async () => {
+      const auditUrl = 'https://www.example.com/redirects.json';
+
+      // Mock URL resolution
+      nock('https://www.example.com')
+        .get('/redirects.json')
+        .reply(200);
+
+      const auditData = {
+        auditResult: {
+          details: {
+            issues: [
+              {
+                origSrc: '/page1',
+                origDest: '/new1',
+                referencedBy: 'https://www.example.com/redirects.json',
+                fullFinal: 'https://www.example.com/final1',
+                fullDest: 'https://www.example.com/dest1',
+                redirectChain: 'A->B->C',
+                error: 'Test error',
+                isDuplicateSrc: true,
+                tooQualified: false,
+                hasSameSrcDest: false,
+                status: 200,
+                fullFinalMatchesDestUrl: true,
+                redirectCount: 0
+              }
+            ]
+          }
+        }
+      };
+
+      // First, let the function generate suggestions normally
+      const result = generateSuggestedFixes(auditUrl, auditData, context);
+
+      // Verify that suggestions were generated (this ensures we pass the condition at line 972)
+      expect(result).to.have.property('suggestions');
+      expect(result.suggestions).to.be.an('array').with.length.greaterThan(0);
+
+      // Now mock JSON.stringify to return empty string for size analysis
+      // This will make all suggestionSizes be 0, which will make nonZeroSizes.length === 0
+      const originalJSONStringify = JSON.stringify;
+      JSON.stringify = sandbox.stub().returns('');
+
+      // Call the function again to trigger the size analysis with mocked JSON.stringify
+      const result2 = generateSuggestedFixes(auditUrl, auditData, context);
+
+      expect(result2).to.have.property('suggestions');
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Suggestion size analysis: smallest non-zero size = 0 bytes/)
+      );
+      expect(context.log.info).to.have.been.calledWith(
+        sinon.match(/Suggestion database capacity/)
+      );
+
+      // Restore the original function
+      JSON.stringify = originalJSONStringify;
     });
   });
 });

@@ -72,7 +72,7 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%perplexity-user%', result: 'Chatbots' },
     { pattern: '%perplexity%', result: 'Chatbots' },
     // Google
-    { pattern: '%gemini-deep-research%', result: 'Training bots' },
+    { pattern: '%gemini-deep-research%', result: 'Research' },
     { pattern: 'google', result: 'Web search crawlers' },
   ];
 

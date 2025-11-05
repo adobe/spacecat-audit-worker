@@ -126,7 +126,6 @@ describe('Missing Alt Text Guidance Handler', () => {
     expect(mockOpportunity.setAuditId).to.have.been.calledWith('test-audit-id');
     expect(mockOpportunity.save).to.have.been.called;
     expect(addAltTextSuggestionsStub).to.have.been.called;
-    expect(context.log.info).to.have.been.called;
   });
 
   it('should handle case when opportunity does not exist', async () => {
@@ -146,9 +145,6 @@ describe('Missing Alt Text Guidance Handler', () => {
     const result = await guidanceHandler(mockMessage, context);
 
     expect(result.status).to.equal(200);
-    expect(context.log.info).to.have.been.calledWith(
-      '[alt-text]: Successfully processed Mystique guidance for siteId: test-site-id',
-    );
   });
 
   it('should handle invalid message format', async () => {
@@ -439,7 +435,7 @@ describe('Missing Alt Text Guidance Handler', () => {
       src: 'https://example.com/image1.jpg',
     });
 
-    expect(context.log.info).to.have.been.calledWith(
+    expect(context.log.debug).to.have.been.calledWith(
       '[alt-text]: Marked 1 suggestions as OUTDATED for 1 pages',
     );
   });

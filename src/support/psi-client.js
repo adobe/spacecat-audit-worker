@@ -115,7 +115,7 @@ function PSIClient(config, log = console) {
         return formattedURL;
       }
 
-      log.info(`Redirect detected from '${formattedURL}' to '${finalUrl}'`);
+      log.debug(`Redirect detected from '${formattedURL}' to '${finalUrl}'`);
       return finalUrl;
     } catch (error) {
       log.error(`Error happened while following redirects: ${error}. Falling back to original url: ${url}`);
@@ -144,7 +144,7 @@ function PSIClient(config, log = console) {
     const strategyEndTime = process.hrtime(strategyStartTime);
     const strategyElapsedTime = (strategyEndTime[0] + strategyEndTime[1] / 1e9).toFixed(2);
 
-    log.info(`Audited ${finalUrl} for ${strategy} strategy in ${strategyElapsedTime} seconds`);
+    log.debug(`Audited ${finalUrl} for ${strategy} strategy in ${strategyElapsedTime} seconds`);
 
     psiResult.finalUrl = finalUrl;
 

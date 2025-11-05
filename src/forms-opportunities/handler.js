@@ -60,7 +60,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
   const { SiteTopForm } = dataAccess;
   const topForms = await SiteTopForm.allBySiteId(site.getId());
 
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting audit`);
+  log.debug(`[Form Opportunity] [Site Id: ${site.getId()}] starting audit`);
   const formsAuditRunnerResult = await formsAuditRunner(finalUrl, context);
   const { formVitals } = formsAuditRunnerResult.auditResult;
 
@@ -150,7 +150,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
   };
 
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping`);
+  log.debug(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping`);
   return result;
 }
 
@@ -161,7 +161,7 @@ export async function sendA11yUrlsForScrapingStep(context) {
   const { SiteTopForm } = dataAccess;
   const topForms = await SiteTopForm.allBySiteId(site.getId());
 
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
+  log.debug(`[Form Opportunity] [Site Id: ${site.getId()}] getting scraped data for a11y audit`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
   const { formVitals } = latestAudit.getAuditResult();
@@ -203,7 +203,7 @@ export async function sendA11yUrlsForScrapingStep(context) {
     siteId: site.getId(),
   };
 
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] sending urls for form-accessibility audit`);
+  log.debug(`[Form Opportunity] [Site Id: ${site.getId()}] sending urls for form-accessibility audit`);
   return result;
 }
 
@@ -212,7 +212,7 @@ export async function processOpportunityStep(context) {
     log, site, finalUrl,
   } = context;
 
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
+  log.debug(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
   const excludeForms = new Set();
@@ -220,7 +220,7 @@ export async function processOpportunityStep(context) {
   await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createAccessibilityOpportunity(latestAudit, context);
-  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
+  log.debug(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
     status: 'complete',
   };

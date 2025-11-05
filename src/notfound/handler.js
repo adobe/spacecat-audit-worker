@@ -40,7 +40,7 @@ function process404Response(data) {
 export async function audit404Runner(baseURL, context) {
   const { log } = context;
 
-  log.info(`Received audit req for domain: ${baseURL}`);
+  log.debug(`Received audit req for domain: ${baseURL}`);
   const finalUrl = await getRUMUrl(baseURL);
 
   const rumAPIClient = RUMAPIClient.createFrom(context);

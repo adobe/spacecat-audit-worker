@@ -10,7 +10,12 @@
  * governing permissions and limitations under the License.
  */
 
-import { prependSchema, stripWWW, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
+import {
+  hasText,
+  prependSchema,
+  stripWWW,
+  tracingFetch as fetch,
+} from '@adobe/spacecat-shared-utils';
 
 /**
  * Checks if a given URL is a "preview" page
@@ -53,7 +58,7 @@ export async function filterBrokenSuggestedUrls(suggestedUrls, baseURL) {
  * @returns {string} - The country code.
  */
 export function getCountryCodeFromLang(lang, defaultCountry = 'us') {
-  if (!lang) return defaultCountry;
+  if (!hasText(lang)) return defaultCountry;
   // Split on hyphen or underscore (both are used in the wild)
   const parts = lang.split(/[-_]/);
   if (parts.length === 2 && parts[1].length === 2) {
@@ -70,7 +75,7 @@ export function getCountryCodeFromLang(lang, defaultCountry = 'us') {
  * @returns {Array|null} Array of unique URLs or null
  */
 export function parseCustomUrls(data) {
-  if (!data || typeof data !== 'string') {
+  if (!hasText(data)) {
     return null;
   }
 
@@ -78,7 +83,66 @@ export function parseCustomUrls(data) {
     .split(',')
     .map((url) => url.trim())
     .map((url) => url.replace(/^<|>$/g, '').trim()) // Remove < at start and > at end, then trim again
-    .filter((url) => url.length > 0);
+    .filter((url) => hasText(url));
 
   return urls.length > 0 ? [...new Set(urls)] : null;
+}
+
+/**
+ * Finds the best matching path from config based on context.
+ * Sorts by depth (deepest first) to find most specific match.
+ * Use case: Config path resolution for multi-locale configurations.
+ * @param {Object} sectionData - The config section (e.g., public).
+ * @param {string} contextPath - The path to match (e.g., '/en/us/products').
+ * @returns {string} The best matching config key.
+ */
+export function findBestMatchingPath(sectionData, contextPath) {
+  if (!hasText(contextPath) || contextPath === 'default') {
+    return 'default';
+  }
+
+  const paths = Object.keys(sectionData)
+    .filter((key) => key !== 'default')
+    .sort((a, b) => {
+      const aDepth = a.split('/').filter(Boolean).length;
+      const bDepth = b.split('/').filter(Boolean).length;
+      return bDepth - aDepth; // Deepest first
+    });
+
+  // Find exact match or startsWith match
+  for (const path of paths) {
+    if (contextPath === path || contextPath.startsWith(path)) {
+      return path;
+    }
+  }
+
+  return 'default';
+}
+
+/**
+ * Removes trailing slash from a URL if present.
+ * @param {string} url - The URL to process
+ * @returns {string} URL without trailing slash
+ */
+export function removeTrailingSlash(url) {
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+/**
+ * Gets the base URL from a full URL, optionally returning only the hostname.
+ * @param {string} url - The full URL
+ * @param {boolean} useHostnameOnly - If true, returns protocol + host only
+ * @returns {string} Base URL (with or without path)
+ */
+export function getBaseUrl(url, useHostnameOnly = false) {
+  if (useHostnameOnly) {
+    try {
+      const urlObj = new URL(url);
+      return `${urlObj.protocol}//${urlObj.host}`; // includes port if any
+    } catch {
+      // If URL parsing fails, return the original URL with trailing slash removed
+      return removeTrailingSlash(url);
+    }
+  }
+  return removeTrailingSlash(url);
 }

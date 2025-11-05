@@ -108,6 +108,7 @@ describe('generateSuggestionData', async function test() {
     };
     configuration = {
       isHandlerEnabledForSite: sandbox.stub(),
+      getHandlers: sandbox.stub().returns({}),
     };
     context.dataAccess.Configuration.findLatest.resolves(configuration);
 
@@ -145,7 +146,6 @@ describe('generateSuggestionData', async function test() {
     });
 
     await generateSuggestionData('https://example.com', auditData, context, site);
-    expect(context.log.info.getCall(1).args[0]).to.equal(`[${AUDIT_TYPE}] [Site: ${site.getId()}] No site data found, skipping suggestions generation`);
 
     expect(azureOpenAIClient.fetchChatCompletion).to.not.have.been.called;
   });
@@ -188,7 +188,6 @@ describe('generateSuggestionData', async function test() {
         aiRationale: 'No suitable suggestions found',
       },
     ]);
-    expect(context.log.info).to.have.been.calledWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions generation complete.`);
   });
 
   it('generates suggestions in multiple batches if there are more than 300 alternative URLs', async () => {
@@ -255,7 +254,6 @@ describe('generateSuggestionData', async function test() {
         urlTo: 'https://example.com/broken2',
       },
     ]);
-    expect(context.log.info).to.have.been.calledWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Suggestions generation complete.`);
   }).timeout(20000);
 
   it('handles Firefall client errors gracefully and continues processing, should suggest base URL instead', async () => {

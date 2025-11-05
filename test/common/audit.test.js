@@ -17,6 +17,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { composeAuditURL, hasText, prependSchema } from '@adobe/spacecat-shared-utils';
 import {
   BaseAudit,
@@ -93,6 +94,7 @@ describe('Audit tests', () => {
           },
           enabledByDefault: false,
           dependencies: [],
+          productCodes: ['ASO', 'LLMO'],
         },
       }),
       getJobs: () => [],
@@ -100,6 +102,12 @@ describe('Audit tests', () => {
       disableHandlerForSite: () => true,
       disableHandlerForOrg: () => true,
     };
+
+    // Mock TierClient for entitlement checks
+    const mockTierClient = {
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+    };
+    sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
   });
 
   afterEach('clean', () => {
@@ -244,6 +252,7 @@ describe('Audit tests', () => {
         auditType: message.type,
         auditResult: { metric: 42 },
         fullAuditRef,
+        invocationId: 'some-id',
       };
       context.env = { AUDIT_RESULTS_QUEUE_URL: queueUrl };
       context.dataAccess.Site.findById.withArgs(message.siteId).resolves(site);
@@ -354,6 +363,7 @@ describe('Audit tests', () => {
       auditType: message.type,
       auditResult: { metric: 42 },
       fullAuditRef,
+      invocationId: 'some-id',
     });
 
     expect(context.sqs.sendMessage).not.to.have.been.calledOnce;

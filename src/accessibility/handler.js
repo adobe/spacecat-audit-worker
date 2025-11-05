@@ -46,7 +46,7 @@ export async function processImportStep(context) {
 }
 
 // First step: sends a message to the content scraper to generate accessibility audits
-export async function scrapeAccessibilityData(context) {
+export async function scrapeAccessibilityData(context, deviceType = 'desktop') {
   const {
     site, log, finalUrl, env, s3Client, dataAccess,
   } = context;
@@ -60,7 +60,7 @@ export async function scrapeAccessibilityData(context) {
       error: errorMsg,
     };
   }
-  log.info(`[A11yAudit] Step 1: Preparing content scrape for accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
+  log.debug(`[A11yAudit] Step 1: Preparing content scrape for ${deviceType} accessibility audit for ${site.getBaseURL()} with siteId ${siteId}`);
 
   let urlsToScrape = [];
   urlsToScrape = await getUrlsForAudit(s3Client, bucketName, siteId, log);
@@ -68,7 +68,7 @@ export async function scrapeAccessibilityData(context) {
   if (urlsToScrape.length === 0) {
     const { SiteTopPage } = dataAccess;
     const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-    log.info(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
+    log.debug(`[A11yAudit] Found ${topPages?.length || 0} top pages for site ${site.getBaseURL()}: ${JSON.stringify(topPages || [], null, 2)}`);
     if (!isNonEmptyArray(topPages)) {
       log.info(`[A11yAudit] No top pages found for site ${siteId} (${site.getBaseURL()}), skipping audit`);
       return {
@@ -81,7 +81,7 @@ export async function scrapeAccessibilityData(context) {
       .map((page) => ({ url: page.getUrl(), traffic: page.getTraffic(), urlId: page.getId() }))
       .sort((a, b) => b.traffic - a.traffic)
       .slice(0, 100);
-    log.info(`[A11yAudit] Top 100 pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape, null, 2)}`);
+    log.debug(`[A11yAudit] Top 100 pages for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(urlsToScrape, null, 2)}`);
   }
 
   const existingObjectKeys = await getExistingObjectKeysFromFailedAudits(
@@ -90,19 +90,25 @@ export async function scrapeAccessibilityData(context) {
     siteId,
     log,
   );
-  log.info(`[A11yAudit] Found existing files from failed audits for site ${siteId} (${site.getBaseURL()}): ${existingObjectKeys}`);
+
   const existingUrls = await getExistingUrlsFromFailedAudits(
     s3Client,
     bucketName,
     log,
     existingObjectKeys,
   );
-  log.info(`[A11yAudit] Found existing URLs from failed audits for site ${siteId} (${site.getBaseURL()}): ${existingUrls}`);
+
   const remainingUrls = getRemainingUrls(urlsToScrape, existingUrls);
-  log.info(`[A11yAudit] Remaining URLs to scrape for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(remainingUrls, null, 2)}`);
+
+  // get scraping config from site
+  const scrapingConfig = await site.getConfig();
+  // eslint-disable-next-line max-len
+  const accessibilityScrapingParams = scrapingConfig?.state?.handlers?.accessibility?.scrapingParams || null;
+  log.info(`[A11yAudit] Accessibility scraping params for site ${siteId} (${site.getBaseURL()}): ${JSON.stringify(accessibilityScrapingParams, null, 2)}`);
 
   // The first step MUST return auditResult and fullAuditRef.
   // fullAuditRef could point to where the raw scraped data will be stored (e.g., S3 path).
+  const storagePrefix = deviceType === 'mobile' ? 'accessibility-mobile' : 'accessibility';
   return {
     auditResult: {
       status: 'SCRAPING_REQUESTED',
@@ -115,6 +121,11 @@ export async function scrapeAccessibilityData(context) {
     siteId,
     jobId: siteId,
     processingType: AUDIT_TYPE_ACCESSIBILITY,
+    options: {
+      storagePrefix,
+      deviceType,
+      accessibilityScrapingParams,
+    },
   };
 }
 
@@ -138,7 +149,7 @@ export async function processAccessibilityOpportunities(context) {
     };
   }
 
-  log.info(`[A11yAudit] Step 2: Processing scraped data for site ${siteId} (${site.getBaseURL()})`);
+  log.debug(`[A11yAudit] Step 2: Processing scraped data for site ${siteId} (${site.getBaseURL()})`);
 
   // Use the accessibility aggregator to process data
   let aggregationResult;
@@ -244,7 +255,163 @@ export async function processAccessibilityOpportunities(context) {
   };
 }
 
+// Factory function to create device-specific processing function
+export function createProcessAccessibilityOpportunitiesWithDevice(deviceType) {
+  return async function processAccessibilityOpportunitiesWithDevice(context) {
+    const {
+      site, log, s3Client, env, dataAccess, sqs,
+    } = context;
+    const siteId = site.getId();
+    const version = new Date().toISOString().split('T')[0];
+    const outputKey = deviceType === 'mobile' ? `accessibility-mobile/${siteId}/${version}-final-result.json` : `accessibility/${siteId}/${version}-final-result.json`;
+
+    // Get the S3 bucket name from config or environment
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    if (!bucketName) {
+      const errorMsg = 'Missing S3 bucket configuration for accessibility audit';
+      log.error(`[A11yProcessingError] ${errorMsg}`);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: errorMsg,
+      };
+    }
+
+    log.info(`[A11yAudit] Step 2: Processing scraped data for ${deviceType} on site ${siteId} (${site.getBaseURL()})`);
+
+    // Use the accessibility aggregator to process data
+    let aggregationResult;
+    try {
+      aggregationResult = await aggregateAccessibilityData(
+        s3Client,
+        bucketName,
+        siteId,
+        log,
+        outputKey,
+        `${AUDIT_TYPE_ACCESSIBILITY}-${deviceType}`,
+        version,
+      );
+
+      if (!aggregationResult.success) {
+        log.error(`[A11yAudit][A11yProcessingError] No data aggregated for ${deviceType} on site ${siteId} (${site.getBaseURL()}): ${aggregationResult.message}`);
+        return {
+          status: 'NO_OPPORTUNITIES',
+          message: aggregationResult.message,
+        };
+      }
+    } catch (error) {
+      log.error(`[A11yAudit][A11yProcessingError] Error processing accessibility data for ${deviceType} on site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: error.message,
+      };
+    }
+
+    // change status to IGNORED for older opportunities for this device type
+    await updateStatusToIgnored(dataAccess, siteId, log, deviceType);
+
+    try {
+      await generateReportOpportunities(
+        site,
+        aggregationResult,
+        context,
+        `${AUDIT_TYPE_ACCESSIBILITY}-${deviceType}`,
+        deviceType,
+      );
+    } catch (error) {
+      log.error(`[A11yAudit][A11yProcessingError] Error generating report opportunities for ${deviceType} on site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: error.message,
+      };
+    }
+
+    // Step 2c: Create individual opportunities (skip for mobile audits)
+    if (deviceType !== 'mobile') {
+      try {
+        await createAccessibilityIndividualOpportunities(
+          aggregationResult.finalResultFiles.current,
+          context,
+        );
+        log.debug(`[A11yAudit] Individual opportunities created successfully for ${deviceType} on site ${siteId} (${site.getBaseURL()})`);
+      } catch (error) {
+        log.error(`[A11yAudit][A11yProcessingError] Error creating individual opportunities for ${deviceType} on site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+        return {
+          status: 'PROCESSING_FAILED',
+          error: error.message,
+        };
+      }
+    } else {
+      log.info(`[A11yAudit] Skipping individual opportunities (Step 2c) for mobile audit on site ${siteId}`);
+    }
+
+    // Step 3: Save a11y metrics to s3 for ALL device types (desktop and mobile)
+    try {
+      // Send message to importer-worker to save a11y metrics
+      await sendRunImportMessage(
+        sqs,
+        env.IMPORT_WORKER_QUEUE_URL,
+        `${A11Y_METRICS_AGGREGATOR_IMPORT_TYPE}_${deviceType}`,
+        siteId,
+        {
+          scraperBucketName: env.S3_SCRAPER_BUCKET_NAME,
+          importerBucketName: env.S3_IMPORTER_BUCKET_NAME,
+          version,
+          urlSourceSeparator: URL_SOURCE_SEPARATOR,
+          totalChecks: WCAG_CRITERIA_COUNTS.TOTAL,
+          deviceType,
+          options: {},
+        },
+      );
+      log.debug(`[A11yAudit] Sent message to importer-worker to save a11y metrics for ${deviceType} on site ${siteId}`);
+    } catch (error) {
+      log.error(`[A11yAudit][A11yProcessingError] Error sending message to importer-worker to save a11y metrics for ${deviceType} on site ${siteId} (${site.getBaseURL()}): ${error.message}`, error);
+      return {
+        status: 'PROCESSING_FAILED',
+        error: error.message,
+      };
+    }
+
+    // Extract key metrics for the audit result summary, filtered by device type
+    // Subtract 1 for the 'overall' key to get actual URL count
+    const urlsProcessed = Object.keys(aggregationResult.finalResultFiles.current).length - 1;
+
+    // Calculate device-specific metrics from the aggregated data
+    let deviceSpecificIssues = 0;
+
+    Object.entries(aggregationResult.finalResultFiles.current).forEach(([key, urlData]) => {
+      if (key === 'overall' || !urlData.violations) return;
+
+      ['critical', 'serious'].forEach((severity) => {
+        if (urlData.violations[severity]?.items) {
+          Object.values(urlData.violations[severity].items).forEach((rule) => {
+            if (rule.htmlData) {
+              rule.htmlData.forEach((htmlItem) => {
+                if (htmlItem.deviceTypes?.includes(deviceType)) {
+                  deviceSpecificIssues += 1;
+                }
+              });
+            }
+          });
+        }
+      });
+    });
+
+    log.info(`[A11yAudit] Found ${deviceSpecificIssues} ${deviceType} accessibility issues across ${urlsProcessed} unique URLs for site ${siteId} (${site.getBaseURL()})`);
+
+    // Return the final audit result with device-specific metrics and status
+    return {
+      status: deviceSpecificIssues > 0 ? 'OPPORTUNITIES_FOUND' : 'NO_OPPORTUNITIES',
+      opportunitiesFound: deviceSpecificIssues,
+      urlsProcessed,
+      deviceType,
+      summary: `Found ${deviceSpecificIssues} ${deviceType} accessibility issues across ${urlsProcessed} URLs`,
+      fullReportUrl: outputKey, // Reference to the full report in S3
+    };
+  };
+}
+
 export default new AuditBuilder()
+  .withUrlResolver((site) => site.resolveFinalURL())
   .addStep(
     'processImport',
     processImportStep,

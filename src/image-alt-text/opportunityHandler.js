@@ -76,7 +76,6 @@ export const getProjectedMetrics = async ({
 
   try {
     finalUrl = await getRUMUrl(auditUrl);
-    log.info(`[${AUDIT_TYPE}]: RUM URL: ${finalUrl}`);
     const rumAPIClient = RUMAPIClient.createFrom(context);
     const options = {
       domain: finalUrl,
@@ -160,7 +159,7 @@ export async function sendAltTextOpportunityToMystique(
     // Batch the URLs to avoid sending too many at once
     const urlBatches = chunkArray(pageUrls, MYSTIQUE_BATCH_SIZE);
 
-    log.info(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es)`);
+    log.debug(`[${AUDIT_TYPE}]: Sending ${pageUrls.length} URLs to Mystique in ${urlBatches.length} batch(es)`);
 
     // Send each batch as a separate message
     for (let i = 0; i < urlBatches.length; i += 1) {
@@ -180,11 +179,11 @@ export async function sendAltTextOpportunityToMystique(
       };
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-      log.info(`[${AUDIT_TYPE}]: Batch ${i + 1}/${urlBatches.length} sent to Mystique with ${batch.length} URLs`);
-      log.info(`[${AUDIT_TYPE}]: Message sent to Mystique: ${JSON.stringify(mystiqueMessage)}`);
+      log.debug(`[${AUDIT_TYPE}]: Batch ${i + 1}/${urlBatches.length} sent to Mystique with ${batch.length} URLs`);
+      log.debug(`[${AUDIT_TYPE}]: Message sent to Mystique: ${JSON.stringify(mystiqueMessage)}`);
     }
 
-    log.info(`[${AUDIT_TYPE}]: All ${urlBatches.length} batches sent to Mystique successfully`);
+    log.debug(`[${AUDIT_TYPE}]: All ${urlBatches.length} batches sent to Mystique successfully`);
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to send alt-text opportunity to Mystique: ${error.message}`);
     throw error;
@@ -261,7 +260,7 @@ export async function addAltTextSuggestions({ opportunity, newSuggestionDTOs, lo
     }
   }
 
-  log.info(`[${AUDIT_TYPE}]: Added ${newSuggestionDTOs.length} new suggestions`);
+  log.debug(`[${AUDIT_TYPE}]: Added ${newSuggestionDTOs.length} new suggestions`);
 }
 
 /**
@@ -279,9 +278,9 @@ export async function cleanupOutdatedSuggestions(opportunity, log) {
 
     if (outdatedSuggestions.length > 0) {
       await Promise.all(outdatedSuggestions.map((suggestion) => suggestion.remove()));
-      log.info(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions`);
+      log.debug(`[${AUDIT_TYPE}]: Cleaned up ${outdatedSuggestions.length} OUTDATED suggestions`);
     } else {
-      log.info(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up`);
+      log.debug(`[${AUDIT_TYPE}]: No OUTDATED suggestions to clean up`);
     }
   } catch (error) {
     log.error(`[${AUDIT_TYPE}]: Failed to cleanup OUTDATED suggestions: ${error.message}`);

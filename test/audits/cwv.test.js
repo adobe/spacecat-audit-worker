@@ -19,6 +19,7 @@ import chaiAsPromised from 'chai-as-promised';
 import nock from 'nock';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import GoogleClient from '@adobe/spacecat-shared-google-client';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 import { CWVRunner, opportunityAndSuggestions } from '../../src/cwv/handler.js';
 import expectedOppty from '../fixtures/cwv/oppty.json' with { type: 'json' };
 import expectedOpptyWithoutGSC from '../fixtures/cwv/opptyWithoutGSC.json' with { type: 'json' };
@@ -30,7 +31,6 @@ use(chaiAsPromised);
 
 const sandbox = sinon.createSandbox();
 
-const auditType = Audit.AUDIT_TYPES.CWV;
 const baseURL = 'https://spacecat.com';
 const auditUrl = 'www.spacecat.com';
 const DOMAIN_REQUEST_DEFAULT_PARAMS = {
@@ -45,8 +45,12 @@ describe('CWVRunner Tests', () => {
     getGroupedURLs: sandbox.stub().returns(groupedURLs),
   };
   const site = {
+    getId: () => 'test-site-id',
     getBaseURL: sandbox.stub().returns(baseURL),
     getConfig: () => siteConfig,
+    getDeliveryType: sandbox.stub().returns('aem_cs'),
+    getDeliveryConfig: sandbox.stub().returns({}),
+    hasProductEntitlement: sandbox.stub().resolves(true),
   };
 
   const context = {
@@ -55,25 +59,40 @@ describe('CWVRunner Tests', () => {
     rumApiClient: {
       query: sandbox.stub().resolves(rumData),
     },
-    dataAccess: {},
+    dataAccess: {
+      Configuration: {
+        findLatest: sandbox.stub().resolves({
+          getHandlers: () => ({
+            'cwv-auto-suggest': {
+              productCodes: ['aem-sites'],
+            },
+          }),
+          isHandlerEnabledForSite: () => true,
+        }),
+      },
+    },
     env: {},
     log: {
       debug: sinon.stub(),
+      info: sinon.stub(),
+      warn: sinon.stub(),
     },
   };
 
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
+    site.getDeliveryConfig.reset();
   });
 
   it('cwv audit runs rum api client cwv query', async () => {
+    site.getDeliveryConfig.returns({});
     const result = await CWVRunner(auditUrl, context, site);
 
-    expect(siteConfig.getGroupedURLs.calledWith(auditType)).to.be.true;
+    expect(siteConfig.getGroupedURLs.calledWith(Audit.AUDIT_TYPES.CWV)).to.be.true;
     expect(
       context.rumApiClient.query.calledWith(
-        auditType,
+        Audit.AUDIT_TYPES.CWV,
         {
           ...DOMAIN_REQUEST_DEFAULT_PARAMS,
           groupedURLs,
@@ -90,6 +109,68 @@ describe('CWVRunner Tests', () => {
       },
       fullAuditRef: auditUrl,
     });
+  });
+
+  it('uses custom delivery config if present', async () => {
+    const customConfig = { cwv: { dailyThreshold: 500, interval: 14 } };
+    site.getDeliveryConfig.returns(customConfig);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(context.rumApiClient.query).to.have.been.calledWith(
+      Audit.AUDIT_TYPES.CWV,
+      {
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        interval: customConfig.cwv.interval,
+        groupedURLs,
+      },
+    );
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= customConfig.cwv.dailyThreshold * customConfig.cwv.interval),
+    );
+    expect(result.auditResult.auditContext.interval).to.equal(customConfig.cwv.interval);
+  });
+
+  it('caps the interval at 30 days if a larger value is provided', async () => {
+    const customConfig = { cwv: { dailyThreshold: 500, interval: 90 } };
+    site.getDeliveryConfig.returns(customConfig);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(context.rumApiClient.query).to.have.been.calledWith(
+      Audit.AUDIT_TYPES.CWV,
+      {
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        interval: 30, // Capped value
+        groupedURLs,
+      },
+    );
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= customConfig.cwv.dailyThreshold * 30), // Uses capped interval
+    );
+    expect(result.auditResult.auditContext.interval).to.equal(30); // Reports capped interval
+  });
+
+  it('uses default values when delivery config is null', async () => {
+    site.getDeliveryConfig.returns(null);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(context.rumApiClient.query).to.have.been.calledWith(
+      Audit.AUDIT_TYPES.CWV,
+      {
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        interval: 7,
+        groupedURLs,
+      },
+    );
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= 1000 * 7),
+    );
+    expect(result.auditResult.auditContext.interval).to.equal(7);
   });
 
   describe('CWV audit to oppty conversion', () => {
@@ -115,15 +196,30 @@ describe('CWVRunner Tests', () => {
         bulkUpdateStatus: sandbox.stub(),
       };
 
+      context.sqs = {
+        sendMessage: sandbox.stub().resolves(),
+      };
+
+      context.env = {
+        QUEUE_SPACECAT_TO_MYSTIQUE: 'test-queue',
+      };
+      
+      // Mock TierClient for entitlement checks
+      const mockTierClient = {
+        checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+      };
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
       addSuggestionsResponse = {
         createdItems: [],
         errorItems: [],
       };
 
       oppty = {
-        getType: () => auditType,
+        getType: () => Audit.AUDIT_TYPES.CWV,
         getId: () => 'oppty-id',
         getSiteId: () => 'site-id',
+        getAuditId: () => 'audit-id',
         addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
         getSuggestions: sandbox.stub().resolves([]),
         setAuditId: sandbox.stub(),
@@ -131,6 +227,9 @@ describe('CWVRunner Tests', () => {
         setData: sandbox.stub(),
         save: sandbox.stub().resolves(),
         setUpdatedBy: sandbox.stub().returnsThis(),
+        siteId: 'site-id',
+        auditId: 'audit-id',
+        opportunityId: 'oppty-id',
       };
 
       auditData = {
@@ -138,7 +237,7 @@ describe('CWVRunner Tests', () => {
         id: 'audit-id',
         isLive: true,
         auditedAt: new Date().toISOString(),
-        auditType,
+        auditType: Audit.AUDIT_TYPES.CWV,
         auditResult: {
           cwv: rumData.filter((data) => data.pageviews >= 7000),
           auditContext: {
@@ -160,7 +259,7 @@ describe('CWVRunner Tests', () => {
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(auditType);
+      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(Audit.AUDIT_TYPES.CWV);
 
       expect(GoogleClient.createFrom).to.have.been.calledWith(context, auditUrl);
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnceWith(expectedOppty);
@@ -187,9 +286,10 @@ describe('CWVRunner Tests', () => {
     it('updates the existing opportunity object', async () => {
       sinon.stub(GoogleClient, 'createFrom').resolves({});
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
-      const existingSuggestions = suggestions.map((suggestion) => ({
+      const existingSuggestions = suggestions.map((suggestion, index) => ({
         ...suggestion,
         opportunityId: oppty.getId(),
+        getId: () => `sugg-${index}`,
         remove: sinon.stub(),
         save: sinon.stub(),
         getData: () => (suggestion.data),
@@ -201,7 +301,7 @@ describe('CWVRunner Tests', () => {
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(auditType);
+      expect(siteConfig.getGroupedURLs).to.have.been.calledWith(Audit.AUDIT_TYPES.CWV);
 
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(oppty.setAuditId).to.have.been.calledOnceWith('audit-id');
@@ -256,6 +356,96 @@ describe('CWVRunner Tests', () => {
       expect(oppty.addSuggestions).to.have.been.calledOnce;
       const suggestionsArg = oppty.addSuggestions.getCall(0).args[0];
       expect(suggestionsArg).to.be.an('array').with.lengthOf(4);
+    });
+
+    it('calls sendSQSMessageForAutoSuggest when suggestions have no guidance', async () => {
+      // Mock suggestions without guidance (empty issues array)
+      const mockSuggestions = [
+        { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
+        { getId: () => 'sugg-2', getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
+      ];
+      
+      // Setup opportunity with mock suggestions before the function call
+      oppty.getSuggestions = sandbox.stub().resolves(mockSuggestions);
+      
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+
+      // Verify that SQS sendMessage was called twice (once per suggestion)
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      const message = context.sqs.sendMessage.firstCall.args[1];
+      expect(message.type).to.equal('guidance:cwv-analysis');
+      expect(message.siteId).to.equal('site-id');
+    });
+
+    it('does not call sendSQSMessageForAutoSuggest when all suggestions have guidance', async () => {
+      // Mock suggestions with existing guidance
+      const mockSuggestions = [
+        {
+          getId: () => 'sugg-1',
+          getData: () => ({ 
+            type: 'url', 
+            url: 'test1',
+            issues: [
+              { type: 'lcp', value: '# LCP Optimization\n\nYour LCP is too slow...' }
+            ]
+          }),
+          getStatus: () => 'NEW'
+        }
+      ];
+      
+      // Setup opportunity with mock suggestions before the function call
+      oppty.getSuggestions = sandbox.stub().resolves(mockSuggestions);
+      
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+
+      // Verify that SQS sendMessage was NOT called
+      expect(context.sqs.sendMessage).to.not.have.been.called;
+    });
+
+    it('calls sendSQSMessageForAutoSuggest when some suggestions have guidance and some do not', async () => {
+      // Mock mixed suggestions - some with guidance, some without
+      const mockSuggestions = [
+        {
+          getId: () => 'sugg-1',
+          getData: () => ({ 
+            type: 'url', 
+            url: 'test1',
+            issues: [
+              { type: 'lcp', value: '# LCP Optimization...' }
+            ]
+          }),
+          getStatus: () => 'NEW'
+        },
+        {
+          getId: () => 'sugg-2',
+          getData: () => ({ 
+            type: 'url', 
+            url: 'test2',
+            issues: [] // No guidance (empty issues array)
+          }),
+          getStatus: () => 'NEW'
+        }
+      ];
+      
+      // Setup opportunity with mock suggestions before the function call
+      oppty.getSuggestions = sandbox.stub().resolves(mockSuggestions);
+      
+      context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([]);
+      context.dataAccess.Opportunity.create.resolves(oppty);
+      sinon.stub(GoogleClient, 'createFrom').resolves({});
+
+      await opportunityAndSuggestions(auditUrl, auditData, context, site);
+
+      // Verify that SQS sendMessage was called once (only for the suggestion without guidance)
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
   });
 });

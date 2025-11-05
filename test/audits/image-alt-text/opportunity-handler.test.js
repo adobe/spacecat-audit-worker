@@ -171,7 +171,7 @@ describe('addAltTextSuggestions', () => {
     });
 
     expect(mockOpportunity.addSuggestions).to.have.been.calledWith(newSuggestionDTOs);
-    expect(logStub.info).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Added 2 new suggestions',
     );
   });
@@ -245,7 +245,7 @@ describe('addAltTextSuggestions', () => {
     expect(logStub.error).to.have.been.calledWith(
       '[alt-text]: Item {"id":"suggestion-1"} failed with error: Invalid suggestion data',
     );
-    expect(logStub.info).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Added 1 new suggestions',
     );
   });
@@ -366,10 +366,10 @@ describe('sendAltTextOpportunityToMystique', () => {
       }),
     );
 
-    expect(logStub.info).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Sending 2 URLs to Mystique in 1 batch(es)',
     );
-    expect(logStub.info).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: All 1 batches sent to Mystique successfully',
     );
   });
@@ -394,10 +394,10 @@ describe('sendAltTextOpportunityToMystique', () => {
     const secondCall = sqsStub.sendMessage.getCall(1);
     expect(secondCall.args[1].data.pageUrls).to.have.lengthOf(5);
 
-    expect(logStub.info).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Sending 15 URLs to Mystique in 2 batch(es)',
     );
-    expect(logStub.info).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: All 2 batches sent to Mystique successfully',
     );
   });
@@ -749,7 +749,7 @@ describe('cleanupOutdatedSuggestions', () => {
     expect(mockSuggestions[1].remove).to.have.been.called;
     expect(mockSuggestions[2].remove).to.not.have.been.called;
 
-    expect(logStub.info).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: Cleaned up 2 OUTDATED suggestions',
     );
   });
@@ -776,7 +776,7 @@ describe('cleanupOutdatedSuggestions', () => {
     expect(mockSuggestions[0].remove).to.not.have.been.called;
     expect(mockSuggestions[1].remove).to.not.have.been.called;
 
-    expect(logStub.info).to.have.been.calledWith(
+    expect(logStub.debug).to.have.been.calledWith(
       '[alt-text]: No OUTDATED suggestions to clean up',
     );
   });
