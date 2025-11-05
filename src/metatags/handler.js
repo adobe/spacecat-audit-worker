@@ -238,8 +238,8 @@ export async function runAuditAndGenerateSuggestions(context) {
     site, audit, finalUrl, log, scrapeResultPaths,
   } = context;
 
-  log.debug(`scrapeResultPaths: ${JSON.stringify(scrapeResultPaths)}`);
-  log.info(`Start runAuditAndGenerateSuggestions step for: ${site.getId()}`);
+  log.info(`[metatags] scrapeResultPaths for ${site.getId()}: ${JSON.stringify(scrapeResultPaths)}`);
+  log.info(`[metatags] Start runAuditAndGenerateSuggestions step for: ${site.getId()}`);
 
   const {
     seoChecks,
@@ -288,7 +288,7 @@ export async function runAuditAndGenerateSuggestions(context) {
     auditResult,
   }, context);
 
-  log.info(`Finish runAuditAndGenerateSuggestions step for: ${site.getId()}`);
+  log.info(`[metatags] Finish runAuditAndGenerateSuggestions step for: ${site.getId()}`);
 
   return {
     status: 'complete',
@@ -299,7 +299,7 @@ export async function importTopPages(context) {
   const { site, log, finalUrl } = context;
   const s3BucketPath = `scrapes/${site.getId()}/`;
 
-  log.info(`importTopPages step requested scraping for ${site.getId()}, bucket path: ${s3BucketPath}`);
+  log.info(`[metatags] importTopPages step requested scraping for ${site.getId()}, bucket path: ${s3BucketPath}`);
 
   return {
     type: 'top-pages',
@@ -317,7 +317,7 @@ export async function submitForScraping(context) {
   } = context;
   const { SiteTopPage } = dataAccess;
 
-  log.info(`Start submitForScraping step for: ${site.getId()}`);
+  log.info(`[metatags] Start submitForScraping step for: ${site.getId()}`);
 
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
@@ -332,7 +332,7 @@ export async function submitForScraping(context) {
     throw new Error(`No URLs found for site neither top pages nor included URLs for ${site.getId()}`);
   }
 
-  log.info(`Finish submitForScraping step for: ${site.getId()}`);
+  log.info(`[metatags] Finish submitForScraping step for: ${site.getId()}`);
 
   return {
     urls: finalUrls.map((url) => ({ url })),
