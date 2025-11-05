@@ -332,7 +332,7 @@ describe('FAQs guidance handler', () => {
     expect(mappedSuggestion.data).to.deep.equal(testData);
   });
 
-  it('should call buildKey function correctly with URL and question', async () => {
+  it('should call buildKey function correctly with URL, topic and question', async () => {
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
@@ -349,12 +349,13 @@ describe('FAQs guidance handler', () => {
     const syncArgs = syncCall.args[0];
     const testData = {
       url: 'https://adobe.com/test',
+      topic: 'photoshop',
       item: {
         question: 'How to use Photoshop?',
       },
     };
     const buildKeyResult = syncArgs.buildKey(testData);
-    expect(buildKeyResult).to.equal('https://adobe.com/test-How to use Photoshop?');
+    expect(buildKeyResult).to.equal('https://adobe.com/test::photoshop::How to use Photoshop?');
   });
 
   it('should create correct guidance object with recommendation count', async () => {
