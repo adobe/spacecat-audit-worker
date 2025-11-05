@@ -483,6 +483,7 @@ export default async function handler(message, context) {
         opportunity,
         auditId,
         context,
+        site,
       );
     } else {
       log.info(`[Form Opportunity] [Site Id: ${siteId}] ${opportunity.getType()}-auto-fix is disabled for site, skipping code-fix generation`);

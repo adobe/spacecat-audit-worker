@@ -982,9 +982,9 @@ export async function sendRunImportMessage(
  * @param {Object} context - The context object containing log, sqs, env, and site
  * @returns {Promise<void>}
  */
-export async function sendCodeFixMessagesToImporter(opportunity, auditId, context) {
+export async function sendCodeFixMessagesToImporter(opportunity, auditId, context, site) {
   const {
-    log, sqs, env, site,
+    log, sqs, env,
   } = context;
 
   const siteId = opportunity.getSiteId();
