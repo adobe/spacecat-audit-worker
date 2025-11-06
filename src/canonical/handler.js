@@ -81,6 +81,7 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
 
   try {
     log.info(`Fetching URL: ${url}`);
+    log.info(`[DEBUG] Request headers: ${JSON.stringify(options.headers || {})}`);
     const response = await fetch(url, options);
     // finalUrl is the URL after any redirects
     const finalUrl = response.url;
@@ -508,7 +509,31 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       return true;
     });
 
-    const auditPromises = filteredTopPages.map(async (page) => {
+    // Helper function to limit concurrency and avoid overwhelming servers
+    const limitConcurrency = async (tasks, maxConcurrent) => {
+      const results = [];
+      const executing = [];
+
+      for (const task of tasks) {
+        const promise = task().then((result) => {
+          executing.splice(executing.indexOf(promise), 1);
+          return result;
+        });
+
+        results.push(promise);
+        executing.push(promise);
+
+        if (executing.length >= maxConcurrent) {
+          // eslint-disable-next-line no-await-in-loop
+          await Promise.race(executing);
+        }
+      }
+
+      return Promise.allSettled(results);
+    };
+
+    // Create task functions (not promises yet) for each page
+    const auditTasks = filteredTopPages.map((page) => async () => {
       const { url } = page;
       const checks = [];
 
@@ -529,7 +554,8 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       return { url, checks };
     });
 
-    const auditResultsArray = await Promise.allSettled(auditPromises);
+    // Process with max 10 concurrent requests to avoid triggering rate limits
+    const auditResultsArray = await limitConcurrency(auditTasks, 10);
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
       if (result.status === 'fulfilled') {
         const { url, checks } = result.value;
