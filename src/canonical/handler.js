@@ -540,8 +540,31 @@ export async function canonicalAuditRunner(baseURL, context, site) {
         const urlFormatChecks = validateCanonicalFormat(canonicalUrl, baseURL, log);
         checks.push(...urlFormatChecks);
 
-        const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, options);
-        checks.push(...urlContentCheck);
+        // self-reference check
+        const selfRefCheck = canonicalTagChecks.find(
+          (c) => c.check === CANONICAL_CHECKS.CANONICAL_SELF_REFERENCED.check,
+        );
+        const isSelfReferenced = selfRefCheck?.success === true;
+
+        // if self-referenced - skip accessibility
+        if (isSelfReferenced) {
+          log.info(
+            `Canonical URL is self-referenced, skipping redundant accessibility check for ${url}`,
+          );
+          checks.push({
+            check: CANONICAL_CHECKS.CANONICAL_URL_STATUS_OK.check,
+            success: true,
+          });
+          checks.push({
+            check: CANONICAL_CHECKS.CANONICAL_URL_NO_REDIRECT.check,
+            success: true,
+          });
+        } else {
+          // if not self-referenced  - validate accessibility
+          log.info(`Canonical URL points to different page, validating accessibility: ${canonicalUrl}`);
+          const urlContentCheck = await validateCanonicalRecursively(canonicalUrl, log, options);
+          checks.push(...urlContentCheck);
+        }
       }
       return { url, checks };
     });
