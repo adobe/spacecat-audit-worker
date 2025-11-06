@@ -603,7 +603,7 @@ export function checkDynamoItem(item, safetyMargin = 0.85) {
  * 2. Deduplicates by formsource, keeping only the entry with highest pageviews
  * 3. Limits to top N opportunities by pageviews
  *
- * @param {Array} filteredOpportunities - Array of opportunity data objects to filter
+ * @param {Array} newOpportunities - Array of opportunity data objects to filter
  * @param {Array} existingOpportunities - Array of existing opportunity objects from database
  * @param {string} opportunityType - The type of opportunity
  *   (e.g., FORM_OPPORTUNITY_TYPES.LOW_CONVERSION)
@@ -612,13 +612,13 @@ export function checkDynamoItem(item, safetyMargin = 0.85) {
  * @returns {Array} - Filtered and limited array of opportunity data objects
  */
 export function applyOpportunityFilters(
-  filteredOpportunities,
+  newOpportunities,
   existingOpportunities,
   opportunityType,
   log,
   maxLimit = 2,
 ) {
-  let opportunities = [...filteredOpportunities];
+  let opportunities = [...newOpportunities];
 
   // Only apply filtering steps if we have more than maxLimit opportunities
   // If we have maxLimit or fewer, return them as-is (sorted by pageviews)
