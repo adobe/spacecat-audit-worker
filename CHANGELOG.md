@@ -1,3 +1,15 @@
+# [1.230.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.229.0...v1.230.0) (2025-11-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-http-utils to v1.18.0 ([#1521](https://github.com/adobe/spacecat-audit-worker/issues/1521)) ([d812e81](https://github.com/adobe/spacecat-audit-worker/commit/d812e8139905c8fa25f226ede789caec98908256))
+
+
+### Features
+
+* **page-intent:** check page intent for previous 10 weeks ([#1514](https://github.com/adobe/spacecat-audit-worker/issues/1514)) ([b866051](https://github.com/adobe/spacecat-audit-worker/commit/b866051ffb3543fbb9826a9a1230aa931b6c420e))
+
 # [1.229.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.228.1...v1.229.0) (2025-11-05)
 
 
