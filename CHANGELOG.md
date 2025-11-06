@@ -1,3 +1,10 @@
+## [1.230.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.3...v1.230.4) (2025-11-06)
+
+
+### Bug Fixes
+
+* meta-tags creates duplicated suggestions ([#1516](https://github.com/adobe/spacecat-audit-worker/issues/1516)) ([2f1030b](https://github.com/adobe/spacecat-audit-worker/commit/2f1030bd27f4d59295b8408559e370a3ce904719))
+
 ## [1.230.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.2...v1.230.3) (2025-11-06)
 
 
