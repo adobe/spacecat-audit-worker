@@ -148,7 +148,11 @@ describe('high-organic-low-ctr guidance handler tests', () => {
       guidanceMsgFromMystique.data.suggestions.length,
     );
     suggestionArg.data.variations.forEach((variation, index) => {
-      expect(variation).to.not.have.property('variationEditPageUrl');
+      if (variation.name !== 'Original') {
+        expect(variation).to.not.have.property('variationEditPageUrl');
+      } else {
+        expect(variation).to.have.property('variationEditPageUrl');
+      }
       expect(variation.id).to.equal(guidanceMsgFromMystique.data.suggestions[index].id);
       expect(variation.name).to.equal(guidanceMsgFromMystique.data.suggestions[index].name);
     });
@@ -364,7 +368,7 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     expect(Suggestion.create).to.have.been.calledOnce;
   });
 
-  it('should remove variationEditPageUrl when saving suggestions', async () => {
+  it('should remove variationEditPageUrl when saving suggestions for variations other than Original', async () => {
     Opportunity.allBySiteId.resolves([]);
     const message = {
       auditId: 'audit-id',
@@ -387,6 +391,12 @@ describe('high-organic-low-ctr guidance handler tests', () => {
 
     // Verify that variationEditPageUrl is removed from all variations
     suggestionArg.data.variations.forEach((variation) => {
+      if (variation.name === 'Original') {
+        expect(
+          variation.variationEditPageUrl,
+        ).to.equal(guidanceMsgFromMystique.data.suggestions[0].variationEditPageUrl);
+        return;
+      }
       expect(variation).to.not.have.property('variationEditPageUrl');
       // Verify other properties are still present
       expect(variation).to.have.property('name');

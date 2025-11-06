@@ -27,13 +27,16 @@ function hasManuallyModifiedSuggestions(suggestions) {
 }
 
 /**
- * remove variationEditPageUrl from the variations
+ * remove variationEditPageUrl from the variations other than Original
  * @param {Array} variations - Array of variation objects
  * @returns {Array} - updated Array of variation objects
  */
 function updateVariations(variations) {
   if (isNonEmptyArray(variations)) {
     return variations.map((variation) => {
+      if (variation?.name === 'Original') {
+        return variation;
+      }
       // eslint-disable-next-line no-unused-vars
       const { variationEditPageUrl, ...variationWithOutEditUrl } = variation;
       return variationWithOutEditUrl;
