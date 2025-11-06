@@ -26,7 +26,7 @@ export async function runReport(reportConfig, athenaClient, s3Config, log, optio
   const periods = generateReportingPeriods(referenceDate, weekOffset);
   const { periodIdentifier } = periods;
 
-  log.info(`Running ${reportConfig.name} report for ${periodIdentifier} (week offset: ${weekOffset})`);
+  log.debug(`Running ${reportConfig.name} report for ${periodIdentifier} (week offset: ${weekOffset})`);
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();
   const outputLocation = `${llmoFolder}/${reportConfig.folderSuffix}`;
 
@@ -95,14 +95,14 @@ export async function runWeeklyReport({
   context,
 }) {
   try {
-    log.info(`Starting ${reportConfig.name} report for week offset: ${weekOffset}...`);
+    log.debug(`Starting ${reportConfig.name} report for week offset: ${weekOffset}...`);
     await runReport(reportConfig, athenaClient, s3Config, log, {
       site,
       sharepointClient,
       weekOffset,
       context,
     });
-    log.info(`Successfully completed ${reportConfig.name} report`);
+    log.debug(`Successfully completed ${reportConfig.name} report`);
   } catch (error) {
     log.error(`Failed to generate ${reportConfig.name} report: ${error.message}`);
   }

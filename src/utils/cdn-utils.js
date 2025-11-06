@@ -167,21 +167,21 @@ export async function determineCdnProvider(s3, bucket, prefix) {
  * @param {string} bucketName - S3 bucket name
  * @param {string} serviceProvider - service provider
  * @param {Object} timeParts - Time parts {year, month, day, hour}
- * @param {string} imsOrgId - IMS Organization ID (for new structure)
+ * @param {string} pathId - Path ID for the logs
  */
-export function buildCdnPaths(bucketName, serviceProvider, timeParts, imsOrgId = null) {
+export function buildCdnPaths(bucketName, serviceProvider, timeParts, pathId = null) {
   const {
     year, month, day, hour,
   } = timeParts;
 
-  // New standardized bucket structure: cdn-logs-adobe-{env}/{imsOrgId}/raw/{serviceProvider}/
-  if (isStandardAdobeCdnBucket(bucketName) && imsOrgId) {
+  // New standardized bucket structure: cdn-logs-adobe-{env}/{pathId}/raw/{serviceProvider}/
+  if (isStandardAdobeCdnBucket(bucketName) && pathId) {
     return {
-      rawLocation: `s3://${bucketName}/${imsOrgId}/raw/${serviceProvider}/`,
-      aggregatedLocation: `s3://${bucketName}/${imsOrgId}/aggregated/`,
-      aggregatedOutput: `s3://${bucketName}/${imsOrgId}/aggregated/${year}/${month}/${day}/${hour}/`,
-      aggregatedReferralLocation: `s3://${bucketName}/${imsOrgId}/aggregated-referral/`,
-      aggregatedReferralOutput: `s3://${bucketName}/${imsOrgId}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
+      rawLocation: `s3://${bucketName}/${pathId}/raw/${serviceProvider}/`,
+      aggregatedLocation: `s3://${bucketName}/${pathId}/aggregated/`,
+      aggregatedOutput: `s3://${bucketName}/${pathId}/aggregated/${year}/${month}/${day}/${hour}/`,
+      aggregatedReferralLocation: `s3://${bucketName}/${pathId}/aggregated-referral/`,
+      aggregatedReferralOutput: `s3://${bucketName}/${pathId}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
       tempLocation: `s3://${bucketName}/temp/athena-results/`,
     };
   }
@@ -193,6 +193,39 @@ export function buildCdnPaths(bucketName, serviceProvider, timeParts, imsOrgId =
     aggregatedOutput: `s3://${bucketName}/aggregated/${year}/${month}/${day}/${hour}/`,
     aggregatedReferralOutput: `s3://${bucketName}/aggregated-referral/${year}/${month}/${day}/${hour}/`,
     tempLocation: `s3://${bucketName}/temp/athena-results/`,
+  };
+}
+
+/**
+ * Builds paths with consolidated bucket for aggregated output
+ * @param {string} cdnBucketName - CDN bucket for raw logs
+ * @param {string} consolidatedBucket - Consolidated bucket for aggregated output
+ * @param {string} serviceProvider - service provider
+ * @param {Object} timeParts - Time parts {year, month, day, hour}
+ * @param {string} pathId - Path ID for the logs
+ * @param {string} siteId - Site ID
+ */
+export function buildConsolidatedPaths(
+  cdnBucketName,
+  consolidatedBucket,
+  serviceProvider,
+  timeParts,
+  pathId,
+  siteId,
+) {
+  const {
+    year, month, day, hour,
+  } = timeParts;
+
+  const cdnPaths = buildCdnPaths(cdnBucketName, serviceProvider, timeParts, pathId);
+
+  return {
+    rawLocation: cdnPaths.rawLocation,
+    aggregatedLocation: `s3://${consolidatedBucket}/aggregated/${siteId}/`,
+    aggregatedOutput: `s3://${consolidatedBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/`,
+    aggregatedReferralLocation: `s3://${consolidatedBucket}/aggregated-referral/${siteId}/`,
+    aggregatedReferralOutput: `s3://${consolidatedBucket}/aggregated-referral/${siteId}/${year}/${month}/${day}/${hour}/`,
+    tempLocation: `s3://${consolidatedBucket}/temp/athena-results/`,
   };
 }
 
@@ -216,23 +249,23 @@ function isLegacyBucketStructure(providers) {
  * Gets bucket structure info once and returns legacy status + service providers
  * @param {Object} s3Client - S3 client instance
  * @param {string} bucketName - The S3 bucket name
- * @param {string} imsOrgId - IMS Organization ID (for new structure)
+ * @param {string} pathId - Path ID for the logs
  * @returns {Promise<{isLegacy: boolean, providers: string[]}>} Bucket info
  */
-export async function getBucketInfo(s3Client, bucketName, imsOrgId = null) {
+export async function getBucketInfo(s3Client, bucketName, pathId = null) {
   try {
     let providers = [];
-    // For standardized Adobe buckets with IMS org, check under {imsOrgId}/raw/
-    if (isStandardAdobeCdnBucket(bucketName) && imsOrgId) {
+    // For standardized Adobe buckets with pathId, check under {pathId}/raw/
+    if (isStandardAdobeCdnBucket(bucketName) && pathId) {
       const response = await s3Client.send(new ListObjectsV2Command({
         Bucket: bucketName,
-        Prefix: `${imsOrgId}/raw/`,
+        Prefix: `${pathId}/raw/`,
         Delimiter: '/',
         MaxKeys: 10,
       }));
 
       providers = (response.CommonPrefixes || [])
-        .map((prefix) => prefix.Prefix.replace(`${imsOrgId}/raw/`, '').replace('/', ''))
+        .map((prefix) => prefix.Prefix.replace(`${pathId}/raw/`, '').replace('/', ''))
         .filter((provider) => provider && provider.length > 0);
 
       return { isLegacy: isLegacyBucketStructure(providers), providers };
@@ -276,5 +309,12 @@ export async function discoverCdnProviders(s3Client, bucketName, timeParts) {
   }
 
   return [];
+}
+
+export function resolveConsolidatedBucketName(context) {
+  const { env } = context;
+  const { AWS_ENV, AWS_REGION = 'us-east-1' } = env;
+  const environment = AWS_ENV || 'prod';
+  return `spacecat-${environment}-cdn-logs-aggregates-${AWS_REGION}`;
 }
 /* c8 ignore end */

@@ -10,36 +10,11 @@
  * governing permissions and limitations under the License.
  */
 
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { GenvarClient } from '@adobe/spacecat-shared-gpt-client';
 import { isObject } from '@adobe/spacecat-shared-utils';
+import { getPresignedUrl } from '../utils/getPresignedUrl.js';
 
 const EXPIRY_IN_SECONDS = 25 * 60;
-
-/**
- * Returns the pre-signed url for a AWS S3 object with a defined expiry.
- * This url will be consumed by Genvar API to access the scraped content.
- * Pre-signed URl format: https://{bucket}.s3.{region}.amazonaws.com/{object-path}?{query-params}
- * @param s3Client
- * @param log
- * @param scrapedData
- * @returns {Promise<string>} Presigned url
- */
-async function getPresignedUrl(s3Client, log, scrapedData) {
-  try {
-    const command = new GetObjectCommand({
-      Bucket: process.env.S3_SCRAPER_BUCKET_NAME,
-      Key: scrapedData.s3key,
-    });
-    return await getSignedUrl(s3Client, command, {
-      expiresIn: EXPIRY_IN_SECONDS,
-    });
-  } catch (error) {
-    log.error(`Error generating presigned URL for ${scrapedData.s3key}:`, error);
-    return '';
-  }
-}
 
 export default async function metatagsAutoSuggest(allTags, context, site, options = {
   forceAutoSuggest: false,
@@ -61,7 +36,13 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
   const tagsData = {};
   for (const endpoint of Object.keys(detectedTags)) {
     // eslint-disable-next-line no-await-in-loop
-    tagsData[endpoint] = await getPresignedUrl(s3Client, log, extractedTags[endpoint]);
+    tagsData[endpoint] = await getPresignedUrl({
+      s3Client,
+      bucket: process.env.S3_SCRAPER_BUCKET_NAME,
+      key: extractedTags[endpoint].s3key,
+      expiresIn: EXPIRY_IN_SECONDS,
+      log,
+    });
   }
   log.debug('Generated presigned URLs');
   const requestBody = {
@@ -98,6 +79,44 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
       }
     }
   }
-  log.info('Generated AI suggestions for Meta-tags using Genvar.');
+  // Remove entries from updatedDetectedTags which don't have aiSuggestion for any of the tags
+  // For duplicate tags, if any one instance lacks AI suggestion, remove all instances
+  // to maintain consistency (can't have a "duplicate" with just one page)
+  const tagsToRemove = {};
+
+  for (const endpoint of Object.keys(updatedDetectedTags)) {
+    const tags = updatedDetectedTags[endpoint];
+    for (const tagName of ['title', 'description', 'h1']) {
+      if (tags[tagName] && !tags[tagName].aiSuggestion) {
+        const isDuplicate = tags[tagName].issue?.includes('Duplicate');
+        const { tagContent } = tags[tagName];
+
+        if (isDuplicate && tagContent) {
+          // Track duplicates by their content so we can remove all instances
+          tagsToRemove[tagName] ??= new Set();
+          tagsToRemove[tagName].add(tagContent);
+        } else {
+          // Non-duplicate tags can be removed individually
+          log.info(`Removing ${tagName} tag from ${endpoint} as it doesn't have aiSuggestion.`);
+          delete updatedDetectedTags[endpoint][tagName];
+        }
+      }
+    }
+  }
+
+  // Remove all instances of duplicate tags that lack AI suggestions
+  for (const tagName of ['title', 'description', 'h1']) {
+    if (tagsToRemove[tagName]) {
+      for (const endpoint of Object.keys(updatedDetectedTags)) {
+        const tags = updatedDetectedTags[endpoint];
+        if (tags[tagName] && tagsToRemove[tagName].has(tags[tagName].tagContent)) {
+          log.debug(`Removing ${tagName} tag from ${endpoint} (duplicate group without complete AI suggestions).`);
+          delete updatedDetectedTags[endpoint][tagName];
+        }
+      }
+    }
+  }
+
+  log.debug('Generated AI suggestions for Meta-tags using Genvar.');
   return updatedDetectedTags;
 }

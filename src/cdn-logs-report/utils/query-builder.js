@@ -58,14 +58,14 @@ function generatePageTypeClassification(remotePatterns = null) {
   const patterns = remotePatterns?.pagePatterns || [];
 
   if (patterns.length === 0) {
-    return "'Uncategorized'";
+    return "'Other'";
   }
 
   const caseConditions = patterns
     .map((pattern) => `      WHEN REGEXP_LIKE(url, '${pattern.regex}') THEN '${pattern.name}'`)
     .join('\n');
 
-  return `CASE\n${caseConditions}\n      ELSE 'Uncategorized'\n    END`;
+  return `CASE\n${caseConditions}\n      ELSE 'Other'\n    END`;
 }
 
 // Country Classification

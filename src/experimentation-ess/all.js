@@ -57,7 +57,8 @@ export async function essExperimentationAllAuditRunner(auditUrl, context, site) 
     days = Math.ceil((Date.now() - new Date(oldestExperiment.getStartDate()).getTime())
     / (1000 * 60 * 60 * 24));
   }
-  log.info(`ESS Experimentation All Audit will run for ${days} days`);
+
+  log.debug(`ESS Experimentation All Audit will run for ${days} days`);
   const auditData = await processAudit(
     auditUrl,
     context,
@@ -65,13 +66,11 @@ export async function essExperimentationAllAuditRunner(auditUrl, context, site) 
     days,
   );
 
-  log.info(`ESS Experimentation All Audit data size: ${JSON.stringify(auditData).length}`);
-
   const endTime = process.hrtime(startTime);
   const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
   const formattedElapsed = elapsedSeconds.toFixed(2);
 
-  log.info(`ESS Experimentation All Audit completed in ${formattedElapsed} seconds for ${auditUrl}`);
+  log.debug(`ESS Experimentation All Audit completed in ${formattedElapsed} seconds for ${auditUrl}`);
 
   return {
     auditResult: auditData,

@@ -46,7 +46,7 @@ export async function prepareTrafficAnalysisRequest(auditUrl, context, site, per
   const { log } = context;
   const siteId = site.getSiteId();
 
-  log.info(`[traffic-analysis-audit-${period}] Preparing mystique traffic-analysis-audit request parameters for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
+  log.debug(`[traffic-analysis-audit-${period}] Preparing mystique traffic-analysis-audit request parameters for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
 
   let auditResult;
 
@@ -74,7 +74,7 @@ export async function prepareTrafficAnalysisRequest(auditUrl, context, site, per
       period,
     };
   }
-  log.info(`[traffic-analysis-audit-${period}] Request parameters: ${JSON.stringify(auditResult)} set for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
+  log.debug(`[traffic-analysis-audit-${period}] Request parameters: ${JSON.stringify(auditResult)} set for [siteId: ${siteId}] and baseUrl: ${auditUrl}`);
   return {
     auditResult,
     fullAuditRef: auditUrl,
@@ -93,15 +93,15 @@ export async function sendRequestToMystique(auditUrl, auditData, context, site) 
     monthInt: auditResult.month,
   };
 
-  log.info(`[traffic-analysis-audit] cache-warming-${period} Starting cache warming for site: ${siteId}`);
+  log.debug(`[traffic-analysis-audit] cache-warming-${period} Starting cache warming for site: ${siteId}`);
   await warmCacheForSite(context, log, env, site, temporalParams);
-  log.info(`[traffic-analysis-audit] cache-warming-${period} Completed cache warming for site: ${siteId}`);
+  log.debug(`[traffic-analysis-audit] cache-warming-${period} Completed cache warming for site: ${siteId}`);
 
   const mystiqueMessage = buildMystiqueMessage(site, id, auditUrl, auditResult);
 
-  log.info(`[traffic-analysis-audit] [siteId:  ${siteId}] and [baseUrl:${auditUrl}] with message ${JSON.stringify(mystiqueMessage, 2)} evaluation to mystique`);
+  log.debug(`[traffic-analysis-audit] [siteId:  ${siteId}] and [baseUrl:${auditUrl}] with message ${JSON.stringify(mystiqueMessage, 2)} evaluation to mystique`);
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, mystiqueMessage);
-  log.info(`[traffic-analysis-audit] [siteId: ${siteId}] [baseUrl:${siteId}] Completed mystique evaluation step`);
+  log.debug(`[traffic-analysis-audit] [siteId: ${siteId}] [baseUrl:${siteId}] Completed mystique evaluation step`);
 }
 
 function getWeeksForMonth(targetMonth, targetYear) {
@@ -123,7 +123,7 @@ async function importDataStep(context, period) {
   } = context;
   const siteId = site.getId();
   const allowCache = true;
-  log.info(`[traffic-analysis-import-${period}] Starting import data step for siteId: ${siteId}, url: ${finalUrl}`);
+  log.debug(`[traffic-analysis-import-${period}] Starting import data step for siteId: ${siteId}, url: ${finalUrl}`);
 
   const analysisResult = await prepareTrafficAnalysisRequest(
     finalUrl,
@@ -140,13 +140,13 @@ async function importDataStep(context, period) {
     // Get all weeks that overlap with this month
     const weeksInMonth = getWeeksForMonth(month, year);
 
-    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Found ${weeksInMonth.length} weeks for month ${month}/${year}: weeks [${weeksInMonth.map((w) => `${w.week}/${w.year}`).join(', ')}]`);
+    log.debug(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Found ${weeksInMonth.length} weeks for month ${month}/${year}: weeks [${weeksInMonth.map((w) => `${w.week}/${w.year}`).join(', ')}]`);
 
     // Send import requests for all weeks except the last one
     const weeksToImport = weeksInMonth.slice(0, -1);
     const lastWeek = weeksInMonth[weeksInMonth.length - 1];
 
-    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Sending import messages for ${weeksToImport.length} weeks: [${weeksToImport.map((w) => `${w.week}/${w.year}`).join(', ')}],  allowCache: ${allowCache}`);
+    log.debug(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Sending import messages for ${weeksToImport.length} weeks: [${weeksToImport.map((w) => `${w.week}/${w.year}`).join(', ')}],  allowCache: ${allowCache}`);
 
     for (const weekInfo of weeksToImport) {
       const message = {
@@ -159,14 +159,14 @@ async function importDataStep(context, period) {
         allowCache,
       };
 
-      log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Sending import message for week ${weekInfo.week}/${weekInfo.year} with allowCache: ${allowCache}, temporalCondition: ${temporalCondition}`);
+      log.debug(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Sending import message for week ${weekInfo.week}/${weekInfo.year} with allowCache: ${allowCache}, temporalCondition: ${temporalCondition}`);
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(configuration.getQueues().imports, message);
     }
-    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Reserving last week ${lastWeek.week}/${lastWeek.year} for main audit flow`);
-    log.info(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Returning main audit flow data for week ${lastWeek.week}/${lastWeek.year} with allowCache: ${allowCache}, temporalCondition: ${temporalCondition}`);
+    log.debug(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Reserving last week ${lastWeek.week}/${lastWeek.year} for main audit flow`);
+    log.debug(`[traffic-analysis-import-monthly] [siteId: ${siteId}] Returning main audit flow data for week ${lastWeek.week}/${lastWeek.year} with allowCache: ${allowCache}, temporalCondition: ${temporalCondition}`);
   }
-  log.info(`[traffic-analysis-import-${period}] [siteId: ${siteId}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowCache: ${allowCache}`);
+  log.debug(`[traffic-analysis-import-${period}] [siteId: ${siteId}] Prepared audit result for siteId: ${siteId}, sending to import worker with allowCache: ${allowCache}`);
 
   return {
     auditResult: analysisResult.auditResult,
@@ -183,7 +183,7 @@ async function processAnalysisStep(context, period) {
   const siteId = site.getId();
   const auditId = audit.getId();
 
-  log.info(`[traffic-analysis-process-${period}] Starting process analysis step for siteId: ${siteId}, auditId: ${auditId}, url: ${finalUrl}, and period: ${period}`);
+  log.debug(`[traffic-analysis-process-${period}] Starting process analysis step for siteId: ${siteId}, auditId: ${auditId}, url: ${finalUrl}, and period: ${period}`);
 
   // Use the audit result that was already saved in the import step
   await sendRequestToMystique(
@@ -193,7 +193,7 @@ async function processAnalysisStep(context, period) {
     site,
   );
 
-  log.info(`[traffic-analysis-process-${period}] Completed sending to Mystique for siteId: ${siteId}, auditId: ${auditId}`);
+  log.debug(`[traffic-analysis-process-${period}] Completed sending to Mystique for siteId: ${siteId}, auditId: ${auditId}`);
 
   return {
     status: 'complete',

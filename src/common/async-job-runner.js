@@ -53,7 +53,7 @@ export class AsyncJobRunner extends StepAudit {
     const payload = destination.formatPayload(stepResult, auditContext, context);
     await sendContinuationMessage({ queueUrl, payload }, context);
 
-    log.info(`Step ${step.name} completed for job ${job.getId()} of type ${type}, message sent to ${step.destination}`);
+    log.debug(`Step ${step.name} completed for job ${job.getId()} of type ${type}, message sent to ${step.destination}`);
 
     return stepResult;
   }
@@ -106,7 +106,7 @@ export class AsyncJobRunner extends StepAudit {
       const promiseToken = message.promiseToken || message.auditContext?.promiseToken;
       if (promiseToken) {
         updatedStepContext.promiseToken = promiseToken;
-        log.info(`site: ${siteId}. Promise token added to step context`);
+        log.debug(`site: ${siteId}. Promise token added to step context`);
       }
 
       const stepResult = await step.handler(updatedStepContext);

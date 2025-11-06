@@ -46,7 +46,12 @@ describe('Utils Report Uploader', () => {
 
     mockContext = {
       workbook: { xlsx: { writeBuffer: sandbox.stub().resolves(Buffer.from('excel data')) } },
-      log: { info: sandbox.stub(), error: sandbox.stub() },
+      log: {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
+        debug: sandbox.stub(),
+        warn: sandbox.stub(),
+      },
       sharepointDoc: {
         uploadRawDocument: sandbox.stub().resolves(),
         getDocumentContent: sandbox.stub().resolves(Buffer.from('test content')),
@@ -82,7 +87,8 @@ describe('Utils Report Uploader', () => {
       expect(mockContext.sharepointDoc.getDocumentContent).to.have.been.calledOnce;
       expect(result).to.deep.equal(expectedBuffer);
       expect(mockContext.log.info).to.have.been.calledWith(
-        'Document successfully downloaded from SharePoint: /sites/elmo-ui-data/reports/test.xlsx',
+        sinon.match.string,
+        'REPORT_UPLOADER',
       );
     });
 
@@ -102,7 +108,11 @@ describe('Utils Report Uploader', () => {
         ),
       ).to.be.rejectedWith(errorMessage);
 
-      expect(mockContext.log.error).to.have.been.calledWith(`Failed to read from SharePoint: ${errorMessage}`);
+      expect(mockContext.log.error).to.have.been.calledWith(
+        '%s: SharePoint download failed: /sites/elmo-ui-data/reports/test.xlsx',
+        'REPORT_UPLOADER',
+        sinon.match.object,
+      );
     });
 
     it('should construct correct document path', async () => {
@@ -140,7 +150,8 @@ describe('Utils Report Uploader', () => {
       expect(mockContext.sharepointClient.getDocument).to.have.been.calledWith('/sites/elmo-ui-data/reports/test.xlsx');
       expect(mockContext.sharepointDoc.uploadRawDocument).to.have.been.calledWith(buffer);
       expect(mockContext.log.info).to.have.been.calledWith(
-        'Excel report successfully uploaded to SharePoint: /sites/elmo-ui-data/reports/test.xlsx',
+        sinon.match.string,
+        'REPORT_UPLOADER',
       );
     });
 
@@ -161,7 +172,11 @@ describe('Utils Report Uploader', () => {
         ),
       ).to.be.rejectedWith('SharePoint error');
 
-      expect(mockContext.log.error).to.have.been.calledWith('Failed to upload to SharePoint: SharePoint error');
+      expect(mockContext.log.error).to.have.been.calledWith(
+        '%s: SharePoint upload failed: /sites/elmo-ui-data/reports/test.xlsx',
+        'REPORT_UPLOADER',
+        sinon.match.object,
+      );
     });
   });
 
@@ -187,8 +202,43 @@ describe('Utils Report Uploader', () => {
       expect(fetchStub).to.have.been.calledTwice;
       expect(fetchStub.firstCall.args[0]).to.include('/preview/');
       expect(fetchStub.secondCall.args[0]).to.include('/live/');
-      expect(mockContext.log.info).to.have.been.calledWith(
-        'Excel report successfully uploaded to SharePoint: /sites/elmo-ui-data/reports/test.xlsx',
+      expect(mockContext.log.debug).to.have.been.calledWith(
+        '%s: Waiting 2 seconds before publishing to live...',
+        'REPORT_UPLOADER',
+      );
+    });
+
+    it('should retry on 503 error and then succeed', async function retryTest() {
+      this.timeout(10000);
+
+      const buffer = Buffer.from('test data');
+      const filename = 'test.xlsx';
+      const outputLocation = 'reports';
+
+      // First call fails with 503, second call succeeds for preview
+      fetchStub.onCall(0).resolves({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: {
+          get: sandbox.stub().returns(null),
+        },
+      });
+      fetchStub.onCall(1).resolves({ ok: true, status: 200, statusText: 'OK' });
+      // Live endpoint succeeds immediately
+      fetchStub.onCall(2).resolves({ ok: true, status: 200, statusText: 'OK' });
+
+      await uploadAndPublishFile(
+        buffer,
+        filename,
+        outputLocation,
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(fetchStub).to.have.been.calledThrice;
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/preview Helix API failed.*retrying in 4000ms/),
       );
     });
 
@@ -209,7 +259,11 @@ describe('Utils Report Uploader', () => {
         ),
       ).to.be.rejectedWith('Upload failed');
 
-      expect(mockContext.log.error).to.have.been.calledWith('Failed to upload to SharePoint: Upload failed');
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match.string,
+        'REPORT_UPLOADER',
+        sinon.match.object,
+      );
     });
 
     it('should handle publish errors', async () => {
@@ -229,7 +283,9 @@ describe('Utils Report Uploader', () => {
       );
 
       expect(mockContext.log.error).to.have.been.calledWith(
-        'Failed to publish via admin.hlx.page: live failed: 500 Internal Server Error',
+        '%s: Failed to publish via admin.hlx.page: reports/test.json',
+        'REPORT_UPLOADER',
+        sinon.match.object,
       );
     });
   });
@@ -262,7 +318,11 @@ describe('Utils Report Uploader', () => {
         sharepointClient: mockContext.sharepointClient,
       })).to.be.rejectedWith('Buffer error');
 
-      expect(mockContext.log.error).to.have.been.calledWith('Failed to save Excel report: Buffer error');
+      expect(mockContext.log.error).to.have.been.calledWith(
+        '%s: Failed to save Excel report: test-file.xlsx',
+        'REPORT_UPLOADER',
+        sinon.match.object,
+      );
     });
 
     it('should skip upload when no SharePoint client provided', async () => {
@@ -275,6 +335,10 @@ describe('Utils Report Uploader', () => {
 
       expect(mockContext.workbook.xlsx.writeBuffer).to.have.been.calledOnce;
       expect(fetchStub).to.not.have.been.called;
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        '%s: No SharePoint client provided for test-file.xlsx, skipping upload',
+        'REPORT_UPLOADER',
+      );
     });
   });
 });

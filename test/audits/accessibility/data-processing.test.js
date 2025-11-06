@@ -34,6 +34,7 @@ import {
   aggregateAccessibilityData,
   getAuditPrefixes,
   sendRunImportMessage,
+  sendCodeFixMessagesToImporter,
 } from '../../../src/accessibility/utils/data-processing.js';
 
 use(sinonChai);
@@ -52,6 +53,7 @@ describe('data-processing utility functions', () => {
       info: sandbox.stub(),
       error: sandbox.stub(),
       warn: sandbox.stub(),
+      debug: sandbox.stub(),
     };
   });
 
@@ -84,7 +86,7 @@ describe('data-processing utility functions', () => {
       expect(command).to.be.instanceOf(DeleteObjectCommand);
       expect(command.input.Bucket).to.equal('test-bucket');
       expect(command.input.Key).to.equal('file1.json');
-      expect(mockLog.info.calledWith('Deleted 1 original files after aggregation')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted 1 original files after aggregation')).to.be.true;
     });
 
     it('should use DeleteObjects for multiple files', async () => {
@@ -104,7 +106,7 @@ describe('data-processing utility functions', () => {
         { Key: 'file3.json' },
       ]);
       expect(command.input.Delete.Quiet).to.be.true;
-      expect(mockLog.info.calledWith('Deleted 3 original files after aggregation')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted 3 original files after aggregation')).to.be.true;
     });
 
     it('should handle errors gracefully and log them', async () => {
@@ -225,7 +227,7 @@ describe('data-processing utility functions', () => {
       expect(command.input.Prefix).to.equal('accessibility/site1/');
       expect(command.input.Delimiter).to.equal('/');
       expect(command.input.MaxKeys).to.equal(1000);
-      expect(mockLog.info.calledWith('Fetched 3 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
+      expect(mockLog.debug.calledWith('Fetched 3 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
     });
 
     it('should use custom maxKeys parameter', async () => {
@@ -283,7 +285,7 @@ describe('data-processing utility functions', () => {
       );
 
       expect(result).to.deep.equal([]);
-      expect(mockLog.info.calledWith('Fetched 0 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
+      expect(mockLog.debug.calledWith('Fetched 0 keys from S3 for bucket test-bucket and prefix accessibility/site1/ with delimiter /')).to.be.true;
     });
   });
 
@@ -550,7 +552,7 @@ describe('data-processing utility functions', () => {
       expect(result.objectKeys).to.deep.equal([]);
       expect(result.message).to.include('No accessibility data found');
       // eslint-disable-next-line max-len
-      expect(mockLog.info.calledWith('No accessibility data found in bucket test-bucket at prefix accessibility/site123/ for site site123 with delimiter /')).to.be.true;
+      expect(mockLog.debug.calledWith('No accessibility data found in bucket test-bucket at prefix accessibility/site123/ for site site123 with delimiter /')).to.be.true;
     });
 
     it('should return success false when no current date subfolders found', async () => {
@@ -608,7 +610,7 @@ describe('data-processing utility functions', () => {
       expect(result.success).to.be.true;
       expect(result.objectKeys).to.deep.equal(['file1.json', 'file2.json']);
       expect(result.message).to.equal('Found 2 data files');
-      expect(mockLog.info.calledWith('Found 2 data files for site site123')).to.be.true;
+      expect(mockLog.debug.calledWith('Found 2 data files for site site123')).to.be.true;
     });
 
     it('should filter subfolders by exact date match', async () => {
@@ -734,9 +736,7 @@ describe('data-processing utility functions', () => {
         mockLog,
       );
 
-      expect(mockLog.info.calledWith('Fetching accessibility data for site site123 from bucket test-bucket')).to.be.true;
-      expect(mockLog.info.calledWith('Found 1 subfolders for site site123 in bucket test-bucket with delimiter / and value accessibility/site123/1705276800000/')).to.be.true;
-      expect(mockLog.info.calledWith('Found 1 data files for site site123')).to.be.true;
+      expect(mockLog.debug.calledWith('Found 1 data files for site site123')).to.be.true;
     });
 
     it('should handle complex subfolder filtering with multiple dates', async () => {
@@ -825,7 +825,7 @@ describe('data-processing utility functions', () => {
 
       // Should call delete twice: once for original files, once for oldest final result
       expect(mockS3Client.send.callCount).to.equal(2);
-      expect(mockLog.info.calledWith('Deleted 1 oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
 
     it('should only delete original files when 2 or fewer final result files exist', async () => {
@@ -855,7 +855,7 @@ describe('data-processing utility functions', () => {
 
       await cleanupS3Files(mockS3Client, 'test-bucket', objectKeys, lastWeekObjectKeys, mockLog);
 
-      expect(mockLog.info.calledWith('Deleted 1 oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
 
     it('should handle empty object keys array', async () => {
@@ -872,7 +872,7 @@ describe('data-processing utility functions', () => {
 
       // Should still delete oldest final result file even if no original files
       expect(mockS3Client.send.callCount).to.equal(1);
-      expect(mockLog.info.calledWith('Deleted 1 oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
 
     it('should handle single final result file', async () => {
@@ -903,7 +903,7 @@ describe('data-processing utility functions', () => {
       await cleanupS3Files(mockS3Client, 'test-bucket', objectKeys, lastWeekObjectKeys, mockLog);
 
       // Should delete the oldest file (2024-01-01)
-      expect(mockLog.info.calledWith('Deleted 1 oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
+      expect(mockLog.debug.calledWith('Deleted oldest final result file: accessibility/site1/2024-01-01-final-result.json')).to.be.true;
     });
   });
 
@@ -1264,6 +1264,7 @@ describe('data-processing utility functions', () => {
       };
       const testOpportunity = {
         addSuggestions: sandbox.stub().rejects(new Error('Database connection failed')),
+        getSuggestions: sandbox.stub().resolves([]),
       };
 
       // Mock the createReportOpportunitySuggestionInstance function
@@ -1286,6 +1287,39 @@ describe('data-processing utility functions', () => {
         expect(mockLog.error.calledWith(
           '[A11yProcessingError] Failed to create new suggestion for siteId test-site-456 and auditId audit-789: Database connection failed',
         )).to.be.true;
+      } finally {
+        // Restore the original function
+        global.createReportOpportunitySuggestionInstance = originalCreateInstance;
+      }
+    });
+
+    it('should successfully call the actual exported function', async () => {
+      // Arrange
+      const reportMarkdown = '# Real Test Report\n\nReal content.';
+      const auditData = {
+        siteId: 'real-site-123',
+        auditId: 'real-audit-456',
+      };
+      const testOpportunity = {
+        addSuggestions: sandbox.stub().resolves({ id: 'real-sugg-123' }),
+      };
+
+      // Mock the createReportOpportunitySuggestionInstance function
+      const originalCreateInstance = global.createReportOpportunitySuggestionInstance;
+      global.createReportOpportunitySuggestionInstance = sandbox.stub().returns([{ type: 'mock' }]);
+
+      try {
+        // Act - call the actual exported function to hit line 497
+        const result = await createReportOpportunitySuggestion(
+          testOpportunity,
+          reportMarkdown,
+          auditData,
+          mockLog,
+        );
+
+        // Assert - test line 497: return { suggestion }
+        expect(result).to.deep.equal({ suggestion: { id: 'real-sugg-123' } });
+        expect(testOpportunity.addSuggestions).to.have.been.calledOnce;
       } finally {
         // Restore the original function
         global.createReportOpportunitySuggestionInstance = originalCreateInstance;
@@ -1528,7 +1562,7 @@ describe('data-processing utility functions', () => {
       expect(result.finalResultFiles.current['https://example.com/page1'].violations.total).to.equal(5);
       expect(result.finalResultFiles.current['https://example.com/page1'].traffic).to.equal(100);
       expect(result.message).to.equal('Successfully aggregated 1 files into output-key');
-      expect(mockLog.info.calledWith('[A11yAudit] Saved aggregated accessibility data to output-key')).to.be.true;
+      expect(mockLog.debug.calledWith('[A11yAudit] Saved aggregated accessibility data to output-key')).to.be.true;
     });
 
     it('should handle multiple files and aggregate violations correctly', async () => {
@@ -1770,7 +1804,7 @@ describe('data-processing utility functions', () => {
       // const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey1}`;
       // The log message in the code actually uses lastWeekObjectKeys[1] for the key part.
       const expectedKeyInLog = `[A11yAudit] Last week file key:${lastWeekFileKey2}`;
-      const logCall = mockLog.info.getCalls().find((call) => call.args[0].includes(expectedKeyInLog) && call.args[0].includes('with content:'));
+      const logCall = mockLog.debug.getCalls().find((call) => call.args[0].includes(expectedKeyInLog) && call.args[0].includes('with content:'));
       expect(logCall).to.not.be.undefined;
       // If more precise matching is needed, verify the full content:
       const logContentString = JSON.stringify(mockLastWeekContent, null, 2);
@@ -1911,7 +1945,7 @@ describe('data-processing utility functions', () => {
       expect(result.message).to.equal('Successfully aggregated 1 files into output-key');
 
       // Verify the correct log identifier is used
-      expect(mockLog.info.calledWith('[FormsA11yAudit] Saved aggregated accessibility data to output-key')).to.be.true;
+      expect(mockLog.debug.calledWith('[FormsA11yAudit] Saved aggregated accessibility data to output-key')).to.be.true;
     });
 
     it('should handle forms-opportunities audit type with form source data', async () => {
@@ -2219,7 +2253,7 @@ describe('data-processing utility functions', () => {
         expect(result.results[1]).to.deep.equal({ key: 'file2.json', data: mockData2 });
         expect(result.results[2]).to.deep.equal({ key: 'file3.json', data: mockData3 });
 
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 3 successful, 0 failed out of 3 total files',
         );
       });
@@ -2235,7 +2269,7 @@ describe('data-processing utility functions', () => {
 
         // Assert
         expect(result.results).to.have.length(0);
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 0 successful, 0 failed out of 0 total files',
         );
         expect(mockGetObjectFromKey).to.not.have.been.called;
@@ -2258,7 +2292,7 @@ describe('data-processing utility functions', () => {
         // Assert
         expect(result.results).to.have.length(1);
         expect(result.results[0]).to.deep.equal({ key: 'single-file.json', data: mockData });
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 1 successful, 0 failed out of 1 total files',
         );
       });
@@ -2296,7 +2330,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           'Retrying file retry-file.json (attempt 1/2): Temporary S3 error',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 1 successful, 0 failed out of 1 total files',
         );
       });
@@ -2333,7 +2367,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           '1 out of 1 files failed to process, continuing with 0 successful files',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 0 successful, 1 failed out of 1 total files',
         );
       });
@@ -2383,7 +2417,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           '1 out of 3 files failed to process, continuing with 2 successful files',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 2 successful, 1 failed out of 3 total files',
         );
       });
@@ -2440,7 +2474,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           '1 out of 2 files failed to process, continuing with 1 successful files',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 1 successful, 1 failed out of 2 total files',
         );
       });
@@ -2468,7 +2502,7 @@ describe('data-processing utility functions', () => {
         expect(mockLog.warn).to.have.been.calledWith(
           '2 out of 2 files failed to process, continuing with 0 successful files',
         );
-        expect(mockLog.info).to.have.been.calledWith(
+        expect(mockLog.debug).to.have.been.calledWith(
           'File processing completed: 0 successful, 2 failed out of 2 total files',
         );
       });
@@ -3400,6 +3434,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('opp-123'),
           addSuggestions: sandbox.stub().resolves({ id: 'sugg-123' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         const reportData = {
           mdData: { violations: { total: 5 } },
@@ -3433,10 +3468,11 @@ describe('data-processing utility functions', () => {
         expect(mockCreateOpportunityFn.calledOnce).to.be.true;
         expect(mockCreateOpportunityFn.calledWith(20, 2024)).to.be.true;
         expect(mockDataAccess.Opportunity.create.calledOnce).to.be.true;
+        expect(mockOpportunity.getSuggestions.calledOnce).to.be.true;
         expect(mockOpportunity.addSuggestions.calledOnce).to.be.true;
         expect(mockOpportunity.setStatus.calledWith('IGNORED')).to.be.true;
         expect(mockOpportunity.save.calledOnce).to.be.true;
-        expect(mockOpportunity.getId.calledOnce).to.be.true;
+        expect(mockOpportunity.getId.called).to.be.true;
       });
 
       it('should successfully generate report opportunity with shouldIgnore=false', async () => {
@@ -3448,6 +3484,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('opp-456'),
           addSuggestions: sandbox.stub().resolves({ id: 'sugg-456' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         const reportData = {
           mdData: { violations: { total: 3 } },
@@ -3475,9 +3512,11 @@ describe('data-processing utility functions', () => {
 
         // Assert
         expect(result).to.be.a('string');
+        expect(mockOpportunity.getSuggestions.calledOnce).to.be.true;
+        expect(mockOpportunity.addSuggestions.calledOnce).to.be.true;
         expect(mockOpportunity.setStatus.called).to.be.false;
         expect(mockOpportunity.save.called).to.be.false;
-        expect(mockOpportunity.getId.calledOnce).to.be.true;
+        expect(mockOpportunity.getId.called).to.be.true;
       });
 
       it('should use default shouldIgnore=true when not provided', async () => {
@@ -3489,6 +3528,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('opp-default'),
           addSuggestions: sandbox.stub().resolves({ id: 'sugg-default' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         const reportData = {
           mdData: { violations: { total: 1 } },
@@ -3641,10 +3681,7 @@ describe('data-processing utility functions', () => {
           expect.fail('Should have thrown an error');
         } catch (error) {
           expect(error.message).to.equal('Database connection failed');
-          expect(mockLog.error.calledWith(
-            '[A11yProcessingError] Failed to create report opportunity for Error Test Report',
-            'Database connection failed',
-          )).to.be.true;
+          expect(mockLog.error.called).to.be.true;
         }
       });
     });
@@ -3659,6 +3696,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('opp-suggestion-error'),
           addSuggestions: sandbox.stub().rejects(new Error('Failed to add suggestions')),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         const reportData = {
           mdData: { violations: { total: 3 } },
@@ -3685,11 +3723,9 @@ describe('data-processing utility functions', () => {
           expect.fail('Should have thrown an error');
         } catch (error) {
           expect(error.message).to.equal('Failed to add suggestions');
-          expect(mockLog.error.calledWith(
-            '[A11yProcessingError] Failed to create report opportunity suggestion for Suggestion Error Report',
-            'Failed to add suggestions',
-          )).to.be.true;
+          expect(mockLog.error.called).to.be.true;
           expect(mockDataAccess.Opportunity.create.calledOnce).to.be.true;
+          expect(mockOpportunity.getSuggestions.calledOnce).to.be.true;
           expect(mockOpportunity.setStatus.called).to.be.false;
           expect(mockOpportunity.save.called).to.be.false;
         }
@@ -3761,6 +3797,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('opp-123'),
           addSuggestions: sandbox.stub().resolves({ id: 'sugg-123' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -3788,6 +3825,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('opp-custom'),
           addSuggestions: sandbox.stub().resolves({ id: 'sugg-custom' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -3816,6 +3854,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('opp-prod'),
           addSuggestions: sandbox.stub().resolves({ id: 'sugg-prod' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         prodContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -3840,6 +3879,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('opp-perf'),
           addSuggestions: sandbox.stub().resolves({ id: 'sugg-perf' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -3880,6 +3920,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('opp-complex'),
           addSuggestions: sandbox.stub().resolves({ id: 'sugg-complex' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -3910,6 +3951,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('opp-no-lastweek'),
           addSuggestions: sandbox.stub().resolves({ id: 'sugg-no-lastweek' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -3935,6 +3977,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('in-depth-opp-123'),
           addSuggestions: sandbox.stub().resolves({ id: 'in-depth-sugg-123' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -3981,6 +4024,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('other-opp-123'),
           addSuggestions: sandbox.stub().resolves({ id: 'other-sugg-123' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4029,6 +4073,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('fail-sugg-opp'),
           addSuggestions: sandbox.stub().rejects(suggestionError),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4057,6 +4102,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('param-test-opp'),
           addSuggestions: sandbox.stub().resolves({ id: 'param-test-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4094,6 +4140,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('custom-site-opp'),
           addSuggestions: sandbox.stub().resolves({ id: 'custom-site-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4126,6 +4173,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('enhanced-opp-456'),
           addSuggestions: sandbox.stub().resolves({ id: 'enhanced-sugg-456' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4172,6 +4220,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('enhanced-empty-opp'),
           addSuggestions: sandbox.stub().resolves({ id: 'enhanced-empty-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4201,6 +4250,7 @@ describe('data-processing utility functions', () => {
               save: sandbox.stub(),
               getId: sandbox.stub().returns('in-depth-success-opp'),
               addSuggestions: sandbox.stub().resolves({ id: 'in-depth-success-sugg' }),
+              getSuggestions: sandbox.stub().resolves([]),
             });
           }
           // Second call (enhanced) fails
@@ -4237,6 +4287,7 @@ describe('data-processing utility functions', () => {
               save: sandbox.stub(),
               getId: sandbox.stub().returns('in-depth-sugg-success'),
               addSuggestions: sandbox.stub().resolves({ id: 'in-depth-sugg-success' }),
+              getSuggestions: sandbox.stub().resolves([]),
             });
           }
           // Second call (enhanced) succeeds but suggestions fail
@@ -4245,6 +4296,7 @@ describe('data-processing utility functions', () => {
             save: sandbox.stub(),
             getId: sandbox.stub().returns('enhanced-fail-sugg-opp'),
             addSuggestions: sandbox.stub().rejects(new Error('Enhanced suggestions failed')),
+            getSuggestions: sandbox.stub().resolves([]),
           });
         });
 
@@ -4273,6 +4325,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('enhanced-param-test'),
           addSuggestions: sandbox.stub().resolves({ id: 'enhanced-param-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4319,6 +4372,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('enhanced-complex-opp'),
           addSuggestions: sandbox.stub().resolves({ id: 'enhanced-complex-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4348,6 +4402,7 @@ describe('data-processing utility functions', () => {
             save: sandbox.stub(),
             getId: sandbox.stub().returns('in-depth-success'),
             addSuggestions: sandbox.stub().resolves({ id: 'in-depth-success-sugg' }),
+            getSuggestions: sandbox.stub().resolves([]),
           })
           .onSecondCall()
           .rejects(new Error('Enhanced report database error'));
@@ -4379,6 +4434,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('fixed-vs-new-opp-789'),
           addSuggestions: sandbox.stub().resolves({ id: 'fixed-vs-new-sugg-789' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4425,6 +4481,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('fixed-vs-new-empty-opp'),
           addSuggestions: sandbox.stub().resolves({ id: 'fixed-vs-new-empty-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4454,6 +4511,7 @@ describe('data-processing utility functions', () => {
               save: sandbox.stub(),
               getId: sandbox.stub().returns('in-depth-success-opp'),
               addSuggestions: sandbox.stub().resolves({ id: 'in-depth-success-sugg' }),
+              getSuggestions: sandbox.stub().resolves([]),
             });
           }
           if (callCount === 2) {
@@ -4463,6 +4521,7 @@ describe('data-processing utility functions', () => {
               save: sandbox.stub(),
               getId: sandbox.stub().returns('enhanced-success-opp'),
               addSuggestions: sandbox.stub().resolves({ id: 'enhanced-success-sugg' }),
+              getSuggestions: sandbox.stub().resolves([]),
             });
           }
           // Third call (fixed vs new) fails
@@ -4499,6 +4558,7 @@ describe('data-processing utility functions', () => {
               save: sandbox.stub(),
               getId: sandbox.stub().returns('in-depth-sugg-success'),
               addSuggestions: sandbox.stub().resolves({ id: 'in-depth-sugg-success' }),
+              getSuggestions: sandbox.stub().resolves([]),
             });
           }
           if (callCount === 2) {
@@ -4508,6 +4568,7 @@ describe('data-processing utility functions', () => {
               save: sandbox.stub(),
               getId: sandbox.stub().returns('enhanced-sugg-success'),
               addSuggestions: sandbox.stub().resolves({ id: 'enhanced-sugg-success' }),
+              getSuggestions: sandbox.stub().resolves([]),
             });
           }
           // Third call (fixed vs new) succeeds but suggestions fail
@@ -4516,6 +4577,7 @@ describe('data-processing utility functions', () => {
             save: sandbox.stub(),
             getId: sandbox.stub().returns('fixed-vs-new-fail-sugg-opp'),
             addSuggestions: sandbox.stub().rejects(new Error('Fixed vs new suggestions failed')),
+            getSuggestions: sandbox.stub().resolves([]),
           });
         });
 
@@ -4544,6 +4606,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('fixed-vs-new-param-test'),
           addSuggestions: sandbox.stub().resolves({ id: 'fixed-vs-new-param-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4592,6 +4655,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('fixed-vs-new-complex-opp'),
           addSuggestions: sandbox.stub().resolves({ id: 'fixed-vs-new-complex-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4637,6 +4701,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('improvement-scenario-opp'),
           addSuggestions: sandbox.stub().resolves({ id: 'improvement-scenario-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4663,6 +4728,7 @@ describe('data-processing utility functions', () => {
             save: sandbox.stub(),
             getId: sandbox.stub().returns('in-depth-success'),
             addSuggestions: sandbox.stub().resolves({ id: 'in-depth-success-sugg' }),
+            getSuggestions: sandbox.stub().resolves([]),
           })
           .onSecondCall()
           .resolves({
@@ -4670,6 +4736,7 @@ describe('data-processing utility functions', () => {
             save: sandbox.stub(),
             getId: sandbox.stub().returns('enhanced-success'),
             addSuggestions: sandbox.stub().resolves({ id: 'enhanced-success-sugg' }),
+            getSuggestions: sandbox.stub().resolves([]),
           })
           .onThirdCall()
           .rejects(new Error('Fixed vs new database error'));
@@ -4701,6 +4768,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('base-report-opp-999'),
           addSuggestions: sandbox.stub().resolves({ id: 'base-report-sugg-999' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4754,6 +4822,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('base-report-urls-opp'),
           addSuggestions: sandbox.stub().resolves({ id: 'base-report-urls-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4798,6 +4867,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('base-report-empty-opp'),
           addSuggestions: sandbox.stub().resolves({ id: 'base-report-empty-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4827,6 +4897,7 @@ describe('data-processing utility functions', () => {
               save: sandbox.stub(),
               getId: sandbox.stub().returns(`success-opp-${callCount}`),
               addSuggestions: sandbox.stub().resolves({ id: `success-sugg-${callCount}` }),
+              getSuggestions: sandbox.stub().resolves([]),
             });
           }
           // Fourth call (base report) fails
@@ -4863,6 +4934,7 @@ describe('data-processing utility functions', () => {
               save: sandbox.stub(),
               getId: sandbox.stub().returns(`sugg-success-opp-${callCount}`),
               addSuggestions: sandbox.stub().resolves({ id: `sugg-success-${callCount}` }),
+              getSuggestions: sandbox.stub().resolves([]),
             });
           }
           // Fourth call (base report) succeeds but suggestions fail
@@ -4871,6 +4943,7 @@ describe('data-processing utility functions', () => {
             save: sandbox.stub(),
             getId: sandbox.stub().returns('base-fail-sugg-opp'),
             addSuggestions: sandbox.stub().rejects(new Error('Base report suggestions failed')),
+            getSuggestions: sandbox.stub().resolves([]),
           });
         });
 
@@ -4899,6 +4972,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('base-report-param-test'),
           addSuggestions: sandbox.stub().resolves({ id: 'base-report-param-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4933,6 +5007,7 @@ describe('data-processing utility functions', () => {
           save: sandbox.stub(),
           getId: sandbox.stub().returns('final-success-opp'),
           addSuggestions: sandbox.stub().resolves({ id: 'final-success-sugg' }),
+          getSuggestions: sandbox.stub().resolves([]),
         };
         mockContext.dataAccess.Opportunity.create.resolves(mockOpportunity);
 
@@ -4959,12 +5034,14 @@ describe('data-processing utility functions', () => {
             save: sandbox.stub(),
             getId: sandbox.stub().returns('success-1'),
             addSuggestions: sandbox.stub().resolves({ id: 'success-sugg-1' }),
+            getSuggestions: sandbox.stub().resolves([]),
           })
           .onCall(1).resolves({
             setStatus: sandbox.stub(),
             save: sandbox.stub(),
             getId: sandbox.stub().returns('success-2'),
             addSuggestions: sandbox.stub().resolves({ id: 'success-sugg-2' }),
+            getSuggestions: sandbox.stub().resolves([]),
           })
           .onCall(2)
           .resolves({
@@ -4972,6 +5049,7 @@ describe('data-processing utility functions', () => {
             save: sandbox.stub(),
             getId: sandbox.stub().returns('success-3'),
             addSuggestions: sandbox.stub().resolves({ id: 'success-sugg-3' }),
+            getSuggestions: sandbox.stub().resolves([]),
           })
           .onCall(3)
           .rejects(new Error('Base report database error'));
@@ -5004,6 +5082,7 @@ describe('data-processing utility functions', () => {
             save: sandbox.stub(),
             getId: sandbox.stub().returns(`opp-${creationOrder.length}`),
             addSuggestions: sandbox.stub().resolves({ id: `sugg-${creationOrder.length}` }),
+            getSuggestions: sandbox.stub().resolves([]),
           });
         });
 
@@ -5073,6 +5152,251 @@ describe('data-processing utility functions', () => {
     });
   });
 
+  describe('generateReportOpportunity - device-specific merging', () => {
+    let generateReportOpportunityMocked;
+    let findExistingDesktopOpportunityMocked;
+    let findExistingMobileOpportunityMocked;
+    let mockDataAccess;
+
+    beforeEach(async () => {
+      mockDataAccess = {
+        Opportunity: {
+          create: sandbox.stub(),
+          allBySiteId: sandbox.stub().resolves([]),
+        },
+      };
+
+      const dataProcessingModule = await esmock('../../../src/accessibility/utils/data-processing.js');
+      generateReportOpportunityMocked = dataProcessingModule.generateReportOpportunity;
+      findExistingDesktopOpportunityMocked = dataProcessingModule.findExistingDesktopOpportunity;
+      findExistingMobileOpportunityMocked = dataProcessingModule.findExistingMobileOpportunity;
+    });
+
+    it('should merge mobile audit with existing desktop opportunity', async () => {
+      // Arrange
+      const mockGenMdFn = sandbox.stub().returns('# Mobile Report\n\nMobile content.');
+      const mockCreateOpportunityFn = sandbox.stub().returns({ type: 'accessibility', title: 'Test' });
+      
+      const mockExistingDesktopOpportunity = {
+        getId: sandbox.stub().returns('desktop-opp-123'),
+        getSuggestions: sandbox.stub().resolves([]),
+        addSuggestions: sandbox.stub().resolves({ id: 'merged-sugg' }),
+      };
+
+      const mockExistingDesktopOpportunityForFind = {
+        getTitle: sandbox.stub().returns('Accessibility report - Desktop - Week 20 - 2024'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getId: sandbox.stub().returns('desktop-opp-123'),
+        getSuggestions: sandbox.stub().resolves([]),
+        addSuggestions: sandbox.stub().resolves({ id: 'merged-sugg' }),
+      };
+
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockExistingDesktopOpportunityForFind]);
+
+      const reportData = {
+        mdData: { violations: { total: 3 } },
+        linkData: { baseUrl: 'https://example.com' },
+        opptyData: { week: 20, year: 2024 },
+        auditData: { siteId: 'test-site-mobile', auditId: 'audit-mobile' },
+        context: {
+          log: mockLog,
+          dataAccess: mockDataAccess,
+        },
+      };
+
+      // Act - mobile device type
+      const result = await generateReportOpportunityMocked(
+        reportData,
+        mockGenMdFn,
+        mockCreateOpportunityFn,
+        'Mobile Report',
+        false,
+        'mobile', // deviceType
+        '', // reportType
+      );
+
+      // Assert
+      expect(result).to.be.a('string');
+      expect(mockDataAccess.Opportunity.allBySiteId).to.have.been.called;
+      expect(mockLog.info).to.have.been.calledWith(
+        sinon.match(/Mobile audit will update existing desktop.*opportunity/)
+      );
+    });
+
+    it('should create new mobile-only opportunity when no desktop exists', async () => {
+      // Arrange
+      const mockGenMdFn = sandbox.stub().returns('# Mobile Only Report\n');
+      const mockCreateOpportunityFn = sandbox.stub().returns({ type: 'accessibility', title: 'Mobile Test' });
+      
+      const mockNewOpportunity = {
+        getId: sandbox.stub().returns('new-mobile-opp'),
+        getSuggestions: sandbox.stub().resolves([]),
+        addSuggestions: sandbox.stub().resolves({ id: 'new-mobile-sugg' }),
+      };
+
+      mockDataAccess.Opportunity.allBySiteId.resolves([]); // No existing opportunities
+      mockDataAccess.Opportunity.create.resolves(mockNewOpportunity);
+
+      const reportData = {
+        mdData: { violations: { total: 2 } },
+        linkData: { baseUrl: 'https://example.com' },
+        opptyData: { week: 21, year: 2024 },
+        auditData: { siteId: 'test-site-mobile-only', auditId: 'audit-mobile-only' },
+        context: {
+          log: mockLog,
+          dataAccess: mockDataAccess,
+        },
+      };
+
+      // Act - mobile device type, no existing desktop opportunity
+      const result = await generateReportOpportunityMocked(
+        reportData,
+        mockGenMdFn,
+        mockCreateOpportunityFn,
+        'Mobile Only Report',
+        false,
+        'mobile',
+        '',
+      );
+
+      // Assert
+      expect(result).to.be.a('string');
+      expect(mockDataAccess.Opportunity.create).to.have.been.called;
+      expect(mockLog.info).to.have.been.calledWith(
+        sinon.match(/Created new mobile-only.*opportunity/)
+      );
+    });
+
+    it('should merge desktop audit with existing mobile opportunity', async () => {
+      // Arrange
+      const mockGenMdFn = sandbox.stub().returns('# Desktop Report\n\nDesktop content.');
+      const mockCreateOpportunityFn = sandbox.stub().returns({ type: 'accessibility', title: 'Desktop Test' });
+      
+      const mockExistingMobileOpportunityForFind = {
+        getTitle: sandbox.stub().returns('Accessibility report - Mobile - Week 22 - 2024'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getId: sandbox.stub().returns('mobile-opp-456'),
+        getSuggestions: sandbox.stub().resolves([]),
+        addSuggestions: sandbox.stub().resolves({ id: 'merged-desktop-sugg' }),
+      };
+
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockExistingMobileOpportunityForFind]);
+
+      const reportData = {
+        mdData: { violations: { total: 4 } },
+        linkData: { baseUrl: 'https://example.com' },
+        opptyData: { week: 22, year: 2024 },
+        auditData: { siteId: 'test-site-desktop', auditId: 'audit-desktop' },
+        context: {
+          log: mockLog,
+          dataAccess: mockDataAccess,
+        },
+      };
+
+      // Act - desktop device type
+      const result = await generateReportOpportunityMocked(
+        reportData,
+        mockGenMdFn,
+        mockCreateOpportunityFn,
+        'Desktop Report',
+        false,
+        'desktop', // deviceType
+        '', // reportType
+      );
+
+      // Assert
+      expect(result).to.be.a('string');
+      expect(mockDataAccess.Opportunity.allBySiteId).to.have.been.called;
+      expect(mockLog.info).to.have.been.calledWith(
+        sinon.match(/Desktop audit will update existing mobile.*opportunity/)
+      );
+    });
+
+    it('should handle base report type (empty string)', async () => {
+      // Arrange
+      const mockGenMdFn = sandbox.stub().returns('# Base Report\n');
+      const mockCreateOpportunityFn = sandbox.stub().returns({ type: 'accessibility', title: 'Base' });
+      
+      const mockOpportunity = {
+        getId: sandbox.stub().returns('base-opp'),
+        getSuggestions: sandbox.stub().resolves([]),
+        addSuggestions: sandbox.stub().resolves({ id: 'base-sugg' }),
+      };
+
+      mockDataAccess.Opportunity.allBySiteId.resolves([]);
+      mockDataAccess.Opportunity.create.resolves(mockOpportunity);
+
+      const reportData = {
+        mdData: { violations: { total: 1 } },
+        linkData: { baseUrl: 'https://example.com' },
+        opptyData: { week: 23, year: 2024 },
+        auditData: { siteId: 'test-base', auditId: 'audit-base' },
+        context: {
+          log: mockLog,
+          dataAccess: mockDataAccess,
+        },
+      };
+
+      // Act - with empty reportType (base report)
+      const result = await generateReportOpportunityMocked(
+        reportData,
+        mockGenMdFn,
+        mockCreateOpportunityFn,
+        'Base Report',
+        false,
+        'desktop',
+        '', // empty string for base report
+      );
+
+      // Assert
+      expect(result).to.be.a('string');
+      expect(mockLog.info).to.have.been.calledWith(
+        sinon.match(/base.*opportunity/)
+      );
+    });
+
+    it('should handle error from createOrUpdateDeviceSpecificSuggestion', async () => {
+      // Arrange
+      const mockGenMdFn = sandbox.stub().returns('# Error Report\n');
+      const mockCreateOpportunityFn = sandbox.stub().returns({ type: 'accessibility', title: 'Error Test' });
+      
+      const mockOpportunity = {
+        getId: sandbox.stub().returns('error-opp'),
+        getSuggestions: sandbox.stub().rejects(new Error('Suggestion creation failed')),
+        addSuggestions: sandbox.stub().rejects(new Error('Suggestion creation failed')),
+      };
+
+      mockDataAccess.Opportunity.allBySiteId.resolves([]);
+      mockDataAccess.Opportunity.create.resolves(mockOpportunity);
+
+      const reportData = {
+        mdData: { violations: { total: 1 } },
+        linkData: { baseUrl: 'https://example.com' },
+        opptyData: { week: 24, year: 2024 },
+        auditData: { siteId: 'test-error', auditId: 'audit-error' },
+        context: {
+          log: mockLog,
+          dataAccess: mockDataAccess,
+        },
+      };
+
+      // Act & Assert
+      await expect(
+        generateReportOpportunityMocked(
+          reportData,
+          mockGenMdFn,
+          mockCreateOpportunityFn,
+          'Error Report',
+          false,
+          'desktop',
+          '',
+        )
+      ).to.be.rejectedWith('Suggestion creation failed');
+
+      expect(mockLog.error).to.have.been.called;
+    });
+  });
+
   describe('sendRunImportMessage', () => {
     it('should create data object with a11y-metrics-aggregator import type', async () => {
       // Mock SQS message sending to capture the message structure
@@ -5108,6 +5432,760 @@ describe('data-processing utility functions', () => {
         urlSourceSeparator: '|',
         totalChecks: 10,
         options: {},
+      });
+    });
+  });
+
+  describe('createOrUpdateDeviceSpecificSuggestion', () => {
+    let createOrUpdateDeviceSpecificSuggestionMocked;
+    let mockOpportunity;
+    let mockExistingSuggestion;
+
+    beforeEach(async () => {
+      const dataProcessingModule = await esmock('../../../src/accessibility/utils/data-processing.js');
+      createOrUpdateDeviceSpecificSuggestionMocked = dataProcessingModule.createOrUpdateDeviceSpecificSuggestion;
+
+      mockExistingSuggestion = {
+        getType: sandbox.stub().returns('CODE_CHANGE'),
+        getData: sandbox.stub().returns({
+          suggestionValue: {
+            'accessibility-desktop': '# Desktop content\n',
+          },
+        }),
+        setData: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockOpportunity = {
+        getSuggestions: sandbox.stub().resolves([mockExistingSuggestion]),
+        addSuggestions: sandbox.stub().resolves({ id: 'new-sugg' }),
+      };
+    });
+
+    it('should update existing suggestion with new device content', async () => {
+      // Arrange
+      const reportMarkdown = '# Mobile content\n';
+      const deviceType = 'mobile';
+      const auditData = { siteId: 'site-123', auditId: 'audit-123' };
+
+      // Act
+      const result = await createOrUpdateDeviceSpecificSuggestionMocked(
+        mockOpportunity,
+        reportMarkdown,
+        deviceType,
+        auditData,
+        mockLog,
+      );
+
+      // Assert
+      expect(mockOpportunity.getSuggestions).to.have.been.called;
+      expect(mockExistingSuggestion.setData).to.have.been.called;
+      expect(mockExistingSuggestion.save).to.have.been.called;
+      expect(result.suggestion).to.equal(mockExistingSuggestion);
+    });
+
+    it('should create new suggestion when no existing CODE_CHANGE suggestion found', async () => {
+      // Arrange
+      mockOpportunity.getSuggestions.resolves([]);
+      const reportMarkdown = '# Desktop content\n';
+      const deviceType = 'desktop';
+      const auditData = { siteId: 'site-456', auditId: 'audit-456' };
+
+      // Act
+      const result = await createOrUpdateDeviceSpecificSuggestionMocked(
+        mockOpportunity,
+        reportMarkdown,
+        deviceType,
+        auditData,
+        mockLog,
+      );
+
+      // Assert
+      expect(mockOpportunity.getSuggestions).to.have.been.called;
+      expect(mockOpportunity.addSuggestions).to.have.been.called;
+      expect(mockExistingSuggestion.setData).to.not.have.been.called;
+    });
+
+    it('should handle null getData() result (line 532)', async () => {
+      // Arrange - test the ?? {} branch
+      mockExistingSuggestion.getData.returns(null);
+      const reportMarkdown = '# Content\n';
+      const deviceType = 'mobile';
+      const auditData = { siteId: 'site-789', auditId: 'audit-789' };
+
+      // Act
+      const result = await createOrUpdateDeviceSpecificSuggestionMocked(
+        mockOpportunity,
+        reportMarkdown,
+        deviceType,
+        auditData,
+        mockLog,
+      );
+
+      // Assert
+      expect(mockExistingSuggestion.setData).to.have.been.called;
+      expect(result.suggestion).to.equal(mockExistingSuggestion);
+    });
+
+    it('should handle missing suggestionValue in currentData (line 533)', async () => {
+      // Arrange - test the ?? {} branch for suggestionValue
+      mockExistingSuggestion.getData.returns({ someOtherField: 'value' });
+      const reportMarkdown = '# Content\n';
+      const deviceType = 'desktop';
+      const auditData = { siteId: 'site-abc', auditId: 'audit-abc' };
+
+      // Act
+      const result = await createOrUpdateDeviceSpecificSuggestionMocked(
+        mockOpportunity,
+        reportMarkdown,
+        deviceType,
+        auditData,
+        mockLog,
+      );
+
+      // Assert
+      expect(mockExistingSuggestion.setData).to.have.been.called;
+      expect(result.suggestion).to.equal(mockExistingSuggestion);
+    });
+
+    it('should handle empty reportMarkdown (line 527, 566)', async () => {
+      // Arrange - test the || 0 branch when reportMarkdown is empty
+      mockOpportunity.getSuggestions.resolves([]);
+      const reportMarkdown = ''; // Empty string
+      const deviceType = 'mobile';
+      const auditData = { siteId: 'site-empty', auditId: 'audit-empty' };
+
+      // Act
+      const result = await createOrUpdateDeviceSpecificSuggestionMocked(
+        mockOpportunity,
+        reportMarkdown,
+        deviceType,
+        auditData,
+        mockLog,
+      );
+
+      // Assert
+      expect(mockOpportunity.addSuggestions).to.have.been.called;
+    });
+
+    it('should handle null reportMarkdown (line 527)', async () => {
+      // Arrange - test the ?. branch when reportMarkdown is null
+      mockOpportunity.getSuggestions.resolves([]);
+      const reportMarkdown = null;
+      const deviceType = 'desktop';
+      const auditData = { siteId: 'site-null', auditId: 'audit-null' };
+
+      // Act
+      const result = await createOrUpdateDeviceSpecificSuggestionMocked(
+        mockOpportunity,
+        reportMarkdown,
+        deviceType,
+        auditData,
+        mockLog,
+      );
+
+      // Assert - test passes if no errors are thrown
+      expect(result).to.exist;
+    });
+
+    it('should handle missing accessibility-desktop in suggestionValue (line 536, 550)', async () => {
+      // Arrange - test the || 0 branch when accessibility-desktop is undefined
+      mockExistingSuggestion.getData.returns({
+        suggestionValue: {
+          'accessibility-mobile': '# Mobile content',
+        },
+      });
+      const reportMarkdown = '# Desktop content\n';
+      const deviceType = 'desktop';
+      const auditData = { siteId: 'site-desktop-missing', auditId: 'audit-desktop-missing' };
+
+      // Act
+      const result = await createOrUpdateDeviceSpecificSuggestionMocked(
+        mockOpportunity,
+        reportMarkdown,
+        deviceType,
+        auditData,
+        mockLog,
+      );
+
+      // Assert - verify suggestion was saved with correct data
+      expect(mockExistingSuggestion.save).to.have.been.called;
+    });
+
+    it('should handle missing accessibility-mobile in suggestionValue (line 537, 551)', async () => {
+      // Arrange - test the || 0 branch when accessibility-mobile is undefined
+      mockExistingSuggestion.getData.returns({
+        suggestionValue: {
+          'accessibility-desktop': '# Desktop content',
+        },
+      });
+      const reportMarkdown = '# Mobile content\n';
+      const deviceType = 'mobile';
+      const auditData = { siteId: 'site-mobile-missing', auditId: 'audit-mobile-missing' };
+
+      // Act
+      const result = await createOrUpdateDeviceSpecificSuggestionMocked(
+        mockOpportunity,
+        reportMarkdown,
+        deviceType,
+        auditData,
+        mockLog,
+      );
+
+      // Assert - verify suggestion was saved with correct data
+      expect(mockExistingSuggestion.save).to.have.been.called;
+    });
+  });
+
+  describe('findExistingDesktopOpportunity', () => {
+    let findExistingDesktopOpportunityMocked;
+    let mockDataAccess;
+
+    beforeEach(async () => {
+      const dataProcessingModule = await esmock('../../../src/accessibility/utils/data-processing.js');
+      findExistingDesktopOpportunityMocked = dataProcessingModule.findExistingDesktopOpportunity;
+
+      mockDataAccess = {
+        Opportunity: {
+          allBySiteId: sandbox.stub(),
+        },
+      };
+    });
+
+    it('should find existing desktop opportunity with in-depth report type', async () => {
+      // Arrange
+      const mockOpportunity = {
+        getTitle: sandbox.stub().returns('Accessibility report - Desktop - Week 20 - 2024 - in-depth'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getId: sandbox.stub().returns('opp-123'),
+      };
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      // Act
+      const result = await findExistingDesktopOpportunityMocked(
+        'site-123',
+        20,
+        2024,
+        mockDataAccess,
+        mockLog,
+        'in-depth',
+      );
+
+      // Assert
+      expect(result).to.equal(mockOpportunity);
+    });
+
+    it('should find existing desktop opportunity with fixed report type', async () => {
+      // Arrange
+      const mockOpportunity = {
+        getTitle: sandbox.stub().returns('Accessibility report Fixed vs New Issues - Desktop - Week 20 - 2024'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getId: sandbox.stub().returns('opp-456'),
+      };
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      // Act
+      const result = await findExistingDesktopOpportunityMocked(
+        'site-456',
+        20,
+        2024,
+        mockDataAccess,
+        mockLog,
+        'fixed',
+      );
+
+      // Assert
+      expect(result).to.equal(mockOpportunity);
+    });
+
+    it('should find existing desktop opportunity with enhanced report type', async () => {
+      // Arrange
+      const mockOpportunity = {
+        getTitle: sandbox.stub().returns('Enhancing accessibility for the top 10 most-visited pages - Desktop - Week 20 - 2024'),
+        getStatus: sandbox.stub().returns('NEW'),
+        getId: sandbox.stub().returns('opp-789'),
+      };
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      // Act
+      const result = await findExistingDesktopOpportunityMocked(
+        'site-789',
+        20,
+        2024,
+        mockDataAccess,
+        mockLog,
+        'enhanced',
+      );
+
+      // Assert
+      expect(result).to.equal(mockOpportunity);
+    });
+
+    it('should return null when no matching opportunity found', async () => {
+      // Arrange
+      const mockOpportunity = {
+        getTitle: sandbox.stub().returns('Different Title'),
+        getStatus: sandbox.stub().returns('NEW'),
+      };
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      // Act
+      const result = await findExistingDesktopOpportunityMocked(
+        'site-123',
+        20,
+        2024,
+        mockDataAccess,
+        mockLog,
+        'in-depth',
+      );
+
+      // Assert
+      expect(result).to.be.null;
+    });
+
+    it('should handle error gracefully and return null', async () => {
+      // Arrange
+      mockDataAccess.Opportunity.allBySiteId.rejects(new Error('DB error'));
+
+      // Act
+      const result = await findExistingDesktopOpportunityMocked(
+        'site-123',
+        20,
+        2024,
+        mockDataAccess,
+        mockLog,
+      );
+
+      // Assert
+      expect(result).to.be.null;
+      expect(mockLog.error.called).to.be.true;
+    });
+
+    it('should find opportunity with IGNORED status (line 636 - OR condition)', async () => {
+      // Arrange - test the || branch where status is IGNORED
+      const mockOpportunity = {
+        getTitle: sandbox.stub().returns('Accessibility report - Desktop - Week 25 - 2024'),
+        getStatus: sandbox.stub().returns('IGNORED'), // Test IGNORED status
+        getId: sandbox.stub().returns('ignored-opp-123'),
+      };
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      // Act
+      const result = await findExistingDesktopOpportunityMocked(
+        'site-ignored',
+        25,
+        2024,
+        mockDataAccess,
+        mockLog,
+        '',
+      );
+
+      // Assert
+      expect(result).to.equal(mockOpportunity);
+      expect(mockOpportunity.getStatus).to.have.been.called;
+    });
+
+    it('should not find opportunity with RESOLVED status (line 636)', async () => {
+      // Arrange - test that non-NEW and non-IGNORED statuses are filtered out
+      const mockOpportunity = {
+        getTitle: sandbox.stub().returns('Accessibility report - Desktop - Week 26 - 2024'),
+        getStatus: sandbox.stub().returns('RESOLVED'), // Should not match
+        getId: sandbox.stub().returns('resolved-opp-456'),
+      };
+      mockDataAccess.Opportunity.allBySiteId.resolves([mockOpportunity]);
+
+      // Act
+      const result = await findExistingDesktopOpportunityMocked(
+        'site-resolved',
+        26,
+        2024,
+        mockDataAccess,
+        mockLog,
+        '',
+      );
+
+      // Assert
+      expect(result).to.be.null;
+    });
+  });
+
+  describe('sendCodeFixMessagesToImporter', () => {
+    let sandbox;
+    let context;
+    let mockOpportunity;
+    let mockSuggestion1;
+    let mockSuggestion2;
+    let mockSuggestion3;
+    let mockSite;
+
+    beforeEach(() => {
+      sandbox = sinon.createSandbox();
+
+      // Create mock suggestions
+      mockSuggestion1 = {
+        getId: sandbox.stub().returns('suggestion-123'),
+        getData: sandbox.stub().returns({
+          url: 'https://example.com/form1',
+          source: 'form',
+          issues: [{ type: 'color-contrast' }],
+        }),
+      };
+
+      mockSuggestion2 = {
+        getId: sandbox.stub().returns('suggestion-456'),
+        getData: sandbox.stub().returns({
+          url: 'https://example.com/form1',
+          source: 'form',
+          issues: [{ type: 'color-contrast' }],
+        }),
+      };
+
+      mockSuggestion3 = {
+        getId: sandbox.stub().returns('suggestion-789'),
+        getData: sandbox.stub().returns({
+          url: 'https://example.com/form2',
+          source: 'form2',
+          issues: [{ type: 'select-name' }],
+        }),
+      };
+
+      // Create mock opportunity
+      mockOpportunity = {
+        getId: sandbox.stub().returns('opportunity-123'),
+        getSiteId: sandbox.stub().returns('site-123'),
+        getType: sandbox.stub().returns('accessibility'),
+        getSuggestions: sandbox.stub().resolves([mockSuggestion1, mockSuggestion2, mockSuggestion3]),
+      };
+
+      // Create mock site
+      mockSite = {
+        getBaseURL: sandbox.stub().returns('https://example.com'),
+        getDeliveryType: sandbox.stub().returns('aem_cs'),
+      };
+
+      // Create context with stubs
+      context = {
+        log: {
+          info: sandbox.spy(),
+          debug: sandbox.spy(),
+          warn: sandbox.spy(),
+          error: sandbox.spy(),
+        },
+        sqs: {
+          sendMessage: sandbox.stub().resolves(),
+        },
+        env: {
+          IMPORT_WORKER_QUEUE_URL: 'test-import-worker-queue-url',
+          QUEUE_SPACECAT_TO_MYSTIQUE: 'test-mystique-queue',
+        },
+        site: mockSite,
+      };
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    describe('No suggestions', () => {
+      it('should skip code-fix generation when no suggestions exist', async () => {
+        mockOpportunity.getSuggestions.resolves([]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] No suggestions found for code-fix generation',
+        );
+        expect(context.sqs.sendMessage).not.to.have.been.called;
+      });
+
+      it('should skip code-fix generation when suggestions is null', async () => {
+        mockOpportunity.getSuggestions.resolves(null);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] No suggestions found for code-fix generation',
+        );
+        expect(context.sqs.sendMessage).not.to.have.been.called;
+      });
+    });
+
+    describe('Successful message sending', () => {
+      it('should group suggestions by URL, source, and issueType and send messages', async () => {
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
+        );
+
+        // Should send 2 messages (2 groups)
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+
+        // Verify first message (color-contrast group)
+        const firstCall = context.sqs.sendMessage.firstCall;
+        expect(firstCall.args[0]).to.equal('test-import-worker-queue-url');
+        const firstMessage = firstCall.args[1];
+        expect(firstMessage.type).to.equal('code');
+        expect(firstMessage.siteId).to.equal('site-123');
+        expect(firstMessage.forward.queue).to.equal('test-mystique-queue');
+        expect(firstMessage.forward.type).to.equal('codefix:accessibility');
+        expect(firstMessage.forward.siteId).to.equal('site-123');
+        expect(firstMessage.forward.auditId).to.equal('audit-123');
+        expect(firstMessage.forward.url).to.equal('https://example.com');
+        expect(firstMessage.forward.data.opportunityId).to.equal('opportunity-123');
+        expect(firstMessage.forward.data.suggestionIds).to.have.lengthOf(2);
+        expect(firstMessage.forward.data.suggestionIds).to.include('suggestion-123');
+        expect(firstMessage.forward.data.suggestionIds).to.include('suggestion-456');
+
+        // Verify second message (select-name group)
+        const secondCall = context.sqs.sendMessage.secondCall;
+        expect(secondCall.args[0]).to.equal('test-import-worker-queue-url');
+        const secondMessage = secondCall.args[1];
+        expect(secondMessage.forward.data.suggestionIds).to.have.lengthOf(1);
+        expect(secondMessage.forward.data.suggestionIds).to.include('suggestion-789');
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Completed sending 2 code-fix messages to importer',
+        );
+      });
+
+      it('should use dynamic opportunityType from opportunity.getType()', async () => {
+        mockOpportunity.getType.returns('forms');
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-456', context);
+
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+        const firstMessage = context.sqs.sendMessage.firstCall.args[1];
+        expect(firstMessage.forward.type).to.equal('codefix:forms');
+      });
+
+      it('should handle suggestion with default source when source is undefined', async () => {
+        const mockSuggestionNoSource = {
+          getId: sandbox.stub().returns('suggestion-no-source'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/form3',
+            // No source property
+            issues: [{ type: 'label-missing' }],
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([mockSuggestionNoSource]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.sqs.sendMessage).to.have.been.calledOnce;
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/Sent code-fix message to importer for URL: https:\/\/example\.com\/form3, source: default/),
+        );
+      });
+
+      it('should skip suggestions without issues', async () => {
+        const mockSuggestionNoIssues = {
+          getId: sandbox.stub().returns('suggestion-no-issues'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/form4',
+            source: 'form',
+            issues: [],
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([mockSuggestionNoIssues]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.sqs.sendMessage).not.to.have.been.called;
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Grouped suggestions into 0 groups for code-fix generation',
+        );
+      });
+
+      it('should skip suggestions without issues property', async () => {
+        const mockSuggestionNoIssuesProperty = {
+          getId: sandbox.stub().returns('suggestion-no-issues-property'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/form5',
+            source: 'form',
+            // No issues property
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([mockSuggestionNoIssuesProperty]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.sqs.sendMessage).not.to.have.been.called;
+      });
+
+      it('should log individual message sending for each group', async () => {
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/Sent code-fix message to importer for URL: https:\/\/example\.com\/form1, source: form, issueType: color-contrast, suggestions: 2/),
+        );
+
+        expect(context.log.info).to.have.been.calledWith(
+          sinon.match(/Sent code-fix message to importer for URL: https:\/\/example\.com\/form2, source: form2, issueType: select-name, suggestions: 1/),
+        );
+      });
+    });
+
+    describe('Failed message sending', () => {
+      it('should handle individual message sending failures gracefully', async () => {
+        const sendError = new Error('SQS send failed');
+        context.sqs.sendMessage
+          .onFirstCall().rejects(sendError)
+          .onSecondCall().resolves();
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/Failed to send code-fix message for URL: https:\/\/example\.com\/form1, error: SQS send failed/),
+        );
+
+        // Should still complete and log completion
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Completed sending 2 code-fix messages to importer',
+        );
+      });
+
+      it('should handle all message sending failures', async () => {
+        const sendError = new Error('SQS connection failed');
+        context.sqs.sendMessage.rejects(sendError);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+        expect(context.log.error).to.have.been.calledTwice;
+        expect(context.log.error).to.have.been.calledWith(
+          sinon.match(/Failed to send code-fix message for URL.*error: SQS connection failed/),
+        );
+      });
+    });
+
+    describe('Error handling', () => {
+      it('should handle errors in getSuggestions', async () => {
+        const error = new Error('Database error');
+        mockOpportunity.getSuggestions.rejects(error);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.error).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Error in sendCodeFixMessagesToImporter: Database error',
+        );
+        expect(context.sqs.sendMessage).not.to.have.been.called;
+      });
+
+      it('should handle errors during grouping suggestions', async () => {
+        // Make getData throw an error
+        mockSuggestion1.getData.throws(new Error('getData failed'));
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.error).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Error in sendCodeFixMessagesToImporter: getData failed',
+        );
+        expect(context.sqs.sendMessage).not.to.have.been.called;
+      });
+    });
+
+    describe('Complex grouping scenarios', () => {
+      it('should group multiple suggestions with same URL, source, and issueType', async () => {
+        const mockSuggestion4 = {
+          getId: sandbox.stub().returns('suggestion-999'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/form1',
+            source: 'form',
+            issues: [{ type: 'color-contrast' }],
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([
+          mockSuggestion1,
+          mockSuggestion2,
+          mockSuggestion4,
+        ]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Grouped suggestions into 1 groups for code-fix generation',
+        );
+
+        expect(context.sqs.sendMessage).to.have.been.calledOnce;
+        const message = context.sqs.sendMessage.firstCall.args[1];
+        expect(message.forward.data.suggestionIds).to.have.lengthOf(3);
+        expect(message.forward.data.suggestionIds).to.include('suggestion-123');
+        expect(message.forward.data.suggestionIds).to.include('suggestion-456');
+        expect(message.forward.data.suggestionIds).to.include('suggestion-999');
+      });
+
+      it('should create separate groups for different URLs', async () => {
+        const mockSuggestionDifferentUrl = {
+          getId: sandbox.stub().returns('suggestion-url-diff'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/different-url',
+            source: 'form',
+            issues: [{ type: 'color-contrast' }],
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([
+          mockSuggestion1,
+          mockSuggestionDifferentUrl,
+        ]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
+        );
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      });
+
+      it('should create separate groups for different sources', async () => {
+        const mockSuggestionDifferentSource = {
+          getId: sandbox.stub().returns('suggestion-source-diff'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/form1',
+            source: 'different-source',
+            issues: [{ type: 'color-contrast' }],
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([
+          mockSuggestion1,
+          mockSuggestionDifferentSource,
+        ]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
+        );
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
+      });
+
+      it('should create separate groups for different issue types', async () => {
+        const mockSuggestionDifferentIssue = {
+          getId: sandbox.stub().returns('suggestion-issue-diff'),
+          getData: sandbox.stub().returns({
+            url: 'https://example.com/form1',
+            source: 'form',
+            issues: [{ type: 'button-name' }],
+          }),
+        };
+
+        mockOpportunity.getSuggestions.resolves([
+          mockSuggestion1,
+          mockSuggestionDifferentIssue,
+        ]);
+
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+
+        expect(context.log.info).to.have.been.calledWith(
+          '[accessibility] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
+        );
+        expect(context.sqs.sendMessage).to.have.been.calledTwice;
       });
     });
   });

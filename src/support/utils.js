@@ -370,10 +370,8 @@ export const getScrapedDataForSiteId = async (site, context) => {
     log,
   );
   const headerLinks = extractLinksFromHeader(indexFileContent, site.getBaseURL(), log);
-  log.info(`siteData: ${JSON.stringify(extractedData)}`);
 
   let scrapedFormData;
-  log.info(`all files: ${JSON.stringify(allFiles)}`);
   if (allFiles) {
     const formFiles = allFiles.filter((file) => file.Key.endsWith('forms/scrape.json'));
     scrapedFormData = await fetchContentOfFiles(formFiles);

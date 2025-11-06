@@ -34,7 +34,7 @@ import {
 } from '../../src/metatags/constants.js';
 import SeoChecks from '../../src/metatags/seo-checks.js';
 import testData from '../fixtures/meta-tags-data.js';
-import { removeTrailingSlash, getBaseUrl } from '../../src/metatags/opportunity-utils.js';
+import { removeTrailingSlash, getBaseUrl } from '../../src/utils/url-utils.js';
 import {
   importTopPages,
   submitForScraping,
@@ -309,7 +309,12 @@ describe('Meta Tags', () => {
             { url: 'http://example.com/page2' },
           ],
           siteId: 'site-id',
-          type: 'meta-tags',
+          type: 'default',
+          allowCache: false,
+          maxScrapeAge: 0,
+          options: {
+            waitTimeoutForMetaTags: 5000,
+          },
         });
       });
 
@@ -336,7 +341,12 @@ describe('Meta Tags', () => {
             { url: 'http://example.com/page2' },
           ],
           siteId: 'site-id',
-          type: 'meta-tags',
+          type: 'default',
+          allowCache: false,
+          maxScrapeAge: 0,
+          options: {
+            waitTimeoutForMetaTags: 5000,
+          },
         });
       });
     });
@@ -364,7 +374,7 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
-          'www.test-site.com/page1',
+          'http://example.com/page1',
           'scrapes/site-id/page1/scrape.json',
           logStub,
         );
@@ -401,7 +411,7 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
-          'https://www.test-site.com',
+          'http://example.com/',
           'scrapes/site-id/scrape.json',
           logStub,
         );
@@ -427,7 +437,7 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
-          'https://www.test-site.com/page1',
+          'http://example.com/page1',
           'scrapes/site-id/page1/scrape.json',
           logStub,
         );
@@ -461,7 +471,7 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
-          'https://www.test-site.com/404',
+          'http://example.com/404',
           'scrapes/site-id/404/scrape.json',
           logStub,
         );
@@ -495,7 +505,7 @@ describe('Meta Tags', () => {
         const result = await fetchAndProcessPageObject(
           s3ClientStub,
           'test-bucket',
-          'https://www.test-site.com/valid-page',
+          'http://example.com/valid-page',
           'scrapes/site-id/valid-page/scrape.json',
           logStub,
         );
@@ -568,14 +578,14 @@ describe('Meta Tags', () => {
         dataAccessStub.Opportunity.create = sinon.stub().returns(opportunity);
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.OpportunityData);
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should use existing opportunity and add suggestions', async () => {
         dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([opportunity]);
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should throw error if fetching opportunity fails', async () => {
@@ -604,7 +614,7 @@ describe('Meta Tags', () => {
         opportunity.getSuggestions.returns(testData.existingSuggestions);
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should mark existing suggestions OUTDATED if not present in audit data', async () => {
@@ -657,7 +667,7 @@ describe('Meta Tags', () => {
         await opportunityAndSuggestions(auditUrl, auditDataModified, context);
         expect(dataAccessStub.Suggestion.bulkUpdateStatus).to.be.calledWith(testData.existingSuggestions.splice(0, 2), 'OUTDATED');
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should preserve existing AI suggestions and overrides when syncing', async () => {
@@ -751,7 +761,7 @@ describe('Meta Tags', () => {
         expectedSuggestionModified[0].rank = -1;
         await opportunityAndSuggestions(auditUrl, auditData, context);
         expect(opportunity.save).to.be.calledOnce;
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle malformed URLs in audit data', async () => {
@@ -771,7 +781,7 @@ describe('Meta Tags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('malformed-url.com/path/page1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle URLs with port numbers', async () => {
@@ -795,7 +805,7 @@ describe('Meta Tags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('https://example.com:8080/page1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle URLs with query parameters', async () => {
@@ -819,7 +829,7 @@ describe('Meta Tags', () => {
         const addSuggestionsCall = opportunity.addSuggestions.getCall(0);
         const suggestions = addSuggestionsCall.args[0];
         expect(suggestions[0].data.url).to.equal('https://example.com/page1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle case when config.useHostnameOnly is undefined', async () => {
@@ -843,7 +853,7 @@ describe('Meta Tags', () => {
         const suggestions = addSuggestionsCall.args[0];
         // Should preserve full URL path since useHostnameOnly is undefined
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle case when getSite method returns undefined', async () => {
@@ -864,7 +874,7 @@ describe('Meta Tags', () => {
         const suggestions = addSuggestionsCall.args[0];
         // Should preserve full URL path since getSite returns undefined
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle case when getSite method returns null', async () => {
@@ -885,7 +895,7 @@ describe('Meta Tags', () => {
         const suggestions = addSuggestionsCall.args[0];
         // Should preserve full URL path since getSite returns null
         expect(suggestions[0].data.url).to.equal('http://localhost:8080/path/page1');
-        expect(logStub.info).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
+        expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity And Suggestions for site: site-id and meta-tags audit type.');
       });
 
       it('should handle error in site configuration', async () => {
@@ -1062,13 +1072,6 @@ describe('Meta Tags', () => {
           ContentType: 'application/json',
         };
 
-        const scrapeResultPaths = new Map([
-          ['https://www.test-site.com/blog/page1', 'scrapes/site-id/blog/page1/scrape.json'],
-          ['https://www.test-site.com/blog/page2', 'scrapes/site-id/blog/page2/scrape.json'],
-          ['https://www.test-site.com/blog/page3', 'scrapes/site-id/blog/page3/scrape.json'],
-          ['https://www.test-site.com/', 'scrapes/site-id/scrape.json'],
-        ]);
-
         // Setup S3 client responses
         s3ClientStub.send = sinon.stub();
         s3ClientStub.send
@@ -1110,10 +1113,13 @@ describe('Meta Tags', () => {
           log: logStub,
           s3Client: s3ClientStub,
           dataAccess: dataAccessStub,
-          env: {
-            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
-          },
-          scrapeResultPaths,
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          scrapeResultPaths: new Map([
+            ['http://example.com/blog/page1', 'scrapes/site-id/blog/page1/scrape.json'],
+            ['http://example.com/blog/page2', 'scrapes/site-id/blog/page2/scrape.json'],
+            ['http://example.com/blog/page3', 'scrapes/site-id/blog/page3/scrape.json'],
+            ['http://example.com/', 'scrapes/site-id/scrape.json'],
+          ]),
         };
       });
 
@@ -1126,35 +1132,33 @@ describe('Meta Tags', () => {
           .resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub()
           .resolves(5000);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
         const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': {
-            getRUMDomainkey: mockGetRUMDomainkey,
-            calculateCPCValue: mockCalculateCPCValue,
-          },
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
-          '../../src/metatags/metatags-auto-suggest.js': sinon.stub()
-            .resolves({
-              '/blog/page1': {
-                title: {
-                  aiSuggestion: 'AI Suggested Title 1',
-                  aiRationale: 'AI Rationale 1',
-                },
+          '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({
+            '/blog/page1': {
+              title: {
+                aiSuggestion: 'AI Suggested Title 1',
+                aiRationale: 'AI Rationale 1',
               },
-              '/blog/page2': {
-                title: {
-                  aiSuggestion: 'AI Suggested Title 2',
-                  aiRationale: 'AI Rationale 2',
-                },
+            },
+            '/blog/page2': {
+              title: {
+                aiSuggestion: 'AI Suggested Title 2',
+                aiRationale: 'AI Rationale 2',
               },
-            }),
+            },
+          }),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
         });
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
-        expect(result)
-          .to
-          .deep
-          .equal({ status: 'complete' });
+        expect(result).to.deep.equal({ status: 'complete' });
         expect(s3ClientStub.send).to.have.been.called;
         expect(metatagsOppty.save).to.have.been.called;
       });
@@ -1164,15 +1168,17 @@ describe('Meta Tags', () => {
           .resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub()
           .resolves(2);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
         const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': {
-            getRUMDomainkey: mockGetRUMDomainkey,
-            calculateCPCValue: mockCalculateCPCValue,
-          },
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
           '../../src/metatags/metatags-auto-suggest.js': sinon.stub()
             .resolves({}),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
         });
 
         // Override all S3 responses to have null tags
@@ -1191,73 +1197,54 @@ describe('Meta Tags', () => {
 
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
-        expect(result)
-          .to
-          .deep
-          .equal({ status: 'complete' });
-        expect(logStub.error)
-          .to
-          .have
-          .been
-          .calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
-        expect(logStub.error)
-          .to
-          .have
-          .been
-          .calledWith('Failed to extract tags from scraped content for bucket test-bucket');
-      })
-        .timeout(10000);
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(logStub.error).to.have.been.calledWith('No Scraped tags found in S3 scrapes/site-id/blog/page3/scrape.json object');
+        expect(logStub.error).to.have.been.calledWith('Failed to extract tags from scraped content for bucket test-bucket');
+      }).timeout(10000);
 
       it('should handle RUM API errors gracefully', async () => {
         const mockGetRUMDomainkey = sinon.stub()
           .resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub()
           .resolves(2);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
         const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': {
-            getRUMDomainkey:
-            mockGetRUMDomainkey,
-            calculateCPCValue: mockCalculateCPCValue,
-          },
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
           '../../src/metatags/metatags-auto-suggest.js': sinon.stub()
             .resolves({}),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
         });
         // Override RUM API response to simulate error
-        RUMAPIClientStub.createFrom()
-          .query
-          .rejects(new Error('RUM API Error'));
+        RUMAPIClientStub.createFrom().query.rejects(new Error('RUM API Error'));
 
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
 
-        expect(result)
-          .to
-          .deep
-          .equal({ status: 'complete' });
-        expect(logStub.warn)
-          .to
-          .have
-          .been
-          .calledWith('Error while calculating projected traffic for site-id', sinon.match.instanceOf(Error));
+        expect(result).to.deep.equal({ status: 'complete' });
+        expect(logStub.warn).to.have.been.calledWith('Error while calculating projected traffic for site-id', sinon.match.instanceOf(Error));
       });
 
       it('should submit top pages for scraping when getIncludedURLs returns null', async () => {
         const mockGetRUMDomainkey = sinon.stub().resolves('mockedDomainKey');
         const mockCalculateCPCValue = sinon.stub().resolves(2);
+        const mockValidateDetectedIssues = sinon.stub()
+          .callsFake(async (detectedTags) => detectedTags);
         const getConfigStub = sinon.stub().returns({
           getIncludedURLs: sinon.stub().returns(null),
         });
         context.site.getConfig = getConfigStub;
         const auditStub = await esmock('../../src/metatags/handler.js', {
-          '../../src/support/utils.js': {
-            getRUMDomainkey:
-            mockGetRUMDomainkey,
-            calculateCPCValue: mockCalculateCPCValue,
-          },
+          '../../src/support/utils.js': { getRUMDomainkey: mockGetRUMDomainkey, calculateCPCValue: mockCalculateCPCValue },
           '@adobe/spacecat-shared-rum-api-client': RUMAPIClientStub,
           '../../src/common/index.js': { wwwUrlResolver: (siteObj) => siteObj.getBaseURL() },
           '../../src/metatags/metatags-auto-suggest.js': sinon.stub().resolves({}),
+          '../../src/metatags/ssr-meta-validator.js': {
+            validateDetectedIssues: mockValidateDetectedIssues,
+          },
         });
         const result = await auditStub.runAuditAndGenerateSuggestions(context);
         expect(result).to.deep.equal({ status: 'complete' });
@@ -1341,6 +1328,7 @@ describe('Meta Tags', () => {
           warn: sinon.stub(),
           debug: sinon.stub(),
         };
+        getPresignedUrlStub = sinon.stub().resolves('https://presigned-url.com');
         Configuration = {
           findLatest: sinon.stub().resolves({
             isHandlerEnabledForSite: sinon.stub().returns(true),
@@ -1367,6 +1355,7 @@ describe('Meta Tags', () => {
             },
           }),
         };
+        getPresignedUrlStub = sinon.stub().resolves('https://presigned.url');
         context = {
           s3Client,
           dataAccess,
@@ -1394,9 +1383,12 @@ describe('Meta Tags', () => {
               createFrom: () => genvarClientStub,
             },
           },
-          '@aws-sdk/s3-request-presigner': { getSignedUrl: getPresignedUrlStub },
+          '../../src/utils/getPresignedUrl.js': {
+            getPresignedUrl: getPresignedUrlStub,
+          },
         });
         siteStub = {
+          getId: sinon.stub().returns('site-id'),
           getBaseURL: sinon.stub().returns('https://example.com'),
         };
       });
@@ -1455,7 +1447,7 @@ describe('Meta Tags', () => {
         const response = await metatagsAutoSuggest(allTags, context, siteStub);
 
         expect(log.debug.calledWith('Generated presigned URLs')).to.be.true;
-        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+        expect(log.debug.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
         expect(response['/about-us'].h1.aiSuggestion).to.equal('Our Story: Innovating Comfort for Every Home');
         expect(response['/add-on-and-refresh'].description.aiSuggestion).to.equal('Elevate your home with Lovesac\'s customizable add-ons...');
         expect(response['/add-on-and-refresh'].h1.aiSuggestion).to.equal('Revitalize Your Home with Lovesac Add-Ons');
@@ -1494,7 +1486,7 @@ describe('Meta Tags', () => {
           forceAutoSuggest,
         });
         expect(isHandlerEnabledForSite).not.to.have.been.called;
-        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+        expect(log.debug.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
       });
 
       it('should handle forceAutoSuggest option set to false', async () => {
@@ -1508,7 +1500,448 @@ describe('Meta Tags', () => {
           forceAutoSuggest,
         });
         expect(isHandlerEnabledForSite).to.have.been.called;
-        expect(log.info.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+        expect(log.debug.calledWith('Generated AI suggestions for Meta-tags using Genvar.')).to.be.true;
+      });
+
+      it('should remove tags without aiSuggestion from updatedDetectedTags', async () => {
+        // Setup detectedTags with some tags that will have aiSuggestion and some that won't
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Original Title', issue: 'Title too short' },
+            description: { tagContent: 'Original Description', issue: 'Description too short' },
+            h1: { tagContent: 'Original H1', issue: 'H1 too short' },
+          },
+          '/page2': {
+            title: { tagContent: 'Page 2 Title', issue: 'Title too long' },
+            h1: { tagContent: 'Page 2 H1', issue: 'H1 too long' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+        };
+
+        // Setup Genvar response with mixed aiSuggestion availability
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            title: {
+              aiSuggestion: 'AI Suggested Title 1',
+              aiRationale: 'AI Rationale for title 1',
+            },
+            // description and h1 don't have aiSuggestion in response
+          },
+          '/page2': {
+            title: {
+              aiSuggestion: 'AI Suggested Title 2',
+              aiRationale: 'AI Rationale for title 2',
+            },
+            h1: {
+              aiSuggestion: 'AI Suggested H1 2',
+              aiRationale: 'AI Rationale for h1 2',
+            },
+          },
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that tags without aiSuggestion are removed
+        expect(response['/page1'].title.aiSuggestion).to.equal('AI Suggested Title 1');
+        expect(response['/page1'].description).to.be.undefined;
+        expect(response['/page1'].h1).to.be.undefined;
+
+        expect(response['/page2'].title.aiSuggestion).to.equal('AI Suggested Title 2');
+        expect(response['/page2'].h1.aiSuggestion).to.equal('AI Suggested H1 2');
+
+        // Verify logging for removed tags
+        expect(log.info).to.have.been.calledWith('Removing description tag from /page1 as it doesn\'t have aiSuggestion.');
+        expect(log.info).to.have.been.calledWith('Removing h1 tag from /page1 as it doesn\'t have aiSuggestion.');
+      });
+
+      it('should remove entire endpoint if no tags have aiSuggestion', async () => {
+        // Setup detectedTags with an endpoint that has no aiSuggestion
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Original Title', issue: 'Title too short' },
+            description: { tagContent: 'Original Description', issue: 'Description too short' },
+          },
+          '/page2': {
+            title: { tagContent: 'Page 2 Title', issue: 'Title too long' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+        };
+
+        // Setup Genvar response with no aiSuggestion for /page1
+        genvarClientStub.generateSuggestions.resolves({
+          '/page2': {
+            title: {
+              aiSuggestion: 'AI Suggested Title 2',
+              aiRationale: 'AI Rationale for title 2',
+            },
+          },
+          // /page1 is not in the response, so no aiSuggestion for any of its tags
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that /page1 has all its tags removed (empty object)
+        expect(response['/page1']).to.deep.equal({});
+        expect(response['/page2'].title.aiSuggestion).to.equal('AI Suggested Title 2');
+
+        // Verify logging for removed tags
+        expect(log.info).to.have.been.calledWith('Removing title tag from /page1 as it doesn\'t have aiSuggestion.');
+        expect(log.info).to.have.been.calledWith('Removing description tag from /page1 as it doesn\'t have aiSuggestion.');
+      });
+
+      it('should preserve tags with aiSuggestion and remove only those without', async () => {
+        // Setup detectedTags with mixed scenarios
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Original Title', issue: 'Title too short' },
+            description: { tagContent: 'Original Description', issue: 'Description too short' },
+            h1: { tagContent: 'Original H1', issue: 'H1 too short' },
+          },
+        };
+
+        // Setup extractedTags with s3key for the endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+        };
+
+        // Setup Genvar response with aiSuggestion for title and h1, but not description
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            title: {
+              aiSuggestion: 'AI Suggested Title',
+              aiRationale: 'AI Rationale for title',
+            },
+            h1: {
+              aiSuggestion: 'AI Suggested H1',
+              aiRationale: 'AI Rationale for h1',
+            },
+            // description is missing from response
+          },
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that tags with aiSuggestion are preserved
+        expect(response['/page1'].title.aiSuggestion).to.equal('AI Suggested Title');
+        expect(response['/page1'].title.aiRationale).to.equal('AI Rationale for title');
+        expect(response['/page1'].h1.aiSuggestion).to.equal('AI Suggested H1');
+        expect(response['/page1'].h1.aiRationale).to.equal('AI Rationale for h1');
+
+        // Verify that description is removed
+        expect(response['/page1'].description).to.be.undefined;
+
+        // Verify logging for removed tag
+        expect(log.info).to.have.been.calledWith('Removing description tag from /page1 as it doesn\'t have aiSuggestion.');
+      });
+
+      it('should handle empty response from Genvar API', async () => {
+        // Setup detectedTags with some content
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Original Title', issue: 'Title too short' },
+            description: { tagContent: 'Original Description', issue: 'Description too short' },
+          },
+        };
+
+        // Setup extractedTags with s3key for the endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+        };
+
+        // Setup empty Genvar response
+        genvarClientStub.generateSuggestions.resolves({});
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that all tags are removed since no aiSuggestion is provided
+        expect(response['/page1'].title).to.be.undefined;
+        expect(response['/page1'].description).to.be.undefined;
+
+        // Verify logging for removed tags
+        expect(log.info).to.have.been.calledWith('Removing title tag from /page1 as it doesn\'t have aiSuggestion.');
+        expect(log.info).to.have.been.calledWith('Removing description tag from /page1 as it doesn\'t have aiSuggestion.');
+      });
+
+      it('should remove all duplicate tag instances when one instance lacks AI suggestion', async () => {
+        // Setup detectedTags with duplicate titles across multiple pages
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+          },
+          '/page2': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+          },
+          '/page3': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+          '/page3': { s3key: 'page3-key' },
+        };
+
+        // Setup Genvar response with AI suggestion for only some duplicate instances
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            title: {
+              aiSuggestion: 'AI Suggested Title',
+              aiRationale: 'AI Rationale for title',
+            },
+          },
+          // /page2 and /page3 don't have AI suggestions
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that ALL duplicate instances are removed (even the one with AI suggestion)
+        expect(response['/page1'].title).to.be.undefined;
+        expect(response['/page2'].title).to.be.undefined;
+        expect(response['/page3'].title).to.be.undefined;
+
+        // Verify logging for removed duplicate tags
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page1 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page2 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page3 (duplicate group without complete AI suggestions).');
+      });
+
+      it('should keep all duplicate tag instances when all have AI suggestions', async () => {
+        // Setup detectedTags with duplicate descriptions across multiple pages
+        allTags.detectedTags = {
+          '/page1': {
+            description: { tagContent: 'Duplicate Description', issue: 'Duplicate Description' },
+          },
+          '/page2': {
+            description: { tagContent: 'Duplicate Description', issue: 'Duplicate Description' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+        };
+
+        // Setup Genvar response with AI suggestions for ALL duplicate instances
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            description: {
+              aiSuggestion: 'AI Suggested Description 1',
+              aiRationale: 'AI Rationale for description 1',
+            },
+          },
+          '/page2': {
+            description: {
+              aiSuggestion: 'AI Suggested Description 2',
+              aiRationale: 'AI Rationale for description 2',
+            },
+          },
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that ALL duplicate instances are kept since all have AI suggestions
+        expect(response['/page1'].description.aiSuggestion).to.equal('AI Suggested Description 1');
+        expect(response['/page2'].description.aiSuggestion).to.equal('AI Suggested Description 2');
+      });
+
+      it('should handle mixed duplicate and non-duplicate tags correctly', async () => {
+        // Setup detectedTags with both duplicate and non-duplicate tags
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+            description: { tagContent: 'Unique Description 1', issue: 'Description too short' },
+          },
+          '/page2': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+            h1: { tagContent: 'Unique H1 2', issue: 'H1 too short' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+        };
+
+        // Setup Genvar response with AI suggestions only for page1's title (duplicate)
+        // and page2's h1 (non-duplicate)
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            title: {
+              aiSuggestion: 'AI Suggested Title',
+              aiRationale: 'AI Rationale for title',
+            },
+            // description doesn't have AI suggestion
+          },
+          '/page2': {
+            // title doesn't have AI suggestion
+            h1: {
+              aiSuggestion: 'AI Suggested H1',
+              aiRationale: 'AI Rationale for h1',
+            },
+          },
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that duplicate titles are removed from both pages
+        // (because one instance lacks AI suggestion)
+        expect(response['/page1'].title).to.be.undefined;
+        expect(response['/page2'].title).to.be.undefined;
+
+        // Verify that non-duplicate description is removed from page1 only
+        expect(response['/page1'].description).to.be.undefined;
+
+        // Verify that non-duplicate h1 with AI suggestion is kept
+        expect(response['/page2'].h1.aiSuggestion).to.equal('AI Suggested H1');
+
+        // Verify logging
+        expect(log.info).to.have.been.calledWith('Removing description tag from /page1 as it doesn\'t have aiSuggestion.');
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page1 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page2 (duplicate group without complete AI suggestions).');
+      });
+
+      it('should handle multiple different duplicate groups correctly', async () => {
+        // Setup detectedTags with two different duplicate groups
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Duplicate Title A', issue: 'Duplicate Title' },
+            h1: { tagContent: 'Duplicate H1 B', issue: 'Duplicate H1' },
+          },
+          '/page2': {
+            title: { tagContent: 'Duplicate Title A', issue: 'Duplicate Title' },
+          },
+          '/page3': {
+            h1: { tagContent: 'Duplicate H1 B', issue: 'Duplicate H1' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+          '/page3': { s3key: 'page3-key' },
+        };
+
+        // Setup Genvar response with AI suggestions for all titles but not h1s
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            title: {
+              aiSuggestion: 'AI Suggested Title A1',
+              aiRationale: 'AI Rationale for title A1',
+            },
+            // h1 doesn't have AI suggestion
+          },
+          '/page2': {
+            title: {
+              aiSuggestion: 'AI Suggested Title A2',
+              aiRationale: 'AI Rationale for title A2',
+            },
+          },
+          '/page3': {
+            h1: {
+              aiSuggestion: 'AI Suggested H1 B',
+              aiRationale: 'AI Rationale for h1 B',
+            },
+          },
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that duplicate titles with all AI suggestions are kept
+        expect(response['/page1'].title.aiSuggestion).to.equal('AI Suggested Title A1');
+        expect(response['/page2'].title.aiSuggestion).to.equal('AI Suggested Title A2');
+
+        // Verify that duplicate h1s are removed from all pages
+        // (because page1's h1 lacks AI suggestion)
+        expect(response['/page1'].h1).to.be.undefined;
+        expect(response['/page3'].h1).to.be.undefined;
+
+        // Verify logging for removed duplicate h1 group
+        expect(log.debug).to.have.been.calledWith('Removing h1 tag from /page1 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith('Removing h1 tag from /page3 (duplicate group without complete AI suggestions).');
+      });
+
+      it('should handle duplicate tags with empty tagContent gracefully', async () => {
+        // Setup detectedTags with duplicate tags that have no tagContent
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: '', issue: 'Duplicate Title' },
+          },
+          '/page2': {
+            title: { tagContent: '', issue: 'Duplicate Title' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+        };
+
+        // Setup Genvar response with no AI suggestions
+        genvarClientStub.generateSuggestions.resolves({});
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that tags without tagContent are removed individually (not as duplicate group)
+        expect(response['/page1'].title).to.be.undefined;
+        expect(response['/page2'].title).to.be.undefined;
+
+        // Should log as individual removals since tagContent is empty
+        expect(log.debug).to.not.have.been.calledWith(sinon.match(/duplicate group/));
+      });
+
+      it('should handle case-insensitive duplicate detection', async () => {
+        // Setup detectedTags with duplicates that have different casing
+        allTags.detectedTags = {
+          '/page1': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+          },
+          '/page2': {
+            title: { tagContent: 'Duplicate Title', issue: 'Duplicate Title' },
+          },
+        };
+
+        // Setup extractedTags with s3key for each endpoint
+        allTags.extractedTags = {
+          '/page1': { s3key: 'page1-key' },
+          '/page2': { s3key: 'page2-key' },
+        };
+
+        // Setup Genvar response with AI suggestion for only one instance
+        genvarClientStub.generateSuggestions.resolves({
+          '/page1': {
+            title: {
+              aiSuggestion: 'AI Suggested Title',
+              aiRationale: 'AI Rationale',
+            },
+          },
+          // /page2 doesn't have AI suggestion
+        });
+
+        const response = await metatagsAutoSuggest(allTags, context, siteStub);
+
+        // Verify that both instances are removed since they share the same tagContent
+        expect(response['/page1'].title).to.be.undefined;
+        expect(response['/page2'].title).to.be.undefined;
+
+        // Verify logging for duplicate group removal
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page1 (duplicate group without complete AI suggestions).');
+        expect(log.debug).to.have.been.calledWith('Removing title tag from /page2 (duplicate group without complete AI suggestions).');
       });
     });
   });

@@ -16,7 +16,7 @@ import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import { MockContextBuilder } from '../../shared.js';
-import { cdnLogAnalysisRunner } from '../../../src/cdn-analysis/handler.js';
+import { cdnLogAnalysisRunner, cdnLogsAnalysisRunner } from '../../../src/cdn-analysis/handler.js';
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -93,6 +93,7 @@ describe('CDN Analysis Handler', () => {
         getLlmoCdnBucketConfig: () => ({ bucketName: 'cdn-logs-adobe-dev' }),
       }),
       getOrganizationId: sandbox.stub().returns('test-org-id'),
+      getId: sandbox.stub().returns('test-site-id'),
     };
 
     context = new MockContextBuilder()
@@ -129,8 +130,15 @@ describe('CDN Analysis Handler', () => {
   });
 
   describe('Handler test for cdn analysis', () => {
-    it('successfully processes CDN analysis with valid configuration', async () => {
+    it('successfully processes CDN analysis with valid configuration', async function () {
       const result = await cdnLogAnalysisRunner('https://example.com', context, site);
+      expect(result.auditResult).to.include.keys('database', 'providers', 'completedAt');
+      expect(result.auditResult.database).to.equal('cdn_logs_example_com');
+      expect(result.auditResult.providers).to.be.an('array');
+    });
+
+    it('successfully processes CDN analysis with valid consolidated bucket configuration', async function () {
+      const result = await cdnLogsAnalysisRunner('https://example.com', context, site);
       expect(result.auditResult).to.include.keys('database', 'providers', 'completedAt');
       expect(result.auditResult.database).to.equal('cdn_logs_example_com');
       expect(result.auditResult.providers).to.be.an('array');
@@ -240,6 +248,23 @@ describe('CDN Analysis Handler', () => {
     it('pads provided single-digit month/day/hour in auditContext in output paths', async () => {
       const auditContext = {
         year: 2025, month: 9, day: 7, hour: 4,
+      };
+
+      const result = await cdnLogAnalysisRunner('https://example.com', context, site, auditContext);
+
+      expect(result.fullAuditRef).to.include('2025/09/07/04');
+
+      expect(result.auditResult.providers).to.be.an('array');
+      if (result.auditResult.providers.length > 0) {
+        expect(result.auditResult.providers[0].output).to.include('2025/09/07/04');
+        expect(result.auditResult.providers[0].outputReferral).to.include('2025/09/07/04');
+      }
+    });
+
+    it('should allow full day to be processed', async () => {
+      const auditContext = {
+        year: 2025, month: 9, day: 7, hour: 4,
+        processFullDay: true,
       };
 
       const result = await cdnLogAnalysisRunner('https://example.com', context, site, auditContext);

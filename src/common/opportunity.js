@@ -85,11 +85,17 @@ export async function convertToOpportunity(auditUrl, auditData, context, createO
       if (auditType === Audit.AUDIT_TYPES.CWV
           || auditType === Audit.AUDIT_TYPES.META_TAGS
           || auditType === Audit.AUDIT_TYPES.SECURITY_CSP
+          || auditType === Audit.AUDIT_TYPES.PRODUCT_METATAGS
           || auditType === Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES) {
         opportunity.setData({
           ...opportunity.getData(),
           ...props, // kpiDeltas
           dataSources: opportunityInstance.data?.dataSources,
+        });
+      } else if (auditType === Audit.AUDIT_TYPES.PRERENDER) {
+        opportunity.setData({
+          ...opportunity.getData(),
+          ...opportunityInstance.data,
         });
       } else {
         opportunity.setData({

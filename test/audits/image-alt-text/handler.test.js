@@ -145,10 +145,10 @@ describe('Image Alt Text Handler', () => {
         'audit-id',
         context,
       );
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Processing alt-text with Mystique for site site-id',
       );
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Sent 2 pages to Mystique for generating alt-text suggestions',
       );
     });
@@ -259,7 +259,7 @@ describe('Image Alt Text Handler', () => {
       await handlerModule.processAltTextWithMystique(context);
 
       expect(clearAltTextSuggestionsStub).to.not.have.been.called;
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         '[alt-text]: Creating new opportunity for site site-id',
       );
     });

@@ -388,11 +388,11 @@ async function addPValues(experimentData) {
       };
     }
   }
-  log.info('Lambda Payload: ', JSON.stringify(lambdaPayload, null, 2));
+  log.debug('Lambda Payload: ', JSON.stringify(lambdaPayload, null, 2));
   let lambdaResult;
   try {
     const lambdaResponse = await invokeLambdaFunction(lambdaPayload);
-    log.info('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
+    log.debug('Lambda Response: ', JSON.stringify(lambdaResponse, null, 2));
     const lambdaResponseBody = typeof (lambdaResponse.body) === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
     lambdaResult = lambdaResponseBody.result;
   } catch (error) {
@@ -612,7 +612,7 @@ function filterMultiPageExperimentsByThreshold(
       const dailyViews = Math.ceil(experimentViews / experimentDays);
       if (multiPageExperimentNames.includes(id)
         && dailyViews < threshold) {
-        log.info(`Filtering out experiment ${id} from url ${url} as daily views ${dailyViews} are less than threshold ${threshold}`);
+        log.debug(`Filtering out experiment ${id} from url ${url} as daily views ${dailyViews} are less than threshold ${threshold}`);
       } else {
         newUrlInsights.push(exp);
       }
@@ -629,12 +629,12 @@ function filterMultiPageExperimentsByThreshold(
 
 async function processExperimentRUMData(experimentInsights, context, days) {
   if (Object.keys(experimentInsights).length === 0) {
-    log.info('No Experiment Insights found');
+    log.debug('No Experiment Insights found');
     return [];
   }
-  log.info('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
+  log.debug('Experiment Insights: ', JSON.stringify(experimentInsights, null, 2));
   const multiPageExperimentNames = getMultiPageExperimentNames(experimentInsights);
-  log.info('Multi-Page Experiment Names: ', multiPageExperimentNames.join(', '));
+  log.debug('Multi-Page Experiment Names: ', multiPageExperimentNames.join(', '));
   const dailyPageViewsThreshold = context.env.MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD
   || DEFAULT_MULTIPAGE_EXPERIMENT_DAILY_PAGE_VIEWS_THRESHOLD;
   filterMultiPageExperimentsByThreshold(
@@ -650,7 +650,7 @@ async function processExperimentRUMData(experimentInsights, context, days) {
 
 export async function processAudit(auditURL, context, site, days) {
   log = context.log;
-  log.info(`Processing ESS Experimentation audit for ${auditURL}`);
+  log.debug(`Processing ESS Experimentation audit for ${auditURL}`);
   const rumAPIClient = RUMAPIClient.createFrom(context);
   const options = {
     domain: auditURL,

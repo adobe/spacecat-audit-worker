@@ -654,3 +654,4 @@ Here's how messages flow between workers in a step-based audit:
 ```
 
 Each message preserves the `auditContext` to maintain the step chain. The `next` field determines which step runs next, while `auditId` and `fullAuditRef` track the audit state across workers.
+

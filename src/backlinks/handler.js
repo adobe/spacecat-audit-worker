@@ -49,8 +49,6 @@ async function filterOutValidBacklinks(backlinks, log) {
 
   const backlinkStatuses = [];
   for (const backlink of backlinks) {
-    log.info(`Checking backlink: ${backlink.url_to}`);
-
     // eslint-disable-next-line no-await-in-loop
     const result = await isStillBrokenBacklink(backlink);
     backlinkStatuses.push(result);
@@ -70,7 +68,7 @@ export async function brokenBacklinksAuditRunner(auditUrl, context, site) {
       result,
       fullAuditRef,
     } = await ahrefsAPIClient.getBrokenBacklinks(auditUrl);
-    log.info(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditUrl}`);
+    log.debug(`Found ${result?.backlinks?.length} broken backlinks for siteId: ${siteId} and url ${auditUrl}`);
     const excludedURLs = site.getConfig().getExcludedURLs('broken-backlinks');
     const filteredBacklinks = result?.backlinks?.filter(
       (backlink) => !excludedURLs?.includes(backlink.url_to),

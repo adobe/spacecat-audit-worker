@@ -87,7 +87,7 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.be.callCount(5);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
     // with empty guidance due to no scraping
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
     // asserting spacecat to mystique message
     const [queueArg, messageArg] = context.sqs.sendMessage.getCall(4).args;
     expect(queueArg).to.equal('spacecat-to-mystique');
@@ -101,7 +101,7 @@ describe('createLowConversionOpportunities handler method', () => {
     await createLowConversionOpportunities(auditUrl, auditData, scrapeData, context);
     // with BTF guidance
     // expect(dataAccessStub.Opportunity.create).to.not.have.been.called;
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should create new forms opportunity with scraped data available not matched', async () => {
@@ -112,7 +112,7 @@ describe('createLowConversionOpportunities handler method', () => {
     await createLowConversionOpportunities(auditUrl, auditData2, scrapeData, context);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData2);
     // with empty guidance due to scrapedStatus = false
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should create new forms opportunity with scraped data available with all field labels containing search', async () => {
@@ -130,7 +130,7 @@ describe('createLowConversionOpportunities handler method', () => {
     // with large form guidance
     expectedOpportunityData.data.scrapedStatus = true;
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(expectedOpportunityData);
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should create new forms opportunity with scraped data available and matched with Generic guidance', async () => {
@@ -142,7 +142,7 @@ describe('createLowConversionOpportunities handler method', () => {
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData4);
 
     // with Generic guidance
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should use existing opportunity', async () => {
@@ -156,7 +156,7 @@ describe('createLowConversionOpportunities handler method', () => {
     );
     expect(formsOppty.setUpdatedBy).to.be.calledWith('system');
     expect(formsOppty.save).to.be.callCount(1);
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should use existing opportunity with form details', async () => {
@@ -186,7 +186,7 @@ describe('createLowConversionOpportunities handler method', () => {
     );
     expect(formsOppty.setUpdatedBy).to.be.calledWith('system');
     expect(formsOppty.save).to.be.callCount(1);
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should throw error if fetching opportunity fails', async () => {
@@ -222,7 +222,7 @@ describe('createLowConversionOpportunities handler method', () => {
     );
     expect(dataAccessStub.Opportunity.create).to.be.callCount(1);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData5);
-    expect(logStub.info).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
+    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
   });
 
   it('should not create low conversion opportunity if another opportunity already exists', async () => {

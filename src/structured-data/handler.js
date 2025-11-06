@@ -58,7 +58,7 @@ export async function processStructuredData(finalUrl, context, pages, scrapeCach
     scraperPagesWithIssues,
   );
 
-  log.info(`SDA: ${gscPagesWithIssues.length} issues from GSC, ${scraperPagesWithIssues.length} issues from scrape. ${pagesWithIssues.length} issues after deduplication`);
+  log.debug(`SDA: ${gscPagesWithIssues.length} issues from GSC, ${scraperPagesWithIssues.length} issues from scrape. ${pagesWithIssues.length} issues after deduplication`);
   log.debug('SDA: Deduplicated issues', JSON.stringify(pagesWithIssues));
 
   // Abort early if no issues are found
@@ -145,7 +145,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
 export async function importTopPages(context) {
   const { site, finalUrl, log } = context;
 
-  log.info(`SDA: Importing top pages for ${finalUrl}`);
+  log.debug(`SDA: Importing top pages for ${finalUrl}`);
 
   const s3BucketPath = `scrapes/${site.getId()}/`;
   return {
@@ -170,7 +170,7 @@ export async function submitForScraping(context) {
     throw new Error('No top pages found for site');
   }
 
-  log.info(`SDA: Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}`);
+  log.debug(`SDA: Submitting for scraping ${topPages.length} top pages for site ${site.getId()}, finalUrl: ${finalUrl}`);
 
   return {
     urls: topPages.map((topPage) => ({ url: topPage.getUrl() })),
@@ -237,7 +237,7 @@ export async function runAuditAndGenerateSuggestions(context) {
     const endTime = process.hrtime(startTime);
     const elapsedSeconds = endTime[0] + endTime[1] / 1e9;
     const formattedElapsed = elapsedSeconds.toFixed(2);
-    log.info(`SDA: Structured data audit completed in ${formattedElapsed} seconds for ${finalUrl}`);
+    log.debug(`SDA: Structured data audit completed in ${formattedElapsed} seconds for ${finalUrl}`);
 
     return {
       fullAuditRef: finalUrl,

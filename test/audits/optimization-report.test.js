@@ -71,10 +71,10 @@ describe('Optimization Report Handler', () => {
       );
 
       // Verify logging
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         'Processing optimization report callback for site: test-site-123 with report id: report-001',
       );
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         'Successfully sent message to report jobs queue for site: test-site-123 and report id: report-001',
       );
     });
@@ -236,7 +236,7 @@ describe('Optimization Report Handler', () => {
         'https://sqs.us-east-1.amazonaws.com/123456789012/report-jobs-queue',
         message,
       );
-      expect(context.log.info).to.have.been.calledWith(
+      expect(context.log.debug).to.have.been.calledWith(
         'Processing optimization report callback for site: undefined with report id: undefined',
       );
     });

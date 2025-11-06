@@ -35,6 +35,7 @@ Resources:
           SHAREPOINT_CLIENT_SECRET: !Ref SHAREPOINT_CLIENT_SECRET
           SHAREPOINT_DOMAIN_ID: !Ref SHAREPOINT_DOMAIN_ID
           ADMIN_HLX_API_KEY: !Ref ADMIN_HLX_API_KEY
+          SCRAPE_JOB_CONFIGURATION: !Ref SCRAPE_JOB_CONFIGURATION
       Role: arn:aws:iam::682033462621:role/spacecat-role-lambda-generic
       Events:
         ApiEvent:
@@ -117,3 +118,6 @@ Parameters:
   ADMIN_HLX_API_KEY:
     Type: String
     Description: Admin HLX API Key
+  SCRAPE_JOB_CONFIGURATION:
+    Type: String
+    Description: Scrape job configuration JSON
