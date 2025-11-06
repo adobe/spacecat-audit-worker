@@ -97,6 +97,24 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
     log.error(`No Scraped tags found in S3 ${key} object`);
     return null;
   }
+
+  // Check for error pages by content
+  const { tags } = object.scrapeResult;
+  const title = tags.title?.toLowerCase() || '';
+  const h1Text = Array.isArray(tags.h1) ? tags.h1[0]?.toLowerCase()
+   || '' : tags.h1?.toLowerCase() || '';
+  const httpStatusCodes = ['400', '401', '403', '404', '405', '500', '502', '503', '504'];
+
+  const hasErrorKeyword = title.includes('error') || h1Text.includes('error');
+  const hasStatusCode = httpStatusCodes.some((code) => title.includes(code)
+   || h1Text.includes(code));
+
+  if (hasErrorKeyword || hasStatusCode) {
+    log.info(`[metatags] Skipping error page for ${url} 
+      (title: "${tags.title}", h1: "${Array.isArray(tags.h1) ? tags.h1[0] : tags.h1}")`);
+    return null;
+  }
+
   // if the scrape result is empty, skip the page for metatags audit
   if (object?.scrapeResult?.rawBody?.length < 300) {
     log.error(`Scrape result is empty for ${key}`);
