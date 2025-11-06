@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+
 export function createInDepthReportOpportunity(week, year, deviceType = 'Desktop') {
   const capitalizedDevice = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
   return {
@@ -71,12 +73,12 @@ export function createBaseReportOpportunity(week, year, deviceType = 'Desktop') 
 }
 
 export function createReportOpportunitySuggestionInstance(suggestionValue, context) {
-  const { Suggestion } = context?.dataAccess || {};
   return [
     {
       type: 'CODE_CHANGE',
       rank: 1,
-      status: context?.site?.requiresValidation ? Suggestion?.STATUSES?.NOT_VALIDATED || 'NOT_VALIDATED' : Suggestion?.STATUSES?.NEW || 'NEW',
+      status: context?.site?.requiresValidation ? SuggestionDataAccess.STATUSES.NOT_VALIDATED
+        : SuggestionDataAccess.STATUSES.NEW,
       data: {
         suggestionValue,
       },

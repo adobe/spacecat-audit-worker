@@ -16,6 +16,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { describe } from 'mocha';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { mapToPaidSuggestion, mapToPaidOpportunity } from '../../../src/paid-cookie-consent/guidance-opportunity-mapper.js';
 
 const TEST_SITE_ID = 'some-id';
@@ -40,7 +41,16 @@ describe('Paid Cookie Consent opportunity mapper', () => {
   });
   it('handles plain markdown string with requiresValidation=true', async () => {
     const body = 'Simple markdown';
-    const context = { env: {}, dataAccess: {}, site: { requiresValidation: true } };
+    const context = { 
+      env: {}, 
+      dataAccess: { 
+        Suggestion: { 
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES,
+        } 
+      }, 
+      site: { requiresValidation: true } 
+    };
     const guidance = { body: { markdown: body }, metadata: { scrape_job_id: 'test-job' } };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
     expect(result.data.suggestionValue).to.include('Simple markdown');
@@ -49,7 +59,16 @@ describe('Paid Cookie Consent opportunity mapper', () => {
   
   it('handles plain markdown string with requiresValidation=false', async () => {
     const body = 'Simple markdown';
-    const context = { env: {}, dataAccess: {}, site: { requiresValidation: false } };
+    const context = { 
+      env: {}, 
+      dataAccess: { 
+        Suggestion: { 
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES,
+        } 
+      }, 
+      site: { requiresValidation: false } 
+    };
     const guidance = { body: { markdown: body }, metadata: { scrape_job_id: 'test-job' } };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
     expect(result.data.suggestionValue).to.include('Simple markdown');
@@ -58,7 +77,16 @@ describe('Paid Cookie Consent opportunity mapper', () => {
 
   it('handles plain markdown string with double-escaped newlines', async () => {
     const body = 'Line1\\nLine2\\nLine3';
-    const context = { env: {}, dataAccess: {}, site: { requiresValidation: true } };
+    const context = { 
+      env: {}, 
+      dataAccess: { 
+        Suggestion: { 
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES,
+        } 
+      }, 
+      site: { requiresValidation: true } 
+    };
     const guidance = { body: { markdown: body }, metadata: { scrape_job_id: 'test-job' } };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
     expect(result.data.suggestionValue).to.include(`Line1
@@ -69,7 +97,16 @@ Line3`);
 
   it('handles serialized JSON body with markdown', async () => {
     const markdown = 'Markup with\nnewlines';
-    const context = { env: {}, dataAccess: {}, site: { requiresValidation: true } };
+    const context = { 
+      env: {}, 
+      dataAccess: { 
+        Suggestion: { 
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES,
+        } 
+      }, 
+      site: { requiresValidation: true } 
+    };
     const guidance = { body: { markdown }, metadata: { scrape_job_id: 'test-job' } };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
     expect(result.data.suggestionValue).to.include('Markup with\nnewlines');
@@ -78,7 +115,16 @@ Line3`);
 
   it('handles serialized JSON body with double-escaped newlines in markdown', async () => {
     const markdown = 'Markup with\\nnewlines';
-    const context = { env: {}, dataAccess: {}, site: { requiresValidation: false } };
+    const context = { 
+      env: {}, 
+      dataAccess: { 
+        Suggestion: { 
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES,
+        } 
+      }, 
+      site: { requiresValidation: false } 
+    };
     const guidance = { body: { markdown }, metadata: { scrape_job_id: 'test-job' } };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
     expect(result.data.suggestionValue).to.include(`Markup with
@@ -87,7 +133,16 @@ newlines`);
   });
 
   it('handles JSON object body directly', async () => {
-    const context = { env: {}, dataAccess: {}, site: { requiresValidation: true } };
+    const context = { 
+      env: {}, 
+      dataAccess: { 
+        Suggestion: { 
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES,
+        } 
+      }, 
+      site: { requiresValidation: true } 
+    };
     const guidance = {
       body: {
         markdown: 'Direct JSON object markdown',

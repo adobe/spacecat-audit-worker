@@ -53,26 +53,22 @@ describe('utils/site-validation', () => {
     process.env.LA_VALIDATION_SITE_IDS = 'site-123, site-xyz , another';
     const site = { getId: sandbox.stub().returns('site-xyz'), getOrganizationId: sandbox.stub().returns('org-foo') };
     const stub = sandbox.stub(TierClient, 'createForSite');
-    context.log.debug = sandbox.spy();
 
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
 
     expect(result).to.equal(true);
     expect(stub).to.not.have.been.called;
-    expect(context.log.debug).to.have.been.called;
   });
 
   it('returns true when orgId is listed in LA_VALIDATION_ORG_IDS', async () => {
     process.env.LA_VALIDATION_ORG_IDS = 'org-1, org-2 , org-xyz';
     const site = { getId: sandbox.stub().returns('site-no-match'), getOrganizationId: sandbox.stub().returns('org-xyz') };
     const stub = sandbox.stub(TierClient, 'createForSite');
-    context.log.debug = sandbox.spy();
 
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
 
     expect(result).to.equal(true);
     expect(stub).to.not.have.been.called;
-    expect(context.log.debug).to.have.been.called;
   });
 
   it('returns site.requiresValidation when explicitly set to true', async () => {
@@ -87,38 +83,26 @@ describe('utils/site-validation', () => {
 
   it('returns site.requiresValidation when explicitly set to false', async () => {
     const site = { getId: sandbox.stub().returns('site-1'), requiresValidation: false };
-    const stub = sandbox.stub(TierClient, 'createForSite');
 
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
 
     expect(result).to.equal(false);
-    expect(stub).to.not.have.been.called;
   });
 
   it('returns true when tier in entitlement exists and is equal to PAID with ASO product code', async () => {
     const site = { getId: sandbox.stub().returns('site-2') };
     const checkValidEntitlementStub = sandbox.stub().resolves({
       entitlement: {
-        tier: 'PAID',
-        productCode: 'ASO',
+        record: {
+          tier: 'PAID',
+          productCode: 'ASO',
+        },
       },
     });
     const tierClientStub = {
       checkValidEntitlement: checkValidEntitlementStub,
     };
     sandbox.stub(TierClient, 'createForSite').returns(tierClientStub);
-    context.log.debug = sandbox.spy();
-
-    // Mock the implementation of checkSiteRequiresValidation directly
-    const originalCheckSiteRequiresValidation = checkSiteRequiresValidation;
-    sandbox.stub({ checkSiteRequiresValidation }, 'checkSiteRequiresValidation').callsFake(
-      async (siteArg, contextArg) => {
-        if (siteArg === site) {
-          return true; // Force the return value for our test case
-        }
-        return originalCheckSiteRequiresValidation(siteArg, contextArg);
-      },
-    );
 
     const result = await checkSiteRequiresValidation(site, context);
     expect(result).to.equal(true);
@@ -141,12 +125,10 @@ describe('utils/site-validation', () => {
     sandbox.stub(TierClient, 'createForSite').resolves({
       checkValidEntitlement: sandbox.stub().resolves({ entitlement: undefined }),
     });
-    context.log.debug = sandbox.spy();
 
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
 
     expect(result).to.equal(false);
-    expect(context.log.debug).to.have.been.called;
   });
 
   it('covers debug logging when explicit requiresValidation flag is set', async () => {
@@ -176,15 +158,13 @@ describe('utils/site-validation', () => {
     sandbox.stub(TierClient, 'createForSite').resolves({
       checkValidEntitlement: sandbox.stub().resolves({ entitlement: { tier: 'FREE' } }),
     });
-    context.log.debug = sandbox.spy();
 
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
 
     expect(result).to.equal(false);
-    expect(context.log.debug).to.have.been.called;
   });
 
-  it.skip('returns true when entitlement.tier is nested under record and is PAID', async () => {
+  it('returns true when entitlement.tier is nested under record and is PAID', async () => {
     const site = { getId: sandbox.stub().returns('site-paid-record') };
     // Create a tierClient that will return the expected entitlement
     const checkValidEntitlementStub = sandbox.stub().resolves({

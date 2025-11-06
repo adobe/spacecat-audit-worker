@@ -19,6 +19,7 @@ import nock from 'nock';
 import { describe } from 'mocha';
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import handler from '../../../src/paid-cookie-consent/guidance-handler.js';
 
 use(sinonChai);
@@ -65,7 +66,11 @@ describe('Paid Cookie Consent Guidance Handler', () => {
       error: sandbox.stub(),
       warn: sandbox.stub(),
     };
-    Suggestion = { create: sandbox.stub().resolves() };
+    Suggestion = { 
+      create: sandbox.stub().resolves(),
+      STATUSES: SuggestionDataAccess.STATUSES,
+      TYPES: SuggestionDataAccess.TYPES,
+    };
     opportunityInstance = {
       getId: () => 'opptyId',
       getSuggestions: async () => [],

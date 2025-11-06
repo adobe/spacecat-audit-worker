@@ -114,7 +114,7 @@ describe('Accessibility Report Opportunity Utils', () => {
   describe('createReportOpportunitySuggestionInstance', () => {
     it('should create correct suggestion instance structure with requiresValidation=true', () => {
       const suggestionValue = 'Test accessibility suggestion content';
-      const context = { site: { requiresValidation: true } };
+      const context = { site: { requiresValidation: true }, dataAccess: {} };
 
       const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
 
@@ -123,6 +123,30 @@ describe('Accessibility Report Opportunity Utils', () => {
           type: 'CODE_CHANGE',
           rank: 1,
           status: 'NOT_VALIDATED',
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should use fallback string literals when Suggestion.STATUSES is undefined', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      // Create a context with dataAccess.Suggestion but no STATUSES property
+      const context = { 
+        site: { requiresValidation: true }, 
+        dataAccess: { 
+          Suggestion: { /* No STATUSES property */ } 
+        } 
+      };
+
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'NOT_VALIDATED', // Should use the fallback string literal
           data: {
             suggestionValue: 'Test accessibility suggestion content',
           },
@@ -141,6 +165,141 @@ describe('Accessibility Report Opportunity Utils', () => {
           type: 'CODE_CHANGE',
           rank: 1,
           status: 'NEW',
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should use fallback string literals when Suggestion.STATUSES is undefined and requiresValidation=false', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      // Create a context with dataAccess.Suggestion but no STATUSES property
+      const context = { 
+        site: { requiresValidation: false }, 
+        dataAccess: { 
+          Suggestion: { /* No STATUSES property */ } 
+        } 
+      };
+
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'NEW', // Should use the fallback string literal
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should use fallback string literals when Suggestion.TYPES is undefined', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      // Create a context with dataAccess.Suggestion with STATUSES but no TYPES property
+      const context = { 
+        site: { requiresValidation: true }, 
+        dataAccess: { 
+          Suggestion: { 
+            STATUSES: { 
+              NOT_VALIDATED: 'NOT_VALIDATED',
+              NEW: 'NEW'
+            }
+            /* No TYPES property */ 
+          } 
+        } 
+      };
+
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE', // Should use the fallback string literal
+          rank: 1,
+          status: 'NOT_VALIDATED',
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should use fallback string literals when Suggestion.TYPES.CODE_CHANGE is undefined', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      // Create a context with dataAccess.Suggestion with STATUSES and TYPES but no CODE_CHANGE property
+      const context = { 
+        site: { requiresValidation: true }, 
+        dataAccess: { 
+          Suggestion: { 
+            STATUSES: { 
+              NOT_VALIDATED: 'NOT_VALIDATED',
+              NEW: 'NEW'
+            },
+            TYPES: {
+              // No CODE_CHANGE property
+            }
+          } 
+        } 
+      };
+
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE', // Should use the fallback string literal
+          rank: 1,
+          status: 'NOT_VALIDATED',
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should handle undefined suggestionValue', () => {
+      const context = { site: { requiresValidation: true } };
+      const suggestion = createReportOpportunitySuggestionInstance(undefined, context);
+
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'NOT_VALIDATED',
+          data: {
+            suggestionValue: undefined,
+          },
+        },
+      ]);
+    });
+    
+    it('should handle null context', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, null);
+      
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'NEW', // Default to NEW when no context.site.requiresValidation
+          data: {
+            suggestionValue: 'Test accessibility suggestion content',
+          },
+        },
+      ]);
+    });
+    
+    it('should handle null context.dataAccess', () => {
+      const suggestionValue = 'Test accessibility suggestion content';
+      const context = { site: { requiresValidation: true }, dataAccess: null };
+      const suggestion = createReportOpportunitySuggestionInstance(suggestionValue, context);
+      
+      expect(suggestion).to.deep.equal([
+        {
+          type: 'CODE_CHANGE',
+          rank: 1,
+          status: 'NOT_VALIDATED',
           data: {
             suggestionValue: 'Test accessibility suggestion content',
           },

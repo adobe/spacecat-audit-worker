@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import { MockContextBuilder } from '../shared.js';
 import opportunitiesData from '../fixtures/experimentation-opportunities/opportunitiesdata.json' with { type: 'json' };
 import auditDataMock from '../fixtures/experimentation-opportunities/experimentation-opportunity-audit.json' with { type: 'json' };
@@ -747,7 +748,11 @@ describe('Experimentation Opportunities Tests', () => {
           allBySiteId: sinon.stub().resolves([]),
           create: sinon.stub().resolves(createdOpportunity),
         },
-        Suggestion: { create: sinon.stub().resolves({}) },
+        Suggestion: { 
+          create: sinon.stub().resolves({}),
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES
+        },
       };
 
       const result = await holcGuidanceHandler(message, context);
@@ -794,7 +799,11 @@ describe('Experimentation Opportunities Tests', () => {
         Opportunity: {
           allBySiteId: sinon.stub().resolves([existingOpportunity]),
         },
-        Suggestion: { create: sinon.stub().resolves({}) },
+        Suggestion: { 
+          create: sinon.stub().resolves({}),
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES
+        },
       };
 
       const result = await holcGuidanceHandler(message, context);
@@ -835,7 +844,11 @@ describe('Experimentation Opportunities Tests', () => {
           allBySiteId: sinon.stub().resolves([]),
           create: sinon.stub().resolves(createdOpportunity),
         },
-        Suggestion: { create: sinon.stub().resolves({}) },
+        Suggestion: { 
+          create: sinon.stub().resolves({}),
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES
+        },
       };
 
       await holcGuidanceHandler(message, context);

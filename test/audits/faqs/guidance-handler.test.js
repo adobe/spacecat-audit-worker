@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 use(sinonChai);
 
@@ -120,6 +121,10 @@ describe('FAQs guidance handler', () => {
       dataAccess: {
         Site,
         Opportunity,
+        Suggestion: {
+          STATUSES: SuggestionDataAccess.STATUSES,
+          TYPES: SuggestionDataAccess.TYPES
+        },
       },
     };
 

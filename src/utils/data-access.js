@@ -103,7 +103,7 @@ export async function getImsOrgId(site, dataAccess, log) {
  * @param {Object} params.context - The context object containing the data access object.
  * @returns {Promise<void>} - Resolves when the outdated suggestions are updated.
  */
-const handleOutdatedSuggestions = async ({
+export const handleOutdatedSuggestions = async ({
   context,
   existingSuggestions,
   newDataKeys,
@@ -221,7 +221,11 @@ export async function syncSuggestions({
         existing.setData(mergeDataFunction(existing.getData(), newDataItem));
         if ([SuggestionDataAccess.STATUSES.OUTDATED].includes(existing.getStatus())) {
           log.warn('Resolved suggestion found in audit. Possible regression.');
-          existing.setStatus(SuggestionDataAccess.STATUSES.NEW);
+          const { site } = context;
+          const requiresValidation = Boolean(site?.requiresValidation);
+          existing.setStatus(requiresValidation
+            ? SuggestionDataAccess.STATUSES.NOT_VALIDATED
+            : SuggestionDataAccess.STATUSES.NEW);
         }
         existing.setUpdatedBy('system');
         return existing.save();

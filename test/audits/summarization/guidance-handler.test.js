@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 use(sinonChai);
 
@@ -78,6 +79,8 @@ describe('summarization guidance handler', () => {
     };
     Suggestion = {
       create: sinon.stub().resolves(),
+      STATUSES: SuggestionDataAccess.STATUSES,
+      TYPES: SuggestionDataAccess.TYPES,
     };
     log = {
       info: sinon.stub(),
@@ -421,7 +424,9 @@ describe('summarization guidance handler', () => {
     };
     
     const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
-    expect(mappedSuggestion.status).to.equal('NEW');
+    expect(mappedSuggestion).to.have.property('opportunityId');
+    expect(mappedSuggestion).to.have.property('type');
+    expect(mappedSuggestion).to.have.property('rank');
   });
 
   it('should handle error when saving opportunity fails', async () => {

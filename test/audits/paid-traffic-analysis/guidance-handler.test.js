@@ -16,6 +16,7 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 import handler from '../../../src/paid-traffic-analysis/guidance-handler.js';
 
 use(sinonChai);
@@ -79,6 +80,8 @@ describe('Paid-traffic-analysis guidance handler', () => {
 
     Suggestion = {
       create: sandbox.stub().resolves(),
+      STATUSES: SuggestionDataAccess.STATUSES,
+      TYPES: SuggestionDataAccess.TYPES,
     };
 
     context = {
