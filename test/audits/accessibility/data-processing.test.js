@@ -5927,21 +5927,21 @@ describe('data-processing utility functions', () => {
         expect(firstMessage.type).to.equal('code');
         expect(firstMessage.siteId).to.equal('site-123');
         expect(firstMessage.forward.queue).to.equal('test-mystique-queue');
-        expect(firstMessage.forward.type).to.equal('codefix:accessibility');
-        expect(firstMessage.forward.siteId).to.equal('site-123');
-        expect(firstMessage.forward.auditId).to.equal('audit-123');
-        expect(firstMessage.forward.url).to.equal('https://example.com');
-        expect(firstMessage.forward.data.opportunityId).to.equal('opportunity-123');
-        expect(firstMessage.forward.data.suggestionIds).to.have.lengthOf(2);
-        expect(firstMessage.forward.data.suggestionIds).to.include('suggestion-123');
-        expect(firstMessage.forward.data.suggestionIds).to.include('suggestion-456');
+        expect(firstMessage.forward.payload.type).to.equal('codefix:accessibility');
+        expect(firstMessage.forward.payload.siteId).to.equal('site-123');
+        expect(firstMessage.forward.payload.auditId).to.equal('audit-123');
+        expect(firstMessage.forward.payload.url).to.equal('https://example.com');
+        expect(firstMessage.forward.payload.data.opportunityId).to.equal('opportunity-123');
+        expect(firstMessage.forward.payload.data.suggestionIds).to.have.lengthOf(2);
+        expect(firstMessage.forward.payload.data.suggestionIds).to.include('suggestion-123');
+        expect(firstMessage.forward.payload.data.suggestionIds).to.include('suggestion-456');
 
         // Verify second message (select-name group)
         const secondCall = context.sqs.sendMessage.secondCall;
         expect(secondCall.args[0]).to.equal('test-import-worker-queue-url');
         const secondMessage = secondCall.args[1];
-        expect(secondMessage.forward.data.suggestionIds).to.have.lengthOf(1);
-        expect(secondMessage.forward.data.suggestionIds).to.include('suggestion-789');
+        expect(secondMessage.forward.payload.data.suggestionIds).to.have.lengthOf(1);
+        expect(secondMessage.forward.payload.data.suggestionIds).to.include('suggestion-789');
 
         expect(context.log.info).to.have.been.calledWith(
           '[accessibility] [Site Id: site-123] Completed sending 2 code-fix messages to importer',
@@ -5954,7 +5954,7 @@ describe('data-processing utility functions', () => {
 
         expect(context.sqs.sendMessage).to.have.been.calledTwice;
         const firstMessage = context.sqs.sendMessage.firstCall.args[1];
-        expect(firstMessage.forward.type).to.equal('codefix:forms');
+        expect(firstMessage.forward.payload.type).to.equal('codefix:forms');
       });
 
       it('should handle suggestion with default source when source is undefined', async () => {
@@ -6112,10 +6112,10 @@ describe('data-processing utility functions', () => {
 
         expect(context.sqs.sendMessage).to.have.been.calledOnce;
         const message = context.sqs.sendMessage.firstCall.args[1];
-        expect(message.forward.data.suggestionIds).to.have.lengthOf(3);
-        expect(message.forward.data.suggestionIds).to.include('suggestion-123');
-        expect(message.forward.data.suggestionIds).to.include('suggestion-456');
-        expect(message.forward.data.suggestionIds).to.include('suggestion-999');
+        expect(message.forward.payload.data.suggestionIds).to.have.lengthOf(3);
+        expect(message.forward.payload.data.suggestionIds).to.include('suggestion-123');
+        expect(message.forward.payload.data.suggestionIds).to.include('suggestion-456');
+        expect(message.forward.payload.data.suggestionIds).to.include('suggestion-999');
       });
 
       it('should create separate groups for different URLs', async () => {

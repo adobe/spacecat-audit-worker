@@ -1032,14 +1032,16 @@ export async function sendCodeFixMessagesToImporter(opportunity, auditId, contex
         siteId,
         forward: {
           queue: env.QUEUE_SPACECAT_TO_MYSTIQUE,
-          type: `codefix:${opportunityType}`,
-          siteId,
-          auditId,
-          url: baseUrl,
-          deliveryType: site.getDeliveryType(),
-          data: {
-            opportunityId: opportunity.getId(),
-            suggestionIds: group.suggestionIds,
+          payload: {
+            type: `codefix:${opportunityType}`,
+            siteId,
+            auditId,
+            url: baseUrl,
+            deliveryType: site.getDeliveryType(),
+            data: {
+              opportunityId: opportunity.getId(),
+              suggestionIds: group.suggestionIds,
+            },
           },
         },
       };
