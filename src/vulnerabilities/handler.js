@@ -26,12 +26,11 @@ import { createOpportunityData, createOpportunityProps } from './opportunity-dat
 import { getImsOrgId, syncSuggestions } from '../utils/data-access.js';
 import { mapVulnerabilityToSuggestion } from './suggestion-data-mapper.js';
 
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 1; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES;
 
-/**
- * @typedef {import('./vulnerability-report.d.ts').VulnerabilityReport} VulnerabilityReport
- */
+
 
 /**
  * Fetches vulnerability report for a given AEM Cloud Service site from the starfish API.
@@ -83,8 +82,8 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
   let resp;
   try {
     resp = await fetch(
-      `${env.STARFISH_API_BASE_URL}/reports/${programId}/${environmentId}/vulnerabilities`,
-      { headers },
+        `${env.STARFISH_API_BASE_URL}/reports/${programId}/${environmentId}/vulnerabilities`,
+        { headers },
     );
   } catch (error) {
     throw new Error('Failed to fetch vulnerability report');
@@ -106,14 +105,14 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
  * Perform an audit to check if the environment has vulnerable dependencies.
  *
  * @async
- * @param {string} baseURL - The URL to run audit against
  * @param {Object} context - The context object containing configurations, services,
  * and environment variables.
- * @param {Object} site - The site object
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
-export async function vulnerabilityAuditRunner(baseURL, context, site) {
-  const { log } = context;
+export async function vulnerabilityAuditRunner(context) {
+
+  const { finalUrl, site, log } = context;
+  const baseURL = finalUrl
 
   // This opportunity is only relevant for aem_cs delivery-type at the moment
   if (site.getDeliveryType() !== DELIVERY_TYPES.AEM_CS) {
@@ -172,6 +171,20 @@ export async function vulnerabilityAuditRunner(baseURL, context, site) {
   }
 }
 
+
+export async function extractCodeBucket(context) {
+
+  const { site } = context;
+  const result = await vulnerabilityAuditRunner( context);
+
+  return {
+    type: 'code',
+    siteId: site.getId(),
+    auditResult: result.auditResult,
+    fullAuditRef: result.fullAuditRef,
+  };
+}
+
 /**
  * Creates opportunities and syncs suggestions.
  *
@@ -198,7 +211,7 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
     let opportunity;
     try {
       const opportunities = await site.getOpportunitiesByStatus(
-        Oppty.STATUSES.NEW,
+          Oppty.STATUSES.NEW,
       );
       opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
     } catch (e) {
@@ -228,12 +241,12 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
 
   // Update opportunity
   const opportunity = await convertToOpportunity(
-    auditUrl,
-    { siteId: auditData.siteId, id: auditData.auditId },
-    context,
-    createOpportunityData,
-    AUDIT_TYPE,
-    createOpportunityProps(auditData.auditResult.vulnerabilityReport),
+      auditUrl,
+      { siteId: auditData.siteId, id: auditData.auditId },
+      context,
+      createOpportunityData,
+      AUDIT_TYPE,
+      createOpportunityProps(auditData.auditResult.vulnerabilityReport),
   );
 
   const configuration = await Configuration.findLatest();
@@ -256,7 +269,7 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
     context,
     buildKey,
     mapNewSuggestion:
-      (entry) => mapVulnerabilityToSuggestion(opportunity, entry, generateSuggestions),
+        (entry) => mapVulnerabilityToSuggestion(opportunity, entry, generateSuggestions),
     log,
   });
 
@@ -264,6 +277,7 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
 };
 
 export default new AuditBuilder()
-  .withRunner(vulnerabilityAuditRunner)
-  .withPostProcessors([opportunityAndSuggestionsStep])
-  .build();
+    .addStep('import', extractCodeBucket        , AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+    // final step
+     .addStep('postProcess', opportunityAndSuggestionsStep)
+    .build();
