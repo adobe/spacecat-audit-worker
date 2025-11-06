@@ -9,7 +9,6 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* c8 ignore start */
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { Audit, PageIntent as PageIntentModel } from '@adobe/spacecat-shared-data-access';
@@ -95,10 +94,18 @@ export async function fetchScrapeContent(url, s3Path, s3Client, bucketName, log)
   return minimalContent;
 }
 
+export function stripMarkdownCodeBlocks(content) {
+  let cleaned = content.trim();
+  cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '');
+  cleaned = cleaned.replace(/\n?```\s*$/, '');
+  return cleaned.trim();
+}
+
 export async function analyzePageIntent(url, textContent, context, log) {
   const userPrompt = createUserPrompt(url, textContent);
   const response = await prompt(SYSTEM_PROMPT, userPrompt, context);
-  const analysis = JSON.parse(response.content);
+  const cleanedContent = stripMarkdownCodeBlocks(response.content);
+  const analysis = JSON.parse(cleanedContent);
 
   log.debug(`${LOG_PREFIX} LLM analysis for ${url}: ${analysis.pageIntent}, topic: ${analysis.topic}`);
 
@@ -146,7 +153,7 @@ export async function processPage(url, s3Path, processingContext) {
       siteId,
       url,
       pageIntent: analysis.pageIntent,
-      topic: analysis.topic,
+      topic: analysis.topic || '',
     });
 
     log.info(`${LOG_PREFIX} Created: ${url} -> ${analysis.pageIntent}, ${analysis.topic}`);
@@ -209,13 +216,14 @@ export async function generatePageIntent(context) {
     const result = await processPage(url, s3Path, processingContext);
     results.push(result);
 
-    // Track token usage
+    /* c8 ignore start */
     if (result.usage) {
       tokenUsage.totalPromptTokens += result.usage.prompt_tokens || 0;
       tokenUsage.totalCompletionTokens += result.usage.completion_tokens || 0;
       tokenUsage.totalTokens += result.usage.total_tokens || 0;
       tokenUsage.promptCount += 1;
     }
+    /* c8 ignore end */
   }
 
   const successfulPages = results.filter((r) => r.success).length;
@@ -239,4 +247,3 @@ export default new AuditBuilder()
   .addStep('extract-urls', getPathsOfLastWeek, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('generate-intent', generatePageIntent)
   .build();
-/* c8 ignore end */

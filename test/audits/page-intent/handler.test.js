@@ -404,6 +404,75 @@ describe('Page Intent Handler', () => {
         expect(result.auditResult.failedPages).to.equal(2);
       });
 
+      it('should handle markdown-wrapped JSON responses (```json)', async () => {
+        getObjectFromKeyStub.resolves({
+          scrapeResult: {
+            minimalContent: 'Test content',
+          },
+        });
+
+        promptStub.resolves({
+          content: '```json\n{"pageIntent":"INFORMATIONAL","topic":"Test Topic"}\n```',
+        });
+
+        const result = await handlerModule.generatePageIntent(context);
+
+        expect(mockPageIntent.create).to.have.been.calledTwice;
+        expect(mockPageIntent.create).to.have.been.calledWith(
+          sinon.match({
+            pageIntent: 'INFORMATIONAL',
+            topic: 'Test Topic',
+          }),
+        );
+        expect(result.auditResult.successfulPages).to.equal(2);
+      });
+
+      it('should handle markdown-wrapped JSON responses (```)', async () => {
+        getObjectFromKeyStub.resolves({
+          scrapeResult: {
+            minimalContent: 'Test content',
+          },
+        });
+
+        promptStub.resolves({
+          content: '```\n{"pageIntent":"COMMERCIAL","topic":"Product"}\n```',
+        });
+
+        const result = await handlerModule.generatePageIntent(context);
+
+        expect(mockPageIntent.create).to.have.been.calledTwice;
+        expect(mockPageIntent.create).to.have.been.calledWith(
+          sinon.match({
+            pageIntent: 'COMMERCIAL',
+            topic: 'Product',
+          }),
+        );
+        expect(result.auditResult.successfulPages).to.equal(2);
+      });
+
+      it('should handle plain JSON responses without markdown', async () => {
+        getObjectFromKeyStub.resolves({
+          scrapeResult: {
+            minimalContent: 'Test content',
+          },
+        });
+
+        promptStub.resolves({
+          content: '{"pageIntent":"TRANSACTIONAL","topic":"Shopping"}',
+        });
+
+        const result = await handlerModule.generatePageIntent(context);
+
+        expect(mockPageIntent.create).to.have.been.calledTwice;
+        expect(mockPageIntent.create).to.have.been.calledWith(
+          sinon.match({
+            pageIntent: 'TRANSACTIONAL',
+            topic: 'Shopping',
+          }),
+        );
+        expect(result.auditResult.successfulPages).to.equal(2);
+      });
+
       it('should accept all valid page intent types', async () => {
         const validIntents = ['INFORMATIONAL', 'NAVIGATIONAL', 'COMMERCIAL', 'TRANSACTIONAL'];
 
@@ -462,7 +531,7 @@ describe('Page Intent Handler', () => {
         expect(mockPageIntent.create).to.have.been.calledWith(
           sinon.match({
             pageIntent: 'INFORMATIONAL',
-            topic: undefined,
+            topic: '',
           }),
         );
       });
