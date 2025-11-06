@@ -543,6 +543,29 @@ describe('Meta Tags', () => {
           },
         });
       });
+
+      it('should skip PDF files from scraping', async () => {
+        const topPages = [
+          { getUrl: () => 'http://example.com/document.pdf' },
+          { getUrl: () => 'http://example.com/guide.PDF' },
+          { getUrl: () => 'http://example.com/files/report.pdf' },
+          { getUrl: () => 'http://example.com/page1' },
+        ];
+        dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+        const result = await submitForScraping(context);
+
+        // Should only include the non-PDF page
+        expect(result.urls).to.have.lengthOf(1);
+        expect(result.urls[0]).to.deep.equal({ url: 'http://example.com/page1' });
+        expect(result).to.have.property('siteId', 'site-id');
+        expect(result).to.have.property('type', 'default');
+
+        // Verify log entries for skipped PDF files
+        expect(context.log.info).to.have.been.calledWith('[metatags] Skipping PDF file from scraping: http://example.com/document.pdf');
+        expect(context.log.info).to.have.been.calledWith('[metatags] Skipping PDF file from scraping: http://example.com/guide.PDF');
+        expect(context.log.info).to.have.been.calledWith('[metatags] Skipping PDF file from scraping: http://example.com/files/report.pdf');
+      });
     });
 
     describe('fetchAndProcessPageObject', () => {
