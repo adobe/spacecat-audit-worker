@@ -321,8 +321,6 @@ export async function submitForScraping(context) {
 
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  log.info(`[metatags] Test log - got ${topPages.length} top pages for site: ${site.getId()}`);
-
   const topPagesUrls = topPages.map((page) => page.getUrl());
   // Combine includedURLs and topPages URLs to scrape
   const includedURLs = await site?.getConfig()?.getIncludedURLs('meta-tags') || [];
@@ -334,10 +332,29 @@ export async function submitForScraping(context) {
     throw new Error(`No URLs found for site neither top pages nor included URLs for ${site.getId()}`);
   }
 
+  // Filter out PDF files before scraping
+  const isPdfUrl = (url) => {
+    try {
+      const pathname = new URL(url).pathname.toLowerCase();
+      return pathname.endsWith('.pdf');
+    } catch {
+      return false;
+    }
+  };
+
+  const filteredUrls = finalUrls.filter((url) => {
+    if (isPdfUrl(url)) {
+      log.info(`[metatags] Skipping PDF file from scraping: ${url}`);
+      return false;
+    }
+    return true;
+  });
+
+  log.info(`[metatags] Filtered ${finalUrls.length - filteredUrls.length} PDF files from ${finalUrls.length} URLs`);
   log.info(`[metatags] Finish submitForScraping step for: ${site.getId()}`);
 
   return {
-    urls: finalUrls.map((url) => ({ url })),
+    urls: filteredUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'default',
     allowCache: false,
