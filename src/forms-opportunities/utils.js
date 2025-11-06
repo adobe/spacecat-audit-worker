@@ -595,3 +595,72 @@ export function checkDynamoItem(item, safetyMargin = 0.85) {
   const sizeKB = Buffer.byteLength(JSON.stringify(item), 'utf8') / 1024;
   return { safe: sizeKB < safeLimitKB, sizeKB };
 }
+
+/**
+ * Apply filtering and deduplication logic to opportunities.
+ * This function performs three steps:
+ * 1. Filters out opportunities that match existing INVALIDATED opportunities
+ * 2. Deduplicates by formsource, keeping only the entry with highest pageviews
+ * 3. Limits to top N opportunities by pageviews
+ *
+ * @param {Array} filteredOpportunities - Array of opportunity data objects to filter
+ * @param {Array} existingOpportunities - Array of existing opportunity objects from database
+ * @param {string} opportunityType - The type of opportunity
+ *   (e.g., FORM_OPPORTUNITY_TYPES.LOW_CONVERSION)
+ * @param {Object} log - Logger object
+ * @param {number} maxLimit - Maximum number of opportunities to return (default: 3)
+ * @returns {Array} - Filtered and limited array of opportunity data objects
+ */
+export function applyOpportunityFilters(
+  filteredOpportunities,
+  existingOpportunities,
+  opportunityType,
+  log,
+  maxLimit = 2,
+) {
+  let opportunities = [...filteredOpportunities];
+
+  // Only apply filtering steps if we have more than maxLimit opportunities
+  // If we have maxLimit or fewer, return them as-is (sorted by pageviews)
+  if (opportunities.length > maxLimit) {
+    // Step 1: Filter out opportunities that have been marked as INVALIDATED
+    opportunities = opportunities.filter((opptyData) => {
+      const existingOppty = existingOpportunities.find(
+        (oppty) => oppty.getType() === opportunityType
+          && oppty.getData().form === opptyData.form
+          && oppty.getData().formsource === opptyData.formsource,
+      );
+      if (existingOppty && existingOppty.getStatus() === 'INVALIDATED') {
+        log.debug(`Filtering out opportunity for form ${opptyData.form} due to INVALIDATED status`);
+        return false;
+      }
+      return true;
+    });
+
+    // Step 2: Deduplicate by formsource
+    // If different forms have the same formsource, keep only the one
+    // with the highest pageviews. This prevents duplicate opportunities for the same form source.
+    // Only apply if we still have more than maxLimit opportunities after filtering
+    if (opportunities.length > maxLimit) {
+      const formSourceMap = new Map();
+      opportunities.forEach((oppty) => {
+        const key = oppty.formsource;
+        const existing = formSourceMap.get(key);
+        // Replace existing entry only if current entry has higher pageviews
+        if (!existing || (oppty.pageviews > existing.pageviews)) {
+          formSourceMap.set(key, oppty);
+        }
+      });
+      opportunities = Array.from(formSourceMap.values());
+    }
+  }
+
+  // Step 3: Limit to top N opportunities by pageviews
+  // Sort opportunities in descending order by pageviews and keep only the top N.
+  // This ensures we focus on the most impactful forms with highest traffic.
+  opportunities = opportunities
+    .sort((a, b) => (b.pageviews || 0) - (a.pageviews || 0))
+    .slice(0, maxLimit);
+
+  return opportunities;
+}

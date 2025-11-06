@@ -57,7 +57,7 @@ describe('createLowNavigationOpportunities handler method', () => {
     };
     dataAccessStub = {
       Opportunity: {
-        allBySiteIdAndStatus: sinon.stub().resolves([]),
+        allBySiteId: sinon.stub().resolves([]),
         create: sinon.stub(),
       },
     };
@@ -265,7 +265,7 @@ describe('createLowNavigationOpportunities handler method', () => {
   });
 
   it('should use existing high page views low form navigation opportunity', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);
+    dataAccessStub.Opportunity.allBySiteId.resolves([formsCTAOppty]);
 
     await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
     expect(formsCTAOppty.setUpdatedBy).to.be.calledWith('system');
@@ -274,7 +274,7 @@ describe('createLowNavigationOpportunities handler method', () => {
   });
 
   it('should use existing high page views low form navigation opportunity with existing form details', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);
+    dataAccessStub.Opportunity.allBySiteId.resolves([formsCTAOppty]);
     formsCTAOppty.getData = sinon.stub().returns({
       form: 'https://www.surest.com/newsletter',
       screenshot: '',
@@ -299,13 +299,13 @@ describe('createLowNavigationOpportunities handler method', () => {
 
   it('should not process opportunities with origin ESS_OPS', async () => {
     formsCTAOppty.getOrigin = sinon.stub().returns(ORIGINS.ESS_OPS);
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsCTAOppty]);
+    dataAccessStub.Opportunity.allBySiteId.resolves([formsCTAOppty]);
     await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
     expect(dataAccessStub.Opportunity.create).to.be.calledOnce;
   });
 
   it('should throw error if fetching high page views low form navigation opportunity fails', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
+    dataAccessStub.Opportunity.allBySiteId.rejects(new Error('some-error'));
 
     try {
       await createLowNavigationOpportunities(auditUrl, auditData, undefined, context);
@@ -317,7 +317,7 @@ describe('createLowNavigationOpportunities handler method', () => {
   });
 
   it('should throw error if creating high page views low form navigation opportunity fails', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([]);
+    dataAccessStub.Opportunity.allBySiteId.returns([]);
     dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
 
     try {
