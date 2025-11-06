@@ -34,7 +34,9 @@ export const PREFLIGHT_STEP_SUGGEST = 'suggest';
  * List of available checks.
  * Should not be changed as it would break existing clients.
  * @type {string}
- * NOTE: When adding a new audit check, define the constant here.
+ * NOTE: When adding a new audit check, define the constant here and add it to AVAILABLE_CHECKS.
+ * When adding a new handler, add the handler to PREFLIGHT_HANDLERS.
+ * Also ensure the handler name matches the constant defined here.
  */
 export const AUDIT_CANONICAL = 'canonical';
 export const AUDIT_LINKS = 'links';
@@ -128,26 +130,30 @@ export const preflightAudit = async (context) => {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
-  // Compute enabled status for all available preflight checks and persist in job metadata
+  // Compute enabled preflight checks for the site and store in job metadata
+  let enabledChecks = [];
   try {
-    const checks = await Promise.all(AVAILABLE_CHECKS.map(async (audit) => ({
-      name: audit,
-      enabled: await isAuditEnabledForSite(`${audit}-preflight`, site, context),
-    })));
+    enabledChecks = (await Promise.all(
+      AVAILABLE_CHECKS.map(async (audit) => {
+        try {
+          const enabled = await isAuditEnabledForSite(`${audit}-preflight`, site, context);
+          return enabled ? audit : null;
+        } catch (err) {
+          // Fail-safe: treat failures as disabled, but continue evaluating others
+          log.warn(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Failed to evaluate enabled state for ${audit}-preflight: ${err.message}`);
+          return null;
+        }
+      }),
+    )).filter(Boolean);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
-    log.debug(`radhika [preflight-audit] job: ${jobId}, jobEntity: ${JSON.stringify(jobEntity)}.`);
     const currentMetadata = jobEntity.getMetadata() || {};
-    log.debug(`radhika[preflight-audit] job: ${jobId}, currentMetadata: ${JSON.stringify(currentMetadata)}.`);
     const currentPayload = currentMetadata?.payload || {};
-    log.debug(`radhika [preflight-audit] job: ${jobId}, currentPayload: ${JSON.stringify(currentPayload)}.`);
-    const enabledCheckNames = checks.filter((c) => c.enabled).map((c) => c.name);
-    log.debug(`radhika [preflight-audit] job: ${jobId}, enabledCheckNames: ${JSON.stringify(enabledCheckNames)}.`);
     jobEntity.setMetadata({
       ...currentMetadata,
       payload: {
         ...currentPayload,
-        checks: enabledCheckNames,
+        checks: enabledChecks,
       },
     });
     log.debug(`radhika [preflight-audit] job: ${jobId}, jobEntity after setting metadata: ${JSON.stringify(jobEntity)}.`);
@@ -191,9 +197,9 @@ export const preflightAudit = async (context) => {
     }));
     const audits = new Map(auditsResult.map((r) => [r.pageUrl, r]));
 
-    const bodySizeEnabled = await isAuditEnabledForSite(`${AUDIT_BODY_SIZE}-preflight`, site, context);
-    const loremIpsumEnabled = await isAuditEnabledForSite(`${AUDIT_LOREM_IPSUM}-preflight`, site, context);
-    const h1CountEnabled = await isAuditEnabledForSite(`${AUDIT_H1_COUNT}-preflight`, site, context);
+    const bodySizeEnabled = enabledChecks.includes(AUDIT_BODY_SIZE);
+    const loremIpsumEnabled = enabledChecks.includes(AUDIT_LOREM_IPSUM);
+    const h1CountEnabled = enabledChecks.includes(AUDIT_H1_COUNT);
     // DOM-based checks: body size, lorem ipsum, h1 count
     if (bodySizeEnabled || loremIpsumEnabled || h1CountEnabled) {
       const domStartTime = Date.now();
@@ -269,8 +275,10 @@ export const preflightAudit = async (context) => {
       await saveIntermediateResults(context, auditsResult, 'DOM-based audit');
     }
 
-    // Execute all preflight handlers
-    const handlerResults = await Object.keys(PREFLIGHT_HANDLERS).reduce(
+    // Execute only enabled preflight handlers
+    const handlersToRun = Object.keys(PREFLIGHT_HANDLERS)
+      .filter((key) => enabledChecks.includes(key));
+    const handlerResults = await handlersToRun.reduce(
       async (accPromise, handler) => {
         const acc = await accPromise;
         const res = await PREFLIGHT_HANDLERS[handler](context, {
