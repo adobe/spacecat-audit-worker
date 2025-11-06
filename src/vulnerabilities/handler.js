@@ -177,6 +177,10 @@ export async function extractCodeBucket(context) {
   const { site } = context;
   const result = await vulnerabilityAuditRunner( context);
 
+  if (result.success === false) {
+    throw new Error('Audit failed, skipping call to import worker');
+  }
+
   return {
     type: 'code',
     siteId: site.getId(),
@@ -194,16 +198,16 @@ export async function extractCodeBucket(context) {
  * @param {Object} site - The site object
  * @returns {Object} The audit data unchanged (opportunities created as side effect).
  */
-export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context, site) => {
-  const { log, dataAccess } = context;
+export const opportunityAndSuggestionsStep = async ( context) => {
+  const {    site, audit,  log, sqs, env, finalUrl, dataAccess } = context;
   const { Configuration, Suggestion } = dataAccess;
 
-  const { vulnerabilityReport, success } = auditData.auditResult;
-
-  if (!success) {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Audit failed, skipping opportunity / suggestions generation`);
-    return { status: 'complete' };
+  const auditResult = audit.getAuditResult();
+  if (auditResult.success === false) {
+    throw new Error('Audit failed, skipping suggestions generation');
   }
+
+  const { vulnerabilityReport, success } = auditResult;
 
   if (!isNonEmptyArray(vulnerabilityReport.vulnerableComponents)) {
     // No vulnerabilities found
@@ -241,12 +245,12 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
 
   // Update opportunity
   const opportunity = await convertToOpportunity(
-      auditUrl,
-      { siteId: auditData.siteId, id: auditData.auditId },
+      finalUrl,
+      { siteId: site.getId(), id: audit.getId() },
       context,
       createOpportunityData,
       AUDIT_TYPE,
-      createOpportunityProps(auditData.auditResult.vulnerabilityReport),
+      createOpportunityProps(auditResult.vulnerabilityReport),
   );
 
   const configuration = await Configuration.findLatest();
@@ -273,11 +277,35 @@ export const opportunityAndSuggestionsStep = async (auditUrl, auditData, context
     log,
   });
 
+  // TODO enable proper FT handling
+  // const generateCodeFix = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-fix', site);
+  // if (!generateCodeFix) {
+  //   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-fix not configured, skipping code generation with mystique`);
+  // }
+
+  // TODO => only add new suggestions to the payload
+  // TODO => optimize payload to reduce size
+
+  const message = {
+    type: 'codefix:security-vulnerabilities',
+    siteId: site.getId(),
+    auditId: audit.getId(),
+    deliveryType: site.getDeliveryType(),
+    time: new Date().toISOString(),
+    data: {
+      suggestions: await opportunity.getSuggestions(),
+    },
+  };
+
+  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+  return {
+    status: 'complete',
+  };
+
   return { status: 'complete' };
 };
 
 export default new AuditBuilder()
     .addStep('import', extractCodeBucket        , AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-    // final step
-     .addStep('postProcess', opportunityAndSuggestionsStep)
+    .addStep('generate-suggestion-data', opportunityAndSuggestionsStep)
     .build();
