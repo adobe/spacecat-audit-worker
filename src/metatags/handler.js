@@ -43,7 +43,7 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
  * @returns {Object} { isError: boolean, reason: string|null }
  */
 function isErrorPageContent(scrapeResult, url, log) {
-  log.info('[metatags] 7a13fe74-d721-4b7e-9464-2c1fadc4f821 - isErrorPageContent called');
+  log.info('[metatags temp log] - isErrorPageContent called');
 
   const { tags, structuredData, canonical } = scrapeResult;
 
@@ -83,7 +83,7 @@ function isErrorPageContent(scrapeResult, url, log) {
 
   // Only flag as error if status code + ALL SEO elements missing
   if (hasStatusCodeInTitle && hasNoStructuredData && hasNoDescription && hasNoCanonical) {
-    log.info(`[metatags 7a13fe74-d721-4b7e-9464-2c1fadc4f821] Error page detected for ${url}: HTTP status code in title/H1 + no SEO elements`);
+    log.info(`[metatags temp log] Error page detected for ${url}: HTTP status code in title/H1 + no SEO elements`);
     return { isError: true, reason: 'HTTP status code in title + no SEO elements (no structured data, no description, no canonical)' };
   }
 
@@ -392,7 +392,7 @@ export async function submitForScraping(context) {
   } = context;
   const { SiteTopPage } = dataAccess;
 
-  log.info(`[metatags] Start submitForScraping step for: ${site.getId()}`);
+  log.info(`[metatags temp log] Start submitForScraping step for: ${site.getId()}`);
 
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
@@ -409,7 +409,7 @@ export async function submitForScraping(context) {
   const filteredTopPages = topPages.filter((page) => {
     const url = page.getUrl();
     if (isPdfUrl(url)) {
-      log.info(`[metatags 7a13fe74-d721-4b7e-9464-2c1fadc4f821] Skipping PDF file from scraping: ${url}`);
+      log.info(`[metatags temp log] Skipping PDF file from scraping: ${url}`);
       return false;
     }
     return true;
