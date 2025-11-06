@@ -143,9 +143,15 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     expect(Suggestion.create).to.have.been.calledOnce;
     const suggestionArg = Suggestion.create.getCall(0).args[0];
     expect(suggestionArg.type).to.equal('CONTENT_UPDATE');
-    expect(suggestionArg.data.variations).to.deep.equal(
-      guidanceMsgFromMystique.data.suggestions,
+    // Verify that variations have variationEditPageUrl removed
+    expect(suggestionArg.data.variations).to.have.lengthOf(
+      guidanceMsgFromMystique.data.suggestions.length,
     );
+    suggestionArg.data.variations.forEach((variation, index) => {
+      expect(variation).to.not.have.property('variationEditPageUrl');
+      expect(variation.id).to.equal(guidanceMsgFromMystique.data.suggestions[index].id);
+      expect(variation.name).to.equal(guidanceMsgFromMystique.data.suggestions[index].name);
+    });
   });
 
   it('should update existing opportunity if found', async () => {
@@ -356,5 +362,43 @@ describe('high-organic-low-ctr guidance handler tests', () => {
     expect(legacyOpportunity.setGuidance).to.have.been.called;
     expect(legacyOpportunity.save).to.have.been.called;
     expect(Suggestion.create).to.have.been.calledOnce;
+  });
+
+  it('should remove variationEditPageUrl when saving suggestions', async () => {
+    Opportunity.allBySiteId.resolves([]);
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        url: 'https://abc.com/abc-adoption/account',
+        guidance: guidanceMsgFromMystique.data.guidance,
+        suggestions: guidanceMsgFromMystique.data.suggestions,
+      },
+    };
+
+    await handler(message, context);
+
+    expect(Suggestion.create).to.have.been.calledOnce;
+    const suggestionArg = Suggestion.create.getCall(0).args[0];
+
+    // Verify that variations exist in the created suggestion
+    expect(suggestionArg.data.variations).to.be.an('array');
+    expect(suggestionArg.data.variations).to.have.lengthOf(2);
+
+    // Verify that variationEditPageUrl is removed from all variations
+    suggestionArg.data.variations.forEach((variation) => {
+      expect(variation).to.not.have.property('variationEditPageUrl');
+      // Verify other properties are still present
+      expect(variation).to.have.property('name');
+      expect(variation).to.have.property('id');
+      expect(variation).to.have.property('variationPageUrl');
+      expect(variation).to.have.property('previewImage');
+    });
+
+    // Verify specific variations are correct
+    expect(suggestionArg.data.variations[0].name).to.equal('Original');
+    expect(suggestionArg.data.variations[0].id).to.equal('original');
+    expect(suggestionArg.data.variations[1].name).to.equal('Variation 1');
+    expect(suggestionArg.data.variations[1].id).to.equal('variation-1');
   });
 });

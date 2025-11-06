@@ -11,6 +11,7 @@
  */
 
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
 
 /**
@@ -23,6 +24,22 @@ function hasManuallyModifiedSuggestions(suggestions) {
     const suggestionUpdatedBy = suggestion.getUpdatedBy();
     return suggestionUpdatedBy && suggestionUpdatedBy !== 'system';
   });
+}
+
+/**
+ * remove variationEditPageUrl from the variations
+ * @param {Array} variations - Array of variation objects
+ * @returns {Array} - updated Array of variation objects
+ */
+function updateVariations(variations) {
+  if (isNonEmptyArray(variations)) {
+    return variations.map((variation) => {
+      // eslint-disable-next-line no-unused-vars
+      const { variationEditPageUrl, ...variationWithOutEditUrl } = variation;
+      return variationWithOutEditUrl;
+    });
+  }
+  return [];
 }
 
 export default async function handler(message, context) {
@@ -79,6 +96,9 @@ export default async function handler(message, context) {
     await Promise.all(existingSuggestions.map((suggestion) => suggestion.remove()));
   }
 
+  // update suggestions
+  const updatedVariations = updateVariations(suggestions);
+
   // map the suggestions received from M to PSS
   const suggestionData = {
     opportunityId: opportunity.getId(),
@@ -86,7 +106,7 @@ export default async function handler(message, context) {
     rank: 1,
     status: 'NEW',
     data: {
-      variations: suggestions,
+      variations: updatedVariations,
     },
     kpiDeltas: {
       estimatedKPILift: 0,
