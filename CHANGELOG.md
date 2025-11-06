@@ -1,3 +1,10 @@
+## [1.230.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.1...v1.230.2) (2025-11-06)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1527](https://github.com/adobe/spacecat-audit-worker/issues/1527)) ([58aeca4](https://github.com/adobe/spacecat-audit-worker/commit/58aeca46406c9ed936bbaf6d53c9748fa32076ab))
+
 ## [1.230.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.0...v1.230.1) (2025-11-06)
 
 
