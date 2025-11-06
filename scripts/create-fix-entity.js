@@ -55,7 +55,7 @@
  */
 export async function createFixEntityForSuggestion(dataAccess, suggestion, options = {}) {
   const {
-    status = 'PENDING',
+    status = 'PUBLISHED',
     origin = 'spacecat',
     logger = null
   } = options;
@@ -99,20 +99,18 @@ export async function createFixEntityForSuggestion(dataAccess, suggestion, optio
     }
 
     // Check if fix entity already exists for this suggestion (prevent duplication)
-    const { FixEntitySuggestionCollection, FixEntityCollection } = dataAccess;
-    const existingFixEntitySuggestions = await FixEntitySuggestionCollection
-      .allBySuggestionId(suggestionId);
-
-    if (existingFixEntitySuggestions && existingFixEntitySuggestions.length > 0) {
+    const { Suggestion: SuggestionCollection, FixEntity: FixEntityCollection } = dataAccess;
+    
+    log.debug(`Checking if fix entity already exists for suggestion ${suggestionId}...`);
+    const existingFixEntitiesResult = await SuggestionCollection.getFixEntitiesBySuggestionId(suggestionId);
+    
+    if (existingFixEntitiesResult && existingFixEntitiesResult.data && existingFixEntitiesResult.data.length > 0) {
       log.debug(`Fix entity already exists for suggestion ${suggestionId}, skipping creation`);
-      
-      // Get the existing fix entity
-      const existingFixEntityId = existingFixEntitySuggestions[0].getFixEntityId();
-      const existingFixEntity = await FixEntityCollection.findById(existingFixEntityId);
-      
-      return existingFixEntity;
+      return existingFixEntitiesResult.data[0];
     }
 
+    log.debug(`Creating new fix entity for suggestion ${suggestionId}...`);
+    
     // Create fix entity
     const fixEntity = await FixEntityCollection.create({
       opportunityId,
@@ -126,18 +124,15 @@ export async function createFixEntityForSuggestion(dataAccess, suggestion, optio
 
     log.info(`Created fix entity ${fixEntity.getId()} for suggestion ${suggestionId}`);
 
-    // Create fix entity suggestion junction record
-    const fixEntityId = fixEntity.getId();
-    const fixEntityCreatedAt = fixEntity.getCreatedAt();
-
-    await FixEntitySuggestionCollection.create({
+    // Link the suggestion to the fix entity using the proper API
+    log.debug(`Linking suggestion ${suggestionId} to fix entity ${fixEntity.getId()}...`);
+    const linkResult = await FixEntityCollection.setSuggestionsForFixEntity(
       opportunityId,
-      fixEntityId,
-      suggestionId,
-      fixEntityCreatedAt
-    });
+      fixEntity,
+      [suggestion]
+    );
 
-    log.info(`Created fix entity suggestion link: ${suggestionId} -> ${fixEntityId}`);
+    log.info(`Created fix entity suggestion link: ${suggestionId} -> ${fixEntity.getId()} (created: ${linkResult.createdItems.length}, errors: ${linkResult.errorItems.length})`);
 
     return fixEntity;
 
@@ -178,11 +173,10 @@ export async function createFixEntitiesForSuggestions(dataAccess, suggestions, o
       const suggestionId = suggestion.getId ? suggestion.getId() : suggestion.id;
       
       // Check if fix entity already exists before attempting creation
-      const { FixEntitySuggestionCollection } = dataAccess;
-      const existingFixEntitySuggestions = await FixEntitySuggestionCollection
-        .allBySuggestionId(suggestionId);
+      const { Suggestion: SuggestionCollection } = dataAccess;
+      const existingFixEntitiesResult = await SuggestionCollection.getFixEntitiesBySuggestionId(suggestionId);
 
-      if (existingFixEntitySuggestions && existingFixEntitySuggestions.length > 0) {
+      if (existingFixEntitiesResult && existingFixEntitiesResult.data && existingFixEntitiesResult.data.length > 0) {
         skippedItems.push({
           suggestionId,
           reason: 'Fix entity already exists'

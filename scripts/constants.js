@@ -31,7 +31,7 @@ export const SITES = [
     name: 'chocolateworld.com'
   },
   {
-    id: '9ae8877a-bbf3-407d-9adb-d6a72ce3c5e3',
+    id: 'c2473d89-e997-458d-a86d-b4096649c12b',
     name: 'adobe.com'
   },
   {
