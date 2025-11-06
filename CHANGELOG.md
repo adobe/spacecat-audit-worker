@@ -1,3 +1,24 @@
+## [1.230.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.2...v1.230.3) (2025-11-06)
+
+
+### Bug Fixes
+
+* keep categories consistent when adding or deleting ([#1523](https://github.com/adobe/spacecat-audit-worker/issues/1523)) ([0f44c96](https://github.com/adobe/spacecat-audit-worker/commit/0f44c96fa3d1ffbf35bd3634d40f563a7679eb5a))
+
+## [1.230.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.1...v1.230.2) (2025-11-06)
+
+
+### Bug Fixes
+
+* **deps:** update adobe fixes ([#1527](https://github.com/adobe/spacecat-audit-worker/issues/1527)) ([58aeca4](https://github.com/adobe/spacecat-audit-worker/commit/58aeca46406c9ed936bbaf6d53c9748fa32076ab))
+
+## [1.230.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.0...v1.230.1) (2025-11-06)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.69.4 ([#1525](https://github.com/adobe/spacecat-audit-worker/issues/1525)) ([933fcf4](https://github.com/adobe/spacecat-audit-worker/commit/933fcf431db1920c4a3f86b75ea29ada7227cc18))
+
 # [1.230.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.229.0...v1.230.0) (2025-11-06)
 
 

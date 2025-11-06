@@ -238,7 +238,7 @@ describe('Patterns Uploader', () => {
     clock.restore();
   });
 
-  it('merges new and existing patterns', async () => {
+  it('merges new and existing patterns and keep only config categories', async () => {
     const clock = sandbox.useFakeTimers();
     mockAnalyzeProducts.resolves({ 'new-product': 'regex-new' });
 
@@ -254,7 +254,7 @@ describe('Patterns Uploader', () => {
 
     expect(result).to.be.true;
     const callArgs = mockCreateExcelReport.getCall(0).args[0];
-    expect(callArgs['shared-products']).to.have.length(2);
+    expect(callArgs['shared-products']).to.have.length(1);
     expect(callArgs['shared-pagetype']).to.have.length(1);
 
     clock.restore();
