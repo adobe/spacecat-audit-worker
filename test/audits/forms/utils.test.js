@@ -23,7 +23,7 @@ import {
   getFormTitle,
   applyOpportunityFilters,
 } from '../../../src/forms-opportunities/utils.js';
-import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
+import { FORM_OPPORTUNITY_TYPES, OPPORTUNITY_STATUS } from '../../../src/forms-opportunities/constants.js';
 
 describe('isSearchForm', () => {
   it('should return true for search form type', () => {
@@ -731,7 +731,7 @@ describe('applyOpportunityFilters', () => {
           form: 'https://example.com/contact',
           formsource: '.contact-form',
         }),
-        getStatus: () => 'INVALIDATED',
+        getStatus: () => OPPORTUNITY_STATUS.INVALIDATED,
       },
     ];
 
@@ -779,7 +779,7 @@ describe('applyOpportunityFilters', () => {
           form: 'https://example.com/form1',
           formsource: 'source1',
         }),
-        getStatus: () => 'INVALIDATED',
+        getStatus: () => OPPORTUNITY_STATUS.INVALIDATED,
       },
     ];
 
@@ -822,7 +822,7 @@ describe('applyOpportunityFilters', () => {
           form: 'https://example.com/contact',
           formsource: '.contact-form-v1',
         }),
-        getStatus: () => 'INVALIDATED',
+        getStatus: () => OPPORTUNITY_STATUS.INVALIDATED,
       },
     ];
 

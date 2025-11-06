@@ -18,7 +18,7 @@ import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
-import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
+import { FORM_OPPORTUNITY_TYPES, OPPORTUNITY_STATUS, successCriteriaLinks } from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
 import { getPresignedUrl as getPresignedUrlUtil } from '../utils/getPresignedUrl.js';
 
@@ -630,7 +630,7 @@ export function applyOpportunityFilters(
           && oppty.getData().form === opptyData.form
           && oppty.getData().formsource === opptyData.formsource,
       );
-      if (existingOppty && existingOppty.getStatus() === 'INVALIDATED') {
+      if (existingOppty && existingOppty.getStatus() === OPPORTUNITY_STATUS.INVALIDATED) {
         log.debug(`Filtering out opportunity for form ${opptyData.form} due to INVALIDATED status`);
         return false;
       }
