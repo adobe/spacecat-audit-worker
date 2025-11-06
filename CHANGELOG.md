@@ -1,3 +1,10 @@
+## [1.230.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.2...v1.230.3) (2025-11-06)
+
+
+### Bug Fixes
+
+* keep categories consistent when adding or deleting ([#1523](https://github.com/adobe/spacecat-audit-worker/issues/1523)) ([0f44c96](https://github.com/adobe/spacecat-audit-worker/commit/0f44c96fa3d1ffbf35bd3634d40f563a7679eb5a))
+
 ## [1.230.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.1...v1.230.2) (2025-11-06)
 
 
