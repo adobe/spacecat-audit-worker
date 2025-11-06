@@ -11,6 +11,7 @@
  */
 import { validateCanonicalFormat, validateCanonicalTag } from '../canonical/handler.js';
 import { saveIntermediateResults } from './utils.js';
+import { isAuditEnabledForSite } from '../common/index.js';
 
 export const PREFLIGHT_CANONICAL = 'canonical';
 
@@ -28,51 +29,52 @@ export default async function canonical(context, auditContext) {
     timeExecutionBreakdown,
   } = auditContext;
 
-  log.debug(`radhika [preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Canonical audit started.`);
+  const canonicalEnabled = await isAuditEnabledForSite(`${PREFLIGHT_CANONICAL}-preflight`, site, context);
+  if (canonicalEnabled) {
+    const canonicalStartTime = Date.now();
+    const canonicalStartTimestamp = new Date().toISOString();
+    // Create canonical audit entries for all pages
+    previewUrls.forEach((url) => {
+      const pageResult = audits.get(url);
+      pageResult.audits.push({ name: PREFLIGHT_CANONICAL, type: 'seo', opportunities: [] });
+    });
 
-  const canonicalStartTime = Date.now();
-  const canonicalStartTimestamp = new Date().toISOString();
-  // Create canonical audit entries for all pages
-  previewUrls.forEach((url) => {
-    const pageResult = audits.get(url);
-    pageResult.audits.push({ name: PREFLIGHT_CANONICAL, type: 'seo', opportunities: [] });
-  });
+    const canonicalResults = await Promise.all(
+      previewUrls.map(async (url) => {
+        const {
+          canonicalUrl,
+          checks: tagChecks,
+        } = await validateCanonicalTag(url, log, authHeader, true);
+        const allChecks = [...tagChecks];
+        if (canonicalUrl) {
+          log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Found Canonical URL: ${canonicalUrl}`);
+          allChecks.push(...validateCanonicalFormat(canonicalUrl, previewBaseURL, log, true));
+        }
+        return { url, checks: allChecks.filter((c) => !c.success) };
+      }),
+    );
+    const canonicalEndTime = Date.now();
+    const canonicalEndTimestamp = new Date().toISOString();
+    const canonicalElapsed = ((canonicalEndTime - canonicalStartTime) / 1000).toFixed(2);
+    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Canonical audit completed in ${canonicalElapsed} seconds`);
 
-  const canonicalResults = await Promise.all(
-    previewUrls.map(async (url) => {
-      const {
-        canonicalUrl,
-        checks: tagChecks,
-      } = await validateCanonicalTag(url, log, authHeader, true);
-      const allChecks = [...tagChecks];
-      if (canonicalUrl) {
-        log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Found Canonical URL: ${canonicalUrl}`);
-        allChecks.push(...validateCanonicalFormat(canonicalUrl, previewBaseURL, log, true));
-      }
-      return { url, checks: allChecks.filter((c) => !c.success) };
-    }),
-  );
-  const canonicalEndTime = Date.now();
-  const canonicalEndTimestamp = new Date().toISOString();
-  const canonicalElapsed = ((canonicalEndTime - canonicalStartTime) / 1000).toFixed(2);
-  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job.getId()}, step: ${step}. Canonical audit completed in ${canonicalElapsed} seconds`);
+    timeExecutionBreakdown.push({
+      name: 'canonical',
+      duration: `${canonicalElapsed} seconds`,
+      startTime: canonicalStartTimestamp,
+      endTime: canonicalEndTimestamp,
+    });
 
-  timeExecutionBreakdown.push({
-    name: 'canonical',
-    duration: `${canonicalElapsed} seconds`,
-    startTime: canonicalStartTimestamp,
-    endTime: canonicalEndTimestamp,
-  });
+    canonicalResults.forEach(({ url, checks: canonicalChecks }) => {
+      const audit = audits.get(url).audits.find((a) => a.name === PREFLIGHT_CANONICAL);
+      canonicalChecks.forEach((check) => audit.opportunities.push({
+        check: check.check,
+        issue: check.explanation,
+        seoImpact: check.seoImpact || 'Moderate',
+        seoRecommendation: check.explanation,
+      }));
+    });
 
-  canonicalResults.forEach(({ url, checks: canonicalChecks }) => {
-    const audit = audits.get(url).audits.find((a) => a.name === PREFLIGHT_CANONICAL);
-    canonicalChecks.forEach((check) => audit.opportunities.push({
-      check: check.check,
-      issue: check.explanation,
-      seoImpact: check.seoImpact || 'Moderate',
-      seoRecommendation: check.explanation,
-    }));
-  });
-
-  await saveIntermediateResults(context, auditsResult, 'canonical audit');
+    await saveIntermediateResults(context, auditsResult, 'canonical audit');
+  }
 }

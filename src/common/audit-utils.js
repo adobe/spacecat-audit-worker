@@ -72,12 +72,6 @@ export async function isAuditEnabledForSite(type, site, context) {
   return configuration.isHandlerEnabledForSite(type, site);
 }
 
-export async function getEnabledAuditsForSite(site, context) {
-  const { Configuration } = context.dataAccess;
-  const configuration = await Configuration.findLatest();
-  return configuration.getEnabledAuditsForSite(site);
-}
-
 export async function loadExistingAudit(auditId, context) {
   if (!isValidUUID(auditId)) {
     throw new Error('Valid auditId is required for step execution');
