@@ -19,7 +19,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { getIssueRanking } from '../utils/seo-utils.js';
+import { getIssueRanking, trimTagValue } from '../utils/seo-utils.js';
 import { getBaseUrl } from '../utils/url-utils.js';
 import {
   DESCRIPTION,
@@ -108,9 +108,9 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
   // handling for homepage
   return {
     [pageUrl]: {
-      title: object.scrapeResult.tags.title,
-      description: object.scrapeResult.tags.description,
-      h1: object.scrapeResult.tags.h1 || [],
+      title: trimTagValue(object.scrapeResult.tags.title),
+      description: trimTagValue(object.scrapeResult.tags.description),
+      h1: trimTagValue(object.scrapeResult.tags.h1) || [],
       s3key: key,
     },
   };
@@ -237,7 +237,10 @@ export async function runAuditAndGenerateSuggestions(context) {
   const {
     site, audit, finalUrl, log, scrapeResultPaths,
   } = context;
-  log.debug(`scrapeResultPaths: ${JSON.stringify(scrapeResultPaths)}`);
+
+  log.info(`[metatags] scrapeResultPaths for ${site.getId()}: ${JSON.stringify(scrapeResultPaths)}`);
+  log.info(`[metatags] Start runAuditAndGenerateSuggestions step for: ${site.getId()}`);
+
   const {
     seoChecks,
     detectedTags,
@@ -285,15 +288,19 @@ export async function runAuditAndGenerateSuggestions(context) {
     auditResult,
   }, context);
 
+  log.info(`[metatags] Finish runAuditAndGenerateSuggestions step for: ${site.getId()}`);
+
   return {
     status: 'complete',
   };
 }
 
 export async function importTopPages(context) {
-  const { site, finalUrl } = context;
-
+  const { site, log, finalUrl } = context;
   const s3BucketPath = `scrapes/${site.getId()}/`;
+
+  log.info(`[metatags] importTopPages step requested scraping for ${site.getId()}, bucket path: ${s3BucketPath}`);
+
   return {
     type: 'top-pages',
     siteId: site.getId(),
@@ -309,6 +316,9 @@ export async function submitForScraping(context) {
     log,
   } = context;
   const { SiteTopPage } = dataAccess;
+
+  log.info(`[metatags] Start submitForScraping step for: ${site.getId()}`);
+
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
   const topPagesUrls = topPages.map((page) => page.getUrl());
@@ -319,8 +329,10 @@ export async function submitForScraping(context) {
   log.debug(`Total top pages: ${topPagesUrls.length}, Total included URLs: ${includedURLs.length}, Final URLs to scrape after removing duplicates: ${finalUrls.length}`);
 
   if (finalUrls.length === 0) {
-    throw new Error('No URLs found for site neither top pages nor included URLs');
+    throw new Error(`No URLs found for site neither top pages nor included URLs for ${site.getId()}`);
   }
+
+  log.info(`[metatags] Finish submitForScraping step for: ${site.getId()}`);
 
   return {
     urls: finalUrls.map((url) => ({ url })),

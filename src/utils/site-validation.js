@@ -11,6 +11,9 @@
  */
 
 import { TierClient } from '@adobe/spacecat-shared-tier-client';
+import { Entitlement } from '@adobe/spacecat-shared-data-access';
+
+const ASO_PRODUCT_CODE = Entitlement.PRODUCT_CODES.ASO;
 
 /**
  * Checks if a site requires suggestion validation before showing in UI
@@ -22,41 +25,38 @@ export async function checkSiteRequiresValidation(site, context) {
     return false;
   }
   // Check if the site has the requiresValidation flag set directly
-  if (typeof site.requiresValidation === 'boolean') {
+  if (site?.requiresValidation) {
     return site.requiresValidation;
   }
 
-  // LA customers override via env (comma-separated IDs)
+  // LA customers override via env
   let laSiteIds = [];
   let laOrgIds = [];
 
   if (process.env.LA_VALIDATION_SITE_IDS) {
-    laSiteIds = process.env.LA_VALIDATION_SITE_IDS.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+    laSiteIds = process.env.LA_VALIDATION_SITE_IDS.split(',').map((id) => id.trim()).filter((id) => id.length > 0);
   }
-
   if (process.env.LA_VALIDATION_ORG_IDS) {
-    laOrgIds = process.env.LA_VALIDATION_ORG_IDS.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+    laOrgIds = process.env.LA_VALIDATION_ORG_IDS.split(',').map((id) => id.trim()).filter((id) => id.length > 0);
   }
   const siteId = site.getId?.();
   const orgId = site.getOrganizationId?.();
   const isLABySite = siteId && laSiteIds.includes(siteId);
   const isLAByOrg = orgId && laOrgIds.includes(orgId);
 
-  context?.log?.debug?.(`LA validation check: siteId=${siteId}, orgId=${orgId}, laSiteIds=${JSON.stringify(laSiteIds)}, laOrgIds=${JSON.stringify(laOrgIds)}, isLABySite=${isLABySite}, isLAByOrg=${isLAByOrg}`);
-
   if (isLABySite || isLAByOrg) {
-    context?.log?.debug?.(`LA customer detected! Site ${siteId} requires validation.`);
     return true;
   }
 
   // Entitlement-driven: require validation only for PAID tier of ASO
   try {
-    const tierClient = TierClient.createForSite(context, site, 'ASO');
+    const tierClient = TierClient.createForSite(context, site, ASO_PRODUCT_CODE);
     const { entitlement } = await tierClient.checkValidEntitlement();
     const tier = entitlement?.tier ?? entitlement?.record?.tier ?? null;
     const productCode = entitlement?.record?.productCode ?? null;
 
-    if (tier === 'PAID' && (productCode === 'ASO' || entitlement?.record?.productCode === 'ASO')) {
+    if (tier === Entitlement.TIERS.PAID && (productCode === ASO_PRODUCT_CODE
+      || entitlement?.record?.productCode === ASO_PRODUCT_CODE)) {
       return true;
     }
   } catch (e) {

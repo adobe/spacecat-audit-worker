@@ -118,7 +118,7 @@ export default async function handler(message, context) {
 
     await Promise.all(suggestions.map((s) => Suggestion.create({
       ...s,
-      status: requiresValidation ? 'NOT_VALIDATED' : 'NEW',
+      status: requiresValidation ? Suggestion.STATUSES.NOT_VALIDATED : Suggestion.STATUSES.NEW,
     })));
   }
 

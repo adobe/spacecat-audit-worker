@@ -60,7 +60,7 @@ export default async function handler(message, context) {
 
   await Suggestion.create({
     ...suggestionData,
-    status: requiresValidation ? 'NOT_VALIDATED' : 'NEW',
+    status: requiresValidation ? Suggestion.STATUSES.NOT_VALIDATED : Suggestion.STATUSES.NEW,
   });
   log.debug(`Created suggestion for opportunity ${opportunity.getId()}`);
 

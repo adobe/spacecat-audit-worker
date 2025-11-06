@@ -71,11 +71,12 @@ export function createBaseReportOpportunity(week, year, deviceType = 'Desktop') 
 }
 
 export function createReportOpportunitySuggestionInstance(suggestionValue, context) {
+  const { Suggestion } = context?.dataAccess || {};
   return [
     {
       type: 'CODE_CHANGE',
       rank: 1,
-      status: context?.site?.requiresValidation ? 'NOT_VALIDATED' : 'NEW',
+      status: context?.site?.requiresValidation ? Suggestion?.STATUSES?.NOT_VALIDATED || 'NOT_VALIDATED' : Suggestion?.STATUSES?.NEW || 'NEW',
       data: {
         suggestionValue,
       },

@@ -66,8 +66,7 @@ import accessibilityRemediationGuidance from './accessibility/guidance-handlers/
 import cdnAnalysis, { cdnLogsAnalysis } from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
-import detectPageIntent from './page-intent/handler.detect.js';
-import updatePageIntent from './page-intent/handler.update.js';
+import pageIntent from './page-intent/handler.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
 import readabilityGuidance from './readability/guidance-readability-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
@@ -149,9 +148,8 @@ const HANDLERS = {
   'cdn-logs-analysis': cdnLogsAnalysis,
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
-  'detect:page-intent': detectPageIntent,
   'detect:form-details': detectFormDetails,
-  'page-intent': updatePageIntent,
+  'page-intent': pageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,

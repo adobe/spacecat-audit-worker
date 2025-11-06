@@ -248,15 +248,7 @@ export async function syncSuggestions({
   // Add new suggestions if any
   if (newSuggestions.length > 0) {
     const suggestions = await opportunity.addSuggestions(newSuggestions);
-    const suggestionsArray = Array.isArray(suggestions)
-      ? suggestions
-      : (suggestions.createdItems || []);
-    const newCount = suggestionsArray.length;
-    if (newCount <= 10) {
-      log.debug(`New suggestions = ${newCount}: ${JSON.stringify(suggestionsArray, null, 2)}`);
-    } else {
-      log.debug(`New suggestions = ${newCount}: ${JSON.stringify(suggestionsArray.slice(0, 10), null, 2)}`);
-    }
+    log.debug(`New suggestions = ${suggestions.length}: ${JSON.stringify(suggestions, null, 2)}`);
 
     if (suggestions.errorItems?.length > 0) {
       log.error(`Suggestions for siteId ${opportunity.getSiteId()} contains ${suggestions.errorItems.length} items with errors`);

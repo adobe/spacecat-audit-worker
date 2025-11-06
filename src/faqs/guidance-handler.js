@@ -25,7 +25,7 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
  */
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
-  const { Site, Opportunity } = dataAccess;
+  const { Site, Opportunity, Suggestion } = dataAccess;
   const { siteId, auditId, data } = message;
   const { presignedUrl } = data;
 
@@ -125,9 +125,10 @@ export default async function handler(message, context) {
       buildKey: (dataItem) => dataItem.bKey,
       mapNewSuggestion: (dataItem) => ({
         opportunityId: opportunity.getId(),
-        type: 'CONTENT_UPDATE',
+        type: Suggestion.TYPES.CONTENT_UPDATE,
         rank: 1,
-        status: context.site?.requiresValidation ? 'NOT_VALIDATED' : 'NEW',
+        status: context.site?.requiresValidation ? Suggestion.STATUSES.NOT_VALIDATED
+          : Suggestion.STATUSES.NEW,
         data: {
           suggestionValue: dataItem.suggestionValue,
         },

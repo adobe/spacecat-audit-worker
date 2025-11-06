@@ -86,7 +86,7 @@ export default async function handler(message, context) {
     opportunityId: opportunity.getId(),
     type: 'CONTENT_UPDATE',
     rank: 1,
-    status: requiresValidation ? 'NOT_VALIDATED' : 'NEW',
+    status: requiresValidation ? Suggestion.STATUSES.NOT_VALIDATED : Suggestion.STATUSES.NEW,
     data: {
       variations: suggestions,
     },
