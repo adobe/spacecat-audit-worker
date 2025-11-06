@@ -125,7 +125,7 @@ export default async function handler(message, context) {
       buildKey: (dataItem) => dataItem.bKey,
       mapNewSuggestion: (dataItem) => ({
         opportunityId: opportunity.getId(),
-        type: Suggestion.TYPES.CONTENT_UPDATE,
+        type: 'CONTENT_UPDATE',
         rank: 1,
         status: context.site?.requiresValidation ? Suggestion.STATUSES.NOT_VALIDATED
           : Suggestion.STATUSES.NEW,

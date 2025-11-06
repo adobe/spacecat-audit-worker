@@ -55,8 +55,7 @@ export async function checkSiteRequiresValidation(site, context) {
     const tier = entitlement?.tier ?? entitlement?.record?.tier ?? null;
     const productCode = entitlement?.record?.productCode ?? null;
 
-    if (tier === Entitlement.TIERS.PAID && (productCode === ASO_PRODUCT_CODE
-      || entitlement?.record?.productCode === ASO_PRODUCT_CODE)) {
+    if (tier === Entitlement.TIERS.PAID && productCode === ASO_PRODUCT_CODE) {
       return true;
     }
   } catch (e) {
