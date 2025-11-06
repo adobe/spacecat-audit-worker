@@ -671,8 +671,9 @@ describe('Meta Tags', () => {
         );
 
         expect(result).to.be.null;
-        expect(logStub.error).to.have.been.calledWith(
-          'Scrape result is empty for scrapes/site-id/404/scrape.json',
+        // Now caught by error page detection (has "404" and "error" in content)
+        expect(logStub.info).to.have.been.calledWith(
+          sinon.match(/Skipping error page for http:\/\/example\.com\/404/),
         );
       });
 
