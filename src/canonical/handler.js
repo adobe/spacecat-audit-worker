@@ -85,6 +85,7 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
     // finalUrl is the URL after any redirects
     const finalUrl = response.url;
     const html = await response.text();
+    log.info(`[DEBUG] Response status: ${response.status}, HTML length: ${html.length}, Contains 'canonical': ${html.includes('canonical')}, First 500 chars: ${html.substring(0, 500)}`);
     const dom = new JSDOM(html);
     const { document } = dom.window;
 
