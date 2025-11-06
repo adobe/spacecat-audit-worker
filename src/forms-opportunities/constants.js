@@ -24,7 +24,7 @@ export const ORIGINS = {
 };
 
 export const OPPORTUNITY_STATUS = {
-  INVALIDATED: 'INVALIDATED',
+  INVALIDATED: 'NOT_VALIDATED',
 };
 
 export const successCriteriaLinks = {
