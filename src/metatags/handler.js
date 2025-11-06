@@ -110,7 +110,7 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
    || h1Text.includes(code));
 
   if (hasErrorKeyword || hasStatusCode) {
-    log.info(`[metatags] Skipping error page for ${url} 
+    log.info(`[metatags-skipping] Skipping error page for ${url} 
       (title: "${tags.title}", h1: "${Array.isArray(tags.h1) ? tags.h1[0] : tags.h1}")`);
     return null;
   }
@@ -362,7 +362,7 @@ export async function submitForScraping(context) {
 
   const filteredUrls = finalUrls.filter((url) => {
     if (isPdfUrl(url)) {
-      log.info(`[metatags] Skipping PDF file from scraping: ${url}`);
+      log.info(`[metatags-skipping] Skipping PDF file from scraping: ${url}`);
       return false;
     }
     return true;
