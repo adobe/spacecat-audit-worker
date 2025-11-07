@@ -1038,6 +1038,8 @@ export async function sendCodeFixMessagesToImporter(opportunity, auditId, contex
             auditId,
             url: baseUrl,
             deliveryType: site.getDeliveryType(),
+            source: 'spacecat',
+            observation: 'Auto optimize form accessibility',
             data: {
               opportunityId: opportunity.getId(),
               suggestionIds: group.suggestionIds,
