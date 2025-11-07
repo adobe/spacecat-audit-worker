@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { Audit, PageIntent as PageIntentModel } from '@adobe/spacecat-shared-data-access';
 import { wwwUrlResolver } from '../common/index.js';
@@ -24,6 +24,17 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const ATHENA_DATABASE = 'rum_metrics';
 const ATHENA_TABLE = 'compact_metrics';
 const LOG_PREFIX = '[PageIntent]';
+const NOTHING_TO_PROCESS = 'NOTHING TO PROCESS';
+
+const NOTHING_TO_PROCESS_RESULT = (baseURL, siteId) => ({
+  auditResult: {
+    missingPageIntents: 0,
+  },
+  fullAuditRef: NOTHING_TO_PROCESS,
+  urls: [{ url: baseURL }],
+  processingType: 'minimal-content',
+  siteId,
+});
 
 export async function getPathsOfLastWeek(context) {
   const {
@@ -47,6 +58,12 @@ export async function getPathsOfLastWeek(context) {
   const query = await getStaticContent(variables, './src/page-intent/sql/referral-traffic-paths.sql');
   const description = `[Athena Query] Fetching referral traffic data for ${baseURL}`;
   const paths = await athenaClient.query(query, ATHENA_DATABASE, description);
+
+  if (!isNonEmptyArray(paths)) {
+    log.info(`${LOG_PREFIX} No referral traffic paths found for site ${baseURL}`);
+    return NOTHING_TO_PROCESS_RESULT(baseURL, site.getId());
+  }
+
   const pageIntents = await site.getPageIntents();
   const existingUrls = new Set(pageIntents.map((pi) => pi.getUrl()));
 
@@ -54,7 +71,14 @@ export async function getPathsOfLastWeek(context) {
     .map(({ path }) => path)
     .filter((path) => !existingUrls.has(`${baseURL}${path}`));
 
-  log.info(`${LOG_PREFIX} Found ${missingPageIntents.length} pages missing page intent; processing batch of ${batchSize} pages`);
+  const numOfMissing = missingPageIntents.length;
+
+  if (numOfMissing === 0) {
+    log.info(`${LOG_PREFIX} No missing page intents for site ${baseURL}`);
+    return NOTHING_TO_PROCESS_RESULT(baseURL, site.getId());
+  }
+
+  log.info(`${LOG_PREFIX} Found ${numOfMissing} pages missing page intent; processing batch of ${Math.min(batchSize, numOfMissing)} pages`);
 
   const urlsToScrape = missingPageIntents.slice(0, batchSize).map((path) => ({
     url: `${baseURL}${path}`,
@@ -62,7 +86,7 @@ export async function getPathsOfLastWeek(context) {
 
   return {
     auditResult: {
-      missingPageIntents: missingPageIntents.length,
+      missingPageIntents: numOfMissing,
     },
     fullAuditRef: finalUrl,
     urls: urlsToScrape,
@@ -128,16 +152,6 @@ export async function processPage(url, s3Path, processingContext) {
     log.debug(`${LOG_PREFIX} Processing ${url} from ${s3Path}`);
 
     const scrapeContent = await fetchScrapeContent(url, s3Path, s3Client, bucketName, log);
-
-    if (!scrapeContent) {
-      return {
-        url,
-        success: false,
-        error: 'No scrape data or minimal content found',
-        usage: null,
-      };
-    }
-
     const { analysis, usage } = await analyzePageIntent(url, scrapeContent, context, log);
 
     if (!analysis) {
@@ -190,6 +204,16 @@ export async function generatePageIntent(context) {
   const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   const { PageIntent } = dataAccess;
+  const fullAuditRef = audit.getFullAuditRef();
+
+  if (fullAuditRef === NOTHING_TO_PROCESS) {
+    return {
+      auditResult: {
+        result: NOTHING_TO_PROCESS,
+      },
+      fullAuditRef: audit.getFullAuditRef(),
+    };
+  }
 
   log.info(`${LOG_PREFIX} Step 2: Generating page intent for ${scrapeResultPaths.size} pages`);
 
