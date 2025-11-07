@@ -61,7 +61,7 @@ export const HEADINGS_CHECKS = Object.freeze({
   HEADING_ORDER_INVALID: {
     check: 'heading-order-invalid',
     title: 'Invalid Heading Order',
-    explanation: 'Heading levels should increase by one example: (H1→H2), not jump levels example: (H1→H3).',
+    explanation: 'Heading levels should increase by one (example: H1→H2), not jump levels (example: H1→H3).',
     suggestion: 'Adjust heading levels to maintain proper hierarchy.',
   },
   HEADING_NO_CONTENT: {
