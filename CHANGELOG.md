@@ -1,3 +1,10 @@
+## [1.230.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.6...v1.230.7) (2025-11-07)
+
+
+### Bug Fixes
+
+* heading oppty tokowaka fixes ([#1532](https://github.com/adobe/spacecat-audit-worker/issues/1532)) ([8dbfe27](https://github.com/adobe/spacecat-audit-worker/commit/8dbfe27e76a1ea5827e5429e328ec361b9881193))
+
 ## [1.230.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.5...v1.230.6) (2025-11-07)
 
 
