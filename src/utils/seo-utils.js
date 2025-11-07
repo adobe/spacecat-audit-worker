@@ -58,6 +58,35 @@ export function trimTagValue(value) {
 }
 
 /**
+ * Normalizes a tag value to a single string for comparison/matching.
+ * Handles both string and array values, converts to lowercase by default.
+ * Used for error detection and keyword matching in scraped content.
+ * @param {string|string[]|null|undefined} value - Tag value from scraper
+ * @param {boolean} toLowerCase - Whether to convert to lowercase (default: true)
+ * @returns {string} Normalized string value (empty string if null/undefined)
+ * @example
+ * normalizeTagValue('Error Page') // 'error page'
+ * normalizeTagValue(['404 Error', 'Not Found']) // '404 error'
+ * normalizeTagValue(null) // ''
+ */
+export function normalizeTagValue(value, toLowerCase = true) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  let normalized = '';
+  if (Array.isArray(value)) {
+    // Take first non-empty value from array
+    const firstValue = value.find((v) => typeof v === 'string' && v.trim());
+    normalized = firstValue || '';
+  } else if (typeof value === 'string') {
+    normalized = value;
+  }
+
+  return toLowerCase ? normalized.toLowerCase() : normalized;
+}
+
+/**
  * Returns the tag issue rank based on SEO impact.
  * The rank helps in sorting issues by priority.
  * Ranking (low number means high rank):
