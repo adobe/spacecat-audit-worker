@@ -81,10 +81,14 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
 
   try {
     log.info(`Fetching URL: ${url}`);
+    // remove loggin for production
+    log.info(`[DEBUG] Request headers: ${JSON.stringify(options.headers || {})}`);
     const response = await fetch(url, options);
     // finalUrl is the URL after any redirects
     const finalUrl = response.url;
     const html = await response.text();
+    // remove logging for production
+    log.info(`[DEBUG] Response status3: ${response.status}, HTML length: ${html.length}, Contains 'canonical': ${html.includes('canonical')}, First 500 chars: ${html.substring(0, 500)}`);
     const dom = new JSDOM(html);
     const { document } = dom.window;
 
