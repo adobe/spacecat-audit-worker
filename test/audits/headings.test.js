@@ -28,6 +28,7 @@ import {
   generateSuggestions,
   headingsAuditRunner,
   getH1HeadingASuggestion,
+  getHeadingSelector,
 } from '../../src/headings/handler.js';
 import { createOpportunityData, createOpportunityDataForElmo } from '../../src/headings/opportunity-data-mapper.js';
 import { keepLatestMergeDataFunction } from '../../src/utils/data-access.js';
@@ -1675,6 +1676,7 @@ describe('Headings Audit', () => {
                 action: 'insertBefore',
                 selector: 'body > main > :first-child',
                 tag: 'h1',
+                scrapedAt: new Date().toISOString(),
               }
             }]
           },
@@ -1686,6 +1688,7 @@ describe('Headings Audit', () => {
               transformRules: {
                 action: 'replace',
                 selector: 'body > h1',
+                scrapedAt: new Date().toISOString(),
               }
             }]
           }
@@ -1764,6 +1767,7 @@ describe('Headings Audit', () => {
               action: 'insertBefore',
               selector: 'body > main > :first-child',
               tag: 'h1',
+              scrapedAt: new Date().toISOString(),
             }
           }
         ]
@@ -2139,6 +2143,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url,
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>', // Missing H1 to trigger AI suggestion
                 tags: {
@@ -2233,6 +2238,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url,
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>', // Missing H1 to trigger AI suggestion
                 tags: {
@@ -2331,6 +2337,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url,
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>', // Missing H1 to trigger AI suggestion
                 tags: {
@@ -2413,6 +2420,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url,
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>',
                 tags: {
@@ -2496,6 +2504,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url,
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>',
                 tags: {
@@ -2577,6 +2586,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url, // Truthy finalUrl
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>',
                 tags: {
@@ -2665,6 +2675,7 @@ describe('Headings Audit', () => {
           Body: {
             transformToString: () => JSON.stringify({
               finalUrl: url,
+              scrapedAt: Date.now(),
               scrapeResult: {
                 rawBody: '<h2>No H1 here</h2>',
                 tags: {
@@ -4585,6 +4596,441 @@ describe('Headings Audit', () => {
 
       expect(result).to.deep.equal(auditData);
       expect(convertToOpportunityStub).to.have.been.calledOnce;
+    });
+  });
+
+  describe('getHeadingSelector function', () => {
+    describe('Unit tests - direct function calls', () => {
+      it('returns null when heading is null', () => {
+        const result = getHeadingSelector(null);
+        expect(result).to.be.null;
+      });
+
+      it('returns null when heading is undefined', () => {
+        const result = getHeadingSelector(undefined);
+        expect(result).to.be.null;
+      });
+
+      it('returns null when heading has no tagName property', () => {
+        const headingWithoutTag = { id: 'test', className: 'heading' };
+        const result = getHeadingSelector(headingWithoutTag);
+        expect(result).to.be.null;
+      });
+
+      it('returns null when heading.tagName is null', () => {
+        const headingWithNullTag = { tagName: null, id: 'test' };
+        const result = getHeadingSelector(headingWithNullTag);
+        expect(result).to.be.null;
+      });
+
+      it('returns null when heading.tagName is undefined', () => {
+        const headingWithUndefinedTag = { tagName: undefined, id: 'test' };
+        const result = getHeadingSelector(headingWithUndefinedTag);
+        expect(result).to.be.null;
+      });
+
+      it('returns null when heading.tagName is empty string', () => {
+        const headingWithEmptyTag = { tagName: '', id: 'test' };
+        const result = getHeadingSelector(headingWithEmptyTag);
+        expect(result).to.be.null;
+      });
+
+      it('returns selector when heading has valid tagName', () => {
+        const heading = { tagName: 'H1', id: 'main' };
+        const result = getHeadingSelector(heading);
+        expect(result).to.equal('h1#main');
+      });
+    });
+
+    describe('Integration tests - full audit flow', () => {
+
+    it('generates selector with ID when heading has an ID attribute', async () => {
+      const url = 'https://example.com/page';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1 id="main-heading">Test</h1><h2></h2>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      // Empty H2 should generate a selector
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.transformRules.selector).to.exist;
+      // Selector should be generated for the H2
+      expect(emptyCheck.transformRules.selector).to.include('h2');
+    });
+
+    it('generates selector with single class', async () => {
+      const url = 'https://example.com/page';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><h2 class="section-heading"></h2>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.transformRules.selector).to.include('h2');
+      expect(emptyCheck.transformRules.selector).to.include('section-heading');
+    });
+
+    it('generates selector with multiple classes (limits to 2)', async () => {
+      const url = 'https://example.com/page';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><h2 class="hero title bold highlight"></h2>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+      expect(selector).to.include('h2');
+      expect(selector).to.include('hero');
+      expect(selector).to.include('title');
+      // Should not include 3rd and 4th classes
+      expect(selector).to.not.include('bold');
+      expect(selector).to.not.include('highlight');
+    });
+
+    it('generates selector with nth-of-type for multiple siblings', async () => {
+      const url = 'https://example.com/page';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><div><h2>First</h2><h2></h2><h2>Third</h2></div>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.transformRules.selector).to.include('h2');
+      expect(emptyCheck.transformRules.selector).to.include(':nth-of-type(2)');
+    });
+
+    it('generates selector with parent context', async () => {
+      const url = 'https://example.com/page';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><main><article><h2></h2></article></main>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+      expect(selector).to.include('h2');
+      expect(selector).to.include('article');
+      expect(selector).to.include('main');
+      expect(selector).to.include('>'); // Should use direct child combinator
+    });
+
+    it('generates selector with parent classes', async () => {
+      const url = 'https://example.com/page';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><div class="container wrapper"><h2></h2></div>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+      expect(selector).to.include('h2');
+      expect(selector).to.include('div');
+      expect(selector).to.include('container');
+      expect(selector).to.include('wrapper');
+    });
+
+    it('stops at parent with ID (early termination)', async () => {
+      const url = 'https://example.com/page';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><div id="content"><section><article><h2></h2></article></section></div>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+      expect(selector).to.include('h2');
+      expect(selector).to.include('#content');
+      // Should not climb past the ID
+      expect(selector).to.not.include('body');
+    });
+
+    it('limits parent context to 3 levels', async () => {
+      const url = 'https://example.com/page';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><div><section><article><aside><h2></h2></aside></article></section></div>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+      
+      // Count the number of '>' separators (should be max 3 for 3 levels of parents)
+      const separatorCount = (selector.match(/>/g) || []).length;
+      expect(separatorCount).to.be.at.most(3);
+    });
+
+    it('handles heading with ID and classes (ID takes priority)', async () => {
+      const url = 'https://example.com/page';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1 id="main" class="hero large">Test</h1><h2></h2>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      // Empty H2 should still generate a selector
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      expect(emptyCheck.transformRules.selector).to.include('h2');
+    });
+
+    it('handles complex selector: classes + nth-of-type + parent context', async () => {
+      const url = 'https://example.com/page';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><main class="content"><section class="posts"><h2 class="title">First</h2><h2 class="title"></h2></section></main>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+      
+      // Should include all parts
+      expect(selector).to.include('h2');
+      expect(selector).to.include('title'); // heading class
+      expect(selector).to.include(':nth-of-type(2)'); // second H2
+      expect(selector).to.include('section'); // parent
+      expect(selector).to.include('posts'); // parent class
+      expect(selector).to.include('>'); // direct child combinator
+    });
+
+    it('handles empty heading at different document positions', async () => {
+      const url = 'https://example.com/page';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><header><h2></h2></header><main><h3></h3></main><footer><h4></h4></footer>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      const emptyChecks = result.checks.filter(c => c.check === 'heading-empty');
+      expect(emptyChecks).to.have.lengthOf(3);
+      
+      // Each should have unique selectors
+      const selectors = emptyChecks.map(c => c.transformRules.selector);
+      const uniqueSelectors = new Set(selectors);
+      expect(uniqueSelectors.size).to.equal(3);
+      
+      // Verify each includes its parent context
+      expect(selectors.some(s => s.includes('header'))).to.be.true;
+      expect(selectors.some(s => s.includes('main'))).to.be.true;
+      expect(selectors.some(s => s.includes('footer'))).to.be.true;
+    });
+
+    it('handles parent with excessive classes (limits to 2)', async () => {
+      const url = 'https://example.com/page';
+      
+      s3Client.send.resolves({
+        Body: {
+          transformToString: () => JSON.stringify({
+            finalUrl: url,
+            scrapedAt: Date.now(),
+            scrapeResult: {
+              rawBody: '<h1>Test</h1><div class="container wrapper main-content primary"><h2></h2></div>',
+              tags: {
+                title: 'Test',
+                description: 'Test',
+                h1: ['Test'],
+              },
+            }
+          }),
+        },
+        ContentType: 'application/json',
+      });
+
+      const result = await validatePageHeadings(url, log, site, allKeys, s3Client, context.env.S3_SCRAPER_BUCKET_NAME, context, seoChecks);
+      
+      const emptyCheck = result.checks.find(c => c.check === 'heading-empty');
+      expect(emptyCheck).to.exist;
+      const selector = emptyCheck.transformRules.selector;
+      
+      // Should include first 2 parent classes only
+      expect(selector).to.include('container');
+      expect(selector).to.include('wrapper');
+      // Should not include 3rd and 4th classes
+      expect(selector).to.not.include('main-content');
+      expect(selector).to.not.include('primary');
+    });
     });
   });
 });

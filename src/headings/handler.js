@@ -161,7 +161,7 @@ function getScrapeJsonPath(url, siteId) {
  * @param {Element} heading - The heading element to generate selector for
  * @returns {string} A CSS selector string that uniquely identifies the element
  */
-function getHeadingSelector(heading) {
+export function getHeadingSelector(heading) {
   if (!heading || !heading.tagName) {
     return null;
   }
