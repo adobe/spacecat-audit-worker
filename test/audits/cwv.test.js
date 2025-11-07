@@ -79,6 +79,10 @@ describe('CWVRunner Tests', () => {
     },
   };
 
+  beforeEach(() => {
+    context.rumApiClient.query = sandbox.stub().resolves(rumData);
+  });
+
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
@@ -101,7 +105,7 @@ describe('CWVRunner Tests', () => {
     ).to.be.true;
 
     // With new logic: top 15 pages by pageviews are always included
-    // rumData has 32 entries, top 15 will be selected (first 15 when sorted by pageviews desc)
+    // rumData has 31 entries, top 15 will be selected (first 15 when sorted by pageviews desc)
     const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
     const expectedData = sortedData.slice(0, 15);
 
@@ -212,8 +216,8 @@ describe('CWVRunner Tests', () => {
 
     const result = await CWVRunner(auditUrl, context, site);
 
-    // All 32 entries have pageviews >= 70, so all should be included
-    expect(result.auditResult.cwv).to.have.lengthOf(32);
+    // All 31 entries have pageviews >= 70, so all should be included
+    expect(result.auditResult.cwv).to.have.lengthOf(31);
     
     // Verify sorted by pageviews descending
     for (let i = 1; i < result.auditResult.cwv.length; i++) {
@@ -292,9 +296,6 @@ describe('CWVRunner Tests', () => {
     const result = await CWVRunner(auditUrl, context, site);
     // Should only have top 15 (grouped entry excluded: type !== 'url')
     expect(result.auditResult.cwv).to.have.lengthOf(15);
-
-    // Reset stub back to original rumData to not affect other tests
-    context.rumApiClient.query.resolves(rumData);
   });
 
   describe('CWV audit to oppty conversion', () => {
