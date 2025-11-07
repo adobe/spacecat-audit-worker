@@ -841,5 +841,6 @@ export default new AuditBuilder()
   .withPostProcessors([
     generateSuggestions,
     opportunityAndSuggestions,
+    opportunityAndSuggestionsForElmo,
   ])
   .build();
