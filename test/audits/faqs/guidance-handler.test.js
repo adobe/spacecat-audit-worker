@@ -16,7 +16,6 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
-import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
 
 use(sinonChai);
 
@@ -121,10 +120,6 @@ describe('FAQs guidance handler', () => {
       dataAccess: {
         Site,
         Opportunity,
-        Suggestion: {
-          STATUSES: SuggestionDataAccess.STATUSES,
-          TYPES: SuggestionDataAccess.TYPES
-        },
       },
     };
 
@@ -302,7 +297,7 @@ describe('FAQs guidance handler', () => {
     expect(syncSuggestionsStub).to.have.been.calledOnce;
   });
 
-  it('should create suggestion with NEW status when site does not require validation', async () => {
+  it('should create suggestion with correct data structure', async () => {
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
@@ -310,9 +305,6 @@ describe('FAQs guidance handler', () => {
         presignedUrl: 'https://s3.aws.com/faqs.json',
       },
     };
-
-    // Set requiresValidation to false in context
-    context.site = { requiresValidation: false };
 
     await handler(message, context);
 
@@ -328,7 +320,12 @@ describe('FAQs guidance handler', () => {
     };
 
     const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
+    expect(mappedSuggestion.opportunityId).to.equal('existing-oppty-id');
+    expect(mappedSuggestion.type).to.equal('CONTENT_UPDATE');
+    expect(mappedSuggestion.rank).to.equal(1);
     expect(mappedSuggestion.status).to.equal('NEW');
+    expect(mappedSuggestion.data.suggestionValue).to.equal(testData.suggestionValue);
+    expect(mappedSuggestion.kpiDeltas.estimatedKPILift).to.equal(0);
   });
 
   it('should call buildKey function correctly', async () => {
@@ -515,4 +512,3 @@ describe('FAQs guidance handler', () => {
     expect(createdArg.guidance.recommendations[0].insight).to.include('1 relevant FAQs identified');
   });
 });
-
