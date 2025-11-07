@@ -119,7 +119,7 @@ async function runCdnLogsReport(url, context, site, auditContext) {
 
     for (const weekOffset of weekOffsets) {
       // eslint-disable-next-line no-await-in-loop
-      await runWeeklyReport({
+      const result = await runWeeklyReport({
         athenaClient,
         s3Config,
         reportConfig,
@@ -129,14 +129,16 @@ async function runCdnLogsReport(url, context, site, auditContext) {
         weekOffset,
         context,
       });
-    }
 
-    results.push({
-      name: reportConfig.name,
-      table: reportConfig.tableName,
-      database: s3Config.databaseName,
-      customer: s3Config.customerName,
-    });
+      results.push({
+        name: reportConfig.name,
+        table: reportConfig.tableName,
+        database: s3Config.databaseName,
+        customer: s3Config.customerName,
+        success: result.success,
+        weekOffset,
+      });
+    }
   }
 
   return {
