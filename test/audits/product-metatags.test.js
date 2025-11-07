@@ -782,8 +782,9 @@ describe('Product MetaTags', () => {
         );
 
         expect(result).to.be.null;
-        expect(logStub.error).to.have.been.calledWith(
-          '[PRODUCT-METATAGS] Scrape result is empty for scrapes/site-id/404/scrape.json',
+        // Now caught by error page detection (has "404" in content)
+        expect(logStub.info).to.have.been.calledWith(
+          sinon.match(/Skipping error page for http:\/\/example\.com\/404/),
         );
       });
 
@@ -1040,9 +1041,10 @@ describe('Product MetaTags', () => {
             accessCount += 1;
             // 1st access: guard left side -> object
             // 2nd access: guard right side (typeof) -> object
-            // 3rd access: debug line 181 -> undefined to trigger fallback
-            // 4th+ access: building return object -> object
-            return accessCount === 3 ? undefined : tagsObject;
+            // 3rd access: error detection destructure -> object (new with error detection)
+            // 4th access: debug line -> undefined to trigger fallback
+            // 5th+ access: building return object (title, description, h1) -> object
+            return accessCount === 4 ? undefined : tagsObject;
           },
         });
 
