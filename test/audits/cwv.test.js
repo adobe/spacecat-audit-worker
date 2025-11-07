@@ -267,12 +267,12 @@ describe('CWVRunner Tests', () => {
     const groupedData = {
       type: 'group', // Not 'url' - should not match homepage logic
       // url field is absent for grouped entries (they have pattern instead)
-      pageviews: 100000, // High pageviews - will be in top 15
+      pageviews: 50, // Low pageviews - not in top 15, below threshold
       organic: 10,
       metrics: [
         {
           deviceType: 'desktop',
-          pageviews: 100000,
+          pageviews: 50,
           organic: 10,
           lcp: 2000,
           lcpCount: 1,
@@ -290,7 +290,8 @@ describe('CWVRunner Tests', () => {
     context.rumApiClient.query.resolves(dataWithGrouped);
 
     const result = await CWVRunner(auditUrl, context, site);
-    expect(result.auditResult.cwv).to.have.lengthOf(16);
+    // Should only have top 15 (grouped entry excluded: type !== 'url')
+    expect(result.auditResult.cwv).to.have.lengthOf(15);
   });
 
   describe('CWV audit to oppty conversion', () => {
