@@ -71,7 +71,7 @@ export const SHEET_CONFIGS = {
 
       data.forEach((row) => {
         const {
-          path,
+          path = '',
           referrer,
           utm_source,
           utm_medium,
