@@ -292,6 +292,9 @@ describe('CWVRunner Tests', () => {
     const result = await CWVRunner(auditUrl, context, site);
     // Should only have top 15 (grouped entry excluded: type !== 'url')
     expect(result.auditResult.cwv).to.have.lengthOf(15);
+
+    // Reset stub back to original rumData to not affect other tests
+    context.rumApiClient.query.resolves(rumData);
   });
 
   describe('CWV audit to oppty conversion', () => {

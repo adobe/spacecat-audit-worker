@@ -159,7 +159,7 @@ describe('CWV Utils', () => {
       await sendSQSMessageForAutoSuggest(context, opportunity, site);
 
       expect(sqsStub.called).to.be.false;
-      expect(context.log.info).to.have.been.calledWith('CWV auto-suggest is disabled for site test-site-id, skipping');
+      expect(context.log.info).to.have.been.calledWith('[audit-worker-CWV] CWV auto-suggest is disabled for site test-site-id, skipping');
     });
 
     it('should not send messages for suggestions with existing guidance', async () => {
