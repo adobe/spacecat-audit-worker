@@ -825,6 +825,44 @@ describe('Product MetaTags', () => {
         );
       });
 
+      it('should detect error page when h1 is a string instead of array', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/error',
+          scrapeResult: {
+            tags: {
+              title: 'Error Page',
+              description: 'Something went wrong',
+              h1: '500 Internal Server Error', // String, not array
+            },
+            rawBody: '<html><body><h1>500 Internal Server Error</h1></body></html>'.repeat(10),
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/error',
+          'scrapes/site-id/error/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.info).to.have.been.calledWith(
+          sinon.match(/Skipping error page for http:\/\/example\.com\/error/),
+        );
+        // Verify h1Display shows the string value (not h1[0])
+        expect(logStub.info).to.have.been.calledWith(
+          sinon.match(/h1: "500 Internal Server Error"/),
+        );
+      });
+
       it('should skip pages with scraper error 403', async () => {
         const mockScrapeResult = {
           error: {
