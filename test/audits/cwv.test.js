@@ -263,6 +263,36 @@ describe('CWVRunner Tests', () => {
     expect(homepageInResult.pageviews).to.equal(50);
   });
 
+  it('does not treat grouped URLs as homepage', async () => {
+    const groupedData = {
+      type: 'group', // Not 'url' - should not match homepage logic
+      // url field is absent for grouped entries (they have pattern instead)
+      pageviews: 100000, // High pageviews - will be in top 15
+      organic: 10,
+      metrics: [
+        {
+          deviceType: 'desktop',
+          pageviews: 100000,
+          organic: 10,
+          lcp: 2000,
+          lcpCount: 1,
+          cls: 0.01,
+          clsCount: 1,
+          inp: 100,
+          inpCount: 1,
+          ttfb: 500,
+          ttfbCount: 1,
+        },
+      ],
+    };
+
+    const dataWithGrouped = [...rumData, groupedData];
+    context.rumApiClient.query.resolves(dataWithGrouped);
+
+    const result = await CWVRunner(auditUrl, context, site);
+    expect(result.auditResult.cwv).to.have.lengthOf(16);
+  });
+
   describe('CWV audit to oppty conversion', () => {
     let addSuggestionsResponse;
     let oppty;
