@@ -18,9 +18,6 @@ import sinonChai from 'sinon-chai';
 import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 import { MockContextBuilder } from '../../shared.js';
-import athenaResults from '../../fixtures/page-intent/athena-results.json' with { type: 'json' };
-import scrapeResults from '../../fixtures/page-intent/scrape-results.json' with { type: 'json' };
-import llmResponses from '../../fixtures/page-intent/llm-responses.json' with { type: 'json' };
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -192,330 +189,319 @@ describe('Page Intent Handler', () => {
       expect(result.auditResult).to.have.property('missingPageIntents', 2);
     });
 
-    it('should handle empty Athena results', async () => {
+    it('should handle empty Athena results with early termination', async () => {
       mockAthenaClient.query.resolves([]);
 
       const result = await handlerModule.getPathsOfLastWeek(context);
 
-      expect(result.urls).to.have.lengthOf(0);
       expect(result.auditResult.missingPageIntents).to.equal(0);
+      expect(result.fullAuditRef).to.equal('NOTHING TO PROCESS');
+      expect(result.urls).to.deep.equal([{ url: baseURL }]);
+      expect(result.processingType).to.equal('minimal-content');
+      expect(result.siteId).to.equal(siteId);
+    });
+
+    it('should handle all pages already having page intents with early termination', async () => {
+      mockSite.getPageIntents.resolves([
+        { getUrl: () => `${baseURL}/page1` },
+        { getUrl: () => `${baseURL}/page2` },
+      ]);
+
+      mockAthenaClient.query.resolves([
+        { path: '/page1' },
+        { path: '/page2' },
+      ]);
+
+      const result = await handlerModule.getPathsOfLastWeek(context);
+
+      expect(result.auditResult.missingPageIntents).to.equal(0);
+      expect(result.fullAuditRef).to.equal('NOTHING TO PROCESS');
+      expect(result.urls).to.deep.equal([{ url: baseURL }]);
+      expect(result.processingType).to.equal('minimal-content');
+      expect(result.siteId).to.equal(siteId);
     });
   });
 
   describe('generatePageIntent', () => {
-      beforeEach(() => {
-        context.scrapeResultPaths = new Map([
-          [`${baseURL}/page1`, 's3-key-1'],
-          [`${baseURL}/page2`, 's3-key-2'],
-        ]);
-      });
-
-      it('should process pages sequentially', async () => {
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            minimalContent: 'Test content for page',
-          },
-        });
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(getObjectFromKeyStub).to.have.been.calledTwice;
-        expect(promptStub).to.have.been.calledTwice;
-        expect(mockPageIntent.create).to.have.been.calledTwice;
-        expect(result.auditResult.successfulPages).to.equal(2);
-        expect(result.auditResult.failedPages).to.equal(0);
-      });
-
-      it('should track token usage across all prompts', async () => {
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            minimalContent: 'Test content for page',
-          },
-        });
-
-        promptStub.onFirstCall().resolves({
-          content: '{"pageIntent":"INFORMATIONAL","topic":"test"}',
-          usage: {
-            prompt_tokens: 100,
-            completion_tokens: 50,
-            total_tokens: 150,
-          },
-        });
-
-        promptStub.onSecondCall().resolves({
-          content: '{"pageIntent":"COMMERCIAL","topic":"product"}',
-          usage: {
-            prompt_tokens: 120,
-            completion_tokens: 60,
-            total_tokens: 180,
-          },
-        });
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(result.auditResult).to.have.property('tokenUsage');
-        expect(result.auditResult.tokenUsage.totalPromptTokens).to.equal(220);
-        expect(result.auditResult.tokenUsage.totalCompletionTokens).to.equal(110);
-        expect(result.auditResult.tokenUsage.totalTokens).to.equal(330);
-        expect(result.auditResult.tokenUsage.promptCount).to.equal(2);
-      });
-
-      it('should handle missing usage information gracefully', async () => {
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            minimalContent: 'Test content for page',
-          },
-        });
-
-        promptStub.resolves({
-          content: '{"pageIntent":"INFORMATIONAL","topic":"test"}',
-          usage: null,
-        });
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(result.auditResult).to.have.property('tokenUsage');
-        expect(result.auditResult.tokenUsage.totalTokens).to.equal(0);
-        expect(result.auditResult.tokenUsage.promptCount).to.equal(0);
-      });
-
-      it('should skip pages with no scrape data', async () => {
-        getObjectFromKeyStub.onFirstCall().resolves(null);
-        getObjectFromKeyStub.onSecondCall().resolves({
-          scrapeResult: {
-            minimalContent: 'Test content',
-          },
-        });
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(mockPageIntent.create).to.have.been.calledOnce;
-        expect(result.auditResult.successfulPages).to.equal(1);
-        expect(result.auditResult.failedPages).to.equal(1);
-      });
-
-      it('should skip pages with no minimal content', async () => {
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            // minimalContent is missing
-          },
-        });
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(promptStub).to.not.have.been.called;
-        expect(mockPageIntent.create).to.not.have.been.called;
-        expect(result.auditResult.failedPages).to.equal(2);
-      });
-
-      it('should create PageIntent records with correct data', async () => {
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            minimalContent: 'Test content',
-          },
-        });
-
-        promptStub.resolves({
-          content: '{"pageIntent":"COMMERCIAL","topic":"Product Reviews"}',
-        });
-
-        await handlerModule.generatePageIntent(context);
-
-        expect(mockPageIntent.create).to.have.been.calledWith(
-          sinon.match({
-            siteId,
-            url: `${baseURL}/page1`,
-            pageIntent: 'COMMERCIAL',
-            topic: 'Product Reviews',
-          }),
-        );
-      });
-
-      it('should reject invalid page intents', async () => {
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            minimalContent: 'Test content',
-          },
-        });
-
-        promptStub.resolves({
-          content: '{"pageIntent":"INVALID_INTENT","topic":"Test"}',
-        });
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(mockPageIntent.create).to.not.have.been.called;
-        expect(result.auditResult.failedPages).to.equal(2);
-        expect(context.log.warn).to.have.been.calledWith(
-          sinon.match(/Invalid or null page intent/),
-        );
-      });
-
-      it('should reject null page intents', async () => {
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            minimalContent: 'Test content',
-          },
-        });
-
-        promptStub.resolves({
-          content: '{"pageIntent":null,"topic":"Test"}',
-        });
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(mockPageIntent.create).to.not.have.been.called;
-        expect(result.auditResult.failedPages).to.equal(2);
-      });
-
-      it('should handle LLM errors gracefully', async () => {
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            minimalContent: 'Test content',
-          },
-        });
-
-        promptStub.rejects(new Error('LLM API error'));
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(mockPageIntent.create).to.not.have.been.called;
-        expect(result.auditResult.failedPages).to.equal(2);
-        expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/Failed to process/),
-          sinon.match.instanceOf(Error),
-        );
-      });
-
-      it('should handle malformed JSON from LLM', async () => {
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            minimalContent: 'Test content',
-          },
-        });
-
-        promptStub.resolves({
-          content: 'not valid json',
-        });
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(mockPageIntent.create).to.not.have.been.called;
-        expect(result.auditResult.failedPages).to.equal(2);
-      });
-
-      it('should handle markdown-wrapped JSON responses (```json)', async () => {
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            minimalContent: 'Test content',
-          },
-        });
-
-        promptStub.resolves({
-          content: '```json\n{"pageIntent":"INFORMATIONAL","topic":"Test Topic"}\n```',
-        });
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(mockPageIntent.create).to.have.been.calledTwice;
-        expect(mockPageIntent.create).to.have.been.calledWith(
-          sinon.match({
-            pageIntent: 'INFORMATIONAL',
-            topic: 'Test Topic',
-          }),
-        );
-        expect(result.auditResult.successfulPages).to.equal(2);
-      });
-
-      it('should handle markdown-wrapped JSON responses (```)', async () => {
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            minimalContent: 'Test content',
-          },
-        });
-
-        promptStub.resolves({
-          content: '```\n{"pageIntent":"COMMERCIAL","topic":"Product"}\n```',
-        });
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(mockPageIntent.create).to.have.been.calledTwice;
-        expect(mockPageIntent.create).to.have.been.calledWith(
-          sinon.match({
-            pageIntent: 'COMMERCIAL',
-            topic: 'Product',
-          }),
-        );
-        expect(result.auditResult.successfulPages).to.equal(2);
-      });
-
-      it('should handle plain JSON responses without markdown', async () => {
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            minimalContent: 'Test content',
-          },
-        });
-
-        promptStub.resolves({
-          content: '{"pageIntent":"TRANSACTIONAL","topic":"Shopping"}',
-        });
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(mockPageIntent.create).to.have.been.calledTwice;
-        expect(mockPageIntent.create).to.have.been.calledWith(
-          sinon.match({
-            pageIntent: 'TRANSACTIONAL',
-            topic: 'Shopping',
-          }),
-        );
-        expect(result.auditResult.successfulPages).to.equal(2);
-      });
-
-      it('should accept all valid page intent types', async () => {
-        const validIntents = ['INFORMATIONAL', 'NAVIGATIONAL', 'COMMERCIAL', 'TRANSACTIONAL'];
-
-        for (const intent of validIntents) {
-          mockPageIntent.create.resetHistory();
-          getObjectFromKeyStub.resolves({
-            scrapeResult: {
-              minimalContent: 'Test content',
-            },
-          });
-
-          promptStub.resolves({
-            content: `{"pageIntent":"${intent}","topic":"Test"}`,
-          });
-
-          context.scrapeResultPaths = new Map([[`${baseURL}/page`, 's3-key']]);
-
-          await handlerModule.generatePageIntent(context);
-
-          expect(mockPageIntent.create).to.have.been.calledWith(
-            sinon.match({
-              pageIntent: intent,
-            }),
-          );
-        }
-      });
-
-      it('should handle empty scrapeResultPaths', async () => {
-        context.scrapeResultPaths = new Map();
-
-        const result = await handlerModule.generatePageIntent(context);
-
-        expect(result.auditResult.successfulPages).to.equal(0);
-        expect(result.auditResult.failedPages).to.equal(0);
-      });
+    beforeEach(() => {
+      context.scrapeResultPaths = new Map([
+        [`${baseURL}/page1`, 's3-key-1'],
+        [`${baseURL}/page2`, 's3-key-2'],
+      ]);
     });
 
-  describe('Edge Cases', () => {
-      it('should handle missing topic in LLM response', async () => {
-        context.scrapeResultPaths = new Map([
-          [`${baseURL}/page1`, 's3-key-1'],
-        ]);
+    it('should process pages sequentially', async () => {
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content for page',
+        },
+      });
 
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(getObjectFromKeyStub).to.have.been.calledTwice;
+      expect(promptStub).to.have.been.calledTwice;
+      expect(mockPageIntent.create).to.have.been.calledTwice;
+      expect(result.auditResult.successfulPages).to.equal(2);
+      expect(result.auditResult.failedPages).to.equal(0);
+    });
+
+    it('should track token usage across all prompts', async () => {
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content for page',
+        },
+      });
+
+      promptStub.onFirstCall().resolves({
+        content: '{"pageIntent":"INFORMATIONAL","topic":"test"}',
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 50,
+          total_tokens: 150,
+        },
+      });
+
+      promptStub.onSecondCall().resolves({
+        content: '{"pageIntent":"COMMERCIAL","topic":"product"}',
+        usage: {
+          prompt_tokens: 120,
+          completion_tokens: 60,
+          total_tokens: 180,
+        },
+      });
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(result.auditResult).to.have.property('tokenUsage');
+      expect(result.auditResult.tokenUsage.totalPromptTokens).to.equal(220);
+      expect(result.auditResult.tokenUsage.totalCompletionTokens).to.equal(110);
+      expect(result.auditResult.tokenUsage.totalTokens).to.equal(330);
+      expect(result.auditResult.tokenUsage.promptCount).to.equal(2);
+    });
+
+    it('should handle missing usage information gracefully', async () => {
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content for page',
+        },
+      });
+
+      promptStub.resolves({
+        content: '{"pageIntent":"INFORMATIONAL","topic":"test"}',
+        usage: null,
+      });
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(result.auditResult).to.have.property('tokenUsage');
+      expect(result.auditResult.tokenUsage.totalTokens).to.equal(0);
+      expect(result.auditResult.tokenUsage.promptCount).to.equal(0);
+    });
+
+    it('should analyze pages with no scrape data using URL alone', async () => {
+      getObjectFromKeyStub.onFirstCall().resolves(null);
+      getObjectFromKeyStub.onSecondCall().resolves({
+        scrapeResult: {
+          minimalContent: 'Test content',
+        },
+      });
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      // LLM should be called for both pages (one with null content, one with content)
+      expect(promptStub).to.have.been.calledTwice;
+      expect(mockPageIntent.create).to.have.been.calledTwice;
+      expect(result.auditResult.successfulPages).to.equal(2);
+      expect(result.auditResult.failedPages).to.equal(0);
+    });
+
+    it('should analyze pages with no minimal content using URL alone', async () => {
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          // minimalContent is missing
+        },
+      });
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      // esM should still be called even without content
+      expect(promptStub).to.have.been.calledTwice;
+      expect(mockPageIntent.create).to.have.been.calledTwice;
+      expect(result.auditResult.successfulPages).to.equal(2);
+      expect(result.auditResult.failedPages).to.equal(0);
+    });
+
+    it('should create PageIntent records with correct data', async () => {
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content',
+        },
+      });
+
+      promptStub.resolves({
+        content: '{"pageIntent":"COMMERCIAL","topic":"Product Reviews"}',
+      });
+
+      await handlerModule.generatePageIntent(context);
+
+      expect(mockPageIntent.create).to.have.been.calledWith(
+        sinon.match({
+          siteId,
+          url: `${baseURL}/page1`,
+          pageIntent: 'COMMERCIAL',
+          topic: 'Product Reviews',
+        }),
+      );
+    });
+
+    it('should reject invalid page intents', async () => {
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content',
+        },
+      });
+
+      promptStub.resolves({
+        content: '{"pageIntent":"INVALID_INTENT","topic":"Test"}',
+      });
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(mockPageIntent.create).to.not.have.been.called;
+      expect(result.auditResult.failedPages).to.equal(2);
+      expect(context.log.warn).to.have.been.calledWith(
+        sinon.match(/Invalid or null page intent/),
+      );
+    });
+
+    it('should reject null page intents', async () => {
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content',
+        },
+      });
+
+      promptStub.resolves({
+        content: '{"pageIntent":null,"topic":"Test"}',
+      });
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(mockPageIntent.create).to.not.have.been.called;
+      expect(result.auditResult.failedPages).to.equal(2);
+    });
+
+    it('should handle LLM errors gracefully', async () => {
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content',
+        },
+      });
+
+      promptStub.rejects(new Error('LLM API error'));
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(mockPageIntent.create).to.not.have.been.called;
+      expect(result.auditResult.failedPages).to.equal(2);
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match(/Failed to process/),
+        sinon.match.instanceOf(Error),
+      );
+    });
+
+    it('should handle malformed JSON from LLM', async () => {
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content',
+        },
+      });
+
+      promptStub.resolves({
+        content: 'not valid json',
+      });
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(mockPageIntent.create).to.not.have.been.called;
+      expect(result.auditResult.failedPages).to.equal(2);
+    });
+
+    it('should handle markdown-wrapped JSON responses (```json)', async () => {
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content',
+        },
+      });
+
+      promptStub.resolves({
+        content: '```json\n{"pageIntent":"INFORMATIONAL","topic":"Test Topic"}\n```',
+      });
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(mockPageIntent.create).to.have.been.calledTwice;
+      expect(mockPageIntent.create).to.have.been.calledWith(
+        sinon.match({
+          pageIntent: 'INFORMATIONAL',
+          topic: 'Test Topic',
+        }),
+      );
+      expect(result.auditResult.successfulPages).to.equal(2);
+    });
+
+    it('should handle markdown-wrapped JSON responses (```)', async () => {
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content',
+        },
+      });
+
+      promptStub.resolves({
+        content: '```\n{"pageIntent":"COMMERCIAL","topic":"Product"}\n```',
+      });
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(mockPageIntent.create).to.have.been.calledTwice;
+      expect(mockPageIntent.create).to.have.been.calledWith(
+        sinon.match({
+          pageIntent: 'COMMERCIAL',
+          topic: 'Product',
+        }),
+      );
+      expect(result.auditResult.successfulPages).to.equal(2);
+    });
+
+    it('should handle plain JSON responses without markdown', async () => {
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content',
+        },
+      });
+
+      promptStub.resolves({
+        content: '{"pageIntent":"TRANSACTIONAL","topic":"Shopping"}',
+      });
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(mockPageIntent.create).to.have.been.calledTwice;
+      expect(mockPageIntent.create).to.have.been.calledWith(
+        sinon.match({
+          pageIntent: 'TRANSACTIONAL',
+          topic: 'Shopping',
+        }),
+      );
+      expect(result.auditResult.successfulPages).to.equal(2);
+    });
+
+    it('should accept all valid page intent types', async () => {
+      const validIntents = ['INFORMATIONAL', 'NAVIGATIONAL', 'COMMERCIAL', 'TRANSACTIONAL'];
+
+      for (const intent of validIntents) {
+        mockPageIntent.create.resetHistory();
         getObjectFromKeyStub.resolves({
           scrapeResult: {
             minimalContent: 'Test content',
@@ -523,39 +509,99 @@ describe('Page Intent Handler', () => {
         });
 
         promptStub.resolves({
-          content: '{"pageIntent":"INFORMATIONAL"}',
+          content: `{"pageIntent":"${intent}","topic":"Test"}`,
         });
+
+        context.scrapeResultPaths = new Map([[`${baseURL}/page`, 's3-key']]);
 
         await handlerModule.generatePageIntent(context);
 
         expect(mockPageIntent.create).to.have.been.calledWith(
           sinon.match({
-            pageIntent: 'INFORMATIONAL',
-            topic: '',
+            pageIntent: intent,
           }),
         );
+      }
+    });
+
+    it('should handle empty scrapeResultPaths', async () => {
+      context.scrapeResultPaths = new Map();
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(result.auditResult.successfulPages).to.equal(0);
+      expect(result.auditResult.failedPages).to.equal(0);
+    });
+
+    it('should return early when fullAuditRef is NOTHING_TO_PROCESS', async () => {
+      mockAudit.getFullAuditRef.returns('NOTHING TO PROCESS');
+
+      context.scrapeResultPaths = new Map([
+        [`${baseURL}/page1`, 's3-key-1'],
+        [`${baseURL}/page2`, 's3-key-2'],
+      ]);
+
+      const result = await handlerModule.generatePageIntent(context);
+
+      expect(getObjectFromKeyStub).to.not.have.been.called;
+      expect(promptStub).to.not.have.been.called;
+      expect(mockPageIntent.create).to.not.have.been.called;
+
+      expect(result).to.deep.equal({
+        auditResult: {
+          result: 'NOTHING TO PROCESS',
+        },
+        fullAuditRef: 'NOTHING TO PROCESS',
+      });
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should handle missing topic in LLM response', async () => {
+      context.scrapeResultPaths = new Map([
+        [`${baseURL}/page1`, 's3-key-1'],
+      ]);
+
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: 'Test content',
+        },
       });
 
-      it('should handle very long minimal content', async () => {
-        context.scrapeResultPaths = new Map([
-          [`${baseURL}/page1`, 's3-key-1'],
-        ]);
-
-        const longContent = 'a'.repeat(50000);
-        getObjectFromKeyStub.resolves({
-          scrapeResult: {
-            minimalContent: longContent,
-          },
-        });
-
-        await handlerModule.generatePageIntent(context);
-
-        // Verify that the prompt was called with truncated content
-        const promptCall = promptStub.getCall(0);
-        expect(promptCall.args[1]).to.include('a'.repeat(10000));
-        expect(promptCall.args[1]).to.include('[content truncated]');
-        expect(promptCall.args[1]).not.to.include('a'.repeat(50000));
+      promptStub.resolves({
+        content: '{"pageIntent":"INFORMATIONAL"}',
       });
+
+      await handlerModule.generatePageIntent(context);
+
+      expect(mockPageIntent.create).to.have.been.calledWith(
+        sinon.match({
+          pageIntent: 'INFORMATIONAL',
+          topic: '',
+        }),
+      );
+    });
+
+    it('should handle very long minimal content', async () => {
+      context.scrapeResultPaths = new Map([
+        [`${baseURL}/page1`, 's3-key-1'],
+      ]);
+
+      const longContent = 'a'.repeat(50000);
+      getObjectFromKeyStub.resolves({
+        scrapeResult: {
+          minimalContent: longContent,
+        },
+      });
+
+      await handlerModule.generatePageIntent(context);
+
+      // Verify that the prompt was called with truncated content
+      const promptCall = promptStub.getCall(0);
+      expect(promptCall.args[1]).to.include('a'.repeat(10000));
+      expect(promptCall.args[1]).to.include('[content truncated]');
+      expect(promptCall.args[1]).not.to.include('a'.repeat(50000));
+    });
   });
 
   describe('Module Export', () => {
