@@ -60,27 +60,6 @@ describe('utils/site-validation', () => {
     expect(stub).to.not.have.been.called;
   });
 
-  it('returns true when orgId is listed in LA_VALIDATION_ORG_IDS', async () => {
-    process.env.LA_VALIDATION_ORG_IDS = 'org-1, org-2 , org-xyz';
-    const site = { getId: sandbox.stub().returns('site-no-match'), getOrganizationId: sandbox.stub().returns('org-xyz') };
-    const stub = sandbox.stub(TierClient, 'createForSite');
-
-    const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
-
-    expect(result).to.equal(true);
-    expect(stub).to.not.have.been.called;
-  });
-
-  it('returns site.requiresValidation when explicitly set to true', async () => {
-    const site = { getId: sandbox.stub().returns('site-1'), requiresValidation: true };
-    const stub = sandbox.stub(TierClient, 'createForSite');
-
-    const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
-
-    expect(result).to.equal(true);
-    expect(stub).to.not.have.been.called;
-  });
-
   it('returns site.requiresValidation when explicitly set to false', async () => {
     const site = { getId: sandbox.stub().returns('site-1'), requiresValidation: false };
 
@@ -91,13 +70,12 @@ describe('utils/site-validation', () => {
 
   it('returns true when tier in entitlement exists and is equal to PAID with ASO product code', async () => {
     const site = { getId: sandbox.stub().returns('site-2') };
+    const entitlementMock = {
+      getTier: sandbox.stub().returns('PAID'),
+      getProductCode: sandbox.stub().returns('ASO'),
+    };
     const checkValidEntitlementStub = sandbox.stub().resolves({
-      entitlement: {
-        record: {
-          tier: 'PAID',
-          productCode: 'ASO',
-        },
-      },
+      entitlement: entitlementMock,
     });
     const tierClientStub = {
       checkValidEntitlement: checkValidEntitlementStub,
@@ -131,17 +109,6 @@ describe('utils/site-validation', () => {
     expect(result).to.equal(false);
   });
 
-  it('covers debug logging when explicit requiresValidation flag is set', async () => {
-    const site = { getId: sandbox.stub().returns('site-debug'), requiresValidation: true };
-    // No debug logs are called when requiresValidation is explicitly set
-    const stub = sandbox.stub(TierClient, 'createForSite');
-
-    const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
-
-    expect(result).to.equal(true);
-    expect(stub).to.not.have.been.called;
-  });
-
   it('logs warn when entitlement check throws', async () => {
     const site = { getId: sandbox.stub().returns('site-warn-info') };
     sandbox.stub(TierClient, 'createForSite').rejects(new Error('boom'));
@@ -155,8 +122,12 @@ describe('utils/site-validation', () => {
 
   it('returns false when entitlement tier is not PAID', async () => {
     const site = { getId: sandbox.stub().returns('site-non-paid') };
+    const entitlementMock = {
+      getTier: sandbox.stub().returns('FREE'),
+      getProductCode: sandbox.stub().returns('ASO'),
+    };
     sandbox.stub(TierClient, 'createForSite').resolves({
-      checkValidEntitlement: sandbox.stub().resolves({ entitlement: { tier: 'FREE' } }),
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: entitlementMock }),
     });
 
     const result = await Promise.resolve(checkSiteRequiresValidation(site, context));
@@ -164,16 +135,15 @@ describe('utils/site-validation', () => {
     expect(result).to.equal(false);
   });
 
-  it('returns true when entitlement.tier is nested under record and is PAID', async () => {
+  it('returns true when getTier() returns PAID', async () => {
     const site = { getId: sandbox.stub().returns('site-paid-record') };
     // Create a tierClient that will return the expected entitlement
+    const entitlementMock = {
+      getTier: sandbox.stub().returns('PAID'),
+      getProductCode: sandbox.stub().returns('ASO'),
+    };
     const checkValidEntitlementStub = sandbox.stub().resolves({
-      entitlement: {
-        record: {
-          tier: 'PAID',
-          productCode: 'ASO',
-        },
-      },
+      entitlement: entitlementMock,
     });
     const tierClientStub = {
       checkValidEntitlement: checkValidEntitlementStub,

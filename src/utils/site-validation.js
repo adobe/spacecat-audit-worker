@@ -24,11 +24,6 @@ export async function checkSiteRequiresValidation(site, context) {
   if (!site) {
     return false;
   }
-  // Check if the site has the requiresValidation flag set directly
-  if (site?.requiresValidation) {
-    return site.requiresValidation;
-  }
-
   // LA customers override via env
   let laSiteIds = [];
 
@@ -46,8 +41,8 @@ export async function checkSiteRequiresValidation(site, context) {
   try {
     const tierClient = TierClient.createForSite(context, site, ASO_PRODUCT_CODE);
     const { entitlement } = await tierClient.checkValidEntitlement();
-    const tier = entitlement?.tier ?? entitlement?.record?.tier ?? null;
-    const productCode = entitlement?.record?.productCode ?? null;
+    const tier = entitlement?.getTier?.() ?? null;
+    const productCode = entitlement?.getProductCode?.() ?? null;
 
     if (tier === Entitlement.TIERS.PAID && productCode === ASO_PRODUCT_CODE) {
       return true;
