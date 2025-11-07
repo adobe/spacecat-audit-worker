@@ -631,6 +631,43 @@ describe('Product MetaTags', () => {
           type: 'product-metatags',
         });
       });
+
+      it('should filter PDF files from scraping and log them', async () => {
+        const topPages = [
+          { getUrl: () => 'http://example.com/product1' },
+          { getUrl: () => 'http://example.com/catalog.pdf' },
+          { getUrl: () => 'http://example.com/guide.PDF' },
+          { getUrl: () => 'http://example.com/product2' },
+        ];
+        dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+        const result = await submitForScraping(context);
+        expect(result.urls).to.deep.equal([
+          { url: 'http://example.com/product1' },
+          { url: 'http://example.com/product2' },
+        ]);
+
+        // Verify PDF files were logged as skipped
+        expect(context.log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Skipping PDF file from scraping: http://example.com/catalog.pdf');
+        expect(context.log.info).to.have.been.calledWith('[PRODUCT-METATAGS] Skipping PDF file from scraping: http://example.com/guide.PDF');
+      });
+
+      it('should handle malformed URLs gracefully in isPdfUrl', async () => {
+        const topPages = [
+          { getUrl: () => 'http://example.com/product1' },
+          { getUrl: () => '://invalid-url' },
+          { getUrl: () => 'http://example.com/product2' },
+        ];
+        dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+        const result = await submitForScraping(context);
+        // Should include all URLs (malformed URL doesn't throw, just returns false from isPdfUrl)
+        expect(result.urls).to.deep.equal([
+          { url: 'http://example.com/product1' },
+          { url: '://invalid-url' },
+          { url: 'http://example.com/product2' },
+        ]);
+      });
     });
 
     describe('fetchAndProcessPageObject', () => {
@@ -786,6 +823,96 @@ describe('Product MetaTags', () => {
         expect(logStub.info).to.have.been.calledWith(
           sinon.match(/Skipping error page for http:\/\/example\.com\/404/),
         );
+      });
+
+      it('should skip pages with scraper error 403', async () => {
+        const mockScrapeResult = {
+          error: {
+            statusCode: 403,
+            message: 'Forbidden',
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/forbidden',
+          'scrapes/site-id/forbidden/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.warn).to.have.been.calledWith(sinon.match(/Skipping page due to scraper error 403/));
+      });
+
+      it('should skip pages with scraper error 500', async () => {
+        const mockScrapeResult = {
+          error: {
+            statusCode: 500,
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/server-error',
+          'scrapes/site-id/server-error/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.warn).to.have.been.calledWith(sinon.match(/Skipping page due to scraper error 500/));
+      });
+
+      it('should skip pages with small body without error keywords', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/small',
+          scrapeResult: {
+            tags: {
+              title: 'Short Page',
+              description: 'Brief',
+              h1: ['Heading'],
+            },
+            structuredData: {
+              jsonld: {
+                Product: [{ sku: 'PROD-123' }],
+              },
+            },
+            rawBody: '<html><body>Short content</body></html>', // Less than 300 chars, no error keywords
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/small',
+          'scrapes/site-id/small/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.error).to.have.been.calledWith('[PRODUCT-METATAGS] Scrape result is empty for scrapes/site-id/small/scrape.json');
       });
 
       it('should process pages with scrape result body length of 300 characters or more', async () => {
