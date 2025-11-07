@@ -1,3 +1,10 @@
+# [1.231.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.9...v1.231.0) (2025-11-07)
+
+
+### Features
+
+* **page-intent:** use URL as basis for analysis as backup ([#1538](https://github.com/adobe/spacecat-audit-worker/issues/1538)) ([721e406](https://github.com/adobe/spacecat-audit-worker/commit/721e406e62b769246751d3eb147c2f1a568e269d))
+
 ## [1.230.9](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.8...v1.230.9) (2025-11-07)
 
 
