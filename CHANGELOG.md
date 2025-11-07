@@ -1,3 +1,10 @@
+## [1.230.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.5...v1.230.6) (2025-11-07)
+
+
+### Bug Fixes
+
+* log error with siteId properly ([#1534](https://github.com/adobe/spacecat-audit-worker/issues/1534)) ([7078283](https://github.com/adobe/spacecat-audit-worker/commit/707828324ac4a9cdb566334d2b04c69aac5a95b5))
+
 ## [1.230.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.230.4...v1.230.5) (2025-11-07)
 
 
