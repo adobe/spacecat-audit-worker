@@ -56,12 +56,7 @@ export default async function handler(message, context) {
     url,
     guidanceParsed,
   );
-  const requiresValidation = Boolean(context.site?.requiresValidation);
-
-  await Suggestion.create({
-    ...suggestionData,
-    status: requiresValidation ? Suggestion.STATUSES.NOT_VALIDATED : Suggestion.STATUSES.NEW,
-  });
+  await Suggestion.create(suggestionData);
   log.debug(`Created suggestion for opportunity ${opportunity.getId()}`);
 
   // Only after suggestion is successfully created,

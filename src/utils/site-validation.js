@@ -31,20 +31,14 @@ export async function checkSiteRequiresValidation(site, context) {
 
   // LA customers override via env
   let laSiteIds = [];
-  let laOrgIds = [];
 
   if (process.env.LA_VALIDATION_SITE_IDS) {
     laSiteIds = process.env.LA_VALIDATION_SITE_IDS.split(',').map((id) => id.trim()).filter((id) => id.length > 0);
   }
-  if (process.env.LA_VALIDATION_ORG_IDS) {
-    laOrgIds = process.env.LA_VALIDATION_ORG_IDS.split(',').map((id) => id.trim()).filter((id) => id.length > 0);
-  }
   const siteId = site.getId?.();
-  const orgId = site.getOrganizationId?.();
   const isLABySite = siteId && laSiteIds.includes(siteId);
-  const isLAByOrg = orgId && laOrgIds.includes(orgId);
 
-  if (isLABySite || isLAByOrg) {
+  if (isLABySite) {
     return true;
   }
 
