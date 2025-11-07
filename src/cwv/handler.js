@@ -18,10 +18,11 @@ import { syncSuggestions } from '../utils/data-access.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit from './kpi-metrics.js';
-import { sendSQSMessageForAutoSuggest } from './utils.js';
+import { sendSQSMessageForAutoSuggest, isHomepage } from './utils.js';
 
 const DAILY_THRESHOLD = 1000;
 const INTERVAL = 7; // days
+const TOP_PAGES_COUNT = 15; // the number of top pages that will be included in the report
 const auditType = Audit.AUDIT_TYPES.CWV;
 
 export async function CWVRunner(auditUrl, context, site) {
@@ -31,10 +32,9 @@ export async function CWVRunner(auditUrl, context, site) {
   const dailyThreshold = cwvConfig.dailyThreshold || DAILY_THRESHOLD;
   let interval = cwvConfig.interval || INTERVAL; // days
 
-  context.log.info(` CWVRunner: dailyThreshold: ${dailyThreshold}, interval: ${interval}`);
   // Safeguard to prevent excessively large queries against the RUM API
   if (interval > 30) {
-    context.log.warn(`Interval of ${interval} days is too large. Capping at 30 days to protect the upstream API.`);
+    context.log.warn(`[audit-worker-CWV] Interval of ${interval} days is too large. Capping at 30 days to protect the upstream API.`);
     interval = 30;
   }
 
@@ -47,8 +47,23 @@ export async function CWVRunner(auditUrl, context, site) {
     groupedURLs,
   };
   const cwvData = await rumAPIClient.query(auditType, options);
+
+  const threshold = dailyThreshold * interval;
+  const baseURL = site.getBaseURL();
+
+  // Aways include top N pages, homepage, and pages meeting threshold
+  const filteredCwvData = [...cwvData]
+    .sort((a, b) => b.pageviews - a.pageviews)
+    .filter((data, i) => (
+      i < TOP_PAGES_COUNT || data.pageviews >= threshold || isHomepage(data, baseURL)
+    ));
+
+  context.log.info(
+    `[audit-worker-CWV] CWV data: Total=${cwvData.length}, `
+    + `Threshold=${threshold}, BaseURL=${baseURL}, Final=${filteredCwvData.length}`,
+  );
   const auditResult = {
-    cwv: cwvData.filter((data) => data.pageviews >= dailyThreshold * interval),
+    cwv: filteredCwvData,
     auditContext: {
       interval,
     },

@@ -100,15 +100,15 @@ describe('CWVRunner Tests', () => {
       ),
     ).to.be.true;
 
-    expect(result).to.deep.equal({
-      auditResult: {
-        cwv: rumData.filter((data) => data.pageviews >= 7000),
-        auditContext: {
-          interval: 7,
-        },
-      },
-      fullAuditRef: auditUrl,
-    });
+    // With new logic: top 15 pages by pageviews are always included
+    // rumData has 32 entries, top 15 will be selected (first 15 when sorted by pageviews desc)
+    const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
+    const expectedData = sortedData.slice(0, 15);
+
+    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    expect(result.auditResult.cwv).to.deep.equal(expectedData);
+    expect(result.auditResult.auditContext.interval).to.equal(7);
+    expect(result.fullAuditRef).to.equal(auditUrl);
   });
 
   it('uses custom delivery config if present', async () => {
@@ -126,9 +126,13 @@ describe('CWVRunner Tests', () => {
       },
     );
 
-    expect(result.auditResult.cwv).to.deep.equal(
-      rumData.filter((data) => data.pageviews >= customConfig.cwv.dailyThreshold * customConfig.cwv.interval),
-    );
+    // With custom threshold (500 * 14 = 7000), same 4 entries meet threshold
+    // But top 15 are always included, so result should have 15 entries
+    const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
+    const expectedData = sortedData.slice(0, 15);
+    
+    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    expect(result.auditResult.cwv).to.deep.equal(expectedData);
     expect(result.auditResult.auditContext.interval).to.equal(customConfig.cwv.interval);
   });
 
@@ -147,9 +151,13 @@ describe('CWVRunner Tests', () => {
       },
     );
 
-    expect(result.auditResult.cwv).to.deep.equal(
-      rumData.filter((data) => data.pageviews >= customConfig.cwv.dailyThreshold * 30), // Uses capped interval
-    );
+    // With threshold (500 * 30 = 15000), NO entries meet threshold
+    // But top 15 are always included, so result should have 15 entries
+    const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
+    const expectedData = sortedData.slice(0, 15);
+    
+    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    expect(result.auditResult.cwv).to.deep.equal(expectedData);
     expect(result.auditResult.auditContext.interval).to.equal(30); // Reports capped interval
   });
 
@@ -167,10 +175,92 @@ describe('CWVRunner Tests', () => {
       },
     );
 
-    expect(result.auditResult.cwv).to.deep.equal(
-      rumData.filter((data) => data.pageviews >= 1000 * 7),
-    );
+    // With default threshold (1000 * 7 = 7000), 4 entries meet threshold
+    // But top 15 are always included, so result should have 15 entries
+    const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
+    const expectedData = sortedData.slice(0, 15);
+    
+    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    expect(result.auditResult.cwv).to.deep.equal(expectedData);
     expect(result.auditResult.auditContext.interval).to.equal(7);
+  });
+
+  it('always includes top 15 pages even if they do not meet threshold', async () => {
+    // Set a very high threshold that no pages can meet
+    const customConfig = { cwv: { dailyThreshold: 50000, interval: 7 } };
+    site.getDeliveryConfig.returns(customConfig);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    // With threshold (50000 * 7 = 350000), NO entries meet threshold
+    // But top 15 are STILL included
+    const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
+    const expectedData = sortedData.slice(0, 15);
+    
+    expect(result.auditResult.cwv).to.have.lengthOf(15);
+    expect(result.auditResult.cwv).to.deep.equal(expectedData);
+    
+    // Verify that even the lowest of top 15 is included
+    const lowestInTop15 = result.auditResult.cwv[14];
+    expect(lowestInTop15.pageviews).to.be.lessThan(customConfig.cwv.dailyThreshold * customConfig.cwv.interval);
+  });
+
+  it('includes pages beyond top 15 if they meet threshold', async () => {
+    // Set a very low threshold so many pages meet it
+    const customConfig = { cwv: { dailyThreshold: 10, interval: 7 } }; // threshold = 70
+    site.getDeliveryConfig.returns(customConfig);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    // All 32 entries have pageviews >= 70, so all should be included
+    expect(result.auditResult.cwv).to.have.lengthOf(32);
+    
+    // Verify sorted by pageviews descending
+    for (let i = 1; i < result.auditResult.cwv.length; i++) {
+      expect(result.auditResult.cwv[i - 1].pageviews).to.be.at.least(result.auditResult.cwv[i].pageviews);
+    }
+  });
+
+  it('always includes homepage even if not in top 15 or meeting threshold', async () => {
+    // Set a very high threshold that homepage won't meet
+    const customConfig = { cwv: { dailyThreshold: 50000, interval: 7 } };
+    site.getDeliveryConfig.returns(customConfig);
+
+    // Add homepage to rumData with low pageviews
+    const homepageData = {
+      type: 'url',
+      url: baseURL,
+      pageviews: 50, // Very low pageviews (below threshold and below top 15)
+      organic: 10,
+      metrics: [
+        {
+          deviceType: 'desktop',
+          pageviews: 50,
+          organic: 10,
+          lcp: 2000,
+          lcpCount: 1,
+          cls: 0.01,
+          clsCount: 1,
+          inp: 100,
+          inpCount: 1,
+          ttfb: 500,
+          ttfbCount: 1,
+        },
+      ],
+    };
+
+    const dataWithHomepage = [...rumData, homepageData];
+    context.rumApiClient.query.resolves(dataWithHomepage);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    // Should have top 15 + homepage (16 total)
+    expect(result.auditResult.cwv).to.have.lengthOf(16);
+    
+    // Verify homepage is included
+    const homepageInResult = result.auditResult.cwv.find((entry) => entry.url === baseURL);
+    expect(homepageInResult).to.exist;
+    expect(homepageInResult.pageviews).to.equal(50);
   });
 
   describe('CWV audit to oppty conversion', () => {

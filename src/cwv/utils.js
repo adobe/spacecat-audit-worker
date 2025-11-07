@@ -11,10 +11,23 @@
  */
 
 import { isAuditEnabledForSite } from '../common/index.js';
+import { removeTrailingSlash } from '../utils/url-utils.js';
 
 const CWV_AUTO_SUGGEST_MESSAGE_TYPE = 'guidance:cwv-analysis';
 
 const CWV_AUTO_SUGGEST_FEATURE_TOGGLE = 'cwv-auto-suggest';
+
+/**
+ * Checks if a CWV data entry URL matches a site baseURL.
+ * Only applies to entries with type 'url' (not 'group').
+ * @param {object} data - CWV data entry with type and url properties
+ * @param {string} baseURL - URL to compare against
+ * @returns {boolean} - True if the entry's URL matches the given URL
+ */
+export function isHomepage(data, baseURL) {
+  if (data.type !== 'url') return false;
+  return removeTrailingSlash(data.url) === removeTrailingSlash(baseURL);
+}
 
 /**
  * Checks if a specific suggestion should receive auto-suggest from Mystique
@@ -88,7 +101,7 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
     context,
   );
   if (!isAutoSuggestEnabled) {
-    log.info(`CWV auto-suggest is disabled for site ${site?.getId?.()}, skipping`);
+    log.info(`[audit-worker-CWV] CWV auto-suggest is disabled for site ${site?.getId?.()}, skipping`);
     return;
   }
 
@@ -98,7 +111,7 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
     const opportunityId = opportunity.getId();
     const suggestions = await opportunity.getSuggestions();
 
-    log.info(`Processing ${suggestions.length} suggestions for CWV auto-suggest - siteId: ${siteId}, opportunityId: ${opportunityId}`);
+    log.info(`[audit-worker-CWV] Processing ${suggestions.length} suggestions for CWV auto-suggest - siteId: ${siteId}, opportunityId: ${opportunityId}`);
 
     // Send one SQS message per suggestion that needs auto-suggest
     for (const suggestion of suggestions) {
@@ -121,7 +134,7 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
       const { url } = suggestionData;
       const metrics = suggestionData.metrics?.[0] || {};
 
-      log.info(`Sending CWV suggestion for auto-suggest - suggestionId: ${suggestionId}, url: ${url}`);
+      log.info(`[audit-worker-CWV] Sending CWV suggestion for auto-suggest - suggestionId: ${suggestionId}, url: ${url}`);
 
       const sqsMessage = {
         type: CWV_AUTO_SUGGEST_MESSAGE_TYPE,
@@ -139,14 +152,14 @@ export async function sendSQSMessageForAutoSuggest(context, opportunity, site) {
 
       // eslint-disable-next-line no-await-in-loop
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, sqsMessage);
-      log.info(`CWV suggestion sent to Mystique - siteId: ${siteId}, suggestionId: ${suggestionId}, url: ${url}`);
+      log.info(`[audit-worker-CWV] CWV suggestion sent to Mystique - siteId: ${siteId}, suggestionId: ${suggestionId}, url: ${url}`);
     }
 
-    log.info(`Completed sending CWV auto-suggest messages - siteId: ${siteId}, opportunityId: ${opportunityId}`);
+    log.info(`[audit-worker-CWV] Completed sending CWV auto-suggest messages - siteId: ${siteId}, opportunityId: ${opportunityId}`);
   } catch (error) {
     const siteId = opportunity?.getSiteId?.() || 'unknown';
     const opportunityId = opportunity?.getId?.() || 'unknown';
-    log.error(`[CWV] Failed to send auto-suggest messages to Mystique - siteId: ${siteId}, opportunityId: ${opportunityId}, error: ${error.message}`);
+    log.error(`[[audit-worker-CWV] Failed to send auto-suggest messages to Mystique - siteId: ${siteId}, opportunityId: ${opportunityId}, error: ${error.message}`);
     throw new Error(error.message);
   }
 }
