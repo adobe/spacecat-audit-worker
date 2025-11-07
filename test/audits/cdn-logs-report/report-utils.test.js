@@ -223,8 +223,8 @@ describe('CDN Logs Report Utils', () => {
       await reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, referralConfig, mockLog);
 
       expect(mockAthenaClient.execute).to.have.been.calledOnce;
-      expect(mockLog.debug).to.have.been.calledWith('Creating or checking table: aggregated_referral_logs_example_com__consolidated');
-      expect(mockLog.debug).to.have.been.calledWith('Table aggregated_referral_logs_example_com__consolidated is ready');
+      expect(mockLog.debug).to.have.been.calledWith('Creating or checking table: aggregated_referral_logs_example_com_consolidated');
+      expect(mockLog.debug).to.have.been.calledWith('Table aggregated_referral_logs_example_com_consolidated is ready');
     });
 
     it('handles table creation errors', async () => {

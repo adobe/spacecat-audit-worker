@@ -360,7 +360,7 @@ describe('LLM Error Pages Utils', () => {
       expect(result.customerDomain).to.equal('example_com');
       expect(result.aggregatedLocation).to.equal('s3://resolved-bucket/aggregated/test-site-id/');
       expect(result.databaseName).to.equal('cdn_logs_example_com');
-      expect(result.tableName).to.equal('aggregated_logs_example_com__consolidated');
+      expect(result.tableName).to.equal('aggregated_logs_example_com_consolidated');
     });
 
     it('should use resolveConsolidatedBucketName by default', async () => {
