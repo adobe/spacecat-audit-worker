@@ -19,7 +19,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { getIssueRanking, trimTagValue } from '../utils/seo-utils.js';
+import { getIssueRanking, trimTagValue, normalizeTagValue } from '../utils/seo-utils.js';
 import { getBaseUrl } from '../utils/url-utils.js';
 import {
   DESCRIPTION,
@@ -100,18 +100,18 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
 
   // Check for error pages by content
   const { tags } = object.scrapeResult;
-  const title = tags.title?.toLowerCase() || '';
-  const h1Text = Array.isArray(tags.h1) ? tags.h1[0]?.toLowerCase()
-   || '' : tags.h1?.toLowerCase() || '';
+  const title = normalizeTagValue(tags.title);
+  const h1Text = normalizeTagValue(tags.h1);
   const httpStatusCodes = ['400', '401', '403', '404', '405', '500', '502', '503', '504'];
 
   const hasErrorKeyword = title.includes('error') || h1Text.includes('error');
-  const hasStatusCode = httpStatusCodes.some((code) => title.includes(code)
-   || h1Text.includes(code));
+  const hasStatusCode = httpStatusCodes.some(
+    (code) => title.includes(code) || h1Text.includes(code),
+  );
 
   if (hasErrorKeyword || hasStatusCode) {
-    log.info(`[metatags] Skipping error page for ${url} 
-      (title: "${tags.title}", h1: "${Array.isArray(tags.h1) ? tags.h1[0] : tags.h1}")`);
+    const h1Display = Array.isArray(tags.h1) ? tags.h1[0] : tags.h1;
+    log.info(`[metatags] Skipping error page for ${url} (title: "${tags.title}", h1: "${h1Display}")`);
     return null;
   }
 
