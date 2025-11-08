@@ -27,7 +27,7 @@ describe('CWV Utils', () => {
   beforeEach(async () => {
     isAuditEnabledForSite = sandbox.stub().resolves(true);
 
-    ({ sendSQSMessageForAutoSuggest, shouldSendAutoSuggestForSuggestion } = await esmock('../../../src/cwv/utils.js', {
+    ({ sendSQSMessageForAutoSuggest, shouldSendAutoSuggestForSuggestion } = await esmock('../../../src/cwv/auto-suggest.js', {
       '../../../src/common/index.js': {
         isAuditEnabledForSite,
       },
@@ -45,6 +45,7 @@ describe('CWV Utils', () => {
       log: {
         info: sandbox.stub(),
         error: sandbox.stub(),
+        debug: sandbox.stub(),
       },
       sqs: {
         sendMessage: sqsStub,
@@ -159,7 +160,7 @@ describe('CWV Utils', () => {
       await sendSQSMessageForAutoSuggest(context, opportunity, site);
 
       expect(sqsStub.called).to.be.false;
-      expect(context.log.info).to.have.been.calledWith('[audit-worker-CWV] CWV auto-suggest is disabled for site test-site-id, skipping');
+      expect(context.log.info).to.have.been.calledWith('[audit-worker-cwv] siteId: test-site-id | baseURL: https://example.com | CWV auto-suggest is disabled, skipping');
     });
 
     it('should not send messages for suggestions with existing guidance', async () => {

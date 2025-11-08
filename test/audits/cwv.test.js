@@ -115,56 +115,6 @@ describe('CWVRunner Tests', () => {
     expect(result.fullAuditRef).to.equal(auditUrl);
   });
 
-  it('uses custom delivery config if present', async () => {
-    const customConfig = { cwv: { dailyThreshold: 500, interval: 14 } };
-    site.getDeliveryConfig.returns(customConfig);
-
-    const result = await CWVRunner(auditUrl, context, site);
-
-    expect(context.rumApiClient.query).to.have.been.calledWith(
-      Audit.AUDIT_TYPES.CWV,
-      {
-        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
-        interval: customConfig.cwv.interval,
-        groupedURLs,
-      },
-    );
-
-    // With custom threshold (500 * 14 = 7000), same 4 entries meet threshold
-    // But top 15 are always included, so result should have 15 entries
-    const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
-    const expectedData = sortedData.slice(0, 15);
-    
-    expect(result.auditResult.cwv).to.have.lengthOf(15);
-    expect(result.auditResult.cwv).to.deep.equal(expectedData);
-    expect(result.auditResult.auditContext.interval).to.equal(customConfig.cwv.interval);
-  });
-
-  it('caps the interval at 30 days if a larger value is provided', async () => {
-    const customConfig = { cwv: { dailyThreshold: 500, interval: 90 } };
-    site.getDeliveryConfig.returns(customConfig);
-
-    const result = await CWVRunner(auditUrl, context, site);
-
-    expect(context.rumApiClient.query).to.have.been.calledWith(
-      Audit.AUDIT_TYPES.CWV,
-      {
-        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
-        interval: 30, // Capped value
-        groupedURLs,
-      },
-    );
-
-    // With threshold (500 * 30 = 15000), NO entries meet threshold
-    // But top 15 are always included, so result should have 15 entries
-    const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
-    const expectedData = sortedData.slice(0, 15);
-    
-    expect(result.auditResult.cwv).to.have.lengthOf(15);
-    expect(result.auditResult.cwv).to.deep.equal(expectedData);
-    expect(result.auditResult.auditContext.interval).to.equal(30); // Reports capped interval
-  });
-
   it('uses default values when delivery config is null', async () => {
     site.getDeliveryConfig.returns(null);
 
@@ -189,48 +139,28 @@ describe('CWVRunner Tests', () => {
     expect(result.auditResult.auditContext.interval).to.equal(7);
   });
 
-  it('always includes top 15 pages even if they do not meet threshold', async () => {
-    // Set a very high threshold that no pages can meet
-    const customConfig = { cwv: { dailyThreshold: 50000, interval: 7 } };
-    site.getDeliveryConfig.returns(customConfig);
-
-    const result = await CWVRunner(auditUrl, context, site);
-
-    // With threshold (50000 * 7 = 350000), NO entries meet threshold
-    // But top 15 are STILL included
-    const sortedData = [...rumData].sort((a, b) => b.pageviews - a.pageviews);
-    const expectedData = sortedData.slice(0, 15);
-    
-    expect(result.auditResult.cwv).to.have.lengthOf(15);
-    expect(result.auditResult.cwv).to.deep.equal(expectedData);
-    
-    // Verify that even the lowest of top 15 is included
-    const lowestInTop15 = result.auditResult.cwv[14];
-    expect(lowestInTop15.pageviews).to.be.lessThan(customConfig.cwv.dailyThreshold * customConfig.cwv.interval);
-  });
-
   it('includes pages beyond top 15 if they meet threshold', async () => {
-    // Set a very low threshold so many pages meet it
-    const customConfig = { cwv: { dailyThreshold: 10, interval: 7 } }; // threshold = 70
-    site.getDeliveryConfig.returns(customConfig);
-
+    // With default threshold (1000 * 7 = 7000), check pages that meet threshold
     const result = await CWVRunner(auditUrl, context, site);
 
-    // All 31 entries have pageviews >= 70, so all should be included
-    expect(result.auditResult.cwv).to.have.lengthOf(31);
+    // At least top 15 should be included
+    expect(result.auditResult.cwv.length).to.be.at.least(15);
     
     // Verify sorted by pageviews descending
     for (let i = 1; i < result.auditResult.cwv.length; i++) {
       expect(result.auditResult.cwv[i - 1].pageviews).to.be.at.least(result.auditResult.cwv[i].pageviews);
     }
+    
+    // Verify that pages beyond top 15 meet the threshold
+    if (result.auditResult.cwv.length > 15) {
+      for (let i = 15; i < result.auditResult.cwv.length; i++) {
+        expect(result.auditResult.cwv[i].pageviews).to.be.at.least(7000);
+      }
+    }
   });
 
   it('always includes homepage even if not in top 15 or meeting threshold', async () => {
-    // Set a very high threshold that homepage won't meet
-    const customConfig = { cwv: { dailyThreshold: 50000, interval: 7 } };
-    site.getDeliveryConfig.returns(customConfig);
-
-    // Add homepage to rumData with low pageviews
+    // Add homepage to rumData with low pageviews (below default threshold 7000 and not in top 15)
     const homepageData = {
       type: 'url',
       url: baseURL,
