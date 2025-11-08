@@ -159,6 +159,92 @@ describe('CWVRunner Tests', () => {
     }
   });
 
+  it('adds pages to threshold group beyond top 15', async () => {
+    // Create custom data: 15 pages with high pageviews + 3 pages with threshold pageviews
+    const customData = [
+      // Top 15 pages (pageviews 20000-10000)
+      ...Array.from({ length: 15 }, (_, i) => ({
+        type: 'url',
+        url: `https://example.com/page${i}`,
+        pageviews: 20000 - (i * 500),
+        organic: 1000,
+        metrics: [{
+          deviceType: 'desktop',
+          pageviews: 20000 - (i * 500),
+          lcp: 2000,
+          lcpCount: 1,
+          cls: 0.1,
+          clsCount: 1,
+          inp: 200,
+          inpCount: 1,
+        }],
+      })),
+      // 3 more pages that meet threshold (7000+)
+      {
+        type: 'url',
+        url: 'https://example.com/threshold1',
+        pageviews: 8000,
+        organic: 800,
+        metrics: [{
+          deviceType: 'mobile',
+          pageviews: 8000,
+          lcp: 2500,
+          lcpCount: 1,
+          cls: 0.15,
+          clsCount: 1,
+          inp: 250,
+          inpCount: 1,
+        }],
+      },
+      {
+        type: 'url',
+        url: 'https://example.com/threshold2',
+        pageviews: 7500,
+        organic: 750,
+        metrics: [{
+          deviceType: 'desktop',
+          pageviews: 7500,
+          lcp: 2200,
+          lcpCount: 1,
+          cls: 0.12,
+          clsCount: 1,
+          inp: 220,
+          inpCount: 1,
+        }],
+      },
+      {
+        type: 'url',
+        url: 'https://example.com/threshold3',
+        pageviews: 7100,
+        organic: 710,
+        metrics: [{
+          deviceType: 'mobile',
+          pageviews: 7100,
+          lcp: 2300,
+          lcpCount: 1,
+          cls: 0.13,
+          clsCount: 1,
+          inp: 230,
+          inpCount: 1,
+        }],
+      },
+    ];
+
+    context.rumApiClient.query.resolves(customData);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    // Should have 15 (top) + 3 (threshold) = 18 pages
+    expect(result.auditResult.cwv).to.have.lengthOf(18);
+
+    // Verify the last 3 are the threshold pages
+    const thresholdPages = result.auditResult.cwv.slice(15);
+    expect(thresholdPages).to.have.lengthOf(3);
+    expect(thresholdPages[0].url).to.equal('https://example.com/threshold1');
+    expect(thresholdPages[1].url).to.equal('https://example.com/threshold2');
+    expect(thresholdPages[2].url).to.equal('https://example.com/threshold3');
+  });
+
   it('always includes homepage even if not in top 15 or meeting threshold', async () => {
     // Add homepage to rumData with low pageviews (below default threshold 7000 and not in top 15)
     const homepageData = {
