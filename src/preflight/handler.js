@@ -135,20 +135,14 @@ export const preflightAudit = async (context) => {
   try {
     enabledChecks = (await Promise.all(
       AVAILABLE_CHECKS.map(async (audit) => {
-        try {
-          const enabled = await isAuditEnabledForSite(`${audit}-preflight`, site, context);
-          return enabled ? audit : null;
-        } catch (err) {
-          // Fail-safe: treat failures as disabled, but continue evaluating others
-          log.warn(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Failed to evaluate enabled state for ${audit}-preflight: ${err.message}`);
-          return null;
-        }
+        const enabled = await isAuditEnabledForSite(`${audit}-preflight`, site, context);
+        return enabled ? audit : null;
       }),
     )).filter(Boolean);
 
     const jobEntity = await AsyncJobEntity.findById(jobId);
-    const currentMetadata = jobEntity.getMetadata() || {};
-    const currentPayload = currentMetadata?.payload || {};
+    const currentMetadata = jobEntity.getMetadata();
+    const currentPayload = currentMetadata?.payload;
     jobEntity.setMetadata({
       ...currentMetadata,
       payload: {
@@ -156,7 +150,6 @@ export const preflightAudit = async (context) => {
         checks: enabledChecks,
       },
     });
-    log.debug(`radhika [preflight-audit] job: ${jobId}, jobEntity after setting metadata: ${JSON.stringify(jobEntity)}.`);
     await jobEntity.save();
   } catch (e) {
     log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Failed to persist enabled checks in job metadata.`, e);
