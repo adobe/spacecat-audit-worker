@@ -12,6 +12,80 @@
 
 import { calculateStats } from '@adobe/spacecat-shared-html-analyzer';
 
+const NAVIGATION_FOOTER_SELECTOR = [
+  // Core semantic elements (fastest, most reliable)
+  'nav', 'header', 'footer',
+  // Common navigation/menu classes
+  '.nav', '.navigation', '.navbar', '.nav-bar', '.menu', '.main-menu',
+  '.navigation-wrapper', '.nav-wrapper', '.site-navigation',
+  '.primary-navigation', '.secondary-navigation', '.top-nav', '.bottom-nav', '.sidebar-nav',
+  // Header/footer classes
+  '.header', '.site-header', '.page-header', '.top-header', '.header-wrapper',
+  '.footer', '.site-footer', '.page-footer', '.bottom-footer', '.footer-wrapper',
+  // Breadcrumb navigation
+  '.breadcrumb', '.breadcrumbs',
+  // Common ID selectors
+  '#nav', '#navigation', '#navbar', '#header', '#footer', '#menu', '#main-menu',
+  '#site-header', '#site-footer', '#page-header', '#page-footer',
+  // ARIA roles (W3C semantic roles)
+  '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
+].join(', ');
+
+// Optimized cookie detection keywords - ordered by frequency for early exit
+const COOKIE_KEYWORDS = new Set([
+  // Most common (90%+ coverage)
+  'cookie', 'cookies', 'privacy', 'consent',
+  // High frequency (80%+ coverage)
+  'accept', 'reject', 'tracking', 'analytics',
+  // Medium frequency (60%+ coverage)
+  'marketing', 'advertising', 'personalization',
+  // Less common but specific
+  'data protection', 'privacy policy', 'cookie settings',
+  'accept all', 'reject all', 'manage preferences',
+]);
+
+const COOKIE_BANNER_CLASS_SELECTORS = [
+  '.cc-banner', '.cc-grower', '.consent-banner', '.cookie-banner',
+  '.privacy-banner', '.gdpr-banner', '.cookie-consent', '.privacy-consent',
+  '.cookie-notice', '.privacy-notice', '.cookie-policy', '.privacy-policy',
+  '.cookie-bar', '.privacy-bar', '.consent-bar', '.gdpr-bar',
+  '.cookie-popup', '.privacy-popup', '.consent-popup', '.gdpr-popup',
+  '.cookie-modal', '.privacy-modal', '.consent-modal', '.gdpr-modal',
+  '.cookie-overlay', '.privacy-overlay', '.consent-overlay', '.gdpr-overlay',
+  '[class*="syrenis-cookie"]',
+];
+
+const COOKIE_BANNER_ID_SELECTORS = [
+  '#cookie-banner', '#privacy-banner', '#consent-banner', '#gdpr-banner',
+  '#cookie-notice', '#privacy-notice', '#cookie-consent', '#privacy-consent',
+  '#cookie-bar', '#privacy-bar', '#consent-bar', '#gdpr-bar', '#cookiemgmt',
+  '#cookie-popup', '#privacy-popup', '#consent-popup', '#gdpr-popup',
+  '#onetrust-consent-sdk', '#onetrust-banner-sdk',
+];
+
+const COOKIE_BANNER_ARIA_SELECTORS = [
+  '[role="dialog"][aria-label="Consent Banner"]',
+  '[role="dialog"][aria-label*="cookie" i]',
+  '[role="dialog"][aria-label*="privacy" i]',
+  '[role="dialog"][aria-label*="consent" i]',
+  '[role="alertdialog"][aria-label*="cookie" i]',
+  '[role="alertdialog"][aria-label*="privacy" i]',
+  '[aria-describedby*="cookie" i]',
+  '[aria-describedby*="privacy" i]',
+];
+
+function getHtmlFilterSelectors() {
+  return {
+    selectors: [
+      ...NAVIGATION_FOOTER_SELECTOR,
+      ...COOKIE_BANNER_CLASS_SELECTORS,
+      ...COOKIE_BANNER_ID_SELECTORS,
+      ...COOKIE_BANNER_ARIA_SELECTORS,
+    ],
+    cookieKeywords: Array.from(COOKIE_KEYWORDS),
+  };
+}
+
 /**
  * Analyzes HTML content to determine if prerendering is needed
  * @param {string} directHtml - Direct fetch HTML (server-side rendered)
@@ -38,4 +112,5 @@ async function analyzeHtmlForPrerender(directHtml, scrapedHtml, threshold = 1.2)
 
 export {
   analyzeHtmlForPrerender,
+  getHtmlFilterSelectors,
 };
