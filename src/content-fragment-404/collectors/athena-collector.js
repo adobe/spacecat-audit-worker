@@ -14,7 +14,7 @@ import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { getImsOrgId } from '../../utils/data-access.js';
 import { isAssetUrl } from '../../utils/asset-utils.js';
-import { extractCustomerDomain } from '../../utils/cdn-utils.js';
+import { extractCustomerDomain, generateStandardBucketName } from '../../utils/cdn-utils.js';
 
 export class AthenaCollector {
   static GRAPHQL_SUFFIX = /\.cfm.*\.json$/;
@@ -72,9 +72,11 @@ export class AthenaCollector {
   validate() {
     const { env } = this.context;
 
-    if (!env.S3_BUCKET) {
-      throw new Error('Raw bucket is required');
+    const awsEnv = String(env.AWS_ENV || '').trim();
+    if (!awsEnv) {
+      throw new Error('AWS environment is required');
     }
+    this.awsEnv = awsEnv.toLowerCase();
 
     if (!this.imsOrg) {
       throw new Error('IMS organization is required');
@@ -86,8 +88,8 @@ export class AthenaCollector {
   }
 
   getAthenaConfig() {
-    const { env } = this.context;
-    const bucket = `${env.S3_BUCKET}/${this.imsOrg}`;
+    const standardBucket = generateStandardBucketName(this.awsEnv);
+    const bucket = `${standardBucket}/${this.imsOrg}`;
     const database = `cdn_logs_${this.sanitizedHostname}`;
     const tableName = 'content_fragment_404';
 
@@ -95,7 +97,7 @@ export class AthenaCollector {
       database,
       tableName,
       location: `s3://${bucket}/aggregated-404`,
-      tempLocation: `s3://${env.S3_BUCKET}/temp/athena-results/`,
+      tempLocation: `s3://${standardBucket}/temp/athena-results/`,
     };
   }
 

@@ -28,7 +28,10 @@ import {
   TEST_HOSTNAME,
   TEST_BASE_URL_SITE as TEST_BASE_URL,
   TEST_ORG_ID,
-  TEST_S3_BUCKET,
+  TEST_AWS_ENV,
+  CUSTOM_AWS_ENV,
+  TEST_STANDARD_BUCKET,
+  CUSTOM_STANDARD_BUCKET,
   TEST_PATH_1,
   TEST_PATH_2,
   TEST_ASSET_PATH,
@@ -73,7 +76,6 @@ import {
   TEST_DATABASE_NAME,
   TEST_SQL_RESULT,
   ATHENA_QUERY_PREFIX,
-  CUSTOM_BUCKET_NAME,
   CUSTOM_IMS_ORG,
   TEST_PATH_FRAGMENT,
   TEST_PATH_IMAGE_JPG,
@@ -98,6 +100,8 @@ describe('AthenaCollector', () => {
   let athenaClientStub;
   let getStaticContentStub;
   let AthenaCollector;
+  let generateStandardBucketNameStub;
+  let extractCustomerDomainStub;
 
   // Helper to set test config on collector
   const setTestConfig = (collector) => {
@@ -111,6 +115,9 @@ describe('AthenaCollector', () => {
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
+
+    extractCustomerDomainStub = sandbox.stub().returns(TEST_HOSTNAME);
+    generateStandardBucketNameStub = sandbox.stub().callsFake((envValue) => `cdn-logs-adobe-${envValue}`);
 
     athenaClientStub = {
       execute: sandbox.stub().resolves(),
@@ -134,7 +141,7 @@ describe('AthenaCollector', () => {
           error: sandbox.spy(),
         },
         env: {
-          S3_BUCKET: TEST_S3_BUCKET,
+          AWS_ENV: TEST_AWS_ENV,
         },
         site: {
           getBaseURL: () => TEST_BASE_URL,
@@ -160,7 +167,8 @@ describe('AthenaCollector', () => {
         },
       },
       '../../../src/utils/cdn-utils.js': {
-        extractCustomerDomain: sandbox.stub().returns(TEST_HOSTNAME),
+        extractCustomerDomain: extractCustomerDomainStub,
+        generateStandardBucketName: generateStandardBucketNameStub,
       },
     });
 
@@ -198,18 +206,18 @@ describe('AthenaCollector', () => {
   });
 
   describe('validate', () => {
-    it('should throw error when S3_BUCKET is missing', () => {
+    it('should throw error when AWS_ENV is missing', () => {
       const collector = new AthenaCollector({
         ...context,
         env: {
-          S3_BUCKET: undefined,
+          AWS_ENV: undefined,
         },
       });
       collector.imsOrg = TEST_IMS_ORG;
       collector.sanitizedHostname = TEST_HOSTNAME;
 
       expect(() => collector.validate())
-        .to.throw('Raw bucket is required');
+        .to.throw('AWS environment is required');
     });
 
     it('should throw error when imsOrg is missing', () => {
@@ -235,6 +243,22 @@ describe('AthenaCollector', () => {
       collector.sanitizedHostname = TEST_HOSTNAME;
 
       expect(() => collector.validate()).to.not.throw();
+      expect(collector.awsEnv).to.equal(TEST_AWS_ENV);
+    });
+
+    it('should normalize AWS_ENV by trimming and lower-casing', () => {
+      const collector = new AthenaCollector({
+        ...context,
+        env: {
+          AWS_ENV: ' Dev ',
+        },
+      });
+      collector.imsOrg = TEST_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
+
+      collector.validate();
+
+      expect(collector.awsEnv).to.equal(CUSTOM_AWS_ENV);
     });
   });
 
@@ -298,29 +322,34 @@ describe('AthenaCollector', () => {
       const collector = new AthenaCollector(context);
       collector.imsOrg = TEST_IMS_ORG;
       collector.sanitizedHostname = TEST_HOSTNAME;
+      collector.validate();
       const config = collector.getAthenaConfig();
 
       // Verify actual implementation behavior
       expect(config.database).to.equal(DEFAULT_DATABASE_NAME);
       expect(config.tableName).to.equal(DEFAULT_TABLE_NAME);
-      expect(config.location).to.equal(`s3://${TEST_S3_BUCKET}/${TEST_IMS_ORG}/${S3_PATH_AGGREGATED_404}`);
-      expect(config.tempLocation).to.equal(`s3://${TEST_S3_BUCKET}/${S3_PATH_TEMP_ATHENA_RESULTS}`);
+      expect(config.location).to.equal(`s3://${TEST_STANDARD_BUCKET}/${TEST_IMS_ORG}/${S3_PATH_AGGREGATED_404}`);
+      expect(config.tempLocation).to.equal(`s3://${TEST_STANDARD_BUCKET}/${S3_PATH_TEMP_ATHENA_RESULTS}`);
+      expect(generateStandardBucketNameStub).to.have.been.calledWith(TEST_AWS_ENV);
     });
   
-    it('should handle different bucket and IMS org values', () => {
+    it('should handle different AWS environments and IMS org values', () => {
       const customContext = {
         ...context,
         env: {
-          S3_BUCKET: CUSTOM_BUCKET_NAME,
+          AWS_ENV: CUSTOM_AWS_ENV,
         },
       };
 
       const collector = new AthenaCollector(customContext);
       collector.imsOrg = CUSTOM_IMS_ORG;
+      collector.sanitizedHostname = TEST_HOSTNAME;
+      collector.validate();
       const config = collector.getAthenaConfig();
 
-      expect(config.location).to.equal(`s3://${CUSTOM_BUCKET_NAME}/${CUSTOM_IMS_ORG}/${S3_PATH_AGGREGATED_404}`);
-      expect(config.tempLocation).to.equal(`s3://${CUSTOM_BUCKET_NAME}/${S3_PATH_TEMP_ATHENA_RESULTS}`);
+      expect(config.location).to.equal(`s3://${CUSTOM_STANDARD_BUCKET}/${CUSTOM_IMS_ORG}/${S3_PATH_AGGREGATED_404}`);
+      expect(config.tempLocation).to.equal(`s3://${CUSTOM_STANDARD_BUCKET}/${S3_PATH_TEMP_ATHENA_RESULTS}`);
+      expect(generateStandardBucketNameStub).to.have.been.calledWith(CUSTOM_AWS_ENV);
     });
   });
 
@@ -519,14 +548,14 @@ describe('AthenaCollector', () => {
         {
           database: TEST_DATABASE,
           tableName: TEST_TABLE,
-          location: `s3://${TEST_S3_BUCKET}/${TEST_IMS_ORG}/${S3_PATH_AGGREGATED_404}`,
+          location: `s3://${TEST_STANDARD_BUCKET}/${TEST_IMS_ORG}/${S3_PATH_AGGREGATED_404}`,
         },
         './src/content-fragment-404/sql/create-table.sql',
       );
-        expect(athenaClientStub.execute).to.have.been.calledWith(
-          TEST_SQL_RESULT,
-          TEST_DATABASE,
-        );
+      expect(athenaClientStub.execute).to.have.been.calledWith(
+        TEST_SQL_RESULT,
+        TEST_DATABASE,
+      );
     });
 
     it('should handle SQL loading errors', async () => {
