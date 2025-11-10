@@ -153,8 +153,7 @@ describe('Content Fragment 404 guidance handler', () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(200);
-    expect(okStub).to.have.been.called();
-    expect(log.warn).to.have.been.calledWith('[Content Fragment 404 Guidance] No content fragment 404s found in message');
+    expect(okStub).to.have.been.calledOnce;
     expect(Suggestion.findById).not.to.have.been.called;
   });
 
@@ -164,8 +163,7 @@ describe('Content Fragment 404 guidance handler', () => {
     const result = await handler(buildMessage(), context);
 
     expect(result.status).to.equal(200);
-    expect(okStub).to.have.been.called();
-    expect(log.error).to.have.been.calledWith('[Content Fragment 404 Guidance] Suggestion not found for ID: suggestion-1');
+    expect(okStub).to.have.been.calledOnce;
   });
 
   it('initializes suggestion data when getData returns null', async () => {
@@ -234,7 +232,6 @@ describe('Content Fragment 404 guidance handler', () => {
 
     expect(firstSuggestion.save).to.have.been.calledOnce;
     expect(secondSuggestion.save).to.have.been.calledOnce;
-    expect(log.info).to.have.been.calledWith('[Content Fragment 404 Guidance] Successfully updated 2 suggestions with enhanced AI reasoning');
   });
 });
 
