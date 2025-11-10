@@ -481,10 +481,10 @@ describe('CDN Logs Report Handler', function test() {
         await handler.runner('https://example.com', context, site, auditContext);
 
         expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/report generation failed: Athena query failed/)
+          sinon.match(/.* report generation failed: Athena query failed/)
         );
         expect(context.log.error).to.have.been.calledWith(
-          sinon.match(/Failed to generate .* report: Athena query failed/)
+          sinon.match(/Failed to generate .* report for site .*: Athena query failed/)
         );
       });
     });

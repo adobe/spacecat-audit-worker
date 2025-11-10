@@ -17,20 +17,26 @@ import {
 } from 'date-fns';
 
 /**
- * Returns a list of unique (year, month, week) triples for the previous calendar week.
+ * Returns a list of unique (year, month, week) triples for the previous calendar week(s).
  * A week starts on monday and may span multiple months or years.
  *
  * @param {Date} [today=new Date()] - The reference date (defaults to today).
+ * @param {number} [numberOfWeeks=1] - The number of previous weeks to include.
  * @returns {Array<{ year: number, month: number, week: number }>} Array of unique triples.
  */
-function getPreviousWeekTriples(today = new Date()) {
-  const start = subWeeks(startOfWeek(today, { weekStartsOn: 1 }), 1); // previous monday
+function getPreviousWeekTriples(today = new Date(), numberOfWeeks = 1) {
   const triplesSet = new Set();
 
-  for (let i = 0; i < 7; i += 1) {
-    const d = addDays(start, i);
-    const triple = `${getYear(d)}-${getMonth(d) + 1}-${getISOWeek(d)}`;
-    triplesSet.add(triple);
+  // Iterate through each of the previous weeks
+  for (let weekOffset = 1; weekOffset <= numberOfWeeks; weekOffset += 1) {
+    const start = subWeeks(startOfWeek(today, { weekStartsOn: 1 }), weekOffset);
+
+    // For each week, iterate through all 7 days
+    for (let i = 0; i < 7; i += 1) {
+      const d = addDays(start, i);
+      const triple = `${getYear(d)}-${getMonth(d) + 1}-${getISOWeek(d)}`;
+      triplesSet.add(triple);
+    }
   }
 
   return Array.from(triplesSet).map((t) => {
@@ -40,17 +46,18 @@ function getPreviousWeekTriples(today = new Date()) {
 }
 
 /**
- * Generates a SQL-like temporal condition string for the previous calendar week.
+ * Generates a SQL-like temporal condition string for the previous calendar week(s).
  *
  * Examples:
  * - Single: `year = 2025 AND month = 7 AND week = 30`
  * - Multiple: `(year = 2024 AND month = 12 AND week = 1) OR (...)`
  *
  * @param {Date} [today=new Date()] - Optional reference date.
+ * @param {number} [numberOfWeeks=1] - The number of previous weeks to include.
  * @returns {string} SQL-style conditional string.
  */
-export function getTemporalCondition(today = new Date()) {
-  const triples = getPreviousWeekTriples(today);
+export function getTemporalCondition(today = new Date(), numberOfWeeks = 1) {
+  const triples = getPreviousWeekTriples(today, numberOfWeeks);
 
   if (triples.length === 0) {
     throw new Error(`Invalid date: ${today}`);
