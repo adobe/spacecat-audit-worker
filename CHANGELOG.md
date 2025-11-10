@@ -1,3 +1,10 @@
+# [1.232.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.231.3...v1.232.0) (2025-11-10)
+
+
+### Features
+
+* adding enabled audits in preflight job metadata payload ([#1471](https://github.com/adobe/spacecat-audit-worker/issues/1471)) ([846f268](https://github.com/adobe/spacecat-audit-worker/commit/846f268462a2d0f84c5416291a388fc914d1d55d))
+
 ## [1.231.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.231.2...v1.231.3) (2025-11-09)
 
 
