@@ -81,10 +81,12 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
 
   try {
     log.info(`Fetching URL: ${url}`);
+    log.info(`[DEBUG] Request headers: ${JSON.stringify(options.headers || {})}`);
     const response = await fetch(url, options);
     // finalUrl is the URL after any redirects
     const finalUrl = response.url;
     const html = await response.text();
+    log.info(`[DEBUG] Response status3: ${response.status}, HTML length: ${html.length}, Contains 'canonical': ${html.includes('canonical')}, First 500 chars: ${html.substring(0, 500)}`);
     const dom = new JSDOM(html);
     const { document } = dom.window;
 
@@ -444,14 +446,25 @@ export async function canonicalAuditRunner(baseURL, context, site) {
     /**
      * @type {RequestOptions}
      */
-    const options = {};
+    const options = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Upgrade-Insecure-Requests': '1',
+      },
+    };
     if (isPreviewPage(baseURL)) {
       try {
         log.info(`Retrieving page authentication for pageUrl ${baseURL}`);
         const token = await retrievePageAuthentication(site, context);
-        options.headers = {
-          Authorization: `token ${token}`,
-        };
+        options.headers.Authorization = `token ${token}`;
       } catch (error) {
         log.error(`Error retrieving page authentication for pageUrl ${baseURL}: ${error.message}`);
       }
@@ -496,7 +509,31 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       return true;
     });
 
-    const auditPromises = filteredTopPages.map(async (page) => {
+    // Helper function to limit concurrency and avoid overwhelming servers
+    const limitConcurrency = async (tasks, maxConcurrent) => {
+      const results = [];
+      const executing = [];
+
+      for (const task of tasks) {
+        const promise = task().then((result) => {
+          executing.splice(executing.indexOf(promise), 1);
+          return result;
+        });
+
+        results.push(promise);
+        executing.push(promise);
+
+        if (executing.length >= maxConcurrent) {
+          // eslint-disable-next-line no-await-in-loop
+          await Promise.race(executing);
+        }
+      }
+
+      return Promise.allSettled(results);
+    };
+
+    // Create task functions (not promises yet) for each page
+    const auditTasks = filteredTopPages.map((page) => async () => {
       const { url } = page;
       const checks = [];
 
@@ -517,7 +554,8 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       return { url, checks };
     });
 
-    const auditResultsArray = await Promise.allSettled(auditPromises);
+    // Process with max 10 concurrent requests to avoid triggering rate limits
+    const auditResultsArray = await limitConcurrency(auditTasks, 10);
     const aggregatedResults = auditResultsArray.reduce((acc, result) => {
       if (result.status === 'fulfilled') {
         const { url, checks } = result.value;
