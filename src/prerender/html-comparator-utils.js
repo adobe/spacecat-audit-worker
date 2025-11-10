@@ -12,6 +12,7 @@
 
 import { calculateStats } from '@adobe/spacecat-shared-html-analyzer';
 
+// TEMPORARY: Use the shared package's selectors
 const NAVIGATION_FOOTER_SELECTOR = [
   // Core semantic elements (fastest, most reliable)
   'nav', 'header', 'footer',
@@ -74,6 +75,7 @@ const COOKIE_BANNER_ARIA_SELECTORS = [
   '[aria-describedby*="privacy" i]',
 ];
 
+// TEMPORARY: Use the shared package's selectors
 function getHtmlFilterSelectors() {
   return {
     selectors: [
@@ -112,5 +114,6 @@ async function analyzeHtmlForPrerender(directHtml, scrapedHtml, threshold = 1.2)
 
 export {
   analyzeHtmlForPrerender,
+  // TEMPORARY: Use the shared package's selectors
   getHtmlFilterSelectors,
 };
