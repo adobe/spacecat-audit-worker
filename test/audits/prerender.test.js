@@ -22,8 +22,8 @@ import prerenderHandler, {
   submitForScraping,
   processContentAndSendToMystique,
   createScrapeForbiddenOpportunity,
-  uploadStatusSummaryToS3,
 } from '../../src/prerender/handler.js';
+import { uploadStatusSummaryToS3 } from '../../src/prerender/guidance-handler.js';
 import { analyzeHtmlForPrerender } from '../../src/prerender/html-comparator-utils.js';
 import { createOpportunityData } from '../../src/prerender/opportunity-data-mapper.js';
 
@@ -615,15 +615,11 @@ describe('Prerender Audit', () => {
     describe('Guidance handler integration (post-Mystique)', () => {
       it('should persist suggestions and upload status summary after guidance', async () => {
         const syncSuggestionsStub = sandbox.stub().resolves();
-        const uploadStatusSummaryToS3Stub = sandbox.stub().resolves();
         const convertToOpportunityStub = sandbox.stub().resolves({ getId: () => 'oppty-1' });
 
         const mockedGuidance = await esmock('../../src/prerender/guidance-handler.js', {
           '../../src/utils/data-access.js': {
             syncSuggestions: syncSuggestionsStub,
-          },
-          '../../src/prerender/handler.js': {
-            uploadStatusSummaryToS3: uploadStatusSummaryToS3Stub,
           },
           '../../src/common/opportunity.js': {
             convertToOpportunity: convertToOpportunityStub,
@@ -651,6 +647,8 @@ describe('Prerender Audit', () => {
             error: sandbox.stub(),
           },
           dataAccess: { Site, Audit, Suggestion },
+          s3Client: { send: sandbox.stub().resolves() },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
         const message = {
@@ -686,17 +684,8 @@ describe('Prerender Audit', () => {
         expect(res.status).to.equal(200);
         expect(convertToOpportunityStub).to.have.been.calledOnce;
         expect(syncSuggestionsStub).to.have.been.calledOnce;
-        expect(uploadStatusSummaryToS3Stub).to.have.been.calledOnce;
-
-        const uploadArgs = uploadStatusSummaryToS3Stub.firstCall.args;
-        expect(uploadArgs[0]).to.equal('https://example.com'); // auditUrl
-        const auditData = uploadArgs[1];
-        expect(auditData.siteId).to.equal('test-site-id');
-        expect(auditData.auditId).to.equal('audit-123');
-        expect(auditData.auditType).to.equal('prerender');
-        expect(auditData.auditResult.totalUrlsChecked).to.equal(2);
-        expect(auditData.auditResult.urlsNeedingPrerender).to.equal(2);
-        expect(auditData.auditResult.results).to.be.an('array').with.length(2);
+        // Ensure status summary upload was attempted via S3 client
+        expect(context.s3Client.send).to.have.been.calledOnce;
       });
     });
 

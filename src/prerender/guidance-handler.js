@@ -11,12 +11,75 @@
  */
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { uploadStatusSummaryToS3 } from './handler.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../utils/data-access.js';
 
 const AUDIT_TYPE = 'prerender';
+
+/**
+ * Post processor to upload a status JSON file to S3 after audit completion
+ * @param {string} auditUrl - Audited URL (site base URL)
+ * @param {Object} auditData - Audit data with results
+ * @param {Object} context - Processing context
+ * @returns {Promise<void>}
+ */
+export async function uploadStatusSummaryToS3(auditUrl, auditData, context) {
+  const { log, s3Client, env } = context;
+  const { auditResult, siteId, auditedAt } = auditData;
+
+  try {
+    if (!auditResult) {
+      log.warn('Prerender - Missing auditResult, skipping status summary upload');
+      return;
+    }
+
+    // Extract status information for all top pages
+    const statusSummary = {
+      baseUrl: auditUrl,
+      siteId,
+      auditType: AUDIT_TYPE,
+      lastUpdated: auditedAt || new Date().toISOString(),
+      totalUrlsChecked: auditResult.totalUrlsChecked || 0,
+      urlsNeedingPrerender: auditResult.urlsNeedingPrerender || 0,
+      scrapeForbidden: auditResult.scrapeForbidden || false,
+      pages: auditResult.results?.map((result) => {
+        const pageStatus = {
+          url: result.url,
+          scrapingStatus: result.error ? 'error' : 'success',
+          needsPrerender: result.needsPrerender || false,
+          wordCountBefore: result.wordCountBefore || 0,
+          wordCountAfter: result.wordCountAfter || 0,
+          contentGainRatio: result.contentGainRatio || 0,
+          organicTraffic: result.organicTraffic || 0,
+        };
+
+        // Include scrape error details if available
+        if (result.scrapeError) {
+          pageStatus.scrapeError = result.scrapeError;
+        }
+
+        return pageStatus;
+      }) || [],
+    };
+
+    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+    const statusKey = `${AUDIT_TYPE}/scrapes/${siteId}/status.json`;
+
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: statusKey,
+      Body: JSON.stringify(statusSummary, null, 2),
+      ContentType: 'application/json',
+    }));
+
+    log.info(`Prerender - Successfully uploaded status summary to S3: ${statusKey}. baseUrl=${auditUrl}, siteId=${siteId}`);
+  } catch (error) {
+    log.error(`Prerender - Failed to upload status summary to S3: ${error.message}. baseUrl=${auditUrl}, siteId=${siteId}`, error);
+    // Don't throw - this is a non-critical post-processing step
+  }
+}
 
 /**
  * Handles Mystique responses for prerender guidance
