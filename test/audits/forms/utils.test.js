@@ -12,7 +12,7 @@
 
 /* eslint-env mocha */
 import { expect } from 'chai';
-import { getSuccessCriteriaDetails, getUrlsDataForAccessibilityAudit, shouldExcludeForm } from '../../../src/forms-opportunities/utils.js';
+import { getUrlsDataForAccessibilityAudit, shouldExcludeForm } from '../../../src/forms-opportunities/utils.js';
 
 describe('isSearchForm', () => {
   it('should return true for search form type', () => {
@@ -133,7 +133,12 @@ describe('isSearchForm', () => {
 });
 
 describe('getUrlsDataForAccessibilityAudit', () => {
-  const context = { log: { debug: () => {} } };
+  const context = {
+    log: {
+      debug: () => {
+      },
+    },
+  };
   it('should return urls for accessibility audit', () => {
     const scrapedData = {
       formData: [
@@ -164,13 +169,15 @@ describe('getUrlsDataForAccessibilityAudit', () => {
           scrapeResult: [
             {
               classList: 'cmp-mortgage-options',
-              formSource: '#container-1 form#newsletter',
+              formSources: { formSource: '#container-1 form#newsletter', formCTAWithinPage: ['#subscribe-button'] },
             },
           ],
         },
         {
           finalUrl: 'https://www.business.adobe.com/subscribe',
-          scrapeResult: [{ formSource: '#container-1 form#newsletter' }],
+          scrapeResult: [
+            { formSources: { formSource: '#container-1 form#subscribe', formCTAWithinPage: ['#subscribe-button'] } },
+          ],
         },
       ],
     };
@@ -178,63 +185,56 @@ describe('getUrlsDataForAccessibilityAudit', () => {
     expect(urlsData).to.deep.equal([
       {
         url: 'https://www.business.adobe.com/newsletter',
-        formSources: ['#container-1 form#newsletter'],
+        formSources: [
+          { formSource: '#container-1 form#newsletter', formCTAWithinPage: ['#subscribe-button'] },
+        ],
+      },
+      {
+        url: 'https://www.business.adobe.com/subscribe',
+        formSources: [
+          { formSource: '#container-1 form#subscribe', formCTAWithinPage: ['#subscribe-button'] },
+        ],
       },
     ]);
   });
 
   it('should return formSource as id/classList if no element found in scraper', () => {
     const scrapedData = {
-      formData: [{
-        finalUrl: 'https://www.business.adobe.com/a',
-        scrapeResult: [{
-          id: 'test-id',
-          classList: 'test-class',
-        }, {
-          id: '',
-          classList: 'test-class-2 test-class-3',
-        }],
-      }, {
-        finalUrl: 'https://www.business.adobe.com/b',
-        scrapeResult: [{
-          id: '',
-          classList: '',
-        }],
-      }],
+      formData: [
+        {
+          finalUrl: 'https://www.business.adobe.com/a',
+          scrapeResult: [
+            {
+              id: 'test-id',
+              classList: 'test-class',
+            },
+            {
+              id: '',
+              classList: 'test-class-2 test-class-3',
+            },
+          ],
+        },
+        {
+          finalUrl: 'https://www.business.adobe.com/b',
+          scrapeResult: [
+            {
+              id: '',
+              classList: '',
+            },
+          ],
+        },
+      ],
     };
     const urlsData = getUrlsDataForAccessibilityAudit(scrapedData, context);
     expect(urlsData).to.deep.equal([
       {
         url: 'https://www.business.adobe.com/a',
-        formSources: ['form#test-id', 'form.test-class-2.test-class-3'],
-      }, {
+        formSources: { formSource: ['form#test-id', 'form.test-class-2.test-class-3'] },
+      },
+      {
         url: 'https://www.business.adobe.com/b',
-        formSources: ['form'],
+        formSources: { formSource: ['form'] },
       },
     ]);
-  });
-});
-
-describe('getSuccessCriteriaDetails', () => {
-  it('should return success criteria details', () => {
-    const successCriteriaDetails = getSuccessCriteriaDetails('1.1.1 Non-text Content');
-    expect(successCriteriaDetails).to.deep.equal({
-      name: 'Non-text Content',
-      criteriaNumber: '1.1.1',
-      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html',
-    });
-  });
-
-  it('should return success criteria details', () => {
-    const successCriteriaDetails = getSuccessCriteriaDetails('wcag111');
-    expect(successCriteriaDetails).to.deep.equal({
-      name: 'Non-text Content',
-      criteriaNumber: '1.1.1',
-      understandingUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html',
-    });
-  });
-
-  it('should throw error for invalid criteria', () => {
-    expect(() => getSuccessCriteriaDetails('invalid')).to.throw('Invalid criteria format: invalid');
   });
 });
