@@ -74,6 +74,8 @@ export class MockContextBuilder {
 
     const mockEnv = {
       S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+      AWS_ENV: 'test',
+      AWS_REGION: 'us-east-1',
     };
 
     let context = {
@@ -81,6 +83,9 @@ export class MockContextBuilder {
       dataAccess: mockDataAccess,
       sqs: mockSqs,
       env: mockEnv,
+      invocation: {
+        id: 'some-id',
+      },
     };
 
     if (this.contextOverrides) {

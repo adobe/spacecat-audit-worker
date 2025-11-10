@@ -511,8 +511,37 @@ export async function canonicalAuditRunner(baseURL, context, site) {
       return true;
     });
 
-    const auditPromises = filteredTopPages.map(async (page) => {
-      const { url } = page;
+    // Check which pages return 200 status
+    log.info('Checking HTTP status for top pages...');
+    const statusCheckPromises = filteredTopPages.map(async ({ url }) => {
+      try {
+        const response = await fetch(url, options);
+        const { status } = response;
+        log.info(`Page ${url} returned status: ${status}`);
+        return { url, status, isOk: status === 200 };
+      } catch (error) {
+        log.error(`Error fetching ${url}: ${error.message}`);
+        return { url, status: null, isOk: false };
+      }
+    });
+
+    const statusCheckResults = await Promise.all(statusCheckPromises);
+    const pagesWithOkStatus = statusCheckResults.filter(({ isOk }) => isOk);
+
+    if (pagesWithOkStatus.length === 0) {
+      log.info('No pages returned 200 status, ending audit without creating opportunities.');
+      return {
+        fullAuditRef: baseURL,
+        auditResult: {
+          status: 'success',
+          message: 'No pages with 200 status found to analyze for canonical tags',
+        },
+      };
+    }
+
+    log.info(`Found ${pagesWithOkStatus.length} pages with 200 status out of ${filteredTopPages.length} filtered pages`);
+
+    const auditPromises = pagesWithOkStatus.map(async ({ url }) => {
       const checks = [];
 
       const {

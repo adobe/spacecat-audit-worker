@@ -84,7 +84,13 @@ describe('LLMO Customer Analysis Handler', () => {
       log,
       dataAccess,
       s3Client: {},
-      env: { S3_IMPORTER_BUCKET_NAME: 'importer-bucket' },
+      env: {
+        S3_IMPORTER_BUCKET_NAME: 'importer-bucket',
+        IMS_HOST: 'https://ims-na1.adobelogin.com',
+        IMS_CLIENT_ID: 'test-client-id',
+        IMS_CLIENT_CODE: 'test-client-code',
+        IMS_CLIENT_SECRET: 'test-client-secret',
+      },
     };
   });
 
@@ -153,6 +159,13 @@ describe('LLMO Customer Analysis Handler', () => {
         },
         '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
           Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
+        },
+        '@adobe/spacecat-shared-ims-client': {
+          ImsClient: {
+            createFrom: sandbox.stub().returns({
+              getServiceAccessToken: sandbox.stub().resolves({ access_token: 'mock-token' }),
+            }),
+          },
         },
       });
     });
@@ -459,6 +472,14 @@ describe('LLMO Customer Analysis Handler', () => {
     it('should trigger all audits when no config version provided', async () => {
       const auditContext = {};
 
+      // Mock readConfig for triggerMystiqueCategorization call
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          categories: {},
+        },
+        exists: true,
+      });
+
       const result = await mockHandler.runLlmoCustomerAnalysis(
         'https://example.com',
         context,
@@ -466,7 +487,6 @@ describe('LLMO Customer Analysis Handler', () => {
         auditContext,
       );
 
-      expect(mockLlmoConfig.readConfig).to.not.have.been.called;
       expect(result.auditResult.status).to.equal('completed');
       expect(result.auditResult.configChangesDetected).to.equal(true);
       expect(result.auditResult.message).to.equal('All audits triggered (no config version provided)');
@@ -946,11 +966,11 @@ describe('LLMO Customer Analysis Handler', () => {
     it('should skip geo-brand-presence when audit is not enabled', async () => {
       // Create a mock where isAuditEnabledForSite returns false
       const mockIsAuditDisabled = sandbox.stub().resolves(false);
-      
+
       const testMockRUMAPIClientClass = {
         createFrom: sandbox.stub().returns(mockRUMAPIClient),
       };
-      
+
       const mockHandlerDisabled = await esmock('../../src/llmo-customer-analysis/handler.js', {
         '@adobe/spacecat-shared-utils': {
           getLastNumberOfWeeks: () => [
@@ -1058,6 +1078,212 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.status).to.equal('completed');
     });
 
+  });
+
+  describe('triggerMystiqueCategorization', () => {
+    let mockHandler;
+    let mockLlmoConfig;
+    let mockFetch;
+    let mockIsNonEmptyObject;
+
+    beforeEach(async () => {
+      mockLlmoConfig = {
+        readConfig: sandbox.stub(),
+        writeConfig: sandbox.stub().resolves(),
+        defaultConfig: sandbox.stub().returns({
+          entities: {},
+          categories: {},
+          topics: {},
+          brands: { aliases: [] },
+          competitors: { competitors: [] },
+        }),
+      };
+
+      mockIsNonEmptyObject = sandbox.stub();
+      mockFetch = sandbox.stub(globalThis, 'fetch');
+
+      mockHandler = await esmock('../../src/llmo-customer-analysis/handler.js', {
+        '@adobe/spacecat-shared-utils': {
+          getLastNumberOfWeeks: () => [
+            { week: 1, year: 2025 },
+          ],
+          llmoConfig: mockLlmoConfig,
+          isNonEmptyObject: mockIsNonEmptyObject,
+        },
+        '@adobe/spacecat-shared-rum-api-client': {
+          default: {
+            createFrom: sandbox.stub().returns({
+              query: sandbox.stub().resolves({ pageviews: 100 }),
+            }),
+          },
+        },
+        '../../src/support/utils.js': {
+          getRUMUrl: sandbox.stub().resolves('example.com'),
+        },
+        '../../src/common/audit-utils.js': {
+          isAuditEnabledForSite: sandbox.stub().resolves(true),
+        },
+        '../../src/llmo-customer-analysis/cdn-config-handler.js': {
+          handleCdnBucketConfigChanges: sandbox.stub().resolves(),
+        },
+        '@adobe/spacecat-shared-data-access/src/models/site/config.js': {
+          Config: { toDynamoItem: sandbox.stub().callsFake((cfg) => ({})) },
+        },
+        '@adobe/spacecat-shared-ims-client': {
+          ImsClient: {
+            createFrom: sandbox.stub().returns({
+              getServiceAccessToken: sandbox.stub().resolves({ access_token: 'mock-token' }),
+            }),
+          },
+        },
+      });
+
+      context.env.MYSTIQUE_API_BASE_URL = 'https://mystique.example.com';
+    });
+
+    it('should successfully trigger Mystique categorization with valid inputs', async () => {
+      const siteId = 'site-123';
+      const domain = 'https://example.com';
+      const mockCategories = {
+        'cat-1': { name: 'Technology', region: 'us' },
+        'cat-2': { name: 'Business', region: 'us' },
+      };
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {},
+        },
+        exists: true,
+      });
+
+      mockIsNonEmptyObject.returns(false);
+
+      mockFetch.resolves({
+        json: sandbox.stub().resolves({
+          categories: {
+            categories: mockCategories,
+          },
+        }),
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        domain,
+        context,
+        site,
+        { configVersion: 'v1' },
+      );
+
+      expect(mockFetch).to.have.been.calledOnce;
+      expect(mockFetch).to.have.been.calledWith(
+        'https://mystique.example.com/v1/categorization/site',
+        sinon.match({
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            authorization: 'mock-token',
+          },
+          body: JSON.stringify({ url: domain }),
+          timeout: 60000,
+        }),
+      );
+      expect(mockLlmoConfig.writeConfig).to.have.been.calledWith(
+        siteId,
+        sinon.match.has('categories', mockCategories),
+        context.s3Client,
+        { s3Bucket: 'importer-bucket' },
+      );
+      expect(log.info).to.have.been.calledWith(
+        `Triggering Mystique categorization for siteId: ${siteId}, domain: ${domain}`,
+      );
+    });
+
+    it('should skip categorization when config categories already exist', async () => {
+      const domain = 'https://example.com';
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          entities: {},
+          categories: {
+            'cat-1': { name: 'Existing Category' },
+          },
+        },
+        exists: true,
+      });
+
+      mockIsNonEmptyObject.returns(true);
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        domain,
+        context,
+        site,
+        { configVersion: 'v1' },
+      );
+
+      expect(mockFetch).to.not.have.been.called;
+      expect(mockLlmoConfig.writeConfig).to.not.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        'Config categories already exist; skipping Mystique categorization',
+      );
+    });
+
+    it('should handle config with empty categories object', async () => {
+      const siteId = 'site-123';
+      const domain = 'https://example.com';
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {
+          categories: {},
+        },
+        exists: true,
+      });
+
+      mockIsNonEmptyObject.returns(false);
+
+      mockFetch.resolves({
+        json: sandbox.stub().resolves({
+          categories: { categories: {} },
+        }),
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        domain,
+        context,
+        site,
+        { configVersion: 'v1' },
+      );
+
+      expect(mockFetch).to.have.been.called;
+      expect(log.info).to.have.been.calledWith(
+        `Triggering Mystique categorization for siteId: ${siteId}, domain: ${domain}`,
+      );
+    });
+
+    it('should handle config that does not exist', async () => {
+      const domain = 'https://example.com';
+
+      mockLlmoConfig.readConfig.resolves({
+        config: {},
+        exists: false,
+      });
+
+      mockIsNonEmptyObject.returns(false);
+
+      mockFetch.resolves({
+        json: sandbox.stub().resolves({
+          categories: { categories: {} },
+        }),
+      });
+
+      await mockHandler.runLlmoCustomerAnalysis(
+        domain,
+        context,
+        site,
+        { configVersion: 'v1' },
+      );
+
+      expect(mockFetch).to.have.been.called;
+    });
   });
 });
 
