@@ -278,10 +278,10 @@ export const opportunityAndSuggestionsStep = async ( context) => {
   });
 
   // TODO enable proper FT handling
-  // const generateCodeFix = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-fix', site);
-  // if (!generateCodeFix) {
-  //   log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-fix not configured, skipping code generation with mystique`);
-  // }
+  const generateCodeFix = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-fix', site);
+  if (!generateCodeFix) {
+    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-fix not configured, skipping code generation with mystique`);
+  }
 
   // TODO => only add new suggestions to the payload
   // TODO => optimize payload to reduce size
