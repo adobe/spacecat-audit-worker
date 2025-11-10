@@ -1,3 +1,10 @@
+# [1.234.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.233.0...v1.234.0) (2025-11-10)
+
+
+### Features
+
+* use new aggregated bucket for reports ([#1535](https://github.com/adobe/spacecat-audit-worker/issues/1535)) ([f6b32b6](https://github.com/adobe/spacecat-audit-worker/commit/f6b32b689a80cb7accf3fd1b7c23d21e420230ca))
+
 # [1.233.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.232.0...v1.233.0) (2025-11-10)
 
 
