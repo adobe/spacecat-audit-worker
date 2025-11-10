@@ -17,7 +17,7 @@ import {
 } from 'date-fns';
 import {
   extractCustomerDomain,
-  resolveCdnBucketName,
+  resolveConsolidatedBucketName,
 } from '../../utils/cdn-utils.js';
 
 export async function getS3Config(site, context) {
@@ -25,7 +25,7 @@ export async function getS3Config(site, context) {
   const domainParts = customerDomain.split(/[._]/);
   /* c8 ignore next */
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = await resolveCdnBucketName(site, context);
+  const bucket = resolveConsolidatedBucketName(context);
 
   return {
     bucket,

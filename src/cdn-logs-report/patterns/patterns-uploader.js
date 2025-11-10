@@ -108,12 +108,19 @@ export async function generatePatternsWorkbook(options) {
     }
 
     // Prepare data for workbook with unique lowercase names
-    const productData = Array.from(
+    let productData = Array.from(
       new Map(Object.entries(mergedProductRegexes).map(([name, regex]) => [
         name.toLowerCase(),
         { name: name.toLowerCase(), regex },
       ])).values(),
     );
+
+    // Filter product data based on config categories if they exist
+    if (configCategories.length > 0) {
+      const configCategoriesLower = configCategories.map((cat) => cat.toLowerCase());
+      productData = productData.filter((item) => configCategoriesLower.includes(item.name));
+      log.info(`Filtered product patterns to match config categories. Kept ${productData.length} patterns out of ${Object.keys(mergedProductRegexes).length}`);
+    }
 
     const pagetypeData = Array.from(
       new Map(Object.entries(mergedPagetypeRegexes).map(([name, regex]) => [
