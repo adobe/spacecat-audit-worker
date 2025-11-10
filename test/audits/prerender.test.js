@@ -466,18 +466,8 @@ describe('Prerender Audit', () => {
         expect(context.log.info).to.have.been.calledWith('Prerender - No URLs found for comparison. baseUrl=https://example.com, siteId=test-site-id');
       });
 
-      it('should trigger opportunity processing path when prerender is detected', async () => {
-        // This test covers line 341 by ensuring the full opportunity processing flow executes
-        const mockOpportunity = { getId: () => 'test-opportunity-id' };
-
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../src/utils/data-access.js': {
-            syncSuggestions: sinon.stub().resolves(),
-          },
-        });
+      it('should send prerender suggestions to Mystique when detected', async () => {
+        const mockHandler = await esmock('../../src/prerender/handler.js', {});
 
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
@@ -500,10 +490,13 @@ describe('Prerender Audit', () => {
             }),
         };
 
+        const sendMessageStub = sandbox.stub().resolves();
+
         const context = {
           site: {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
+            getDeliveryType: () => 'other',
           },
           audit: { getId: () => 'audit-id' },
           dataAccess: {
@@ -516,17 +509,23 @@ describe('Prerender Audit', () => {
             error: sandbox.stub(),
           },
           s3Client: mockS3Client,
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          sqs: { sendMessage: sendMessageStub },
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.example.com/queue',
+          },
         };
 
-        // This should fully execute the opportunity processing path including line 341
         const result = await mockHandler.processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(result.auditResult.urlsNeedingPrerender).to.be.greaterThan(0);
-        expect(context.log.info).to.have.been.called;
-        // Verify that the opportunity processing was logged
-        expect(context.log.info.args.some(call => call[0].includes('Successfully synced suggestions'))).to.be.true;
+        expect(sendMessageStub).to.have.been.calledOnce;
+
+        const sentPayload = sendMessageStub.firstCall.args[1]; // queueUrl, message
+        expect(sentPayload).to.have.property('type', 'guidance:prerender');
+        expect(sentPayload).to.have.nested.property('data.suggestions').that.is.an('array').with.length.greaterThan(0);
+        expect(sentPayload).to.have.nested.property('data.excludedSelectors').that.is.an('array').and.not.empty;
       });
 
       it('should create dummy opportunity when scraping is forbidden', async () => {
@@ -610,6 +609,94 @@ describe('Prerender Audit', () => {
         
         // Verify that convertToOpportunity was called with correct parameters
         expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com'); // auditUrl
+      });
+    });
+
+    describe('Guidance handler integration (post-Mystique)', () => {
+      it('should persist suggestions and upload status summary after guidance', async () => {
+        const syncSuggestionsStub = sandbox.stub().resolves();
+        const uploadStatusSummaryToS3Stub = sandbox.stub().resolves();
+        const convertToOpportunityStub = sandbox.stub().resolves({ getId: () => 'oppty-1' });
+
+        const mockedGuidance = await esmock('../../src/prerender/guidance-handler.js', {
+          '../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../src/prerender/handler.js': {
+            uploadStatusSummaryToS3: uploadStatusSummaryToS3Stub,
+          },
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: convertToOpportunityStub,
+          },
+        });
+
+        const Site = {
+          findById: sandbox.stub().resolves({
+            getBaseURL: () => 'https://example.com',
+          }),
+        };
+        const Audit = {
+          findById: sandbox.stub().resolves({
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        };
+        const Suggestion = {}; // not directly used here
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          dataAccess: { Site, Audit, Suggestion },
+        };
+
+        const message = {
+          siteId: 'test-site-id',
+          auditId: 'audit-123',
+          data: {
+            suggestions: [
+              {
+                url: 'https://example.com/page1',
+                contentGainRatio: 2.1,
+                wordCountBefore: 100,
+                wordCountAfter: 300,
+                organicTraffic: 500,
+                originalHtmlKey: 'prerender/scrapes/site/page1/server-side.html',
+                prerenderedHtmlKey: 'prerender/scrapes/site/page1/client-side.html',
+                aiSummary: 'Concise AI summary.',
+              },
+              {
+                url: 'https://example.com/page2',
+                contentGainRatio: 1.5,
+                wordCountBefore: 80,
+                wordCountAfter: 200,
+                organicTraffic: 300,
+                originalHtmlKey: 'prerender/scrapes/site/page2/server-side.html',
+                prerenderedHtmlKey: 'prerender/scrapes/site/page2/client-side.html',
+                aiSummary: 'Another summary.',
+              },
+            ],
+          },
+        };
+
+        const res = await mockedGuidance.default(message, context);
+        expect(res.status).to.equal(200);
+        expect(convertToOpportunityStub).to.have.been.calledOnce;
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        expect(uploadStatusSummaryToS3Stub).to.have.been.calledOnce;
+
+        const uploadArgs = uploadStatusSummaryToS3Stub.firstCall.args;
+        expect(uploadArgs[0]).to.equal('https://example.com'); // auditUrl
+        const auditData = uploadArgs[1];
+        expect(auditData.siteId).to.equal('test-site-id');
+        expect(auditData.auditId).to.equal('audit-123');
+        expect(auditData.auditType).to.equal('prerender');
+        expect(auditData.auditResult.totalUrlsChecked).to.equal(2);
+        expect(auditData.auditResult.urlsNeedingPrerender).to.equal(2);
+        expect(auditData.auditResult.results).to.be.an('array').with.length(2);
       });
     });
 

@@ -427,16 +427,6 @@ export async function processContentAndSendToMystique(context) {
 
     log.info(`Prerender - Audit completed in ${elapsedSeconds}s. baseUrl=${site.getBaseURL()}, siteId=${siteId}`);
 
-    // Upload status summary to S3 (post-processing)
-    const auditData = {
-      siteId,
-      auditId: audit.getId(),
-      auditedAt: new Date().toISOString(),
-      auditType: AUDIT_TYPE,
-      auditResult,
-    };
-    await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
-
     return {
       status: 'complete',
       auditResult,

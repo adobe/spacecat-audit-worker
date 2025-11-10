@@ -12,6 +12,7 @@
 
 import { badRequest, notFound, ok } from '@adobe/spacecat-shared-http-utils';
 import { convertToOpportunity } from '../common/opportunity.js';
+import { uploadStatusSummaryToS3 } from './handler.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { syncSuggestions } from '../utils/data-access.js';
 
@@ -92,6 +93,37 @@ export default async function handler(message, context) {
     });
 
     log.info(`[${AUDIT_TYPE}] Saved ${suggestions.length} suggestions from Mystique for siteId: ${siteId}`);
+
+    // Upload status summary now that suggestions have been created
+    try {
+      const auditResult = {
+        totalUrlsChecked: suggestions.length,
+        urlsNeedingPrerender: suggestions.length,
+        results: (suggestions || []).map((s) => ({
+          url: s.url,
+          scrapingStatus: 'success',
+          needsPrerender: true,
+          wordCountBefore: s.wordCountBefore || 0,
+          wordCountAfter: s.wordCountAfter || 0,
+          contentGainRatio: s.contentGainRatio || 0,
+          organicTraffic: s.organicTraffic || 0,
+        })),
+        scrapeForbidden: false,
+      };
+
+      const auditData = {
+        siteId,
+        auditId,
+        auditedAt: new Date().toISOString(),
+        auditType: AUDIT_TYPE,
+        auditResult,
+      };
+
+      await uploadStatusSummaryToS3(site.getBaseURL(), auditData, context);
+      log.info(`[${AUDIT_TYPE}] Uploaded status summary after guidance for siteId: ${siteId}`);
+    } catch (e) {
+      log.warn(`[${AUDIT_TYPE}] Failed to upload status summary after guidance: ${e.message}`);
+    }
     return ok();
   } catch (error) {
     log.error(`[${AUDIT_TYPE}] Error processing Mystique guidance for siteId: ${siteId}:`, error);
