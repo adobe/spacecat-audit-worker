@@ -1,3 +1,10 @@
+## [1.234.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.234.1...v1.234.2) (2025-11-10)
+
+
+### Bug Fixes
+
+* check toppages status code ([#1484](https://github.com/adobe/spacecat-audit-worker/issues/1484)) ([287c0e4](https://github.com/adobe/spacecat-audit-worker/commit/287c0e4071bcb9297d10fc99a93ce704f61879c7))
+
 ## [1.234.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.234.0...v1.234.1) (2025-11-10)
 
 
