@@ -1,3 +1,10 @@
+# [1.233.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.232.0...v1.233.0) (2025-11-10)
+
+
+### Features
+
+* add specific opportunity for faq ([#1508](https://github.com/adobe/spacecat-audit-worker/issues/1508)) ([4dbeeab](https://github.com/adobe/spacecat-audit-worker/commit/4dbeeab32347f93e52a81d0e67d4807d864139ea))
+
 # [1.232.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.231.3...v1.232.0) (2025-11-10)
 
 
