@@ -347,7 +347,7 @@ export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
   const addedFormSources = new Set();
   if (isNonEmptyArray(scrapedData.formData)) {
     for (const form of scrapedData.formData) {
-      const formSources = [];
+      const formSources = { formSource: [] };
       const validForms = form.scrapeResult.filter((sr) => !shouldExcludeForm(sr));
       if (form.finalUrl.includes('search') || validForms.length === 0) {
         // eslint-disable-next-line no-continue
@@ -356,13 +356,13 @@ export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
       // 1. get formSources from scraped data if available
       let isFormSourceAlreadyAdded = false;
       validForms.forEach((sr) => {
-        if (!sr.formSource) {
+        if (!sr.formSources) {
           return;
         }
-        if (!addedFormSources.has(sr.formSource)) {
-          formSources.push(sr.formSource);
-          if (!['dialog form', 'form'].includes(sr.formSource)) {
-            addedFormSources.add(sr.formSource);
+        if (!addedFormSources.has(sr.formSources)) {
+          formSources.push(sr.formSources);
+          if (!['dialog form', 'form'].includes(sr.formSources.formSource)) {
+            addedFormSources.add(sr.formSources.formSource);
           }
         } else {
           isFormSourceAlreadyAdded = true;
@@ -370,26 +370,26 @@ export function getUrlsDataForAccessibilityAudit(scrapedData, context) {
       });
       // eslint-disable-next-line max-len
       // 2. If no unique formSource found in current page, then use id or classList to identify the form
-      if (formSources.length === 0) {
+      if (formSources.formSource.length === 0) {
         log.debug(`[Form Opportunity] No formSource found in scraped data for form: ${form.finalUrl}`);
         validForms.forEach((sr) => {
-          if (sr.formSource) {
+          if (sr.formSources) {
             return;
           }
           if (sr.id) {
-            formSources.push(`form#${sr.id}`);
+            formSources.formSource.push(`form#${sr.id}`);
           } else if (sr.classList) {
-            formSources.push(`form.${sr.classList.split(' ').join('.')}`);
+            formSources.formSource.push(`form.${sr.classList.split(' ').join('.')}`);
           }
         });
       }
       // 3. Fallback to "form" element. If any formSource of current page is already added
       // in previous pages, then don't add "form" element.
-      if (!isFormSourceAlreadyAdded && formSources.length === 0) {
-        formSources.push('form');
+      if (!isFormSourceAlreadyAdded && formSources.formSource.length === 0) {
+        formSources.formSource.push('form');
       }
-      log.debug(`[Form Opportunity] Form sources for page: ${form.finalUrl} are ${formSources.join(', ')}`);
-      if (formSources.length > 0) {
+      log.debug(`[Form Opportunity] Form sources for page: ${form.finalUrl} are ${formSources.formSource.join(', ')}`);
+      if (formSources.formSource.length > 0) {
         urlsData.push({
           url: form.finalUrl,
           formSources,
