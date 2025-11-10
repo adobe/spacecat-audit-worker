@@ -26,7 +26,7 @@ use(chaiAsPromised);
 describe('CDN Logs Report Utils', () => {
   let sandbox;
   let mockContext;
-  const referralConfig = getConfigs('test-bucket', 'example_com')
+  const referralConfig = getConfigs('test-bucket', 'example_com', 'test-site-id')
     .find((c) => c.name === 'referral');
 
   beforeEach(() => {
@@ -35,6 +35,10 @@ describe('CDN Logs Report Utils', () => {
     mockContext = {
       s3Client: {
         send: sandbox.stub().resolves(),
+      },
+      env: {
+        AWS_ENV: 'test',
+        AWS_REGION: 'us-east-1',
       },
     };
   });
@@ -62,7 +66,7 @@ describe('CDN Logs Report Utils', () => {
 
       expect(config).to.have.property('customerName', 'example');
       expect(config).to.have.property('customerDomain', 'example_com');
-      expect(config).to.have.property('bucket', 'test-bucket');
+      expect(config).to.have.property('bucket', 'spacecat-test-cdn-logs-aggregates-us-east-1');
       expect(config).to.have.property('databaseName', 'cdn_logs_example_com');
     });
 
@@ -87,7 +91,7 @@ describe('CDN Logs Report Utils', () => {
       const config = await reportUtils.getS3Config(mockSite, mockContext);
       const tempLocation = config.getAthenaTempLocation();
 
-      expect(tempLocation).to.equal('s3://test-bucket/temp/athena-results/');
+      expect(tempLocation).to.equal('s3://spacecat-test-cdn-logs-aggregates-us-east-1/temp/athena-results/');
     });
   });
   describe('generateReportingPeriods', () => {
@@ -219,8 +223,8 @@ describe('CDN Logs Report Utils', () => {
       await reportUtils.ensureTableExists(mockAthenaClient, mockS3Config, referralConfig, mockLog);
 
       expect(mockAthenaClient.execute).to.have.been.calledOnce;
-      expect(mockLog.debug).to.have.been.calledWith('Creating or checking table: aggregated_referral_logs_example_com');
-      expect(mockLog.debug).to.have.been.calledWith('Table aggregated_referral_logs_example_com is ready');
+      expect(mockLog.debug).to.have.been.calledWith('Creating or checking table: aggregated_referral_logs_example_com_consolidated');
+      expect(mockLog.debug).to.have.been.calledWith('Table aggregated_referral_logs_example_com_consolidated is ready');
     });
 
     it('handles table creation errors', async () => {
