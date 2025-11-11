@@ -454,42 +454,48 @@ export async function validatePageHeadings(
         log.debug(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`);
       }
     }
+    const noContentViolations = [];
     for (let i = 0; i < headings.length - 1; i += 1) {
       const currentHeading = headings[i];
       const nextHeading = headings[i + 1];
 
       if (!hasContentBetweenElements(currentHeading, nextHeading)) {
-        checks.push({
-          check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
-          checkTitle: HEADINGS_CHECKS.HEADING_NO_CONTENT.title,
-          success: false,
-          explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
-          suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
-          heading: currentHeading.tagName,
-          nextHeading: nextHeading.tagName,
-        });
+        noContentViolations.push(`${currentHeading.tagName} → ${nextHeading.tagName}`);
         log.debug(`Heading without content detected at ${url}: ${currentHeading.tagName} has no content before ${nextHeading.tagName}`);
       }
     }
+    if (noContentViolations.length > 0) {
+      const violationsList = noContentViolations.join(', ');
+      checks.push({
+        check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
+        checkTitle: HEADINGS_CHECKS.HEADING_NO_CONTENT.title,
+        success: false,
+        explanation: `${HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation} Found ${noContentViolations.length} heading${noContentViolations.length > 1 ? 's' : ''} without content: ${violationsList}.`,
+        suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
+      });
+    }
 
     if (headings.length > 1) {
+      const violations = [];
       for (let i = 1; i < headings.length; i += 1) {
         const prev = headings[i - 1];
         const cur = headings[i];
         const prevLevel = getHeadingLevel(prev.tagName);
         const curLevel = getHeadingLevel(cur.tagName);
         if (curLevel - prevLevel > 1) {
-          checks.push({
-            check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
-            checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
-            success: false,
-            explanation: HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation,
-            suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
-            previous: `h${prevLevel}`,
-            current: `h${curLevel}`,
-          });
+          violations.push(`h${prevLevel} → h${curLevel}`);
           log.debug(`Heading level jump detected at ${url}: h${prevLevel} → h${curLevel}`);
         }
+      }
+      if (violations.length > 0) {
+        const violationsList = violations.join(', ');
+        checks.push({
+          check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
+          checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
+          success: false,
+          explanation: `${HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation} Found ${violations.length} violation${violations.length > 1 ? 's' : ''}: ${violationsList}.`,
+          suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
+        });
       }
     }
 
