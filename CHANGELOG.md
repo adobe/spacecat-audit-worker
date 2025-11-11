@@ -1,3 +1,10 @@
+## [1.234.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.234.6...v1.234.7) (2025-11-11)
+
+
+### Bug Fixes
+
+* removing heading no content issue type ([#1550](https://github.com/adobe/spacecat-audit-worker/issues/1550)) ([9153148](https://github.com/adobe/spacecat-audit-worker/commit/9153148cd4105f08bd7eedddd546f146ddbccc40))
+
 ## [1.234.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.234.5...v1.234.6) (2025-11-11)
 
 
