@@ -20,11 +20,10 @@ use(sinonChai);
 import prerenderHandler, {
   importTopPages,
   submitForScraping,
-  processContentAndGenerateOpportunities,
-  processOpportunityAndSuggestions,
+  processContentAndSendToMystique,
   createScrapeForbiddenOpportunity,
-  uploadStatusSummaryToS3,
 } from '../../src/prerender/handler.js';
+import { uploadStatusSummaryToS3 } from '../../src/prerender/guidance-handler.js';
 import { analyzeHtmlForPrerender } from '../../src/prerender/html-comparator-utils.js';
 import { createOpportunityData } from '../../src/prerender/opportunity-data-mapper.js';
 
@@ -48,7 +47,7 @@ describe('Prerender Audit', () => {
     it('should export step functions', () => {
       expect(importTopPages).to.be.a('function');
       expect(submitForScraping).to.be.a('function');
-      expect(processContentAndGenerateOpportunities).to.be.a('function');
+      expect(processContentAndSendToMystique).to.be.a('function');
     });
   });
 
@@ -255,7 +254,7 @@ describe('Prerender Audit', () => {
             AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
           },
           auditContext: {
-            next: 'process-content-and-generate-opportunities',
+            next: 'process-scrape-content-and-send-to-mystique',
             auditId: 'test-audit-id',
             auditType: 'prerender',
           },
@@ -289,7 +288,7 @@ describe('Prerender Audit', () => {
             AUDIT_JOBS_QUEUE_URL: 'https://sqs.test.com/test-queue',
           },
           auditContext: {
-            next: 'process-content-and-generate-opportunities',
+            next: 'process-scrape-content-and-send-to-mystique',
             auditId: 'test-audit-id',
             auditType: 'prerender',
           },
@@ -337,7 +336,7 @@ describe('Prerender Audit', () => {
       });
     });
 
-    describe('processContentAndGenerateOpportunities', () => {
+    describe('processContentAndSendToMystique', () => {
       it('should process URLs and generate opportunities when prerender is needed', async function testProcessContentAndGenerateOpportunities() {
         this.timeout(5000); // Increase timeout to 5 seconds
 
@@ -365,10 +364,10 @@ describe('Prerender Audit', () => {
         };
 
         // Test that the function exists and can be called
-        expect(processContentAndGenerateOpportunities).to.be.a('function');
+        expect(processContentAndSendToMystique).to.be.a('function');
 
         // Test basic functionality with no URLs to process
-        const result = await processContentAndGenerateOpportunities(context);
+        const result = await processContentAndSendToMystique(context);
 
         expect(result).to.be.an('object');
         expect(result.status).to.equal('complete');
@@ -393,7 +392,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await processContentAndGenerateOpportunities(context);
+        const result = await processContentAndSendToMystique(context);
 
         expect(result).to.be.an('object');
         expect(result.error).to.be.a('string');
@@ -429,7 +428,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await processContentAndGenerateOpportunities(context);
+        const result = await processContentAndSendToMystique(context);
 
         expect(result).to.be.an('object');
         expect(result.status).to.equal('complete');
@@ -459,7 +458,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await processContentAndGenerateOpportunities(context);
+        const result = await processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
@@ -467,18 +466,8 @@ describe('Prerender Audit', () => {
         expect(context.log.info).to.have.been.calledWith('Prerender - No URLs found for comparison. baseUrl=https://example.com, siteId=test-site-id');
       });
 
-      it('should trigger opportunity processing path when prerender is detected', async () => {
-        // This test covers line 341 by ensuring the full opportunity processing flow executes
-        const mockOpportunity = { getId: () => 'test-opportunity-id' };
-
-        const mockHandler = await esmock('../../src/prerender/handler.js', {
-          '../../src/common/opportunity.js': {
-            convertToOpportunity: sinon.stub().resolves(mockOpportunity),
-          },
-          '../../src/utils/data-access.js': {
-            syncSuggestions: sinon.stub().resolves(),
-          },
-        });
+      it('should send prerender suggestions to Mystique when detected', async () => {
+        const mockHandler = await esmock('../../src/prerender/handler.js', {});
 
         const mockSiteTopPage = {
           allBySiteIdAndSourceAndGeo: sandbox.stub().resolves([
@@ -501,10 +490,13 @@ describe('Prerender Audit', () => {
             }),
         };
 
+        const sendMessageStub = sandbox.stub().resolves();
+
         const context = {
           site: {
             getId: () => 'test-site-id',
             getBaseURL: () => 'https://example.com',
+            getDeliveryType: () => 'other',
           },
           audit: { getId: () => 'audit-id' },
           dataAccess: {
@@ -517,17 +509,23 @@ describe('Prerender Audit', () => {
             error: sandbox.stub(),
           },
           s3Client: mockS3Client,
-          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+          sqs: { sendMessage: sendMessageStub },
+          env: {
+            S3_SCRAPER_BUCKET_NAME: 'test-bucket',
+            QUEUE_SPACECAT_TO_MYSTIQUE: 'https://sqs.example.com/queue',
+          },
         };
 
-        // This should fully execute the opportunity processing path including line 341
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        const result = await mockHandler.processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(result.auditResult.urlsNeedingPrerender).to.be.greaterThan(0);
-        expect(context.log.info).to.have.been.called;
-        // Verify that the opportunity processing was logged
-        expect(context.log.info.args.some(call => call[0].includes('Successfully synced suggestions'))).to.be.true;
+        expect(sendMessageStub).to.have.been.calledOnce;
+
+        const sentPayload = sendMessageStub.firstCall.args[1]; // queueUrl, message
+        expect(sentPayload).to.have.property('type', 'guidance:prerender');
+        expect(sentPayload).to.have.nested.property('data.suggestions').that.is.an('array').with.length.greaterThan(0);
+        expect(sentPayload).to.have.nested.property('data.excludedSelectors').that.is.an('array').and.not.empty;
       });
 
       it('should create dummy opportunity when scraping is forbidden', async () => {
@@ -596,7 +594,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await mockHandlerWithS3.processContentAndGenerateOpportunities(context);
+        const result = await mockHandlerWithS3.processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(result.auditResult.scrapeForbidden).to.be.true;
@@ -611,6 +609,83 @@ describe('Prerender Audit', () => {
         
         // Verify that convertToOpportunity was called with correct parameters
         expect(convertToOpportunityStub.firstCall.args[0]).to.equal('https://example.com'); // auditUrl
+      });
+    });
+
+    describe('Guidance handler integration (post-Mystique)', () => {
+      it('should persist suggestions and upload status summary after guidance', async () => {
+        const syncSuggestionsStub = sandbox.stub().resolves();
+        const convertToOpportunityStub = sandbox.stub().resolves({ getId: () => 'oppty-1' });
+
+        const mockedGuidance = await esmock('../../src/prerender/guidance-handler.js', {
+          '../../src/utils/data-access.js': {
+            syncSuggestions: syncSuggestionsStub,
+          },
+          '../../src/common/opportunity.js': {
+            convertToOpportunity: convertToOpportunityStub,
+          },
+        });
+
+        const Site = {
+          findById: sandbox.stub().resolves({
+            getBaseURL: () => 'https://example.com',
+          }),
+        };
+        const Audit = {
+          findById: sandbox.stub().resolves({
+            setAuditResult: sandbox.stub(),
+            save: sandbox.stub().resolves(),
+          }),
+        };
+        const Suggestion = {}; // not directly used here
+
+        const context = {
+          log: {
+            info: sandbox.stub(),
+            debug: sandbox.stub(),
+            warn: sandbox.stub(),
+            error: sandbox.stub(),
+          },
+          dataAccess: { Site, Audit, Suggestion },
+          s3Client: { send: sandbox.stub().resolves() },
+          env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
+        };
+
+        const message = {
+          siteId: 'test-site-id',
+          auditId: 'audit-123',
+          data: {
+            suggestions: [
+              {
+                url: 'https://example.com/page1',
+                contentGainRatio: 2.1,
+                wordCountBefore: 100,
+                wordCountAfter: 300,
+                organicTraffic: 500,
+                originalHtmlKey: 'prerender/scrapes/site/page1/server-side.html',
+                prerenderedHtmlKey: 'prerender/scrapes/site/page1/client-side.html',
+                aiSummary: 'Concise AI summary.',
+              },
+              {
+                url: 'https://example.com/page2',
+                contentGainRatio: 1.5,
+                wordCountBefore: 80,
+                wordCountAfter: 200,
+                organicTraffic: 300,
+                originalHtmlKey: 'prerender/scrapes/site/page2/server-side.html',
+                prerenderedHtmlKey: 'prerender/scrapes/site/page2/client-side.html',
+                aiSummary: 'Another summary.',
+              },
+            ],
+          },
+        };
+
+        const res = await mockedGuidance.default(message, context);
+        expect(res.status).to.equal(200);
+        expect(convertToOpportunityStub).to.have.been.calledOnce;
+        expect(syncSuggestionsStub).to.have.been.calledOnce;
+        // Ensure status summary upload was attempted via S3 client
+        expect(context.s3Client.send).to.have.been.calledOnce;
       });
     });
 
@@ -655,7 +730,7 @@ describe('Prerender Audit', () => {
       });
     });
 
-    describe('processOpportunityAndSuggestions', () => {
+    describe.skip('processOpportunityAndSuggestions', () => {
       it('should skip processing when no URLs need prerender', async () => {
         const auditData = {
           auditResult: {
@@ -668,7 +743,7 @@ describe('Prerender Audit', () => {
           log: { info: logStub, debug: logStub },
         };
 
-        await processOpportunityAndSuggestions('https://example.com', auditData, context);
+        // processOpportunityAndSuggestions removed; flow handled via Mystique guidance callback
 
         expect(logStub).to.have.been.calledWith('Prerender - No prerender opportunities found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
       });
@@ -688,7 +763,7 @@ describe('Prerender Audit', () => {
           log: { info: logStub, debug: logStub },
         };
 
-        await processOpportunityAndSuggestions('https://example.com', auditData, context);
+        // processOpportunityAndSuggestions removed; flow handled via Mystique guidance callback
 
         expect(logStub).to.have.been.calledWith('Prerender - No URLs needing prerender found, skipping opportunity creation. baseUrl=https://example.com, siteId=undefined');
       });
@@ -715,13 +790,7 @@ describe('Prerender Audit', () => {
           log: { info: logStub, debug: logStub },
         };
 
-        // This will fail due to missing mocks, but we test the early logging
-        try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context);
-        } catch (error) {
-          // Expected to fail due to missing convertToOpportunity and syncSuggestions imports
-          // But we can verify the function attempts to process
-        }
+        // processOpportunityAndSuggestions removed; verify logging behavior separately
 
         expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
       });
@@ -770,12 +839,7 @@ describe('Prerender Audit', () => {
           },
         };
 
-        try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context);
-        } catch (error) {
-          // May still fail due to complex convertToOpportunity logic, but we should reach the opportunity creation
-          // The key is that we test the filtering and logging logic
-        }
+        // processOpportunityAndSuggestions removed; verify logging behavior separately
 
         // Verify that we logged the correct number of suggestions
         expect(logStub).to.have.been.calledWith('Prerender - Generated 2 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
@@ -819,12 +883,7 @@ describe('Prerender Audit', () => {
           log: { info: logStub, debug: logStub },
         };
 
-        try {
-          await processOpportunityAndSuggestions('https://example.com', auditData, context);
-        } catch (error) {
-          // Expected to fail due to missing dependencies, but tests the early logic
-          expect(error.message).to.match(/convertToOpportunity|destructure|opportunity|Opportunity/);
-        }
+        // processOpportunityAndSuggestions removed; verify logging behavior separately
 
         // Should have logged about generating suggestions
         expect(logStub).to.have.been.calledWith('Prerender - Generated 1 prerender suggestions for baseUrl=https://example.com, siteId=test-site-id');
@@ -934,7 +993,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await processContentAndGenerateOpportunities(context);
+        const result = await processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(result.auditResult.totalUrlsChecked).to.equal(1);
@@ -976,7 +1035,7 @@ describe('Prerender Audit', () => {
           dataAccess: { SiteTopPage: mockSiteTopPage },
         };
 
-        const result = await processContentAndGenerateOpportunities(fullContext);
+        const result = await processContentAndSendToMystique(fullContext);
 
         // Should complete but with warnings (from S3) and errors (from compareHtmlContent) logged
         expect(result.status).to.equal('complete');
@@ -1018,7 +1077,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await processContentAndGenerateOpportunities(context);
+        const result = await processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(context.log.error).to.have.been.called;
@@ -1068,7 +1127,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await processContentAndGenerateOpportunities(context);
+        const result = await processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(context.log.error).to.have.been.called;
@@ -1150,7 +1209,7 @@ describe('Prerender Audit', () => {
         };
 
         try {
-          const result = await processContentAndGenerateOpportunities(context);
+          const result = await processContentAndSendToMystique(context);
           // If it doesn't throw, the test still covers the branch
           expect(result).to.be.an('object');
         } catch (error) {
@@ -1198,7 +1257,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await processContentAndGenerateOpportunities(context);
+        const result = await processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         // Even if analysis doesn't fail, the test structure covers the error handling path
@@ -1483,7 +1542,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await mockS3Utils.processContentAndGenerateOpportunities(context);
+        const result = await mockS3Utils.processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(context.log.warn).to.have.been.called;
@@ -1526,7 +1585,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        const result = await mockHandler.processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
 
@@ -1575,7 +1634,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        const result = await mockHandler.processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(context.log.error).to.have.been.called;
@@ -1583,7 +1642,7 @@ describe('Prerender Audit', () => {
         expect(context.log.error.args.some(call => call[0].includes('HTML analysis failed for'))).to.be.true;
       });
 
-      it('should trigger opportunity and suggestion creation flow', async () => {
+      it.skip('should trigger opportunity and suggestion creation flow', async () => {
         // Test the full opportunity creation and suggestion sync flow including S3 key generation
         const mockOpportunity = { getId: () => 'test-opportunity-id' };
         const syncSuggestionsStub = sinon.stub().resolves();
@@ -1623,7 +1682,7 @@ describe('Prerender Audit', () => {
           },
         };
 
-        await mockHandler.processOpportunityAndSuggestions('https://example.com', auditData, context);
+        // processOpportunityAndSuggestions removed; flow handled via Mystique guidance callback
 
         expect(context.log.info).to.have.been.called;
         // Verify that syncSuggestions was called
@@ -1801,7 +1860,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        const result = await mockHandler.processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(context.log.error).to.have.been.called;
@@ -1849,7 +1908,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        const result = await mockHandler.processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(context.log.error).to.have.been.called;
@@ -1897,7 +1956,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        const result = await mockHandler.processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(context.log.error).to.have.been.called;
@@ -1947,7 +2006,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        const result = await mockHandler.processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         expect(context.log.error).to.have.been.called;
@@ -1996,7 +2055,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        const result = await mockHandler.processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         // Should complete successfully even if scrape.json is missing (backward compatible)
@@ -2040,7 +2099,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        const result = await mockHandler.processContentAndSendToMystique(context);
 
         expect(result.status).to.equal('complete');
         // Should complete successfully with HTML analysis, even if metadata is null
@@ -2076,7 +2135,7 @@ describe('Prerender Audit', () => {
           env: { S3_SCRAPER_BUCKET_NAME: 'test-bucket' },
         };
 
-        const result = await mockHandler.processContentAndGenerateOpportunities(context);
+        const result = await mockHandler.processContentAndSendToMystique(context);
         
         expect(result.auditResult.results[0].scrapeError).to.be.undefined;
       });
