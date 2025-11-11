@@ -184,8 +184,10 @@ describe('Geo Brand Presence Handler', () => {
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
-    // When aiPlatform is provided (chatgpt), only one message is sent per opportunity type
-    expect(sqs.sendMessage).to.have.been.calledOnce;
+    // When aiPlatform is provided (chatgpt), one detection message + one categorization message = 2 total
+    expect(sqs.sendMessage).to.have.been.calledTwice;
+    
+    // First call should be detection message
     const [brandPresenceQueue, brandPresenceMessage] = sqs.sendMessage.firstCall.args;
     expect(brandPresenceQueue).to.equal('spacecat-to-mystique');
     expect(brandPresenceMessage).to.include({
@@ -201,6 +203,23 @@ describe('Geo Brand Presence Handler', () => {
       config_version: '1.0.0',
       url: 'https://example.com/presigned-url',
     });
+    
+    // Second call should be categorization message
+    const [categorizationQueue, categorizationMessage] = sqs.sendMessage.secondCall.args;
+    expect(categorizationQueue).to.equal('spacecat-to-mystique');
+    expect(categorizationMessage).to.include({
+      type: 'categorize:geo-brand-presence',
+      siteId: site.getId(),
+      url: site.getBaseURL(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+    });
+    expect(categorizationMessage.data).to.include({
+      configVersion: '1.0.0',
+      config_version: '1.0.0',
+      url: 'https://example.com/presigned-url',
+    });
+    expect(categorizationMessage.data.web_search_provider).to.be.null;
   });
 
   it('should fall back to all providers when aiPlatform is invalid', async () => {
@@ -218,8 +237,8 @@ describe('Geo Brand Presence Handler', () => {
       },
     }, getPresignedUrl);
 
-    // Should send messages for all providers since 'invalid-provider' is not in WEB_SEARCH_PROVIDERS
-    expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length);
+    // Should send messages for all providers + 1 categorization message
+    expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length + 1);
   });
 
   // TODO(aurelio): check that we write the right file to s3
@@ -238,10 +257,10 @@ describe('Geo Brand Presence Handler', () => {
       },
     }, getPresignedUrl);
 
-    // Should send messages equal to the number of configured providers
-    expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length);
+    // Should send messages equal to the number of configured providers + 1 categorization message
+    expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length + 1);
 
-    // Verify each message has the correct provider
+    // Verify each detection message has the correct provider
     WEB_SEARCH_PROVIDERS.forEach((provider, index) => {
       const [queue, message] = sqs.sendMessage.getCall(index).args;
       expect(queue).to.equal('spacecat-to-mystique');
@@ -259,6 +278,18 @@ describe('Geo Brand Presence Handler', () => {
         url: 'https://example.com/presigned-url',
       });
     });
+    
+    // Verify the last message is the categorization message
+    const [lastQueue, lastMessage] = sqs.sendMessage.getCall(WEB_SEARCH_PROVIDERS.length).args;
+    expect(lastQueue).to.equal('spacecat-to-mystique');
+    expect(lastMessage).to.include({
+      type: 'categorize:geo-brand-presence',
+      siteId: site.getId(),
+      url: site.getBaseURL(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+    });
+    expect(lastMessage.data.web_search_provider).to.be.null;
   });
 
   it('sends customer defined prompts from the config to mystique', async () => {
