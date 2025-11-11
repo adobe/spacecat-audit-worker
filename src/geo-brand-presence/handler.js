@@ -31,10 +31,12 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const LLMO_QUESTIONS_IMPORT_TYPE = 'llmo-prompts-ahrefs';
 export const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
 export const GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE = 'detect:geo-brand-presence-daily';
+export const GEO_BRAND_CATEGORIZATION_OPPTY_TYPE = 'categorize:geo-brand-presence';
 export const GEO_FAQ_OPPTY_TYPE = 'guidance:geo-faq';
 export const OPPTY_TYPES = [
   GEO_BRAND_PRESENCE_OPPTY_TYPE,
   GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE,
+  GEO_BRAND_CATEGORIZATION_OPPTY_TYPE,
   // GEO_FAQ_OPPTY_TYPE, // TODO reenable when working on faqs again
 ];
 
@@ -290,8 +292,8 @@ export async function sendToMystique(context, getPresignedUrlOverride = getSigne
     : [GEO_BRAND_PRESENCE_OPPTY_TYPE];
 
   // Send messages for each combination of opportunity type and web search provider
-  await Promise.all(
-    opptyTypes.flatMap((opptyType) => providersToUse.map(async (webSearchProvider) => {
+  const detectionMessages = opptyTypes.flatMap((opptyType) => providersToUse.map(
+    async (webSearchProvider) => {
       const message = createMystiqueMessage({
         type: opptyType,
         siteId,
@@ -308,8 +310,32 @@ export async function sendToMystique(context, getPresignedUrlOverride = getSigne
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
       const cadenceLabel = isDaily ? ' DAILY' : '';
       log.debug('GEO BRAND PRESENCE%s: %s message sent to Mystique for site id %s (%s) with provider %s', cadenceLabel, opptyType, siteId, baseURL, webSearchProvider);
-    })),
-  );
+    },
+  ));
+
+  // Send categorization message in parallel with detection
+  const categorizationMessage = (async () => {
+    const message = createMystiqueMessage({
+      type: GEO_BRAND_CATEGORIZATION_OPPTY_TYPE,
+      siteId,
+      baseURL,
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+      calendarWeek: dateContext,
+      url,
+      webSearchProvider: null, // Categorization doesn't need a specific provider
+      configVersion: /* c8 ignore next */ configExists ? configVersion : null,
+      ...(isDaily && { date: dateContext.date }), // Add date only for daily cadence
+    });
+
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    const cadenceLabel = isDaily ? ' DAILY' : '';
+    const catLogMsg = 'GEO BRAND PRESENCE%s: categorization message sent to Mystique for site id %s (%s)';
+    log.debug(catLogMsg, cadenceLabel, siteId, baseURL);
+  })();
+
+  // Wait for all messages (detection + categorization) to be sent in parallel
+  await Promise.all([...detectionMessages, categorizationMessage]);
   /* c8 ignore end */
 }
 
