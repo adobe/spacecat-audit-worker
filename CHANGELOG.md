@@ -1,3 +1,10 @@
+## [1.234.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.234.5...v1.234.6) (2025-11-11)
+
+
+### Bug Fixes
+
+* country codes that should be ignored ([#1552](https://github.com/adobe/spacecat-audit-worker/issues/1552)) ([fc23e9b](https://github.com/adobe/spacecat-audit-worker/commit/fc23e9b2ddbeb930f7f9319b80b03ae4d91b02e1))
+
 ## [1.234.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.234.4...v1.234.5) (2025-11-11)
 
 
