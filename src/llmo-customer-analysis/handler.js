@@ -25,6 +25,7 @@ import {
 import { getRUMUrl } from '../support/utils.js';
 import { handleCdnBucketConfigChanges } from './cdn-config-handler.js';
 import { sendOnboardingNotification } from './onboarding-notifications.js';
+import { enableContentAI } from './content-ai.js';
 
 const REFERRAL_TRAFFIC_AUDIT = 'llmo-referral-traffic';
 const REFERRAL_TRAFFIC_IMPORT = 'traffic-analysis';
@@ -285,6 +286,14 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
     'cdn-logs-report',
     'geo-brand-presence',
   ]);
+
+  // Enable ContentAI for the site
+  try {
+    await enableContentAI(site, context);
+    log.info(`Successfully enabled ContentAI for site ${siteId}`);
+  } catch (error) {
+    log.error(`Failed to enable ContentAI for site ${siteId}: ${error.message}`);
+  }
 
   await enableImports(site, [
     { type: REFERRAL_TRAFFIC_IMPORT },
