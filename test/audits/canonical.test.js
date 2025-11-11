@@ -878,6 +878,106 @@ describe('Canonical URL Tests', () => {
       });
       expect(log.info).to.have.been.calledWith('No pages returned 200 status, ending audit without creating opportunities.');
     });
+
+    it('should skip redundant fetch for self-referenced canonical URLs', async () => {
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/page1';
+      const html = `<html lang="en"><head><link rel="canonical" href="${pageURL}"><title>test</title></head><body></body></html>`;
+
+      // Should only be fetched ONCE (not twice) due to optimization
+      nock('https://example.com').get('/page1').once().reply(200, html);
+
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => pageURL }]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('fullAuditRef', baseURL);
+      expect(result.auditResult).to.deep.equal({
+        status: 'success',
+        message: 'No canonical issues detected',
+      });
+
+      // Verify nock interceptor was called exactly once
+      expect(nock.isDone()).to.be.true;
+    });
+
+    it('should fetch canonical URL when NOT self-referenced', async () => {
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/page1';
+      const canonicalURL = 'https://example.com/canonical-page';
+
+      const pageHtml = `<html lang="en"><head><link rel="canonical" href="${canonicalURL}"><title>test</title></head><body></body></html>`;
+      const canonicalHtml = `<html lang="en"><head><link rel="canonical" href="${canonicalURL}"><title>canonical</title></head><body></body></html>`;
+
+      // Page fetched once, canonical URL fetched once (total 2 fetches)
+      nock('https://example.com').get('/page1').once().reply(200, pageHtml);
+      nock('https://example.com').get('/canonical-page').once().reply(200, canonicalHtml);
+
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => pageURL }]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('fullAuditRef', baseURL);
+      expect(result).to.have.property('auditResult');
+
+      // Should have canonical-self-referenced error
+      expect(result.auditResult).to.be.an('array');
+      expect(result.auditResult).to.have.lengthOf(1);
+      expect(result.auditResult[0]).to.have.property('type', 'canonical-self-referenced');
+
+      // Verify both URLs were fetched
+      expect(nock.isDone()).to.be.true;
+    });
+
+    it('should handle URL normalization with trailing slashes', async () => {
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/page1';
+      const canonicalURLWithSlash = 'https://example.com/page1/';
+
+      const html = `<html lang="en"><head><link rel="canonical" href="${canonicalURLWithSlash}"><title>test</title></head><body></body></html>`;
+
+      // Should only be fetched ONCE due to normalization
+      nock('https://example.com').get('/page1').once().reply(200, html);
+
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => pageURL }]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result.auditResult).to.deep.equal({
+        status: 'success',
+        message: 'No canonical issues detected',
+      });
+
+      // Verify only one fetch occurred
+      expect(nock.isDone()).to.be.true;
+    });
   });
 
   describe('generateCanonicalSuggestion', () => {
