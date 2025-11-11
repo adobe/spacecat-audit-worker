@@ -13,7 +13,7 @@
 /* eslint-env mocha */
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { Audit as AuditModel, Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
+import { Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
 import esmock from 'esmock';
 
 describe('Missing Alt Text Guidance Handler', () => {
@@ -69,8 +69,6 @@ describe('Missing Alt Text Guidance Handler', () => {
           bulkUpdateStatus: sandbox.stub().resolves(),
           STATUSES: {
             OUTDATED: 'OUTDATED',
-            NEW: 'NEW',
-            NOT_VALIDATED: 'NOT_VALIDATED',
           },
         },
       },
@@ -475,51 +473,5 @@ describe('Missing Alt Text Guidance Handler', () => {
 
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
     expect(getProjectedMetricsStub).to.have.been.called;
-  });
-
-  it('should set suggestion status to NEW when site does not require validation', async () => {
-    // Set up context without requiresValidation flag
-    context.site = {
-      requiresValidation: false,
-      ...mockSite,
-    };
-
-    // Capture the mapped suggestions
-    addAltTextSuggestionsStub.resetHistory();
-    
-    const result = await guidanceHandler(mockMessage, context);
-
-    expect(result.status).to.equal(200);
-    expect(addAltTextSuggestionsStub).to.have.been.called;
-    
-    // Get the first argument passed to addAltTextSuggestions
-    const addSuggestionsCall = addAltTextSuggestionsStub.getCall(0).args[0];
-    const newSuggestionDTOs = addSuggestionsCall.newSuggestionDTOs;
-    
-    // Verify the status is set to NEW
-    expect(newSuggestionDTOs[0].status).to.equal(SuggestionModel.STATUSES.NEW);
-  });
-
-  it('should set suggestion status to NOT_VALIDATED when site requires validation', async () => {
-    // Set up context with requiresValidation flag
-    context.site = {
-      requiresValidation: true,
-      ...mockSite,
-    };
-
-    // Capture the mapped suggestions
-    addAltTextSuggestionsStub.resetHistory();
-    
-    const result = await guidanceHandler(mockMessage, context);
-
-    expect(result.status).to.equal(200);
-    expect(addAltTextSuggestionsStub).to.have.been.called;
-    
-    // Get the first argument passed to addAltTextSuggestions
-    const addSuggestionsCall = addAltTextSuggestionsStub.getCall(0).args[0];
-    const newSuggestionDTOs = addSuggestionsCall.newSuggestionDTOs;
-    
-    // Verify the status is set to NOT_VALIDATED
-    expect(newSuggestionDTOs[0].status).to.equal(SuggestionModel.STATUSES.NOT_VALIDATED);
   });
 });

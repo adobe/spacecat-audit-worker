@@ -22,7 +22,8 @@ const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
  * @param {string} opportunityId - The opportunity ID to associate suggestions with
  * @returns {Array} Array of suggestion DTOs ready for addition
  */
-function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunityId, context) {
+
+function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunityId) {
   return mystiquesuggestions.map((suggestion) => {
     const suggestionId = `${suggestion.pageUrl}/${suggestion.imageId}`;
 
@@ -41,8 +42,6 @@ function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunity
           language: suggestion.language,
         }],
       },
-      status: context.site?.requiresValidation ? SuggestionModel.STATUSES.NOT_VALIDATED
-        : SuggestionModel.STATUSES.NEW,
       rank: 1,
     };
   });
@@ -68,7 +67,10 @@ async function clearSuggestionsForPagesAndCalculateMetrics(
 ) {
   const existingSuggestions = await opportunity.getSuggestions();
   const pageUrlSet = new Set(pageUrls);
-
+  /**
+  * TODO: ASSETS-59781 - Update alt-text opportunity to use syncSuggestions
+  * instead of current approach. This will enable handling of PENDING_VALIDATION status.
+  */
   // Find suggestions to remove for these pages
   const suggestionsToRemove = existingSuggestions.filter((suggestion) => {
     const pageUrl = suggestion.getData()?.recommendations?.[0]?.pageUrl;
@@ -179,7 +181,6 @@ export default async function handler(message, context) {
       const mappedSuggestions = mapMystiqueSuggestionsToSuggestionDTOs(
         suggestions,
         altTextOppty.getId(),
-        context,
       );
       await addAltTextSuggestions({
         opportunity: altTextOppty,
