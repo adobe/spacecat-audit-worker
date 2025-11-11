@@ -373,6 +373,92 @@ describe('Scrape Utils', () => {
 
       expect(filtered).to.be.an('array').that.is.empty;
     });
+
+    it('filters opportunities by specific device type (desktop)', () => {
+      const opportunities = [
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Accessibility report - Desktop - Week 1 - 2024',
+        },
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Accessibility report - Mobile - Week 1 - 2024',
+        },
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Accessibility report - Desktop - Week 2 - 2024',
+        },
+      ];
+
+      const filtered = filterAccessibilityOpportunities(opportunities, 'desktop');
+
+      expect(filtered).to.have.lengthOf(2);
+      expect(filtered[0].getTitle()).to.include('- Desktop -');
+      expect(filtered[1].getTitle()).to.include('- Desktop -');
+    });
+
+    it('filters opportunities by specific device type (mobile)', () => {
+      const opportunities = [
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Accessibility report - Desktop - Week 1 - 2024',
+        },
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Accessibility report - Mobile - Week 1 - 2024',
+        },
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Accessibility report - Mobile - Week 2 - 2024',
+        },
+      ];
+
+      const filtered = filterAccessibilityOpportunities(opportunities, 'mobile');
+
+      expect(filtered).to.have.lengthOf(2);
+      expect(filtered[0].getTitle()).to.include('- Mobile -');
+      expect(filtered[1].getTitle()).to.include('- Mobile -');
+    });
+
+    it('returns empty array when device type does not match', () => {
+      const opportunities = [
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Accessibility report - Desktop - Week 1 - 2024',
+        },
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Accessibility report - Desktop - Week 2 - 2024',
+        },
+      ];
+
+      const filtered = filterAccessibilityOpportunities(opportunities, 'mobile');
+
+      expect(filtered).to.be.an('array').that.is.empty;
+    });
+
+    it('filters by device type with proper capitalization', () => {
+      const opportunities = [
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Accessibility report - Desktop - Week 1 - 2024',
+        },
+        {
+          getType: () => 'generic-opportunity',
+          getTitle: () => 'Accessibility report - Mobile - Week 1 - 2024',
+        },
+      ];
+
+      // Test with lowercase device type
+      const filteredDesktop = filterAccessibilityOpportunities(opportunities, 'desktop');
+      expect(filteredDesktop).to.have.lengthOf(1);
+      expect(filteredDesktop[0].getTitle()).to.include('- Desktop -');
+
+      // Test with lowercase mobile
+      const filteredMobile = filterAccessibilityOpportunities(opportunities, 'mobile');
+      expect(filteredMobile).to.have.lengthOf(1);
+      expect(filteredMobile[0].getTitle()).to.include('- Mobile -');
+    });
   });
 
   describe('updateStatusToIgnored', () => {
@@ -478,6 +564,60 @@ describe('Scrape Utils', () => {
         error: 'Fetch failed',
       });
       expect(mockLog.error).to.have.been.calledWith('[A11yAudit][A11yProcessingError] Error updating opportunities to IGNORED for site site1: Fetch failed');
+    });
+
+    it('successfully updates opportunities with device type specified', async () => {
+      // Create opportunities with desktop-specific titles
+      const desktopOpportunity = {
+        getType: sandbox.stub().returns('generic-opportunity'),
+        getTitle: sandbox.stub().returns('Accessibility report - Desktop - Week 1 - 2024'),
+        setStatus: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([desktopOpportunity]);
+      
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog, 'desktop');
+
+      expect(result).to.deep.equal({
+        success: true,
+        updatedCount: 1,
+        error: undefined,
+      });
+      expect(desktopOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+      expect(desktopOpportunity.save).to.have.been.calledOnce;
+      expect(mockLog.debug).to.have.been.calledWith('[A11yAudit] Found 1 opportunities to update to IGNORED for desktop for site site1');
+    });
+
+    it('filters by device type when updating status', async () => {
+      // Create both desktop and mobile opportunities
+      const desktopOpportunity = {
+        getType: sandbox.stub().returns('generic-opportunity'),
+        getTitle: sandbox.stub().returns('Accessibility report - Desktop - Week 1 - 2024'),
+        setStatus: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+      const mobileOpportunity = {
+        getType: sandbox.stub().returns('generic-opportunity'),
+        getTitle: sandbox.stub().returns('Accessibility report - Mobile - Week 1 - 2024'),
+        setStatus: sandbox.stub(),
+        save: sandbox.stub().resolves(),
+      };
+
+      mockDataAccess.Opportunity.allBySiteIdAndStatus.resolves([desktopOpportunity, mobileOpportunity]);
+      
+      // Update only desktop opportunities
+      const result = await updateStatusToIgnored(mockDataAccess, 'site1', mockLog, 'desktop');
+
+      expect(result).to.deep.equal({
+        success: true,
+        updatedCount: 1,
+        error: undefined,
+      });
+      expect(desktopOpportunity.setStatus).to.have.been.calledWith('IGNORED');
+      expect(desktopOpportunity.save).to.have.been.calledOnce;
+      expect(mobileOpportunity.setStatus).to.not.have.been.called;
+      expect(mobileOpportunity.save).to.not.have.been.called;
     });
   });
 

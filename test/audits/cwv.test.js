@@ -49,6 +49,7 @@ describe('CWVRunner Tests', () => {
     getBaseURL: sandbox.stub().returns(baseURL),
     getConfig: () => siteConfig,
     getDeliveryType: sandbox.stub().returns('aem_cs'),
+    getDeliveryConfig: sandbox.stub().returns({}),
     hasProductEntitlement: sandbox.stub().resolves(true),
   };
 
@@ -74,15 +75,18 @@ describe('CWVRunner Tests', () => {
     log: {
       debug: sinon.stub(),
       info: sinon.stub(),
+      warn: sinon.stub(),
     },
   };
 
   afterEach(() => {
     nock.cleanAll();
     sinon.restore();
+    site.getDeliveryConfig.reset();
   });
 
   it('cwv audit runs rum api client cwv query', async () => {
+    site.getDeliveryConfig.returns({});
     const result = await CWVRunner(auditUrl, context, site);
 
     expect(siteConfig.getGroupedURLs.calledWith(Audit.AUDIT_TYPES.CWV)).to.be.true;
@@ -105,6 +109,68 @@ describe('CWVRunner Tests', () => {
       },
       fullAuditRef: auditUrl,
     });
+  });
+
+  it('uses custom delivery config if present', async () => {
+    const customConfig = { cwv: { dailyThreshold: 500, interval: 14 } };
+    site.getDeliveryConfig.returns(customConfig);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(context.rumApiClient.query).to.have.been.calledWith(
+      Audit.AUDIT_TYPES.CWV,
+      {
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        interval: customConfig.cwv.interval,
+        groupedURLs,
+      },
+    );
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= customConfig.cwv.dailyThreshold * customConfig.cwv.interval),
+    );
+    expect(result.auditResult.auditContext.interval).to.equal(customConfig.cwv.interval);
+  });
+
+  it('caps the interval at 30 days if a larger value is provided', async () => {
+    const customConfig = { cwv: { dailyThreshold: 500, interval: 90 } };
+    site.getDeliveryConfig.returns(customConfig);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(context.rumApiClient.query).to.have.been.calledWith(
+      Audit.AUDIT_TYPES.CWV,
+      {
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        interval: 30, // Capped value
+        groupedURLs,
+      },
+    );
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= customConfig.cwv.dailyThreshold * 30), // Uses capped interval
+    );
+    expect(result.auditResult.auditContext.interval).to.equal(30); // Reports capped interval
+  });
+
+  it('uses default values when delivery config is null', async () => {
+    site.getDeliveryConfig.returns(null);
+
+    const result = await CWVRunner(auditUrl, context, site);
+
+    expect(context.rumApiClient.query).to.have.been.calledWith(
+      Audit.AUDIT_TYPES.CWV,
+      {
+        ...DOMAIN_REQUEST_DEFAULT_PARAMS,
+        interval: 7,
+        groupedURLs,
+      },
+    );
+
+    expect(result.auditResult.cwv).to.deep.equal(
+      rumData.filter((data) => data.pageviews >= 1000 * 7),
+    );
+    expect(result.auditResult.auditContext.interval).to.equal(7);
   });
 
   describe('CWV audit to oppty conversion', () => {
@@ -153,6 +219,7 @@ describe('CWVRunner Tests', () => {
         getType: () => Audit.AUDIT_TYPES.CWV,
         getId: () => 'oppty-id',
         getSiteId: () => 'site-id',
+        getAuditId: () => 'audit-id',
         addSuggestions: sandbox.stub().resolves(addSuggestionsResponse),
         getSuggestions: sandbox.stub().resolves([]),
         setAuditId: sandbox.stub(),
@@ -219,9 +286,10 @@ describe('CWVRunner Tests', () => {
     it('updates the existing opportunity object', async () => {
       sinon.stub(GoogleClient, 'createFrom').resolves({});
       context.dataAccess.Opportunity.allBySiteIdAndStatus.resolves([oppty]);
-      const existingSuggestions = suggestions.map((suggestion) => ({
+      const existingSuggestions = suggestions.map((suggestion, index) => ({
         ...suggestion,
         opportunityId: oppty.getId(),
+        getId: () => `sugg-${index}`,
         remove: sinon.stub(),
         save: sinon.stub(),
         getData: () => (suggestion.data),
@@ -293,8 +361,8 @@ describe('CWVRunner Tests', () => {
     it('calls sendSQSMessageForAutoSuggest when suggestions have no guidance', async () => {
       // Mock suggestions without guidance (empty issues array)
       const mockSuggestions = [
-        { getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
-        { getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
+        { getId: () => 'sugg-1', getData: () => ({ type: 'url', url: 'test1', issues: [] }), getStatus: () => 'NEW' },
+        { getId: () => 'sugg-2', getData: () => ({ type: 'url', url: 'test2', issues: [] }), getStatus: () => 'NEW' }
       ];
       
       // Setup opportunity with mock suggestions before the function call
@@ -306,8 +374,8 @@ describe('CWVRunner Tests', () => {
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      // Verify that SQS sendMessage was called
-      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      // Verify that SQS sendMessage was called twice (once per suggestion)
+      expect(context.sqs.sendMessage).to.have.been.calledTwice;
       const message = context.sqs.sendMessage.firstCall.args[1];
       expect(message.type).to.equal('guidance:cwv-analysis');
       expect(message.siteId).to.equal('site-id');
@@ -316,7 +384,8 @@ describe('CWVRunner Tests', () => {
     it('does not call sendSQSMessageForAutoSuggest when all suggestions have guidance', async () => {
       // Mock suggestions with existing guidance
       const mockSuggestions = [
-        { 
+        {
+          getId: () => 'sugg-1',
           getData: () => ({ 
             type: 'url', 
             url: 'test1',
@@ -344,7 +413,8 @@ describe('CWVRunner Tests', () => {
     it('calls sendSQSMessageForAutoSuggest when some suggestions have guidance and some do not', async () => {
       // Mock mixed suggestions - some with guidance, some without
       const mockSuggestions = [
-        { 
+        {
+          getId: () => 'sugg-1',
           getData: () => ({ 
             type: 'url', 
             url: 'test1',
@@ -354,7 +424,8 @@ describe('CWVRunner Tests', () => {
           }),
           getStatus: () => 'NEW'
         },
-        { 
+        {
+          getId: () => 'sugg-2',
           getData: () => ({ 
             type: 'url', 
             url: 'test2',
@@ -373,7 +444,7 @@ describe('CWVRunner Tests', () => {
 
       await opportunityAndSuggestions(auditUrl, auditData, context, site);
 
-      // Verify that SQS sendMessage was called (because at least one suggestion needs guidance)
+      // Verify that SQS sendMessage was called once (only for the suggestion without guidance)
       expect(context.sqs.sendMessage).to.have.been.calledOnce;
     });
   });
