@@ -482,8 +482,8 @@ export default async function handler(message, context) {
       await sendCodeFixMessagesToImporter(
         opportunity,
         auditId,
-        context,
         site,
+        context,
       );
     } else {
       log.info(`[Form Opportunity] [Site Id: ${siteId}] ${opportunity.getType()}-auto-fix is disabled for site, skipping code-fix generation`);

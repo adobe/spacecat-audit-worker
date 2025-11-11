@@ -979,10 +979,11 @@ export async function sendRunImportMessage(
  *
  * @param {Object} opportunity - The opportunity object containing suggestions
  * @param {string} auditId - The audit ID
+ * @param {Object} site - The site object
  * @param {Object} context - The context object containing log, sqs, env, and site
  * @returns {Promise<void>}
  */
-export async function sendCodeFixMessagesToImporter(opportunity, auditId, context, site) {
+export async function sendCodeFixMessagesToImporter(opportunity, auditId, site, context) {
   const {
     log, sqs, env,
   } = context;
