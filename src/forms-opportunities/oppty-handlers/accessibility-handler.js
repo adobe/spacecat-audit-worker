@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { ok } from '@adobe/spacecat-shared-http-utils';
+import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { FORM_OPPORTUNITY_TYPES, formOpportunitiesMap } from '../constants.js';
 import {
@@ -203,7 +203,7 @@ async function createOrUpdateOpportunity(auditId, siteId, a11yData, context, opp
     // If no existing opportunity, create new opportunity
     if (!opportunity) {
       // change status to IGNORED for older opportunities
-      await updateStatusToIgnored(dataAccess, siteId, log, filterAccessibilityOpportunities);
+      await updateStatusToIgnored(dataAccess, siteId, log, null, filterAccessibilityOpportunities);
 
       const opportunityData = {
         siteId,
@@ -448,10 +448,18 @@ export async function createAccessibilityOpportunity(auditData, context) {
 }
 
 export default async function handler(message, context) {
-  const { log, site } = context;
+  const { log, dataAccess } = context;
+  const { Site } = dataAccess;
   const { auditId, siteId, data } = message;
   const { opportunityId, a11y } = data;
   log.debug(`[Form Opportunity] [Site Id: ${siteId}] Received message in accessibility handler: ${JSON.stringify(message, null, 2)}`);
+
+  const site = await Site.findById(siteId);
+  if (!site) {
+    log.error(`[Form Opportunity] [Site Id: ${siteId}] Site not found for siteId: ${siteId}`);
+    return notFound('Site not found');
+  }
+
   try {
     const opportunity = await createOrUpdateOpportunity(
       auditId,
@@ -474,6 +482,7 @@ export default async function handler(message, context) {
       await sendCodeFixMessagesToImporter(
         opportunity,
         auditId,
+        site,
         context,
       );
     } else {
