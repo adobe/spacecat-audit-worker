@@ -25,7 +25,6 @@ import { createOpportunityData } from './opportunity-data-mapper.js';
 // TODO: Change to Audit.AUDIT_TYPES.CONTENT_FRAGMENT_404
 // See https://github.com/adobe/spacecat-shared/pull/1049
 export const AUDIT_TYPE = 'content-fragment-404';
-export const AUDIT_TYPE_AUTO_SUGGEST = 'content-fragment-404-auto-suggest';
 export const GUIDANCE_TYPE = `guidance:${AUDIT_TYPE}`;
 
 async function fetchContentFragment404s(context) {
