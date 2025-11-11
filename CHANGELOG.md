@@ -1,3 +1,10 @@
+## [1.234.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.234.4...v1.234.5) (2025-11-11)
+
+
+### Bug Fixes
+
+* enable only when customer selected cdn ([#1549](https://github.com/adobe/spacecat-audit-worker/issues/1549)) ([61b058b](https://github.com/adobe/spacecat-audit-worker/commit/61b058baffd8fdbf1914590898354cf21e9158a0))
+
 ## [1.234.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.234.3...v1.234.4) (2025-11-11)
 
 
