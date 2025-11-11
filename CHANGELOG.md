@@ -1,3 +1,10 @@
+## [1.234.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.234.3...v1.234.4) (2025-11-11)
+
+
+### Bug Fixes
+
+* update updateStatusToIgnored function to accept custom filter fu… ([#1511](https://github.com/adobe/spacecat-audit-worker/issues/1511)) ([2d392eb](https://github.com/adobe/spacecat-audit-worker/commit/2d392ebc4e35bdac89a438eae1a7bec7792f3375))
+
 ## [1.234.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.234.2...v1.234.3) (2025-11-10)
 
 
