@@ -10,6 +10,27 @@
  * governing permissions and limitations under the License.
  */
 
+async function getAccessToken(tokenEndpoint, clientId, clientSecret) {
+  const formParams = new URLSearchParams();
+  formParams.append('grant_type', 'client_credentials');
+  formParams.append('client_id', clientId);
+  formParams.append('client_secret', clientSecret);
+  formParams.append('scope', 'openid,AdobeID,aem.contentai');
+
+  const accessTokenRes = await fetch(tokenEndpoint, {
+    method: 'POST',
+    body: formParams,
+  });
+  if (!accessTokenRes.ok) {
+    throw new Error(`Failed to get access token from ContentAI: ${accessTokenRes.status} ${accessTokenRes.statusText}`);
+  }
+  const accessTokenJson = await accessTokenRes.json();
+  return {
+    accessToken: accessTokenJson.access_token,
+    tokenType: accessTokenJson.token_type,
+  };
+}
+
 async function getConfigurations(endpoint, tokenType, accessToken) {
   let allItems = [];
   let cursor = null;
@@ -45,22 +66,11 @@ async function getConfigurations(endpoint, tokenType, accessToken) {
 export async function enableContentAI(site, context) {
   const { env } = context;
 
-  const formParams = new URLSearchParams();
-  formParams.append('grant_type', env.CONTENTAI_GRANT_TYPE);
-  formParams.append('client_id', env.CONTENTAI_CLIENT_ID);
-  formParams.append('client_secret', env.CONTENTAI_CLIENT_SECRET);
-  formParams.append('scope', env.CONTENTAI_SCOPE);
-
-  const accessTokenRes = await fetch(env.CONTENTAI_TOKEN_ENDPOINT, {
-    method: 'POST',
-    body: formParams,
-  });
-  if (!accessTokenRes.ok) {
-    throw new Error(`Failed to get access token from ContentAI: ${accessTokenRes.status} ${accessTokenRes.statusText}`);
-  }
-  const accessTokenJson = await accessTokenRes.json();
-  const accessToken = accessTokenJson.access_token;
-  const tokenType = accessTokenJson.token_type;
+  const { accessToken, tokenType } = await getAccessToken(
+    env.CONTENTAI_TOKEN_ENDPOINT,
+    env.CONTENTAI_CLIENT_ID,
+    env.CONTENTAI_CLIENT_SECRET,
+  );
 
   const configurations = await getConfigurations(env.CONTENTAI_ENDPOINT, tokenType, accessToken);
 
