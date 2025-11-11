@@ -11,8 +11,7 @@
  */
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
-import { resolveCdnBucketName, extractCustomerDomain, isStandardAdobeCdnBucket } from '../utils/cdn-utils.js';
-import { getImsOrgId } from '../utils/data-access.js';
+import { resolveConsolidatedBucketName, extractCustomerDomain } from '../utils/cdn-utils.js';
 
 // ============================================================================
 // CONSTANTS
@@ -161,27 +160,17 @@ export async function getS3Config(site, context) {
   const domainParts = customerDomain.split(/[._]/);
   /* c8 ignore next */
   const customerName = domainParts[0] === 'www' && domainParts.length > 1 ? domainParts[1] : domainParts[0];
-  const bucket = await resolveCdnBucketName(site, context);
+  const bucket = resolveConsolidatedBucketName(context);
+  const siteId = site.getId();
+  const aggregatedLocation = `s3://${bucket}/aggregated/${siteId}/`;
 
-  let aggregatedLocation = `s3://${bucket}/aggregated/`;
-  try {
-    if (isStandardAdobeCdnBucket(bucket)) {
-      const { orgId } = site.getConfig()?.getLlmoCdnBucketConfig?.() || {};
-      const imsOrgId = orgId || await getImsOrgId?.(site, context?.dataAccess, context?.log);
-      if (imsOrgId) {
-        aggregatedLocation = `s3://${bucket}/${imsOrgId}/aggregated/`;
-      }
-    }
-  } catch {
-    // keep default aggregatedLocation
-  }
   return {
     bucket,
     customerName,
     customerDomain,
     aggregatedLocation,
     databaseName: `cdn_logs_${customerDomain}`,
-    tableName: `aggregated_logs_${customerDomain}`,
+    tableName: `aggregated_logs_${customerDomain}_consolidated`,
     getAthenaTempLocation: () => `s3://${bucket}/temp/athena-results/`,
   };
 }

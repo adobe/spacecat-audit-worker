@@ -10,78 +10,146 @@
  * governing permissions and limitations under the License.
  */
 
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 
-export async function sendMystiqueMessagePostProcessor(auditUrl, auditData, context) {
+const { AUDIT_STEP_DESTINATIONS } = Audit;
+
+/**
+ * Step 1: Import top pages from Ahrefs
+ */
+export async function importTopPages(context) {
+  const { site, dataAccess, log } = context;
+  const { SiteTopPage } = dataAccess;
+
+  try {
+    const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+    if (topPages.length === 0) {
+      log.warn('[SUMMARIZATION] No top pages found for site');
+      return {
+        type: 'top-pages',
+        siteId: site.getId(),
+        auditResult: {
+          success: false,
+          topPages: [],
+        },
+        fullAuditRef: site.getBaseURL(),
+      };
+    }
+
+    log.info(`[SUMMARIZATION] Found ${topPages.length} top pages for site ${site.getId()}`);
+
+    return {
+      type: 'top-pages',
+      siteId: site.getId(),
+      auditResult: {
+        success: true,
+        topPages: topPages.map((page) => page.getUrl()),
+      },
+      fullAuditRef: site.getBaseURL(),
+    };
+  } catch (error) {
+    log.error(`[SUMMARIZATION] Failed to import top pages: ${error.message}`, error);
+    return {
+      type: 'top-pages',
+      siteId: site.getId(),
+      auditResult: {
+        success: false,
+        error: error.message,
+        topPages: [],
+      },
+      fullAuditRef: site.getBaseURL(),
+    };
+  }
+}
+
+/**
+ * Step 2: Submit top pages for scraping
+ */
+export async function submitForScraping(context) {
   const {
-    log, sqs, env, audit, dataAccess,
+    site, dataAccess, audit, log,
   } = context;
-  const { siteId, auditResult } = auditData;
+  const { SiteTopPage } = dataAccess;
 
-  // Skip if audit failed
-  if (!auditResult.success) {
-    log.info('Audit failed, skipping Mystique message');
-    return auditData;
+  const auditResult = audit.getAuditResult();
+  if (auditResult.success === false) {
+    log.warn('[SUMMARIZATION] Audit failed, skipping scraping');
+    throw new Error('Audit failed, skipping scraping');
   }
 
-  // Get site for additional data
-  const { Site } = dataAccess;
-  const site = await Site.findById(siteId);
-  if (!site) {
-    log.warn('Site not found, skipping Mystique message');
-    return auditData;
-  }
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
-  const { topPages } = auditResult;
   if (topPages.length === 0) {
-    log.info('No top pages found, skipping Mystique message');
-    return auditData;
+    log.warn('[SUMMARIZATION] No top pages to submit for scraping');
+    throw new Error('No top pages to submit for scraping');
+  }
+
+  log.info(`[SUMMARIZATION] Submitting ${topPages.length} pages for scraping`);
+
+  return {
+    urls: topPages.slice(0, 100).map((topPage) => ({ url: topPage.getUrl() })),
+    siteId: site.getId(),
+    type: 'summarization',
+  };
+}
+
+/**
+ * Step 3: Send to Mystique for AI processing
+ */
+export async function sendToMystique(context) {
+  const {
+    site, audit, dataAccess, log, sqs, env,
+  } = context;
+  const { SiteTopPage } = dataAccess;
+
+  const auditResult = audit.getAuditResult();
+  if (auditResult.success === false) {
+    log.warn('[SUMMARIZATION] Audit failed, skipping Mystique message');
+    throw new Error('Audit failed, skipping Mystique message');
   }
 
   if (!sqs || !env?.QUEUE_SPACECAT_TO_MYSTIQUE) {
-    log.warn('SQS or Mystique queue not configured, skipping message');
-    return auditData;
+    log.warn('[SUMMARIZATION] SQS or Mystique queue not configured, skipping message');
+    throw new Error('SQS or Mystique queue not configured');
   }
 
-  const topPagesPayload = topPages.slice(0, 100).map((page) => ({ page_url: page, keyword: '', questions: [] }));
+  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
+
+  if (topPages.length === 0) {
+    log.warn('[SUMMARIZATION] No top pages found, skipping Mystique message');
+    throw new Error('No top pages found');
+  }
+
+  const topPagesPayload = topPages.slice(0, 100).map((page) => ({
+    page_url: page.getUrl(),
+    keyword: '',
+    questions: [],
+  }));
 
   const message = {
     type: 'guidance:summarization',
-    siteId,
+    siteId: site.getId(),
     url: site.getBaseURL(),
     auditId: audit.getId(),
     deliveryType: site.getDeliveryType(),
     time: new Date().toISOString(),
     data: { pages: topPagesPayload },
   };
+
   await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-  log.info('SUMMARIZATION: %s Message sent to Mystique for site id %s:', 'summarization', siteId, message);
-
-  return auditData;
-}
-
-export async function summarizationAudit(url, context, site) {
-  const { dataAccess, log } = context;
-  const { SiteTopPage } = dataAccess;
-  const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
-  let success = true;
-  if (topPages.length === 0) {
-    log.warn('No top pages found for site');
-    success = false;
-  }
+  log.info(`[SUMMARIZATION] Sent ${topPagesPayload.length} pages to Mystique for site ${site.getId()}`);
 
   return {
-    auditResult: {
-      topPages: topPages.map((page) => page.getUrl()),
-      success,
-    },
-    fullAuditRef: url,
+    status: 'complete',
   };
 }
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(summarizationAudit)
-  .withPostProcessors([sendMystiqueMessagePostProcessor])
+  .addStep('import-top-pages', importTopPages, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('submit-for-scraping', submitForScraping, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
+  .addStep('send-to-mystique', sendToMystique)
   .build();

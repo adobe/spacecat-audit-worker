@@ -579,6 +579,7 @@ describe('Preflight Audit', () => {
     let azureOpenAIClient;
     let genvarClient;
     let preflightAuditFunction;
+    let retrievePageAuthenticationStub;
 
     const sandbox = sinon.createSandbox();
 
@@ -624,11 +625,15 @@ describe('Preflight Audit', () => {
       sinon.stub(AWSXray, 'captureAWSv3Client').returns(secretsClient);
       sandbox.stub(AzureOpenAIClient, 'createFrom').returns(azureOpenAIClient);
       sandbox.stub(GenvarClient, 'createFrom').returns(genvarClient);
+      retrievePageAuthenticationStub = sinon.stub().resolves('token1234');
 
       // Mock the accessibility handler to prevent timeouts
       const { preflightAudit: mockedPreflightAudit } = await esmock('../../src/preflight/handler.js', {
         '../../src/preflight/accessibility.js': {
           default: sinon.stub().resolves(), // Mock accessibility handler as no-op
+        },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
         },
       });
       preflightAuditFunction = mockedPreflightAudit;
@@ -845,7 +850,6 @@ describe('Preflight Audit', () => {
         payload: {
           step: PREFLIGHT_STEP_SUGGEST,
           urls: ['https://main--example--page.aem.page'],
-          checks: ['body-size', 'lorem-ipsum', 'h1-count', 'canonical', 'metatags', 'links', 'readability'],
         },
       });
 
@@ -1223,10 +1227,10 @@ describe('Preflight Audit', () => {
       configuration.isHandlerEnabledForSite.returns(true);
       await preflightAuditFunction(context);
 
-      // Verify that AsyncJob.findById was called for each intermediate save and final save
-      // (total of 6 times: 5 intermediate + 1 final)
+      // Verify that AsyncJob.findById was called for job metadata update, each intermediate save and final save
+      // (total of 7 times: 1 metadata update + 5 intermediate + 1 final)
       expect(context.dataAccess.AsyncJob.findById).to.have.been.called;
-      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(6);
+      expect(context.dataAccess.AsyncJob.findById.callCount).to.equal(7);
     });
 
     it('handles errors during intermediate saves gracefully', async () => {
@@ -1483,6 +1487,9 @@ describe('Preflight Audit', () => {
         '../../src/preflight/accessibility.js': {
           default: sinon.stub().resolves(),
         },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
+        },
       });
 
       await testPreflightAudit(mockContext);
@@ -1561,6 +1568,9 @@ describe('Preflight Audit', () => {
         '../../src/preflight/links.js': { default: async () => undefined },
         '../../src/readability/handler.js': { default: async () => undefined },
         '../../src/preflight/accessibility.js': { default: async () => undefined },
+        '@adobe/spacecat-shared-ims-client': {
+          retrievePageAuthentication: retrievePageAuthenticationStub,
+        },
       });
 
       await testPreflightAudit(mockContext);
@@ -2937,16 +2947,6 @@ describe('Preflight Audit', () => {
         sandbox.restore();
       });
 
-      it('should skip accessibility when not in checks', async () => {
-        pollingAuditContext.checks = ['other-check']; // Not including accessibility
-        configuration.isHandlerEnabledForSite.withArgs('accessibility-preflight', pollingContext.site).resolves(false);
-
-        await accessibility(pollingContext, pollingAuditContext);
-
-        expect(pollingS3Client.send).to.not.have.been.called;
-        expect(pollingLog.info).to.not.have.been.calledWith('[preflight-audit] Starting to poll for accessibility data');
-      });
-
       it('should execute full accessibility workflow when checks include accessibility', async () => {
         // Mock successful S3 operations for the entire workflow
         pollingS3Client.send.callsFake((command) => {
@@ -3795,6 +3795,140 @@ describe('Preflight Audit', () => {
       expect(log.debug).to.have.been.calledWith('[preflight-audit] Polling completed, proceeding to process accessibility data');
       // Verify that both polling attempts were made
       expect(pollCallCount).to.equal(2);
+    });
+  });
+
+  describe('saving enabled checks in job metadata payload', () => {
+    let site;
+    let job;
+    let s3Client;
+    let configuration;
+    let preflightAuditFunction;
+    let sandbox;
+
+    beforeEach(async () => {
+      sandbox = sinon.createSandbox();
+      site = {
+        getId: () => 'site-123',
+      };
+      job = {
+        getMetadata: () => ({
+          payload: {
+            step: PREFLIGHT_STEP_IDENTIFY,
+            urls: ['https://main--example--page.aem.page/page1'],
+            enableAuthentication: false, // avoid IMS auth to keep test lean
+          },
+        }),
+        getStatus: sinon.stub().returns('IN_PROGRESS'),
+        getId: () => 'job-123',
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setResult: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      s3Client = {
+        send: sinon.stub(),
+      };
+
+      s3Client.send.callsFake((command) => {
+        if (command.input?.Prefix) {
+          return Promise.resolve({
+            Contents: [{ Key: 'scrapes/site-123/page1/scrape.json' }],
+            IsTruncated: false,
+          });
+        }
+        return Promise.resolve({
+          ContentType: 'application/json',
+          Body: {
+            transformToString: sinon.stub().resolves(JSON.stringify({
+              scrapeResult: { rawBody: '<html><body>Short content</body></html>' },
+              finalUrl: 'https://main--example--page.aem.page/page1',
+            })),
+          },
+        });
+      });
+
+      configuration = {
+        isHandlerEnabledForSite: sinon.stub(),
+        getHandlers: sinon.stub().returns({
+          'readability-preflight': { productCodes: ['aem-sites'] },
+          'accessibility-preflight': { productCodes: ['aem-sites'] },
+          'metatags-preflight': { productCodes: ['aem-sites'] },
+          'canonical-preflight': { productCodes: ['aem-sites'] },
+          'links-preflight': { productCodes: ['aem-sites'] },
+          'body-size-preflight': { productCodes: ['aem-sites'] },
+          'lorem-ipsum-preflight': { productCodes: ['aem-sites'] },
+          'h1-count-preflight': { productCodes: ['aem-sites'] },
+        }),
+      };
+
+      // Ensure entitlement checks pass for enabled checks calculation
+      const mockTierClient = {
+        checkValidEntitlement: sinon.stub().resolves({ entitlement: true }),
+      };
+      if (TierClient.createForSite && TierClient.createForSite.restore) {
+        TierClient.createForSite.restore();
+      }
+      sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
+
+      // Import preflight with accessibility mocked to no-op
+      const { preflightAudit } = await esmock('../../src/preflight/handler.js', {
+        '../../src/preflight/accessibility.js': {
+          default: sinon.stub().resolves(),
+        },
+      });
+      preflightAuditFunction = preflightAudit;
+    });
+
+    afterEach(() => {
+      sinon.restore();
+      sandbox.restore();
+    });
+
+    it('merges checks into existing metadata payload and saves', async () => {
+      // Enable only body-size so no handlers run
+      configuration.isHandlerEnabledForSite.withArgs(`${AUDIT_BODY_SIZE}-preflight`, site).returns(true);
+      configuration.isHandlerEnabledForSite.returns(false);
+
+      const jobEntity = {
+        getMetadata: sinon.stub().returns(job.getMetadata()),
+        setMetadata: sinon.stub(),
+        setStatus: sinon.stub(),
+        setResultType: sinon.stub(),
+        setResult: sinon.stub(),
+        setEndedAt: sinon.stub(),
+        setError: sinon.stub(),
+        save: sinon.stub().resolves(),
+      };
+
+      const context = new MockContextBuilder()
+        .withSandbox(sinon.createSandbox())
+        .withOverrides({
+          job,
+          site,
+          s3Client,
+          func: { version: 'test' },
+        })
+        .build();
+
+      context.env.S3_SCRAPER_BUCKET_NAME = 'test-bucket';
+      context.dataAccess.Configuration.findLatest.resolves(configuration);
+      context.dataAccess.AsyncJob.findById = sinon.stub().resolves(jobEntity);
+
+      await preflightAuditFunction(context);
+
+      expect(jobEntity.setMetadata).to.have.been.calledOnce;
+      const metadataArg = jobEntity.setMetadata.getCall(0).args[0];
+      expect(metadataArg.payload).to.deep.include({
+        step: PREFLIGHT_STEP_IDENTIFY,
+        urls: ['https://main--example--page.aem.page/page1'],
+        enableAuthentication: false,
+      });
+      expect(metadataArg.payload.checks).to.deep.equal([AUDIT_BODY_SIZE]);
+      expect(jobEntity.save).to.have.been.called;
     });
   });
 });
