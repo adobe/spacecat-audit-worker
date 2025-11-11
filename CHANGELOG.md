@@ -1,3 +1,10 @@
+## [1.235.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.235.0...v1.235.1) (2025-11-11)
+
+
+### Bug Fixes
+
+* sites-36335 ([#1548](https://github.com/adobe/spacecat-audit-worker/issues/1548)) ([ab306c7](https://github.com/adobe/spacecat-audit-worker/commit/ab306c796b5eb5c5cfe73d164c02cb39c84a79b7))
+
 # [1.235.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.234.8...v1.235.0) (2025-11-11)
 
 
