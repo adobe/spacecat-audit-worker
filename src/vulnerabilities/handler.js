@@ -10,21 +10,15 @@
  * governing permissions and limitations under the License.
  */
 
-import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess }
-  from '@adobe/spacecat-shared-data-access';
-import {
-  isNonEmptyArray,
-  DELIVERY_TYPES,
-  tracingFetch as fetch,
-  hasText,
-} from '@adobe/spacecat-shared-utils';
-import { ImsClient } from '@adobe/spacecat-shared-ims-client';
-import { createHash } from 'node:crypto';
-import { AuditBuilder } from '../common/audit-builder.js';
-import { convertToOpportunity } from '../common/opportunity.js';
-import { createOpportunityData, createOpportunityProps } from './opportunity-data-mapper.js';
-import { getImsOrgId, syncSuggestions } from '../utils/data-access.js';
-import { mapVulnerabilityToSuggestion } from './suggestion-data-mapper.js';
+import {Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess} from '@adobe/spacecat-shared-data-access';
+import {DELIVERY_TYPES, hasText, isNonEmptyArray, tracingFetch as fetch,} from '@adobe/spacecat-shared-utils';
+import {ImsClient} from '@adobe/spacecat-shared-ims-client';
+import {createHash} from 'node:crypto';
+import {AuditBuilder} from '../common/audit-builder.js';
+import {convertToOpportunity} from '../common/opportunity.js';
+import {createOpportunityData, createOpportunityProps} from './opportunity-data-mapper.js';
+import {getImsOrgId, syncSuggestions} from '../utils/data-access.js';
+import {mapVulnerabilityToSuggestion} from './suggestion-data-mapper.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 1; // days
@@ -199,7 +193,7 @@ export async function extractCodeBucket(context) {
  * @returns {Object} The audit data unchanged (opportunities created as side effect).
  */
 export const opportunityAndSuggestionsStep = async ( context) => {
-  const {    site, audit,  log, sqs, env, finalUrl, dataAccess } = context;
+  const { site, data, audit,  log, sqs, env, finalUrl, dataAccess } = context;
   const { Configuration, Suggestion } = dataAccess;
 
   const auditResult = audit.getAuditResult();
@@ -278,32 +272,42 @@ export const opportunityAndSuggestionsStep = async ( context) => {
   });
 
   // TODO enable proper FT handling
-  const generateCodeFix = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-fix', site);
-  if (!generateCodeFix) {
+  // const generateCodeFix = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-fix', site);
+  const generateCodeFix = true;
+  if (generateCodeFix && dataContainsCode(data)) {
+
+    // TODO => only add new suggestions to the payload
+    // TODO => optimize payload to reduce size use s3 instead of data as transport medium
+
+    const message = {
+      type: 'codefix:security-vulnerabilities',
+      siteId: site.getId(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        suggestions: await opportunity.getSuggestions(),
+        codeBucket: data.codeBucket,
+        codePath: data.codePath
+      },
+    };
+
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+  }else{
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-fix not configured, skipping code generation with mystique`);
   }
-
-  // TODO => only add new suggestions to the payload
-  // TODO => optimize payload to reduce size
-
-  const message = {
-    type: 'codefix:security-vulnerabilities',
-    siteId: site.getId(),
-    auditId: audit.getId(),
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      suggestions: await opportunity.getSuggestions(),
-    },
-  };
-
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-  return {
-    status: 'complete',
-  };
-
   return { status: 'complete' };
 };
+
+const dataContainsCode = (data) => {
+  return data &&
+      typeof data === "object" &&
+      typeof data.codeBucket === "string" &&
+      data.codeBucket.trim() !== "" &&
+      typeof data.codePath === "string" &&
+      data.codePath.trim() !== "";
+};
+
 
 export default new AuditBuilder()
     .addStep('import', extractCodeBucket        , AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
