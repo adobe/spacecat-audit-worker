@@ -54,7 +54,7 @@ describe('Paid Cookie Consent opportunity mapper', () => {
     const guidance = { body: { markdown: body }, metadata: { scrape_job_id: 'test-job' } };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
     expect(result.data.suggestionValue).to.include('Simple markdown');
-    expect(result.status).to.equal('NOT_VALIDATED');
+    expect(result.status).to.equal('PENDING_VALIDATION');
   });
   
   it('handles plain markdown string with requiresValidation=false', async () => {
@@ -92,7 +92,7 @@ describe('Paid Cookie Consent opportunity mapper', () => {
     expect(result.data.suggestionValue).to.include(`Line1
 Line2
 Line3`);
-    expect(result.status).to.equal('NOT_VALIDATED');
+    expect(result.status).to.equal('PENDING_VALIDATION');
   });
 
   it('handles serialized JSON body with markdown', async () => {
@@ -110,7 +110,7 @@ Line3`);
     const guidance = { body: { markdown }, metadata: { scrape_job_id: 'test-job' } };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
     expect(result.data.suggestionValue).to.include('Markup with\nnewlines');
-    expect(result.status).to.equal('NOT_VALIDATED');
+    expect(result.status).to.equal('PENDING_VALIDATION');
   });
 
   it('handles serialized JSON body with double-escaped newlines in markdown', async () => {
@@ -152,7 +152,7 @@ newlines`);
     };
     const result = await mapToPaidSuggestion(context, TEST_SITE_ID, 'oppId', TEST_SITE, guidance);
     expect(result.data.suggestionValue).to.include('Direct JSON object markdown');
-    expect(result.status).to.equal('NOT_VALIDATED');
+    expect(result.status).to.equal('PENDING_VALIDATION');
   });
 
   // Additional tests for mapToPaidOpportunity edge cases

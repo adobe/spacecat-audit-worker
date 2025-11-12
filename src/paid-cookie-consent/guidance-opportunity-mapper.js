@@ -137,7 +137,7 @@ export async function mapToPaidSuggestion(context, siteId, opportunityId, url, p
     opportunityId,
     type: 'CONTENT_UPDATE',
     rank: 1,
-    status: context.site?.requiresValidation ? Suggestion.STATUSES.NOT_VALIDATED
+    status: context.site?.requiresValidation ? Suggestion.STATUSES.PENDING_VALIDATION
       : Suggestion.STATUSES.NEW,
     data: {
       recommendations: [

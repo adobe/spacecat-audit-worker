@@ -224,7 +224,7 @@ export async function syncSuggestions({
           const { site } = context;
           const requiresValidation = Boolean(site?.requiresValidation);
           existing.setStatus(requiresValidation
-            ? SuggestionDataAccess.STATUSES.NOT_VALIDATED
+            ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
             : SuggestionDataAccess.STATUSES.NEW);
         }
         existing.setUpdatedBy('system');
@@ -244,7 +244,7 @@ export async function syncSuggestions({
       const suggestion = mapNewSuggestion(data);
       return {
         ...suggestion,
-        status: requiresValidation ? SuggestionDataAccess.STATUSES.NOT_VALIDATED
+        status: requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
           : SuggestionDataAccess.STATUSES.NEW,
       };
     });

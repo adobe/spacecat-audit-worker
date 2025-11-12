@@ -813,7 +813,7 @@ describe('Experimentation Opportunities Tests', () => {
       expect(result).to.have.property('status', 200);
     });
 
-    it('creates NOT_VALIDATED suggestion when site requires validation', async () => {
+    it('creates PENDING_VALIDATION suggestion when site requires validation', async () => {
       const auditId = 'audit-3';
       const siteId = site.getId();
       const urlUnderTest = 'https://abc.com/oppty-three';
@@ -854,7 +854,7 @@ describe('Experimentation Opportunities Tests', () => {
       await holcGuidanceHandler(message, context);
 
       expect(context.dataAccess.Suggestion.create).to.have.been.calledWith(
-        sinon.match.has('status', 'NOT_VALIDATED'),
+        sinon.match.has('status', 'PENDING_VALIDATION'),
       );
     });
   });

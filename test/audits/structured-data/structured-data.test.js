@@ -292,7 +292,7 @@ describe('Structured Data Audit', () => {
       expect(actualArgs[0].opportunityId).to.equal('opportunity-id');
       expect(actualArgs[0].type).to.equal('CODE_CHANGE');
       expect(actualArgs[0].rank).to.equal(0);
-      expect(actualArgs[0].status).to.equal('NOT_VALIDATED');
+      expect(actualArgs[0].status).to.equal('PENDING_VALIDATION');
       expect(actualArgs[0].data).to.deep.equal({
           type: 'url',
           url: 'https://www.example.com',

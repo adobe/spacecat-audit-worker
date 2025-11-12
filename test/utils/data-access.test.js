@@ -183,14 +183,14 @@ describe('data-access', () => {
       expect(actualArgs[0].opportunityId).to.equal('123');
       expect(actualArgs[0].type).to.equal('TYPE');
       expect(actualArgs[0].rank).to.equal(123);
-      expect(actualArgs[0].status).to.equal('NOT_VALIDATED');
+      expect(actualArgs[0].status).to.equal('PENDING_VALIDATION');
       expect(actualArgs[0].data).to.deep.equal({ key: '3' });
 
       // Check second suggestion
       expect(actualArgs[1].opportunityId).to.equal('123');
       expect(actualArgs[1].type).to.equal('TYPE');
       expect(actualArgs[1].rank).to.equal(123);
-      expect(actualArgs[1].status).to.equal('NOT_VALIDATED');
+      expect(actualArgs[1].status).to.equal('PENDING_VALIDATION');
       expect(actualArgs[1].data).to.deep.equal({ key: '4' });
       expect(mockLogger.error).to.not.have.been.called;
     });
@@ -232,7 +232,7 @@ describe('data-access', () => {
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
     });
 
-    it('should update OUTDATED suggestions to NOT_VALIDATED when site requires validation', async () => {
+    it('should update OUTDATED suggestions to PENDING_VALIDATION when site requires validation', async () => {
       const suggestionsData = [
         { key: '1', title: 'old title' },
         { key: '2', title: 'same title' },
@@ -264,7 +264,7 @@ describe('data-access', () => {
       });
 
       expect(existingSuggestions[0].setStatus).to.have.been
-        .calledWith(SuggestionDataAccess.STATUSES.NOT_VALIDATED);
+        .calledWith(SuggestionDataAccess.STATUSES.PENDING_VALIDATION);
       expect(existingSuggestions[0].save).to.have.been.called;
     });
 

@@ -77,7 +77,7 @@ export function createReportOpportunitySuggestionInstance(suggestionValue, conte
     {
       type: 'CODE_CHANGE',
       rank: 1,
-      status: context?.site?.requiresValidation ? SuggestionDataAccess.STATUSES.NOT_VALIDATED
+      status: context?.site?.requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
         : SuggestionDataAccess.STATUSES.NEW,
       data: {
         suggestionValue,

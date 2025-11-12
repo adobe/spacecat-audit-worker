@@ -95,7 +95,7 @@ describe('Suggestion Validation Tests', () => {
     expect(suggestions[1].status).to.equal(Suggestion.STATUSES.NEW);
   });
 
-  it('should set status to NOT_VALIDATED for sites with requiresValidation flag', async () => {
+  it('should set status to PENDING_VALIDATION for sites with requiresValidation flag', async () => {
     // Site with requiresValidation flag
     context.site.requiresValidation = true;
 
@@ -113,8 +113,8 @@ describe('Suggestion Validation Tests', () => {
 
     const suggestions = addSuggestionsCall.args[0];
     expect(suggestions).to.be.an('array').with.lengthOf(2);
-    expect(suggestions[0].status).to.equal(Suggestion.STATUSES.NOT_VALIDATED);
-    expect(suggestions[1].status).to.equal(Suggestion.STATUSES.NOT_VALIDATED);
+    expect(suggestions[0].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
+    expect(suggestions[1].status).to.equal(Suggestion.STATUSES.PENDING_VALIDATION);
   });
 
   // Removed legacy list test; relies on entitlement-driven requiresValidation only

@@ -1169,7 +1169,7 @@ describe('Sitemap Audit', () => {
         data: suggestion,
       }));
       
-      // Verify that each suggestion has the expected properties plus status: 'NOT_VALIDATED'
+      // Verify that each suggestion has the expected properties plus status: 'PENDING_VALIDATION'
       expect(actualArgs.length).to.equal(expectedArgs.length);
       actualArgs.forEach((actual, i) => {
         const expected = expectedArgs[i];
@@ -1177,7 +1177,7 @@ describe('Sitemap Audit', () => {
         expect(actual.type).to.equal(expected.type);
         expect(actual.rank).to.equal(expected.rank);
         expect(actual.data).to.deep.equal(expected.data);
-        expect(actual.status).to.equal('NOT_VALIDATED');
+        expect(actual.status).to.equal('PENDING_VALIDATION');
       });
     });
 
@@ -1237,7 +1237,7 @@ describe('Sitemap Audit', () => {
         data: suggestion,
       }));
       
-      // Verify that each suggestion has the expected properties plus status: 'NOT_VALIDATED'
+      // Verify that each suggestion has the expected properties plus status: 'PENDING_VALIDATION'
       expect(actualArgs.length).to.equal(expectedArgs.length);
       actualArgs.forEach((actual, i) => {
         const expected = expectedArgs[i];
@@ -1245,7 +1245,7 @@ describe('Sitemap Audit', () => {
         expect(actual.type).to.equal(expected.type);
         expect(actual.rank).to.equal(expected.rank);
         expect(actual.data).to.deep.equal(expected.data);
-        expect(actual.status).to.equal('NOT_VALIDATED');
+        expect(actual.status).to.equal('PENDING_VALIDATION');
       });
     });
   });

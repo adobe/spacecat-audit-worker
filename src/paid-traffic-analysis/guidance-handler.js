@@ -53,7 +53,7 @@ function mapToAIInsightsSuggestions(opportunityId, guidanceArr) {
     opportunityId,
     type: 'AI_INSIGHTS',
     rank: 1,
-    // Status will be set to NOT_VALIDATED when creating the suggestion
+    // Status will be set to PENDING_VALIDATION when creating the suggestion
     data: {
       parentReport: section.reportType,
       recommendations: Array.isArray(section.recommendations)
@@ -118,7 +118,7 @@ export default async function handler(message, context) {
 
     await Promise.all(suggestions.map((s) => Suggestion.create({
       ...s,
-      status: requiresValidation ? Suggestion.STATUSES.NOT_VALIDATED : Suggestion.STATUSES.NEW,
+      status: requiresValidation ? Suggestion.STATUSES.PENDING_VALIDATION : Suggestion.STATUSES.NEW,
     })));
   }
 
