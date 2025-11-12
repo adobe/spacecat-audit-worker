@@ -306,7 +306,7 @@ describe('generateSuggestionData', async function test() {
     expect(context.log.error).to.have.been.calledWith(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Batch processing error: Firefall error`);
   }).timeout(20000);
 
-  it('should extract path prefix from urlFrom when urlTo has no prefix (line 46 false branch)', async () => {
+  it('should extract path prefix from urlFrom when urlTo has no prefix', async () => {
     // Test the false branch of: extractPathPrefix(link.urlTo) || extractPathPrefix(link.urlFrom)
     // When urlTo has no prefix but urlFrom does
     const siteWithSubpath = {
@@ -340,7 +340,7 @@ describe('generateSuggestionData', async function test() {
     };
     context.s3Client.send.resolves(mockFileResponse);
     
-    // Broken link where urlTo has no prefix but urlFrom does (line 46 false branch)
+    // Broken link where urlTo has no prefix but urlFrom does
     // urlTo must have no path prefix (empty string from extractPathPrefix) to hit false branch
     const brokenLinks = [
       { urlTo: 'https://bulk.com', urlFrom: 'https://bulk.com/uk/page1' }, // urlTo has no prefix
@@ -358,7 +358,7 @@ describe('generateSuggestionData', async function test() {
     expect(result.length).to.equal(1);
   });
 
-  it('should use prefix-filtered data when prefix filtering results in non-empty arrays (lines 64-65, 67-68)', async () => {
+  it('should use prefix-filtered data when prefix filtering results in non-empty arrays', async () => {
     // Setup: site with baseURL that has subpath, broken link has same prefix
     const siteWithSubpath = {
       ...site,
@@ -392,7 +392,7 @@ describe('generateSuggestionData', async function test() {
     };
     context.s3Client.send.resolves(mockFileResponseWithLocale);
     
-    // Broken link with same prefix (/uk/) - this will trigger the true branch (lines 64-65, 67-68)
+    // Broken link with same prefix (/uk/) - this will trigger the true branch
     // prefixFilteredSiteData.length > 0 will be true, so linkFilteredSiteData = prefixFilteredSiteData
     const brokenLinksWithSamePrefix = [
       { urlTo: 'https://bulk.com/uk/broken1', urlFrom: 'https://bulk.com/uk/page1' },
@@ -407,21 +407,21 @@ describe('generateSuggestionData', async function test() {
     
     const result = await generateSuggestionData('https://bulk.com', brokenLinksWithSamePrefix, context, siteWithSubpath);
     
-    // Should use prefix-filtered data (true branch of if statements on lines 64-65, 67-68)
+    // Should use prefix-filtered data (true branch of if statements)
     expect(result).to.be.an('array');
     expect(result.length).to.equal(1);
     expect(result[0].urlTo).to.equal('https://bulk.com/uk/broken1');
   });
 
-  it('should handle siteData items that are strings (line 55 true branch)', async () => {
-    // Test when siteData items are strings - covers true branch of ternary on line 55
+  it('should handle siteData items that are strings', async () => {
+    // Test when siteData items are strings - covers the string case in ternary operator
     // Import actual filter functions to use in mock
     const { filterByAuditScope, extractPathPrefix, isWithinAuditScope } = await import('../../../src/internal-links/subpath-filter.js');
     
     const mockedModule = await esmock('../../../src/internal-links/suggestions-generator.js', {
       '../../../src/support/utils.js': {
         getScrapedDataForSiteId: sandbox.stub().resolves({
-          siteData: ['https://bulk.com/uk/page1'], // Strings, not objects - hits TRUE branch of ternary on line 55
+          siteData: ['https://bulk.com/uk/page1'], // Strings, not objects
           headerLinks: ['https://bulk.com/uk/home'], // Strings
         }),
       },
@@ -453,15 +453,15 @@ describe('generateSuggestionData', async function test() {
     expect(result.length).to.equal(1);
   });
 
-  it('should handle siteData items that are objects not strings (line 55 false branch)', async () => {
-    // Test when siteData items are objects (not strings) - covers false branch of ternary on line 55
+  it('should handle siteData items that are objects not strings', async () => {
+    // Test when siteData items are objects (not strings) - covers the object case in ternary operator
     // Import actual filter functions to use in mock
     const { filterByAuditScope, extractPathPrefix, isWithinAuditScope } = await import('../../../src/internal-links/subpath-filter.js');
     
     const mockedModule = await esmock('../../../src/internal-links/suggestions-generator.js', {
       '../../../src/support/utils.js': {
         getScrapedDataForSiteId: sandbox.stub().resolves({
-          siteData: [{ url: 'https://bulk.com/uk/page1', title: 'Test' }], // Objects, not strings - hits FALSE branch of ternary on line 55
+          siteData: [{ url: 'https://bulk.com/uk/page1', title: 'Test' }], // Objects, not strings
           headerLinks: ['https://bulk.com/uk/home'], // Strings
         }),
       },
@@ -493,8 +493,8 @@ describe('generateSuggestionData', async function test() {
     expect(result.length).to.equal(1);
   });
 
-  it('should handle headerLinks items that are objects (line 61 false branch)', async () => {
-    // Test when headerLinks items are objects (not strings) - covers false branch of ternary on line 61
+  it('should handle headerLinks items that are objects', async () => {
+    // Test when headerLinks items are objects (not strings) - covers the object case in ternary operator
     // Import actual filter functions to use in mock
     const { filterByAuditScope, extractPathPrefix, isWithinAuditScope } = await import('../../../src/internal-links/subpath-filter.js');
     
@@ -502,7 +502,7 @@ describe('generateSuggestionData', async function test() {
       '../../../src/support/utils.js': {
         getScrapedDataForSiteId: sandbox.stub().resolves({
           siteData: [{ url: 'https://bulk.com/uk/page1', title: 'Test' }], // Objects
-          headerLinks: [{ url: 'https://bulk.com/uk/home' }], // Objects, not strings - hits false branch on line 61
+          headerLinks: [{ url: 'https://bulk.com/uk/home' }], // Objects, not strings
         }),
       },
       '../../../src/internal-links/subpath-filter.js': {
@@ -533,7 +533,7 @@ describe('generateSuggestionData', async function test() {
     expect(result.length).to.equal(1);
   });
 
-  it('should fallback to base-filtered data when prefix filtering results in empty arrays (false branch lines 64-65)', async () => {
+  it('should fallback to base-filtered data when prefix filtering results in empty arrays', async () => {
     // Setup: site with baseURL that has subpath, but broken link has different prefix
     const siteWithSubpath = {
       ...site,
@@ -568,8 +568,8 @@ describe('generateSuggestionData', async function test() {
     context.s3Client.send.resolves(mockFileResponseWithLocale);
     
     // Broken link with different prefix (/fr/ instead of /uk/)
-    // This will cause prefixFilteredSiteData.length === 0, so if statement on line 63 is false
-    // This covers the false branch of lines 64-65 (assignment doesn't happen)
+    // This will cause prefixFilteredSiteData.length === 0, so the condition is false
+    // This covers the false branch (assignment doesn't happen)
     const brokenLinksWithDifferentPrefix = [
       { urlTo: 'https://bulk.com/fr/broken1', urlFrom: 'https://bulk.com/fr/page1' },
     ];
@@ -584,12 +584,12 @@ describe('generateSuggestionData', async function test() {
     const result = await generateSuggestionData('https://bulk.com', brokenLinksWithDifferentPrefix, context, siteWithSubpath);
     
     // Should still process with base-filtered data (fallback to base-filtered when prefix-filtered is empty)
-    // This ensures the false branch of lines 64-65 is covered (linkFilteredSiteData stays as filteredSiteData)
+    // This ensures the false branch is covered (linkFilteredSiteData stays as filteredSiteData)
     expect(result).to.be.an('array');
     expect(result.length).to.equal(1);
   });
 
-  it('should use dataBatches when link.filteredSiteData is not available (line 135 false branch)', async () => {
+  it('should use dataBatches when link.filteredSiteData is not available', async () => {
     // Test when link.filteredSiteData is falsy, so we use dataBatches instead
     // This happens when linkPathPrefix is falsy or filteredSiteData.length === 0
     const siteNoSubpath = {
@@ -640,7 +640,7 @@ describe('generateSuggestionData', async function test() {
     expect(result.length).to.equal(1);
   });
 
-  it('should use filteredHeaderLinks when link.filteredHeaderLinks is not available (line 178 false branch)', async () => {
+  it('should use filteredHeaderLinks when link.filteredHeaderLinks is not available', async () => {
     // Test when link.filteredHeaderLinks is falsy, so we use filteredHeaderLinks instead
     // This happens when linkPathPrefix is falsy
     const siteNoSubpath = {
@@ -777,7 +777,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     testSandbox.restore();
   });
 
-  it('should call syncSuggestions with correct parameters (lines 210-236)', async () => {
+  it('should call syncSuggestions with correct parameters', async () => {
     const brokenInternalLinks = [
       {
         urlFrom: 'https://example.com/from1',
@@ -821,7 +821,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     });
   });
 
-  it('should handle empty arrays in mapNewSuggestion (lines 230-231)', async () => {
+  it('should handle empty arrays in mapNewSuggestion', async () => {
     const brokenInternalLinks = [
       {
         urlFrom: 'https://example.com/from1',
@@ -841,7 +841,7 @@ describe('syncBrokenInternalLinksSuggestions', () => {
     const callArgs = mockSyncSuggestions.getCall(0).args[0];
     const mappedSuggestion = callArgs.mapNewSuggestion(brokenInternalLinks[0]);
     
-    // Should use default empty array and empty string (lines 230-231)
+    // Should use default empty array and empty string
     expect(mappedSuggestion.data.urlsSuggested).to.deep.equal([]);
     expect(mappedSuggestion.data.aiRationale).to.equal('');
   });

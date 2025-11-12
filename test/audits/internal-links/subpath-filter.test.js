@@ -260,22 +260,17 @@ describe('subpath-filter', () => {
       expect(extractPathPrefix('bulk.com/uk')).to.equal('/uk');
     });
 
-    it('should return empty string when segments array is empty (line 150 false branch)', () => {
+    it('should return empty string when segments array is empty', () => {
       // Test the branch where segments.length === 0 (ternary false branch)
-      // To hit line 150's false branch, we need a pathname that:
-      // 1. Passes the check on line 144 (!pathname || pathname === '/') - so pathname exists and is not '/'
-      // 2. But results in empty segments after filtering
-      // This can happen with a pathname like "//" which is not equal to '/' but results in empty segments
-      // However, URL() normalizes "//" to "//" (not "/"), and after filtering, segments is empty
-      // But wait - the check is pathname === '/', so "//" would pass and we'd reach line 150
-      // Let's test with a URL that has "//" in the pathname
-      // Actually, after prependSchema and URL parsing, "bulk.com//" becomes "https://bulk.com//"
-      // and pathname is "//", which is not equal to '/', so we pass line 144
-      // After splitting and filtering, segments is empty, hitting the false branch on line 150
+      // This happens when pathname exists but results in empty segments after filtering
+      // For example, a pathname like "//" which is not equal to '/' but results in empty segments
+      // After prependSchema and URL parsing, "bulk.com//" becomes "https://bulk.com//"
+      // and pathname is "//", which is not equal to '/', so we pass the pathname check
+      // After splitting and filtering, segments is empty, hitting the false branch
       expect(extractPathPrefix('bulk.com//')).to.equal('');
     });
 
-    it('should return prefix when segments array is not empty (line 150 true branch)', () => {
+    it('should return prefix when segments array is not empty', () => {
       // Test the branch where segments.length > 0 (ternary true branch)
       expect(extractPathPrefix('https://bulk.com/uk')).to.equal('/uk');
       expect(extractPathPrefix('https://bulk.com/uk/page')).to.equal('/uk');
