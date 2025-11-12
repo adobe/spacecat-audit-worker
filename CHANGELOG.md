@@ -1,3 +1,10 @@
+## [1.236.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.236.3...v1.236.4) (2025-11-12)
+
+
+### Bug Fixes
+
+* canonical tag is in the head section ([#1559](https://github.com/adobe/spacecat-audit-worker/issues/1559)) ([38a587e](https://github.com/adobe/spacecat-audit-worker/commit/38a587ef16a0cac7091b46a9feff39f63d4ba765))
+
 ## [1.236.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.236.2...v1.236.3) (2025-11-12)
 
 
