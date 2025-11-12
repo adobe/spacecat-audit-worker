@@ -15,60 +15,88 @@ import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { syncSuggestions } from '../utils/data-access.js';
+import { removeTrailingSlash } from '../utils/url-utils.js';
 import { createOpportunityData } from './opportunity-data-mapper.js';
 import { convertToOpportunity } from '../common/opportunity.js';
 import calculateKpiDeltasForAudit from './kpi-metrics.js';
-import { sendSQSMessageForAutoSuggest } from './utils.js';
+import { sendSQSMessageForAutoSuggest } from './auto-suggest.js';
+import { isHomepage } from './utils.js';
 
-const DAILY_THRESHOLD = 1000;
+const DAILY_THRESHOLD = 1000; // pageviews
 const INTERVAL = 7; // days
-const auditType = Audit.AUDIT_TYPES.CWV;
+// The number of top pages with issues that will be included in the report
+const TOP_PAGES_COUNT = 15;
 
 export async function CWVRunner(auditUrl, context, site) {
-  const deliveryConfig = site?.getDeliveryConfig() || {};
-  const cwvConfig = deliveryConfig.cwv || {};
-
-  const dailyThreshold = cwvConfig.dailyThreshold || DAILY_THRESHOLD;
-  let interval = cwvConfig.interval || INTERVAL; // days
-
-  context.log.info(` CWVRunner: dailyThreshold: ${dailyThreshold}, interval: ${interval}`);
-  // Safeguard to prevent excessively large queries against the RUM API
-  if (interval > 30) {
-    context.log.warn(`Interval of ${interval} days is too large. Capping at 30 days to protect the upstream API.`);
-    interval = 30;
-  }
+  const siteId = site.getId();
+  const baseURL = removeTrailingSlash(site.getBaseURL());
 
   const rumAPIClient = RUMAPIClient.createFrom(context);
-  const groupedURLs = site.getConfig().getGroupedURLs(auditType);
+  const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
   const options = {
     domain: auditUrl,
-    interval,
+    interval: INTERVAL,
     granularity: 'hourly',
     groupedURLs,
   };
-  const cwvData = await rumAPIClient.query(auditType, options);
-  const auditResult = {
-    cwv: cwvData.filter((data) => data.pageviews >= dailyThreshold * interval),
-    auditContext: {
-      interval,
-    },
-  };
+  const cwvData = await rumAPIClient.query(Audit.AUDIT_TYPES.CWV, options);
+
+  const stats = { homepage: false, topNCount: 0, thresholdCount: 0 };
+
+  // Always include: homepage + top N pages + pages meeting threshold
+  const filteredCwvData = [...cwvData]
+    .sort((a, b) => b.pageviews - a.pageviews)
+    .reduce((list, item) => {
+      // 1) Homepage
+      if (isHomepage(item, baseURL)) {
+        list.push(item);
+        stats.homepage = true;
+        return list;
+      }
+
+      // 2) Top N by pageviews (excluding homepage)
+      if (stats.topNCount < TOP_PAGES_COUNT) {
+        list.push(item);
+        stats.topNCount += 1;
+        return list;
+      }
+
+      // 3) Threshold group (pages meeting threshold, excluding homepage and topN)
+      if (item.pageviews >= DAILY_THRESHOLD * INTERVAL) {
+        list.push(item);
+        stats.thresholdCount += 1;
+      }
+
+      return list;
+    }, []);
+
+  context.log.info(
+    `[audit-worker-cwv] siteId: ${siteId} | baseURL: ${baseURL} | Total=${cwvData.length}, Reported=${filteredCwvData.length} | `
+    + `Homepage: ${stats.homepage ? 'included' : 'not included'} | `
+    + `Top${TOP_PAGES_COUNT} pages: ${stats.topNCount} | `
+    + `Pages above threshold: ${stats.thresholdCount}`,
+  );
 
   return {
-    auditResult,
+    auditResult: {
+      cwv: filteredCwvData,
+      auditContext: {
+        interval: INTERVAL,
+      },
+    },
     fullAuditRef: auditUrl,
   };
 }
 
 export async function opportunityAndSuggestions(auditUrl, auditData, context, site) {
-  const groupedURLs = site.getConfig().getGroupedURLs(auditType);
+  const groupedURLs = site.getConfig().getGroupedURLs(Audit.AUDIT_TYPES.CWV);
   const kpiDeltas = calculateKpiDeltasForAudit(auditData, context, groupedURLs);
   const opportunity = await convertToOpportunity(
     auditUrl,
     auditData,
     context,
     createOpportunityData,
-    auditType,
+    Audit.AUDIT_TYPES.CWV,
     kpiDeltas,
   );
   // Sync suggestions
@@ -95,7 +123,6 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context, si
     }),
   });
 
-  // Send SQS messages for Mystique auto-suggest
   await sendSQSMessageForAutoSuggest(context, opportunity, site);
 }
 

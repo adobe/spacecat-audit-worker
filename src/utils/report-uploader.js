@@ -97,21 +97,45 @@ async function fetchWithRetry(url, options, endpointName, log, maxRetries = 5) {
       const isRetryable = !error.status || error.status >= 500 || error.status === 429;
       const shouldRetry = isRetryable && attemptNumber <= maxRetries;
 
-      // Log x-error header for 503 server errors
-      const xError = error.status === 503 && error.response?.headers?.get
-        ? error.response.headers.get('x-error')
-        : null;
-      if (xError) {
-        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed with server error - x-error: ${xError}, URL: ${url}`);
-      }
-
       if (!shouldRetry) {
-        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed after retries, error: ${error.message}, status: ${error.status}, statusText: ${error.response?.statusText}, URL: ${url}`);
+        const xError = error.response?.headers?.get
+          ? error.response.headers.get('x-error')
+          : null;
+        const xErrorInfo = xError ? `, x-error: ${xError}` : '';
+        log.error(`${AUDIT_NAME}: ${endpointName} Helix API failed after retries, error: ${error.message}, status: ${error.status}, statusText: ${error.response?.statusText}${xErrorInfo}, URL: ${url}`);
         throw error;
       }
 
-      log.warn(`${AUDIT_NAME}: ${endpointName} Helix API failed with error ${error.message}, retrying in 4000ms (attempt ${attemptNumber}/${maxRetries}), URL: ${url}`);
-      await sleep(4000);
+      // check for retry-after header
+      const retryAfter = error.response?.headers?.get
+        ? error.response.headers.get('retry-after')
+        : null;
+
+      const xError = error.response?.headers?.get
+        ? error.response.headers.get('x-error')
+        : null;
+      const xErrorInfo = xError ? `, x-error: ${xError}` : '';
+
+      let retryDelay;
+      if (retryAfter) {
+        // retry-after can be in seconds or HTTP-date format
+        const retryAfterSeconds = Number.parseInt(retryAfter, 10);
+        if (!Number.isNaN(retryAfterSeconds)) {
+          retryDelay = retryAfterSeconds * 1000;
+        } else {
+          const retryDate = new Date(retryAfter);
+          const now = new Date();
+          retryDelay = Math.max(0, retryDate.getTime() - now.getTime());
+        }
+        log.warn(`${AUDIT_NAME}: ${endpointName} Helix API failed with error ${error.message}${xErrorInfo}, retrying in ${retryDelay}ms per Retry-After header (attempt ${attemptNumber}/${maxRetries}), URL: ${url}`);
+      } else {
+        const baseDelay = 4000;
+        const jitter = Math.floor(Math.random() * 1000);
+        retryDelay = baseDelay + jitter;
+        log.warn(`${AUDIT_NAME}: ${endpointName} Helix API failed with error ${error.message}${xErrorInfo}, retrying in ${retryDelay}ms (attempt ${attemptNumber}/${maxRetries}), URL: ${url}`);
+      }
+
+      await sleep(retryDelay);
       return attemptFetch(attemptNumber + 1);
     }
   }

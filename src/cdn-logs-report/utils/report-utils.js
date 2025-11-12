@@ -42,11 +42,15 @@ export async function loadSql(filename, variables) {
 
 export function validateCountryCode(code) {
   const DEFAULT_COUNTRY_CODE = 'GLOBAL';
+  // these are codes that are not valid to be regions as these are small islands
+  const ignoreCountryCodes = ['TV', 'ST'];
   if (!code || typeof code !== 'string') return DEFAULT_COUNTRY_CODE;
 
   const upperCode = code.toUpperCase();
 
-  if (upperCode === DEFAULT_COUNTRY_CODE) return DEFAULT_COUNTRY_CODE;
+  if (upperCode === DEFAULT_COUNTRY_CODE || ignoreCountryCodes.includes(upperCode)) {
+    return DEFAULT_COUNTRY_CODE;
+  }
 
   try {
     const displayNames = new Intl.DisplayNames(['en'], { type: 'region' });

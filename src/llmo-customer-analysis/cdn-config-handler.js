@@ -126,7 +126,7 @@ export async function handleCdnBucketConfigChanges(context, data) {
   /* c8 ignore next */
   const { siteId } = context.params || {};
   const { cdnProvider, allowedPaths, bucketName } = data;
-  const { log } = context;
+  const { dataAccess: { Configuration }, log } = context;
 
   if (!siteId) throw new Error('Site ID is required for CDN configuration');
   if (!cdnProvider) throw new Error('CDN provider is required for CDN configuration');
@@ -161,6 +161,11 @@ export async function handleCdnBucketConfigChanges(context, data) {
   if (bucketName || pathId) {
     await handleBucketConfiguration(siteId, bucketName, pathId, context);
   }
+
+  // enable cdn-logs-analysis audit
+  const configuration = await Configuration.findLatest();
+  configuration.enableHandlerForSite('cdn-logs-analysis', site);
+  await configuration.save();
 
   // Run analysis and reporting for CS fastly customers
   if (cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY) {

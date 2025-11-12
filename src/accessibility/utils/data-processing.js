@@ -979,12 +979,13 @@ export async function sendRunImportMessage(
  *
  * @param {Object} opportunity - The opportunity object containing suggestions
  * @param {string} auditId - The audit ID
+ * @param {Object} site - The site object
  * @param {Object} context - The context object containing log, sqs, env, and site
  * @returns {Promise<void>}
  */
-export async function sendCodeFixMessagesToImporter(opportunity, auditId, context) {
+export async function sendCodeFixMessagesToImporter(opportunity, auditId, site, context) {
   const {
-    log, sqs, env, site,
+    log, sqs, env,
   } = context;
 
   const siteId = opportunity.getSiteId();
@@ -1032,14 +1033,18 @@ export async function sendCodeFixMessagesToImporter(opportunity, auditId, contex
         siteId,
         forward: {
           queue: env.QUEUE_SPACECAT_TO_MYSTIQUE,
-          type: `codefix:${opportunityType}`,
-          siteId,
-          auditId,
-          url: baseUrl,
-          deliveryType: site.getDeliveryType(),
-          data: {
-            opportunityId: opportunity.getId(),
-            suggestionIds: group.suggestionIds,
+          payload: {
+            type: `codefix:${opportunityType}`,
+            siteId,
+            auditId,
+            url: baseUrl,
+            deliveryType: site.getDeliveryType(),
+            source: 'spacecat',
+            observation: 'Auto optimize form accessibility',
+            data: {
+              opportunityId: opportunity.getId(),
+              suggestionIds: group.suggestionIds,
+            },
           },
         },
       };

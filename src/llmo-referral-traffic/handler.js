@@ -13,14 +13,19 @@
 /* eslint-disable no-param-reassign */
 /* c8 ignore start */
 
-import { getDateRanges, getStaticContent, isInteger } from '@adobe/spacecat-shared-utils';
+import {
+  getDateRanges, getStaticContent, getWeekInfo, isInteger, isoCalendarWeek,
+} from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
+import { Audit } from '@adobe/spacecat-shared-data-access';
 import ExcelJS from 'exceljs';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import { getPreviousWeekYear, getTemporalCondition } from '../utils/date-utils.js';
 import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../cdn-logs-report/constants/country-patterns.js';
+
+const { AUDIT_STEP_DESTINATIONS } = Audit;
 
 const COMPILED_COUNTRY_PATTERNS = DEFAULT_COUNTRY_PATTERNS.map(({ name, regex }) => {
   let flags = '';
@@ -73,11 +78,49 @@ function calculateAuditStartDate(auditContext) {
   return new Date(ranges[0].startTime);
 }
 
-export async function referralTrafficRunner(auditUrl, context, site, auditContext) {
-  const { env, log } = context;
+export async function triggerTrafficAnalysisImport(context) {
+  const {
+    site, finalUrl, log, auditContext = {},
+  } = context;
+
+  const siteId = site.getId();
+  let week;
+  let year;
+
+  if (auditContext.week && auditContext.year) {
+    ({ week, year } = getWeekInfo(auditContext.week, auditContext.year));
+  } else {
+    const yesterday = new Date();
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    ({ week, year } = isoCalendarWeek(yesterday));
+  }
+
+  log.info(
+    `[llmo-referral-traffic] Triggering traffic-analysis import for site: ${siteId}, `
+    + `week: ${week}, year: ${year}`,
+  );
+
+  return {
+    type: 'traffic-analysis',
+    siteId,
+    auditResult: {
+      status: 'import-triggered',
+      week,
+      year,
+    },
+    fullAuditRef: finalUrl,
+  };
+}
+
+export async function referralTrafficRunner(context) {
+  const {
+    env, log, audit, site,
+  } = context;
   const { S3_IMPORTER_BUCKET_NAME: importerBucket } = env;
 
-  const today = calculateAuditStartDate(auditContext);
+  const auditResult = audit.getAuditResult();
+  const { week, year } = auditResult;
+  const today = calculateAuditStartDate({ week, year });
 
   // constants
   const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
@@ -147,6 +190,14 @@ export async function referralTrafficRunner(auditUrl, context, site, auditContex
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
-  .withRunner(referralTrafficRunner)
+  .addStep(
+    'trigger-traffic-analysis-import',
+    triggerTrafficAnalysisImport,
+    AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
+  )
+  .addStep(
+    'run-referral-traffic',
+    referralTrafficRunner,
+  )
   .build();
 /* c8 ignore end */

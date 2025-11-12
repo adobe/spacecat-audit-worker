@@ -147,14 +147,6 @@ describe('Headings Audit', () => {
     expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion);
     expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].urls).to.be.an('array').with.lengthOf.at.least(1);
     expect(result[HEADINGS_CHECKS.HEADING_H1_LENGTH.check].urls[0].url).to.equal(url);
-    
-    // Check heading-no-content
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls).to.be.an('array').with.lengthOf.at.least(1);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls[0].url).to.equal(url);
   });
 
   it('flags heading order jumps (h1 → h3)', async () => {
@@ -915,60 +907,6 @@ describe('Headings Audit', () => {
     );
   });
 
-  it('detects heading without content before next heading', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    context.dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-          { getUrl: () => url },
-        ]),
-      },
-    };
-    const allKeys = ['scrapes/site-1/page/scrape.json'];
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () =>
-              JSON.stringify({
-                finalUrl: url,
-                scrapedAt: Date.now(),
-                scrapeResult: {
-                  rawBody: '<h1>Title</h1><h2>Section Without Content</h2><h3>Subsection</h3>',
-                  tags: {
-                    title: 'Page Title',
-                    description: 'Page Description',
-                    h1: ['Page H1'],
-                  },
-                },
-              }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-    context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
-    const result = completedAudit.auditResult;
-
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls).to.be.an('array').with.lengthOf.at.least(1);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls[0].url).to.equal(url);
-  });
-
   describe('generateSuggestions', () => {
     it('skips suggestions for successful audit', () => {
       const auditUrl = 'https://example.com';
@@ -1055,11 +993,6 @@ describe('Headings Audit', () => {
             explanation: 'Duplicate text',
             urls: [{ url: 'https://example.com/page3' }]
           },
-          'heading-no-content': {
-            success: false,
-            explanation: 'No content',
-            urls: [{ url: 'https://example.com/page4' }]
-          },
           'unknown-check-type': {
             success: false,
             explanation: 'Unknown issue',
@@ -1070,12 +1003,11 @@ describe('Headings Audit', () => {
 
       const result = generateSuggestions(auditUrl, auditData, context);
 
-      expect(result.suggestions).to.have.lengthOf(5);
+      expect(result.suggestions).to.have.lengthOf(4);
       expect(result.suggestions[0].recommendedAction).to.equal('Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).');
       expect(result.suggestions[1].recommendedAction).to.equal('Provide meaningful text content for the empty heading or remove the element.');
       expect(result.suggestions[2].recommendedAction).to.equal('Ensure each heading has unique, descriptive text content that clearly identifies its section.');
-      expect(result.suggestions[3].recommendedAction).to.equal('Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.');
-      expect(result.suggestions[4].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
+      expect(result.suggestions[3].recommendedAction).to.equal('Review heading structure and content to follow heading best practices.');
     });
 
     it('generates elmoSuggestions with markdown table when there are issues', () => {
@@ -1310,61 +1242,6 @@ describe('Headings Audit', () => {
     // Should pass with no heading issues since content is eventually found after iterating through empty siblings
     expect(result.status).to.equal('success');
     expect(result.message).to.equal('No heading issues detected');
-  });
-
-  it('iterates through all siblings and finds no content', async () => {
-    const baseURL = 'https://example.com';
-    const url = 'https://example.com/page';
-    context.dataAccess = {
-      SiteTopPage: {
-        allBySiteIdAndSourceAndGeo: sinon.stub().resolves([
-          { getUrl: () => url },
-        ]),
-      },
-    };
-    const allKeys = ['scrapes/site-1/page/scrape.json'];
-    s3Client.send.callsFake((command) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({
-          Contents: allKeys.map((key) => ({ Key: key })),
-          NextContinuationToken: undefined,
-        });
-      }
-
-      if (command instanceof GetObjectCommand) {
-        return Promise.resolve({
-          Body: {
-            transformToString: () =>
-              JSON.stringify({
-                finalUrl: url,
-                scrapedAt: Date.now(),
-                scrapeResult: {
-                  rawBody: '<h1>Title</h1><div></div><span></span><div></div><h2>Section</h2>',
-                  tags: {
-                    title: 'Page Title',
-                    description: 'Page Description',
-                    h1: ['Page H1'],
-                  },
-                },
-              }),
-          },
-          ContentType: 'application/json',
-        });
-      }
-
-      throw new Error('Unexpected command passed to s3Client.send');
-    });
-    context.s3Client = s3Client;
-    const completedAudit = await headingsAuditRunner(baseURL, context, site);
-    const result = completedAudit.auditResult;
-
-    // Should detect no content between h1 and h2 after iterating through all empty siblings
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check]).to.exist;
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].success).to.equal(false);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].explanation).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].suggestion).to.equal(HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls).to.be.an('array').with.lengthOf.at.least(1);
-    expect(result[HEADINGS_CHECKS.HEADING_NO_CONTENT.check].urls[0].url).to.equal(url);
   });
 
   describe('transformRules functionality', () => {
@@ -3358,25 +3235,7 @@ describe('Headings Audit', () => {
       expect(result.suggestions).to.have.lengthOf(1);
       expect(result.suggestions[0].recommendedAction).to.equal('Ensure each heading has unique, descriptive text content that clearly identifies its section.');
     });
-
-    it('generates suggestions for no content check', () => {
-      const auditUrl = 'https://example.com';
-      const auditData = {
-        auditResult: {
-          'heading-no-content': {
-            success: false,
-            explanation: 'Heading has no content',
-            urls: [{ url: 'https://example.com/page1' }]
-          }
-        }
-      };
-
-      const result = generateSuggestions(auditUrl, auditData, context);
-
-      expect(result.suggestions).to.have.lengthOf(1);
-      expect(result.suggestions[0].recommendedAction).to.equal('Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.');
-    });
-
+    
     it('handles new URL object format with tagName and custom suggestion', () => {
       const auditUrl = 'https://example.com';
       const auditData = {
