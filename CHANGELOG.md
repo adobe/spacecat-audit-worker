@@ -1,3 +1,10 @@
+## [1.236.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.236.1...v1.236.2) (2025-11-12)
+
+
+### Bug Fixes
+
+* **brand-presence:** resilient report publishing for helix and onedrive ([#1496](https://github.com/adobe/spacecat-audit-worker/issues/1496)) ([749177a](https://github.com/adobe/spacecat-audit-worker/commit/749177a5351c291676926dd9f9ce460cd9f66a21))
+
 ## [1.236.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.236.0...v1.236.1) (2025-11-12)
 
 
