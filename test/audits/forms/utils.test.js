@@ -23,7 +23,7 @@ import {
   getFormTitle,
   applyOpportunityFilters,
 } from '../../../src/forms-opportunities/utils.js';
-import { FORM_OPPORTUNITY_TYPES, OPPORTUNITY_STATUS } from '../../../src/forms-opportunities/constants.js';
+import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
 
 describe('isSearchForm', () => {
   it('should return true for search form type', () => {
@@ -731,7 +731,7 @@ describe('applyOpportunityFilters', () => {
           form: 'https://example.com/contact',
           formsource: '.contact-form',
         }),
-        getStatus: () => OPPORTUNITY_STATUS.INVALIDATED,
+        getStatus: () => 'IGNORED',
       },
     ];
 
@@ -748,7 +748,7 @@ describe('applyOpportunityFilters', () => {
     expect(result[0].form).to.equal('https://example.com/newsletter');
     expect(result[1].form).to.equal('https://example.com/signup');
     expect(logStub.debug).to.have.been.calledWith(
-      'Filtering out opportunity for form https://example.com/contact due to INVALIDATED status',
+      'Filtering out opportunity for form https://example.com/contact due to IGNORED status',
     );
   });
 
@@ -779,7 +779,7 @@ describe('applyOpportunityFilters', () => {
           form: 'https://example.com/form1',
           formsource: 'source1',
         }),
-        getStatus: () => OPPORTUNITY_STATUS.INVALIDATED,
+        getStatus: () => 'IGNORED',
       },
     ];
 
@@ -822,7 +822,7 @@ describe('applyOpportunityFilters', () => {
           form: 'https://example.com/contact',
           formsource: '.contact-form-v1',
         }),
-        getStatus: () => OPPORTUNITY_STATUS.INVALIDATED,
+        getStatus: () => 'IGNORED',
       },
     ];
 
