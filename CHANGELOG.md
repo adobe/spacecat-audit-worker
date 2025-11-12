@@ -1,3 +1,10 @@
+# [1.236.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.235.1...v1.236.0) (2025-11-12)
+
+
+### Features
+
+* add llmo-referral-traffic-daily audit ([#1543](https://github.com/adobe/spacecat-audit-worker/issues/1543)) ([93fdaee](https://github.com/adobe/spacecat-audit-worker/commit/93fdaee2d8a9c4e89592f85a9d2a8b1b9799913b))
+
 ## [1.235.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.235.0...v1.235.1) (2025-11-11)
 
 
