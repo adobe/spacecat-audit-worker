@@ -11,6 +11,7 @@
  */
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
+import { MYSTIQUE_TEXT_TRUNCATION_LENGTH } from '../shared/constants.js';
 
 /**
  * Maps Mystique readability suggestions to opportunity format
@@ -18,22 +19,18 @@ import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
  * @returns {Array} Array of suggestions for opportunity
  */
 function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
-  return mystiquesuggestions.map((suggestion, index) => {
-    const suggestionId = `readability-opportunity-${suggestion.pageUrl || 'unknown'}-${index}`;
-
-    return {
-      id: suggestionId,
-      pageUrl: suggestion.pageUrl,
-      originalText: suggestion.original_paragraph,
-      improvedText: suggestion.improved_paragraph,
-      originalFleschScore: suggestion.current_flesch_score,
-      improvedFleschScore: suggestion.improved_flesch_score,
-      seoRecommendation: suggestion.seo_recommendation,
-      aiRationale: suggestion.ai_rationale,
-      targetFleschScore: suggestion.target_flesch_score,
-      type: 'READABILITY_IMPROVEMENT',
-    };
-  });
+  return mystiquesuggestions.map((suggestion) => ({
+    id: suggestion.id,
+    pageUrl: suggestion.pageUrl,
+    originalText: suggestion.original_paragraph,
+    improvedText: suggestion.improved_paragraph,
+    originalFleschScore: suggestion.current_flesch_score,
+    improvedFleschScore: suggestion.improved_flesch_score,
+    seoRecommendation: suggestion.seo_recommendation,
+    aiRationale: suggestion.ai_rationale,
+    targetFleschScore: suggestion.target_flesch_score,
+    type: 'READABILITY_IMPROVEMENT',
+  }));
 }
 
 export default async function handler(message, context) {
@@ -122,7 +119,8 @@ export default async function handler(message, context) {
     const matchingSuggestion = existingSuggestions.find(
       (existing) => {
         const existingData = existing.getData();
-        const mystiqueTextTruncated = mystiquesuggestion.originalText?.substring(0, 500);
+        // eslint-disable-next-line max-len
+        const mystiqueTextTruncated = mystiquesuggestion.originalText?.substring(0, MYSTIQUE_TEXT_TRUNCATION_LENGTH);
         return existingData?.textPreview === mystiqueTextTruncated;
       },
     );

@@ -10,6 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
+import crypto from 'crypto';
 import { isNonEmptyArray } from '@adobe/spacecat-shared-utils';
 import { Suggestion as SuggestionModel, Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../../common/audit-builder.js';
@@ -19,6 +20,7 @@ import { syncSuggestions } from '../../utils/data-access.js';
 import { analyzePageReadability, sendReadabilityToMystique } from '../shared/analysis-utils.js';
 import {
   TOP_PAGES_LIMIT,
+  MYSTIQUE_TEXT_TRUNCATION_LENGTH,
 } from '../shared/constants.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -161,13 +163,18 @@ export async function processReadabilityOpportunities(context) {
         data: {
           ...issueWithoutFullText,
           id: `readability-${siteId}-${index}`,
-          textPreview: textContent?.substring(0, 500),
+          textPreview: textContent?.substring(0, MYSTIQUE_TEXT_TRUNCATION_LENGTH),
         },
       };
     });
 
     // Sync suggestions with existing ones (preserve ignored/fixed suggestions)
-    const buildKey = (data) => `${data.pageUrl}|${data.textPreview?.substring(0, 200)}`;
+    // Use a hash for the buildKey to uniquely identify suggestion content
+    const buildKey = (data) => {
+      const hash = crypto.createHash('sha256');
+      hash.update(`${data.pageUrl || ''}|${data.textPreview || ''}`);
+      return hash.digest('hex');
+    };
 
     await syncSuggestions({
       opportunity,
@@ -190,7 +197,7 @@ export async function processReadabilityOpportunities(context) {
         );
         log.info(`[ReadabilityAudit] Successfully sent ${readabilityIssues.length} readability issues to Mystique for AI processing`);
       } catch (error) {
-        log.error(`[ReadabilityAudit][ReadabilityProcessingError] Error sending readability issues to Mystique: ${error.message}`, error);
+        log.error('[ReadabilityAudit][ReadabilityProcessingError] Error sending readability issues to Mystique');
         // Continue without failing - the opportunity is still valid without AI suggestions
       }
     }

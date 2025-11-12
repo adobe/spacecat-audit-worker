@@ -11,12 +11,10 @@
  */
 
 // Preflight constants
-export const READABILITY_GUIDANCE_TYPE = 'guidance:readability'; // for preflight
 export const READABILITY_OBSERVATION = 'Content readability needs improvement';
 export const MYSTIQUE_BATCH_SIZE = 10;
 
 // Opportunity audit constants
-export const READABILITY_OPPORTUNITY_TYPE = 'READABILITY_IMPROVEMENT';
 export const MAX_OPPORTUNITIES_PER_SITE = 50;
 export const TOP_PAGES_LIMIT = 10;
 
@@ -29,3 +27,6 @@ export const MIN_TEXT_LENGTH = 200;
 
 // Maximum characters to display in the audit report
 export const MAX_CHARACTERS_DISPLAY = 200;
+
+// Improved text coming from Mystique is truncated to this length
+export const MYSTIQUE_TEXT_TRUNCATION_LENGTH = 500;

@@ -30,7 +30,7 @@ export function createOpportunityData() {
     },
     tags: ['Engagement', 'isElmo'],
     data: {
-      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.SITE],
+      dataSources: [DATA_SOURCES.AHREFS, DATA_SOURCES.PAGE],
     },
   };
 }

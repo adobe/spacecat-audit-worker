@@ -11,6 +11,7 @@
  */
 
 import rs from 'text-readability';
+import getCssSelector from 'css-selector-generator';
 import { JSDOM } from 'jsdom';
 import { franc } from 'franc-min';
 import { getObjectKeysUsingPrefix, getObjectFromKey } from '../../utils/s3-utils.js';
@@ -64,7 +65,7 @@ function extractTrafficFromKey() {
  * Analyzes readability for a single text block
  */
 async function analyzeTextReadability(
-  text,
+  paragraph,
   pageUrl,
   traffic,
   detectedLanguages,
@@ -73,7 +74,7 @@ async function analyzeTextReadability(
 ) {
   try {
     // Check if text is in a supported language
-    const detectedLanguage = getSupportedLanguage(text);
+    const detectedLanguage = getSupportedLanguage(paragraph.text);
     if (!detectedLanguage) {
       return null; // Skip unsupported languages
     }
@@ -84,28 +85,29 @@ async function analyzeTextReadability(
     // Calculate readability score
     let readabilityScore;
     if (detectedLanguage === 'english') {
-      readabilityScore = rs.fleschReadingEase(text.trim());
+      readabilityScore = rs.fleschReadingEase(paragraph.text.trim());
     } else {
-      readabilityScore = await calculateReadabilityScore(text.trim(), detectedLanguage);
+      readabilityScore = await calculateReadabilityScore(paragraph.text.trim(), detectedLanguage);
     }
 
     // Check if readability is poor
     if (readabilityScore < TARGET_READABILITY_SCORE) {
       // Truncate text for display
-      const displayText = text.length > MAX_CHARACTERS_DISPLAY
-        ? `${text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
-        : text;
+      const displayText = paragraph.text.length > MAX_CHARACTERS_DISPLAY
+        ? `${paragraph.text.substring(0, MAX_CHARACTERS_DISPLAY)}...`
+        : paragraph.text;
 
       // Calculate priority rank
       const trafficWeight = traffic || 0;
       const readabilityWeight = TARGET_READABILITY_SCORE - readabilityScore;
-      const contentLengthWeight = Math.min(text.length, 1000) / 1000;
+      const contentLengthWeight = Math.min(paragraph.text.length, 1000) / 1000;
       const rank = (readabilityWeight * 0.5) + (trafficWeight * 0.0001)
         + (contentLengthWeight * 0.1);
 
       return {
         pageUrl,
-        textContent: text,
+        selector: paragraph.selector,
+        textContent: paragraph.text,
         displayText,
         fleschReadingEase: Math.round(readabilityScore * 100) / 100,
         language: detectedLanguage,
@@ -182,10 +184,9 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
           .map((p) => {
             const tempDiv = doc.createElement('div');
             tempDiv.innerHTML = p;
-            return tempDiv.textContent;
+            return { text: tempDiv.textContent.trim(), selector: getCssSelector(tempDiv) };
           })
-          .map((p) => p.trim())
-          .filter((p) => p.length >= MIN_TEXT_LENGTH);
+          .filter((p) => p.text.length >= MIN_TEXT_LENGTH && p.text.includes(' '));
 
         paragraphs.forEach((paragraph) => {
           const analysisPromise = analyzeTextReadability(
@@ -200,7 +201,7 @@ export async function analyzePageContent(rawBody, pageUrl, traffic, log) {
         });
       } else {
         const analysisPromise = analyzeTextReadability(
-          textContent,
+          { text: textContent, selector: getCssSelector(element) },
           pageUrl,
           traffic,
           detectedLanguages,
