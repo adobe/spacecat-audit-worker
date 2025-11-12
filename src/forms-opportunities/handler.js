@@ -216,9 +216,9 @@ export async function processOpportunityStep(context) {
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
   const excludeForms = new Set();
-  await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
-  await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
-  await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
+  // await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
+  // await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
+  // await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createAccessibilityOpportunity(latestAudit, context);
   log.debug(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
