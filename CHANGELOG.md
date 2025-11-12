@@ -1,3 +1,10 @@
+## [1.236.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.236.0...v1.236.1) (2025-11-12)
+
+
+### Bug Fixes
+
+* removing generic oppty for lmo ([#1555](https://github.com/adobe/spacecat-audit-worker/issues/1555)) ([bc77408](https://github.com/adobe/spacecat-audit-worker/commit/bc77408720206b4120a64945190e14b3791b4ecf))
+
 # [1.236.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.235.1...v1.236.0) (2025-11-12)
 
 
