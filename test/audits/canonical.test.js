@@ -207,7 +207,7 @@ describe('Canonical URL Tests', () => {
         success: false,
         explanation: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.explanation,
       });
-      expect(log.info).to.have.been.calledWith('Canonical tag is not in the head section');
+      expect(log.info).to.have.been.calledWith('Canonical tag is not in the head section (detected via Cheerio)');
     });
 
     it('should follow redirects and validate canonical tag on the final destination page', async () => {

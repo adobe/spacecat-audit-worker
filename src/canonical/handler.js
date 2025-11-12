@@ -11,6 +11,7 @@
  */
 
 import { JSDOM } from 'jsdom';
+import * as cheerio from 'cheerio';
 import { composeBaseURL, tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { retrievePageAuthentication } from '@adobe/spacecat-shared-ims-client';
@@ -85,6 +86,16 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
     // finalUrl is the URL after any redirects
     const finalUrl = response.url;
     const html = await response.text();
+
+    // Use Cheerio to check if canonical is in <head> (more reliable than JSDOM for large HTML).
+    // This is the same approach used in the MetaTags audit (ssr-meta-validator.js).
+    const $ = cheerio.load(html);
+    const cheerioCanonicalInHead = $('head link[rel="canonical"]').length > 0;
+    const cheerioCanonicalCount = $('link[rel="canonical"]').length;
+
+    log.info(`Cheerio found ${cheerioCanonicalCount} canonical link(s), ${cheerioCanonicalInHead ? 'IN <head>' : 'NOT in <head>'}`);
+
+    // Still use JSDOM for the rest of the parsing and checks
     const dom = new JSDOM(html);
     const { document } = dom.window;
 
@@ -171,19 +182,22 @@ export async function validateCanonicalTag(url, log, options = {}, isPreview = f
           }
         }
 
-        // Check if canonical link is in the head section
-        if (!canonicalLink.closest('head')) {
+        // Check if canonical link is in the <head> section.
+        // Use Cheerio result instead of JSDOM's closest('head') because JSDOM can fail
+        // to parse large HTML correctly and may incorrectly place tags in <body>
+        if (!cheerioCanonicalInHead) {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
             success: false,
             explanation: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.explanation,
           });
-          log.info('Canonical tag is not in the head section');
+          log.info('Canonical tag is not in the head section (detected via Cheerio)');
         } else {
           checks.push({
             check: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.check,
             success: true,
           });
+          log.info('Canonical tag is in the head section (verified via Cheerio)');
         }
       }
     }
