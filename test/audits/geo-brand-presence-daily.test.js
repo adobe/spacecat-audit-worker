@@ -19,6 +19,7 @@ import sinonChai from 'sinon-chai';
 import { parquetWriteBuffer } from 'hyparquet-writer';
 import { keywordPromptsImportStep, sendToMystique } from '../../src/geo-brand-presence/handler.js';
 import { llmoConfig } from '@adobe/spacecat-shared-utils';
+import { TierClient } from '@adobe/spacecat-shared-tier-client';
 
 use(sinonChai);
 
@@ -32,6 +33,7 @@ describe('Geo Brand Presence Daily Handler', () => {
   let env;
   let s3Client;
   let getPresignedUrl;
+  let configuration;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -39,6 +41,7 @@ describe('Geo Brand Presence Daily Handler', () => {
       getBaseURL: () => 'https://adobe.com',
       getId: () => 'site-id-123',
       getDeliveryType: () => 'geo_edge',
+      getConfig: () => ({}),
     };
     audit = {
       getId: () => 'audit-id-456',
@@ -63,6 +66,17 @@ describe('Geo Brand Presence Daily Handler', () => {
         }),
     };
     getPresignedUrl = sandbox.stub();
+
+    // Mock Configuration for isAuditEnabledForSite
+    configuration = {
+      isHandlerEnabledForSite: sandbox.stub().returns(true),
+      getHandlers: sandbox.stub().returns({
+        'geo-brand-presence-daily': {
+          productCodes: ['LLMO'],
+        },
+      }),
+    };
+
     context = {
       log,
       sqs,
@@ -70,7 +84,18 @@ describe('Geo Brand Presence Daily Handler', () => {
       site,
       audit,
       s3Client,
+      dataAccess: {
+        Configuration: {
+          findLatest: sandbox.stub().resolves(configuration),
+        },
+      },
     };
+
+    // Mock TierClient for entitlement checks
+    const mockTierClient = {
+      checkValidEntitlement: sandbox.stub().resolves({ entitlement: true }),
+    };
+    sandbox.stub(TierClient, 'createForSite').returns(mockTierClient);
 
     fakeConfigS3Response();
 

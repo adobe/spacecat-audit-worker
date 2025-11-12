@@ -23,6 +23,7 @@ import { parquetReadObjects } from 'hyparquet';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
 import { getSignedUrl } from '../utils/getPresignedUrl.js';
+import { isAuditEnabledForSite } from '../common/audit-utils.js';
 import { transformWebSearchProviderForMystique } from './util.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
@@ -167,12 +168,32 @@ export async function sendToMystique(context, getPresignedUrlOverride = getSigne
   // TEMPORARY!!!!
   /* c8 ignore start */
   const {
-    auditContext, log, sqs, env, site, audit, s3Client, brandPresenceCadence,
+    auditContext, log, sqs, env, site, audit, s3Client,
   } = context;
 
   const siteId = site.getId();
   const baseURL = site.getBaseURL();
+
+  // Check if daily audit is enabled using proper entitlement and configuration check
+  const isDailyEnabled = await isAuditEnabledForSite(
+    'geo-brand-presence-daily',
+    site,
+    context,
+  );
+
+  // Priority: explicit context override > per-site Configuration check > site config > default
+  const brandPresenceCadence = context.brandPresenceCadence
+    || (isDailyEnabled ? 'daily' : null)
+    || site.getConfig()?.getBrandPresenceCadence?.()
+    || 'weekly';
   const isDaily = brandPresenceCadence === 'daily';
+
+  log.info(
+    'GEO_BRAND_PRESENCE: Processing sendToMystique with cadence: %s for siteId: %s, isDaily: %s',
+    brandPresenceCadence,
+    siteId,
+    isDaily,
+  );
 
   const { calendarWeek, parquetFiles, success } = auditContext ?? /* c8 ignore next */ {};
 
@@ -363,8 +384,28 @@ export async function keywordPromptsImportStep(context) {
     data,
     finalUrl,
     log,
-    brandPresenceCadence,
   } = context;
+
+  // Check if daily audit is enabled using proper entitlement and configuration check
+  const isDailyEnabled = await isAuditEnabledForSite(
+    'geo-brand-presence-daily',
+    site,
+    context,
+  );
+
+  // Priority: explicit context override > per-site Configuration check > site config > default
+  const brandPresenceCadence = context.brandPresenceCadence
+    || (isDailyEnabled ? 'daily' : null)
+    || site.getConfig()?.getBrandPresenceCadence?.()
+    || 'weekly';
+  const isDaily = brandPresenceCadence === 'daily';
+
+  log.info(
+    'GEO_BRAND_PRESENCE: Processing import with cadence: %s for siteId: %s, isDaily: %s',
+    brandPresenceCadence,
+    site.getId(),
+    isDaily,
+  );
 
   let endDate;
   let aiPlatform;
@@ -417,6 +458,9 @@ export async function keywordPromptsImportStep(context) {
   if (brandPresenceCadence) {
     result.auditResult.cadence = brandPresenceCadence;
   }
+
+  // Store brandPresenceCadence in context for next step
+  context.brandPresenceCadence = brandPresenceCadence;
 
   return result;
 }
