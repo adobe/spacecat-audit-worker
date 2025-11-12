@@ -27,9 +27,12 @@ describe('FAQs guidance handler', () => {
   let dummySite;
   let dummyOpportunity;
   let syncSuggestionsStub;
-  let getFaqMarkdownStub;
   let handler;
   let fetchStub;
+  let convertToOpportunityStub;
+  let s3Client;
+  let getObjectKeysUsingPrefixStub;
+  let getObjectFromKeyStub;
 
   const mockFaqData = {
     opportunity_id: 'oppty-123',
@@ -72,16 +75,22 @@ describe('FAQs guidance handler', () => {
   beforeEach(async function () {
     this.timeout(10000); // Increase timeout for esmock loading
     syncSuggestionsStub = sinon.stub().resolves();
-    getFaqMarkdownStub = sinon.stub().returns('## 1. Target URL: [/products/photoshop]...');
+    convertToOpportunityStub = sinon.stub();
     fetchStub = sinon.stub(global, 'fetch');
+    getObjectKeysUsingPrefixStub = sinon.stub();
+    getObjectFromKeyStub = sinon.stub();
 
     // Mock the handler with stubbed dependencies
     const mockedHandler = await esmock('../../../src/faqs/guidance-handler.js', {
       '../../../src/utils/data-access.js': {
         syncSuggestions: syncSuggestionsStub,
       },
-      '../../../src/faqs/utils.js': {
-        getFaqMarkdown: getFaqMarkdownStub,
+      '../../../src/common/opportunity.js': {
+        convertToOpportunity: convertToOpportunityStub,
+      },
+      '../../../src/utils/s3-utils.js': {
+        getObjectKeysUsingPrefix: getObjectKeysUsingPrefixStub,
+        getObjectFromKey: getObjectFromKeyStub,
       },
     });
 
@@ -97,18 +106,17 @@ describe('FAQs guidance handler', () => {
     Site.findById.resolves(dummySite);
 
     dummyOpportunity = {
-      getId: sinon.stub().returns('existing-oppty-id'),
-      getData: sinon.stub().returns({ subType: 'faqs' }),
-      setAuditId: sinon.stub(),
-      setData: sinon.stub(),
-      setGuidance: sinon.stub(),
-      setUpdatedBy: sinon.stub(),
-      save: sinon.stub().resolvesThis(),
+      getId: sinon.stub().returns('specific-oppty-id'),
     };
+    
+    convertToOpportunityStub.resolves(dummyOpportunity);
+
     Opportunity = {
       create: sinon.stub().resolves(dummyOpportunity),
       allBySiteId: sinon.stub().resolves([]),
     };
+
+    s3Client = { mockClient: true };
 
     log = {
       info: sinon.stub(),
@@ -117,9 +125,14 @@ describe('FAQs guidance handler', () => {
     };
     context = {
       log,
+      auditId: 'audit-123',
       dataAccess: {
         Site,
         Opportunity,
+      },
+      s3Client,
+      env: {
+        S3_SCRAPER_BUCKET_NAME: 'scraper-bucket',
       },
     };
 
@@ -129,6 +142,10 @@ describe('FAQs guidance handler', () => {
       status: 200,
       json: sinon.stub().resolves(mockFaqData),
     });
+
+    // Default S3 stubs
+    getObjectKeysUsingPrefixStub.resolves([]);
+    getObjectFromKeyStub.resolves(null);
   });
 
   afterEach(() => {
@@ -209,7 +226,7 @@ describe('FAQs guidance handler', () => {
 
     expect(result.status).to.equal(204);
     expect(log.info).to.have.been.calledWith('[FAQ] No FAQs found in the response');
-    expect(Opportunity.create).not.to.have.been.called;
+    expect(convertToOpportunityStub).not.to.have.been.called;
   });
 
   it('should return noContent when no suitable suggestions are found', async () => {
@@ -251,9 +268,7 @@ describe('FAQs guidance handler', () => {
     expect(log.info).to.have.been.calledWith('[FAQ] No suitable FAQ suggestions found after filtering');
   });
 
-  it('should create a new FAQ opportunity if no existing opportunity is found', async () => {
-    Opportunity.allBySiteId.resolves([]);
-
+  it('should create an FAQ opportunity', async () => {
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
@@ -265,35 +280,14 @@ describe('FAQs guidance handler', () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(200);
-    expect(Opportunity.create).to.have.been.calledOnce;
-    const createdArg = Opportunity.create.getCall(0).args[0];
-    expect(createdArg.type).to.equal('generic-opportunity');
-    expect(createdArg.data.subType).to.equal('faqs');
-    expect(createdArg.tags).to.include('isElmo');
-    expect(syncSuggestionsStub).to.have.been.calledOnce;
-    expect(getFaqMarkdownStub).to.have.been.calledWith(mockFaqData.faqs, log);
-  });
-
-  it('should update existing FAQ opportunity if found', async () => {
-    Opportunity.allBySiteId.resolves([dummyOpportunity]);
-
-    const message = {
-      auditId: 'audit-123',
-      siteId: 'site-123',
-      data: {
-        presignedUrl: 'https://s3.aws.com/faqs.json',
-      },
-    };
-
-    const result = await handler(message, context);
-
-    expect(result.status).to.equal(200);
-    expect(Opportunity.create).not.to.have.been.called;
-    expect(dummyOpportunity.setAuditId).to.have.been.calledWith('audit-123');
-    expect(dummyOpportunity.setData).to.have.been.called;
-    expect(dummyOpportunity.setGuidance).to.have.been.called;
-    expect(dummyOpportunity.setUpdatedBy).to.have.been.calledWith('system');
-    expect(dummyOpportunity.save).to.have.been.called;
+    expect(convertToOpportunityStub).to.have.been.calledOnce;
+    
+    const callArgs = convertToOpportunityStub.getCall(0).args;
+    expect(callArgs[0]).to.equal('https://adobe.com'); // baseUrl
+    expect(callArgs[1].siteId).to.equal('site-123');
+    expect(callArgs[1].auditId).to.equal('audit-123');
+    expect(callArgs[4]).to.equal('faq'); // type
+    
     expect(syncSuggestionsStub).to.have.been.calledOnce;
   });
 
@@ -315,22 +309,30 @@ describe('FAQs guidance handler', () => {
 
     // Test the mapNewSuggestion function
     const testData = {
-      suggestionValue: '## FAQ Markdown Content',
-      bKey: 'faqs:https://adobe.com',
+      headingText: 'FAQs',
+      url: 'https://adobe.com/test',
+      topic: 'test',
+      transformRules: {
+        selector: 'body',
+        action: 'appendChild',
+      },
+      item: {
+        question: 'Question?',
+        answer: 'Answer.',
+        sources: [],
+        questionRelevanceReason: 'Reason',
+        answerSuitabilityReason: 'Reason',
+      },
     };
 
     const mappedSuggestion = syncArgs.mapNewSuggestion(testData);
-    expect(mappedSuggestion.opportunityId).to.equal('existing-oppty-id');
+    expect(mappedSuggestion.opportunityId).to.equal('specific-oppty-id');
     expect(mappedSuggestion.type).to.equal('CONTENT_UPDATE');
-    expect(mappedSuggestion.rank).to.equal(1);
-    expect(mappedSuggestion.status).to.equal('NEW');
-    expect(mappedSuggestion.data.suggestionValue).to.equal(testData.suggestionValue);
-    expect(mappedSuggestion.kpiDeltas.estimatedKPILift).to.equal(0);
+    expect(mappedSuggestion.rank).to.equal(10);
+    expect(mappedSuggestion.data).to.deep.equal(testData);
   });
 
-  it('should call buildKey function correctly', async () => {
-    Opportunity.allBySiteId.resolves([]);
-
+  it('should call buildKey function correctly with URL, topic and question', async () => {
     const message = {
       auditId: 'audit-123',
       siteId: 'site-123',
@@ -346,11 +348,14 @@ describe('FAQs guidance handler', () => {
     const syncCall = syncSuggestionsStub.getCall(0);
     const syncArgs = syncCall.args[0];
     const testData = {
-      suggestionValue: 'test',
-      bKey: 'faqs:https://adobe.com',
+      url: 'https://adobe.com/test',
+      topic: 'photoshop',
+      item: {
+        question: 'How to use Photoshop?',
+      },
     };
     const buildKeyResult = syncArgs.buildKey(testData);
-    expect(buildKeyResult).to.equal('faqs:https://adobe.com');
+    expect(buildKeyResult).to.equal('https://adobe.com/test::photoshop::How to use Photoshop?');
   });
 
   it('should create correct guidance object with recommendation count', async () => {
@@ -364,12 +369,14 @@ describe('FAQs guidance handler', () => {
 
     await handler(message, context);
 
-    expect(Opportunity.create).to.have.been.calledOnce;
-    const createdArg = Opportunity.create.getCall(0).args[0];
-    expect(createdArg.guidance).to.exist;
-    expect(createdArg.guidance.recommendations).to.be.an('array');
-    expect(createdArg.guidance.recommendations[0].insight).to.include('2 relevant FAQs identified');
-    expect(createdArg.guidance.recommendations[0].type).to.equal('CONTENT_UPDATE');
+    expect(convertToOpportunityStub).to.have.been.calledOnce;
+    const callArgs = convertToOpportunityStub.getCall(0).args;
+    const guidanceObj = callArgs[5]; // The { guidance } object
+    
+    expect(guidanceObj.guidance).to.exist;
+    expect(guidanceObj.guidance).to.be.an('array');
+    expect(guidanceObj.guidance[0].insight).to.include('2 relevant FAQs identified');
+    expect(guidanceObj.guidance[0].type).to.equal('CONTENT_UPDATE');
   });
 
   it('should handle error when fetching FAQ data fails', async () => {
@@ -403,7 +410,7 @@ describe('FAQs guidance handler', () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(400);
-    expect(log.error).to.have.been.calledWith(sinon.match(/\[FAQ\] Error processing FAQ guidance: Database error/));
+    expect(log.error).to.have.been.calledWith(sinon.match(/\[FAQ\] Failed to save FAQ opportunity on Mystique callback: Database error/));
   });
 
   it('should filter and count only suitable and relevant suggestions', async () => {
@@ -459,10 +466,11 @@ describe('FAQs guidance handler', () => {
 
     await handler(message, context);
 
-    expect(Opportunity.create).to.have.been.calledOnce;
-    const createdArg = Opportunity.create.getCall(0).args[0];
+    expect(convertToOpportunityStub).to.have.been.calledOnce;
+    const callArgs = convertToOpportunityStub.getCall(0).args;
+    const guidanceObj = callArgs[5];
     // Should only count the 2 suitable AND relevant suggestions
-    expect(createdArg.guidance.recommendations[0].insight).to.include('2 relevant FAQs identified');
+    expect(guidanceObj.guidance[0].insight).to.include('2 relevant FAQs identified');
   });
 
   it('should handle FAQs with missing suggestions array', async () => {
@@ -506,9 +514,330 @@ describe('FAQs guidance handler', () => {
 
     await handler(message, context);
 
-    expect(Opportunity.create).to.have.been.calledOnce;
-    const createdArg = Opportunity.create.getCall(0).args[0];
+    expect(convertToOpportunityStub).to.have.been.calledOnce;
+    const callArgs = convertToOpportunityStub.getCall(0).args;
+    const guidanceObj = callArgs[5];
     // Should only count the 1 suitable suggestion from the first FAQ
-    expect(createdArg.guidance.recommendations[0].insight).to.include('1 relevant FAQs identified');
+    expect(guidanceObj.guidance[0].insight).to.include('1 relevant FAQs identified');
+  });
+
+  it('should analyze scrape data and determine selector as main', async () => {
+    // Mock scrape data with <main> element
+    const mockScrapeData = {
+      scrapeResult: {
+        rawBody: '<html><body><main><h1>Content</h1></main></body></html>',
+      },
+    };
+
+    getObjectKeysUsingPrefixStub.resolves([
+      'scrapes/site-123/products/photoshop/scrape.json',
+    ]);
+    getObjectFromKeyStub.resolves(mockScrapeData);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    // Check that selector was set to 'main'
+    expect(newData[0].transformRules.selector).to.equal('main');
+  });
+
+  it('should analyze scrape data and determine selector as body when no main', async () => {
+    // Mock scrape data without <main> element
+    const mockScrapeData = {
+      scrapeResult: {
+        rawBody: '<html><body><div><h1>Content</h1></div></body></html>',
+      },
+    };
+
+    getObjectKeysUsingPrefixStub.resolves([
+      'scrapes/site-123/products/photoshop/scrape.json',
+    ]);
+    getObjectFromKeyStub.resolves(mockScrapeData);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    // Check that selector was set to 'body'
+    expect(newData[0].transformRules.selector).to.equal('body');
+  });
+
+  it('should detect FAQ headings and set shouldOptimize to false', async () => {
+    // Mock scrape data with FAQ heading
+    const mockScrapeData = {
+      scrapeResult: {
+        rawBody: '<html><body><main><h2>Frequently Asked Questions</h2></main></body></html>',
+      },
+    };
+
+    getObjectKeysUsingPrefixStub.resolves([
+      'scrapes/site-123/products/photoshop/scrape.json',
+    ]);
+    getObjectFromKeyStub.resolves(mockScrapeData);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    // Check that shouldOptimize is false when FAQ heading exists
+    expect(newData[0].shouldOptimize).to.equal(false);
+    expect(log.info).to.have.been.calledWith(sinon.match(/Found FAQ heading in h2: "Frequently Asked Questions"/));
+  });
+
+  it('should detect FAQ heading with "faq" text (case insensitive)', async () => {
+    const mockScrapeData = {
+      scrapeResult: {
+        rawBody: '<html><body><h1>FAQ</h1></body></html>',
+      },
+    };
+
+    getObjectKeysUsingPrefixStub.resolves([
+      'scrapes/site-123/products/photoshop/scrape.json',
+    ]);
+    getObjectFromKeyStub.resolves(mockScrapeData);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    expect(newData[0].shouldOptimize).to.equal(false);
+  });
+
+  it('should set shouldOptimize to true when no FAQ headings found', async () => {
+    const mockScrapeData = {
+      scrapeResult: {
+        rawBody: '<html><body><main><h1>Product Information</h1></main></body></html>',
+      },
+    };
+
+    getObjectKeysUsingPrefixStub.resolves([
+      'scrapes/site-123/products/photoshop/scrape.json',
+    ]);
+    getObjectFromKeyStub.resolves(mockScrapeData);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    expect(newData[0].shouldOptimize).to.equal(true);
+  });
+
+  it('should handle headings with empty textContent', async () => {
+    // Mock scrape data with heading that has no text content
+    const mockScrapeData = {
+      scrapeResult: {
+        rawBody: '<html><body><main><h1></h1><h2>Normal Heading</h2></main></body></html>',
+      },
+    };
+
+    getObjectKeysUsingPrefixStub.resolves([
+      'scrapes/site-123/products/photoshop/scrape.json',
+    ]);
+    getObjectFromKeyStub.resolves(mockScrapeData);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    // Should still work correctly
+    expect(newData[0].transformRules.selector).to.equal('main');
+    expect(newData[0].shouldOptimize).to.equal(true);
+  });
+
+  it('should set shouldOptimize to false when FAQ has topic only (no URL)', async () => {
+    // Mock FAQ data with no URL (topic only)
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
+        faqs: [
+          {
+            topic: 'general-topic',
+            // No URL provided
+            suggestions: [
+              {
+                isAnswerSuitable: true,
+                isQuestionRelevant: true,
+                question: 'General question?',
+                answer: 'General answer.',
+                sources: [],
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    // Should set shouldOptimize to false for topic-only FAQs
+    expect(newData[0].shouldOptimize).to.equal(false);
+    expect(newData[0].url).to.equal('');
+    expect(newData[0].topic).to.equal('general-topic');
+  });
+
+  it('should handle missing scrape data gracefully', async () => {
+    getObjectKeysUsingPrefixStub.resolves([]);
+    getObjectFromKeyStub.resolves(null);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    // Should still create opportunity with default values
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    expect(newData[0].transformRules.selector).to.equal('body');
+    expect(newData[0].shouldOptimize).to.equal(true);
+    expect(log.warn).to.have.been.calledWith(sinon.match(/Scrape JSON path not found/));
+  });
+
+  it('should handle when scrape JSON object is not found', async () => {
+    // Key exists but object is null
+    getObjectKeysUsingPrefixStub.resolves([
+      'scrapes/site-123/products/photoshop/scrape.json',
+    ]);
+    getObjectFromKeyStub.resolves(null);
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    // Should still create opportunity with default values
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    expect(newData[0].transformRules.selector).to.equal('body');
+    expect(newData[0].shouldOptimize).to.equal(true);
+    expect(log.warn).to.have.been.calledWith(sinon.match(/Scrape JSON object not found/));
+  });
+
+  it('should handle S3 error gracefully during scrape analysis', async () => {
+    getObjectKeysUsingPrefixStub.rejects(new Error('S3 connection failed'));
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    // Should still create opportunity with default values
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    expect(newData[0].transformRules.selector).to.equal('body');
+    expect(newData[0].shouldOptimize).to.equal(true);
+    expect(log.error).to.have.been.calledWith(sinon.match(/Error fetching S3 keys/));
+  });
+
+  it('should handle error during scrape data analysis', async () => {
+    // Mock scrape data with invalid structure that will throw an error
+    getObjectKeysUsingPrefixStub.resolves([
+      'scrapes/site-123/products/photoshop/scrape.json',
+    ]);
+    // Return an object without scrapeResult property - this will cause error accessing scrapeResult.rawBody
+    getObjectFromKeyStub.resolves({
+      invalidProperty: 'test',
+    });
+
+    const message = {
+      auditId: 'audit-123',
+      siteId: 'site-123',
+      data: {
+        presignedUrl: 'https://s3.aws.com/faqs.json',
+      },
+    };
+
+    await handler(message, context);
+
+    // Should still create opportunity with default values
+    const syncCall = syncSuggestionsStub.getCall(0);
+    const newData = syncCall.args[0].newData;
+    
+    expect(newData[0].transformRules.selector).to.equal('body');
+    expect(newData[0].shouldOptimize).to.equal(true);
+    expect(log.error).to.have.been.calledWith(sinon.match(/Error analyzing scrape data/));
   });
 });

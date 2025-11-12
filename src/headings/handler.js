@@ -14,7 +14,6 @@ import { JSDOM } from 'jsdom';
 import { getPrompt } from '@adobe/spacecat-shared-utils';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AzureOpenAIClient } from '@adobe/spacecat-shared-gpt-client';
-import CssSelectorGenerator from 'css-selector-generator';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { noopUrlResolver } from '../common/index.js';
 import { syncSuggestions, keepLatestMergeDataFunction } from '../utils/data-access.js';
@@ -62,14 +61,8 @@ export const HEADINGS_CHECKS = Object.freeze({
   HEADING_ORDER_INVALID: {
     check: 'heading-order-invalid',
     title: 'Invalid Heading Order',
-    explanation: 'Heading levels should increase by one (H1→H2), not jump levels (H1→H3).',
+    explanation: 'Heading levels should increase by one (example: H1→H2), not jump levels (example: H1→H3).',
     suggestion: 'Adjust heading levels to maintain proper hierarchy.',
-  },
-  HEADING_NO_CONTENT: {
-    check: 'heading-no-content',
-    title: 'Heading Without Content',
-    explanation: 'Headings should be followed by content before the next heading.',
-    suggestion: 'Add meaningful content after each heading.',
   },
   TOPPAGES: {
     check: 'top-pages',
@@ -91,63 +84,92 @@ function getTextContent(element) {
   return (element.textContent || '').trim();
 }
 
-/**
- * Check if there is meaningful content between two DOM elements
- * @param {Element} startElement - The starting element (heading)
- * @param {Element} endElement - The ending element (next heading)
- * @returns {boolean} - True if meaningful content exists between the elements
- */
-function hasContentBetweenElements(startElement, endElement) {
-  const contentTags = new Set([
-    'P', 'DIV', 'SPAN', 'UL', 'OL', 'DL', 'LI', 'IMG', 'FIGURE', 'VIDEO', 'AUDIO',
-    'TABLE', 'FORM', 'FIELDSET', 'SECTION', 'ARTICLE', 'ASIDE', 'NAV', 'MAIN',
-    'BLOCKQUOTE', 'PRE', 'CODE', 'HR', 'BR', 'CANVAS', 'SVG', 'IFRAME',
-  ]);
-
-  let currentElement = startElement.nextSibling;
-
-  while (currentElement && currentElement !== endElement) {
-    // Check if it's an element node
-    if (currentElement.nodeType === 1) { // Element node
-      const tagName = currentElement.tagName.toUpperCase();
-
-      // If it's a content tag, check if it has meaningful content
-      if (contentTags.has(tagName)) {
-        const textContent = (currentElement.textContent || '').trim();
-        // Consider it meaningful if it has text content or is a self-closing content element
-        if (textContent.length > 0 || ['IMG', 'HR', 'BR', 'CANVAS', 'SVG', 'IFRAME'].includes(tagName)) {
-          return true;
-        }
-      }
-
-      // Recursively check child elements for content
-      if (currentElement.children && currentElement.children.length > 0) {
-        const hasChildContent = Array.from(currentElement.children).some((child) => {
-          const childTextContent = getTextContent(child);
-          const childTagName = child.tagName.toUpperCase();
-          return childTextContent.length > 0
-                 || ['IMG', 'HR', 'BR', 'CANVAS', 'SVG', 'IFRAME'].includes(childTagName);
-        });
-        if (hasChildContent) {
-          return true;
-        }
-      }
-    } else if (currentElement.nodeType === 3) { // Text node
-      const textContent = getTextContent(currentElement);
-      if (textContent.length > 0) {
-        return true;
-      }
-    }
-
-    currentElement = currentElement.nextSibling;
-  }
-
-  return false;
-}
-
 function getScrapeJsonPath(url, siteId) {
   const pathname = new URL(url).pathname.replace(/\/$/, '');
   return `scrapes/${siteId}${pathname}/scrape.json`;
+}
+
+/**
+ * Generate a unique CSS selector for a heading element.
+ * Uses a progressive specificity strategy:
+ * 1. Start with tag name
+ * 2. Add ID if available (most specific - stop here)
+ * 3. Add classes if available
+ * 4. Add :nth-of-type() if multiple siblings exist
+ * 5. Walk up parent tree (max 3 levels) for context
+ *
+ * @param {Element} heading - The heading element to generate selector for
+ * @returns {string} A CSS selector string that uniquely identifies the element
+ */
+export function getHeadingSelector(heading) {
+  if (!heading || !heading.tagName) {
+    return null;
+  }
+
+  const tag = heading.tagName.toLowerCase();
+  let selectors = [tag];
+
+  // 1. Check for ID (most specific - return immediately)
+  if (heading.id) {
+    return `${tag}#${heading.id}`;
+  }
+
+  // 2. Add classes if available
+  if (heading.className && typeof heading.className === 'string') {
+    const classes = heading.className.trim().split(/\s+/).filter(Boolean);
+    if (classes.length > 0) {
+      // Limit to first 2 classes for readability
+      const classSelector = classes.slice(0, 2).join('.');
+      selectors = [`${tag}.${classSelector}`];
+    }
+  }
+
+  // 3. Add nth-of-type if multiple siblings of same tag exist
+  const parent = heading.parentElement;
+  if (parent) {
+    // Get all sibling elements of the same tag type (direct children only)
+    const siblingsOfSameTag = Array.from(parent.children).filter(
+      (child) => child.tagName === heading.tagName,
+    );
+
+    if (siblingsOfSameTag.length > 1) {
+      const index = siblingsOfSameTag.indexOf(heading) + 1;
+      selectors.push(`:nth-of-type(${index})`);
+    }
+  }
+
+  const selector = selectors.join('');
+
+  // 4. Build path with parent selectors for more specificity (max 3 levels)
+  const pathParts = [selector];
+  let current = parent;
+  let levels = 0;
+
+  while (current && current.tagName && current.tagName.toLowerCase() !== 'html' && levels < 3) {
+    let parentSelector = current.tagName.toLowerCase();
+
+    // If parent has ID, use it and stop (ID is unique enough)
+    if (current.id) {
+      pathParts.unshift(`#${current.id}`);
+      break;
+    }
+
+    // Add parent classes (limit to first 2 for readability)
+    if (current.className && typeof current.className === 'string') {
+      const classes = current.className.trim().split(/\s+/).filter(Boolean);
+      if (classes.length > 0) {
+        const classSelector = classes.slice(0, 2).join('.');
+        parentSelector = `${parentSelector}.${classSelector}`;
+      }
+    }
+
+    pathParts.unshift(parentSelector);
+    current = current.parentElement;
+    levels += 1;
+  }
+
+  // 5. Join with '>' (direct child combinator)
+  return pathParts.join(' > ');
 }
 
 export async function getH1HeadingASuggestion(url, log, pageTags, context, brandGuidelines) {
@@ -265,6 +287,7 @@ export async function validatePageHeadings(
       log.debug(`Missing h1 element detected at ${url}`);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MISSING_H1.check,
+        checkTitle: HEADINGS_CHECKS.HEADING_MISSING_H1.title,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_MISSING_H1.explanation,
         suggestion: HEADINGS_CHECKS.HEADING_MISSING_H1.suggestion,
@@ -272,6 +295,7 @@ export async function validatePageHeadings(
           action: 'insertBefore',
           selector: document.querySelector('body > main') ? 'body > main > :first-child' : 'body > :first-child',
           tag: 'h1',
+          scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
         },
         pageTags,
       });
@@ -279,20 +303,21 @@ export async function validatePageHeadings(
       log.debug(`Multiple h1 elements detected at ${url}: ${h1Elements.length} found`);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.check,
+        checkTitle: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.title,
         success: false,
-        explanation: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation,
+        explanation: `Found ${h1Elements.length} h1 elements: ${HEADINGS_CHECKS.HEADING_MULTIPLE_H1.explanation}`,
         suggestion: HEADINGS_CHECKS.HEADING_MULTIPLE_H1.suggestion,
         count: h1Elements.length,
       });
     } else if (getTextContent(h1Elements[0]).length === 0
       || getTextContent(h1Elements[0]).length > H1_LENGTH_CHARS) {
-      const generator = new CssSelectorGenerator();
-      const h1Selector = generator.getSelector(h1Elements[0]);
+      const h1Selector = getHeadingSelector(h1Elements[0]);
       const h1Length = h1Elements[0].textContent.length;
       const lengthIssue = h1Length === 0 ? 'empty' : 'too long';
       log.info(`H1 length ${lengthIssue} detected at ${url}: ${h1Length} characters using selector: ${h1Selector}`);
       checks.push({
         check: HEADINGS_CHECKS.HEADING_H1_LENGTH.check,
+        checkTitle: HEADINGS_CHECKS.HEADING_H1_LENGTH.title,
         success: false,
         explanation: HEADINGS_CHECKS.HEADING_H1_LENGTH.explanation,
         suggestion: HEADINGS_CHECKS.HEADING_H1_LENGTH.suggestion,
@@ -300,6 +325,7 @@ export async function validatePageHeadings(
           action: 'replace',
           selector: h1Selector,
           currValue: h1Elements[0].textContent,
+          scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
         },
         pageTags,
       });
@@ -311,12 +337,20 @@ export async function validatePageHeadings(
       if (heading.tagName !== 'H1') {
         const text = getTextContent(heading);
         if (text.length === 0) {
-          log.debug(`Empty heading detected (${heading.tagName}) at ${url}`);
+          log.info(`Empty heading detected (${heading.tagName}) at ${url}`);
+          const headingSelector = getHeadingSelector(heading);
           return {
             check: HEADINGS_CHECKS.HEADING_EMPTY.check,
+            checkTitle: HEADINGS_CHECKS.HEADING_EMPTY.title,
             success: false,
-            explanation: HEADINGS_CHECKS.HEADING_EMPTY.explanation,
+            explanation: `Found empty text for ${heading.tagName}: ${HEADINGS_CHECKS.HEADING_EMPTY.explanation}`,
             suggestion: HEADINGS_CHECKS.HEADING_EMPTY.suggestion,
+            transformRules: {
+              action: 'replace',
+              selector: headingSelector,
+              currValue: text,
+              scrapedAt: new Date(scrapeJsonObject.scrapedAt).toISOString(),
+            },
             tagName: heading.tagName,
             pageTags,
           };
@@ -346,32 +380,18 @@ export async function validatePageHeadings(
     // eslint-disable-next-line no-unused-vars
     for (const [lowerText, headingsWithSameText] of headingTexts) {
       if (headingsWithSameText.length > 1) {
+        const detailedExplanation = `${HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation} \n Text "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`;
         checks.push({
           check: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check,
+          checkTitle: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.title,
           success: false,
-          explanation: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.explanation,
+          explanation: detailedExplanation,
           suggestion: HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.suggestion,
           text: headingsWithSameText[0].text,
           duplicates: headingsWithSameText.map((h) => h.tagName),
           count: headingsWithSameText.length,
         });
         log.debug(`Duplicate heading text detected at ${url}: "${headingsWithSameText[0].text}" found in ${headingsWithSameText.map((h) => h.tagName).join(', ')}`);
-      }
-    }
-    for (let i = 0; i < headings.length - 1; i += 1) {
-      const currentHeading = headings[i];
-      const nextHeading = headings[i + 1];
-
-      if (!hasContentBetweenElements(currentHeading, nextHeading)) {
-        checks.push({
-          check: HEADINGS_CHECKS.HEADING_NO_CONTENT.check,
-          success: false,
-          explanation: HEADINGS_CHECKS.HEADING_NO_CONTENT.explanation,
-          suggestion: HEADINGS_CHECKS.HEADING_NO_CONTENT.suggestion,
-          heading: currentHeading.tagName,
-          nextHeading: nextHeading.tagName,
-        });
-        log.debug(`Heading without content detected at ${url}: ${currentHeading.tagName} has no content before ${nextHeading.tagName}`);
       }
     }
 
@@ -384,6 +404,7 @@ export async function validatePageHeadings(
         if (curLevel - prevLevel > 1) {
           checks.push({
             check: HEADINGS_CHECKS.HEADING_ORDER_INVALID.check,
+            checkTitle: HEADINGS_CHECKS.HEADING_ORDER_INVALID.title,
             success: false,
             explanation: HEADINGS_CHECKS.HEADING_ORDER_INVALID.explanation,
             suggestion: HEADINGS_CHECKS.HEADING_ORDER_INVALID.suggestion,
@@ -506,9 +527,10 @@ export async function headingsAuditRunner(baseURL, context, site) {
             // Add URL if not already present
             if (!aggregatedResults[checkType].urls.includes(url)) {
               const urlObject = { url };
-              if (check.suggestion) {
-                urlObject.suggestion = aiSuggestion || check.suggestion;
-              }
+              urlObject.explanation = check.explanation;
+              urlObject.suggestion = aiSuggestion || check.suggestion;
+              urlObject.isAISuggested = !!aiSuggestion;
+              urlObject.checkTitle = check.checkTitle;
               if (check.tagName) {
                 urlObject.tagName = check.tagName;
               }
@@ -548,6 +570,19 @@ export async function headingsAuditRunner(baseURL, context, site) {
   }
 }
 
+function generateRecommendedAction(checkType) {
+  switch (checkType) {
+    case HEADINGS_CHECKS.HEADING_ORDER_INVALID.check:
+      return 'Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).';
+    case HEADINGS_CHECKS.HEADING_EMPTY.check:
+      return 'Provide meaningful text content for the empty heading or remove the element.';
+    case HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check:
+      return 'Ensure each heading has unique, descriptive text content that clearly identifies its section.';
+    default:
+      return 'Review heading structure and content to follow heading best practices.';
+  }
+}
+
 export function generateSuggestions(auditUrl, auditData, context) {
   const { log } = context;
   if (auditData.auditResult?.status === 'success'
@@ -576,21 +611,14 @@ export function generateSuggestions(auditUrl, auditData, context) {
         const suggestion = {
           type: 'CODE_CHANGE',
           checkType,
-          explanation: checkResult.explanation,
           url: urlObj.url,
-          // eslint-disable-next-line no-use-before-define
-          recommendedAction: generateRecommendedAction(checkType),
+          explanation: urlObj.explanation ?? checkResult.explanation,
+          recommendedAction: urlObj.suggestion ?? generateRecommendedAction(checkType),
+          checkTitle: urlObj.checkTitle,
+          isAISuggested: urlObj.isAISuggested,
+          ...(urlObj.tagName && { tagName: urlObj.tagName }),
+          ...(urlObj.transformRules && { transformRules: urlObj.transformRules }),
         };
-        if (urlObj.tagName) {
-          suggestion.tagName = urlObj.tagName;
-        }
-        if (urlObj.suggestion) {
-          suggestion.recommendedAction = urlObj.suggestion;
-        }
-        if (urlObj.transformRules) {
-          suggestion.transformRules = urlObj.transformRules;
-        }
-
         suggestionsByType[checkType].push(suggestion);
         allSuggestions.push(suggestion);
       });
@@ -629,21 +657,6 @@ export function generateSuggestions(auditUrl, auditData, context) {
   return { ...auditData, suggestions, elmoSuggestions };
 }
 
-function generateRecommendedAction(checkType) {
-  switch (checkType) {
-    case HEADINGS_CHECKS.HEADING_ORDER_INVALID.check:
-      return 'Adjust heading levels to avoid skipping levels (for example, change h3 to h2 after an h1).';
-    case HEADINGS_CHECKS.HEADING_EMPTY.check:
-      return 'Provide meaningful text content for the empty heading or remove the element.';
-    case HEADINGS_CHECKS.HEADING_DUPLICATE_TEXT.check:
-      return 'Ensure each heading has unique, descriptive text content that clearly identifies its section.';
-    case HEADINGS_CHECKS.HEADING_NO_CONTENT.check:
-      return 'Add meaningful content (paragraphs, lists, images, etc.) after the heading before the next heading.';
-    default:
-      return 'Review heading structure and content to follow heading best practices.';
-  }
-}
-
 export async function opportunityAndSuggestions(auditUrl, auditData, context) {
   const { log } = context;
   if (!auditData.suggestions?.length) {
@@ -676,6 +689,8 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         checkType: suggestion.checkType,
         explanation: suggestion.explanation,
         recommendedAction: suggestion.recommendedAction,
+        checkTitle: suggestion.checkTitle,
+        isAISuggested: suggestion.isAISuggested,
         ...(suggestion.transformRules && {
           transformRules: { ...suggestion.transformRules },
         }),

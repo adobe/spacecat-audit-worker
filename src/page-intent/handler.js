@@ -9,8 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-/* c8 ignore start */
-import { getStaticContent } from '@adobe/spacecat-shared-utils';
+import { isNonEmptyArray, getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { Audit, PageIntent as PageIntentModel } from '@adobe/spacecat-shared-data-access';
 import { wwwUrlResolver } from '../common/index.js';
@@ -25,6 +24,17 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 const ATHENA_DATABASE = 'rum_metrics';
 const ATHENA_TABLE = 'compact_metrics';
 const LOG_PREFIX = '[PageIntent]';
+const NOTHING_TO_PROCESS = 'NOTHING TO PROCESS';
+
+const NOTHING_TO_PROCESS_RESULT = (baseURL, siteId) => ({
+  auditResult: {
+    missingPageIntents: 0,
+  },
+  fullAuditRef: NOTHING_TO_PROCESS,
+  urls: [{ url: baseURL }],
+  processingType: 'minimal-content',
+  siteId,
+});
 
 export async function getPathsOfLastWeek(context) {
   const {
@@ -35,11 +45,12 @@ export async function getPathsOfLastWeek(context) {
   const baseURL = site.getBaseURL();
   const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
   const athenaClient = AWSAthenaClient.fromContext(context, tempLocation);
+  const today = new Date();
 
   const variables = {
     tableName: `${ATHENA_DATABASE}.${ATHENA_TABLE}`,
     siteId: site.getSiteId(),
-    temporalCondition: getTemporalCondition(),
+    temporalCondition: getTemporalCondition(today, 10),
   };
 
   log.info(`${LOG_PREFIX} Step 1: Extracting URLs for page intent analysis for site ${baseURL}`);
@@ -47,23 +58,35 @@ export async function getPathsOfLastWeek(context) {
   const query = await getStaticContent(variables, './src/page-intent/sql/referral-traffic-paths.sql');
   const description = `[Athena Query] Fetching referral traffic data for ${baseURL}`;
   const paths = await athenaClient.query(query, ATHENA_DATABASE, description);
+
+  if (!isNonEmptyArray(paths)) {
+    log.info(`${LOG_PREFIX} No referral traffic paths found for site ${baseURL}`);
+    return NOTHING_TO_PROCESS_RESULT(baseURL, site.getId());
+  }
+
   const pageIntents = await site.getPageIntents();
   const existingUrls = new Set(pageIntents.map((pi) => pi.getUrl()));
 
   const missingPageIntents = paths
     .map(({ path }) => path)
-    .filter((path) => !existingUrls.has(`${baseURL}${path}`))
-    .slice(0, batchSize);
+    .filter((path) => !existingUrls.has(`${baseURL}${path}`));
 
-  log.info(`${LOG_PREFIX} Found ${missingPageIntents.length} pages missing page intent (limited to ${batchSize})`);
+  const numOfMissing = missingPageIntents.length;
 
-  const urlsToScrape = missingPageIntents.map((path) => ({
+  if (numOfMissing === 0) {
+    log.info(`${LOG_PREFIX} No missing page intents for site ${baseURL}`);
+    return NOTHING_TO_PROCESS_RESULT(baseURL, site.getId());
+  }
+
+  log.info(`${LOG_PREFIX} Found ${numOfMissing} pages missing page intent; processing batch of ${Math.min(batchSize, numOfMissing)} pages`);
+
+  const urlsToScrape = missingPageIntents.slice(0, batchSize).map((path) => ({
     url: `${baseURL}${path}`,
   }));
 
   return {
     auditResult: {
-      missingPageIntents: missingPageIntents.length,
+      missingPageIntents: numOfMissing,
     },
     fullAuditRef: finalUrl,
     urls: urlsToScrape,
@@ -95,10 +118,18 @@ export async function fetchScrapeContent(url, s3Path, s3Client, bucketName, log)
   return minimalContent;
 }
 
+export function stripMarkdownCodeBlocks(content) {
+  let cleaned = content.trim();
+  cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '');
+  cleaned = cleaned.replace(/\n?```\s*$/, '');
+  return cleaned.trim();
+}
+
 export async function analyzePageIntent(url, textContent, context, log) {
   const userPrompt = createUserPrompt(url, textContent);
   const response = await prompt(SYSTEM_PROMPT, userPrompt, context);
-  const analysis = JSON.parse(response.content);
+  const cleanedContent = stripMarkdownCodeBlocks(response.content);
+  const analysis = JSON.parse(cleanedContent);
 
   log.debug(`${LOG_PREFIX} LLM analysis for ${url}: ${analysis.pageIntent}, topic: ${analysis.topic}`);
 
@@ -106,10 +137,10 @@ export async function analyzePageIntent(url, textContent, context, log) {
   const validIntents = Object.values(PageIntentModel.PAGE_INTENTS);
   if (!analysis.pageIntent || !validIntents.includes(analysis.pageIntent)) {
     log.warn(`${LOG_PREFIX} Invalid or null page intent '${analysis.pageIntent}' returned by LLM for ${url}`);
-    return null;
+    return { analysis: null, usage: response.usage };
   }
 
-  return analysis;
+  return { analysis, usage: response.usage };
 }
 
 export async function processPage(url, s3Path, processingContext) {
@@ -121,22 +152,14 @@ export async function processPage(url, s3Path, processingContext) {
     log.debug(`${LOG_PREFIX} Processing ${url} from ${s3Path}`);
 
     const scrapeContent = await fetchScrapeContent(url, s3Path, s3Client, bucketName, log);
-
-    if (!scrapeContent) {
-      return {
-        url,
-        success: false,
-        error: 'No scrape data or minimal content found',
-      };
-    }
-
-    const analysis = await analyzePageIntent(url, scrapeContent, context, log);
+    const { analysis, usage } = await analyzePageIntent(url, scrapeContent, context, log);
 
     if (!analysis) {
       return {
         url,
         success: false,
         error: 'Invalid or insufficient data for page intent classification',
+        usage,
       };
     }
 
@@ -144,7 +167,7 @@ export async function processPage(url, s3Path, processingContext) {
       siteId,
       url,
       pageIntent: analysis.pageIntent,
-      topic: analysis.topic,
+      topic: analysis.topic || '',
     });
 
     log.info(`${LOG_PREFIX} Created: ${url} -> ${analysis.pageIntent}, ${analysis.topic}`);
@@ -154,6 +177,7 @@ export async function processPage(url, s3Path, processingContext) {
       pageIntent: analysis.pageIntent,
       topic: analysis.topic,
       success: true,
+      usage,
     };
   } catch (error) {
     log.error(`${LOG_PREFIX} Failed to process ${url}:`, error);
@@ -161,6 +185,7 @@ export async function processPage(url, s3Path, processingContext) {
       url,
       success: false,
       error: error.message,
+      usage: null,
     };
   }
 }
@@ -179,6 +204,16 @@ export async function generatePageIntent(context) {
   const siteId = site.getId();
   const bucketName = env.S3_SCRAPER_BUCKET_NAME;
   const { PageIntent } = dataAccess;
+  const fullAuditRef = audit.getFullAuditRef();
+
+  if (fullAuditRef === NOTHING_TO_PROCESS) {
+    return {
+      auditResult: {
+        result: NOTHING_TO_PROCESS,
+      },
+      fullAuditRef: audit.getFullAuditRef(),
+    };
+  }
 
   log.info(`${LOG_PREFIX} Step 2: Generating page intent for ${scrapeResultPaths.size} pages`);
 
@@ -193,21 +228,39 @@ export async function generatePageIntent(context) {
 
   // Sequential processing is intentional here to prevent overwhelming the Azure OpenAI API
   const results = [];
+  const tokenUsage = {
+    totalPromptTokens: 0,
+    totalCompletionTokens: 0,
+    totalTokens: 0,
+    promptCount: 0,
+  };
+
   for (const [url, s3Path] of scrapeResultPaths.entries()) {
     // eslint-disable-next-line no-await-in-loop
     const result = await processPage(url, s3Path, processingContext);
     results.push(result);
+
+    /* c8 ignore start */
+    if (result.usage) {
+      tokenUsage.totalPromptTokens += result.usage.prompt_tokens || 0;
+      tokenUsage.totalCompletionTokens += result.usage.completion_tokens || 0;
+      tokenUsage.totalTokens += result.usage.total_tokens || 0;
+      tokenUsage.promptCount += 1;
+    }
+    /* c8 ignore end */
   }
 
   const successfulPages = results.filter((r) => r.success).length;
   const failedPages = results.filter((r) => !r.success).length;
 
   log.info(`${LOG_PREFIX} Completed: ${successfulPages} successful, ${failedPages} failed out of ${results.length} total`);
+  log.info(`${LOG_PREFIX} Token usage: ${tokenUsage.totalTokens} total tokens across ${tokenUsage.promptCount} prompts (${tokenUsage.totalPromptTokens} prompt + ${tokenUsage.totalCompletionTokens} completion)`);
 
   return {
     auditResult: {
       successfulPages,
       failedPages,
+      tokenUsage,
     },
     fullAuditRef: audit.getFullAuditRef(),
   };
@@ -218,4 +271,3 @@ export default new AuditBuilder()
   .addStep('extract-urls', getPathsOfLastWeek, AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT)
   .addStep('generate-intent', generatePageIntent)
   .build();
-/* c8 ignore end */

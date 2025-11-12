@@ -40,6 +40,7 @@ import {
   submitForScraping,
   fetchAndProcessPageObject,
   opportunityAndSuggestions,
+  buildKey,
 } from '../../src/metatags/handler.js';
 
 use(sinonChai);
@@ -204,6 +205,199 @@ describe('Meta Tags', () => {
     });
   });
 
+  describe('buildKey', () => {
+    it('should create a key with all fields present', () => {
+      const data = {
+        url: 'https://example.com/page1',
+        issue: 'Title too short',
+        tagContent: 'Example Title',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page1|Title too short|Example Title');
+    });
+
+    it('should handle undefined tagContent by defaulting to empty string', () => {
+      const data = {
+        url: 'https://example.com/page2',
+        issue: 'Missing Description',
+        tagContent: undefined,
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page2|Missing Description|');
+    });
+
+    it('should handle null tagContent by defaulting to empty string', () => {
+      const data = {
+        url: 'https://example.com/page3',
+        issue: 'Empty Title',
+        tagContent: null,
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page3|Empty Title|');
+    });
+
+    it('should handle false tagContent by defaulting to empty string', () => {
+      const data = {
+        url: 'https://example.com/page4',
+        issue: 'Invalid Tag',
+        tagContent: false,
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page4|Invalid Tag|');
+    });
+
+    it('should handle empty string tagContent', () => {
+      const data = {
+        url: 'https://example.com/page5',
+        issue: 'Empty H1',
+        tagContent: '',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page5|Empty H1|');
+    });
+
+    it('should handle 0 as tagContent by defaulting to empty string', () => {
+      const data = {
+        url: 'https://example.com/page6',
+        issue: 'Numeric Tag',
+        tagContent: 0,
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page6|Numeric Tag|');
+    });
+
+    it('should handle missing tagContent property by defaulting to empty string', () => {
+      const data = {
+        url: 'https://example.com/page7',
+        issue: 'Missing H1',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page7|Missing H1|');
+    });
+
+    it('should handle tagContent with pipe characters', () => {
+      const data = {
+        url: 'https://example.com/page8',
+        issue: 'Title too long',
+        tagContent: 'Title with | pipe | characters',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page8|Title too long|Title with | pipe | characters');
+    });
+
+    it('should handle tagContent with special characters', () => {
+      const data = {
+        url: 'https://example.com/page9',
+        issue: 'Duplicate Title',
+        tagContent: 'Special chars: @#$%^&*()',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page9|Duplicate Title|Special chars: @#$%^&*()');
+    });
+
+    it('should create unique keys for different URLs with same issue and tagContent', () => {
+      const data1 = {
+        url: 'https://example.com/page1',
+        issue: 'Title too short',
+        tagContent: 'Same Title',
+      };
+      const data2 = {
+        url: 'https://example.com/page2',
+        issue: 'Title too short',
+        tagContent: 'Same Title',
+      };
+
+      const result1 = buildKey(data1);
+      const result2 = buildKey(data2);
+
+      expect(result1).to.not.equal(result2);
+      expect(result1).to.equal('https://example.com/page1|Title too short|Same Title');
+      expect(result2).to.equal('https://example.com/page2|Title too short|Same Title');
+    });
+
+    it('should create unique keys for same URL with different issues', () => {
+      const data1 = {
+        url: 'https://example.com/page1',
+        issue: 'Title too short',
+        tagContent: 'Example Title',
+      };
+      const data2 = {
+        url: 'https://example.com/page1',
+        issue: 'Title too long',
+        tagContent: 'Example Title',
+      };
+
+      const result1 = buildKey(data1);
+      const result2 = buildKey(data2);
+
+      expect(result1).to.not.equal(result2);
+      expect(result1).to.equal('https://example.com/page1|Title too short|Example Title');
+      expect(result2).to.equal('https://example.com/page1|Title too long|Example Title');
+    });
+
+    it('should handle whitespace in tagContent', () => {
+      const data = {
+        url: 'https://example.com/page10',
+        issue: 'Title formatting',
+        tagContent: '  Title with spaces  ',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page10|Title formatting|  Title with spaces  ');
+    });
+
+    it('should handle multiline tagContent', () => {
+      const data = {
+        url: 'https://example.com/page11',
+        issue: 'Description formatting',
+        tagContent: 'Line 1\nLine 2\nLine 3',
+      };
+
+      const result = buildKey(data);
+
+      expect(result).to.equal('https://example.com/page11|Description formatting|Line 1\nLine 2\nLine 3');
+    });
+
+    it('should differentiate between missing and empty tagContent', () => {
+      const dataMissing = {
+        url: 'https://example.com/page12',
+        issue: 'Missing Tag',
+        tagContent: undefined,
+      };
+      const dataEmpty = {
+        url: 'https://example.com/page12',
+        issue: 'Missing Tag',
+        tagContent: '',
+      };
+
+      const resultMissing = buildKey(dataMissing);
+      const resultEmpty = buildKey(dataEmpty);
+
+      // Both should result in the same key since empty string is the fallback
+      expect(resultMissing).to.equal(resultEmpty);
+      expect(resultMissing).to.equal('https://example.com/page12|Missing Tag|');
+    });
+  });
+
   describe('handler method', () => {
     let dataAccessStub;
     let s3ClientStub;
@@ -349,6 +543,43 @@ describe('Meta Tags', () => {
           },
         });
       });
+
+      it('should filter PDF files from scraping and log them', async () => {
+        const topPages = [
+          { getUrl: () => 'http://example.com/page1', getTraffic: () => 100 },
+          { getUrl: () => 'http://example.com/document.pdf', getTraffic: () => 90 },
+          { getUrl: () => 'http://example.com/guide.PDF', getTraffic: () => 80 },
+          { getUrl: () => 'http://example.com/page2', getTraffic: () => 70 },
+        ];
+        dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+        const result = await submitForScraping(context);
+        expect(result.urls).to.deep.equal([
+          { url: 'http://example.com/page1' },
+          { url: 'http://example.com/page2' },
+        ]);
+
+        // Verify PDF files were logged as skipped
+        expect(context.log.info).to.have.been.calledWith('[metatags] Skipping PDF file from scraping: http://example.com/document.pdf');
+        expect(context.log.info).to.have.been.calledWith('[metatags] Skipping PDF file from scraping: http://example.com/guide.PDF');
+      });
+
+      it('should handle malformed URLs gracefully in isPdfUrl', async () => {
+        const topPages = [
+          { getUrl: () => 'http://example.com/page1', getTraffic: () => 100 },
+          { getUrl: () => '://invalid-url', getTraffic: () => 90 }, // Malformed URL
+          { getUrl: () => 'http://example.com/page2', getTraffic: () => 80 },
+        ];
+        dataAccessStub.SiteTopPage.allBySiteIdAndSourceAndGeo.resolves(topPages);
+
+        const result = await submitForScraping(context);
+        // Should include all URLs (malformed URL doesn't throw, just returns false from isPdfUrl)
+        expect(result.urls).to.deep.equal([
+          { url: 'http://example.com/page1' },
+          { url: '://invalid-url' },
+          { url: 'http://example.com/page2' },
+        ]);
+      });
     });
 
     describe('fetchAndProcessPageObject', () => {
@@ -477,9 +708,135 @@ describe('Meta Tags', () => {
         );
 
         expect(result).to.be.null;
-        expect(logStub.error).to.have.been.calledWith(
-          'Scrape result is empty for scrapes/site-id/404/scrape.json',
+        // Now caught by error page detection (has "404" and "error" in content)
+        expect(logStub.info).to.have.been.calledWith(
+          sinon.match(/Skipping error page for http:\/\/example\.com\/404/),
         );
+      });
+
+      it('should skip pages with small body (< 300 bytes) without error keywords', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/small-page',
+          scrapeResult: {
+            tags: {
+              title: 'Short',
+              description: 'Brief content',
+              h1: ['Heading'],
+            },
+            rawBody: '<html><body>Short content</body></html>', // Less than 300 chars, no error keywords
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/small-page',
+          'scrapes/site-id/small-page/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.error).to.have.been.calledWith('Scrape result is empty for scrapes/site-id/small-page/scrape.json');
+      });
+
+      it('should detect error pages when title is null and h1 has error keyword', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/error',
+          scrapeResult: {
+            tags: {
+              title: null,
+              h1: 'Error Page',
+            },
+            rawBody: '<html><body><h1>Error Page</h1></body></html>'.repeat(10), // > 300 bytes
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/error',
+          'scrapes/site-id/error/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.info).to.have.been.calledWith(sinon.match(/Skipping error page/));
+      });
+
+      it('should detect error pages when h1 is array with null first element', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/error',
+          scrapeResult: {
+            tags: {
+              title: '404 Not Found',
+              h1: [null, 'Second H1'],
+            },
+            rawBody: '<html><body><h1>404</h1></body></html>'.repeat(10), // > 300 bytes
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/error',
+          'scrapes/site-id/error/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.info).to.have.been.calledWith(sinon.match(/Skipping error page/));
+      });
+
+      it('should detect error pages when h1 is null', async () => {
+        const mockScrapeResult = {
+          finalUrl: 'http://example.com/error',
+          scrapeResult: {
+            tags: {
+              title: '500 Internal Server Error',
+              h1: null,
+            },
+            rawBody: '<html><body><h1>500</h1></body></html>'.repeat(10), // > 300 bytes
+          },
+        };
+
+        s3ClientStub.send.resolves({
+          Body: {
+            transformToString: () => JSON.stringify(mockScrapeResult),
+          },
+          ContentType: 'application/json',
+        });
+
+        const result = await fetchAndProcessPageObject(
+          s3ClientStub,
+          'test-bucket',
+          'http://example.com/error',
+          'scrapes/site-id/error/scrape.json',
+          logStub,
+        );
+
+        expect(result).to.be.null;
+        expect(logStub.info).to.have.been.calledWith(sinon.match(/Skipping error page/));
       });
 
       it('should process pages with scrape result body length of 300 characters or more', async () => {

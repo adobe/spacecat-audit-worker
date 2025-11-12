@@ -25,7 +25,10 @@ Intent definitions:
 - COMMERCIAL: Compares products/services, reviews, research before purchase
 - TRANSACTIONAL: Designed for completing transactions, purchases, conversions
 
-If there is insufficient data to confidently classify the page, return null for pageIntent.
+You must return a valid result.
+
+If there is insufficient data to confidently classify the page, use the given URL to
+derive an educated guess about its intent and topic.
 
 Return a pure JSON string without markdown. Example output:
 {
@@ -35,9 +38,12 @@ Return a pure JSON string without markdown. Example output:
 `;
 
 export function createUserPrompt(url, textContent) {
-  const truncatedContent = textContent.length > MAX_CONTENT_LENGTH
-    ? `${textContent.substring(0, MAX_CONTENT_LENGTH)}... [content truncated]`
-    : textContent;
+  // Handle null/undefined textContent - LLM should analyze based on URL alone
+  const content = textContent || '[No page content available - analyze based on URL]';
+
+  const truncatedContent = content.length > MAX_CONTENT_LENGTH
+    ? `${content.substring(0, MAX_CONTENT_LENGTH)}... [content truncated]`
+    : content;
 
   return `URL: ${url}
 

@@ -34,18 +34,30 @@ export const PREFLIGHT_STEP_SUGGEST = 'suggest';
  * List of available checks.
  * Should not be changed as it would break existing clients.
  * @type {string}
+ * NOTE: When adding a new audit check, define the constant here and add it to AVAILABLE_CHECKS.
+ * When adding a new handler, add the handler to PREFLIGHT_HANDLERS.
+ * Also ensure the handler name matches the constant defined here.
  */
+export const AUDIT_CANONICAL = 'canonical';
+export const AUDIT_LINKS = 'links';
+export const AUDIT_METATAGS = 'metatags';
 export const AUDIT_BODY_SIZE = 'body-size';
 export const AUDIT_LOREM_IPSUM = 'lorem-ipsum';
 export const AUDIT_H1_COUNT = 'h1-count';
+export const AUDIT_ACCESSIBILITY = 'accessibility';
+export const AUDIT_READABILITY = 'readability';
 
-/**
- * NOTE: When adding a new audit check:
- * 1. Define the constant here.
- * 2. Update the AVAILABLE_CHECKS array defined in:
- *    https://github.com/adobe/spacecat-api-service/blob/main/src/controllers/preflight.js
- *    for the POST /preflight/jobs API endpoint.
- */
+const AVAILABLE_CHECKS = [
+  AUDIT_CANONICAL,
+  AUDIT_LINKS,
+  AUDIT_METATAGS,
+  AUDIT_BODY_SIZE,
+  AUDIT_LOREM_IPSUM,
+  AUDIT_H1_COUNT,
+  AUDIT_ACCESSIBILITY,
+  AUDIT_READABILITY,
+];
+
 export const PREFLIGHT_HANDLERS = {
   canonical,
   metatags,
@@ -118,6 +130,31 @@ export const preflightAudit = async (context) => {
     throw new Error(`[preflight-audit] site: ${site.getId()}. Job not in progress for jobId: ${job.getId()}. Status: ${job.getStatus()}`);
   }
 
+  // Compute enabled preflight checks for the site and store in job metadata
+  let enabledChecks = [];
+  try {
+    enabledChecks = (await Promise.all(
+      AVAILABLE_CHECKS.map(async (audit) => {
+        const enabled = await isAuditEnabledForSite(`${audit}-preflight`, site, context);
+        return enabled ? audit : null;
+      }),
+    )).filter(Boolean);
+
+    const jobEntity = await AsyncJobEntity.findById(jobId);
+    const currentMetadata = jobEntity.getMetadata();
+    const currentPayload = currentMetadata?.payload;
+    jobEntity.setMetadata({
+      ...currentMetadata,
+      payload: {
+        ...currentPayload,
+        checks: enabledChecks,
+      },
+    });
+    await jobEntity.save();
+  } catch (e) {
+    log.error(`[preflight-audit] site: ${site.getId()}, job: ${jobId}, step: ${step}. Failed to persist enabled checks in job metadata.`, e);
+  }
+
   const timeExecutionBreakdown = [];
 
   try {
@@ -153,9 +190,9 @@ export const preflightAudit = async (context) => {
     }));
     const audits = new Map(auditsResult.map((r) => [r.pageUrl, r]));
 
-    const bodySizeEnabled = await isAuditEnabledForSite(`${AUDIT_BODY_SIZE}-preflight`, site, context);
-    const loremIpsumEnabled = await isAuditEnabledForSite(`${AUDIT_LOREM_IPSUM}-preflight`, site, context);
-    const h1CountEnabled = await isAuditEnabledForSite(`${AUDIT_H1_COUNT}-preflight`, site, context);
+    const bodySizeEnabled = enabledChecks.includes(AUDIT_BODY_SIZE);
+    const loremIpsumEnabled = enabledChecks.includes(AUDIT_LOREM_IPSUM);
+    const h1CountEnabled = enabledChecks.includes(AUDIT_H1_COUNT);
     // DOM-based checks: body size, lorem ipsum, h1 count
     if (bodySizeEnabled || loremIpsumEnabled || h1CountEnabled) {
       const domStartTime = Date.now();
@@ -231,8 +268,10 @@ export const preflightAudit = async (context) => {
       await saveIntermediateResults(context, auditsResult, 'DOM-based audit');
     }
 
-    // Execute all preflight handlers
-    const handlerResults = await Object.keys(PREFLIGHT_HANDLERS).reduce(
+    // Execute only enabled preflight handlers
+    const handlersToRun = Object.keys(PREFLIGHT_HANDLERS)
+      .filter((key) => enabledChecks.includes(key));
+    const handlerResults = await handlersToRun.reduce(
       async (accPromise, handler) => {
         const acc = await accPromise;
         const res = await PREFLIGHT_HANDLERS[handler](context, {

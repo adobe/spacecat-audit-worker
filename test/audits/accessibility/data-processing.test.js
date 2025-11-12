@@ -5894,7 +5894,6 @@ describe('data-processing utility functions', () => {
           IMPORT_WORKER_QUEUE_URL: 'test-import-worker-queue-url',
           QUEUE_SPACECAT_TO_MYSTIQUE: 'test-mystique-queue',
         },
-        site: mockSite,
       };
     });
 
@@ -5906,7 +5905,7 @@ describe('data-processing utility functions', () => {
       it('should skip code-fix generation when no suggestions exist', async () => {
         mockOpportunity.getSuggestions.resolves([]);
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.log.info).to.have.been.calledWith(
           '[accessibility] [Site Id: site-123] No suggestions found for code-fix generation',
@@ -5917,7 +5916,7 @@ describe('data-processing utility functions', () => {
       it('should skip code-fix generation when suggestions is null', async () => {
         mockOpportunity.getSuggestions.resolves(null);
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.log.info).to.have.been.calledWith(
           '[accessibility] [Site Id: site-123] No suggestions found for code-fix generation',
@@ -5928,7 +5927,7 @@ describe('data-processing utility functions', () => {
 
     describe('Successful message sending', () => {
       it('should group suggestions by URL, source, and issueType and send messages', async () => {
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.log.info).to.have.been.calledWith(
           '[accessibility] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
@@ -5944,21 +5943,21 @@ describe('data-processing utility functions', () => {
         expect(firstMessage.type).to.equal('code');
         expect(firstMessage.siteId).to.equal('site-123');
         expect(firstMessage.forward.queue).to.equal('test-mystique-queue');
-        expect(firstMessage.forward.type).to.equal('codefix:accessibility');
-        expect(firstMessage.forward.siteId).to.equal('site-123');
-        expect(firstMessage.forward.auditId).to.equal('audit-123');
-        expect(firstMessage.forward.url).to.equal('https://example.com');
-        expect(firstMessage.forward.data.opportunityId).to.equal('opportunity-123');
-        expect(firstMessage.forward.data.suggestionIds).to.have.lengthOf(2);
-        expect(firstMessage.forward.data.suggestionIds).to.include('suggestion-123');
-        expect(firstMessage.forward.data.suggestionIds).to.include('suggestion-456');
+        expect(firstMessage.forward.payload.type).to.equal('codefix:accessibility');
+        expect(firstMessage.forward.payload.siteId).to.equal('site-123');
+        expect(firstMessage.forward.payload.auditId).to.equal('audit-123');
+        expect(firstMessage.forward.payload.url).to.equal('https://example.com');
+        expect(firstMessage.forward.payload.data.opportunityId).to.equal('opportunity-123');
+        expect(firstMessage.forward.payload.data.suggestionIds).to.have.lengthOf(2);
+        expect(firstMessage.forward.payload.data.suggestionIds).to.include('suggestion-123');
+        expect(firstMessage.forward.payload.data.suggestionIds).to.include('suggestion-456');
 
         // Verify second message (select-name group)
         const secondCall = context.sqs.sendMessage.secondCall;
         expect(secondCall.args[0]).to.equal('test-import-worker-queue-url');
         const secondMessage = secondCall.args[1];
-        expect(secondMessage.forward.data.suggestionIds).to.have.lengthOf(1);
-        expect(secondMessage.forward.data.suggestionIds).to.include('suggestion-789');
+        expect(secondMessage.forward.payload.data.suggestionIds).to.have.lengthOf(1);
+        expect(secondMessage.forward.payload.data.suggestionIds).to.include('suggestion-789');
 
         expect(context.log.info).to.have.been.calledWith(
           '[accessibility] [Site Id: site-123] Completed sending 2 code-fix messages to importer',
@@ -5967,11 +5966,11 @@ describe('data-processing utility functions', () => {
 
       it('should use dynamic opportunityType from opportunity.getType()', async () => {
         mockOpportunity.getType.returns('forms');
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-456', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-456', mockSite, context);
 
         expect(context.sqs.sendMessage).to.have.been.calledTwice;
         const firstMessage = context.sqs.sendMessage.firstCall.args[1];
-        expect(firstMessage.forward.type).to.equal('codefix:forms');
+        expect(firstMessage.forward.payload.type).to.equal('codefix:forms');
       });
 
       it('should handle suggestion with default source when source is undefined', async () => {
@@ -5986,7 +5985,7 @@ describe('data-processing utility functions', () => {
 
         mockOpportunity.getSuggestions.resolves([mockSuggestionNoSource]);
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.sqs.sendMessage).to.have.been.calledOnce;
         expect(context.log.info).to.have.been.calledWith(
@@ -6006,7 +6005,7 @@ describe('data-processing utility functions', () => {
 
         mockOpportunity.getSuggestions.resolves([mockSuggestionNoIssues]);
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.sqs.sendMessage).not.to.have.been.called;
         expect(context.log.info).to.have.been.calledWith(
@@ -6026,13 +6025,13 @@ describe('data-processing utility functions', () => {
 
         mockOpportunity.getSuggestions.resolves([mockSuggestionNoIssuesProperty]);
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.sqs.sendMessage).not.to.have.been.called;
       });
 
       it('should log individual message sending for each group', async () => {
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.log.info).to.have.been.calledWith(
           sinon.match(/Sent code-fix message to importer for URL: https:\/\/example\.com\/form1, source: form, issueType: color-contrast, suggestions: 2/),
@@ -6051,7 +6050,7 @@ describe('data-processing utility functions', () => {
           .onFirstCall().rejects(sendError)
           .onSecondCall().resolves();
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.sqs.sendMessage).to.have.been.calledTwice;
         expect(context.log.error).to.have.been.calledWith(
@@ -6068,7 +6067,7 @@ describe('data-processing utility functions', () => {
         const sendError = new Error('SQS connection failed');
         context.sqs.sendMessage.rejects(sendError);
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.sqs.sendMessage).to.have.been.calledTwice;
         expect(context.log.error).to.have.been.calledTwice;
@@ -6083,7 +6082,7 @@ describe('data-processing utility functions', () => {
         const error = new Error('Database error');
         mockOpportunity.getSuggestions.rejects(error);
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.log.error).to.have.been.calledWith(
           '[accessibility] [Site Id: site-123] Error in sendCodeFixMessagesToImporter: Database error',
@@ -6095,7 +6094,7 @@ describe('data-processing utility functions', () => {
         // Make getData throw an error
         mockSuggestion1.getData.throws(new Error('getData failed'));
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.log.error).to.have.been.calledWith(
           '[accessibility] [Site Id: site-123] Error in sendCodeFixMessagesToImporter: getData failed',
@@ -6121,7 +6120,7 @@ describe('data-processing utility functions', () => {
           mockSuggestion4,
         ]);
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.log.info).to.have.been.calledWith(
           '[accessibility] [Site Id: site-123] Grouped suggestions into 1 groups for code-fix generation',
@@ -6129,10 +6128,10 @@ describe('data-processing utility functions', () => {
 
         expect(context.sqs.sendMessage).to.have.been.calledOnce;
         const message = context.sqs.sendMessage.firstCall.args[1];
-        expect(message.forward.data.suggestionIds).to.have.lengthOf(3);
-        expect(message.forward.data.suggestionIds).to.include('suggestion-123');
-        expect(message.forward.data.suggestionIds).to.include('suggestion-456');
-        expect(message.forward.data.suggestionIds).to.include('suggestion-999');
+        expect(message.forward.payload.data.suggestionIds).to.have.lengthOf(3);
+        expect(message.forward.payload.data.suggestionIds).to.include('suggestion-123');
+        expect(message.forward.payload.data.suggestionIds).to.include('suggestion-456');
+        expect(message.forward.payload.data.suggestionIds).to.include('suggestion-999');
       });
 
       it('should create separate groups for different URLs', async () => {
@@ -6150,7 +6149,7 @@ describe('data-processing utility functions', () => {
           mockSuggestionDifferentUrl,
         ]);
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.log.info).to.have.been.calledWith(
           '[accessibility] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
@@ -6173,7 +6172,7 @@ describe('data-processing utility functions', () => {
           mockSuggestionDifferentSource,
         ]);
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.log.info).to.have.been.calledWith(
           '[accessibility] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',
@@ -6196,7 +6195,7 @@ describe('data-processing utility functions', () => {
           mockSuggestionDifferentIssue,
         ]);
 
-        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', context);
+        await sendCodeFixMessagesToImporter(mockOpportunity, 'audit-123', mockSite, context);
 
         expect(context.log.info).to.have.been.calledWith(
           '[accessibility] [Site Id: site-123] Grouped suggestions into 2 groups for code-fix generation',

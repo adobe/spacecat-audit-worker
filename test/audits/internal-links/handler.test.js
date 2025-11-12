@@ -483,7 +483,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
 
     // Mock statuses
     sandbox.stub(Oppty, 'STATUSES').value({ RESOLVED: 'RESOLVED', NEW: 'NEW' });
-    sandbox.stub(SuggestionDataAccess, 'STATUSES').value({ OUTDATED: 'OUTDATED', NEW: 'NEW' });
+    sandbox.stub(SuggestionDataAccess, 'STATUSES').value({ OUTDATED: 'OUTDATED', NEW: 'NEW', FIXED: 'FIXED' });
     sandbox.stub(GoogleClient, 'createFrom').resolves({});
     context.site.getLatestAuditByAuditType = () => auditData;
 
@@ -516,7 +516,7 @@ describe('broken-internal-links audit opportunity and suggestions', () => {
     // Verify suggestions statuses were updated
     expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.have.been.calledOnceWith(
       mockSuggestions,
-      'OUTDATED',
+      'FIXED',
     );
     expect(existingOpportunity.save).to.have.been.calledOnce;
 

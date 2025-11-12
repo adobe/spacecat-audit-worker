@@ -18,7 +18,6 @@ import { sleep } from '../support/utils.js';
 import { accessibilityOpportunitiesMap } from '../accessibility/utils/constants.js';
 import { getObjectFromKey, getObjectKeysUsingPrefix } from '../utils/s3-utils.js';
 import { formatWcagRule } from '../accessibility/utils/generate-individual-opportunities.js';
-import { isAuditEnabledForSite } from '../common/index.js';
 
 export const PREFLIGHT_ACCESSIBILITY = 'accessibility';
 
@@ -310,117 +309,114 @@ export default async function accessibility(context, auditContext) {
   const { previewUrls, timeExecutionBreakdown } = auditContext;
   const { log, site, job } = context;
 
-  const isAccessibilityEnabled = await isAuditEnabledForSite(`${PREFLIGHT_ACCESSIBILITY}-preflight`, site, context);
-  if (isAccessibilityEnabled) {
-    // Check if we have URLs to process
-    if (!isNonEmptyArray(previewUrls)) {
-      log.warn('[preflight-audit] No URLs to process for accessibility audit, skipping');
+  // Check if we have URLs to process
+  if (!isNonEmptyArray(previewUrls)) {
+    log.warn('[preflight-audit] No URLs to process for accessibility audit, skipping');
+    return;
+  }
+
+  // Start timing for the entire accessibility scraping process (sending to scraper + polling)
+  const scrapeStartTime = Date.now();
+  const scrapeStartTimestamp = new Date().toISOString();
+
+  // Step 1: Send URLs to content scraper for accessibility-specific processing
+  await scrapeAccessibilityData(context, auditContext);
+
+  // Poll for content scraper to process the URLs
+  const { s3Client, env } = context;
+  const bucketName = env.S3_SCRAPER_BUCKET_NAME;
+  const siteId = context.site.getId();
+  const jobId = context.job?.getId();
+
+  log.debug('[preflight-audit] Starting to poll for accessibility data');
+  log.debug(`[preflight-audit] S3 Bucket: ${bucketName}`);
+  log.debug(`[preflight-audit] Site ID: ${siteId}`);
+  log.debug(`[preflight-audit] Job ID: ${jobId}`);
+  log.debug(`[preflight-audit] Looking for data in path: accessibility-preflight/${siteId}/`);
+
+  const maxWaitTime = 10 * 60 * 1000;
+  // 1 second poll interval
+  const pollInterval = 1 * 1000;
+
+  // Generate expected filenames based on preview URLs
+  const expectedFiles = previewUrls.map((url) => generateAccessibilityFilename(url));
+
+  log.debug(`[preflight-audit] Expected files: ${JSON.stringify(expectedFiles)}`);
+
+  // Recursive polling function to check for accessibility files
+  const pollForAccessibilityFiles = async () => {
+    if (Date.now() - scrapeStartTime >= maxWaitTime) {
+      log.info('[preflight-audit] Maximum wait time reached, stopping polling');
       return;
     }
 
-    // Start timing for the entire accessibility scraping process (sending to scraper + polling)
-    const scrapeStartTime = Date.now();
-    const scrapeStartTimestamp = new Date().toISOString();
+    try {
+      log.debug(`[preflight-audit] Polling attempt - checking S3 bucket: ${bucketName}`);
 
-    // Step 1: Send URLs to content scraper for accessibility-specific processing
-    await scrapeAccessibilityData(context, auditContext);
+      // Check if accessibility data files exist in S3 using helper function
+      const objectKeys = await getObjectKeysUsingPrefix(
+        s3Client,
+        bucketName,
+        `accessibility-preflight/${siteId}/`,
+        log,
+        100,
+        '.json',
+      );
 
-    // Poll for content scraper to process the URLs
-    const { s3Client, env } = context;
-    const bucketName = env.S3_SCRAPER_BUCKET_NAME;
-    const siteId = context.site.getId();
-    const jobId = context.job?.getId();
+      // Check if we have the expected accessibility files
+      const foundFiles = objectKeys.filter((key) => {
+        // Extract filename from the S3 key
+        const pathParts = key.split('/');
+        const filename = pathParts[pathParts.length - 1];
 
-    log.debug('[preflight-audit] Starting to poll for accessibility data');
-    log.debug(`[preflight-audit] S3 Bucket: ${bucketName}`);
-    log.debug(`[preflight-audit] Site ID: ${siteId}`);
-    log.debug(`[preflight-audit] Job ID: ${jobId}`);
-    log.debug(`[preflight-audit] Looking for data in path: accessibility-preflight/${siteId}/`);
+        // Check if this is one of our expected files
+        return expectedFiles.includes(filename);
+      });
 
-    const maxWaitTime = 10 * 60 * 1000;
-    // 1 second poll interval
-    const pollInterval = 1 * 1000;
+      if (foundFiles && foundFiles.length >= expectedFiles.length) {
+        log.debug(`[preflight-audit] Found ${foundFiles.length} accessibility files out of ${expectedFiles.length} expected, accessibility processing complete`);
 
-    // Generate expected filenames based on preview URLs
-    const expectedFiles = previewUrls.map((url) => generateAccessibilityFilename(url));
-
-    log.debug(`[preflight-audit] Expected files: ${JSON.stringify(expectedFiles)}`);
-
-    // Recursive polling function to check for accessibility files
-    const pollForAccessibilityFiles = async () => {
-      if (Date.now() - scrapeStartTime >= maxWaitTime) {
-        log.info('[preflight-audit] Maximum wait time reached, stopping polling');
+        // Log the found files for debugging
+        foundFiles.forEach((key) => {
+          log.debug(`[preflight-audit] Accessibility file: ${key}`);
+        });
         return;
       }
 
-      try {
-        log.debug(`[preflight-audit] Polling attempt - checking S3 bucket: ${bucketName}`);
+      log.debug(`[preflight-audit] Found ${foundFiles.length} out of ${expectedFiles.length} expected accessibility files, continuing to wait...`);
+      log.debug('[preflight-audit] No accessibility data yet, waiting...');
+      await sleep(pollInterval);
 
-        // Check if accessibility data files exist in S3 using helper function
-        const objectKeys = await getObjectKeysUsingPrefix(
-          s3Client,
-          bucketName,
-          `accessibility-preflight/${siteId}/`,
-          log,
-          100,
-          '.json',
-        );
+      // Recursively call to continue polling
+      await pollForAccessibilityFiles();
+    } catch (error) {
+      log.error(`[preflight-audit] Error polling for accessibility data: ${error.message}`);
+      await sleep(pollInterval);
 
-        // Check if we have the expected accessibility files
-        const foundFiles = objectKeys.filter((key) => {
-          // Extract filename from the S3 key
-          const pathParts = key.split('/');
-          const filename = pathParts[pathParts.length - 1];
+      // Recursively call to continue polling after error
+      await pollForAccessibilityFiles();
+    }
+  };
 
-          // Check if this is one of our expected files
-          return expectedFiles.includes(filename);
-        });
+  // Start the polling process
+  await pollForAccessibilityFiles();
 
-        if (foundFiles && foundFiles.length >= expectedFiles.length) {
-          log.debug(`[preflight-audit] Found ${foundFiles.length} accessibility files out of ${expectedFiles.length} expected, accessibility processing complete`);
+  // End timing for the entire scraping process (sending to scraper + polling)
+  const scrapeEndTime = Date.now();
+  const scrapeEndTimestamp = new Date().toISOString();
+  const scrapeElapsed = ((scrapeEndTime - scrapeStartTime) / 1000).toFixed(2);
 
-          // Log the found files for debugging
-          foundFiles.forEach((key) => {
-            log.debug(`[preflight-audit] Accessibility file: ${key}`);
-          });
-          return;
-        }
+  log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job?.getId()}, step: ${auditContext.step}. Accessibility scraping process completed in ${scrapeElapsed} seconds`);
 
-        log.debug(`[preflight-audit] Found ${foundFiles.length} out of ${expectedFiles.length} expected accessibility files, continuing to wait...`);
-        log.debug('[preflight-audit] No accessibility data yet, waiting...');
-        await sleep(pollInterval);
+  timeExecutionBreakdown.push({
+    name: 'accessibility-scraping',
+    duration: `${scrapeElapsed} seconds`,
+    startTime: scrapeStartTimestamp,
+    endTime: scrapeEndTimestamp,
+  });
 
-        // Recursively call to continue polling
-        await pollForAccessibilityFiles();
-      } catch (error) {
-        log.error(`[preflight-audit] Error polling for accessibility data: ${error.message}`);
-        await sleep(pollInterval);
+  log.debug('[preflight-audit] Polling completed, proceeding to process accessibility data');
 
-        // Recursively call to continue polling after error
-        await pollForAccessibilityFiles();
-      }
-    };
-
-    // Start the polling process
-    await pollForAccessibilityFiles();
-
-    // End timing for the entire scraping process (sending to scraper + polling)
-    const scrapeEndTime = Date.now();
-    const scrapeEndTimestamp = new Date().toISOString();
-    const scrapeElapsed = ((scrapeEndTime - scrapeStartTime) / 1000).toFixed(2);
-
-    log.debug(`[preflight-audit] site: ${site.getId()}, job: ${job?.getId()}, step: ${auditContext.step}. Accessibility scraping process completed in ${scrapeElapsed} seconds`);
-
-    timeExecutionBreakdown.push({
-      name: 'accessibility-scraping',
-      duration: `${scrapeElapsed} seconds`,
-      startTime: scrapeStartTimestamp,
-      endTime: scrapeEndTimestamp,
-    });
-
-    log.debug('[preflight-audit] Polling completed, proceeding to process accessibility data');
-
-    // Step 2: Process scraped data and create opportunities
-    await processAccessibilityOpportunities(context, auditContext);
-  }
+  // Step 2: Process scraped data and create opportunities
+  await processAccessibilityOpportunities(context, auditContext);
 }

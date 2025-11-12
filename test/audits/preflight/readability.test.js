@@ -120,14 +120,6 @@ describe('Preflight Readability Audit', () => {
   });
 
   describe('readability audit', () => {
-    it('should skip when check is not included', async () => {
-      configuration.isHandlerEnabledForSite.resolves(false);
-      await readability(context, auditContext);
-
-      expect(auditsResult[0].audits).to.have.lengthOf(0);
-      expect(log.info).not.to.have.been.called;
-    });
-
     it('should create audit entry for each page', async () => {
       auditContext.scrapedObjects = [{
         data: {

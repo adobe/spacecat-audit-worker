@@ -19,7 +19,7 @@ import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
 import metatagsAutoSuggest from './metatags-auto-suggest.js';
 import { convertToOpportunity } from '../common/opportunity.js';
-import { getIssueRanking, trimTagValue } from '../utils/seo-utils.js';
+import { getIssueRanking, trimTagValue, normalizeTagValue } from '../utils/seo-utils.js';
 import { getBaseUrl } from '../utils/url-utils.js';
 import {
   DESCRIPTION,
@@ -33,6 +33,8 @@ import { validateDetectedIssues } from './ssr-meta-validator.js';
 
 const auditType = Audit.AUDIT_TYPES.META_TAGS;
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+
+export const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent || ''}`;
 
 export async function opportunityAndSuggestions(finalUrl, auditData, context) {
   const opportunity = await convertToOpportunity(
@@ -73,8 +75,6 @@ export async function opportunityAndSuggestions(finalUrl, auditData, context) {
       });
     });
 
-  const buildKey = (data) => `${data.url}|${data.issue}|${data.tagContent}`;
-
   // Sync the suggestions from new audit with old ones
   await syncSuggestions({
     opportunity,
@@ -97,6 +97,24 @@ export async function fetchAndProcessPageObject(s3Client, bucketName, url, key, 
     log.error(`No Scraped tags found in S3 ${key} object`);
     return null;
   }
+
+  // Check for error pages by content
+  const { tags } = object.scrapeResult;
+  const title = normalizeTagValue(tags.title);
+  const h1Text = normalizeTagValue(tags.h1);
+  const httpStatusCodes = ['400', '401', '403', '404', '405', '500', '502', '503', '504'];
+
+  const hasErrorKeyword = title.includes('error') || h1Text.includes('error');
+  const hasStatusCode = httpStatusCodes.some(
+    (code) => title.includes(code) || h1Text.includes(code),
+  );
+
+  if (hasErrorKeyword || hasStatusCode) {
+    const h1Display = Array.isArray(tags.h1) ? tags.h1[0] : tags.h1;
+    log.info(`[metatags] Skipping error page for ${url} (title: "${tags.title}", h1: "${h1Display}")`);
+    return null;
+  }
+
   // if the scrape result is empty, skip the page for metatags audit
   if (object?.scrapeResult?.rawBody?.length < 300) {
     log.error(`Scrape result is empty for ${key}`);
@@ -332,10 +350,28 @@ export async function submitForScraping(context) {
     throw new Error(`No URLs found for site neither top pages nor included URLs for ${site.getId()}`);
   }
 
+  // Filter out PDF files before scraping
+  const isPdfUrl = (url) => {
+    try {
+      const pathname = new URL(url).pathname.toLowerCase();
+      return pathname.endsWith('.pdf');
+    } catch {
+      return false;
+    }
+  };
+
+  const filteredUrls = finalUrls.filter((url) => {
+    if (isPdfUrl(url)) {
+      log.info(`[metatags] Skipping PDF file from scraping: ${url}`);
+      return false;
+    }
+    return true;
+  });
+
   log.info(`[metatags] Finish submitForScraping step for: ${site.getId()}`);
 
   return {
-    urls: finalUrls.map((url) => ({ url })),
+    urls: filteredUrls.map((url) => ({ url })),
     siteId: site.getId(),
     type: 'default',
     allowCache: false,
