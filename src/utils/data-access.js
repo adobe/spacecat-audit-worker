@@ -21,17 +21,47 @@ import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-
  * @returns {string} - The stringified data or an error message.
  */
 function safeStringify(data, maxArrayLength = 10) {
+  const MAX_STRING_SIZE = 1_000_000; // 1MB limit to prevent string overflow
+
   try {
-    if (Array.isArray(data) && data.length > maxArrayLength) {
-      const truncated = data.slice(0, maxArrayLength);
-      return JSON.stringify({
+    // If not an array, just stringify and check size
+    if (!Array.isArray(data)) {
+      const stringified = JSON.stringify(data, null, 2);
+      if (stringified.length > MAX_STRING_SIZE) {
+        return `[String too large: ${stringified.length} bytes exceeds ${MAX_STRING_SIZE} limit]`;
+      }
+      return stringified;
+    }
+
+    // For arrays, incrementally build the result
+    let items = [...data];
+    let stringified;
+
+    // First truncate by array length
+    if (items.length > maxArrayLength) {
+      items = items.slice(0, maxArrayLength);
+    }
+
+    // Try to stringify
+    stringified = JSON.stringify({
+      truncated: items.length < data.length,
+      totalLength: data.length,
+      items,
+      message: `Showing first ${items.length} of ${data.length} items`,
+    }, null, 2);
+
+    // If still too large, remove items one by one until it fits
+    while (stringified.length > MAX_STRING_SIZE && items.length > 0) {
+      items = items.slice(0, -1);
+      stringified = JSON.stringify({
         truncated: true,
         totalLength: data.length,
-        items: truncated,
-        message: `Showing first ${maxArrayLength} of ${data.length} items`,
+        items,
+        message: `Showing first ${items.length} of ${data.length} items (limited by string size)`,
       }, null, 2);
     }
-    return JSON.stringify(data, null, 2);
+
+    return stringified;
   } catch (error) {
     return `[Unable to stringify: ${error.message}. Total items: ${Array.isArray(data) ? data.length : 'N/A'}]`;
   }
