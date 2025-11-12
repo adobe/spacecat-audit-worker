@@ -64,6 +64,23 @@ function extractTrafficFromKey() {
 /**
  * Analyzes readability for a single text block
  */
+/**
+ * Analyzes the readability of a single paragraph of text and determines
+ * whether it constitutes a readability issue based on target thresholds.
+ *
+ * @param {Object} paragraph - The paragraph object containing at least a `text`
+ * property and the css selector for the paragraph element, `selector`.
+ * @param {string} pageUrl - The URL of the page from which the paragraph originated.
+ * @param {number} traffic - The traffic volume associated with the page or text block.
+ * @param {Set<string>} detectedLanguages - A set to populate with detected
+ * languages for the analysis run.
+ * @param {function} getSupportedLanguage - Function that accepts text and returns a
+ * supported language key if recognized, or null otherwise.
+ * @param {Object} log - A logger for debug and error information.
+ * @returns {Promise<Object|null>} An object describing the readability issue,
+ *  or null if no issue is found or the language is unsupported.
+ */
+
 async function analyzeTextReadability(
   paragraph,
   pageUrl,
