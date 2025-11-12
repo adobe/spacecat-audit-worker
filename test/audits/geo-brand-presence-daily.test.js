@@ -186,7 +186,7 @@ describe('Geo Brand Presence Daily Handler', () => {
 
     // Should send 1 detection message + 1 categorization message = 2 total
     expect(sqs.sendMessage).to.have.been.calledTwice;
-    
+
     // First call is detection message
     const [queue, message] = sqs.sendMessage.firstCall.args;
     expect(queue).to.equal('spacecat-to-mystique');
@@ -208,12 +208,12 @@ describe('Geo Brand Presence Daily Handler', () => {
       url: 'https://example.com/presigned-url',
       date: '2025-10-01', // Yesterday from reference date
     });
-    
+
     // Second call is categorization message
     const [catQueue, catMessage] = sqs.sendMessage.secondCall.args;
     expect(catQueue).to.equal('spacecat-to-mystique');
     expect(catMessage).to.include({
-      type: 'categorize:geo-brand-presence-daily',
+      type: 'categorize:geo-brand-presence',
       siteId: site.getId(),
       url: site.getBaseURL(),
       auditId: audit.getId(),
@@ -322,11 +322,11 @@ describe('Geo Brand Presence Daily Handler', () => {
 
     // Verify all unique providers were used
     expect(providers.size).to.equal(WEB_SEARCH_PROVIDERS.length);
-    
+
     // Verify the last message is the categorization message
     const [lastQueue, lastMessage] = sqs.sendMessage.getCall(WEB_SEARCH_PROVIDERS.length).args;
     expect(lastQueue).to.equal('spacecat-to-mystique');
-    expect(lastMessage.type).to.equal('categorize:geo-brand-presence-daily');
+    expect(lastMessage.type).to.equal('categorize:geo-brand-presence');
     expect(lastMessage.data.web_search_provider).to.be.null;
     expect(lastMessage.data.date).to.equal('2025-10-01');
   });
@@ -361,11 +361,11 @@ describe('Geo Brand Presence Daily Handler', () => {
       url: 'https://example.com/presigned-url',
       date: '2025-10-01',
     });
-    
+
     // Second call is categorization message
     const [catQueue, catMessage] = sqs.sendMessage.secondCall.args;
     expect(catQueue).to.equal('spacecat-to-mystique');
-    expect(catMessage.type).to.equal('categorize:geo-brand-presence-daily');
+    expect(catMessage.type).to.equal('categorize:geo-brand-presence');
     expect(catMessage.data.web_search_provider).to.be.null;
     expect(catMessage.data.date).to.equal('2025-10-01');
   });
