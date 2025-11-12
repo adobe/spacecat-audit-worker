@@ -11,7 +11,6 @@
  */
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
-import { MYSTIQUE_TEXT_TRUNCATION_LENGTH } from '../shared/constants.js';
 
 /**
  * Maps Mystique readability suggestions to opportunity format
@@ -22,6 +21,7 @@ function mapMystiqueSuggestionsToOpportunityFormat(mystiquesuggestions) {
   return mystiquesuggestions.map((suggestion) => ({
     id: suggestion.id,
     pageUrl: suggestion.pageUrl,
+    selector: suggestion.selector,
     originalText: suggestion.original_paragraph,
     improvedText: suggestion.improved_paragraph,
     originalFleschScore: suggestion.current_flesch_score,
@@ -86,6 +86,7 @@ export default async function handler(message, context) {
     mappedSuggestions.push({
       id: `readability-opportunity-${auditId}-${messageId}`,
       pageUrl: data.pageUrl || auditUrl,
+      selector: data.selector,
       originalText: data.original_paragraph,
       improvedText: data.improved_paragraph,
       originalFleschScore: data.current_flesch_score,
@@ -115,13 +116,11 @@ export default async function handler(message, context) {
 
   // Prepare update operations
   const updateOperations = mappedSuggestions.map((mystiquesuggestion) => {
-    // Find matching suggestion by text preview (first 500 chars)
+    // Find matching suggestion by selector (DOM element identifier)
     const matchingSuggestion = existingSuggestions.find(
       (existing) => {
         const existingData = existing.getData();
-        // eslint-disable-next-line max-len
-        const mystiqueTextTruncated = mystiquesuggestion.originalText?.substring(0, MYSTIQUE_TEXT_TRUNCATION_LENGTH);
-        return existingData?.textPreview === mystiqueTextTruncated;
+        return existingData?.selector === mystiquesuggestion.selector;
       },
     );
 
