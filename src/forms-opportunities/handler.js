@@ -19,9 +19,6 @@ import {
   checkDynamoItem, generateOpptyData, getUrlsDataForAccessibilityAudit,
 } from './utils.js';
 import { getScrapedDataForSiteId } from '../support/utils.js';
-import createLowConversionOpportunities from './oppty-handlers/low-conversion-handler.js';
-import createLowNavigationOpportunities from './oppty-handlers/low-navigation-handler.js';
-import createLowViewsOpportunities from './oppty-handlers/low-views-handler.js';
 import { createAccessibilityOpportunity } from './oppty-handlers/accessibility-handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
@@ -209,16 +206,16 @@ export async function sendA11yUrlsForScrapingStep(context) {
 
 export async function processOpportunityStep(context) {
   const {
+    // eslint-disable-next-line no-unused-vars
     log, site, finalUrl,
   } = context;
 
   log.debug(`[Form Opportunity] [Site Id: ${site.getId()}] processing opportunity`);
+  // eslint-disable-next-line no-unused-vars
   const scrapedData = await getScrapedDataForSiteId(site, context);
   const latestAudit = await site.getLatestAuditByAuditType('forms-opportunities');
+  // eslint-disable-next-line no-unused-vars
   const excludeForms = new Set();
-  // await createLowNavigationOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
-  // await createLowViewsOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
-  // await createLowConversionOpportunities(finalUrl, latestAudit, scrapedData, context, excludeForms);
   await createAccessibilityOpportunity(latestAudit, context);
   log.debug(`[Form Opportunity] [Site Id: ${site.getId()}] opportunity identified`);
   return {
