@@ -150,7 +150,7 @@ export async function runAuditAndSendUrlsForScrapingStep(context) {
     fullAuditRef: formsAuditRunnerResult.fullAuditRef,
   };
 
-  log.debug(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping`);
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] finished audit and sending urls for scraping: ${JSON.stringify(urlsData)}`);
   return result;
 }
 
