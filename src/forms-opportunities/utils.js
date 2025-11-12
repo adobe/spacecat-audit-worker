@@ -18,7 +18,7 @@ import {
   getHighPageViewsLowFormCtrMetrics, getHighFormViewsLowConversionMetrics,
   getHighPageViewsLowFormViewsMetrics,
 } from './formcalc.js';
-import { FORM_OPPORTUNITY_TYPES, OPPORTUNITY_STATUS, successCriteriaLinks } from './constants.js';
+import { FORM_OPPORTUNITY_TYPES, successCriteriaLinks } from './constants.js';
 import { calculateCPCValue } from '../support/utils.js';
 import { getPresignedUrl as getPresignedUrlUtil } from '../utils/getPresignedUrl.js';
 
@@ -623,15 +623,15 @@ export function applyOpportunityFilters(
   // Only apply filtering steps if we have more than maxLimit opportunities
   // If we have maxLimit or fewer, return them as-is (sorted by pageviews)
   if (opportunities.length > maxLimit) {
-    // Step 1: Filter out opportunities that have been marked as INVALIDATED
+    // Step 1: Filter out opportunities that have been marked as IGNORED
     opportunities = opportunities.filter((opptyData) => {
       const existingOppty = existingOpportunities.find(
         (oppty) => oppty.getType() === opportunityType
           && oppty.getData().form === opptyData.form
           && oppty.getData().formsource === opptyData.formsource,
       );
-      if (existingOppty && existingOppty.getStatus() === OPPORTUNITY_STATUS.INVALIDATED) {
-        log.debug(`Filtering out opportunity for form ${opptyData.form} due to INVALIDATED status`);
+      if (existingOppty && existingOppty.getStatus() === 'IGNORED') {
+        log.debug(`Filtering out opportunity for form ${opptyData.form} due to IGNORED status`);
         return false;
       }
       return true;

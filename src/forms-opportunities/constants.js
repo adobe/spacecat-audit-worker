@@ -23,10 +23,6 @@ export const ORIGINS = {
   ESS_OPS: 'ESS_OPS',
 };
 
-export const OPPORTUNITY_STATUS = {
-  INVALIDATED: 'NOT_VALIDATED',
-};
-
 export const successCriteriaLinks = {
   111: {
     name: 'Non-text Content',
