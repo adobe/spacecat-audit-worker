@@ -1,3 +1,10 @@
+## [1.236.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.236.4...v1.236.5) (2025-11-12)
+
+
+### Bug Fixes
+
+* canonical self referenced urls ([#1531](https://github.com/adobe/spacecat-audit-worker/issues/1531)) ([3320586](https://github.com/adobe/spacecat-audit-worker/commit/3320586278d2cfd8d1925a22e66c21fee2ec797d))
+
 ## [1.236.4](https://github.com/adobe/spacecat-audit-worker/compare/v1.236.3...v1.236.4) (2025-11-12)
 
 
