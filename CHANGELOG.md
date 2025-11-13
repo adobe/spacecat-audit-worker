@@ -1,3 +1,10 @@
+## [1.236.7](https://github.com/adobe/spacecat-audit-worker/compare/v1.236.6...v1.236.7) (2025-11-13)
+
+
+### Bug Fixes
+
+* prevent empty opportunities creation in metatags and backlinks handlers ([#1560](https://github.com/adobe/spacecat-audit-worker/issues/1560)) ([1ec9b5e](https://github.com/adobe/spacecat-audit-worker/commit/1ec9b5e5445b8ee12ae8d586211f465f8f5ca66c))
+
 ## [1.236.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.236.5...v1.236.6) (2025-11-13)
 
 
