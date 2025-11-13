@@ -180,6 +180,13 @@ export async function extractCodeBucket(context) {
   };
 }
 
+const dataContainsCode = (data) => data
+    && typeof data === 'object'
+    && typeof data.codeBucket === 'string'
+    && data.codeBucket.trim() !== ''
+    && typeof data.codePath === 'string'
+    && data.codePath.trim() !== '';
+
 /**
  * Creates opportunities and syncs suggestions.
  *
@@ -200,7 +207,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
     throw new Error('Audit failed, skipping suggestions generation');
   }
 
-  const { vulnerabilityReport, success } = auditResult;
+  const { vulnerabilityReport } = auditResult;
 
   if (!isNonEmptyArray(vulnerabilityReport.vulnerableComponents)) {
     // No vulnerabilities found
@@ -253,10 +260,10 @@ export const opportunityAndSuggestionsStep = async (context) => {
   }
 
   // As a buildKey we hash all the component details and add name and version for readability
-  const buildKey = (data) => {
-    const s = JSON.stringify(data);
+  const buildKey = (item) => {
+    const s = JSON.stringify(item);
     const hash = createHash('sha256').update(s).digest('hex').slice(0, 8);
-    return `${data.name}@${data.version}#${hash}`;
+    return `${item.name}@${item.version}#${hash}`;
   };
 
   // Populate suggestions
@@ -296,13 +303,6 @@ export const opportunityAndSuggestionsStep = async (context) => {
   }
   return { status: 'complete' };
 };
-
-const dataContainsCode = (data) => data
-      && typeof data === 'object'
-      && typeof data.codeBucket === 'string'
-      && data.codeBucket.trim() !== ''
-      && typeof data.codePath === 'string'
-      && data.codePath.trim() !== '';
 
 export default new AuditBuilder()
   .addStep('import', extractCodeBucket, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)

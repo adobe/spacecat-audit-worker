@@ -25,9 +25,15 @@ function checkEnvSafe() {
     .toString('utf8')
     .match(/\d{12}/)?.[0];
   // checks the session token of 1h
-  // if (!hasText(x) || !x.includes('8203346262')) {
-  //   throw new Error('RUNS ONLY ON DEV!');
-  // }
+
+  // poor man's way to use tokens that are valid > 1h. Ask bott.
+  if (process.env.IM_REALLY_USING_A_DEV_TOKEN === 'true' || process.env.IM_REALLY_USING_A_DEV_TOKEN === 'pinky finger promise') {
+    return;
+  }
+
+  if (!hasText(x) || !x.includes('8203346262')) {
+    throw new Error('RUNS ONLY ON DEV!');
+  }
 }
 
 async function run() {
