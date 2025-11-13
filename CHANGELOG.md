@@ -1,3 +1,11 @@
+## [1.236.6](https://github.com/adobe/spacecat-audit-worker/compare/v1.236.5...v1.236.6) (2025-11-13)
+
+
+### Bug Fixes
+
+* filtering logic for forms opportunities for invalidated tag ([#1524](https://github.com/adobe/spacecat-audit-worker/issues/1524)) ([ca078f2](https://github.com/adobe/spacecat-audit-worker/commit/ca078f2a7518ac1a887fc93b93dd71a9a4880146))
+* modifying log for forms oppty ([#1557](https://github.com/adobe/spacecat-audit-worker/issues/1557)) ([0023ad9](https://github.com/adobe/spacecat-audit-worker/commit/0023ad9da95b3063b871784a1c8c5f0add572945))
+
 ## [1.236.5](https://github.com/adobe/spacecat-audit-worker/compare/v1.236.4...v1.236.5) (2025-11-12)
 
 
