@@ -9,74 +9,12 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { composeBaseURL } from '@adobe/spacecat-shared-utils';
 import { Config } from '@adobe/spacecat-shared-data-access/src/models/site/config.js';
 import {
   startOfWeek, subWeeks, addDays, isAfter,
 } from 'date-fns';
 import { getImsOrgId } from '../utils/data-access.js';
 import { SERVICE_PROVIDER_TYPES } from '../utils/cdn-utils.js';
-
-/**
- * Enables CDN analysis for one domain per service
- */
-export async function enableCdnAnalysisPerService(serviceName, domains, context) {
-  const { log, dataAccess: { Site, LatestAudit, Configuration } } = context;
-
-  if (!domains?.length) return null;
-
-  try {
-    const domainStatuses = await Promise.all(
-      domains
-        .filter(Boolean)
-        .map(async (domain) => {
-          try {
-            const site = await Site.findByBaseURL(composeBaseURL(`https://${domain}`));
-            if (!site) return null;
-
-            const hasAnalysis = await LatestAudit?.findBySiteIdAndAuditType(site.getId(), 'cdn-analysis');
-            const hasAnalysisFullAuditRef = hasAnalysis?.getFullAuditRef();
-            return { domain, site, enabled: hasAnalysisFullAuditRef?.length > 0 };
-          } catch (error) {
-            log.error(`Error processing domain ${domain}:`, error.message);
-            return null;
-          }
-        }),
-    );
-
-    const validDomains = domainStatuses.filter(Boolean);
-    if (!validDomains.length) return { enabled: false, serviceName, message: 'No valid domains found' };
-
-    const enabledDomains = validDomains.filter((d) => d.enabled);
-    const config = await Configuration.findLatest();
-
-    // More than one enabled: disable all
-    if (enabledDomains.length > 1) {
-      enabledDomains.forEach(({ site }) => config.disableHandlerForSite('cdn-analysis', site));
-      await config.save();
-      return { enabled: false, serviceName, message: `Disabled ${enabledDomains.length} domains` };
-    }
-
-    // Exactly one enabled: leave it
-    if (enabledDomains.length === 1) {
-      const existing = enabledDomains[0];
-      return {
-        enabled: false, serviceName, domain: existing.domain, message: `Already enabled: ${existing.domain}`,
-      };
-    }
-
-    // None enabled: enable first available
-    const firstDomain = validDomains[0];
-    config.enableHandlerForSite('cdn-analysis', firstDomain.site);
-    await config.save();
-    return {
-      enabled: true, serviceName, domain: firstDomain.domain, message: `Enabled: ${firstDomain.domain}`,
-    };
-  } catch (error) {
-    log.error(`CDN analysis enablement failed for service ${serviceName}:`, error.message);
-    throw error;
-  }
-}
 
 /**
  * Fetches commerce-fastly service for given domain
@@ -119,53 +57,10 @@ export async function fetchCommerceFastlyService(domain, { log }) {
   }
 }
 
-/**
- * Checks if any sites in the organization have cdn-analysis with fullAuditRef
- */
-async function hasOrgCdnAnalysisWithResults(site, { dataAccess: { Site, LatestAudit }, log }) {
-  try {
-    const sitesInOrg = await Site.allByOrganizationId(site?.getOrganizationId());
-
-    for (const orgSite of sitesInOrg) {
-      // eslint-disable-next-line no-await-in-loop
-      const cdnAnalysis = await LatestAudit?.findBySiteIdAndAuditType(orgSite.getId(), 'cdn-analysis');
-      if (cdnAnalysis) {
-        const auditResult = cdnAnalysis.getAuditResult();
-        const fullAuditRef = cdnAnalysis.getFullAuditRef();
-
-        // Check if audit has meaningful results with fullAuditRef
-        if (auditResult?.providers?.length > 0 && fullAuditRef) {
-          log.info(`Found existing cdn-analysis with results for site ${orgSite.getId()} in organization`);
-          return true;
-        }
-      }
-    }
-
-    return false;
-    /* c8 ignore next 4 */
-  } catch (error) {
-    log.error('Error checking org cdn-analysis:', error);
-    return false;
-  }
-}
-
-// Enables cdn-analysis audit for first site in org only
-async function enableCdnAnalysisPerOrg(site, { dataAccess: { Configuration, Site } }) {
-  const [config, sitesInOrg] = await Promise.all([
-    Configuration.findLatest(),
-    Site.allByOrganizationId(site.getOrganizationId()),
-  ]);
-
-  if (!sitesInOrg.some((s) => config.isHandlerEnabledForSite('cdn-analysis', s))) {
-    config.enableHandlerForSite('cdn-analysis', site);
-    await config.save();
-  }
-}
-
 async function handleAdobeFastly(
   siteId,
   {
-    dataAccess: { Configuration, LatestAudit, Site },
+    dataAccess: { Configuration, LatestAudit },
     sqs,
     log,
   },
@@ -173,15 +68,14 @@ async function handleAdobeFastly(
   const config = await Configuration.findLatest();
   const auditQueue = config.getQueues().audits;
 
-  // Skip CDN analysis if any site in the org already has cdn-analysis with fullAuditRef
-  const site = await Site.findById(siteId);
-  const hasOrgCdnAnalysisExist = await hasOrgCdnAnalysisWithResults(
-    site,
-    { dataAccess: { Site, LatestAudit }, log },
-  );
+  // Skip CDN analysis if current site already has cdn-logs-analysis with fullAuditRef
+  const cdnLogsAnalysis = await LatestAudit.findBySiteIdAndAuditType(siteId, 'cdn-logs-analysis');
+  const hasCdnAnalysisWithResults = cdnLogsAnalysis
+    && cdnLogsAnalysis.getAuditResult()?.providers?.length > 0
+    && cdnLogsAnalysis.getFullAuditRef();
 
-  if (hasOrgCdnAnalysisExist) {
-    log.info(`Skipping CDN analysis for site ${siteId} - organization already has cdn-analysis with results`);
+  if (hasCdnAnalysisWithResults) {
+    log.info(`Skipping CDN analysis for site ${siteId} - site already has cdn-logs-analysis with results`);
   } else {
     // Queue CDN analysis from last Monday until today
     const lastMonday = startOfWeek(subWeeks(new Date(), 1), { weekStartsOn: 1 });
@@ -190,7 +84,7 @@ async function handleAdobeFastly(
     const analysisPromises = [];
     for (let date = new Date(lastMonday); !isAfter(date, today); date = addDays(date, 1)) {
       analysisPromises.push(sqs.sendMessage(auditQueue, {
-        type: 'cdn-analysis',
+        type: 'cdn-logs-analysis',
         siteId,
         auditContext: {
           year: date.getUTCFullYear(),
@@ -251,7 +145,6 @@ export async function handleCdnBucketConfigChanges(context, data) {
     const service = await fetchCommerceFastlyService(site.getBaseURL(), context);
     if (service) {
       pathId = service.serviceName;
-      await enableCdnAnalysisPerService(service.serviceName, service.matchedDomains, context);
     }
   }
 
@@ -262,7 +155,6 @@ export async function handleCdnBucketConfigChanges(context, data) {
         pathId = imsOrgId.replace('@', ''); // Remove @ for filesystem-safe path
       }
     }
-    await enableCdnAnalysisPerOrg(site, context);
   }
 
   // Set bucket configuration
@@ -270,15 +162,13 @@ export async function handleCdnBucketConfigChanges(context, data) {
     await handleBucketConfiguration(siteId, bucketName, pathId, context);
   }
 
-  // Enable audits and run analysis
-  if (cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY) {
-    await enableCdnAnalysisPerOrg(site, context);
-    await handleAdobeFastly(siteId, context);
-  }
+  // enable cdn-logs-analysis audit
+  const configuration = await Configuration.findLatest();
+  configuration.enableHandlerForSite('cdn-logs-analysis', site);
+  await configuration.save();
 
-  if (cdnProvider?.includes('byocdn')) {
-    const configuration = await Configuration.findLatest();
-    configuration.enableHandlerForSite('cdn-analysis', site);
-    await configuration.save();
+  // Run analysis and reporting for CS fastly customers
+  if (cdnProvider === SERVICE_PROVIDER_TYPES.AEM_CS_FASTLY) {
+    await handleAdobeFastly(siteId, context);
   }
 }
