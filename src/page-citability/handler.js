@@ -92,16 +92,16 @@ export async function extractUrls(context) {
   // const urlsToAnalyze = missingUrls;
   const baseURL = site.getBaseURL();
   const urls = [
-    '/check-in.html',
-    '/ca/illustrator/kb/recover-files-after-crash.html',
-    '/acrobat/kb/pdf-browser-plugin-configuration.html',
-    '/express/learn/blog/creative-cloud-express-features',
-    '/stock/help/usage-licensing.html',
-    '/lightroom-classic/kb/tethered-camera-support.html',
-    '/jp/acrobat/roc/blog/curriculum-vitae-template.html',
-    '/enterprise/using/individuals-to-teams-plan-upgrade.html',
-    '/au/acrobat/roc/blog/save-a-google-doc-as-pdf.html',
-    '/in/photoshop/using/saving-exporting-video-animations.html',
+    '/uk/the-core/heating-stability-of-whey/',
+    '/es/products/pura-proteina-de-suero-aislada-al-90/bpb-wpi9-0000',
+    '/uk/food-safety',
+    '/uk/the-core/citrulline-malate-smart-supplementation/',
+    '/uk/products/colostrum/bpb-colo-0000',
+    '/uk/products/creatine-monohydrate-tablets-1000mg/bpb-cmon-tabs',
+    '/uk/products/co-enzyme-q10-coq10/bpb-coq-0000',
+    '/uk/products/sports-multi-am-pm/bpps-smul',
+    '/uk/products/cream-of-rice/bpb-cori',
+    '/uk/the-core/',
   ];
   // log.info(`${LOG_PREFIX} Found ${urlsToAnalyze.length}
   // URLs (${existingScores.length} already analyzed)`);
