@@ -98,6 +98,10 @@ export async function triggerTrafficAnalysisImport(context) {
       week,
       year,
     },
+    auditContext: {
+      week,
+      year,
+    },
     fullAuditRef: finalUrl,
     allowCache: false,
   };
@@ -140,7 +144,7 @@ export async function referralTrafficRunner(context) {
 
   // early return if no rum data available
   if (results.length === 0) {
-    log.warn(`[llmo-referral-traffic] No OpTel data found for ${baseURL} (site: ${siteId})`);
+    log.info(`[llmo-referral-traffic] No OpTel data found for ${baseURL}`);
     return {
       auditResult: {
         rowCount: results.length,

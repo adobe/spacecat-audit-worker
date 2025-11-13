@@ -214,6 +214,48 @@ describe('Step-based Audit Tests', () => {
       );
     });
 
+    it('merges custom auditContext fields with framework fields', async () => {
+      nock('https://space.cat')
+        .get('/')
+        .reply(200, 'Success');
+
+      const customAudit = new AuditBuilder()
+        .addStep('prepare', async () => ({
+          auditResult: { status: 'preparing' },
+          fullAuditRef: 's3://test/123',
+          type: 'content-import',
+          siteId: '42322ae6-b8b1-4a61-9c88-25205fa65b07',
+          auditContext: {
+            week: 35,
+            year: 2025,
+            customField: 'value',
+          },
+        }), AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+        .addStep('analyze', async () => ({ status: 'complete' }))
+        .build();
+
+      const createdAudit = {
+        getId: () => '109b71f7-2005-454e-8191-8e92e05daac2',
+        getAuditType: () => 'content-audit',
+        getFullAuditRef: () => 's3://test/123',
+      };
+      context.dataAccess.Audit.create.resolves(createdAudit);
+
+      await customAudit.run(message, context);
+
+      expect(context.sqs.sendMessage).to.have.been.calledOnce;
+      const [, payload] = context.sqs.sendMessage.firstCall.args;
+      expect(payload.auditContext).to.deep.equal({
+        next: 'analyze',
+        auditId: '109b71f7-2005-454e-8191-8e92e05daac2',
+        auditType: 'content-audit',
+        fullAuditRef: 's3://test/123',
+        week: 35,
+        year: 2025,
+        customField: 'value',
+      });
+    });
+
     it('continues execution from specified step', async () => {
       nock('https://space.cat')
         .get('/')
