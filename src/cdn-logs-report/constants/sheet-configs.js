@@ -33,20 +33,40 @@ export const SHEET_CONFIGS = {
       'URL',
       'Product',
       'Category',
+      'Citability Score',
     ],
     headerColor: HEADER_COLOR,
     numberColumns: [2, 3, 4],
-    processData: (data) => data?.map((row) => [
-      row.agent_type || 'Other',
-      row.user_agent_display || 'Unknown',
-      Number(row.status) || 'N/A',
-      Number(row.number_of_hits) || 0,
-      Number(row.avg_ttfb_ms) || 0,
-      validateCountryCode(row.country_code),
-      row.url === '-' ? '/' : (row.url || ''),
-      capitalizeFirstLetter(row.product) || 'Other',
-      row.category || 'Uncategorized',
-    ]) || [],
+    processData: async (data) => {
+      if (!data) return [];
+
+      // Fetch citability scores from database
+      // const { PageReadability } = dataAccess;
+      // const citabilityScores = await PageReadability.allBySiteId(site.getId());
+      // const citabilityMap = citabilityScores.reduce((acc, score) => {
+      //   acc[score.getUrl()] = score.getCitabilityScore();
+      //   return acc;
+      // }, {});
+
+      return data.map((row) => {
+        const urlPath = row.url === '-' ? '/' : (row.url || '');
+        // const fullUrl = `${site.getBaseURL()}${urlPath}`;
+        // const citabilityScore = citabilityMap[fullUrl] || 'N/A';
+
+        return [
+          row.agent_type || 'Other',
+          row.user_agent_display || 'Unknown',
+          Number(row.status) || 'N/A',
+          Number(row.number_of_hits) || 0,
+          Number(row.avg_ttfb_ms) || 0,
+          validateCountryCode(row.country_code),
+          urlPath,
+          capitalizeFirstLetter(row.product) || 'Other',
+          row.category || 'Uncategorized',
+          // citabilityScore,
+        ];
+      });
+    },
   },
   referral: {
     getHeaders: () => [
