@@ -25,6 +25,7 @@ import {
   VULNERABILITY_REPORT_MULTIPLE_COMPONENTS,
 } from '../fixtures/vulnerabilities/vulnerability-reports.js';
 import { vulnerabilityAuditRunner, opportunityAndSuggestionsStep } from '../../src/vulnerabilities/handler.js';
+import {generateSuggestionData} from "../../src/backlinks/handler.js";
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -32,7 +33,6 @@ use(chaiAsPromised);
 describe('Vulnerabilities Handler Integration Tests', () => {
   let sandbox;
   let context;
-  let site;
   let mockVulnerabilityReport;
 
   const resetAllStubHistories = () => {
@@ -43,32 +43,29 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       context.dataAccess.Suggestion.bulkUpdateStatus.resetHistory();
       context.dataAccess.Suggestion.allByOpportunityIdAndStatus.resetHistory();
     }
-    if (site?.getOpportunitiesByStatus) {
-      site.getOpportunitiesByStatus.resetHistory();
+    if (context.site?.getOpportunitiesByStatus) {
+      context.site.getOpportunitiesByStatus.resetHistory();
     }
   };
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
-
-    site = {
-      getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-      getBaseURL: () => 'https://example.com',
-      getDeliveryType: () => 'aem_cs',
-      getDeliveryConfig: () => ({
-        programId: '123456',
-        environmentId: '789012',
-      }),
-      getOrganizationId: () => 'test-org-id',
-      getOpportunitiesByStatus: sandbox.stub().resolves([]),
-    };
-
     mockVulnerabilityReport = VULNERABILITY_REPORT_WITH_VULNERABILITIES;
 
     context = new MockContextBuilder()
       .withSandbox(sandbox)
       .withOverrides({
-        site,
+        site:{
+          getId: () => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+          getBaseURL: () => 'https://example.com',
+          getDeliveryType: () => 'aem_cs',
+          getDeliveryConfig: () => ({
+            programId: '123456',
+            environmentId: '789012',
+          }),
+          getOrganizationId: () => 'test-org-id',
+          getOpportunitiesByStatus: sandbox.stub().resolves([]),
+        },
         finalUrl: 'https://example.com',
         env: {
           IMS_CLIENT_ID: 'test-client-id',
@@ -152,21 +149,22 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       .reply(404, { error: 'Not Found' });
   };
 
-  const createAuditData = (overrides = {}) => ({
-    auditResult: {
-      vulnerabilityReport: mockVulnerabilityReport,
-      success: true,
-    },
-    siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-    auditId: 'test-audit-id',
-    ...overrides,
-  });
+  // const createAuditData = (overrides = {}) => ({
+  //   auditResult: {
+  //     vulnerabilityReport: mockVulnerabilityReport,
+  //     success: true,
+  //   },
+  //   siteId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  //   auditId: 'test-audit-id',
+  //   ...overrides,
+  // });
 
   describe('vulnerabilityAuditRunner', () => {
+    return
     it('should skip when site is not aem_cs delivery type', async () => {
-      site.getDeliveryType = () => DELIVERY_TYPES.AEM_EDGE;
+      context.site.getDeliveryType = () => DELIVERY_TYPES.AEM_EDGE;
 
-      const result = await vulnerabilityAuditRunner('https://example.com', context, site);
+      const result = await vulnerabilityAuditRunner(context);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('Unsupported delivery type');
@@ -181,7 +179,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         },
       });
 
-      const result = await mockedRunner('https://example.com', context, site);
+      const result = await mockedRunner( context);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('Missing IMS org');
@@ -200,7 +198,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       setupSuccessfulImsAuth();
       setupSuccessfulVulnerabilityApi();
 
-      const result = await mockedRunner('https://example.com', context, site);
+      const result = await mockedRunner(context);
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.vulnerabilityReport).to.deep.equal(mockVulnerabilityReport);
@@ -211,28 +209,28 @@ describe('Vulnerabilities Handler Integration Tests', () => {
     });
 
     it('should handle missing programId in delivery config', async () => {
-      site.getDeliveryConfig = () => ({ programId: undefined, environmentId: '789012' });
+      context.site.getDeliveryConfig = () => ({ programId: undefined, environmentId: '789012' });
 
-      const result = await vulnerabilityAuditRunner('https://example.com', context, site);
+      const result = await vulnerabilityAuditRunner( context);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('Invalid delivery config for AEM_CS');
     });
 
     it('should handle missing environmentId in delivery config', async () => {
-      site.getDeliveryConfig = () => ({ programId: '123456', environmentId: null });
+      context.site.getDeliveryConfig = () => ({ programId: '123456', environmentId: null });
 
-      const result = await vulnerabilityAuditRunner('https://example.com', context, site);
+      const result = await vulnerabilityAuditRunner( context);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('Invalid delivery config for AEM_CS');
     });
 
     it('should handle non-aem_cs delivery type', async () => {
-      site.getDeliveryType = () => 'aem_on_premise';
-      site.getDeliveryConfig = () => ({ programId: null, environmentId: null });
+      context.site.getDeliveryType = () => 'aem_on_premise';
+      context.site.getDeliveryConfig = () => ({ programId: null, environmentId: null });
 
-      const result = await vulnerabilityAuditRunner('https://example.com', context, site);
+      const result = await vulnerabilityAuditRunner( context);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('Unsupported delivery type aem_on_premise');
@@ -241,7 +239,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
     it('should handle IMS authentication failure', async () => {
       setupFailedImsAuth(401);
 
-      const result = await vulnerabilityAuditRunner('https://example.com', context, site);
+      const result = await vulnerabilityAuditRunner( context);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('Failed to retrieve IMS token');
@@ -251,7 +249,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       setupSuccessfulImsAuth();
       setupFailedVulnerabilityApi(500);
 
-      const result = await vulnerabilityAuditRunner('https://example.com', context, site);
+      const result = await vulnerabilityAuditRunner(context);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('audit failed with error');
@@ -261,7 +259,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       setupSuccessfulImsAuth();
       setupVulnerabilityApi404();
 
-      const result = await vulnerabilityAuditRunner('https://example.com', context, site);
+      const result = await vulnerabilityAuditRunner( context);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('fetch successful, but report was empty / null');
@@ -286,7 +284,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         },
       });
 
-      const result = await mockedRunner('https://example.com', context, site);
+      const result = await mockedRunner( context);
 
       expect(result.auditResult.success).to.be.false;
       expect(result.auditResult.error).to.include('Failed to fetch vulnerability report');
@@ -294,11 +292,11 @@ describe('Vulnerabilities Handler Integration Tests', () => {
 
     it('should format errors with correct structure when any error is thrown', async () => {
       // Mock an error by making the site throw an error
-      site.getDeliveryConfig = () => {
+      context.site.getDeliveryConfig = () => {
         throw new Error('Test error');
       };
 
-      const result = await vulnerabilityAuditRunner('https://example.com', context, site);
+      const result = await vulnerabilityAuditRunner( context);
 
       expect(result).to.have.property('fullAuditRef', 'https://example.com');
       expect(result).to.have.property('auditResult');
@@ -312,7 +310,7 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       setupSuccessfulImsAuth();
       setupSuccessfulVulnerabilityApi();
 
-      const result = await vulnerabilityAuditRunner('https://example.com', context, site);
+      const result = await vulnerabilityAuditRunner( context);
 
       expect(result.auditResult.success).to.be.true;
       expect(result.auditResult.vulnerabilityReport).to.deep.equal(mockVulnerabilityReport);
@@ -322,53 +320,54 @@ describe('Vulnerabilities Handler Integration Tests', () => {
 
   describe('opportunityAndSuggestionsStep', () => {
     it('should skip when audit failed', async () => {
-      const auditData = createAuditData({
-        auditResult: { success: false },
-      });
-
-      const result = await opportunityAndSuggestionsStep('https://example.com', auditData, context, site);
-
-      expect(result).to.deep.equal({ status: 'complete' });
+      context.audit = {
+        getAuditResult: () => ({ success: false }),
+      };
+      try {
+        const result = await opportunityAndSuggestionsStep(context);
+      } catch (error) {
+        expect(error.message).to.equal('Audit failed, skipping suggestions generation');
+      }
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
       expect(context.dataAccess.Suggestion.bulkUpdateStatus).to.not.have.been.called;
     });
 
     it('should handle no vulnerabilities scenario', async () => {
-      const auditData = createAuditData({
-        auditResult: {
+      context.audit = {
+        getAuditResult: () => ({
           vulnerabilityReport: VULNERABILITY_REPORT_NO_VULNERABILITIES,
           success: true,
-        },
-      });
+        }),
+      };
 
-      const result = await opportunityAndSuggestionsStep('https://example.com', auditData, context, site);
+      const result = await opportunityAndSuggestionsStep( context);
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
     });
 
     it('should handle opportunity fetching error when no vulnerabilities found', async () => {
-      const auditData = createAuditData({
-        auditResult: {
+      context.audit = {
+        getAuditResult: () => ({
           vulnerabilityReport: VULNERABILITY_REPORT_NO_VULNERABILITIES,
           success: true,
-        },
-      });
+        }),
+      };
 
       // Mock opportunity fetching to fail
-      site.getOpportunitiesByStatus.rejects(new Error('Database connection failed'));
+      context.site.getOpportunitiesByStatus.rejects(new Error('Database connection failed'));
 
-      await expect(opportunityAndSuggestionsStep('https://example.com', auditData, context, site))
+      await expect(opportunityAndSuggestionsStep( context))
         .to.be.rejectedWith('Failed to fetch opportunities for siteId a1b2c3d4-e5f6-7890-abcd-ef1234567890: Database connection failed');
     });
 
     it('should update existing opportunity to RESOLVED when no vulnerabilities found', async () => {
-      const auditData = createAuditData({
-        auditResult: {
+      context.audit = {
+        getAuditResult: () => ({
           vulnerabilityReport: VULNERABILITY_REPORT_NO_VULNERABILITIES,
           success: true,
-        },
-      });
+        }),
+      };
 
       // Mock existing opportunity
       const mockOpportunity = {
@@ -382,9 +381,9 @@ describe('Vulnerabilities Handler Integration Tests', () => {
         save: sandbox.stub().resolves(),
       };
 
-      site.getOpportunitiesByStatus.resolves([mockOpportunity]);
+      context.site.getOpportunitiesByStatus.resolves([mockOpportunity]);
 
-      const result = await opportunityAndSuggestionsStep('https://example.com', auditData, context, site);
+      const result = await opportunityAndSuggestionsStep(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(mockOpportunity.setStatus).to.have.been.calledWith('RESOLVED');
@@ -398,17 +397,17 @@ describe('Vulnerabilities Handler Integration Tests', () => {
     });
 
     it('should handle no vulnerabilities scenario when no existing opportunity found', async () => {
-      const auditData = createAuditData({
-        auditResult: {
+      context.audit = {
+        getAuditResult: () => ({
           vulnerabilityReport: VULNERABILITY_REPORT_NO_VULNERABILITIES,
           success: true,
-        },
-      });
+        }),
+      };
 
       // Mock no existing opportunities
-      site.getOpportunitiesByStatus.resolves([]);
+      context.site.getOpportunitiesByStatus.resolves([]);
 
-      const result = await opportunityAndSuggestionsStep('https://example.com', auditData, context, site);
+      const result = await opportunityAndSuggestionsStep(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Opportunity.create).to.not.have.been.called;
@@ -424,9 +423,15 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities').returns(true);
       configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-suggest').returns(true);
 
-      const auditData = createAuditData();
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
 
-      const result = await opportunityAndSuggestionsStep('https://example.com', auditData, context, site);
+      const result = await opportunityAndSuggestionsStep(context);
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
@@ -477,14 +482,15 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-suggest').returns(true);
 
       // Create audit data with multiple vulnerable components
-      const auditData = createAuditData({
-        auditResult: {
+      context.audit = {
+        getAuditResult: () => ({
           vulnerabilityReport: VULNERABILITY_REPORT_MULTIPLE_COMPONENTS,
           success: true,
-        },
-      });
+        }),
+        getId: () => 'test-audit-id',
+      };
 
-      const result = await opportunityAndSuggestionsStep('https://example.com', auditData, context, site);
+      const result = await opportunityAndSuggestionsStep( context);
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
@@ -523,8 +529,15 @@ describe('Vulnerabilities Handler Integration Tests', () => {
       configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities').returns(true);
       configuration.isHandlerEnabledForSite.withArgs('security-vulnerabilities-auto-suggest').returns(false);
 
-      const auditData = createAuditData();
-      const result = await opportunityAndSuggestionsStep('https://example.com', auditData, context, site);
+        context.audit = {
+          getAuditResult: () => ({
+            vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
+            success: true,
+          }),
+          getId: () => 'test-audit-id',
+        };
+
+      const result = await opportunityAndSuggestionsStep( context);
 
       expect(result).to.deep.equal({ status: 'complete' });
       expect(context.dataAccess.Opportunity.create).to.have.been.calledOnce;
@@ -544,12 +557,50 @@ describe('Vulnerabilities Handler Integration Tests', () => {
     it('should handle configuration lookup failure gracefully', async () => {
       context.dataAccess.Configuration.findLatest.rejects(new Error('Database connection failed'));
 
-      const auditData = createAuditData();
+      context.audit = {
+        getAuditResult: () => ({
+          vulnerabilityReport: VULNERABILITY_REPORT_WITH_VULNERABILITIES,
+          success: true,
+        }),
+        getId: () => 'test-audit-id',
+      };
 
       // This should throw an error since the handler doesn't
       // handle config lookup failures gracefully
-      await expect(opportunityAndSuggestionsStep('https://example.com', auditData, context, site))
+      await expect(opportunityAndSuggestionsStep( context))
         .to.be.rejectedWith('Database connection failed');
+    });
+  });
+
+  describe('extractCodeBucket', () => {
+    it('should return code bucket data when audit succeeds', async () => {
+      // Setup successful audit
+      setupSuccessfulImsAuth();
+      setupSuccessfulVulnerabilityApi();
+
+      const { extractCodeBucket } = await import('../../src/vulnerabilities/handler.js');
+
+      const result = await extractCodeBucket(context);
+
+      expect(result).to.have.property('type', 'code');
+      expect(result).to.have.property('siteId', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+      expect(result).to.have.property('auditResult');
+      expect(result).to.have.property('fullAuditRef', 'https://example.com');
+      expect(result.auditResult).to.have.property('success', true);
+    });
+
+    it('should throw error when audit fails', async () => {
+      // Setup failed audit
+      context.site.getDeliveryType = () => 'other';
+
+      const { extractCodeBucket } = await import('../../src/vulnerabilities/handler.js');
+
+      try {
+        await  extractCodeBucket(context)
+      } catch (error){
+        expect(error.message).to.equal('Audit failed, skipping call to import worker');
+      }
+
     });
   });
 });

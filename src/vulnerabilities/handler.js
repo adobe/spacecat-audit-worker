@@ -10,21 +10,21 @@
  * governing permissions and limitations under the License.
  */
 
-import {Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess} from '@adobe/spacecat-shared-data-access';
-import {DELIVERY_TYPES, hasText, isNonEmptyArray, tracingFetch as fetch,} from '@adobe/spacecat-shared-utils';
-import {ImsClient} from '@adobe/spacecat-shared-ims-client';
-import {createHash} from 'node:crypto';
-import {AuditBuilder} from '../common/audit-builder.js';
-import {convertToOpportunity} from '../common/opportunity.js';
-import {createOpportunityData, createOpportunityProps} from './opportunity-data-mapper.js';
-import {getImsOrgId, syncSuggestions} from '../utils/data-access.js';
-import {mapVulnerabilityToSuggestion} from './suggestion-data-mapper.js';
+import { Audit, Opportunity as Oppty, Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+import {
+  DELIVERY_TYPES, hasText, isNonEmptyArray, tracingFetch as fetch,
+} from '@adobe/spacecat-shared-utils';
+import { ImsClient } from '@adobe/spacecat-shared-ims-client';
+import { createHash } from 'node:crypto';
+import { AuditBuilder } from '../common/audit-builder.js';
+import { convertToOpportunity } from '../common/opportunity.js';
+import { createOpportunityData, createOpportunityProps } from './opportunity-data-mapper.js';
+import { getImsOrgId, syncSuggestions } from '../utils/data-access.js';
+import { mapVulnerabilityToSuggestion } from './suggestion-data-mapper.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 const INTERVAL = 1; // days
 const AUDIT_TYPE = Audit.AUDIT_TYPES.SECURITY_VULNERABILITIES;
-
-
 
 /**
  * Fetches vulnerability report for a given AEM Cloud Service site from the starfish API.
@@ -76,8 +76,8 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
   let resp;
   try {
     resp = await fetch(
-        `${env.STARFISH_API_BASE_URL}/reports/${programId}/${environmentId}/vulnerabilities`,
-        { headers },
+      `${env.STARFISH_API_BASE_URL}/reports/${programId}/${environmentId}/vulnerabilities`,
+      { headers },
     );
   } catch (error) {
     throw new Error('Failed to fetch vulnerability report');
@@ -104,9 +104,8 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
  * @returns {Response} - Returns a response object indicating the result of the audit process.
  */
 export async function vulnerabilityAuditRunner(context) {
-
   const { finalUrl, site, log } = context;
-  const baseURL = finalUrl
+  const baseURL = finalUrl;
 
   // This opportunity is only relevant for aem_cs delivery-type at the moment
   if (site.getDeliveryType() !== DELIVERY_TYPES.AEM_CS) {
@@ -165,13 +164,11 @@ export async function vulnerabilityAuditRunner(context) {
   }
 }
 
-
 export async function extractCodeBucket(context) {
-
   const { site } = context;
-  const result = await vulnerabilityAuditRunner( context);
+  const result = await vulnerabilityAuditRunner(context);
 
-  if (result.success === false) {
+  if (result.auditResult.success === false) {
     throw new Error('Audit failed, skipping call to import worker');
   }
 
@@ -192,8 +189,10 @@ export async function extractCodeBucket(context) {
  * @param {Object} site - The site object
  * @returns {Object} The audit data unchanged (opportunities created as side effect).
  */
-export const opportunityAndSuggestionsStep = async ( context) => {
-  const { site, data, audit,  log, sqs, env, finalUrl, dataAccess } = context;
+export const opportunityAndSuggestionsStep = async (context) => {
+  const {
+    site, data, audit, log, sqs, env, finalUrl, dataAccess,
+  } = context;
   const { Configuration, Suggestion } = dataAccess;
 
   const auditResult = audit.getAuditResult();
@@ -209,7 +208,7 @@ export const opportunityAndSuggestionsStep = async ( context) => {
     let opportunity;
     try {
       const opportunities = await site.getOpportunitiesByStatus(
-          Oppty.STATUSES.NEW,
+        Oppty.STATUSES.NEW,
       );
       opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
     } catch (e) {
@@ -239,12 +238,12 @@ export const opportunityAndSuggestionsStep = async ( context) => {
 
   // Update opportunity
   const opportunity = await convertToOpportunity(
-      finalUrl,
-      { siteId: site.getId(), id: audit.getId() },
-      context,
-      createOpportunityData,
-      AUDIT_TYPE,
-      createOpportunityProps(auditResult.vulnerabilityReport),
+    finalUrl,
+    { siteId: site.getId(), id: audit.getId() },
+    context,
+    createOpportunityData,
+    AUDIT_TYPE,
+    createOpportunityProps(auditResult.vulnerabilityReport),
   );
 
   const configuration = await Configuration.findLatest();
@@ -275,7 +274,6 @@ export const opportunityAndSuggestionsStep = async ( context) => {
   // const generateCodeFix = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-fix', site);
   const generateCodeFix = true;
   if (generateCodeFix && dataContainsCode(data)) {
-
     // TODO => only add new suggestions to the payload
     // TODO => optimize payload to reduce size use s3 instead of data as transport medium
 
@@ -288,28 +286,25 @@ export const opportunityAndSuggestionsStep = async ( context) => {
       data: {
         suggestions: await opportunity.getSuggestions(),
         codeBucket: data.codeBucket,
-        codePath: data.codePath
+        codePath: data.codePath,
       },
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-  }else{
+  } else {
     log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-fix not configured, skipping code generation with mystique`);
   }
   return { status: 'complete' };
 };
 
-const dataContainsCode = (data) => {
-  return data &&
-      typeof data === "object" &&
-      typeof data.codeBucket === "string" &&
-      data.codeBucket.trim() !== "" &&
-      typeof data.codePath === "string" &&
-      data.codePath.trim() !== "";
-};
-
+const dataContainsCode = (data) => data
+      && typeof data === 'object'
+      && typeof data.codeBucket === 'string'
+      && data.codeBucket.trim() !== ''
+      && typeof data.codePath === 'string'
+      && data.codePath.trim() !== '';
 
 export default new AuditBuilder()
-    .addStep('import', extractCodeBucket        , AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-    .addStep('generate-suggestion-data', opportunityAndSuggestionsStep)
-    .build();
+  .addStep('import', extractCodeBucket, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('generate-suggestion-data', opportunityAndSuggestionsStep)
+  .build();

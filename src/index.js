@@ -78,7 +78,6 @@ import optimizationReportCallback from './optimization-report/handler.js';
 import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
-import vulnerabilitiesCodeFix from './vulnerabilities-codefix/handler.js';
 import prerender from './prerender/handler.js';
 import productMetatags from './product-metatags/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
@@ -158,7 +157,6 @@ const HANDLERS = {
   prerender,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
-  'codefix:security-vulnerabilities': vulnerabilitiesCodeFix,
   'security-permissions': permissions,
   'security-permissions-redundant': permissionsRedundant,
   faqs,
