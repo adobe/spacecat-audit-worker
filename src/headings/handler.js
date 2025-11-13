@@ -224,48 +224,31 @@ async function getBrandGuidelines(healthyTagsObject, log, context) {
 }
 
 /**
- * Validate heading semantics for a single page.
+ * Validate heading semantics for a single page from a scrapeJsonObject.
  * - Ensure heading level increases by at most 1 when going deeper (no jumps, e.g., h1 → h3)
  * - Ensure headings are not empty
  *
- * @param {string} url
- * @param {Object} log
+ * @param {string} url - The URL being validated
+ * @param {Object} scrapeJsonObject - The scraped page data from S3
+ * @param {Object} log - Logger instance
+ * @param {Object} context - Audit context
+ * @param {Object} seoChecks - SeoChecks instance for tracking healthy tags
  * @returns {Promise<{url: string, checks: Array}>}
  */
-export async function validatePageHeadings(
+export async function validatePageHeadingFromScrapeJson(
   url,
+  scrapeJsonObject,
   log,
-  site,
-  allKeys,
-  s3Client,
-  S3_SCRAPER_BUCKET_NAME,
   context,
   seoChecks,
 ) {
-  if (!url) {
-    log.error('URL is undefined or null, cannot validate headings');
-    return {
-      url,
-      checks: [],
-    };
-  }
-
   try {
-    const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
-    const s3Key = allKeys.find((key) => key.includes(scrapeJsonPath));
     let document = null;
-    let scrapeJsonObject = null;
-    if (!s3Key) {
-      log.error(`Scrape JSON path not found for ${url}, skipping headings audit`);
+    if (!scrapeJsonObject) {
+      log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
       return null;
     } else {
-      scrapeJsonObject = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, s3Key, log);
-      if (!scrapeJsonObject) {
-        log.error(`Scrape JSON object not found for ${url}, skipping headings audit`);
-        return null;
-      } else {
-        document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
-      }
+      document = new JSDOM(scrapeJsonObject.scrapeResult.rawBody).window.document;
     }
 
     const pageTags = {
@@ -417,6 +400,53 @@ export async function validatePageHeadings(
     }
 
     return { url, checks };
+  } catch (error) {
+    log.error(`Error validating headings for ${url}: ${error.message}`);
+    return {
+      url,
+      checks: [],
+    };
+  }
+}
+
+/**
+ * Validate heading semantics for a single page.
+ * - Ensure heading level increases by at most 1 when going deeper (no jumps, e.g., h1 → h3)
+ * - Ensure headings are not empty
+ *
+ * @param {string} url
+ * @param {Object} log
+ * @returns {Promise<{url: string, checks: Array}>}
+ */
+export async function validatePageHeadings(
+  url,
+  log,
+  site,
+  allKeys,
+  s3Client,
+  S3_SCRAPER_BUCKET_NAME,
+  context,
+  seoChecks,
+) {
+  if (!url) {
+    log.error('URL is undefined or null, cannot validate headings');
+    return {
+      url,
+      checks: [],
+    };
+  }
+
+  try {
+    const scrapeJsonPath = getScrapeJsonPath(url, site.getId());
+    const s3Key = allKeys.find((key) => key.includes(scrapeJsonPath));
+    let scrapeJsonObject = null;
+    if (!s3Key) {
+      log.error(`Scrape JSON path not found for ${url}, skipping headings audit`);
+      return null;
+    } else {
+      scrapeJsonObject = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, s3Key, log);
+      return validatePageHeadingFromScrapeJson(url, scrapeJsonObject, log, context, seoChecks);
+    }
   } catch (error) {
     log.error(`Error validating headings for ${url}: ${error.message}`);
     return {
