@@ -33,11 +33,11 @@ export const SHEET_CONFIGS = {
       'URL',
       'Product',
       'Category',
-      'Citability Score',
+      // 'Citability Score',
     ],
     headerColor: HEADER_COLOR,
     numberColumns: [2, 3, 4],
-    processData: async (data) => {
+    processData: (data) => {
       if (!data) return [];
 
       // Fetch citability scores from database
