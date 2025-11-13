@@ -106,7 +106,7 @@ export async function extractUrls(context) {
   // log.info(`${LOG_PREFIX} Found ${urlsToAnalyze.length}
   // URLs (${existingScores.length} already analyzed)`);
 
-  const urlsForScraping = urls.map(({ url }) => ({
+  const urlsForScraping = urls.map((url) => ({
     url: `${baseURL}${url}`,
   }));
 
