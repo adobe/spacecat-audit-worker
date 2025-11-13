@@ -205,7 +205,7 @@ export async function getH1HeadingASuggestion(url, log, pageTags, context, brand
   }
 }
 
-async function getBrandGuidelines(healthyTagsObject, log, context) {
+export async function getBrandGuidelines(healthyTagsObject, log, context) {
   const azureOpenAIClient = AzureOpenAIClient.createFrom(context);
   const prompt = await getPrompt(
     {
@@ -239,7 +239,6 @@ export async function validatePageHeadingFromScrapeJson(
   url,
   scrapeJsonObject,
   log,
-  context,
   seoChecks,
 ) {
   try {
@@ -445,7 +444,7 @@ export async function validatePageHeadings(
       return null;
     } else {
       scrapeJsonObject = await getObjectFromKey(s3Client, S3_SCRAPER_BUCKET_NAME, s3Key, log);
-      return validatePageHeadingFromScrapeJson(url, scrapeJsonObject, log, context, seoChecks);
+      return validatePageHeadingFromScrapeJson(url, scrapeJsonObject, log, seoChecks);
     }
   } catch (error) {
     log.error(`Error validating headings for ${url}: ${error.message}`);

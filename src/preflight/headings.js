@@ -11,11 +11,65 @@
  */
 
 import { stripTrailingSlash } from '@adobe/spacecat-shared-utils';
-import { validatePageHeadingFromScrapeJson } from '../headings/handler.js';
+import {
+  validatePageHeadingFromScrapeJson,
+  getBrandGuidelines,
+  getH1HeadingASuggestion,
+  HEADINGS_CHECKS,
+} from '../headings/handler.js';
 import { saveIntermediateResults } from './utils.js';
 import SeoChecks from '../metatags/seo-checks.js';
 
 export const PREFLIGHT_HEADINGS = 'headings';
+
+/**
+ * Enhance heading results with AI suggestions for specific check types
+ * @param {Array} headingsResults - Array of heading validation results
+ * @param {Object} brandGuidelines - Brand guidelines for AI suggestions
+ * @param {Object} context - Audit context
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Array>} Enhanced results with AI suggestions
+ */
+async function enhanceWithAISuggestions(headingsResults, brandGuidelines, context, log) {
+  const enhancedResults = await Promise.all(
+    headingsResults.map(async (pageResult) => {
+      const { url, checks } = pageResult;
+      const enhancedChecks = await Promise.all(
+        checks.map(async (check) => {
+          if (!check.success) {
+            const checkType = check.check;
+            // Generate AI suggestions for H1-related issues only
+            if (checkType === HEADINGS_CHECKS.HEADING_MISSING_H1.check
+              || checkType === HEADINGS_CHECKS.HEADING_H1_LENGTH.check
+              || checkType === HEADINGS_CHECKS.HEADING_EMPTY.check) {
+              try {
+                const aiSuggestion = await getH1HeadingASuggestion(
+                  url,
+                  log,
+                  check.pageTags,
+                  context,
+                  brandGuidelines,
+                );
+                if (aiSuggestion) {
+                  return {
+                    ...check,
+                    suggestion: aiSuggestion,
+                    isAISuggested: true,
+                  };
+                }
+              } catch (error) {
+                log.error(`[preflight-headings] Error generating AI suggestion for ${url}: ${error.message}`);
+              }
+            }
+          }
+          return check;
+        }),
+      );
+      return { url, checks: enhancedChecks };
+    }),
+  );
+  return enhancedResults;
+}
 
 export default async function headings(context, auditContext) {
   const {
@@ -45,7 +99,7 @@ export default async function headings(context, auditContext) {
     const seoChecks = new SeoChecks(log);
 
     // Validate headings for each scraped page
-    const headingsResults = await Promise.all(
+    const detectedIssues = await Promise.all(
       scrapedObjects.map(async ({ data }) => {
         const scrapeJsonObject = data;
         const url = stripTrailingSlash(scrapeJsonObject.finalUrl);
@@ -59,13 +113,32 @@ export default async function headings(context, auditContext) {
           url,
           scrapeJsonObject,
           log,
-          context,
           seoChecks,
         );
 
         return result || { url, checks: [] };
       }),
     );
+
+    // Enhance with AI suggestions for 'suggest' step
+    const headingsResults = step === 'suggest'
+      ? await (async () => {
+        const healthyTags = seoChecks.getFewHealthyTags();
+        const healthyTagsObject = {
+          title: healthyTags.title.join(', '),
+          description: healthyTags.description.join(', '),
+          h1: healthyTags.h1.join(', '),
+        };
+        log.debug(`[preflight-headings] AI Suggestions Healthy tags object: ${JSON.stringify(healthyTagsObject)}`);
+        try {
+          const brandGuidelines = await getBrandGuidelines(healthyTagsObject, log, context);
+          return await enhanceWithAISuggestions(detectedIssues, brandGuidelines, context, log);
+        } catch (error) {
+          log.error(`[preflight-headings] Failed to generate AI suggestions: ${error.message}`);
+          return detectedIssues;
+        }
+      })()
+      : detectedIssues;
 
     // Process results and add to audit opportunities
     headingsResults.forEach(({ url, checks }) => {
@@ -84,6 +157,7 @@ export default async function headings(context, auditContext) {
             issue: check.explanation,
             seoImpact: 'Moderate',
             seoRecommendation: check.suggestion,
+            ...(check.isAISuggested && { isAISuggested: true }),
             ...(check.tagName && { tagName: check.tagName }),
             ...(check.count && { count: check.count }),
             ...(check.previous && { previous: check.previous }),
