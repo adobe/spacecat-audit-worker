@@ -57,7 +57,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
     };
     dataAccessStub = {
       Opportunity: {
-        allBySiteIdAndStatus: sinon.stub().resolves([]),
+        allBySiteId: sinon.stub().resolves([]),
         create: sinon.stub(),
       },
     };
@@ -81,7 +81,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
   });
 
   it('should send message to mystique', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
+    dataAccessStub.Opportunity.allBySiteId.resolves([highPageViewsLowFormViewsOptty]);
     await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
     const expectedMessage = {
       type: 'detect:form-details',
@@ -192,7 +192,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
   });
 
   it('should use existing high page views low form view opportunity', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
+    dataAccessStub.Opportunity.allBySiteId.resolves([highPageViewsLowFormViewsOptty]);
     await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
     expect(highPageViewsLowFormViewsOptty.setUpdatedBy).to.be.calledWith('system');
     expect(highPageViewsLowFormViewsOptty.save).to.be.calledOnce;
@@ -212,7 +212,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
   });
 
   it('should use existing high page views low form view opportunity with existing forms details', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
+    dataAccessStub.Opportunity.allBySiteId.resolves([highPageViewsLowFormViewsOptty]);
     highPageViewsLowFormViewsOptty.getData = sinon.stub().returns({
       form: 'https://www.surest.com/existing-opportunity',
       screenshot: '',
@@ -249,13 +249,13 @@ describe('createLowFormViewsOpportunities handler method', () => {
 
   it('should not process opportunities with origin ESS_OPS', async () => {
     highPageViewsLowFormViewsOptty.getOrigin = sinon.stub().returns(ORIGINS.ESS_OPS);
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([highPageViewsLowFormViewsOptty]);
+    dataAccessStub.Opportunity.allBySiteId.resolves([highPageViewsLowFormViewsOptty]);
     await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
     expect(dataAccessStub.Opportunity.create).to.be.calledTwice;
   });
 
   it('should throw error if fetching high page views low form navigation opportunity fails', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
+    dataAccessStub.Opportunity.allBySiteId.rejects(new Error('some-error'));
 
     try {
       await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
@@ -267,7 +267,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
   });
 
   it('should throw error if creating high page views low form navigation opportunity fails', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([]);
+    dataAccessStub.Opportunity.allBySiteId.returns([]);
     dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
 
     try {
