@@ -290,9 +290,9 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
   // Enable ContentAI for the site
   try {
     await enableContentAI(site, context);
-    log.info(`Successfully enabled ContentAI for site ${siteId}`);
+    log.info(`Successfully processed ContentAI for site ${siteId}`);
   } catch (error) {
-    log.error(`Failed to enable ContentAI for site ${siteId}: ${error.message}`);
+    log.error(`Failed to process ContentAI for site ${siteId}: ${error.message}`);
   }
 
   await enableImports(site, [

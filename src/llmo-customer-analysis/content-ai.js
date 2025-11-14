@@ -10,28 +10,42 @@
  * governing permissions and limitations under the License.
  */
 
-async function getAccessToken(tokenEndpoint, clientId, clientSecret) {
-  const formParams = new URLSearchParams();
-  formParams.append('grant_type', 'client_credentials');
-  formParams.append('client_id', clientId);
-  formParams.append('client_secret', clientSecret);
-  formParams.append('scope', 'openid,AdobeID,aem.contentai');
+import { ImsClient } from '@adobe/spacecat-shared-ims-client';
 
-  const accessTokenRes = await fetch(tokenEndpoint, {
-    method: 'POST',
-    body: formParams,
-  });
-  if (!accessTokenRes.ok) {
-    throw new Error(`Failed to get access token from ContentAI: ${accessTokenRes.status} ${accessTokenRes.statusText}`);
+/**
+ * Calculates a weekly cron schedule set to run one hour from now.
+ * If the next hour is midnight (0), the day is incremented.
+ * @returns {string} Cron schedule in format "0 HH * * D" where HH is hour and D is day of week
+ */
+function calculateWeeklyCronSchedule() {
+  const now = new Date();
+  const currentHour = now.getHours();
+  const nextHour = (currentHour + 1) % 24;
+  let dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+
+  // If next hour wraps to 0 (midnight), we're on the next day
+  if (nextHour === 0) {
+    dayOfWeek = (dayOfWeek + 1) % 7;
   }
-  const accessTokenJson = await accessTokenRes.json();
-  return {
-    accessToken: accessTokenJson.access_token,
-    tokenType: accessTokenJson.token_type,
-  };
+
+  return `0 ${nextHour} * * ${dayOfWeek}`;
 }
 
-async function getConfigurations(endpoint, tokenType, accessToken) {
+async function getAccessToken(context) {
+  const imsClient = ImsClient.createFrom({
+    ...context,
+    env: {
+      ...context.env,
+      IMS_HOST: context.env.CONTENTAI_IMS_HOST,
+      IMS_CLIENT_ID: context.env.CONTENTAI_CLIENT_ID,
+      IMS_CLIENT_SECRET: context.env.CONTENTAI_CLIENT_SECRET,
+      IMS_CLIENT_SCOPE: context.env.CONTENTAI_CLIENT_SCOPE,
+    },
+  });
+  return imsClient.getServiceAccessToken();
+}
+
+async function getConfigurations(endpoint, accessToken) {
   let allItems = [];
   let cursor = null;
 
@@ -44,7 +58,7 @@ async function getConfigurations(endpoint, tokenType, accessToken) {
     const configurationsResponse = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `${tokenType} ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
       },
     });
 
@@ -64,40 +78,36 @@ async function getConfigurations(endpoint, tokenType, accessToken) {
 }
 
 export async function enableContentAI(site, context) {
-  const { env } = context;
+  const { env, log } = context;
 
-  const { accessToken, tokenType } = await getAccessToken(
-    env.CONTENTAI_TOKEN_ENDPOINT,
-    env.CONTENTAI_CLIENT_ID,
-    env.CONTENTAI_CLIENT_SECRET,
-  );
+  const tokenResponse = await getAccessToken(context);
 
-  const configurations = await getConfigurations(env.CONTENTAI_ENDPOINT, tokenType, accessToken);
+  const configurations = await getConfigurations(env.CONTENTAI_ENDPOINT, tokenResponse);
 
   const existingConf = configurations.find(
     (conf) => conf.steps?.find((step) => step.baseUrl === site.getBaseURL()),
   );
 
   if (existingConf) {
+    log.info(`ContentAI configuration already exists for site ${site.getBaseURL()}`);
     return;
   }
 
-  // Calculate cron schedule: weekly on current day, one hour from now (rounded to next hour)
-  const now = new Date();
-  const timestamp = now.getTime();
-  const nextHour = (now.getHours() + 1) % 24;
-  const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-  const cronSchedule = `0 ${nextHour} * * ${dayOfWeek}`;
+  const timestamp = Date.now();
+  const cronSchedule = calculateWeeklyCronSchedule();
+  const name = `${site.getBaseURL().replace(/https?:\/\//, '')}-generative`;
+
+  log.info(`Creating ContentAI configuration for site ${site.getBaseURL()} with cron schedule ${cronSchedule} and name ${name}`);
 
   const contentAiData = {
     steps: [
       {
         type: 'index',
-        name: `${site.getBaseURL().replace(/https?:\/\//, '')}-generative`,
+        name,
       },
       {
         type: 'discovery',
-        sourceId: `${site.getBaseURL().replace(/https?:\/\//, '')}-generative-${timestamp}`,
+        sourceId: `${name}-${timestamp}`,
         baseUrl: site.getBaseURL(),
         discoveryProperties: {
           type: 'website',
@@ -125,11 +135,12 @@ export async function enableContentAI(site, context) {
     body: JSON.stringify(contentAiData),
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `${tokenType} ${accessToken}`,
+      Authorization: `Bearer ${tokenResponse}`,
     },
   });
 
   if (!contentAIResponse.ok) {
     throw new Error(`Failed to enable content AI for site ${site.getId()}: ${contentAIResponse.status} ${contentAIResponse.statusText}`);
   }
+  log.info(`ContentAI configuration created for site ${site.getBaseURL()}`);
 }

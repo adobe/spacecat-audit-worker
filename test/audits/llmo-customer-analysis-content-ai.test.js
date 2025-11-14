@@ -102,9 +102,15 @@ describe('Content AI - enableContentAI', () => {
 
       // Calculate expected values based on local timezone
       const testDate = new Date('2025-01-14T15:30:00Z');
-      const expectedHour = (testDate.getHours() + 1) % 24;
-      const expectedDay = testDate.getDay();
+      const currentHour = testDate.getHours();
+      const expectedHour = (currentHour + 1) % 24;
+      let expectedDay = testDate.getDay();
       const expectedTimestamp = testDate.getTime();
+      
+      // If hour wraps to midnight, increment the day
+      if (expectedHour === 0) {
+        expectedDay = (expectedDay + 1) % 7;
+      }
 
       // Verify cron schedule
       expect(requestBody.steps[1].schedule.cronSchedule).to.equal(`0 ${expectedHour} * * ${expectedDay}`);
@@ -159,8 +165,14 @@ describe('Content AI - enableContentAI', () => {
 
       // Calculate expected values based on local timezone
       const testDate = new Date('2025-01-14T23:30:00Z');
-      const expectedHour = (testDate.getHours() + 1) % 24;
-      const expectedDay = testDate.getDay();
+      const currentHour = testDate.getHours();
+      const expectedHour = (currentHour + 1) % 24;
+      let expectedDay = testDate.getDay();
+      
+      // If hour wraps to midnight, increment the day
+      if (expectedHour === 0) {
+        expectedDay = (expectedDay + 1) % 7;
+      }
 
       // Verify hour wraps around correctly (if local hour is 23, should wrap to 0)
       expect(requestBody.steps[1].schedule.cronSchedule).to.equal(`0 ${expectedHour} * * ${expectedDay}`);
@@ -205,10 +217,68 @@ describe('Content AI - enableContentAI', () => {
 
       // Calculate expected values based on local timezone
       const testDate = new Date('2025-01-12T10:00:00Z');
-      const expectedHour = (testDate.getHours() + 1) % 24;
-      const expectedDay = testDate.getDay();
+      const currentHour = testDate.getHours();
+      const expectedHour = (currentHour + 1) % 24;
+      let expectedDay = testDate.getDay();
+      
+      // If hour wraps to midnight, increment the day
+      if (expectedHour === 0) {
+        expectedDay = (expectedDay + 1) % 7;
+      }
 
       // Verify Sunday day and correct hour
+      expect(requestBody.steps[1].schedule.cronSchedule).to.equal(`0 ${expectedHour} * * ${expectedDay}`);
+    });
+
+    it('should increment day when hour wraps to midnight (Saturday to Sunday)', async () => {
+      // Mock Date to be Saturday 11:30 PM (23:30)
+      clock.restore();
+      sandbox.restore();
+      sandbox = sinon.createSandbox();
+      mockFetch = sandbox.stub(globalThis, 'fetch');
+
+      const fixedDate = new Date('2025-01-18T23:30:00Z'); // Saturday
+      clock = sinon.useFakeTimers(fixedDate.getTime());
+
+      const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js');
+      enableContentAI = contentAiModule.enableContentAI;
+
+      // Mock endpoints
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: sandbox.stub().resolves({
+          access_token: 'test-access-token',
+          token_type: 'Bearer',
+        }),
+      });
+
+      mockFetch.onSecondCall().resolves({
+        ok: true,
+        json: sandbox.stub().resolves({
+          items: [],
+        }),
+      });
+
+      mockFetch.onThirdCall().resolves({
+        ok: true,
+      });
+
+      await enableContentAI(site, context);
+
+      const requestBody = JSON.parse(mockFetch.thirdCall.args[1].body);
+
+      // Calculate expected values based on local timezone
+      const testDate = new Date('2025-01-18T23:30:00Z');
+      const currentHour = testDate.getHours();
+      const expectedHour = (currentHour + 1) % 24;
+      let expectedDay = testDate.getDay();
+      
+      // If hour wraps to midnight, increment the day (Saturday 6 -> Sunday 0)
+      if (expectedHour === 0) {
+        expectedDay = (expectedDay + 1) % 7;
+      }
+
+      // If local hour is 23, next hour should be 0 and day should increment
       expect(requestBody.steps[1].schedule.cronSchedule).to.equal(`0 ${expectedHour} * * ${expectedDay}`);
     });
   });
