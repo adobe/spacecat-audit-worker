@@ -13,9 +13,12 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { keywordPromptsImportStep, sendToMystique } from '../geo-brand-presence/handler.js';
+import { keywordPromptsImportStep, loadPromptsAndSendCategorization } from '../geo-brand-presence/handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
+
+// Note: Step 2 (loadCategorizedPromptsAndSendDetection) will be triggered by a callback
+// from Mystique when categorization completes, not as a regular audit step.
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
@@ -25,7 +28,7 @@ export default new AuditBuilder()
     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
   )
   .addStep(
-    'sendToMystiqueStep',
-    (context) => sendToMystique({ ...context, brandPresenceCadence: 'daily' }),
+    'loadPromptsAndSendCategorizationStep',
+    (context) => loadPromptsAndSendCategorization({ ...context, brandPresenceCadence: 'daily' }),
   )
   .build();

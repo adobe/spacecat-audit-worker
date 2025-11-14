@@ -17,7 +17,12 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { parquetWriteBuffer } from 'hyparquet-writer';
-import { keywordPromptsImportStep, sendToMystique, WEB_SEARCH_PROVIDERS } from '../../src/geo-brand-presence/handler.js';
+import {
+  keywordPromptsImportStep,
+  loadPromptsAndSendCategorization,
+  loadCategorizedPromptsAndSendDetection,
+  WEB_SEARCH_PROVIDERS,
+} from '../../src/geo-brand-presence/handler.js';
 import { llmoConfig } from '@adobe/spacecat-shared-utils';
 
 use(sinonChai);
@@ -45,6 +50,7 @@ describe('Geo Brand Presence Handler', () => {
       getAuditType: () => 'geo-brand-presence',
       getFullAuditRef: () => 'https://adobe.com',
       getAuditResult: () => ({ aiPlatform: 'chatgpt' }),
+      setAuditResult: sandbox.stub(),
     };
     log = sinon.stub({ ...console });
     sqs = {
@@ -171,41 +177,25 @@ describe('Geo Brand Presence Handler', () => {
     );
   });
 
-  it('should send message to Mystique using aiPlatform when provided', async () => {
+  it('should send categorization message to Mystique in step 1', async () => {
     // Mock S3 client method used by getStoredMetrics (AWS SDK v3 style)
     fakeParquetS3Response(fakeData());
 
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
-    await sendToMystique({
+    await loadPromptsAndSendCategorization({
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
-    // When aiPlatform is provided (chatgpt), one detection message + one categorization message = 2 total
-    expect(sqs.sendMessage).to.have.been.calledTwice;
 
-    // First call should be detection message
-    const [brandPresenceQueue, brandPresenceMessage] = sqs.sendMessage.firstCall.args;
-    expect(brandPresenceQueue).to.equal('spacecat-to-mystique');
-    expect(brandPresenceMessage).to.include({
-      type: 'detect:geo-brand-presence',
-      siteId: site.getId(),
-      url: site.getBaseURL(),
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-    });
-    expect(brandPresenceMessage.data).deep.equal({
-      configVersion: '1.0.0',
-      web_search_provider: 'chatgpt',
-      config_version: '1.0.0',
-      url: 'https://example.com/presigned-url',
-    });
+    // Step 1 sends only categorization message
+    expect(sqs.sendMessage).to.have.been.calledOnce;
 
-    // Second call should be categorization message
-    const [categorizationQueue, categorizationMessage] = sqs.sendMessage.secondCall.args;
+    // Should be categorization message
+    const [categorizationQueue, categorizationMessage] = sqs.sendMessage.firstCall.args;
     expect(categorizationQueue).to.equal('spacecat-to-mystique');
     expect(categorizationMessage).to.include({
       type: 'categorize:geo-brand-presence',
@@ -220,16 +210,28 @@ describe('Geo Brand Presence Handler', () => {
       url: 'https://example.com/presigned-url',
     });
     expect(categorizationMessage.data.web_search_provider).to.be.null;
+    expect(categorizationMessage.data.parquetFiles).to.deep.equal(['some/parquet/file/data.parquet']);
+
+    // Step 1 should store context in audit result for step 2
+    expect(audit.setAuditResult).to.have.been.calledOnce;
+    const auditResultArg = audit.setAuditResult.firstCall.args[0];
+    expect(auditResultArg).to.include({
+      aiPlatform: 'chatgpt',
+      configVersion: '1.0.0',
+    });
+    expect(auditResultArg.providersToUse).to.deep.equal(['chatgpt']);
+    expect(auditResultArg.dateContext).to.deep.equal({ year: 2025, week: 33 });
+    expect(auditResultArg.parquetFiles).to.deep.equal(['some/parquet/file/data.parquet']);
   });
 
-  it('should fall back to all providers when aiPlatform is invalid', async () => {
+  it('should fall back to all providers when aiPlatform is invalid in step 1', async () => {
     // Set aiPlatform to an invalid value
     audit.getAuditResult = () => ({ aiPlatform: 'invalid-provider' });
 
     fakeParquetS3Response(fakeData());
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
-    await sendToMystique({
+    await loadPromptsAndSendCategorization({
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
@@ -237,19 +239,60 @@ describe('Geo Brand Presence Handler', () => {
       },
     }, getPresignedUrl);
 
-    // Should send messages for all providers + 1 categorization message
-    expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length + 1);
+    // Step 1 should only send categorization message
+    expect(sqs.sendMessage).to.have.been.calledOnce;
+
+    // Should store all providers in audit result for step 2
+    expect(audit.setAuditResult).to.have.been.calledOnce;
+    const auditResultArg = audit.setAuditResult.firstCall.args[0];
+    expect(auditResultArg.providersToUse).to.deep.equal(WEB_SEARCH_PROVIDERS);
   });
 
   // TODO(aurelio): check that we write the right file to s3
-  it('should send messages to Mystique for all web search providers when no aiPlatform is provided', async () => {
-    // Remove aiPlatform from audit result
-    audit.getAuditResult = () => ({});
+  it('should send detection messages for all web search providers in step 2 when no aiPlatform is provided', async () => {
+    // Remove aiPlatform from audit result, but set providersToUse for step 2
+    audit.getAuditResult = () => ({
+      providersToUse: WEB_SEARCH_PROVIDERS,
+      dateContext: { year: 2025, week: 33 },
+      configVersion: '1.0.0',
+      parquetFiles: ['some/parquet/file/data.parquet'],
+    });
 
-    fakeParquetS3Response(fakeData());
+    // Mock LLMO config with ai_topics (categorized prompts)
+    const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+    fakeConfigS3Response({
+      ...llmoConfig.defaultConfig(),
+      categories: {
+        [cat1]: { name: 'Category 1', region: ['us'] },
+      },
+      ai_topics: {
+        'b4d9e3f2-6a7b-8c9d-0e1f-2a3b4c5d6e7f': {
+          name: 'AI Topic 1',
+          category: cat1,
+          prompts: [
+            { prompt: 'ai prompt 1', regions: ['us'], origin: 'ai', source: 'config' },
+          ],
+        },
+      },
+      topics: {
+        'a3c8d1e2-4f5b-6c7d-8e9f-0a1b2c3d4e5f': {
+          name: 'Human Topic 1',
+          category: cat1,
+          prompts: [
+            { prompt: 'human prompt 1', regions: ['us'], origin: 'human', source: 'config' },
+          ],
+        },
+      },
+    });
+
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
-    await sendToMystique({
+    // Mock S3 PutObjectCommand for aggregates write
+    s3Client.send
+      .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^aggregates[/]/) }))
+      .resolves({});
+
+    await loadCategorizedPromptsAndSendDetection({
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
@@ -257,8 +300,8 @@ describe('Geo Brand Presence Handler', () => {
       },
     }, getPresignedUrl);
 
-    // Should send messages equal to the number of configured providers + 1 categorization message
-    expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length + 1);
+    // Should send messages equal to the number of configured providers
+    expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length);
 
     // Verify each detection message has the correct provider
     WEB_SEARCH_PROVIDERS.forEach((provider, index) => {
@@ -278,25 +321,21 @@ describe('Geo Brand Presence Handler', () => {
         url: 'https://example.com/presigned-url',
       });
     });
-
-    // Verify the last message is the categorization message
-    const [lastQueue, lastMessage] = sqs.sendMessage.getCall(WEB_SEARCH_PROVIDERS.length).args;
-    expect(lastQueue).to.equal('spacecat-to-mystique');
-    expect(lastMessage).to.include({
-      type: 'categorize:geo-brand-presence',
-      siteId: site.getId(),
-      url: site.getBaseURL(),
-      auditId: audit.getId(),
-      deliveryType: site.getDeliveryType(),
-    });
-    expect(lastMessage.data.web_search_provider).to.be.null;
   });
 
-  it('sends customer defined prompts from the config to mystique', async () => {
+  it('sends customer defined prompts from the config to mystique in step 2', async () => {
     const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
     const cat2 = '2a2f9b39-126b-411e-af0b-ad2a48dfd9b1';
 
-    fakeParquetS3Response(fakeData());
+    // Mock audit result for step 2
+    audit.getAuditResult = () => ({
+      aiPlatform: 'chatgpt',
+      providersToUse: ['chatgpt'],
+      dateContext: { year: 2025, week: 33 },
+      configVersion: '1.0.0',
+      parquetFiles: ['some/parquet/file/data.parquet'],
+    });
+
     fakeConfigS3Response({
       ...llmoConfig.defaultConfig(),
       categories: {
@@ -320,12 +359,18 @@ describe('Geo Brand Presence Handler', () => {
             { prompt: 'custom prompt 4', regions: ['es'], origin: 'human', source: 'config' },
           ],
         },
-      }
+      },
+      ai_topics: {},
     });
 
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
-    await sendToMystique({
+    // Mock S3 PutObjectCommand for aggregates write
+    s3Client.send
+      .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^aggregates[/]/) }))
+      .resolves({});
+
+    await loadCategorizedPromptsAndSendDetection({
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
@@ -375,12 +420,20 @@ describe('Geo Brand Presence Handler', () => {
     );
   });
 
-  it('should split customer prompts with multiple regions into separate items', async () => {
+  it('should split customer prompts with multiple regions into separate items in step 2', async () => {
     const cat1 = 'ecfc4ebe-8841-4d10-a52f-1ab79bbc77a9'; // Acrobat
     const cat2 = '49d70928-c542-45ba-bbfb-528c69cfdbe7'; // Firefly
     const cat3 = 'bae2762a-fca8-4a05-97d4-0cbd4adb1ef4'; // Photoshop
 
-    fakeParquetS3Response(fakeData());
+    // Mock audit result for step 2
+    audit.getAuditResult = () => ({
+      aiPlatform: 'chatgpt',
+      providersToUse: ['chatgpt'],
+      dateContext: { year: 2025, week: 33 },
+      configVersion: '1.0.0',
+      parquetFiles: ['some/parquet/file/data.parquet'],
+    });
+
     fakeConfigS3Response({
       ...llmoConfig.defaultConfig(),
       categories: {
@@ -413,11 +466,17 @@ describe('Geo Brand Presence Handler', () => {
           ],
         },
       },
+      ai_topics: {},
     });
 
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
-    await sendToMystique({
+    // Mock S3 PutObjectCommand for aggregates write
+    s3Client.send
+      .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^aggregates[/]/) }))
+      .resolves({});
+
+    await loadCategorizedPromptsAndSendDetection({
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
@@ -488,9 +547,9 @@ describe('Geo Brand Presence Handler', () => {
     );
   });
 
-  it('should skip sending message to Mystique when no keywordQuestions', async () => {
+  it('should skip sending message to Mystique in step 1 when no AI prompts', async () => {
     fakeParquetS3Response([]);
-    await sendToMystique({
+    await loadPromptsAndSendCategorization({
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
@@ -500,7 +559,7 @@ describe('Geo Brand Presence Handler', () => {
     expect(sqs.sendMessage).to.not.have.been.called;
   });
 
-  it('should skip sending message to Mystique when aiPlatform is undefined (simulating empty providers)', async () => {
+  it('should skip sending message to Mystique in step 1 when no web search providers configured', async () => {
     // Set aiPlatform to undefined to simulate empty provider scenario
     audit.getAuditResult = () => ({ aiPlatform: undefined });
 
@@ -512,7 +571,7 @@ describe('Geo Brand Presence Handler', () => {
     WEB_SEARCH_PROVIDERS.splice(0, WEB_SEARCH_PROVIDERS.length);
 
     try {
-      await sendToMystique({
+      await loadPromptsAndSendCategorization({
         ...context,
         auditContext: {
           calendarWeek: { year: 2025, week: 33 },
@@ -532,8 +591,8 @@ describe('Geo Brand Presence Handler', () => {
     }
   });
 
-  it('should skip sending message to Mystique when success is false', async () => {
-    await sendToMystique({
+  it('should skip sending message to Mystique in step 1 when success is false', async () => {
+    await loadPromptsAndSendCategorization({
       ...context,
       auditContext: {
         success: false,
@@ -551,8 +610,8 @@ describe('Geo Brand Presence Handler', () => {
     );
   });
 
-  it('should skip sending message to Mystique when calendarWeek is invalid', async () => {
-    await sendToMystique({
+  it('should skip sending message to Mystique in step 1 when calendarWeek is invalid', async () => {
+    await loadPromptsAndSendCategorization({
       ...context,
       auditContext: {
         calendarWeek: null,
@@ -569,8 +628,8 @@ describe('Geo Brand Presence Handler', () => {
     );
   });
 
-  it('should skip sending message to Mystique when calendarWeek is missing week', async () => {
-    await sendToMystique({
+  it('should skip sending message to Mystique in step 1 when calendarWeek is missing week', async () => {
+    await loadPromptsAndSendCategorization({
       ...context,
       auditContext: {
         calendarWeek: { year: 2025 },
@@ -587,8 +646,8 @@ describe('Geo Brand Presence Handler', () => {
     );
   });
 
-  it('should skip sending message to Mystique when parquetFiles is invalid', async () => {
-    await sendToMystique({
+  it('should skip sending message to Mystique in step 1 when parquetFiles is invalid', async () => {
+    await loadPromptsAndSendCategorization({
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
@@ -605,8 +664,8 @@ describe('Geo Brand Presence Handler', () => {
     );
   });
 
-  it('should skip sending message to Mystique when parquetFiles contains non-strings', async () => {
-    await sendToMystique({
+  it('should skip sending message to Mystique in step 1 when parquetFiles contains non-strings', async () => {
+    await loadPromptsAndSendCategorization({
       ...context,
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
@@ -623,9 +682,9 @@ describe('Geo Brand Presence Handler', () => {
     );
   });
 
-  // NEW TESTS: Deduplication Logic
+  // NEW TESTS: Deduplication Logic (Step 1)
   describe('Deduplication Logic', () => {
-    it('should remove duplicate AI prompts within same region/topic', async () => {
+    it('should remove duplicate AI prompts within same region/topic in step 1', async () => {
       const duplicateData = [
         {
           prompt: 'what is adobe?',
@@ -670,7 +729,7 @@ describe('Geo Brand Presence Handler', () => {
 
       getPresignedUrl.resolves('https://example.com/presigned-url');
 
-      await sendToMystique({
+      await loadPromptsAndSendCategorization({
         ...context,
         auditContext: {
           calendarWeek: { year: 2025, week: 33 },
@@ -692,7 +751,7 @@ describe('Geo Brand Presence Handler', () => {
       );
     });
 
-    it('should keep same prompts in different regions/topics', async () => {
+    it('should keep same prompts in different regions/topics in step 1', async () => {
       const samePromptDifferentContext = [
         {
           prompt: 'what is adobe?',
@@ -737,7 +796,7 @@ describe('Geo Brand Presence Handler', () => {
 
       getPresignedUrl.resolves('https://example.com/presigned-url');
 
-      await sendToMystique({
+      await loadPromptsAndSendCategorization({
         ...context,
         auditContext: {
           calendarWeek: { year: 2025, week: 33 },
@@ -757,7 +816,7 @@ describe('Geo Brand Presence Handler', () => {
       );
     });
 
-    it('should skip empty and invalid prompts', async () => {
+    it('should skip empty and invalid prompts in step 1', async () => {
       const mixedData = [
         {
           prompt: 'valid prompt',
@@ -802,7 +861,7 @@ describe('Geo Brand Presence Handler', () => {
 
       getPresignedUrl.resolves('https://example.com/presigned-url');
 
-      await sendToMystique({
+      await loadPromptsAndSendCategorization({
         ...context,
         auditContext: {
           calendarWeek: { year: 2025, week: 33 },
