@@ -15,6 +15,7 @@ import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
 import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { checkSiteRequiresValidation } from './utils/site-validation.js';
 
 import sqs from './support/sqs.js';
 import s3Client from './support/s3-client.js';
@@ -192,6 +193,22 @@ async function run(message, context) {
     const msg = `no such audit type: ${type}`;
     log.error(msg);
     return notFound();
+  }
+
+  // If siteId, fetch the site and check if it requires validation
+  if (siteId) {
+    try {
+      const { Site } = context.dataAccess;
+      const site = await Site.findById(siteId);
+      if (site) {
+        // Set the requiresValidation flag on the site object
+        const requiresValidation = await checkSiteRequiresValidation(site, context);
+        site.requiresValidation = requiresValidation;
+        context.site = site;
+      }
+    } catch (e) {
+      log.warn(`Failed to fetch site ${siteId}: ${e.message}`);
+    }
   }
 
   const startTime = process.hrtime();

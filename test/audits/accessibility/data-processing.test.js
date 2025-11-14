@@ -1087,8 +1087,9 @@ describe('data-processing utility functions', () => {
       reportMarkdown,
       auditData,
       log,
+      context = {}
     ) => {
-      const suggestions = createReportOpportunitySuggestionInstanceStub(reportMarkdown);
+      const suggestions = createReportOpportunitySuggestionInstanceStub(reportMarkdown, context);
 
       try {
         const suggestion = await opportunity.addSuggestions(suggestions);
@@ -1113,11 +1114,12 @@ describe('data-processing utility functions', () => {
         reportMarkdown,
         mockAuditData,
         mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result.suggestion).to.deep.equal(createdSuggestion);
       expect(createReportOpportunitySuggestionInstanceStub.calledOnce).to.be.true;
-      expect(createReportOpportunitySuggestionInstanceStub.calledWith(reportMarkdown)).to.be.true;
+      expect(createReportOpportunitySuggestionInstanceStub.calledWith(reportMarkdown, sinon.match.any)).to.be.true;
       expect(mockOpportunity.addSuggestions.calledOnce).to.be.true;
       expect(mockOpportunity.addSuggestions.calledWith(mockSuggestions)).to.be.true;
     });
@@ -1138,6 +1140,7 @@ describe('data-processing utility functions', () => {
           reportMarkdown,
           mockAuditData,
           mockLog,
+          { site: { requiresValidation: true } }
         );
         expect.fail('Should have thrown an error');
       } catch (thrownError) {
@@ -1160,10 +1163,11 @@ describe('data-processing utility functions', () => {
         reportMarkdown,
         mockAuditData,
         mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result.suggestion).to.deep.equal(createdSuggestion);
-      expect(createReportOpportunitySuggestionInstanceStub.calledWith('')).to.be.true;
+      expect(createReportOpportunitySuggestionInstanceStub.calledWith('', sinon.match.any)).to.be.true;
     });
 
     it('should handle complex report markdown', async () => {
@@ -1198,10 +1202,11 @@ describe('data-processing utility functions', () => {
         reportMarkdown,
         mockAuditData,
         mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(result.suggestion).to.deep.equal(createdSuggestion);
-      expect(createReportOpportunitySuggestionInstanceStub.calledWith(reportMarkdown)).to.be.true;
+      expect(createReportOpportunitySuggestionInstanceStub.calledWith(reportMarkdown, sinon.match.any)).to.be.true;
     });
 
     it('should handle different audit data formats', async () => {
@@ -1250,6 +1255,7 @@ describe('data-processing utility functions', () => {
         reportMarkdown,
         mockAuditData,
         mockLog,
+        { site: { requiresValidation: true } }
       );
 
       expect(mockOpportunity.addSuggestions.calledOnce).to.be.true;
@@ -1277,6 +1283,7 @@ describe('data-processing utility functions', () => {
           reportMarkdown,
           auditData,
           mockLog,
+          { site: { requiresValidation: true } }
         );
         expect.fail('Should have thrown an error');
       } catch (error) {
@@ -1315,6 +1322,7 @@ describe('data-processing utility functions', () => {
           reportMarkdown,
           auditData,
           mockLog,
+          { site: { requiresValidation: true } }
         );
 
         // Assert - test line 497: return { suggestion }
@@ -5475,6 +5483,7 @@ describe('data-processing utility functions', () => {
         deviceType,
         auditData,
         mockLog,
+        { site: { requiresValidation: true } }
       );
 
       // Assert
@@ -5498,6 +5507,7 @@ describe('data-processing utility functions', () => {
         deviceType,
         auditData,
         mockLog,
+        { site: { requiresValidation: true } }
       );
 
       // Assert
@@ -5520,6 +5530,7 @@ describe('data-processing utility functions', () => {
         deviceType,
         auditData,
         mockLog,
+        { site: { requiresValidation: true } }
       );
 
       // Assert
@@ -5541,6 +5552,7 @@ describe('data-processing utility functions', () => {
         deviceType,
         auditData,
         mockLog,
+        { site: { requiresValidation: true } }
       );
 
       // Assert
@@ -5562,6 +5574,7 @@ describe('data-processing utility functions', () => {
         deviceType,
         auditData,
         mockLog,
+        { site: { requiresValidation: true } }
       );
 
       // Assert
@@ -5582,6 +5595,7 @@ describe('data-processing utility functions', () => {
         deviceType,
         auditData,
         mockLog,
+        { site: { requiresValidation: true } }
       );
 
       // Assert - test passes if no errors are thrown
@@ -5606,6 +5620,7 @@ describe('data-processing utility functions', () => {
         deviceType,
         auditData,
         mockLog,
+        { site: { requiresValidation: true } }
       );
 
       // Assert - verify suggestion was saved with correct data
@@ -5630,6 +5645,7 @@ describe('data-processing utility functions', () => {
         deviceType,
         auditData,
         mockLog,
+        { site: { requiresValidation: true } }
       );
 
       // Assert - verify suggestion was saved with correct data

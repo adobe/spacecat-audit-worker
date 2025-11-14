@@ -10,6 +10,8 @@
  * governing permissions and limitations under the License.
  */
 
+import { Suggestion as SuggestionDataAccess } from '@adobe/spacecat-shared-data-access';
+
 export function createInDepthReportOpportunity(week, year, deviceType = 'Desktop') {
   const capitalizedDevice = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
   return {
@@ -70,12 +72,13 @@ export function createBaseReportOpportunity(week, year, deviceType = 'Desktop') 
   };
 }
 
-export function createReportOpportunitySuggestionInstance(suggestionValue) {
+export function createReportOpportunitySuggestionInstance(suggestionValue, context) {
   return [
     {
       type: 'CODE_CHANGE',
       rank: 1,
-      status: 'NEW',
+      status: context?.site?.requiresValidation ? SuggestionDataAccess.STATUSES.PENDING_VALIDATION
+        : SuggestionDataAccess.STATUSES.NEW,
       data: {
         suggestionValue,
       },
@@ -95,7 +98,7 @@ export function createOrUpdateDeviceSpecificSuggestion(
   suggestionValue,
   deviceType,
   markdownContent,
-
+  context,
 ) {
   let updatedSuggestionValue;
 
@@ -117,7 +120,7 @@ export function createOrUpdateDeviceSpecificSuggestion(
     updatedSuggestionValue[`accessibility-${deviceType}`] = markdownContent;
   }
 
-  return createReportOpportunitySuggestionInstance(updatedSuggestionValue);
+  return createReportOpportunitySuggestionInstance(updatedSuggestionValue, context);
 }
 
 export function createAccessibilityAssistiveOpportunity() {

@@ -132,11 +132,13 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
 }
 
 export async function mapToPaidSuggestion(context, siteId, opportunityId, url, pageGuidance = []) {
+  const { Suggestion } = context.dataAccess;
   return {
     opportunityId,
     type: 'CONTENT_UPDATE',
     rank: 1,
-    status: 'NEW',
+    status: context.site?.requiresValidation ? Suggestion.STATUSES.PENDING_VALIDATION
+      : Suggestion.STATUSES.NEW,
     data: {
       recommendations: [
         {
