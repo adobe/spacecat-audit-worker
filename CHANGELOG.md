@@ -1,3 +1,10 @@
+# [1.238.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.237.1...v1.238.0) (2025-11-14)
+
+
+### Features
+
+* Enable content AI during llmo customer analysis ([#1553](https://github.com/adobe/spacecat-audit-worker/issues/1553)) ([820ffc8](https://github.com/adobe/spacecat-audit-worker/commit/820ffc87263ac6769214870b26cc38bdc6aaede9))
+
 ## [1.237.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.237.0...v1.237.1) (2025-11-14)
 
 
