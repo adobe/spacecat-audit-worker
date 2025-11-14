@@ -1244,7 +1244,7 @@ describe('Canonical URL Tests', () => {
       const result = createOpportunityData();
 
       expect(result).to.be.an('object');
-      expect(result).to.have.property('runbook', '');
+      expect(result).to.have.property('runbook').that.is.a('string').and.is.not.empty;
       expect(result).to.have.property('origin', 'AUTOMATION');
       expect(result).to.have.property('title', 'Canonical URL issues affecting SEO');
       expect(result).to.have.property('description').that.is.a('string');
@@ -1264,7 +1264,7 @@ describe('Canonical URL Tests', () => {
       const result = createOpportunityDataForElmo();
 
       expect(result).to.be.an('object');
-      expect(result).to.have.property('runbook', '');
+      expect(result).to.have.property('runbook').that.is.a('string').and.is.not.empty;
       expect(result).to.have.property('origin', 'AUTOMATION');
       expect(result).to.have.property('title', 'Canonical URL issues affecting SEO');
       expect(result).to.have.property('description').that.is.a('string');
