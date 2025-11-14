@@ -53,7 +53,7 @@ function mapToAIInsightsSuggestions(opportunityId, guidanceArr) {
     opportunityId,
     type: 'AI_INSIGHTS',
     rank: 1,
-    status: 'NEW',
+    // Status will be set to PENDING_VALIDATION when creating the suggestion
     data: {
       parentReport: section.reportType,
       recommendations: Array.isArray(section.recommendations)
@@ -114,8 +114,12 @@ export default async function handler(message, context) {
   // Map AI Insights suggestions from guidance (already in expected structure)
   const suggestions = mapToAIInsightsSuggestions(opportunity.getId(), guidance);
   if (suggestions.length) {
-    // Create all suggestions in parallel
-    await Promise.all(suggestions.map((s) => Suggestion.create(s)));
+    const requiresValidation = Boolean(context.site?.requiresValidation);
+
+    await Promise.all(suggestions.map((s) => Suggestion.create({
+      ...s,
+      status: requiresValidation ? Suggestion.STATUSES.PENDING_VALIDATION : Suggestion.STATUSES.NEW,
+    })));
   }
 
   // Only after successful opportunity and suggestions creation, ignore previous ones
