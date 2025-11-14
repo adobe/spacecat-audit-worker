@@ -107,15 +107,15 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
   try {
     opportunities = await Opportunity.allBySiteId(auditData.siteId);
   } catch (e) {
-    log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
+    log.error(`[Form Opportunity] [Site Id: ${auditData.siteId}] fetching opportunities failed with error: ${e.message}`);
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
   }
 
   const { formVitals } = auditData.auditResult;
-  log.debug(`scraped data for form ${JSON.stringify(scrapedData, null, 2)}`);
+  log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] scraped data for form ${JSON.stringify(scrapedData, null, 2)}`);
   // eslint-disable-next-line max-len
   const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]);
-  log.debug(`forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
+  log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
   let filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
   // Apply filtering logic: deduplicate, filter INVALIDATED, and limit to top opportunities
@@ -126,7 +126,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
     log,
     2, // Limit to top 2 opportunities by pageviews
   );
-  log.debug(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
+  log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] filtered opportunities high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {
     for (const opptyData of filteredOpportunities) {
@@ -155,7 +155,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         guidance: generateDefaultGuidance(scrapedData, opptyData),
       };
 
-      log.debug(`Forms Opportunity high form views low conversion ${JSON.stringify(opportunityData, null, 2)}`);
+      log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] forms opportunity high form views low conversion ${JSON.stringify(opportunityData, null, 2)}`);
       let formsList = [];
 
       if (!highFormViewsLowConversionsOppty) {
@@ -163,9 +163,9 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
         // eslint-disable-next-line max-len
         formsList = [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
-        log.debug('Forms Opportunity high form views low conversion created');
+        log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] forms Opportunity high form views low conversion created`);
       } else if (highFormViewsLowConversionsOppty.getOrigin() === ORIGINS.ESS_OPS) {
-        log.debug('Forms Opportunity high form views low conversion exists and is from ESS_OPS');
+        log.debug(`[Form Opportunity] [Site Id: ${auditData.siteId}] Forms Opportunity high form views low conversion exists and is from ESS_OPS`);
         opportunityData.status = 'IGNORED';
         // eslint-disable-next-line no-await-in-loop
         highFormViewsLowConversionsOppty = await Opportunity.create(opportunityData);
@@ -174,9 +174,9 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
       } else {
         const data = highFormViewsLowConversionsOppty.getData();
         const { formDetails } = data;
-        log.info(`Form details available for data  ${JSON.stringify(data, null, 2)}`);
+        log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] Form details available for data  ${JSON.stringify(data, null, 2)}`);
         formsList = (formDetails !== undefined && isNonEmptyObject(formDetails))
-          ? (log.info('Form details available for opportunity, not sending it to mystique'), [])
+          ? (log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] Form details available for opportunity, not sending it to mystique`), [])
           : [{ form: opportunityData.data.form, formSource: opportunityData.data.formsource }];
 
         highFormViewsLowConversionsOppty.setAuditId(auditData.auditId);
@@ -200,7 +200,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         : sendMessageToFormsQualityAgent(context, highFormViewsLowConversionsOppty, formsList));
     }
   } catch (e) {
-    log.error(`Creating Forms opportunity for siteId ${auditData.siteId} failed with error: ${e.message}`, e);
+    log.error(`[Form Opportunity] [Site Id: ${auditData.siteId}] Creating low conversion forms opportunity failed with error: ${e.message}`, e);
   }
-  log.debug(`Successfully synced Opportunity for site: ${auditData.siteId} and high-form-views-low-conversions audit type.`);
+  log.info(`[Form Opportunity] [Site Id: ${auditData.siteId}] Successfully synced opportunity for high-form-views-low-conversions audit type.`);
 }
