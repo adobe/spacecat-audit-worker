@@ -234,8 +234,10 @@ describe('Geo Brand Presence Daily Handler', () => {
     expect(message.year).to.equal(2025); // ISO year 2025 (even though calendar year is 2024)
   });
 
-  it('should skip sending message to Mystique in step 1 when no AI prompts', async () => {
+  it('should send empty categorization message when no AI prompts to trigger callback flow', async () => {
     fakeParquetS3Response([]);
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
     await loadPromptsAndSendCategorization({
       ...context,
       brandPresenceCadence: 'daily',
@@ -244,7 +246,13 @@ describe('Geo Brand Presence Daily Handler', () => {
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
-    expect(sqs.sendMessage).to.not.have.been.called;
+
+    // Should still send categorization message (even with empty array) to trigger callback flow
+    expect(sqs.sendMessage).to.have.been.calledOnce;
+    const [, message] = sqs.sendMessage.firstCall.args;
+    expect(message.type).to.equal('categorize:geo-brand-presence');
+    expect(message.data.url).to.equal('https://example.com/presigned-url');
+    expect(message.data.date).to.equal('2025-10-01'); // Yesterday's date
   });
 
   it('should use current date when referenceDate is not provided in step 1', async () => {
@@ -289,6 +297,12 @@ describe('Geo Brand Presence Daily Handler', () => {
       parquetFiles: ['some/parquet/file/data.parquet'],
     });
 
+    // Mock fetch for empty categorized prompts from callback
+    sinon.stub(global, 'fetch').resolves({
+      ok: true,
+      json: sinon.stub().resolves({ prompts: [] }),
+    });
+
     // Mock LLMO config with some data
     const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
     fakeConfigS3Response({
@@ -296,7 +310,6 @@ describe('Geo Brand Presence Daily Handler', () => {
       categories: {
         [cat1]: { name: 'Category 1', region: ['us'] },
       },
-      ai_topics: {},
       topics: {
         'f1a9605a-5a05-49e7-8760-b40ca2426380': {
           name: 'Human Topic 1',
@@ -314,12 +327,15 @@ describe('Geo Brand Presence Daily Handler', () => {
 
     await loadCategorizedPromptsAndSendDetection({
       ...context,
+      data: { url: 'https://example.com/categorized-prompts.json' },
       brandPresenceCadence: 'daily',
       auditContext: {
         referenceDate,
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
+
+    global.fetch.restore();
 
     // Should send one message per provider (no categorization in step 2)
     expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length);
@@ -357,6 +373,12 @@ describe('Geo Brand Presence Daily Handler', () => {
       parquetFiles: ['some/parquet/file/data.parquet'],
     });
 
+    // Mock fetch for empty categorized prompts from callback
+    sinon.stub(global, 'fetch').resolves({
+      ok: true,
+      json: sinon.stub().resolves({ prompts: [] }),
+    });
+
     // Mock LLMO config with some data
     const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
     fakeConfigS3Response({
@@ -364,7 +386,6 @@ describe('Geo Brand Presence Daily Handler', () => {
       categories: {
         [cat1]: { name: 'Category 1', region: ['us'] },
       },
-      ai_topics: {},
       topics: {
         '49db7cbc-326f-437f-bedc-e4b7b33ac220': {
           name: 'Human Topic 1',
@@ -380,12 +401,15 @@ describe('Geo Brand Presence Daily Handler', () => {
 
     await loadCategorizedPromptsAndSendDetection({
       ...context,
+      data: { url: 'https://example.com/categorized-prompts.json' },
       brandPresenceCadence: 'daily',
       auditContext: {
         referenceDate,
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
+
+    global.fetch.restore();
 
     // Should send only 1 detection message (no categorization in step 2)
     expect(sqs.sendMessage).to.have.been.calledOnce;

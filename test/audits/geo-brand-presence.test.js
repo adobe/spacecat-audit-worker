@@ -258,21 +258,36 @@ describe('Geo Brand Presence Handler', () => {
       parquetFiles: ['some/parquet/file/data.parquet'],
     });
 
-    // Mock LLMO config with ai_topics (categorized prompts)
+    // Mock categorized AI prompts from callback URL
+    const categorizedAIPrompts = [
+      {
+        prompt: 'ai prompt 1',
+        region: 'us',
+        category: 'Category 1',
+        topic: 'AI Topic 1',
+        source: 'ai',
+        origin: 'ai',
+        url: '',
+        keyword: '',
+        keywordImportTime: -1,
+        volume: -1,
+        volumeImportTime: -1,
+        market: 'us',
+      },
+    ];
+
+    // Mock fetch for categorized prompts
+    sinon.stub(global, 'fetch').resolves({
+      ok: true,
+      json: sinon.stub().resolves({ prompts: categorizedAIPrompts }),
+    });
+
+    // Mock LLMO config with human prompts only (no ai_topics - those come from callback)
     const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
     fakeConfigS3Response({
       ...llmoConfig.defaultConfig(),
       categories: {
         [cat1]: { name: 'Category 1', region: ['us'] },
-      },
-      ai_topics: {
-        'b4d9e3f2-6a7b-8c9d-0e1f-2a3b4c5d6e7f': {
-          name: 'AI Topic 1',
-          category: cat1,
-          prompts: [
-            { prompt: 'ai prompt 1', regions: ['us'], origin: 'ai', source: 'config' },
-          ],
-        },
       },
       topics: {
         'a3c8d1e2-4f5b-6c7d-8e9f-0a1b2c3d4e5f': {
@@ -294,11 +309,14 @@ describe('Geo Brand Presence Handler', () => {
 
     await loadCategorizedPromptsAndSendDetection({
       ...context,
+      data: { categorizedPromptsUrl: 'https://example.com/categorized-prompts.json' },
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
+
+    global.fetch.restore();
 
     // Should send messages equal to the number of configured providers
     expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length);
@@ -336,6 +354,12 @@ describe('Geo Brand Presence Handler', () => {
       parquetFiles: ['some/parquet/file/data.parquet'],
     });
 
+    // Mock fetch for empty categorized prompts from callback
+    sinon.stub(global, 'fetch').resolves({
+      ok: true,
+      json: sinon.stub().resolves({ prompts: [] }),
+    });
+
     fakeConfigS3Response({
       ...llmoConfig.defaultConfig(),
       categories: {
@@ -360,7 +384,6 @@ describe('Geo Brand Presence Handler', () => {
           ],
         },
       },
-      ai_topics: {},
     });
 
     getPresignedUrl.resolves('https://example.com/presigned-url');
@@ -372,11 +395,14 @@ describe('Geo Brand Presence Handler', () => {
 
     await loadCategorizedPromptsAndSendDetection({
       ...context,
+      data: { url: 'https://example.com/categorized-prompts.json' },
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
+
+    global.fetch.restore();
 
     // custom prompt 3 has regions ['ch', 'fr'] so it should be split into 2 items
     // Total: 1 (de) + 1 (it) + 2 (ch, fr) + 1 (es) = 5 customer prompts
@@ -434,6 +460,12 @@ describe('Geo Brand Presence Handler', () => {
       parquetFiles: ['some/parquet/file/data.parquet'],
     });
 
+    // Mock fetch for empty categorized prompts from callback
+    sinon.stub(global, 'fetch').resolves({
+      ok: true,
+      json: sinon.stub().resolves({ prompts: [] }),
+    });
+
     fakeConfigS3Response({
       ...llmoConfig.defaultConfig(),
       categories: {
@@ -466,7 +498,6 @@ describe('Geo Brand Presence Handler', () => {
           ],
         },
       },
-      ai_topics: {},
     });
 
     getPresignedUrl.resolves('https://example.com/presigned-url');
@@ -478,11 +509,14 @@ describe('Geo Brand Presence Handler', () => {
 
     await loadCategorizedPromptsAndSendDetection({
       ...context,
+      data: { url: 'https://example.com/categorized-prompts.json' },
       auditContext: {
         calendarWeek: { year: 2025, week: 33 },
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
+
+    global.fetch.restore();
 
     // Verify that:
     // - "What is Acrobat ?" with regions ['gb', 'us'] creates 2 items (one for gb, one for us)
@@ -547,8 +581,213 @@ describe('Geo Brand Presence Handler', () => {
     );
   });
 
-  it('should skip sending message to Mystique in step 1 when no AI prompts', async () => {
+  it('should download and process already-categorized prompts from callback in step 2', async () => {
+    // Mock audit result for step 2
+    audit.getAuditResult = () => ({
+      aiPlatform: 'chatgpt',
+      providersToUse: ['chatgpt'],
+      dateContext: { year: 2025, week: 33 },
+      configVersion: '1.0.0',
+      parquetFiles: ['some/parquet/file/data.parquet'],
+    });
+
+    const alreadyCategorizedPrompts = [
+      {
+        topic: 'pdf editor',
+        prompt: 'What is the best PDF editor?',
+        region: 'us',
+        category: 'Product Comparison',
+        origin: 'AI',
+      },
+      {
+        topic: 'pdf converter',
+        prompt: 'How to convert PDF to Word?',
+        region: 'uk',
+        category: 'How-to',
+        origin: 'AI',
+      },
+    ];
+
+    // Mock fetch to return already-categorized prompts
+    sinon.stub(global, 'fetch').resolves({
+      ok: true,
+      json: sinon.stub().resolves({ prompts: alreadyCategorizedPrompts }),
+    });
+
+    const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+    fakeConfigS3Response({
+      ...llmoConfig.defaultConfig(),
+      categories: {
+        [cat1]: { name: 'Category 1', region: ['us'] },
+      },
+      topics: {
+        'a3c8d1e2-4f5b-6c7d-8e9f-0a1b2c3d4e5f': {
+          name: 'Human Topic 1',
+          category: cat1,
+          prompts: [
+            { prompt: 'human prompt 1', regions: ['us'], origin: 'human', source: 'config' },
+          ],
+        },
+      },
+    });
+
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    // Mock S3 PutObjectCommand for aggregates write
+    s3Client.send
+      .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^aggregates[/]/) }))
+      .resolves({});
+
+    await loadCategorizedPromptsAndSendDetection({
+      ...context,
+      data: { categorizedPromptsUrl: 'https://example.com/categorized-prompts.json' },
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    // Verify fetch was called with correct URL (before restoring)
+    expect(global.fetch).to.have.been.calledWith('https://example.com/categorized-prompts.json');
+
+    global.fetch.restore();
+
+    // Verify aggregates write was called (categorized prompts should be written)
+    const aggregatesCall = s3Client.send.getCalls().find(call =>
+      call.args[0].input?.Key?.startsWith('aggregates/')
+    );
+    expect(aggregatesCall).to.exist;
+
+    // Verify detection message was sent with combined prompts (AI + human)
+    expect(sqs.sendMessage).to.have.been.calledOnce;
+    const [, message] = sqs.sendMessage.firstCall.args;
+    expect(message.type).to.equal('detect:geo-brand-presence');
+  });
+
+  it('should handle empty categorized prompts list in step 2 callback', async () => {
+    // Mock audit result for step 2
+    audit.getAuditResult = () => ({
+      aiPlatform: 'chatgpt',
+      providersToUse: ['chatgpt'],
+      dateContext: { year: 2025, week: 33 },
+      configVersion: '1.0.0',
+      parquetFiles: ['some/parquet/file/data.parquet'],
+    });
+
+    // Mock fetch to return empty categorized prompts
+    sinon.stub(global, 'fetch').resolves({
+      ok: true,
+      json: sinon.stub().resolves({ prompts: [] }),
+    });
+
+    const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+    fakeConfigS3Response({
+      ...llmoConfig.defaultConfig(),
+      categories: {
+        [cat1]: { name: 'Category 1', region: ['us'] },
+      },
+      topics: {
+        'a3c8d1e2-4f5b-6c7d-8e9f-0a1b2c3d4e5f': {
+          name: 'Human Topic 1',
+          category: cat1,
+          prompts: [
+            { prompt: 'human prompt 1', regions: ['us'], origin: 'human', source: 'config' },
+          ],
+        },
+      },
+    });
+
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    // Mock S3 PutObjectCommand for aggregates write (should NOT be called for empty list)
+    s3Client.send
+      .withArgs(matchS3Cmd('PutObjectCommand', { Key: sinon.match(/^aggregates[/]/) }))
+      .resolves({});
+
+    await loadCategorizedPromptsAndSendDetection({
+      ...context,
+      data: { categorizedPromptsUrl: 'https://example.com/categorized-prompts.json' },
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    global.fetch.restore();
+
+    // Verify detection still runs with only human prompts
+    expect(sqs.sendMessage).to.have.been.calledOnce;
+    const [, message] = sqs.sendMessage.firstCall.args;
+    expect(message.type).to.equal('detect:geo-brand-presence');
+
+    // Verify aggregates write was NOT called (no AI prompts)
+    const aggregatesCall = s3Client.send.getCalls().find(call =>
+      call.args[0].input?.Key?.startsWith('aggregates/')
+    );
+    expect(aggregatesCall).to.not.exist;
+  });
+
+  it('should return error when categorizedPromptsUrl is missing in step 2', async () => {
+    // Mock audit result for step 2
+    audit.getAuditResult = () => ({
+      aiPlatform: 'chatgpt',
+      providersToUse: ['chatgpt'],
+      dateContext: { year: 2025, week: 33 },
+      configVersion: '1.0.0',
+      parquetFiles: ['some/parquet/file/data.parquet'],
+    });
+
+    const result = await loadCategorizedPromptsAndSendDetection({
+      ...context,
+      data: {}, // Missing categorizedPromptsUrl
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    expect(result.status).to.equal('error');
+    expect(result.message).to.include('categorizedPromptsUrl');
+    expect(sqs.sendMessage).to.not.have.been.called;
+  });
+
+  it('should return error when fetch of categorized prompts fails in step 2', async () => {
+    // Mock audit result for step 2
+    audit.getAuditResult = () => ({
+      aiPlatform: 'chatgpt',
+      providersToUse: ['chatgpt'],
+      dateContext: { year: 2025, week: 33 },
+      configVersion: '1.0.0',
+      parquetFiles: ['some/parquet/file/data.parquet'],
+    });
+
+    // Mock fetch to fail
+    sinon.stub(global, 'fetch').resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+    });
+
+    const result = await loadCategorizedPromptsAndSendDetection({
+      ...context,
+      data: { categorizedPromptsUrl: 'https://example.com/categorized-prompts.json' },
+      auditContext: {
+        calendarWeek: { year: 2025, week: 33 },
+        parquetFiles: ['some/parquet/file/data.parquet'],
+      },
+    }, getPresignedUrl);
+
+    global.fetch.restore();
+
+    expect(result.status).to.equal('error');
+    expect(result.message).to.include('Failed to download categorized prompts');
+    expect(sqs.sendMessage).to.not.have.been.called;
+  });
+
+  it('should send empty categorization message when no AI prompts to trigger callback flow', async () => {
     fakeParquetS3Response([]);
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
     await loadPromptsAndSendCategorization({
       ...context,
       auditContext: {
@@ -556,7 +795,12 @@ describe('Geo Brand Presence Handler', () => {
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
-    expect(sqs.sendMessage).to.not.have.been.called;
+
+    // Should still send categorization message (even with empty array) to trigger callback flow
+    expect(sqs.sendMessage).to.have.been.calledOnce;
+    const [, message] = sqs.sendMessage.firstCall.args;
+    expect(message.type).to.equal('categorize:geo-brand-presence');
+    expect(message.data.url).to.equal('https://example.com/presigned-url');
   });
 
   it('should skip sending message to Mystique in step 1 when no web search providers configured', async () => {
