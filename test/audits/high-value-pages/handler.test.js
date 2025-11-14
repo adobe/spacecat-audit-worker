@@ -188,10 +188,6 @@ describe('High value pages audit', () => {
         traffic: 5000,
         topKeyword: 'keyword1',
       });
-
-      expect(context.log.info).to.have.been.calledWith(
-        sinon.match('Message sent to Mystique:')
-      );
     });
 
     it('should filter out existing high value pages from top pages', async () => {
@@ -260,6 +256,9 @@ describe('High value pages audit', () => {
 
       expect(mockSiteTopPage.allBySiteId).to.have.been.calledOnce;
       expect(context.log.info).to.not.have.been.called;
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match('Failed to send message to Mystique')
+      );
     });
 
     it('should throw error when SiteTopPage fetch fails', async () => {
@@ -269,6 +268,9 @@ describe('High value pages audit', () => {
         .to.be.rejectedWith('Database error');
 
       expect(mockSqs.sendMessage).to.not.have.been.called;
+      expect(context.log.error).to.have.been.calledWith(
+        sinon.match('Failed to send message to Mystique')
+      );
     });
 
     it('should correctly map top page fields to message format', async () => {

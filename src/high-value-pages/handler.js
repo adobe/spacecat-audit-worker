@@ -54,47 +54,60 @@ export async function runAuditAndImportTopPagesStep(context) {
  * @param {Object} context - The execution context containing dataAccess, sqs, audit, etc.
  * @returns {Object} Status object indicating completion
  */
-export const sendToMystiqueForGeneration = async (context) => {
+export async function sendToMystiqueForGeneration(context) {
   const {
     log, site, finalUrl, sqs, env, dataAccess, audit,
   } = context;
   const { SiteTopPage } = dataAccess;
 
-  const { existingHighValuePages } = audit.getAuditResult();
+  try {
+    const { existingHighValuePages } = audit.getAuditResult();
 
-  // Fetch all top pages for the site
-  const topPages = await SiteTopPage.allBySiteId(site.getId());
+    // Fetch all top pages for the site
+    const topPages = await SiteTopPage.allBySiteId(site.getId());
 
-  // Filter out existing high value pages and map to required format
-  const topPagesWithoutExistingHighValuePages = topPages
-    .filter((topPage) => !existingHighValuePages.some((hvp) => hvp.url === topPage.getUrl()))
-    .map((topPage) => ({
-      url: topPage.getUrl(),
-      traffic: topPage.getTraffic(),
-      topKeyword: topPage.getTopKeyword(),
-    }));
+    // Filter out existing high value pages and map to required format
+    const existingHvpUrls = new Set(existingHighValuePages.map((hvp) => hvp.url));
+    const topPagesWithoutExistingHighValuePages = topPages
+      .filter((topPage) => !existingHvpUrls.has(topPage.getUrl()))
+      .map((topPage) => ({
+        url: topPage.getUrl(),
+        traffic: topPage.getTraffic(),
+        topKeyword: topPage.getTopKeyword(),
+      }));
 
-  // Prepare message for Mystique queue
-  const message = {
-    type: 'guidance:high-value-pages',
-    siteId: site.getId(),
-    auditId: audit.getId(),
-    deliveryType: site.getDeliveryType(),
-    time: new Date().toISOString(),
-    data: {
-      finalUrl,
-      highValuePages: existingHighValuePages,
-      topPages: topPagesWithoutExistingHighValuePages,
-    },
-  };
+    // Prepare message for Mystique queue
+    const message = {
+      type: 'guidance:high-value-pages',
+      siteId: site.getId(),
+      auditId: audit.getId(),
+      deliveryType: site.getDeliveryType(),
+      time: new Date().toISOString(),
+      data: {
+        finalUrl,
+        highValuePages: existingHighValuePages,
+        topPages: topPagesWithoutExistingHighValuePages,
+      },
+    };
 
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
-  log.info(`Message sent to Mystique: ${JSON.stringify(message)}`);
+    await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
+    log.info(`[${AUDIT_TYPE}] Message sent to Mystique`, {
+      ...message,
+      data: {
+        ...message.data,
+        highValuePages: `total existing high value pages: ${existingHighValuePages.length}`,
+        topPages: `total top pages: ${topPagesWithoutExistingHighValuePages.length}, without existing high value pages`,
+      },
+    });
 
-  return {
-    status: 'complete',
-  };
-};
+    return {
+      status: 'complete',
+    };
+  } catch (error) {
+    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to send message to Mystique: ${error.message}`);
+    throw error;
+  }
+}
 
 /**
  * Export the audit handler with all steps configured
