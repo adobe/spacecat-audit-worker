@@ -180,7 +180,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
 
     const actualCall = dataAccessStub.Opportunity.create.getCall(0).args[0];
     expect(actualCall).to.deep.equal(expectedOpportunityData);
-    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
+    expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] successfully synced opportunity for site: site-id and high page views low form views audit type.');
   });
 
   it('should not create low views opportunity if another opportunity already exists', async () => {
@@ -208,7 +208,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         ],
       },
     );
-    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
+    expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] successfully synced opportunity for site: site-id and high page views low form views audit type.');
   });
 
   it('should use existing high page views low form view opportunity with existing forms details', async () => {
@@ -244,7 +244,7 @@ describe('createLowFormViewsOpportunities handler method', () => {
         ],
       },
     );
-    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
+    expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] successfully synced opportunity for site: site-id and high page views low form views audit type.');
   });
 
   it('should not process opportunities with origin ESS_OPS', async () => {
@@ -263,20 +263,16 @@ describe('createLowFormViewsOpportunities handler method', () => {
       expect(err.message).to.equal('Failed to fetch opportunities for siteId site-id: some-error');
     }
 
-    expect(logStub.error).to.be.calledWith('Fetching opportunities for siteId site-id failed with error: some-error');
+    expect(logStub.error).to.be.calledWith('[Form Opportunity] [Site Id: site-id] fetching opportunities failed with error: some-error');
   });
 
   it('should throw error if creating high page views low form navigation opportunity fails', async () => {
     dataAccessStub.Opportunity.allBySiteId.returns([]);
     dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
 
-    try {
-      await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
-    } catch (err) {
-      expect(err.message).to.equal('Failed to create Forms opportunity for high page views low form views for siteId site-id: some-error');
-    }
+    await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
-    expect(logStub.error).to.be.calledWith('Creating Forms opportunity for high page views low form views for siteId site-id failed with error: some-error');
+    expect(logStub.error).to.be.calledWith('[Form Opportunity] [Site Id: site-id] creating forms opportunity for high page views low form views failed with error: some-error', sinon.match.instanceOf(Error));
   });
 
   it('should handle empty form vitals data', async () => {
@@ -284,6 +280,6 @@ describe('createLowFormViewsOpportunities handler method', () => {
     await createLowViewsOpportunities(auditUrl, auditData, undefined, context);
 
     expect(dataAccessStub.Opportunity.create).to.not.be.called;
-    expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high page views low form views audit type.');
+    expect(logStub.info).to.be.calledWith('[Form Opportunity] [Site Id: site-id] successfully synced opportunity for site: site-id and high page views low form views audit type.');
   });
 });
