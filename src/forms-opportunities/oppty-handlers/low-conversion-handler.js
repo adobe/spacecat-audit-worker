@@ -16,7 +16,9 @@ import {
   generateOpptyData,
   shouldExcludeForm,
   calculateProjectedConversionValue,
-  sendMessageToFormsQualityAgent, sendMessageToMystiqueForGuidance,
+  sendMessageToFormsQualityAgent,
+  sendMessageToMystiqueForGuidance,
+  applyOpportunityFilters,
 } from '../utils.js';
 import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../constants.js';
 import { DATA_SOURCES } from '../../common/constants.js';
@@ -103,7 +105,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
   let opportunities;
 
   try {
-    opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+    opportunities = await Opportunity.allBySiteId(auditData.siteId);
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
@@ -114,8 +116,16 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
   // eslint-disable-next-line max-len
   const formOpportunities = await generateOpptyData(formVitals, context, [FORM_OPPORTUNITY_TYPES.LOW_CONVERSION]);
   log.debug(`forms opportunities ${JSON.stringify(formOpportunities, null, 2)}`);
-  const filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
+  let filteredOpportunities = filterForms(formOpportunities, scrapedData, log, excludeForms);
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
+  // Apply filtering logic: deduplicate, filter INVALIDATED, and limit to top opportunities
+  filteredOpportunities = applyOpportunityFilters(
+    filteredOpportunities,
+    opportunities,
+    FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+    log,
+    2, // Limit to top 2 opportunities by pageviews
+  );
   log.debug(`filtered opportunties high form views low conversion for form ${JSON.stringify(filteredOpportunities, null, 2)}`);
 
   try {
@@ -124,6 +134,7 @@ export default async function createLowConversionOpportunities(auditUrl, auditDa
         (oppty) => oppty.getType() === FORM_OPPORTUNITY_TYPES.LOW_CONVERSION
           && oppty.getData().form === opptyData.form,
       );
+
       // eslint-disable-next-line no-await-in-loop,max-len
       const { projectedConversionValue = null } = (await calculateProjectedConversionValue(context, auditData.siteId, opptyData)) || {};
 

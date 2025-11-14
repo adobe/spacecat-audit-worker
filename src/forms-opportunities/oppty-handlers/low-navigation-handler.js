@@ -13,6 +13,7 @@
 import { isNonEmptyObject } from '@adobe/spacecat-shared-utils';
 import { FORM_OPPORTUNITY_TYPES, ORIGINS } from '../constants.js';
 import {
+  applyOpportunityFilters,
   calculateProjectedConversionValue,
   filterForms,
   generateOpptyData,
@@ -40,7 +41,7 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
   let opportunities;
 
   try {
-    opportunities = await Opportunity.allBySiteIdAndStatus(auditData.siteId, 'NEW');
+    opportunities = await Opportunity.allBySiteId(auditData.siteId);
   } catch (e) {
     log.error(`Fetching opportunities for siteId ${auditData.siteId} failed with error: ${e.message}`);
     throw new Error(`Failed to fetch opportunities for siteId ${auditData.siteId}: ${e.message}`);
@@ -57,13 +58,21 @@ export default async function createLowNavigationOpportunities(auditUrl, auditDa
   const filteredOpportunitiesByNavigation = formOpportunities.filter((opportunity) => formPathSegments.some((substring) => opportunity.form?.includes(substring)
     && !opportunity.formNavigation?.url?.includes('search')));
 
-  const filteredOpportunities = filterForms(
+  let filteredOpportunities = filterForms(
     filteredOpportunitiesByNavigation,
     scrapedData,
     log,
     excludeForms,
   );
   filteredOpportunities.forEach((oppty) => excludeForms.add(oppty.form + oppty.formsource));
+  // Apply filtering logic: deduplicate, filter INVALIDATED, and limit to top opportunities
+  filteredOpportunities = applyOpportunityFilters(
+    filteredOpportunities,
+    opportunities,
+    FORM_OPPORTUNITY_TYPES.LOW_NAVIGATION,
+    log,
+    2, // Limit to top 2 opportunities by pageviews
+  );
   log.debug(`filtered opportunities: high-page-views-low-form-navigations:  ${JSON.stringify(filteredOpportunities, null, 2)}`);
   try {
     for (const opptyData of filteredOpportunities) {
