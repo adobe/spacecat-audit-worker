@@ -201,47 +201,6 @@ describe('LLMO Customer Analysis Handler', () => {
       expect(result.auditResult.triggeredSteps).to.include('traffic-analysis');
     });
 
-    it('should skip enabling cdn-analysis when already enabled for organization', async () => {
-      const otherSite = {
-        getSiteId: () => 'other-site-123',
-        getOrganizationId: () => 'org-123',
-      };
-
-      context.dataAccess.Site.allByOrganizationId.resolves([site, otherSite]);
-
-      configuration.isHandlerEnabledForSite.callsFake((auditType, checkSite) => {
-        if (auditType === 'cdn-analysis' && checkSite.getSiteId() === 'other-site-123') {
-          return true;
-        }
-        return false;
-      });
-
-      const auditContext = {
-        configVersion: 'v1',
-      };
-
-      mockLlmoConfig.readConfig.resolves({
-        config: {
-          entities: {},
-          categories: {},
-          topics: {},
-          brands: { aliases: [] },
-          competitors: { competitors: [] },
-        },
-      });
-
-      const result = await mockHandler.runLlmoCustomerAnalysis(
-        'https://example.com',
-        context,
-        site,
-        auditContext,
-      );
-
-      expect(configuration.enableHandlerForSite).to.not.have.been.calledWith('cdn-analysis', site);
-
-      expect(result.auditResult.status).to.equal('completed');
-    });
-
     it('should not trigger referral traffic imports on subsequent config updates', async () => {
       const auditContext = {
         configVersion: 'v2',

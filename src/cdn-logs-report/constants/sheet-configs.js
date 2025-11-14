@@ -134,8 +134,10 @@ export const SHEET_CONFIGS = {
     processData: (data) => data?.map((row) => {
       const name = row.name || '';
       const capitalizedName = name.charAt(0).toUpperCase() + name.slice(1);
+      // Escape apostrophes for SQL compatibility (Athena requires '' for ')
+      const sqlEscapedName = capitalizedName.replace(/'/g, "''");
       return [
-        capitalizedName,
+        sqlEscapedName,
         row.regex || '',
       ];
     }) || [],
