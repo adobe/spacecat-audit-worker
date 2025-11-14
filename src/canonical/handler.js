@@ -522,7 +522,7 @@ export async function canonicalAuditRunner(baseURL, context, site) {
         if (finalUrl !== url && shouldSkipAuthPage(finalUrl)) {
           log.info(`Page ${url} redirected to auth page ${finalUrl}, skipping`);
           return {
-            url, status, isOk: false, redirectedToAuth: true,
+            url, status, isOk: false,
           };
         }
 
