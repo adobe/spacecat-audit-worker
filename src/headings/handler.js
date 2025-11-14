@@ -672,6 +672,18 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
     auditType,
   );
 
+  const mergeDataFunction = (existingSuggestion, newSuggestion) => {
+    const mergedSuggestion = {
+      ...existingSuggestion,
+      ...newSuggestion,
+    };
+    // Preserve recommendedAction from existingSuggestion if isEdited is true
+    if (existingSuggestion.isEdited && existingSuggestion.recommendedAction !== undefined) {
+      mergedSuggestion.recommendedAction = existingSuggestion.recommendedAction;
+    }
+    return mergedSuggestion;
+  };
+
   const buildKey = (suggestion) => `${suggestion.checkType}|${suggestion.url}`;
 
   await syncSuggestions({
@@ -696,6 +708,7 @@ export async function opportunityAndSuggestions(auditUrl, auditData, context) {
         }),
       },
     }),
+    mergeDataFunction,
     log,
   });
 
