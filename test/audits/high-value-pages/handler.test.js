@@ -265,11 +265,11 @@ describe('High value pages audit', () => {
       mockSiteTopPage.allBySiteId.rejects(new Error('Database error'));
 
       await expect(sendToMystiqueForGeneration(context))
-        .to.be.rejectedWith('Database error');
+        .to.be.rejectedWith('Error occurred: Database error');
 
       expect(mockSqs.sendMessage).to.not.have.been.called;
       expect(context.log.error).to.have.been.calledWith(
-        sinon.match('Failed to send message to Mystique')
+        sinon.match('Error occurred')
       );
     });
 

@@ -60,22 +60,28 @@ export async function sendToMystiqueForGeneration(context) {
   } = context;
   const { SiteTopPage } = dataAccess;
 
+  const { existingHighValuePages } = audit.getAuditResult();
+  let topPagesWithoutExistingHighValuePages = [];
   try {
-    const { existingHighValuePages } = audit.getAuditResult();
-
     // Fetch all top pages for the site
     const topPages = await SiteTopPage.allBySiteId(site.getId());
-
     // Filter out existing high value pages and map to required format
     const existingHvpUrls = new Set(existingHighValuePages.map((hvp) => hvp.url));
-    const topPagesWithoutExistingHighValuePages = topPages
+    topPagesWithoutExistingHighValuePages = topPages
       .filter((topPage) => !existingHvpUrls.has(topPage.getUrl()))
       .map((topPage) => ({
         url: topPage.getUrl(),
         traffic: topPage.getTraffic(),
         topKeyword: topPage.getTopKeyword(),
       }));
+  } catch (error) {
+    log.error(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Error occurred: ${error.message}`,
+    );
+    throw new Error(`Error occurred: ${error.message}`);
+  }
 
+  try {
     // Prepare message for Mystique queue
     const message = {
       type: 'guidance:high-value-pages',
@@ -104,7 +110,11 @@ export async function sendToMystiqueForGeneration(context) {
       status: 'complete',
     };
   } catch (error) {
-    log.error(`[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to send message to Mystique: ${error.message}`);
+    log.error(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Failed to send message to Mystique: ${
+        error.message
+      }`,
+    );
     throw error;
   }
 }
