@@ -75,10 +75,7 @@ export async function fetchVulnerabilityReport(baseURL, context, site) {
   };
   let resp;
   try {
-    resp = await fetch(
-      `${env.STARFISH_API_BASE_URL}/reports/${programId}/${environmentId}/vulnerabilities`,
-      { headers },
-    );
+    resp = await fetch(`${env.STARFISH_API_BASE_URL}/reports/${programId}/${environmentId}/vulnerabilities`, { headers });
   } catch (error) {
     throw new Error('Failed to fetch vulnerability report');
   }
@@ -180,12 +177,37 @@ export async function extractCodeBucket(context) {
   };
 }
 
-const dataContainsCode = (data) => data
-    && typeof data === 'object'
-    && typeof data.codeBucket === 'string'
-    && data.codeBucket.trim() !== ''
-    && typeof data.codePath === 'string'
-    && data.codePath.trim() !== '';
+export const dataContainsCode = (data) => {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  // Navigate the nested structure
+  const { importResults } = data;
+  if (!Array.isArray(importResults) || importResults.length === 0) {
+    return false;
+  }
+
+  const firstImportResult = importResults[0];
+  if (!firstImportResult || typeof firstImportResult !== 'object') {
+    return false;
+  }
+
+  const results = firstImportResult.result;
+  if (!Array.isArray(results) || results.length === 0) {
+    return false;
+  }
+
+  const codeInfo = results[0];
+  return !!(
+    codeInfo
+    && typeof codeInfo === 'object'
+    && typeof codeInfo.codeBucket === 'string'
+    && codeInfo.codeBucket.trim() !== ''
+    && typeof codeInfo.codePath === 'string'
+    && codeInfo.codePath.trim() !== ''
+  );
+};
 
 /**
  * Creates opportunities and syncs suggestions.
@@ -214,9 +236,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
     // Fetch opportunity
     let opportunity;
     try {
-      const opportunities = await site.getOpportunitiesByStatus(
-        Oppty.STATUSES.NEW,
-      );
+      const opportunities = await site.getOpportunitiesByStatus(Oppty.STATUSES.NEW);
       opportunity = opportunities.find((o) => o.getType() === AUDIT_TYPE);
     } catch (e) {
       log.error(`Fetching opportunities for siteId ${site.getId()} failed with error: ${e.message}`);
@@ -256,7 +276,9 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const configuration = await Configuration.findLatest();
   const generateSuggestions = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-suggest', site);
   if (!generateSuggestions) {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-suggest not configured, skipping version recommendations`);
+    log.debug(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-suggest not configured, skipping version recommendations`,
+    );
   }
 
   // As a buildKey we hash all the component details and add name and version for readability
@@ -277,10 +299,8 @@ export const opportunityAndSuggestionsStep = async (context) => {
     log,
   });
 
-  // TODO enable proper FT handling
-  // const generateCodeFix = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-fix', site);
-  const generateCodeFix = true;
-  if (generateCodeFix && dataContainsCode(data)) {
+  const generateCodeFix = configuration.isHandlerEnabledForSite('security-vulnerabilities-auto-fix', site);
+  if (generateSuggestions && generateCodeFix && dataContainsCode(data)) {
     // TODO => only add new suggestions to the payload
     // TODO => optimize payload to reduce size use s3 instead of data as transport medium
 
@@ -292,14 +312,15 @@ export const opportunityAndSuggestionsStep = async (context) => {
       time: new Date().toISOString(),
       data: {
         suggestions: await opportunity.getSuggestions(),
-        codeBucket: data.codeBucket,
-        codePath: data.codePath,
+        importResults: data.importResults,
       },
     };
 
     await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
   } else {
-    log.debug(`[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-fix not configured, skipping code generation with mystique`);
+    log.debug(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] security-vulnerabilities-auto-fix not configured, skipping code generation with mystique`,
+    );
   }
   return { status: 'complete' };
 };
