@@ -174,6 +174,8 @@ export async function analyzeCitability(context) {
 
   log.info(`${LOG_PREFIX} Analyzing ${scrapeResultPaths.size} scrapes`);
 
+  log.info(`${LOG_PREFIX} Scrape result paths: ${JSON.stringify(scrapeResultPaths, null, 2)}`);
+
   const results = [];
   for (const [url, s3Path] of scrapeResultPaths.entries()) {
     // eslint-disable-next-line no-await-in-loop
