@@ -17,7 +17,12 @@ import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import { parquetWriteBuffer } from 'hyparquet-writer';
-import { keywordPromptsImportStep, sendToMystique } from '../../src/geo-brand-presence/handler.js';
+import {
+  keywordPromptsImportStep,
+  loadPromptsAndSendCategorization,
+  loadCategorizedPromptsAndSendDetection,
+  WEB_SEARCH_PROVIDERS,
+} from '../../src/geo-brand-presence/handler.js';
 import { llmoConfig } from '@adobe/spacecat-shared-utils';
 
 use(sinonChai);
@@ -45,6 +50,7 @@ describe('Geo Brand Presence Daily Handler', () => {
       getAuditType: () => 'geo-brand-presence-daily',
       getFullAuditRef: () => 'https://adobe.com',
       getAuditResult: () => ({ aiPlatform: 'chatgpt', cadence: 'daily' }),
+      setAuditResult: sandbox.stub(),
     };
     log = sinon.stub({ ...console });
     sqs = {
@@ -167,7 +173,7 @@ describe('Geo Brand Presence Daily Handler', () => {
     );
   });
 
-  it('should send daily message to Mystique with date field', async () => {
+  it('should send daily categorization message in step 1 with date field', async () => {
     // Mock S3 client method used by getStoredMetrics (AWS SDK v3 style)
     fakeParquetS3Response(fakeData());
 
@@ -175,7 +181,7 @@ describe('Geo Brand Presence Daily Handler', () => {
 
     const referenceDate = new Date('2025-10-02T12:00:00Z'); // October 2, 2025
 
-    await sendToMystique({
+    await loadPromptsAndSendCategorization({
       ...context,
       brandPresenceCadence: 'daily',
       auditContext: {
@@ -184,11 +190,14 @@ describe('Geo Brand Presence Daily Handler', () => {
       },
     }, getPresignedUrl);
 
+    // Step 1 should send only categorization message
     expect(sqs.sendMessage).to.have.been.calledOnce;
+
+    // Should be categorization message
     const [queue, message] = sqs.sendMessage.firstCall.args;
     expect(queue).to.equal('spacecat-to-mystique');
     expect(message).to.include({
-      type: 'detect:geo-brand-presence-daily',
+      type: 'categorize:geo-brand-presence',
       siteId: site.getId(),
       url: site.getBaseURL(),
       auditId: audit.getId(),
@@ -198,23 +207,19 @@ describe('Geo Brand Presence Daily Handler', () => {
     // Verify daily-specific fields
     expect(message.week).to.be.a('number');
     expect(message.year).to.be.a('number');
-    expect(message.data).to.deep.equal({
-      config_version: null,
-      configVersion: null,
-      web_search_provider: 'chatgpt',
-      url: 'https://example.com/presigned-url',
-      date: '2025-10-01', // Yesterday from reference date
-    });
+    expect(message.data.web_search_provider).to.be.null;
+    expect(message.data.date).to.equal('2025-10-01'); // Yesterday from reference date
+    expect(message.data.parquetFiles).to.deep.equal(['some/parquet/file/data.parquet']);
   });
 
-  it('should calculate correct ISO week for dates at year boundaries', async () => {
+  it('should calculate correct ISO week for dates at year boundaries in step 1', async () => {
     fakeParquetS3Response(fakeData());
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
     // Test December 30, 2024 (Monday of Week 1, 2025)
     const referenceDate = new Date('2024-12-31T12:00:00Z');
 
-    await sendToMystique({
+    await loadPromptsAndSendCategorization({
       ...context,
       brandPresenceCadence: 'daily',
       auditContext: {
@@ -229,9 +234,11 @@ describe('Geo Brand Presence Daily Handler', () => {
     expect(message.year).to.equal(2025); // ISO year 2025 (even though calendar year is 2024)
   });
 
-  it('should skip sending message to Mystique when no keywordQuestions', async () => {
+  it('should send empty categorization message when no AI prompts to trigger callback flow', async () => {
     fakeParquetS3Response([]);
-    await sendToMystique({
+    getPresignedUrl.resolves('https://example.com/presigned-url');
+
+    await loadPromptsAndSendCategorization({
       ...context,
       brandPresenceCadence: 'daily',
       auditContext: {
@@ -239,14 +246,20 @@ describe('Geo Brand Presence Daily Handler', () => {
         parquetFiles: ['some/parquet/file/data.parquet'],
       },
     }, getPresignedUrl);
-    expect(sqs.sendMessage).to.not.have.been.called;
+
+    // Should still send categorization message (even with empty array) to trigger callback flow
+    expect(sqs.sendMessage).to.have.been.calledOnce;
+    const [, message] = sqs.sendMessage.firstCall.args;
+    expect(message.type).to.equal('categorize:geo-brand-presence');
+    expect(message.data.url).to.equal('https://example.com/presigned-url');
+    expect(message.data.date).to.equal('2025-10-01'); // Yesterday's date
   });
 
-  it('should use current date when referenceDate is not provided', async () => {
+  it('should use current date when referenceDate is not provided in step 1', async () => {
     fakeParquetS3Response(fakeData());
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
-    await sendToMystique({
+    await loadPromptsAndSendCategorization({
       ...context,
       brandPresenceCadence: 'daily',
       auditContext: {
@@ -254,12 +267,13 @@ describe('Geo Brand Presence Daily Handler', () => {
       },
     }, getPresignedUrl);
 
+    // Step 1 should send only categorization message
     expect(sqs.sendMessage).to.have.been.calledOnce;
     const [, message] = sqs.sendMessage.firstCall.args;
 
     // Verify date is yesterday's date
     const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
     const expectedDate = yesterday.toISOString().split('T')[0];
 
     expect(message.data.date).to.equal(expectedDate);
@@ -267,17 +281,53 @@ describe('Geo Brand Presence Daily Handler', () => {
     expect(message.year).to.be.a('number');
   });
 
-  it('should send messages for all providers when aiPlatform is not specified', async () => {
-    // Remove aiPlatform from audit result
-    audit.getAuditResult = () => ({ cadence: 'daily' });
+  it('should send detection messages for all providers in step 2 when aiPlatform is not specified', async () => {
+    // Remove aiPlatform from audit result and set step 2 context
+    const { isoCalendarWeek } = await import('@adobe/spacecat-shared-utils');
+    const referenceDate = new Date('2025-10-02T12:00:00Z');
+    const yesterday = new Date(referenceDate);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const { week, year } = isoCalendarWeek(yesterday);
 
-    fakeParquetS3Response(fakeData());
+    audit.getAuditResult = () => ({
+      cadence: 'daily',
+      providersToUse: WEB_SEARCH_PROVIDERS,
+      dateContext: { date: yesterday.toISOString().split('T')[0], week, year },
+      configVersion: null,
+      parquetFiles: ['some/parquet/file/data.parquet'],
+    });
+
+    // Mock fetch for empty categorized prompts from callback
+    sinon.stub(global, 'fetch').resolves({
+      ok: true,
+      json: sinon.stub().resolves({ prompts: [] }),
+    });
+
+    // Mock LLMO config with some data
+    const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+    fakeConfigS3Response({
+      ...llmoConfig.defaultConfig(),
+      categories: {
+        [cat1]: { name: 'Category 1', region: ['us'] },
+      },
+      topics: {
+        'f1a9605a-5a05-49e7-8760-b40ca2426380': {
+          name: 'Human Topic 1',
+          category: cat1,
+          prompts: [
+            { prompt: 'human prompt 1', regions: ['us'], origin: 'human', source: 'config' },
+          ],
+        },
+      },
+    });
+
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
-    const referenceDate = new Date('2025-10-02T12:00:00Z');
+    // Mock S3 PutObjectCommand for aggregates write (no AI prompts, so no write will happen)
 
-    await sendToMystique({
+    await loadCategorizedPromptsAndSendDetection({
       ...context,
+      data: { url: 'https://example.com/categorized-prompts.json' },
       brandPresenceCadence: 'daily',
       auditContext: {
         referenceDate,
@@ -285,15 +335,14 @@ describe('Geo Brand Presence Daily Handler', () => {
       },
     }, getPresignedUrl);
 
-    // Import WEB_SEARCH_PROVIDERS to get the count
-    const { WEB_SEARCH_PROVIDERS } = await import('../../src/geo-brand-presence/handler.js');
+    global.fetch.restore();
 
-    // Should send one message per provider
+    // Should send one message per provider (no categorization in step 2)
     expect(sqs.sendMessage).to.have.callCount(WEB_SEARCH_PROVIDERS.length);
 
-    // Verify each message has the correct provider and daily-specific fields
+    // Verify each detection message has the correct provider and daily-specific fields
     const providers = new Set();
-    for (let i = 0; i < sqs.sendMessage.callCount; i += 1) {
+    for (let i = 0; i < WEB_SEARCH_PROVIDERS.length; i += 1) {
       const [queue, message] = sqs.sendMessage.getCall(i).args;
       expect(queue).to.equal('spacecat-to-mystique');
       expect(message.type).to.equal('detect:geo-brand-presence-daily');
@@ -307,15 +356,52 @@ describe('Geo Brand Presence Daily Handler', () => {
     expect(providers.size).to.equal(WEB_SEARCH_PROVIDERS.length);
   });
 
-  it('should send only one message per provider when aiPlatform is specified for daily', async () => {
+  it('should send only one detection message in step 2 when aiPlatform is specified for daily', async () => {
     // aiPlatform is already set to 'chatgpt' in beforeEach
-    fakeParquetS3Response(fakeData());
+    const { isoCalendarWeek } = await import('@adobe/spacecat-shared-utils');
+    const referenceDate = new Date('2025-10-02T12:00:00Z');
+    const yesterday = new Date(referenceDate);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const { week, year } = isoCalendarWeek(yesterday);
+
+    audit.getAuditResult = () => ({
+      aiPlatform: 'chatgpt',
+      cadence: 'daily',
+      providersToUse: ['chatgpt'],
+      dateContext: { date: yesterday.toISOString().split('T')[0], week, year },
+      configVersion: null,
+      parquetFiles: ['some/parquet/file/data.parquet'],
+    });
+
+    // Mock fetch for empty categorized prompts from callback
+    sinon.stub(global, 'fetch').resolves({
+      ok: true,
+      json: sinon.stub().resolves({ prompts: [] }),
+    });
+
+    // Mock LLMO config with some data
+    const cat1 = '10606bf9-08bd-4276-9ba9-db2e7775e96a';
+    fakeConfigS3Response({
+      ...llmoConfig.defaultConfig(),
+      categories: {
+        [cat1]: { name: 'Category 1', region: ['us'] },
+      },
+      topics: {
+        '49db7cbc-326f-437f-bedc-e4b7b33ac220': {
+          name: 'Human Topic 1',
+          category: cat1,
+          prompts: [
+            { prompt: 'human prompt 1', regions: ['us'], origin: 'human', source: 'config' },
+          ],
+        },
+      },
+    });
+
     getPresignedUrl.resolves('https://example.com/presigned-url');
 
-    const referenceDate = new Date('2025-10-02T12:00:00Z');
-
-    await sendToMystique({
+    await loadCategorizedPromptsAndSendDetection({
       ...context,
+      data: { url: 'https://example.com/categorized-prompts.json' },
       brandPresenceCadence: 'daily',
       auditContext: {
         referenceDate,
@@ -323,9 +409,12 @@ describe('Geo Brand Presence Daily Handler', () => {
       },
     }, getPresignedUrl);
 
-    // Should send only one message since aiPlatform is 'chatgpt'
+    global.fetch.restore();
+
+    // Should send only 1 detection message (no categorization in step 2)
     expect(sqs.sendMessage).to.have.been.calledOnce;
 
+    // Should be detection message
     const [queue, message] = sqs.sendMessage.firstCall.args;
     expect(queue).to.equal('spacecat-to-mystique');
     expect(message.type).to.equal('detect:geo-brand-presence-daily');
