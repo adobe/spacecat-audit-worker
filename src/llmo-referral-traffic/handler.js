@@ -14,14 +14,13 @@
 /* c8 ignore start */
 
 import {
-  getDateRanges, getStaticContent, getWeekInfo, isInteger, isoCalendarWeek,
+  getStaticContent, getWeekInfo, isoCalendarWeek,
 } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import ExcelJS from 'exceljs';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { getPreviousWeekYear, getTemporalCondition } from '../utils/date-utils.js';
 import { createLLMOSharepointClient, saveExcelReport } from '../utils/report-uploader.js';
 import { DEFAULT_COUNTRY_PATTERNS } from '../cdn-logs-report/constants/country-patterns.js';
 
@@ -69,15 +68,6 @@ async function createWorkbook(results) {
   return workbook;
 }
 
-function calculateAuditStartDate(auditContext) {
-  if (!isInteger(auditContext.week) || !isInteger(auditContext.year)) {
-    return new Date();
-  }
-
-  const ranges = getDateRanges(auditContext.week, auditContext.year);
-  return new Date(ranges[0].startTime);
-}
-
 export async function triggerTrafficAnalysisImport(context) {
   const {
     site, finalUrl, log, auditContext = {},
@@ -108,7 +98,12 @@ export async function triggerTrafficAnalysisImport(context) {
       week,
       year,
     },
+    auditContext: {
+      week,
+      year,
+    },
     fullAuditRef: finalUrl,
+    allowCache: false,
   };
 }
 
@@ -120,7 +115,14 @@ export async function referralTrafficRunner(context) {
 
   const auditResult = audit.getAuditResult();
   const { week, year } = auditResult;
-  const today = calculateAuditStartDate({ week, year });
+  const { temporalCondition } = getWeekInfo(week, year);
+  const siteId = site.getSiteId();
+  const baseURL = site.getBaseURL();
+
+  log.info(
+    `[llmo-referral-traffic] Starting referral traffic extraction for site: ${siteId}, `
+    + `week: ${week}, year: ${year}`,
+  );
 
   // constants
   const tempLocation = `s3://${importerBucket}/rum-metrics-compact/temp/out/`;
@@ -131,26 +133,29 @@ export async function referralTrafficRunner(context) {
   // query build-up
   const variables = {
     tableName: `${databaseName}.${tableName}`,
-    siteId: site.getSiteId(),
-    temporalCondition: getTemporalCondition(today),
+    siteId,
+    temporalCondition,
   };
 
   // run athena query - fetch data
   const query = await getStaticContent(variables, './src/llmo-referral-traffic/sql/referral-traffic.sql');
-  const description = `[Athena Query] Fetching referral traffic data for ${site.getBaseURL()}`;
+  const description = `[Athena Query] Fetching referral traffic data for ${baseURL}`;
   const results = await athenaClient.query(query, databaseName, description);
 
   // early return if no rum data available
   if (results.length === 0) {
+    log.info(`[llmo-referral-traffic] No OpTel data found for ${baseURL}`);
     return {
       auditResult: {
         rowCount: results.length,
       },
-      fullAuditRef: `No OpTel Data Found for ${site.getBaseURL()}`,
+      fullAuditRef: `No OpTel Data Found for ${baseURL}`,
     };
   }
 
+  log.info('[llmo-referral-traffic] Enriching data with page intents and region information');
   const pageIntents = await site.getPageIntents();
+  log.info(`[llmo-referral-traffic] Retrieved ${pageIntents.length} page intents for site ${siteId}`);
   const pageIntentMap = pageIntents.reduce((acc, cur) => {
     acc[new URL(cur.getUrl()).pathname] = cur.getPageIntent();
     return acc;
@@ -161,6 +166,7 @@ export async function referralTrafficRunner(context) {
     result.page_intent = pageIntentMap[result.path] || '';
     result.region = extractCountryCode(result.path);
   });
+  log.info(`[llmo-referral-traffic] Data enrichment completed for ${results.length} rows`);
 
   // upload to sharepoint & publish via hlx admin api
   const sharepointClient = await createLLMOSharepointClient(context);
@@ -168,7 +174,7 @@ export async function referralTrafficRunner(context) {
   const workbook = await createWorkbook(results);
   const llmoFolder = site.getConfig()?.getLlmoDataFolder();
   const outputLocation = `${llmoFolder}/referral-traffic`;
-  const filename = `referral-traffic-w${getPreviousWeekYear(today)}.xlsx`;
+  const filename = `referral-traffic-w${String(week).padStart(2, '0')}-${year}.xlsx`;
 
   await saveExcelReport({
     sharepointClient,
