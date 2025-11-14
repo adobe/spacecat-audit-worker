@@ -1,3 +1,10 @@
+## [1.238.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.238.1...v1.238.2) (2025-11-14)
+
+
+### Bug Fixes
+
+* provide a Runbook for the canonical audit ([#1577](https://github.com/adobe/spacecat-audit-worker/issues/1577)) ([ebb8e4a](https://github.com/adobe/spacecat-audit-worker/commit/ebb8e4aea10d802cb822988361fe083677db19cc))
+
 ## [1.238.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.238.0...v1.238.1) (2025-11-14)
 
 
