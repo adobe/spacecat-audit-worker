@@ -251,6 +251,14 @@ export const opportunityAndSuggestionsStep = async (context) => {
           const urlPathPrefix = extractPathPrefix(url);
           return urlPathPrefix === brokenLinkPathPrefix;
         });
+
+        // Log warning if no alternatives found for this locale
+        if (filteredAlternatives.length === 0) {
+          log.warn(
+            `[${AUDIT_TYPE}] [Site: ${site.getId()}] No alternatives found for broken link `
+            + `with prefix ${brokenLinkPathPrefix}. urlTo: ${urlTo}, urlFrom: ${urlFrom}`,
+          );
+        }
       }
 
       return {

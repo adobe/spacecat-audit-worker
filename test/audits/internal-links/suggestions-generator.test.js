@@ -453,7 +453,7 @@ describe('generateSuggestionData', async function test() {
     expect(result.length).to.equal(1);
   });
 
-  it('should handle siteData items that are objects not strings', async () => {
+  it('should handle siteData items that are objects, not strings', async () => {
     // Test when siteData items are objects (not strings) - covers the object case in ternary operator
     // Import actual filter functions to use in mock
     const { filterByAuditScope, extractPathPrefix, isWithinAuditScope } = await import('../../../src/internal-links/subpath-filter.js');

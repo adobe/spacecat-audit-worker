@@ -43,7 +43,6 @@ export function isWithinAuditScope(url, baseURL) {
 
     // Ensure we match with a trailing slash to avoid false positives (e.g., /fr/ not /french)
     const basePathWithSlash = `${basePath}/`;
-    const baseURLWithSlash = `${baseURLWithSchema}/`;
 
     // Handle relative URLs
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -53,7 +52,15 @@ export function isWithinAuditScope(url, baseURL) {
 
     // Handle absolute URLs
     const urlWithSchema = prependSchema(url);
-    return urlWithSchema.startsWith(baseURLWithSlash);
+    const parsedUrl = new URL(urlWithSchema);
+
+    // Compare hostnames (and ports, if present) - protocol-agnostic
+    if (parsedUrl.hostname !== parsedBaseURL.hostname || parsedUrl.port !== parsedBaseURL.port) {
+      return false;
+    }
+
+    // Compare paths (protocol-agnostic)
+    return parsedUrl.pathname.startsWith(basePathWithSlash) || parsedUrl.pathname === basePath;
   } catch (error) {
     // If URL parsing fails, exclude it to be safe
     return false;

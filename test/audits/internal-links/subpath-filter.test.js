@@ -86,6 +86,15 @@ describe('subpath-filter', () => {
       // Invalid baseURL also causes parsing errors
       expect(isWithinAuditScope('https://bulk.com/uk/page', '://invalid')).to.equal(false);
     });
+
+    it('should return false when URLs have different ports', () => {
+      // Test port mismatch - hostnames match but ports differ
+      // This covers the port comparison branch in the condition
+      expect(isWithinAuditScope('https://bulk.com:8080/uk/page', 'bulk.com/uk')).to.equal(false);
+      expect(isWithinAuditScope('https://bulk.com/uk/page', 'bulk.com:8080/uk')).to.equal(false);
+      // Same port should work
+      expect(isWithinAuditScope('https://bulk.com:8080/uk/page', 'bulk.com:8080/uk')).to.equal(true);
+    });
   });
 
   describe('filterByAuditScope', () => {

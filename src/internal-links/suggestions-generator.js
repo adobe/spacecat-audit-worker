@@ -49,26 +49,33 @@ export const generateSuggestionData = async (finalUrl, brokenInternalLinks, cont
     let linkFilteredSiteData;
     let linkFilteredHeaderLinks;
 
-    if (linkPathPrefix && filteredSiteData.length > 0) {
-      const prefixFilteredSiteData = filteredSiteData.filter((item) => {
-        // siteData items are objects with a 'url' property
-        const url = typeof item === 'string' ? item : item?.url;
-        const urlPathPrefix = extractPathPrefix(url);
-        return urlPathPrefix === linkPathPrefix;
-      });
-      const prefixFilteredHeaderLinks = filteredHeaderLinks.filter((item) => {
-        // headerLinks are strings
-        const url = typeof item === 'string' ? item : item?.url;
-        const urlPathPrefix = extractPathPrefix(url);
-        return urlPathPrefix === linkPathPrefix;
-      });
+    if (linkPathPrefix) {
+      if (filteredSiteData.length > 0) {
+        const prefixFilteredSiteData = filteredSiteData.filter((item) => {
+          // siteData items can be either strings (URLs) or objects with a 'url' property
+          const url = typeof item === 'string' ? item : item?.url;
+          const urlPathPrefix = extractPathPrefix(url);
+          return urlPathPrefix === linkPathPrefix;
+        });
 
-      // Only use prefix-filtered data if it's not empty, otherwise fall back to base-filtered data
-      if (prefixFilteredSiteData.length > 0) {
-        linkFilteredSiteData = prefixFilteredSiteData;
+        // Only use prefix-filtered data if it's not empty,
+        // otherwise fall back to base-filtered data
+        if (prefixFilteredSiteData.length > 0) {
+          linkFilteredSiteData = prefixFilteredSiteData;
+        }
       }
-      if (prefixFilteredHeaderLinks.length > 0) {
-        linkFilteredHeaderLinks = prefixFilteredHeaderLinks;
+
+      if (filteredHeaderLinks.length > 0) {
+        const prefixFilteredHeaderLinks = filteredHeaderLinks.filter((item) => {
+          // headerLinks can be either strings (URLs) or objects with a 'url' property
+          const url = typeof item === 'string' ? item : item?.url;
+          const urlPathPrefix = extractPathPrefix(url);
+          return urlPathPrefix === linkPathPrefix;
+        });
+
+        if (prefixFilteredHeaderLinks.length > 0) {
+          linkFilteredHeaderLinks = prefixFilteredHeaderLinks;
+        }
       }
     }
 
