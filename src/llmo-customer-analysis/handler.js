@@ -276,6 +276,7 @@ export async function runLlmoCustomerAnalysis(finalUrl, context, site, auditCont
 
   // Ensure relevant audits and imports are enabled
   await enableAudits(site, context, [
+    'scrape-top-pages',
     'headings',
     'llm-blocked',
     'llm-error-pages',

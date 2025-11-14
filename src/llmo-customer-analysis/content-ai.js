@@ -39,13 +39,13 @@ async function getAccessToken(context) {
       IMS_HOST: context.env.CONTENTAI_IMS_HOST,
       IMS_CLIENT_ID: context.env.CONTENTAI_CLIENT_ID,
       IMS_CLIENT_SECRET: context.env.CONTENTAI_CLIENT_SECRET,
-      IMS_CLIENT_SCOPE: context.env.CONTENTAI_CLIENT_SCOPE,
+      IMS_SCOPE: context.env.CONTENTAI_CLIENT_SCOPE,
     },
   });
-  return imsClient.getServiceAccessToken();
+  return imsClient.getServiceAccessTokenV3();
 }
 
-async function getConfigurations(endpoint, accessToken) {
+async function getConfigurations(endpoint, tokenType, accessToken) {
   let allItems = [];
   let cursor = null;
 
@@ -58,7 +58,7 @@ async function getConfigurations(endpoint, accessToken) {
     const configurationsResponse = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `${tokenType} ${accessToken}`,
       },
     });
 
@@ -81,23 +81,31 @@ export async function enableContentAI(site, context) {
   const { env, log } = context;
 
   const tokenResponse = await getAccessToken(context);
+  const configurations = await getConfigurations(
+    env.CONTENTAI_ENDPOINT,
+    tokenResponse.token_type,
+    tokenResponse.access_token,
+  );
 
-  const configurations = await getConfigurations(env.CONTENTAI_ENDPOINT, tokenResponse);
+  const overrideBaseURL = site.getConfig()?.getFetchConfig()?.overrideBaseURL;
+  const baseURL = site.getBaseURL();
 
   const existingConf = configurations.find(
-    (conf) => conf.steps?.find((step) => step.baseUrl === site.getBaseURL()),
+    (conf) => conf.steps?.find(
+      (step) => step.baseUrl === baseURL || (!!overrideBaseURL && step.baseUrl === overrideBaseURL),
+    ),
   );
 
   if (existingConf) {
-    log.info(`ContentAI configuration already exists for site ${site.getBaseURL()}`);
+    log.info(`ContentAI configuration already exists for site ${baseURL}`);
     return;
   }
 
   const timestamp = Date.now();
   const cronSchedule = calculateWeeklyCronSchedule();
-  const name = `${site.getBaseURL().replace(/https?:\/\//, '')}-generative`;
+  const name = `${baseURL.replace(/https?:\/\//, '')}-generative`;
 
-  log.info(`Creating ContentAI configuration for site ${site.getBaseURL()} with cron schedule ${cronSchedule} and name ${name}`);
+  log.info(`Creating ContentAI configuration for site ${baseURL} with cron schedule ${cronSchedule} and name ${name}`);
 
   const contentAiData = {
     steps: [
@@ -108,7 +116,7 @@ export async function enableContentAI(site, context) {
       {
         type: 'discovery',
         sourceId: `${name}-${timestamp}`,
-        baseUrl: site.getBaseURL(),
+        baseUrl: baseURL,
         discoveryProperties: {
           type: 'website',
           includePdfs: true,
@@ -130,17 +138,17 @@ export async function enableContentAI(site, context) {
     ],
   };
 
-  const contentAIResponse = await fetch(env.CONTENTAI_ENDPOINT, {
+  const contentAIResponse = await fetch(`${env.CONTENTAI_ENDPOINT}/configurations`, {
     method: 'POST',
     body: JSON.stringify(contentAiData),
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${tokenResponse}`,
+      Authorization: `${tokenResponse.token_type} ${tokenResponse.access_token}`,
     },
   });
 
   if (!contentAIResponse.ok) {
     throw new Error(`Failed to enable content AI for site ${site.getId()}: ${contentAIResponse.status} ${contentAIResponse.statusText}`);
   }
-  log.info(`ContentAI configuration created for site ${site.getBaseURL()}`);
+  log.info(`ContentAI configuration created for site ${baseURL}`);
 }

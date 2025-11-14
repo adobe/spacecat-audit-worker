@@ -89,9 +89,12 @@ describe('Content AI - enableContentAI', () => {
     const fixedDate = new Date('2025-01-14T15:30:00Z');
     clock = sinon.useFakeTimers(fixedDate.getTime());
 
-    // Mock ImsClient
+    // Mock ImsClient with v3 token response
     mockImsClient = {
-      getServiceAccessToken: sandbox.stub().resolves('test-access-token'),
+      getServiceAccessTokenV3: sandbox.stub().resolves({
+        access_token: 'test-access-token',
+        token_type: 'Bearer',
+      }),
     };
 
     const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js', {
@@ -106,6 +109,9 @@ describe('Content AI - enableContentAI', () => {
     site = {
       getId: sandbox.stub().returns('site-123'),
       getBaseURL: sandbox.stub().returns('https://example.com'),
+      getConfig: sandbox.stub().returns({
+        getFetchConfig: sandbox.stub().returns({}),
+      }),
     };
 
     context = {
@@ -146,13 +152,13 @@ describe('Content AI - enableContentAI', () => {
       await enableContentAI(site, context);
 
       // Verify IMS client was called
-      expect(mockImsClient.getServiceAccessToken).to.have.been.calledOnce;
+      expect(mockImsClient.getServiceAccessTokenV3).to.have.been.calledOnce;
 
       // Verify configurations request
       expect(mockFetch.firstCall.args[0]).to.equal('https://contentai.example.com/configurations');
 
       // Verify enable content AI request
-      expect(mockFetch.secondCall.args[0]).to.equal('https://contentai.example.com');
+      expect(mockFetch.secondCall.args[0]).to.equal('https://contentai.example.com/configurations');
       expect(mockFetch.secondCall.args[1].method).to.equal('POST');
 
       const requestBody = JSON.parse(mockFetch.secondCall.args[1].body);
@@ -191,9 +197,12 @@ describe('Content AI - enableContentAI', () => {
       const fixedDate = new Date('2025-01-14T23:30:00Z');
       clock = sinon.useFakeTimers(fixedDate.getTime());
 
-      // Mock ImsClient
+      // Mock ImsClient with v3 token response
       mockImsClient = {
-        getServiceAccessToken: sandbox.stub().resolves('test-access-token'),
+        getServiceAccessTokenV3: sandbox.stub().resolves({
+          access_token: 'test-access-token',
+          token_type: 'Bearer',
+        }),
       };
 
       const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js', {
@@ -247,9 +256,12 @@ describe('Content AI - enableContentAI', () => {
       const fixedDate = new Date('2025-01-12T10:00:00Z'); // Sunday
       clock = sinon.useFakeTimers(fixedDate.getTime());
 
-      // Mock ImsClient
+      // Mock ImsClient with v3 token response
       mockImsClient = {
-        getServiceAccessToken: sandbox.stub().resolves('test-access-token'),
+        getServiceAccessTokenV3: sandbox.stub().resolves({
+          access_token: 'test-access-token',
+          token_type: 'Bearer',
+        }),
       };
 
       const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js', {
@@ -302,9 +314,12 @@ describe('Content AI - enableContentAI', () => {
       const fixedDate = new Date('2025-01-18T23:30:00Z'); // Saturday
       clock = sinon.useFakeTimers(fixedDate.getTime());
 
-      // Mock ImsClient
+      // Mock ImsClient with v3 token response
       mockImsClient = {
-        getServiceAccessToken: sandbox.stub().resolves('test-access-token'),
+        getServiceAccessTokenV3: sandbox.stub().resolves({
+          access_token: 'test-access-token',
+          token_type: 'Bearer',
+        }),
       };
 
       const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js', {
@@ -519,11 +534,43 @@ describe('Content AI - enableContentAI', () => {
       // Should paginate through all results and find existing config
       expect(mockFetch.callCount).to.equal(2);
     });
+
+    it('should skip enabling when override base URL matches existing configuration', async () => {
+      // Mock site with fetchConfig override
+      site.getConfig.returns({
+        getFetchConfig: sandbox.stub().returns({
+          overrideBaseURL: 'https://override.example.com',
+        }),
+      });
+
+      // Mock configurations endpoint with config matching override base URL
+      mockFetch.onFirstCall().resolves({
+        ok: true,
+        json: sandbox.stub().resolves({
+          items: [
+            {
+              id: 'existing-config',
+              steps: [
+                {
+                  type: 'discovery',
+                  baseUrl: 'https://override.example.com',
+                },
+              ],
+            },
+          ],
+        }),
+      });
+
+      await enableContentAI(site, context);
+
+      // Should only call configurations endpoint, not enable endpoint
+      expect(mockFetch.callCount).to.equal(1);
+    });
   });
 
   describe('error handling', () => {
     it('should throw error when IMS token request fails', async () => {
-      mockImsClient.getServiceAccessToken.rejects(new Error('IMS authentication failed'));
+      mockImsClient.getServiceAccessTokenV3.rejects(new Error('IMS authentication failed'));
 
       await expect(enableContentAI(site, context))
         .to.be.rejectedWith('IMS authentication failed');
