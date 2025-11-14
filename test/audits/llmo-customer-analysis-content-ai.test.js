@@ -15,9 +15,61 @@
 import { expect, use } from 'chai';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
+import chaiAsPromised from 'chai-as-promised';
 import esmock from 'esmock';
 
 use(sinonChai);
+use(chaiAsPromised);
+
+describe('Content AI - calculateWeeklyCronSchedule', () => {
+  let sandbox;
+  let clock;
+  let calculateWeeklyCronSchedule;
+
+  beforeEach(async () => {
+    sandbox = sinon.createSandbox();
+    const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js');
+    calculateWeeklyCronSchedule = contentAiModule.calculateWeeklyCronSchedule;
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+    if (clock) clock.restore();
+  });
+
+  it('should increment day when hour is 23 (wraps to midnight)', () => {
+    // Set time to 11:30 PM on Tuesday - next hour will be 0 (midnight), day should increment to Wednesday
+    const fixedDate = new Date('2025-01-14T23:30:00'); // Local time
+    clock = sinon.useFakeTimers(fixedDate.getTime());
+
+    const result = calculateWeeklyCronSchedule();
+
+    // Hour 23 + 1 = 0 (midnight), Tuesday (2) + 1 = Wednesday (3)
+    expect(result).to.equal('0 0 * * 3');
+  });
+
+  it('should increment day when hour is 23 on Saturday (wraps to Sunday)', () => {
+    // Set time to 11:30 PM on Saturday - next hour will be 0 (midnight), day should wrap to Sunday
+    const fixedDate = new Date('2025-01-18T23:30:00'); // Saturday local time
+    clock = sinon.useFakeTimers(fixedDate.getTime());
+
+    const result = calculateWeeklyCronSchedule();
+
+    // Hour 23 + 1 = 0 (midnight), Saturday (6) + 1 = Sunday (0)
+    expect(result).to.equal('0 0 * * 0');
+  });
+
+  it('should not increment day when hour does not wrap to midnight', () => {
+    // Set time to 3:30 PM on Tuesday
+    const fixedDate = new Date('2025-01-14T15:30:00'); // Local time
+    clock = sinon.useFakeTimers(fixedDate.getTime());
+
+    const result = calculateWeeklyCronSchedule();
+
+    // Hour 15 + 1 = 16, day stays Tuesday (2)
+    expect(result).to.equal('0 16 * * 2');
+  });
+});
 
 describe('Content AI - enableContentAI', () => {
   let sandbox;
@@ -26,6 +78,7 @@ describe('Content AI - enableContentAI', () => {
   let mockFetch;
   let enableContentAI;
   let clock;
+  let mockImsClient;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -36,7 +89,18 @@ describe('Content AI - enableContentAI', () => {
     const fixedDate = new Date('2025-01-14T15:30:00Z');
     clock = sinon.useFakeTimers(fixedDate.getTime());
 
-    const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js');
+    // Mock ImsClient
+    mockImsClient = {
+      getServiceAccessToken: sandbox.stub().resolves('test-access-token'),
+    };
+
+    const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js', {
+      '@adobe/spacecat-shared-ims-client': {
+        ImsClient: {
+          createFrom: sandbox.stub().returns(mockImsClient),
+        },
+      },
+    });
     enableContentAI = contentAiModule.enableContentAI;
 
     site = {
@@ -46,12 +110,15 @@ describe('Content AI - enableContentAI', () => {
 
     context = {
       env: {
-        CONTENTAI_GRANT_TYPE: 'client_credentials',
         CONTENTAI_CLIENT_ID: 'test-client-id',
         CONTENTAI_CLIENT_SECRET: 'test-secret',
-        CONTENTAI_SCOPE: 'test-scope',
-        CONTENTAI_TOKEN_ENDPOINT: 'https://auth.example.com/token',
+        CONTENTAI_CLIENT_SCOPE: 'openid,AdobeID,aem.contentai',
+        CONTENTAI_IMS_HOST: 'ims-na1.adobelogin.com',
         CONTENTAI_ENDPOINT: 'https://contentai.example.com',
+      },
+      log: {
+        info: sandbox.stub(),
+        error: sandbox.stub(),
       },
     };
   });
@@ -63,17 +130,8 @@ describe('Content AI - enableContentAI', () => {
 
   describe('successful enablement', () => {
     it('should enable ContentAI with correct cron schedule and timestamp', async () => {
-      // Mock token endpoint
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
-        }),
-      });
-
       // Mock configurations endpoint - no existing config
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [],
@@ -81,24 +139,23 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock enable content AI endpoint
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
       });
 
       await enableContentAI(site, context);
 
-      // Verify token request
-      expect(mockFetch.firstCall.args[0]).to.equal('https://auth.example.com/token');
-      expect(mockFetch.firstCall.args[1].method).to.equal('POST');
+      // Verify IMS client was called
+      expect(mockImsClient.getServiceAccessToken).to.have.been.calledOnce;
 
       // Verify configurations request
-      expect(mockFetch.secondCall.args[0]).to.equal('https://contentai.example.com/configurations');
+      expect(mockFetch.firstCall.args[0]).to.equal('https://contentai.example.com/configurations');
 
       // Verify enable content AI request
-      expect(mockFetch.thirdCall.args[0]).to.equal('https://contentai.example.com');
-      expect(mockFetch.thirdCall.args[1].method).to.equal('POST');
+      expect(mockFetch.secondCall.args[0]).to.equal('https://contentai.example.com');
+      expect(mockFetch.secondCall.args[1].method).to.equal('POST');
 
-      const requestBody = JSON.parse(mockFetch.thirdCall.args[1].body);
+      const requestBody = JSON.parse(mockFetch.secondCall.args[1].body);
 
       // Calculate expected values based on local timezone
       const testDate = new Date('2025-01-14T15:30:00Z');
@@ -134,20 +191,22 @@ describe('Content AI - enableContentAI', () => {
       const fixedDate = new Date('2025-01-14T23:30:00Z');
       clock = sinon.useFakeTimers(fixedDate.getTime());
 
-      const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js');
+      // Mock ImsClient
+      mockImsClient = {
+        getServiceAccessToken: sandbox.stub().resolves('test-access-token'),
+      };
+
+      const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js', {
+        '@adobe/spacecat-shared-ims-client': {
+          ImsClient: {
+            createFrom: sandbox.stub().returns(mockImsClient),
+          },
+        },
+      });
       enableContentAI = contentAiModule.enableContentAI;
 
-      // Mock token endpoint
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
-        }),
-      });
-
       // Mock configurations endpoint
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [],
@@ -155,13 +214,13 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock enable content AI endpoint
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
       });
 
       await enableContentAI(site, context);
 
-      const requestBody = JSON.parse(mockFetch.thirdCall.args[1].body);
+      const requestBody = JSON.parse(mockFetch.secondCall.args[1].body);
 
       // Calculate expected values based on local timezone
       const testDate = new Date('2025-01-14T23:30:00Z');
@@ -188,32 +247,35 @@ describe('Content AI - enableContentAI', () => {
       const fixedDate = new Date('2025-01-12T10:00:00Z'); // Sunday
       clock = sinon.useFakeTimers(fixedDate.getTime());
 
-      const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js');
+      // Mock ImsClient
+      mockImsClient = {
+        getServiceAccessToken: sandbox.stub().resolves('test-access-token'),
+      };
+
+      const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js', {
+        '@adobe/spacecat-shared-ims-client': {
+          ImsClient: {
+            createFrom: sandbox.stub().returns(mockImsClient),
+          },
+        },
+      });
       enableContentAI = contentAiModule.enableContentAI;
 
       // Mock endpoints
       mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
+          items: [],
         }),
       });
 
       mockFetch.onSecondCall().resolves({
         ok: true,
-        json: sandbox.stub().resolves({
-          items: [],
-        }),
-      });
-
-      mockFetch.onThirdCall().resolves({
-        ok: true,
       });
 
       await enableContentAI(site, context);
 
-      const requestBody = JSON.parse(mockFetch.thirdCall.args[1].body);
+      const requestBody = JSON.parse(mockFetch.secondCall.args[1].body);
 
       // Calculate expected values based on local timezone
       const testDate = new Date('2025-01-12T10:00:00Z');
@@ -240,32 +302,35 @@ describe('Content AI - enableContentAI', () => {
       const fixedDate = new Date('2025-01-18T23:30:00Z'); // Saturday
       clock = sinon.useFakeTimers(fixedDate.getTime());
 
-      const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js');
+      // Mock ImsClient
+      mockImsClient = {
+        getServiceAccessToken: sandbox.stub().resolves('test-access-token'),
+      };
+
+      const contentAiModule = await esmock('../../src/llmo-customer-analysis/content-ai.js', {
+        '@adobe/spacecat-shared-ims-client': {
+          ImsClient: {
+            createFrom: sandbox.stub().returns(mockImsClient),
+          },
+        },
+      });
       enableContentAI = contentAiModule.enableContentAI;
 
       // Mock endpoints
       mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
+          items: [],
         }),
       });
 
       mockFetch.onSecondCall().resolves({
         ok: true,
-        json: sandbox.stub().resolves({
-          items: [],
-        }),
-      });
-
-      mockFetch.onThirdCall().resolves({
-        ok: true,
       });
 
       await enableContentAI(site, context);
 
-      const requestBody = JSON.parse(mockFetch.thirdCall.args[1].body);
+      const requestBody = JSON.parse(mockFetch.secondCall.args[1].body);
 
       // Calculate expected values based on local timezone
       const testDate = new Date('2025-01-18T23:30:00Z');
@@ -285,17 +350,8 @@ describe('Content AI - enableContentAI', () => {
 
   describe('pagination handling', () => {
     it('should fetch all configurations when cursor is present', async () => {
-      // Mock token endpoint
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
-        }),
-      });
-
       // Mock first configurations call with cursor
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [
@@ -307,7 +363,7 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock second configurations call without cursor (last page)
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [
@@ -317,34 +373,25 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock enable content AI endpoint
-      mockFetch.onCall(3).resolves({
+      mockFetch.onCall(2).resolves({
         ok: true,
       });
 
       await enableContentAI(site, context);
 
       // Verify first configurations call (without cursor)
-      expect(mockFetch.secondCall.args[0]).to.equal('https://contentai.example.com/configurations');
+      expect(mockFetch.firstCall.args[0]).to.equal('https://contentai.example.com/configurations');
 
       // Verify second configurations call (with cursor)
-      expect(mockFetch.thirdCall.args[0]).to.equal('https://contentai.example.com/configurations?cursor=next-page-cursor');
+      expect(mockFetch.secondCall.args[0]).to.equal('https://contentai.example.com/configurations?cursor=next-page-cursor');
 
       // Verify enable was called after pagination
-      expect(mockFetch.callCount).to.equal(4);
+      expect(mockFetch.callCount).to.equal(3);
     });
 
     it('should handle multiple pages of pagination', async () => {
-      // Mock token endpoint
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
-        }),
-      });
-
       // Mock first page
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [{ id: 'config-1', steps: [] }],
@@ -353,7 +400,7 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock second page
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [{ id: 'config-2', steps: [] }],
@@ -362,7 +409,7 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock third page (last page)
-      mockFetch.onCall(3).resolves({
+      mockFetch.onCall(2).resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [{ id: 'config-3', steps: [] }],
@@ -370,31 +417,22 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock enable content AI endpoint
-      mockFetch.onCall(4).resolves({
+      mockFetch.onCall(3).resolves({
         ok: true,
       });
 
       await enableContentAI(site, context);
 
       // Verify all pagination calls were made
-      expect(mockFetch.callCount).to.equal(5);
-      expect(mockFetch.getCall(1).args[0]).to.equal('https://contentai.example.com/configurations');
-      expect(mockFetch.getCall(2).args[0]).to.equal('https://contentai.example.com/configurations?cursor=cursor-page-2');
-      expect(mockFetch.getCall(3).args[0]).to.equal('https://contentai.example.com/configurations?cursor=cursor-page-3');
+      expect(mockFetch.callCount).to.equal(4);
+      expect(mockFetch.getCall(0).args[0]).to.equal('https://contentai.example.com/configurations');
+      expect(mockFetch.getCall(1).args[0]).to.equal('https://contentai.example.com/configurations?cursor=cursor-page-2');
+      expect(mockFetch.getCall(2).args[0]).to.equal('https://contentai.example.com/configurations?cursor=cursor-page-3');
     });
 
     it('should handle empty items array in paginated response', async () => {
-      // Mock token endpoint
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
-        }),
-      });
-
       // Mock configurations endpoint with empty items
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [],
@@ -403,7 +441,7 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock second page
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [],
@@ -411,30 +449,21 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock enable content AI endpoint
-      mockFetch.onCall(3).resolves({
+      mockFetch.onCall(2).resolves({
         ok: true,
       });
 
       await enableContentAI(site, context);
 
       // Should continue pagination even with empty items
-      expect(mockFetch.callCount).to.equal(4);
+      expect(mockFetch.callCount).to.equal(3);
     });
   });
 
   describe('existing configuration handling', () => {
     it('should skip enabling when configuration already exists', async () => {
-      // Mock token endpoint
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
-        }),
-      });
-
       // Mock configurations endpoint with existing config
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [
@@ -453,22 +482,13 @@ describe('Content AI - enableContentAI', () => {
 
       await enableContentAI(site, context);
 
-      // Should only call token and configurations endpoints, not enable endpoint
-      expect(mockFetch.callCount).to.equal(2);
+      // Should only call configurations endpoint, not enable endpoint
+      expect(mockFetch.callCount).to.equal(1);
     });
 
     it('should check existing configuration across paginated results', async () => {
-      // Mock token endpoint
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
-        }),
-      });
-
       // Mock first page without matching config
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [
@@ -482,7 +502,7 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock second page with matching config
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [
@@ -497,34 +517,21 @@ describe('Content AI - enableContentAI', () => {
       await enableContentAI(site, context);
 
       // Should paginate through all results and find existing config
-      expect(mockFetch.callCount).to.equal(3);
+      expect(mockFetch.callCount).to.equal(2);
     });
   });
 
   describe('error handling', () => {
-    it('should throw error when token request fails', async () => {
-      mockFetch.onFirstCall().resolves({
-        ok: false,
-        status: 401,
-        statusText: 'Unauthorized',
-      });
+    it('should throw error when IMS token request fails', async () => {
+      mockImsClient.getServiceAccessToken.rejects(new Error('IMS authentication failed'));
 
       await expect(enableContentAI(site, context))
-        .to.be.rejectedWith('Failed to get access token from ContentAI: 401 Unauthorized');
+        .to.be.rejectedWith('IMS authentication failed');
     });
 
     it('should throw error when configurations request fails', async () => {
-      // Mock token endpoint
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
-        }),
-      });
-
       // Mock configurations endpoint failure
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: false,
         status: 500,
         statusText: 'Internal Server Error',
@@ -535,17 +542,8 @@ describe('Content AI - enableContentAI', () => {
     });
 
     it('should throw error when enable content AI request fails', async () => {
-      // Mock token endpoint
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
-        }),
-      });
-
       // Mock configurations endpoint
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [],
@@ -553,7 +551,7 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock enable content AI endpoint failure
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: false,
         status: 400,
         statusText: 'Bad Request',
@@ -564,17 +562,8 @@ describe('Content AI - enableContentAI', () => {
     });
 
     it('should throw error when paginated configurations request fails', async () => {
-      // Mock token endpoint
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
-        }),
-      });
-
       // Mock first configurations page succeeds
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [{ id: 'config-1', steps: [] }],
@@ -583,7 +572,7 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock second configurations page fails
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: false,
         status: 503,
         statusText: 'Service Unavailable',
@@ -600,25 +589,17 @@ describe('Content AI - enableContentAI', () => {
       mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
+          items: [],
         }),
       });
 
       mockFetch.onSecondCall().resolves({
         ok: true,
-        json: sandbox.stub().resolves({
-          items: [],
-        }),
-      });
-
-      mockFetch.onThirdCall().resolves({
-        ok: true,
       });
 
       await enableContentAI(site, context);
 
-      const requestBody = JSON.parse(mockFetch.thirdCall.args[1].body);
+      const requestBody = JSON.parse(mockFetch.secondCall.args[1].body);
 
       // Verify all steps are present
       expect(requestBody.steps).to.have.lengthOf(3);
@@ -648,25 +629,17 @@ describe('Content AI - enableContentAI', () => {
       mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
+          items: [],
         }),
       });
 
       mockFetch.onSecondCall().resolves({
         ok: true,
-        json: sandbox.stub().resolves({
-          items: [],
-        }),
-      });
-
-      mockFetch.onThirdCall().resolves({
-        ok: true,
       });
 
       await enableContentAI(site, context);
 
-      const requestBody = JSON.parse(mockFetch.thirdCall.args[1].body);
+      const requestBody = JSON.parse(mockFetch.secondCall.args[1].body);
 
       // Verify protocol is stripped in name/sourceId
       expect(requestBody.steps[0].name).to.equal('www.test-site.com-generative');
@@ -679,17 +652,8 @@ describe('Content AI - enableContentAI', () => {
 
   describe('authorization headers', () => {
     it('should use correct authorization header for configurations request', async () => {
-      // Mock token endpoint
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
-        }),
-      });
-
       // Mock configurations endpoint
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [],
@@ -697,30 +661,21 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock enable content AI endpoint
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
       });
 
       await enableContentAI(site, context);
 
       // Verify configurations request has correct auth header
-      const configsHeaders = mockFetch.secondCall.args[1].headers;
+      const configsHeaders = mockFetch.firstCall.args[1].headers;
       expect(configsHeaders.Authorization).to.equal('Bearer test-access-token');
       expect(configsHeaders['Content-Type']).to.equal('application/json');
     });
 
     it('should use correct authorization header for enable request', async () => {
-      // Mock token endpoint
-      mockFetch.onFirstCall().resolves({
-        ok: true,
-        json: sandbox.stub().resolves({
-          access_token: 'test-access-token',
-          token_type: 'Bearer',
-        }),
-      });
-
       // Mock configurations endpoint
-      mockFetch.onSecondCall().resolves({
+      mockFetch.onFirstCall().resolves({
         ok: true,
         json: sandbox.stub().resolves({
           items: [],
@@ -728,14 +683,14 @@ describe('Content AI - enableContentAI', () => {
       });
 
       // Mock enable content AI endpoint
-      mockFetch.onThirdCall().resolves({
+      mockFetch.onSecondCall().resolves({
         ok: true,
       });
 
       await enableContentAI(site, context);
 
       // Verify enable request has correct auth header
-      const enableHeaders = mockFetch.thirdCall.args[1].headers;
+      const enableHeaders = mockFetch.secondCall.args[1].headers;
       expect(enableHeaders.Authorization).to.equal('Bearer test-access-token');
       expect(enableHeaders['Content-Type']).to.equal('application/json');
     });

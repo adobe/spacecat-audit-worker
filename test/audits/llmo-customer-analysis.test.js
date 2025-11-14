@@ -1156,7 +1156,7 @@ describe('LLMO Customer Analysis Handler', () => {
       );
 
       // Should log the error
-      expect(log.error).to.have.been.calledWith('Failed to enable ContentAI for site site-123: ContentAI service unavailable');
+      expect(log.error).to.have.been.calledWith('Failed to process ContentAI for site site-123: ContentAI service unavailable');
 
       // Should still complete successfully despite the error
       expect(result.auditResult.status).to.equal('completed');

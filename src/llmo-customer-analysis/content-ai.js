@@ -17,7 +17,7 @@ import { ImsClient } from '@adobe/spacecat-shared-ims-client';
  * If the next hour is midnight (0), the day is incremented.
  * @returns {string} Cron schedule in format "0 HH * * D" where HH is hour and D is day of week
  */
-function calculateWeeklyCronSchedule() {
+export function calculateWeeklyCronSchedule() {
   const now = new Date();
   const currentHour = now.getHours();
   const nextHour = (currentHour + 1) % 24;
