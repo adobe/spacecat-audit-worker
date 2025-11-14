@@ -93,7 +93,7 @@ describe('audit and send scraping step', () => {
       },
       dataAccessStub: {
         Opportunity: {
-          allBySiteIdAndStatus: sinon.stub().resolves([]),
+          allBySiteId: sinon.stub().resolves([]),
           create: sinon.stub(),
         },
       },
@@ -878,7 +878,7 @@ describe('process opportunity step', () => {
 
   let dataAccessStub = {
     Opportunity: {
-      allBySiteIdAndStatus: sinon.stub().resolves([]),
+      allBySiteId: sinon.stub().resolves([]),
       create: sinon.stub().returns(formsOppty),
     },
   };
@@ -893,7 +893,7 @@ describe('process opportunity step', () => {
 
     dataAccessStub = {
       Opportunity: {
-        allBySiteIdAndStatus: sinon.stub().resolves([]),
+        allBySiteId: sinon.stub().resolves([]),
         create: sinon.stub().returns(formsOppty),
       },
     };

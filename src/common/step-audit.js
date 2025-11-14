@@ -67,12 +67,17 @@ export class StepAudit extends BaseAudit {
     }
 
     const nextStepName = this.getNextStepName(step.name);
-    const auditContext = {
+
+    const baseAuditContext = {
       next: nextStepName,
       auditId: audit.getId(),
       auditType: audit.getAuditType(),
       fullAuditRef: audit.getFullAuditRef(),
     };
+
+    const auditContext = isNonEmptyObject(stepResult.auditContext)
+      ? { ...stepResult.auditContext, ...baseAuditContext }
+      : baseAuditContext;
 
     if (step.destination === AUDIT_STEP_DESTINATIONS.SCRAPE_CLIENT) {
       const scrapeClient = ScrapeClient.createFrom(context);

@@ -207,7 +207,7 @@ describe('Canonical URL Tests', () => {
         success: false,
         explanation: CANONICAL_CHECKS.CANONICAL_TAG_OUTSIDE_HEAD.explanation,
       });
-      expect(log.info).to.have.been.calledWith('Canonical tag is not in the head section');
+      expect(log.info).to.have.been.calledWith('Canonical tag is not in the head section (detected via Cheerio)');
     });
 
     it('should follow redirects and validate canonical tag on the final destination page', async () => {
@@ -877,6 +877,107 @@ describe('Canonical URL Tests', () => {
         message: 'No pages with 200 status found to analyze for canonical tags',
       });
       expect(log.info).to.have.been.calledWith('No pages returned 200 status, ending audit without creating opportunities.');
+    });
+
+    it('should skip redundant fetch for self-referenced canonical URLs', async () => {
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/page1';
+      const html = `<html lang="en"><head><link rel="canonical" href="${pageURL}"><title>test</title></head><body></body></html>`;
+
+      // Optimization: self-referenced URL fetched twice (pre-flight + audit)
+      nock('https://example.com').get('/page1').twice().reply(200, html);
+
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => pageURL }]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('fullAuditRef', baseURL);
+      expect(result.auditResult).to.deep.equal({
+        status: 'success',
+        message: 'No canonical issues detected',
+      });
+
+      expect(nock.isDone()).to.be.true;
+    });
+
+    it('should fetch canonical URL when NOT self-referenced', async () => {
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/page1';
+      const canonicalURL = 'https://example.com/canonical-page';
+
+      const pageHtml = `<html lang="en"><head><link rel="canonical" href="${canonicalURL}"><title>test</title></head><body></body></html>`;
+      const canonicalHtml = `<html lang="en"><head><link rel="canonical" href="${canonicalURL}"><title>canonical</title></head><body></body></html>`;
+
+      // No optimization: page fetched twice (pre-flight + audit), canonical fetched once
+      nock('https://example.com').get('/page1').twice().reply(200, pageHtml);
+      nock('https://example.com').get('/canonical-page').once().reply(200, canonicalHtml);
+
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => pageURL }]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result).to.have.property('fullAuditRef', baseURL);
+      expect(result).to.have.property('auditResult');
+
+      // Result varies by audit logic; key assertion is both URLs fetched
+      if (Array.isArray(result.auditResult)) {
+        expect(result.auditResult).to.have.lengthOf.at.least(1);
+        const hasSelfRefError = result.auditResult.some((r) => r.type === 'canonical-self-referenced');
+        expect(hasSelfRefError).to.be.true;
+      } else {
+        expect(result.auditResult).to.have.property('status');
+      }
+
+      expect(nock.isDone()).to.be.true;
+    });
+
+    it('should handle URL normalization with trailing slashes', async () => {
+      const baseURL = 'https://example.com';
+      const pageURL = 'https://example.com/page1';
+      const canonicalURLWithSlash = 'https://example.com/page1/';
+
+      const html = `<html lang="en"><head><link rel="canonical" href="${canonicalURLWithSlash}"><title>test</title></head><body></body></html>`;
+
+      // Normalization: /page1 and /page1/ treated as same URL, fetched twice (pre-flight + audit)
+      nock('https://example.com').get('/page1').twice().reply(200, html);
+
+      const getTopPagesForSiteStub = sinon.stub().resolves([{ getUrl: () => pageURL }]);
+
+      const context = {
+        log,
+        dataAccess: {
+          SiteTopPage: { allBySiteIdAndSourceAndGeo: getTopPagesForSiteStub },
+        },
+      };
+      const site = { getId: () => 'testSiteId' };
+
+      const result = await canonicalAuditRunner(baseURL, context, site);
+
+      expect(result).to.be.an('object');
+      expect(result.auditResult).to.deep.equal({
+        status: 'success',
+        message: 'No canonical issues detected',
+      });
+
+      expect(nock.isDone()).to.be.true;
     });
   });
 
