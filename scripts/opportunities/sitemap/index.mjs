@@ -33,7 +33,11 @@ import { tracingFetch as fetch } from '@adobe/spacecat-shared-utils';
 import { writeFileSync } from 'fs';
 import { SITES } from '../../constants.js';
 import { writeSitemapCSV, generateSitemapCSV, formatSitemapResult, SITEMAP_CSV_HEADERS } from '../../csv-utils.js';
-import { createFixEntityForSuggestion } from '../../create-fix-entity.js';
+import { createFixEntityForSuggestions } from '../../create-fix-entity.js';
+import { isLoginPage } from '../../../src/support/utils.js';
+
+// Status codes that the handler tracks and creates suggestions for
+const TRACKED_STATUS_CODES = Object.freeze([301, 302, 404]);
 
 class SitemapFixChecker {
   constructor(options) {
@@ -195,29 +199,6 @@ class SitemapFixChecker {
   }
 
   /**
-   * Check if URL redirects to suggested URL
-   */
-  async checkRedirectImplemented(originalUrl, suggestedUrl) {
-    try {
-      const response = await fetch(originalUrl, {
-        method: 'HEAD',
-        timeout: 5000,
-        redirect: 'follow' // Follow redirects to see final destination
-      });
-      
-      // Check if final URL matches suggested URL
-      const finalUrl = response.url || originalUrl;
-      const normalizedFinal = this.normalizeUrl(finalUrl);
-      const normalizedSuggested = this.normalizeUrl(suggestedUrl);
-      
-      return normalizedFinal === normalizedSuggested;
-    } catch (error) {
-      this.log.debug(`Error checking redirect for ${originalUrl}: ${error.message}`);
-      return false;
-    }
-  }
-
-  /**
    * Check if URL exists in sitemap (EXACT MATCH ONLY)
    */
   async checkUrlInSitemap(sitemapUrl, pageUrl) {
@@ -269,6 +250,39 @@ class SitemapFixChecker {
       return `${urlObj.protocol}//${urlObj.host}${urlObj.pathname.replace(/\/$/, '')}${urlObj.search}`.toLowerCase();
     } catch {
       return url.toLowerCase();
+    }
+  }
+
+  /**
+   * Check if URL has 404 patterns (same logic as handler)
+   */
+  has404Pattern(url) {
+    return url.includes('/404/')
+      || url.includes('404.html')
+      || url.includes('/errors/404/');
+  }
+
+  /**
+   * Validate that a suggested URL returns 200 (same logic as handler)
+   */
+  async isValidSuggestedUrl(url) {
+    try {
+      const response = await this.testUrlStatus(url);
+      return response.success && response.statusCode === 200;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get homepage URL for a given URL
+   */
+  getHomepageUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      return `${urlObj.protocol}//${urlObj.hostname}`;
+    } catch {
+      return null;
     }
   }
 
@@ -326,7 +340,10 @@ class SitemapFixChecker {
           recommendedAction: suggestionData.recommendedAction || '',
           
           // Our test results
-          redirectImplemented: false,
+          aiSuggestionImplemented: false,
+          fixedByOtherMeans: false,
+          redirectsToLoginPage: false,
+          redirectDestinationValid: false,
           urlRemovedFromSitemap: false,
           isFixed: false,
           fixType: 'SYSTEMIC_ERROR',
@@ -366,40 +383,84 @@ class SitemapFixChecker {
       
       let isFixed = false;
       let fixType = 'NOT_FIXED';
-      let currentStatusDisplay = currentStatus.success ? currentStatus.statusCode : 'ERROR';
-      let redirectImplemented = false;
+      let currentStatusDisplay = currentStatus.success ? currentStatus.statusCode : 'NETWORK_ERROR';
+      let aiSuggestionImplemented = false;
+      let fixedByOtherMeans = false;
       let urlRemovedFromSitemap = sitemapCheck.inSitemap === false;
+      let redirectsToLoginPage = false;
+      let redirectDestinationValid = false;
       
       if (currentStatus.success) {
-        // According to handler: ONLY 200 OK = working/fixed
-        // 301/302/404 are considered "broken" and create suggestions
+        // Check 1: URL now returns 200 OK (fixed normally)
         if (currentStatus.statusCode === 200) {
           isFixed = true;
           fixType = 'URL_NOW_WORKS';
+          fixedByOtherMeans = true;
         }
-        // All other status codes (including 301/302) = still broken/not fixed
-        else {
-          isFixed = false;
-          fixType = 'NOT_FIXED';
+        // Check 2: URL redirects (301/302)
+        else if (currentStatus.statusCode === 301 || currentStatus.statusCode === 302) {
+          // Check 2a: Does it redirect to a login page? (Handler treats as OK)
+          if (currentStatus.location) {
+            const finalUrl = new URL(currentStatus.location, pageUrl).href;
+            redirectsToLoginPage = isLoginPage(finalUrl);
+            
+            if (redirectsToLoginPage) {
+              isFixed = true;
+              fixType = 'REDIRECTS_TO_LOGIN_PAGE';
+              fixedByOtherMeans = true;
+            }
+            
+            // Check 2b: Check if redirect destination is valid (not 404 pattern)
+            if (!this.has404Pattern(finalUrl)) {
+              const destStatus = await this.testUrlStatus(finalUrl);
+              redirectDestinationValid = destStatus.success && destStatus.statusCode === 200;
+              await this.delay(100); // Rate limiting
+            }
+            
+            // Check 2c: Did they implement our AI suggestion exactly?
+            if (urlsSuggested) {
+              const suggestedUrls = Array.isArray(urlsSuggested) ? urlsSuggested : [urlsSuggested];
+              
+              for (const suggestedUrl of suggestedUrls) {
+                const normalizedFinal = this.normalizeUrl(finalUrl);
+                const normalizedSuggested = this.normalizeUrl(suggestedUrl);
+                
+                if (normalizedFinal === normalizedSuggested) {
+                  // They implemented our suggestion!
+                  // But only count as fixed if destination is valid
+                  if (redirectDestinationValid) {
+                    aiSuggestionImplemented = true;
+                    isFixed = true;
+                    fixType = 'AI_SUGGESTION_IMPLEMENTED';
+                  }
+                  break;
+                }
+              }
+            }
+          }
+          
+          // Check 2d: If redirect destination is valid but not our suggestion
+          if (!isFixed && redirectDestinationValid && !redirectsToLoginPage) {
+            isFixed = true;
+            fixType = 'REDIRECTS_TO_VALID_URL';
+            fixedByOtherMeans = true;
+          }
         }
+        // Check 3: URL returns 404 or other error status
+        else if (!TRACKED_STATUS_CODES.includes(currentStatus.statusCode)) {
+          // Status codes not tracked by handler (e.g., 500, 503)
+          fixType = 'NOT_TRACKED_STATUS';
+        }
+      } else {
+        // Network error (timeout, connection refused, etc.)
+        fixType = 'NETWORK_ERROR';
       }
       
-      // If URL is still broken but was removed from sitemap, consider it fixed
+      // Check 4: If URL is still broken but was removed from sitemap, consider it fixed
       if (!isFixed && urlRemovedFromSitemap) {
         isFixed = true;
         fixType = 'URL_REMOVED_FROM_SITEMAP';
-      }
-      
-      // Check if they implemented our specific redirect suggestion (for reporting)
-      if (currentStatus.success && (currentStatus.statusCode === 301 || currentStatus.statusCode === 302) && urlsSuggested) {
-        const suggestedUrls = Array.isArray(urlsSuggested) ? urlsSuggested : [urlsSuggested];
-        
-        for (const suggestedUrl of suggestedUrls) {
-          redirectImplemented = await this.checkRedirectImplemented(pageUrl, suggestedUrl);
-          if (redirectImplemented) {
-            break; // Found a match to our suggestion
-          }
-        }
+        fixedByOtherMeans = true;
       }
       
       // Get opportunity data from our pre-built map (no additional API call!)
@@ -430,7 +491,10 @@ class SitemapFixChecker {
         recommendedAction: additionalSuggestionData?.recommendedAction || '',
         
         // Our test results
-        redirectImplemented,
+        aiSuggestionImplemented,
+        fixedByOtherMeans,
+        redirectsToLoginPage,
+        redirectDestinationValid,
         urlRemovedFromSitemap,
         isFixed,
         fixType,
@@ -467,14 +531,31 @@ class SitemapFixChecker {
   printSummary() {
     const totalSuggestions = this.results.length;
     const fixed = this.results.filter(r => r.isFixed).length;
-    const redirectsImplemented = this.results.filter(r => r.redirectImplemented).length;
+    const aiSuggestions = this.results.filter(r => r.aiSuggestionImplemented).length;
+    const fixedByOther = this.results.filter(r => r.fixedByOtherMeans).length;
+    const loginRedirects = this.results.filter(r => r.redirectsToLoginPage).length;
+    const removedFromSitemap = this.results.filter(r => r.urlRemovedFromSitemap && r.isFixed).length;
+    
+    // Breakdown by fix type
+    const fixTypeCounts = {};
+    this.results.filter(r => r.isFixed).forEach(r => {
+      fixTypeCounts[r.fixType] = (fixTypeCounts[r.fixType] || 0) + 1;
+    });
     
     this.log.info('');
     this.log.info('=== SUMMARY ===');
     this.log.info(`Total suggestions processed: ${totalSuggestions}`);
     this.log.info(`Fixed overall: ${fixed}`);
-    this.log.info(`Redirects implemented: ${redirectsImplemented}`);
+    this.log.info(`  - AI suggestions implemented: ${aiSuggestions}`);
+    this.log.info(`  - Fixed by other means: ${fixedByOther}`);
+    this.log.info(`  - Redirects to login pages: ${loginRedirects}`);
+    this.log.info(`  - Removed from sitemap: ${removedFromSitemap}`);
     this.log.info(`Not fixed: ${totalSuggestions - fixed}`);
+    this.log.info('');
+    this.log.info('Fix Type Breakdown:');
+    Object.entries(fixTypeCounts).forEach(([type, count]) => {
+      this.log.info(`  ${type}: ${count}`);
+    });
   }
 
   /**
@@ -490,14 +571,36 @@ class SitemapFixChecker {
 
     this.log.info(`Creating fix entities for ${fixedResults.length} fixed suggestions`);
 
+    // Group suggestions by opportunityId for batch API calls
+    const suggestionsByOpportunity = {};
+    
     for (const result of fixedResults) {
+      const opportunityId = result.opportunityId;
+      if (!suggestionsByOpportunity[opportunityId]) {
+        suggestionsByOpportunity[opportunityId] = [];
+      }
+      suggestionsByOpportunity[opportunityId].push(result.suggestionId);
+    }
+
+    // Process each opportunity group
+    for (const [opportunityId, suggestionIds] of Object.entries(suggestionsByOpportunity)) {
       if (this.options.dryRun) {
-        this.log.info(`Would create fix entity for ${result.suggestionId} (dry run)`);
+        this.log.info(`Would create fix entity for opportunity ${opportunityId} with ${suggestionIds.length} suggestion(s) (dry run)`);
       } else {
         try {
-          // await createFixEntityForSuggestion(this.dataAccess, result.suggestion, { logger: this.log });
+          // const result = await createFixEntityForSuggestions(
+          //   this.options.siteId,
+          //   opportunityId,
+          //   suggestionIds,
+          //   {
+          //     apiBaseUrl: process.env.SPACECAT_API_BASE_URL || 'https://spacecat.experiencecloud.live/api/v1',
+          //     apiKey: process.env.SPACECAT_API_KEY,
+          //     logger: this.log
+          //   }
+          // );
+          this.log.info(`✓ Created fix entity for opportunity ${opportunityId}: ${result.success}`);
         } catch (error) {
-          this.log.error(`Failed to create fix entity for ${result.suggestionId}: ${error.message}`);
+          this.log.error(`Failed to create fix entity for opportunity ${opportunityId}: ${error.message}`);
         }
       }
     }

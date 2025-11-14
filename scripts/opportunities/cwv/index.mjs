@@ -36,7 +36,7 @@ dotenv.config();
 import RUMAPIClient from '@adobe/spacecat-shared-rum-api-client';
 import { SITES } from '../../constants.js';
 import { writeCWVCSV, formatCWVResult, CWV_CSV_HEADERS } from '../../csv-utils.js';
-import { createFixEntityForSuggestion } from '../../create-fix-entity.js';
+import { createFixEntityForSuggestions } from '../../create-fix-entity.js';
 
 // CWV Thresholds (from handler)
 const THRESHOLDS = {
@@ -534,14 +534,36 @@ class CWVFixChecker {
 
     this.log.info(`Creating fix entities for ${fixedResults.length} fixed suggestions`);
 
+    // Group suggestions by opportunityId for batch API calls
+    const suggestionsByOpportunity = {};
+    
     for (const result of fixedResults) {
+      const opportunityId = result.opportunityId;
+      if (!suggestionsByOpportunity[opportunityId]) {
+        suggestionsByOpportunity[opportunityId] = [];
+      }
+      suggestionsByOpportunity[opportunityId].push(result.suggestionId);
+    }
+
+    // Process each opportunity group
+    for (const [opportunityId, suggestionIds] of Object.entries(suggestionsByOpportunity)) {
       if (this.options.dryRun) {
-        this.log.info(`Would create fix entity for ${result.suggestionId} (dry run)`);
+        this.log.info(`Would create fix entity for opportunity ${opportunityId} with ${suggestionIds.length} suggestion(s) (dry run)`);
       } else {
         try {
-          // await createFixEntityForSuggestion(this.dataAccess, result.suggestion, { logger: this.log });
+          const result = await createFixEntityForSuggestions(
+            this.options.siteId,
+            opportunityId,
+            suggestionIds,
+            {
+              apiBaseUrl: process.env.SPACECAT_API_BASE_URL || 'https://spacecat.experiencecloud.live/api/v1',
+              apiKey: process.env.SPACECAT_API_KEY,
+              logger: this.log
+            }
+          );
+          this.log.info(`✓ Created fix entity for opportunity ${opportunityId}: ${result.success}`);
         } catch (error) {
-          this.log.error(`Failed to create fix entity for ${result.suggestionId}: ${error.message}`);
+          this.log.error(`Failed to create fix entity for opportunity ${opportunityId}: ${error.message}`);
         }
       }
     }

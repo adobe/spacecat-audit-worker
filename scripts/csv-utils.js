@@ -57,7 +57,7 @@ export const METATAGS_CSV_HEADERS = [
 ];
 
 /**
- * Sitemap CSV headers (with status codes)
+ * Sitemap CSV headers (with status codes and comprehensive fix detection)
  */
 export const SITEMAP_CSV_HEADERS = [
   'Site ID',
@@ -75,6 +75,10 @@ export const SITEMAP_CSV_HEADERS = [
   'Suggested URLs',
   'Recommended Action',
   'AI Suggestion Implemented',
+  'Fixed By Other Means',
+  'Redirects To Login Page',
+  'Redirect Destination Valid',
+  'URL Removed From Sitemap',
   'Is Fixed Overall',
   'Fix Type',
   'Test Date',
@@ -356,7 +360,11 @@ export function formatSitemapResult(result, siteId, siteName) {
     result.currentStatusCode || '',
     `"${result.urlsSuggested || ''}"`,
     `"${result.recommendedAction || ''}"`,
-    result.redirectImplemented ? 'YES' : 'NO',
+    result.aiSuggestionImplemented ? 'YES' : 'NO',
+    result.fixedByOtherMeans ? 'YES' : 'NO',
+    result.redirectsToLoginPage ? 'YES' : 'NO',
+    result.redirectDestinationValid ? 'YES' : 'NO',
+    result.urlRemovedFromSitemap ? 'YES' : 'NO',
     result.isFixed ? 'YES' : 'NO',
     result.fixType || '',
     testDate,
