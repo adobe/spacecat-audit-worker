@@ -12,6 +12,7 @@
 import { isNonEmptyArray, getStaticContent } from '@adobe/spacecat-shared-utils';
 import { AWSAthenaClient } from '@adobe/spacecat-shared-athena-client';
 import { Audit, PageIntent as PageIntentModel } from '@adobe/spacecat-shared-data-access';
+import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
 import { wwwUrlResolver } from '../common/index.js';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { getTemporalCondition } from '../utils/date-utils.js';
@@ -131,9 +132,6 @@ export async function analyzePageIntent(url, textContent, context, log) {
   const cleanedContent = stripMarkdownCodeBlocks(response.content);
   const analysis = JSON.parse(cleanedContent);
 
-  log.debug(`${LOG_PREFIX} LLM analysis for ${url}: ${analysis.pageIntent}, topic: ${analysis.topic}`);
-
-  // Validate the response - only accept standard intents
   const validIntents = Object.values(PageIntentModel.PAGE_INTENTS);
   if (!analysis.pageIntent || !validIntents.includes(analysis.pageIntent)) {
     log.warn(`${LOG_PREFIX} Invalid or null page intent '${analysis.pageIntent}' returned by LLM for ${url}`);
@@ -149,9 +147,11 @@ export async function processPage(url, s3Path, processingContext) {
   } = processingContext;
 
   try {
-    log.debug(`${LOG_PREFIX} Processing ${url} from ${s3Path}`);
+    let scrapeContent = null;
+    if (s3Path) {
+      scrapeContent = await fetchScrapeContent(url, s3Path, s3Client, bucketName, log);
+    }
 
-    const scrapeContent = await fetchScrapeContent(url, s3Path, s3Client, bucketName, log);
     const { analysis, usage } = await analyzePageIntent(url, scrapeContent, context, log);
 
     if (!analysis) {
@@ -194,11 +194,11 @@ export async function generatePageIntent(context) {
   const {
     site,
     audit,
-    scrapeResultPaths,
     log,
     s3Client,
     env,
     dataAccess,
+    auditContext = {},
   } = context;
 
   const siteId = site.getId();
@@ -215,7 +215,22 @@ export async function generatePageIntent(context) {
     };
   }
 
-  log.info(`${LOG_PREFIX} Step 2: Generating page intent for ${scrapeResultPaths.size} pages`);
+  let scrapeJobResults = [];
+  const jobId = auditContext.scrapeJobId;
+
+  try {
+    const scrapeClient = ScrapeClient.createFrom(context);
+    const results = await scrapeClient.getScrapeJobUrlResults(jobId);
+    if (isNonEmptyArray(results)) {
+      scrapeJobResults = results;
+    } else {
+      log.info(`${LOG_PREFIX} No scrape job results found for jobId ${jobId}`);
+    }
+    /* c8 ignore start */
+  } catch (error) {
+    log.error(`${LOG_PREFIX} Failed to load scrape job results for jobId ${jobId}: ${error.message}`, { error });
+  }
+  /* c8 ignore end */
 
   const processingContext = {
     s3Client,
@@ -235,7 +250,20 @@ export async function generatePageIntent(context) {
     promptCount: 0,
   };
 
-  for (const [url, s3Path] of scrapeResultPaths.entries()) {
+  log.info(`${LOG_PREFIX} Step 2: Generating page intent for ${scrapeJobResults.length} URLs`);
+
+  for (const resultMeta of scrapeJobResults) {
+    const {
+      url,
+      path: s3Path,
+      status,
+      reason,
+    } = resultMeta;
+
+    if (!s3Path) {
+      log.info(`${LOG_PREFIX} No scrape content for ${url} (status: ${status || 'unknown'}, reason: ${reason || 'unknown'}). Falling back to URL-only analysis.`);
+    }
+
     // eslint-disable-next-line no-await-in-loop
     const result = await processPage(url, s3Path, processingContext);
     results.push(result);
