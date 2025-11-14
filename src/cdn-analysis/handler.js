@@ -113,7 +113,7 @@ export async function processCdnLogs(auditUrl, context, site, auditContext) {
   const hasAggregatedReferralData = await pathHasData(s3Client, `s3://${consolidatedBucket}/aggregated-referral/${siteId}/${year}/${month}/${day}/${hour}/`);
 
   if (hasAggregatedData && hasAggregatedReferralData) {
-    log.info(`${auditType} aggregated data already exists for ${year}-${month}-${day} hour: ${hour}. Skipping processing.`);
+    log.info(`${auditType} aggregated data already exists for siteId=${siteId} at path=s3://${consolidatedBucket}/aggregated/${siteId}/${year}/${month}/${day}/${hour}/ Skipping processing.`);
     return {
       auditResult: {
         database,
