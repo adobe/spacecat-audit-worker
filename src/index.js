@@ -80,6 +80,7 @@ import llmoCustomerAnalysis from './llmo-customer-analysis/handler.js';
 import headings from './headings/handler.js';
 import contentFragment404 from './content-fragment-404/handler.js';
 import contentFragment404Guidance from './content-fragment-404/guidance-handler.js';
+import contentFragmentUnused from './content-fragment-unused/handler.js';
 import cdnContentFragment404 from './cdn-content-fragment-404/handler.js';
 import vulnerabilities from './vulnerabilities/handler.js';
 import prerender from './prerender/handler.js';
@@ -164,6 +165,7 @@ const HANDLERS = {
   'cdn-content-fragment-404': cdnContentFragment404,
   'content-fragment-404': contentFragment404,
   'guidance:content-fragment-404': contentFragment404Guidance,
+  'content-fragment-unused': contentFragmentUnused,
   prerender,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
