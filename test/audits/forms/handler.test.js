@@ -18,6 +18,7 @@ import esmock from 'esmock';
 import sinonChai from 'sinon-chai';
 import nock from 'nock';
 import {
+  codeImportStep,
   formsAuditRunner,
   processOpportunityStep,
   runAuditAndSendUrlsForScrapingStep,
@@ -995,5 +996,119 @@ describe('process opportunity step', () => {
     expect(result).to.deep.equal({
       status: 'complete',
     });
+  });
+});
+
+describe('codeImportStep', () => {
+  let sandbox;
+  let context;
+
+  beforeEach(() => {
+    sandbox = sinon.createSandbox();
+
+    context = new MockContextBuilder()
+      .withSandbox(sandbox)
+      .withOverrides({
+        runtime: { name: 'aws-lambda', region: 'us-east-1' },
+        func: { package: 'spacecat-services', version: 'ci', name: 'test' },
+        site: {
+          getId: sandbox.stub().returns('test-site-id'),
+        },
+        log: {
+          info: sandbox.spy(),
+          debug: sandbox.spy(),
+          warn: sandbox.spy(),
+          error: sandbox.spy(),
+        },
+      })
+      .build();
+  });
+
+  afterEach(() => {
+    sandbox.restore();
+  });
+
+  it('should return correct code import step structure', async () => {
+    const result = await codeImportStep(context);
+
+    expect(result).to.be.an('object');
+    expect(result).to.have.property('type', 'code');
+    expect(result).to.have.property('siteId', 'test-site-id');
+  });
+
+  it('should log info message with site ID', async () => {
+    await codeImportStep(context);
+
+    expect(context.log.info).to.have.been.calledOnce;
+    expect(context.log.info).to.have.been.calledWith(
+      '[Form Opportunity] [Site Id: test-site-id] starting code import step',
+    );
+  });
+
+  it('should call site.getId() to get siteId', async () => {
+    await codeImportStep(context);
+
+    expect(context.site.getId).to.have.been.called;
+  });
+
+  it('should handle different site IDs correctly', async () => {
+    context.site.getId.returns('different-site-id');
+
+    const result = await codeImportStep(context);
+
+    expect(result.siteId).to.equal('different-site-id');
+    expect(context.log.info).to.have.been.calledWith(
+      '[Form Opportunity] [Site Id: different-site-id] starting code import step',
+    );
+  });
+
+  it('should return type as code', async () => {
+    const result = await codeImportStep(context);
+
+    expect(result.type).to.equal('code');
+  });
+
+  it('should handle numeric site ID', async () => {
+    context.site.getId.returns(12345);
+
+    const result = await codeImportStep(context);
+
+    expect(result.siteId).to.equal(12345);
+    expect(context.log.info).to.have.been.calledWith(
+      '[Form Opportunity] [Site Id: 12345] starting code import step',
+    );
+  });
+
+  it('should handle empty string site ID', async () => {
+    context.site.getId.returns('');
+
+    const result = await codeImportStep(context);
+
+    expect(result.siteId).to.equal('');
+    expect(result.type).to.equal('code');
+  });
+
+  it('should handle null site ID', async () => {
+    context.site.getId.returns(null);
+
+    const result = await codeImportStep(context);
+
+    expect(result.siteId).to.be.null;
+    expect(result.type).to.equal('code');
+  });
+
+  it('should call site.getId twice (for logging and return value)', async () => {
+    await codeImportStep(context);
+
+    expect(context.site.getId).to.have.been.calledTwice;
+  });
+
+  it('should return only type and siteId properties', async () => {
+    const result = await codeImportStep(context);
+
+    const keys = Object.keys(result);
+    expect(keys).to.have.lengthOf(2);
+    expect(keys).to.include('type');
+    expect(keys).to.include('siteId');
   });
 });

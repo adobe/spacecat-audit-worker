@@ -2092,7 +2092,7 @@ describe('Forms Opportunities - Accessibility Handler', () => {
 
       // Verify SQS messages were sent (one for mystique, potentially one for code-fix importer)
       expect(context.sqs.sendMessage).to.have.been.called;
-      // The actual number of calls depends on whether sendCodeFixMessagesToImporter sends messages
+      // The actual number of calls depends on whether sendCodeFixMessagesToMystique sends messages
       // At minimum, it should be called for mystique message
     });
 

@@ -23,7 +23,7 @@ import {
   aggregateAccessibilityIssues,
   createIndividualOpportunitySuggestions,
 } from '../../accessibility/utils/generate-individual-opportunities.js';
-import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToImporter } from '../../accessibility/utils/data-processing.js';
+import { aggregateAccessibilityData, sendRunImportMessage, sendCodeFixMessagesToMystique } from '../../accessibility/utils/data-processing.js';
 import { URL_SOURCE_SEPARATOR, A11Y_METRICS_AGGREGATOR_IMPORT_TYPE, WCAG_CRITERIA_COUNTS } from '../../accessibility/utils/constants.js';
 import { isAuditEnabledForSite } from '../../common/audit-utils.js';
 
@@ -479,7 +479,7 @@ export default async function handler(message, context) {
     // send message to importer for code-fix generation
     const isAutoFixEnabled = await isAuditEnabledForSite(`${opportunity.getType()}-auto-fix`, site, context);
     if (isAutoFixEnabled) {
-      await sendCodeFixMessagesToImporter(
+      await sendCodeFixMessagesToMystique(
         opportunity,
         auditId,
         site,

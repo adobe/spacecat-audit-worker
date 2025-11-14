@@ -207,6 +207,19 @@ export async function sendA11yUrlsForScrapingStep(context) {
   return result;
 }
 
+export async function codeImportStep(context) {
+  const {
+    log, site,
+  } = context;
+
+  log.info(`[Form Opportunity] [Site Id: ${site.getId()}] starting code import step`);
+
+  return {
+    type: 'code',
+    siteId: site.getId(),
+  };
+}
+
 export async function processOpportunityStep(context) {
   const {
     log, site, finalUrl,
@@ -230,5 +243,6 @@ export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .addStep('runAuditAndSendUrlsForScraping', runAuditAndSendUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
   .addStep('sendA11yUrlsForScrapingStep', sendA11yUrlsForScrapingStep, AUDIT_STEP_DESTINATIONS.CONTENT_SCRAPER)
+  .addStep('codeImport', codeImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('processOpportunity', processOpportunityStep)
   .build();
