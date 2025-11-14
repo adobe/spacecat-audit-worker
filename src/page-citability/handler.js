@@ -92,16 +92,9 @@ export async function extractUrls(context) {
   // const urlsToAnalyze = missingUrls;
   const baseURL = site.getBaseURL();
   const urls = [
-    '/uk/the-core/heating-stability-of-whey/',
-    '/es/products/pura-proteina-de-suero-aislada-al-90/bpb-wpi9-0000',
-    '/uk/food-safety',
-    '/uk/the-core/citrulline-malate-smart-supplementation/',
-    '/uk/products/colostrum/bpb-colo-0000',
-    '/uk/products/creatine-monohydrate-tablets-1000mg/bpb-cmon-tabs',
-    '/uk/products/co-enzyme-q10-coq10/bpb-coq-0000',
-    '/uk/products/sports-multi-am-pm/bpps-smul',
-    '/uk/products/cream-of-rice/bpb-cori',
-    '/uk/the-core/',
+    '/',
+    '/creativecloud/video/discover/vertical-videos.html',
+    '/products/photoshop.html',
   ];
   // log.info(`${LOG_PREFIX} Found ${urlsToAnalyze.length}
   // URLs (${existingScores.length} already analyzed)`);
