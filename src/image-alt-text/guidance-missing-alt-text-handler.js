@@ -12,114 +12,19 @@
 
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { Suggestion as SuggestionModel, Audit as AuditModel } from '@adobe/spacecat-shared-data-access';
-import { addAltTextSuggestions, getProjectedMetrics } from './opportunityHandler.js';
+import { getProjectedMetrics } from './opportunityHandler.js';
+import { syncSuggestions, keepSameDataFunction } from '../utils/data-access.js';
 
 const AUDIT_TYPE = AuditModel.AUDIT_TYPES.ALT_TEXT;
 
-/**
- * Maps Mystique alt-text suggestions to suggestion DTO format
- * @param {Array} mystiquesuggestions - Array of suggestions from Mystique
- * @param {string} opportunityId - The opportunity ID to associate suggestions with
- * @returns {Array} Array of suggestion DTOs ready for addition
- */
+// Maps incoming Mystique suggestions to suggestion DTOs is no longer needed here
 
-function mapMystiqueSuggestionsToSuggestionDTOs(mystiquesuggestions, opportunityId) {
-  return mystiquesuggestions.map((suggestion) => {
-    const suggestionId = `${suggestion.pageUrl}/${suggestion.imageId}`;
-
-    return {
-      opportunityId,
-      type: SuggestionModel.TYPES.CONTENT_UPDATE,
-      data: {
-        recommendations: [{
-          id: suggestionId,
-          pageUrl: suggestion.pageUrl,
-          imageUrl: suggestion.imageUrl,
-          altText: suggestion.altText,
-          isAppropriate: suggestion.isAppropriate,
-          isDecorative: suggestion.isDecorative,
-          xpath: suggestion.xpath,
-          language: suggestion.language,
-        }],
-      },
-      rank: 1,
-    };
-  });
-}
-
-/**
- * Clears existing suggestions for specific pages and calculates their metrics for removal
- * @param {Object} opportunity - The opportunity object
- * @param {Array} pageUrls - Array of page URLs to clear suggestions for
- * @param {string} auditUrl - Base audit URL
- * @param {Object} context - Context object
- * @param {Object} Suggestion - Suggestion model from dataAccess
- * @param {Object} log - Logger
- * @returns {Promise<Object>} Metrics for removed suggestions
- */
-async function clearSuggestionsForPagesAndCalculateMetrics(
-  opportunity,
-  pageUrls,
-  auditUrl,
-  context,
-  Suggestion,
-  log,
-) {
-  const existingSuggestions = await opportunity.getSuggestions();
-  const pageUrlSet = new Set(pageUrls);
-  /**
-  * TODO: ASSETS-59781 - Update alt-text opportunity to use syncSuggestions
-  * instead of current approach. This will enable handling of PENDING_VALIDATION status.
-  */
-  // Find suggestions to remove for these pages
-  const suggestionsToRemove = existingSuggestions.filter((suggestion) => {
-    const pageUrl = suggestion.getData()?.recommendations?.[0]?.pageUrl;
-    return pageUrl && pageUrlSet.has(pageUrl);
-  }).filter((suggestion) => {
-    const IGNORED_STATUSES = ['SKIPPED', 'FIXED', 'OUTDATED'];
-    return !IGNORED_STATUSES.includes(suggestion.getStatus());
-  });
-
-  // Extract images from suggestions being removed
-  const removedImages = suggestionsToRemove.map((suggestion) => {
-    const rec = suggestion.getData()?.recommendations?.[0];
-    return {
-      pageUrl: rec?.pageUrl,
-      src: rec?.imageUrl,
-    };
-  }).filter((img) => img.pageUrl);
-
-  // Calculate metrics for removed suggestions using getProjectedMetrics
-  const removedMetrics = removedImages.length > 0
-    ? await getProjectedMetrics({
-      images: removedImages,
-      auditUrl,
-      context,
-      log,
-    })
-    : { projectedTrafficLost: 0, projectedTrafficValue: 0 };
-
-  // Calculate decorative count separately
-  const removedDecorativeCount = suggestionsToRemove
-    .map((s) => s.getData()?.recommendations?.[0]?.isDecorative)
-    .filter((isDecorative) => isDecorative === true).length;
-
-  // Mark suggestions as OUTDATED
-  if (suggestionsToRemove.length > 0) {
-    await Suggestion.bulkUpdateStatus(suggestionsToRemove, SuggestionModel.STATUSES.OUTDATED);
-    log.debug(`[${AUDIT_TYPE}]: Marked ${suggestionsToRemove.length} suggestions as OUTDATED for ${pageUrls.length} pages`);
-  }
-
-  return {
-    ...removedMetrics,
-    decorativeImagesCount: removedDecorativeCount,
-  };
-}
+// clearSuggestionsForPagesAndCalculateMetrics removed in favor of syncSuggestions
 
 export default async function handler(message, context) {
   const { log, dataAccess } = context;
   const {
-    Opportunity, Site, Audit, Suggestion,
+    Opportunity, Site, Audit,
   } = dataAccess;
   const {
     auditId, siteId, data, id: messageId,
@@ -161,15 +66,49 @@ export default async function handler(message, context) {
 
   // Process the Mystique response
   if (pageUrls && Array.isArray(pageUrls) && pageUrls.length > 0) {
-    // Clear existing suggestions for the processed pages and calculate their metrics
-    const removedMetrics = await clearSuggestionsForPagesAndCalculateMetrics(
-      altTextOppty,
-      pageUrls,
-      auditUrl,
-      context,
-      Suggestion,
-      log,
-    );
+    const pageUrlSet = new Set(pageUrls);
+
+    // Compute removed metrics for existing suggestions on processed pages
+    // that are not in the new batch
+    const allExisting = await altTextOppty.getSuggestions();
+    const existingOnProcessedPages = allExisting.filter((s) => {
+      const rec = s.getData()?.recommendations?.[0];
+      return rec?.pageUrl && pageUrlSet.has(rec.pageUrl);
+    });
+
+    const IGNORED_STATUSES = [
+      SuggestionModel.STATUSES.SKIPPED,
+      SuggestionModel.STATUSES.FIXED,
+      SuggestionModel.STATUSES.OUTDATED,
+    ];
+    const incomingKeys = new Set((suggestions || []).map((s) => `${s.pageUrl}/${s.imageId}`));
+    const suggestionsToRemove = existingOnProcessedPages
+      .filter((s) => !IGNORED_STATUSES.includes(s.getStatus()))
+      .filter((s) => {
+        const rec = s.getData()?.recommendations?.[0];
+        return rec?.id && !incomingKeys.has(rec.id);
+      });
+
+    const removedImages = suggestionsToRemove.map((s) => {
+      const rec = s.getData()?.recommendations?.[0];
+      return { pageUrl: rec?.pageUrl, src: rec?.imageUrl };
+    }).filter((i) => i.pageUrl);
+
+    const removedMetrics = removedImages.length > 0
+      ? await getProjectedMetrics({
+        images: removedImages,
+        auditUrl,
+        context,
+        log,
+      })
+      : {
+        projectedTrafficLost: 0,
+        projectedTrafficValue: 0,
+      };
+
+    const removedDecorativeCount = suggestionsToRemove
+      .map((s) => s.getData()?.recommendations?.[0]?.isDecorative)
+      .filter((isDecorative) => isDecorative === true).length;
 
     let newMetrics = {
       projectedTrafficLost: 0,
@@ -178,14 +117,46 @@ export default async function handler(message, context) {
     };
 
     if (suggestions && suggestions.length > 0) {
-      const mappedSuggestions = mapMystiqueSuggestionsToSuggestionDTOs(
-        suggestions,
-        altTextOppty.getId(),
-      );
-      await addAltTextSuggestions({
+      // Prepare sync inputs
+      const buildKey = (payload) => {
+        const rec = payload?.recommendations?.[0];
+        return rec?.id ?? `${payload.pageUrl}/${payload.imageId}`;
+      };
+      const mapNewSuggestion = (s) => ({
+        opportunityId: altTextOppty.getId(),
+        type: SuggestionModel.TYPES.CONTENT_UPDATE,
+        data: {
+          recommendations: [{
+            id: `${s.pageUrl}/${s.imageId}`,
+            pageUrl: s.pageUrl,
+            imageUrl: s.imageUrl,
+            altText: s.altText,
+            isAppropriate: s.isAppropriate,
+            isDecorative: s.isDecorative,
+            xpath: s.xpath,
+            language: s.language,
+          }],
+        },
+        rank: 1,
+      });
+      // Preserve existing suggestions for unprocessed pages to avoid marking them OUTDATED
+      const preserveData = allExisting
+        .filter((s) => {
+          const rec = s.getData()?.recommendations?.[0];
+          return rec?.pageUrl && !pageUrlSet.has(rec.pageUrl);
+        })
+        .map((s) => {
+          const rec = s.getData().recommendations[0];
+          const imageId = rec.id.split('/').pop();
+          return { pageUrl: rec.pageUrl, imageId };
+        });
+      await syncSuggestions({
+        context,
         opportunity: altTextOppty,
-        newSuggestionDTOs: mappedSuggestions,
-        log,
+        newData: [...suggestions, ...preserveData],
+        buildKey,
+        mapNewSuggestion,
+        mergeDataFunction: keepSameDataFunction,
       });
 
       // Calculate metrics for new suggestions using getProjectedMetrics
@@ -204,7 +175,7 @@ export default async function handler(message, context) {
       const newDecorativeCount = suggestions.filter((s) => s.isDecorative === true).length;
       newMetrics.decorativeImagesCount = newDecorativeCount;
 
-      log.debug(`[${AUDIT_TYPE}]: Added ${suggestions.length} new suggestions for ${pageUrls.length} processed pages`);
+      log.debug(`[${AUDIT_TYPE}]: Synced ${suggestions.length} suggestions for ${pageUrls.length} processed pages`);
     } else {
       log.debug(`[${AUDIT_TYPE}]: No new suggestions for ${pageUrls.length} processed pages`);
     }
@@ -213,13 +184,13 @@ export default async function handler(message, context) {
     const updatedOpportunityData = {
       ...existingData,
       projectedTrafficLost: Math.max(0, (existingData.projectedTrafficLost || 0)
-      - removedMetrics.projectedTrafficLost + newMetrics.projectedTrafficLost),
+        - removedMetrics.projectedTrafficLost + newMetrics.projectedTrafficLost),
       projectedTrafficValue: Math.max(0, (existingData.projectedTrafficValue || 0)
-      - removedMetrics.projectedTrafficValue + newMetrics.projectedTrafficValue),
+        - removedMetrics.projectedTrafficValue + newMetrics.projectedTrafficValue),
       decorativeImagesCount: Math.max(
         0,
         (existingData.decorativeImagesCount || 0)
-        - removedMetrics.decorativeImagesCount + newMetrics.decorativeImagesCount,
+          - removedDecorativeCount + newMetrics.decorativeImagesCount,
       ),
       mystiqueResponsesReceived: (existingData.mystiqueResponsesReceived || 0) + 1,
       processedSuggestionIds: [...processedSuggestionIds, messageId],
