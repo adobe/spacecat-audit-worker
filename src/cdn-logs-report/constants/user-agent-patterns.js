@@ -27,6 +27,8 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   { pattern: '%chatgpt-user%', displayName: 'ChatGPT-User' },
   { pattern: '%gptbot%', displayName: 'GPTBot' },
   { pattern: '%oai-searchbot%', displayName: 'OAI-SearchBot' },
+  { pattern: '%chatgpt%20atlas%', displayName: 'ChatGPT Atlas' },
+  { pattern: '%chatgpt%', displayName: 'ChatGPT Clients' },
 
   // Perplexity
   { pattern: '%perplexitybot%', displayName: 'PerplexityBot' },
@@ -35,14 +37,6 @@ export const USER_AGENT_DISPLAY_PATTERNS = [
   // Google
   { pattern: '%gemini-deep-research%', displayName: 'Gemini-Deep-Research' },
   { pattern: 'google', displayName: 'Google-ai-mode' },
-
-  // Other providers TODO: add these if needed
-  // { pattern: '%googlebot%', displayName: 'Googlebot' },
-  // { pattern: '%bingbot%', displayName: 'Bingbot' },
-  // { pattern: '%claude%', displayName: 'Claude' },
-  // { pattern: '%anthropic%', displayName: 'Anthropic' },
-  // { pattern: '%gemini%', displayName: 'Gemini' },
-  // { pattern: '%copilot%', displayName: 'Copilot' },
 ];
 
 /**
@@ -66,7 +60,8 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%gptbot%', result: 'Training bots' },
     { pattern: '%oai-searchbot%', result: 'Web search crawlers' },
     { pattern: '%chatgpt-user%', result: 'Chatbots' },
-    { pattern: '%chatgpt%', result: 'Chatbots' },
+    { pattern: '%chatgpt%20atlas%', result: 'Icon fetchers' },
+    { pattern: '%chatgpt%', result: 'Image fetchers' },
     // Perplexity
     { pattern: '%perplexitybot%', result: 'Web search crawlers' },
     { pattern: '%perplexity-user%', result: 'Chatbots' },
