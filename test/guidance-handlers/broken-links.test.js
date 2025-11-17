@@ -162,4 +162,158 @@ describe('guidance-broken-links-remediation handler', () => {
     await brokenLinksGuidanceHandler(mockMessage, mockContext);
     expect(mockContext.log.error).to.have.been.calledWith('[broken-backlinks] Suggestion not found for ID: test-suggestion-id-1');
   });
+
+  it('should handle field name variations (urls_suggested)', async () => {
+    const messageWithSnakeCase = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://foo.com/redirects-throws-error',
+          urls_suggested: ['https://foo.com/redirects-throws-error-1'],
+          ai_rationale: 'Test rationale',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    const mockSave = sandbox.stub().resolves();
+    mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({
+      setData: mockSetData,
+      getData: sandbox.stub().returns({
+        url_to: 'https://foo.com/redirects-throws-error',
+        url_from: 'https://foo.com/redirects-throws-error',
+      }),
+      save: mockSave,
+    });
+    nock('https://foo.com')
+      .get('/redirects-throws-error-1')
+      .reply(200);
+
+    const response = await brokenLinksGuidanceHandler(messageWithSnakeCase, mockContext);
+    expect(response.status).to.equal(200);
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://foo.com/redirects-throws-error',
+      url_from: 'https://foo.com/redirects-throws-error',
+      urlsSuggested: ['https://foo.com/redirects-throws-error-1'],
+      aiRationale: 'Test rationale',
+    });
+  });
+
+  it('should clear AI rationale when all URLs are filtered out', async () => {
+    const messageWithFilteredUrls = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://foo.com/redirects-throws-error',
+          suggestedUrls: ['https://external.com/invalid-url'],
+          aiRationale: 'This rationale should be cleared',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    const mockSave = sandbox.stub().resolves();
+    mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({
+      setData: mockSetData,
+      getData: sandbox.stub().returns({
+        url_to: 'https://foo.com/redirects-throws-error',
+        url_from: 'https://foo.com/redirects-throws-error',
+      }),
+      save: mockSave,
+    });
+    // URL will be filtered out because it's external domain
+    nock('https://external.com')
+      .get('/invalid-url')
+      .reply(200);
+
+    const response = await brokenLinksGuidanceHandler(messageWithFilteredUrls, mockContext);
+    expect(response.status).to.equal(200);
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://foo.com/redirects-throws-error',
+      url_from: 'https://foo.com/redirects-throws-error',
+      urlsSuggested: [],
+      aiRationale: '', // Should be cleared
+    });
+    expect(mockContext.log.info).to.have.been.calledWith(
+      sinon.match(/All .* suggested URLs were filtered out/),
+    );
+  });
+
+  it('should clear AI rationale when no URLs are provided', async () => {
+    const messageWithNoUrls = {
+      ...mockMessage,
+      data: {
+        ...mockMessage.data,
+        brokenLinks: [{
+          suggestionId: 'test-suggestion-id-1',
+          brokenUrl: 'https://foo.com/redirects-throws-error',
+          suggestedUrls: [],
+          aiRationale: 'This rationale should be cleared',
+        }],
+      },
+    };
+    mockContext.dataAccess.Site.findById = sandbox.stub().resolves({
+      getId: () => mockMessage.siteId,
+      getBaseURL: () => 'https://foo.com',
+    });
+    mockContext.dataAccess.Audit.findById = sandbox.stub().resolves({
+      getId: () => auditDataMock.id,
+      getAuditType: () => 'broken-backlinks',
+    });
+    mockContext.dataAccess.Opportunity.findById = sandbox.stub().resolves({
+      getSiteId: () => mockMessage.siteId,
+      getId: () => mockMessage.data.opportunityId,
+      getType: () => 'broken-backlinks',
+    });
+    const mockSetData = sandbox.stub();
+    const mockSave = sandbox.stub().resolves();
+    mockContext.dataAccess.Suggestion.findById = sandbox.stub().resolves({
+      setData: mockSetData,
+      getData: sandbox.stub().returns({
+        url_to: 'https://foo.com/redirects-throws-error',
+        url_from: 'https://foo.com/redirects-throws-error',
+      }),
+      save: mockSave,
+    });
+
+    const response = await brokenLinksGuidanceHandler(messageWithNoUrls, mockContext);
+    expect(response.status).to.equal(200);
+    expect(mockSetData).to.have.been.calledWith({
+      url_to: 'https://foo.com/redirects-throws-error',
+      url_from: 'https://foo.com/redirects-throws-error',
+      urlsSuggested: [],
+      aiRationale: '', // Should be cleared
+    });
+    expect(mockContext.log.info).to.have.been.calledWith(
+      sinon.match(/No suggested URLs provided by Mystique/),
+    );
+  });
 });

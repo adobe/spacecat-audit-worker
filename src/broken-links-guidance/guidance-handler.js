@@ -54,14 +54,52 @@ export default async function handler(message, context) {
       log.error(`[${opportunity.getType()}] Suggestion not found for ID: ${brokenLink.suggestionId}`);
       return {};
     }
+
+    // Handle multiple field name variations from Mystique
+    // Mystique might return: suggestedUrls, urls_suggested, or suggested_urls
+    const suggestedUrls = brokenLink.suggestedUrls
+      || brokenLink.urls_suggested
+      || brokenLink.suggested_urls
+      || [];
+
+    // Validate that suggestedUrls is an array
+    if (!Array.isArray(suggestedUrls)) {
+      log.info(
+        `[${opportunity.getType()}] Invalid suggestedUrls format for suggestion ${brokenLink.suggestionId}. `
+        + `Expected array, got: ${typeof suggestedUrls}. Available fields: ${Object.keys(brokenLink).join(', ')}`,
+      );
+    }
+
+    // Filter and validate suggested URLs
+    const validSuggestedUrls = Array.isArray(suggestedUrls) ? suggestedUrls : [];
     const filteredSuggestedUrls = await filterBrokenSuggestedUrls(
-      brokenLink.suggestedUrls,
+      validSuggestedUrls,
       site.getBaseURL(),
     );
+
+    // Handle AI rationale - clear it if all URLs were filtered out
+    // This prevents showing rationale for URLs that don't exist
+    let aiRationale = brokenLink.aiRationale || brokenLink.ai_rationale || '';
+    if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length > 0) {
+      // All URLs were filtered out (likely invalid/broken), clear rationale
+      log.info(
+        `[${opportunity.getType()}] All ${validSuggestedUrls.length} suggested URLs were filtered out `
+        + `for suggestion ${brokenLink.suggestionId}. Clearing AI rationale.`,
+      );
+      aiRationale = '';
+    } else if (filteredSuggestedUrls.length === 0 && validSuggestedUrls.length === 0) {
+      // No URLs were provided by Mystique, clear rationale
+      log.info(
+        `[${opportunity.getType()}] No suggested URLs provided by Mystique `
+        + `for suggestion ${brokenLink.suggestionId}. Clearing AI rationale.`,
+      );
+      aiRationale = '';
+    }
+
     suggestion.setData({
       ...suggestion.getData(),
       urlsSuggested: filteredSuggestedUrls,
-      aiRationale: brokenLink.aiRationale,
+      aiRationale,
     });
 
     return suggestion.save();
