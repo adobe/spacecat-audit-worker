@@ -293,10 +293,26 @@ export const opportunityAndSuggestionsStep = async (context) => {
       (link) => link.alternativeUrls.length === 0,
     ).length;
 
+    const alternativeUrls = filteredTopPages.map((page) => page.getUrl());
+
     log.info(
       `[${AUDIT_TYPE}] [Site: ${site.getId()}] Sending ${brokenLinksWithFilteredAlternatives.length} broken links to Mystique. `
       + `${brokenLinksWithEmptyAlternatives} have no alternative URLs available.`,
     );
+
+    log.info(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Alternative URLs that Mystique will see (${alternativeUrls.length} total): ${JSON.stringify(alternativeUrls)}`,
+    );
+
+    // Log what each broken link will see (its filtered alternatives)
+    brokenLinksWithFilteredAlternatives.forEach((link, index) => {
+      if (link.alternativeUrls.length > 0) {
+        log.info(
+          `[${AUDIT_TYPE}] [Site: ${site.getId()}] Broken link ${index + 1}/${brokenLinksWithFilteredAlternatives.length} `
+          + `(${link.urlTo}) will see ${link.alternativeUrls.length} alternatives: ${JSON.stringify(link.alternativeUrls)}`,
+        );
+      }
+    });
 
     const message = {
       type: 'guidance:broken-links',
@@ -305,7 +321,7 @@ export const opportunityAndSuggestionsStep = async (context) => {
       deliveryType: site.getDeliveryType(),
       time: new Date().toISOString(),
       data: {
-        alternativeUrls: filteredTopPages.map((page) => page.getUrl()),
+        alternativeUrls,
         opportunityId: opportunity?.getId(),
         brokenLinks: brokenLinksWithFilteredAlternatives,
       },
