@@ -327,6 +327,6 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
 export default new AuditBuilder()
 // Note the import worker MUST trigger the next step regardless if code repo is configured
-  .addStep('import', extractCodeBucket, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
+  .addStep('import-from-starfish', extractCodeBucket, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
   .addStep('generate-suggestion-data', opportunityAndSuggestionsStep)
   .build();
