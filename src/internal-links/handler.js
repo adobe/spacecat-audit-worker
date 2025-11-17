@@ -226,9 +226,17 @@ export const opportunityAndSuggestionsStep = async (context) => {
   const configuration = await Configuration.findLatest();
   const topPages = await SiteTopPage.allBySiteIdAndSourceAndGeo(site.getId(), 'ahrefs', 'global');
 
+  log.info(
+    `[${AUDIT_TYPE}] [Site: ${site.getId()}] Found ${topPages.length} top pages from Ahrefs`,
+  );
+
   // Filter top pages by audit scope (subpath/locale) if baseURL has a subpath
   const baseURL = site.getBaseURL();
   const filteredTopPages = filterByAuditScope(topPages, baseURL, { urlProperty: 'getUrl' }, log);
+
+  log.info(
+    `[${AUDIT_TYPE}] [Site: ${site.getId()}] After audit scope filtering: ${filteredTopPages.length} top pages available`,
+  );
 
   if (configuration.isHandlerEnabledForSite('broken-internal-links-auto-suggest', site)) {
     const suggestions = await Suggestion.allByOpportunityIdAndStatus(
@@ -246,11 +254,18 @@ export const opportunityAndSuggestionsStep = async (context) => {
 
       // Filter alternatives to same locale/subpath as broken link
       let filteredAlternatives = filteredTopPages.map((page) => page.getUrl());
+      const totalAlternativesBeforeLocaleFilter = filteredAlternatives.length;
       if (brokenLinkPathPrefix) {
         filteredAlternatives = filteredAlternatives.filter((url) => {
           const urlPathPrefix = extractPathPrefix(url);
           return urlPathPrefix === brokenLinkPathPrefix;
         });
+
+        log.info(
+          `[${AUDIT_TYPE}] [Site: ${site.getId()}] Broken link ${urlTo} (prefix: ${brokenLinkPathPrefix}): `
+          + `${totalAlternativesBeforeLocaleFilter} alternatives before locale filter, `
+          + `${filteredAlternatives.length} after locale filter`,
+        );
 
         // Log warning if no alternatives found for this locale
         if (filteredAlternatives.length === 0) {
@@ -259,6 +274,11 @@ export const opportunityAndSuggestionsStep = async (context) => {
             + `with prefix ${brokenLinkPathPrefix}. urlTo: ${urlTo}, urlFrom: ${urlFrom}`,
           );
         }
+      } else {
+        log.info(
+          `[${AUDIT_TYPE}] [Site: ${site.getId()}] Broken link ${urlTo} (no prefix): `
+          + `${filteredAlternatives.length} alternatives available`,
+        );
       }
 
       return {
@@ -268,6 +288,15 @@ export const opportunityAndSuggestionsStep = async (context) => {
         alternativeUrls: filteredAlternatives,
       };
     });
+
+    const brokenLinksWithEmptyAlternatives = brokenLinksWithFilteredAlternatives.filter(
+      (link) => link.alternativeUrls.length === 0,
+    ).length;
+
+    log.info(
+      `[${AUDIT_TYPE}] [Site: ${site.getId()}] Sending ${brokenLinksWithFilteredAlternatives.length} broken links to Mystique. `
+      + `${brokenLinksWithEmptyAlternatives} have no alternative URLs available.`,
+    );
 
     const message = {
       type: 'guidance:broken-links',
