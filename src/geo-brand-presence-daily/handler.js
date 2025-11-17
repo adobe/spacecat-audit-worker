@@ -13,12 +13,14 @@
 import { Audit } from '@adobe/spacecat-shared-data-access';
 import { AuditBuilder } from '../common/audit-builder.js';
 import { wwwUrlResolver } from '../common/index.js';
-import { keywordPromptsImportStep, loadPromptsAndSendCategorization } from '../geo-brand-presence/handler.js';
+import { keywordPromptsImportStep, loadPromptsAndSendDetection } from '../geo-brand-presence/handler.js';
 
 const { AUDIT_STEP_DESTINATIONS } = Audit;
 
-// Note: Step 2 (loadCategorizedPromptsAndSendDetection) will be triggered by a callback
-// from Mystique when categorization completes, not as a regular audit step.
+// Daily geo-brand-presence audit flow:
+// STEP 0: Import keywords from external sources (if scheduled)
+// STEP 1: Load AI + human prompts, upload to S3, send unified detection message to Mystique
+// STEP 2: Receive categorization status (handled by message handler in index.js)
 
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
@@ -28,7 +30,7 @@ export default new AuditBuilder()
     AUDIT_STEP_DESTINATIONS.IMPORT_WORKER,
   )
   .addStep(
-    'loadPromptsAndSendCategorizationStep',
-    (context) => loadPromptsAndSendCategorization({ ...context, brandPresenceCadence: 'daily' }),
+    'loadPromptsAndSendDetectionStep',
+    (context) => loadPromptsAndSendDetection({ ...context, brandPresenceCadence: 'daily' }),
   )
   .build();

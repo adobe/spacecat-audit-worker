@@ -10,49 +10,29 @@
  * governing permissions and limitations under the License.
  */
 /**
- * Geo Brand Presence Audit - Multi-Step Workflow
- * =============================================
- *
- * This audit evaluates brand presence in AI-powered search results
- * using a 3-step process:
- *
+ * ============================================
+ * Geo Brand Presence Audit - workflow
+ * ============================================
  * STEP 0: Import (runs in import-worker via keywordPromptsImportStep)
  *   - Fetches keyword data from Ahrefs API
  *   - Generates AI prompts from keywords + URL combinations
  *   - Writes prompts to partitioned parquet files: metrics/${siteId}/llmo-prompts-ahrefs/...
  *   - Returns parquetFiles array for use in Step 1
  *
- * STEP 1: Load Prompts & Send to Categorization (loadPromptsAndSendCategorization)
+ * STEP 1: Unified Detection (loadPromptsAndSendDetection)
  *   - Reads AI prompts from parquet files
  *   - Deduplicates AI prompts
- *   - Uploads AI prompts as JSON with presigned URL (24h expiry)
- *   - Sends categorization message to Mystique (always, even if prompts empty)
- *   - Mystique filters out already-categorized prompts internally, categorizes
- *     the rest and includes them in callback
- *   - Stores context (config version, providers, etc.) in audit result for Step 2
+ *   - Loads human prompts from LLMO config
+ *   - Combines AI + human prompts
+ *   - Uploads combined prompts as JSON with presigned URL (24h expiry)
+ *   - Sends Detection messages directly to Mystique (one per web search provider)
+ *   - Mystique conditionally categorizes AI prompts if needed (inline)
  *
- * STEP 2: Detection (loadCategorizedPromptsAndSendDetection)
- *   - Triggered by callback from Mystique after categorization completes
- *   - Receives categorized AI prompts via presigned URL in callback message
- *   - Downloads categorized AI prompts from presigned URL
- *   - Writes categorized AI prompts to aggregates/ parquet for analytics
- *   - Loads human prompts from LLMO config (topics) using locked config version
- *   - Combines AI (from callback) + human prompts (from config)
- *   - Uploads combined prompts as JSON with presigned URL
- *   - Sends detection messages to Mystique (one per web search provider)
- *
- * Data Flow:
- *   Parquet (metrics/) → AI prompts → Deduplicate →
- *   JSON (temp/) → Mystique categorization → Callback with categorized prompts →
- *   Categorized AI prompts written to Parquet (aggregates/) for analytics +
- *   LLMO config → Human prompts → Combined prompts → JSON (temp/) → Detection → Results
- *
- * Config Version Locking:
- *   Step 1 locks the config version X. Step 2 uses the same version X to read human prompts,
- *   ensuring consistency even if Mystique creates version X+1 during categorization.
- *
- * Note: Step 2 is NOT a regular audit step. It's triggered externally via callback
- * when categorization completes, allowing the categorization to run asynchronously.
+ * STEP 2: Receive Categorization Status (receiveCategorization)
+ *   - Receives categorization status message from Mystique via SQS
+ *   - Downloads categorized prompts from presigned URL
+ *   - Writes categorized prompts to aggregates parquet for analytics
+ *   - Returns (detection continues independently in Mystique)
  */
 /* eslint-disable no-use-before-define */
 
@@ -65,7 +45,6 @@ import {
   llmoConfig,
 } from '@adobe/spacecat-shared-utils';
 import { parquetReadObjects } from 'hyparquet';
-import { parquetWriteBuffer } from 'hyparquet-writer';
 import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
 import { getSignedUrl } from '../utils/getPresignedUrl.js';
@@ -77,16 +56,14 @@ const { AUDIT_STEP_DESTINATIONS } = Audit;
 export const LLMO_QUESTIONS_IMPORT_TYPE = 'llmo-prompts-ahrefs';
 export const GEO_BRAND_PRESENCE_OPPTY_TYPE = 'detect:geo-brand-presence';
 export const GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE = 'detect:geo-brand-presence-daily';
-export const GEO_BRAND_CATEGORIZATION_OPPTY_TYPE = 'categorize:geo-brand-presence';
+export const GEO_BRAND_CATEGORIZATION_OPPTY_TYPE = 'category:geo-brand-presence';
 export const GEO_FAQ_OPPTY_TYPE = 'guidance:geo-faq';
 export const OPPTY_TYPES = [
   GEO_BRAND_PRESENCE_OPPTY_TYPE,
   GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE,
   GEO_BRAND_CATEGORIZATION_OPPTY_TYPE,
-  // GEO_FAQ_OPPTY_TYPE, // TODO reenable when working on faqs again
 ];
 
-// Web search providers to send messages for
 export const WEB_SEARCH_PROVIDERS = [
   'all',
   'chatgpt',
@@ -95,17 +72,7 @@ export const WEB_SEARCH_PROVIDERS = [
   'ai_mode',
   'perplexity',
   'copilot',
-  // Add more providers here as needed
 ];
-
-/**
- * @import { S3Client } from '@aws-sdk/client-s3';
- * @import { ISOCalendarWeek } from '@adobe/spacecat-shared-utils';
- */
-
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
 
 /**
  * Removes duplicate prompts from AI-generated prompts based on region, topic, and prompt text.
@@ -136,21 +103,17 @@ function deduplicatePrompts(prompts, siteId, log) {
         totalInvalidItemsSkipped += 1;
         log.warn(`GEO BRAND PRESENCE: [DEDUP] Skipping non-object item at index ${i}: ${typeof item}`);
       } else {
-        // Get the prompt for duplicate checking
         const prompt = item.prompt || '';
         const region = (item.region || item.market || 'US').toLowerCase();
         const topic = (item.topic || item.keyword || '').toLowerCase();
 
-        // Skip empty prompts
         if (!prompt || prompt.trim().length === 0) {
           totalEmptyPromptsSkipped += 1;
           log.debug(`GEO BRAND PRESENCE: [DEDUP] Skipping empty prompt at index ${i}: region='${region}', topic='${topic}'`);
         } else {
-          // Check for duplicates BEFORE adding to result
           const regionTopicKey = `${region}:${topic}`;
           const promptKey = prompt.toLowerCase().trim();
 
-          // Initialize group if not exists
           if (!regionTopicGroups.has(regionTopicKey)) {
             regionTopicGroups.set(regionTopicKey, {
               seenPrompts: new Set(),
@@ -162,12 +125,10 @@ function deduplicatePrompts(prompts, siteId, log) {
           group.originalCount += 1;
 
           if (group.seenPrompts.has(promptKey)) {
-            // Skip duplicate
             totalDuplicatesRemoved += 1;
             const truncatedPrompt = prompt.length > 50 ? `${prompt.substring(0, 50)}...` : prompt;
-            log.debug(`GEO BRAND PRESENCE: [DEDUP] Skipping duplicate prompt at index ${i}: region='${region}', topic='${topic}', prompt='${truncatedPrompt}'`);
+            log.debug(`GEO BRAND PRESENCE: Skipping duplicate prompt at index ${i}: region='${region}', topic='${topic}', prompt='${truncatedPrompt}'`);
           } else {
-            // Mark as seen BEFORE adding to result
             group.seenPrompts.add(promptKey);
             deduplicatedPrompts.push(item);
           }
@@ -175,19 +136,17 @@ function deduplicatePrompts(prompts, siteId, log) {
       }
     } catch (error) {
       totalErrorsRecovered += 1;
-      log.error(`GEO BRAND PRESENCE: [DEDUP] Error processing item at index ${i}:`, error);
-      // Include item in result even if processing fails
+      log.error(`GEO BRAND PRESENCE: Deduplication error processing item at index ${i}:`, error);
       deduplicatedPrompts.push(item);
     }
   }
 
-  // Log deduplication statistics
   const finalCount = deduplicatedPrompts.length;
   const totalSkipped = totalDuplicatesRemoved + totalEmptyPromptsSkipped + totalInvalidItemsSkipped;
   const skipRate = originalCount > 0 ? ((totalSkipped / originalCount) * 100).toFixed(1) : 0;
 
   log.info(
-    'GEO BRAND PRESENCE: [DEDUP] Site %s: Processed %d prompts across %d region/topic groups. Skipped %d items (%s%%): %d duplicates, %d empty, %d invalid. Recovered from %d errors. Kept %d unique prompts.',
+    'GEO BRAND PRESENCE: Site %s: Processed %d prompts across %d region/topic groups. Skipped %d items (%s%%): %d duplicates, %d empty, %d invalid. Recovered from %d errors. Kept %d unique prompts.',
     siteId,
     originalCount,
     regionTopicGroups.size,
@@ -200,14 +159,13 @@ function deduplicatePrompts(prompts, siteId, log) {
     finalCount,
   );
 
-  // Log group statistics if debug enabled
   if (log.debug) {
     regionTopicGroups.forEach((group, key) => {
       const [region, topic] = key.split(':');
       const keptCount = group.seenPrompts.size;
       const removedCount = group.originalCount - keptCount;
       if (removedCount > 0) {
-        log.debug(`GEO BRAND PRESENCE: [DEDUP] Group '${region}/${topic}': ${group.originalCount} → ${keptCount} (removed ${removedCount})`);
+        log.debug(`GEO BRAND PRESENCE: Group '${region}/${topic}': ${group.originalCount} → ${keptCount} (removed ${removedCount})`);
       }
     });
   }
@@ -215,24 +173,15 @@ function deduplicatePrompts(prompts, siteId, log) {
   return deduplicatedPrompts;
 }
 
-// ============================================================================
-// STEP 1: CATEGORIZATION
-// ============================================================================
-
 /**
- * Loads AI prompts from parquet files and sends them to Mystique for categorization.
+ * Loads prompts and sends categorization messages for brand presence detection.
  *
- * This is the first audit step after import. It:
- * - Reads AI prompts from parquet files (paths provided by import step)
- * - Filters to only AI prompts (human prompts don't need categorization)
- * - Uploads prompts as JSON to temp/ location with presigned URL
- * - Sends async categorization message to Mystique
- * - Stores context for Step 2 (which runs after categorization completes)
- *
- * The function returns immediately after sending the message. Step 2 will be
- * triggered separately by a callback when Mystique finishes categorization.
+ * @param {Object} context - The execution context including audit, logging, site info, etc.
+ * @param {Function} [getPresignedUrlOverride=getSignedUrl]
+ * - (Optional) Override for generating presigned URLs.
+ * @returns {Promise<void>}
  */
-export async function loadPromptsAndSendCategorization(
+export async function loadPromptsAndSendDetection(
   context,
   getPresignedUrlOverride = getSignedUrl,
 ) {
@@ -289,9 +238,11 @@ export async function loadPromptsAndSendCategorization(
     return;
   }
 
-  log.debug('GEO BRAND PRESENCE: Step 1 - Loading AI prompts from parquet and sending to categorization for site id %s (%s)', siteId, baseURL);
+  log.debug('GEO BRAND PRESENCE: Unified step - Loading AI prompts from parquet and human prompts from config for site id %s (%s)', siteId, baseURL);
 
   const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
+
+  // Load AI prompts from parquet
   const recordSets = await Promise.all(
     parquetFiles.map((key) => loadParquetDataFromS3({ key, bucket, s3Client })),
   );
@@ -306,202 +257,44 @@ export async function loadPromptsAndSendCategorization(
 
   aiPrompts = deduplicatePrompts(aiPrompts, siteId, log);
 
+  // Load LLMO config to get human prompts and config version
   const {
+    config,
     exists: configExists,
     version: configVersion,
   } = await llmoConfig.readConfig(siteId, s3Client, { s3Bucket: bucket });
 
-  log.info('GEO BRAND PRESENCE: Found %d AI prompts (after dedup) to categorize for site id %s (%s)', aiPrompts.length, siteId, baseURL);
+  log.info('GEO BRAND PRESENCE: Found %d AI prompts (after dedup) for site id %s (%s)', aiPrompts.length, siteId, baseURL);
 
-  // Always send categorization message (even with empty prompts) to trigger callback flow
-  // This ensures Step 2 (detection) runs even when all prompts are already categorized
-  if (aiPrompts.length === 0) {
-    log.info('GEO BRAND PRESENCE: No uncategorized AI prompts for site id %s (%s), sending empty categorization request to trigger callback flow', siteId, baseURL);
-  }
-
-  const s3Context = isDaily
-    ? {
-      ...context, getPresignedUrl: getPresignedUrlOverride, isDaily, dateContext,
-    }
-    : { ...context, getPresignedUrl: getPresignedUrlOverride };
-  const url = await asPresignedJsonUrl(aiPrompts, bucket, s3Context);
-  log.info('GEO BRAND PRESENCE: Presigned URL for AI prompts for site id %s (%s): %s', siteId, baseURL, url);
-
-  if (!isNonEmptyArray(providersToUse)) {
-    log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
-    return;
-  }
-
-  // Mystique's main_brand_categorization_flow.py consumes this message asynchronously.
-  // No waiting needed - Step 2 (detection) is triggered separately via callback
-  // after categorization completes.
-  const categorizationMessage = createMystiqueMessage({
-    type: GEO_BRAND_CATEGORIZATION_OPPTY_TYPE,
-    siteId,
-    baseURL,
-    auditId: audit.getId(),
-    deliveryType: site.getDeliveryType(),
-    calendarWeek: dateContext,
-    url,
-    webSearchProvider: null,
-    configVersion: /* c8 ignore next */ configExists ? configVersion : null,
-    ...(isDaily && { date: dateContext.date }),
-  });
-
-  categorizationMessage.data.parquetFiles = parquetFiles;
-
-  await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, categorizationMessage);
-
-  // Store context for Step 2 (triggered by callback after categorization completes)
-  audit.setAuditResult({
-    ...audit.getAuditResult(),
-    providersToUse,
-    dateContext,
-    configVersion,
-    parquetFiles,
-  });
-
-  const cadenceLabel = isDaily ? ' DAILY' : '';
-  const stepCompleteMsg = 'GEO BRAND PRESENCE%s: Step 1 complete - categorization '
-    + 'message sent to Mystique with AI prompts for site id %s (%s)';
-  log.info(stepCompleteMsg, cadenceLabel, siteId, baseURL);
-  /* c8 ignore end */
-}
-
-// ============================================================================
-// STEP 2: DETECTION
-// ============================================================================
-
-/**
- * Loads categorized prompts and sends them to Mystique for detection.
- *
- * This step is triggered by a callback from Mystique after categorization completes. It:
- * - Receives categorized AI prompts via presigned URL in callback message data
- * - Downloads categorized AI prompts from the presigned URL
- * - Loads human prompts from LLMO config (using locked config version from Step 1)
- * - Writes categorized AI prompts to aggregates/ for analytics
- * - Combines AI (from callback) + human (from config) prompts
- * - Uploads combined prompts as JSON with presigned URL
- * - Sends detection messages (one per web search provider)
- *
- * Unlike Step 1, this is NOT part of the regular audit flow - it's invoked externally.
- */
-export async function loadCategorizedPromptsAndSendDetection(
-  context,
-  getPresignedUrlOverride = getSignedUrl,
-) {
-  /* c8 ignore start */
-  const {
-    auditContext, log, sqs, env, site, audit, s3Client, brandPresenceCadence, data,
-  } = context;
-
-  const siteId = site.getId();
-  const baseURL = site.getBaseURL();
-  const isDaily = brandPresenceCadence === 'daily';
-
-  log.info('GEO BRAND PRESENCE: Step 2 - Loading categorized AI prompts from callback for site id %s (%s)', siteId, baseURL);
-
-  const auditResult = audit?.getAuditResult();
-  const providersToUse = auditResult?.providersToUse ?? WEB_SEARCH_PROVIDERS;
-  const dateContext = auditResult?.dateContext ?? auditContext?.calendarWeek;
-  const lockedConfigVersion = auditResult?.configVersion;
-  const parquetFiles = auditResult?.parquetFiles ?? auditContext?.parquetFiles;
-
-  if (!isNonEmptyObject(dateContext) || !dateContext.week || !dateContext.year) {
-    log.error('GEO BRAND PRESENCE: Invalid date context for site id %s (%s). Cannot proceed with detection', siteId, baseURL);
-    return { status: 'error', message: 'Invalid date context' };
-  }
-
-  if (!Array.isArray(parquetFiles) || !parquetFiles.every((x) => typeof x === 'string')) {
-    log.error('GEO BRAND PRESENCE: Invalid parquetFiles in auditContext for site id %s (%s). Cannot proceed with detection', siteId, baseURL);
-    return { status: 'error', message: 'Invalid parquet files' };
-  }
-
-  // Check if categorization had an error
-  if (data?.error || context.data?.error) {
-    log.error('GEO BRAND PRESENCE: Categorization failed for site id %s (%s). Cannot proceed with detection', siteId, baseURL);
-    return { status: 'error', message: 'Categorization failed' };
-  }
-
-  // Get categorized prompts URL from callback message
-  const categorizedPromptsUrl = data?.categorizedPromptsUrl || context.data?.url;
-  if (!categorizedPromptsUrl) {
-    log.error('GEO BRAND PRESENCE: No categorizedPromptsUrl in callback for site id %s (%s). Cannot proceed with detection', siteId, baseURL);
-    return { status: 'error', message: 'Missing categorizedPromptsUrl in callback' };
-  }
-
-  // Download categorized AI prompts from presigned URL (sent by Mystique)
-  log.info('GEO BRAND PRESENCE: Downloading categorized AI prompts from %s', categorizedPromptsUrl);
-  let aiCategorizedPrompts = [];
-  try {
-    const response = await fetch(categorizedPromptsUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch categorized prompts: ${response.status} ${response.statusText}`);
-    }
-    const responseData = await response.json();
-    aiCategorizedPrompts = responseData.prompts || responseData || [];
-    log.info('GEO BRAND PRESENCE: Downloaded %d categorized AI prompts from callback for site id %s (%s)', aiCategorizedPrompts.length, siteId, baseURL);
-  } catch (error) {
-    log.error('GEO BRAND PRESENCE: Failed to download categorized prompts from %s: %s', categorizedPromptsUrl, error.message);
-    return { status: 'error', message: `Failed to download categorized prompts: ${error.message}` };
-  }
-
-  // Write categorized AI prompts to aggregates/ for analytics
-  // This is the FINAL upload location. Mystique sent these via temp/ transfer location.
-  if (aiCategorizedPrompts.length > 0) {
-    await writeCategorizedPromptsToAggregates({
-      aiCategorizedPrompts,
-      bucket: context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '',
-      s3Client,
-      siteId,
-      dateContext,
-      log,
+  // Load human prompts from LLMO config
+  let humanPrompts = [];
+  if (configExists && config) {
+    humanPrompts = Object.values(config.topics || {}).flatMap((x) => {
+      const category = config.categories[x.category];
+      return x.prompts.flatMap((p) => p.regions.map((region) => ({
+        prompt: p.prompt,
+        region,
+        category: category.name,
+        topic: x.name,
+        url: '',
+        keyword: '',
+        keywordImportTime: -1,
+        volume: -1,
+        volumeImportTime: -1,
+        source: 'human',
+        market: p.regions.join(','),
+        origin: 'human',
+      })));
     });
+    log.info('GEO BRAND PRESENCE: Loaded %d human prompts from config for site id %s (%s)', humanPrompts.length, siteId, baseURL);
   }
 
-  // Load human prompts from LLMO config using the locked version from Step 1
-  const bucket = context.env?.S3_IMPORTER_BUCKET_NAME ?? /* c8 ignore next */ '';
-  const configOptions = { s3Bucket: bucket };
-  if (lockedConfigVersion) {
-    configOptions.version = lockedConfigVersion;
-    log.info('GEO BRAND PRESENCE: Reading LLMO config version %s (locked from Step 1)', lockedConfigVersion);
-  }
-
-  const {
-    config,
-    exists: configExists,
-  } = await llmoConfig.readConfig(siteId, s3Client, configOptions);
-
-  if (!configExists) {
-    log.error('GEO BRAND PRESENCE: LLMO config not found for site id %s (%s). Cannot proceed with detection', siteId, baseURL);
-    return { status: 'error', message: 'LLMO config not found' };
-  }
-
-  const humanPrompts = Object.values(config.topics || {}).flatMap((x) => {
-    const category = config.categories[x.category];
-    return x.prompts.flatMap((p) => p.regions.map((region) => ({
-      prompt: p.prompt,
-      region,
-      category: category.name,
-      topic: x.name,
-      url: '',
-      keyword: '',
-      keywordImportTime: -1,
-      volume: -1,
-      volumeImportTime: -1,
-      source: 'human',
-      market: p.regions.join(','),
-      origin: 'human',
-    })));
-  });
-
-  const allPrompts = humanPrompts.concat(aiCategorizedPrompts);
-
+  // Combine AI and human prompts
+  const allPrompts = humanPrompts.concat(aiPrompts);
   log.info(
-    'GEO BRAND PRESENCE: Combined %d human prompts (from config v%s) + %d AI prompts (from callback) = %d total for site id %s (%s)',
+    'GEO BRAND PRESENCE: Combined %d human + %d AI prompts = %d total for site id %s (%s)',
     humanPrompts.length,
-    lockedConfigVersion || 'latest',
-    aiCategorizedPrompts.length,
+    aiPrompts.length,
     allPrompts.length,
     siteId,
     baseURL,
@@ -509,7 +302,7 @@ export async function loadCategorizedPromptsAndSendDetection(
 
   if (allPrompts.length === 0) {
     log.warn('GEO BRAND PRESENCE: No prompts found for site id %s (%s), skipping detection', siteId, baseURL);
-    return { status: 'completed', message: 'No prompts to detect' };
+    return;
   }
 
   const s3Context = isDaily
@@ -517,8 +310,15 @@ export async function loadCategorizedPromptsAndSendDetection(
       ...context, getPresignedUrl: getPresignedUrlOverride, isDaily, dateContext,
     }
     : { ...context, getPresignedUrl: getPresignedUrlOverride };
+
   const url = await asPresignedJsonUrl(allPrompts, bucket, s3Context);
+
   log.info('GEO BRAND PRESENCE: Presigned URL for combined prompts for site id %s (%s): %s', siteId, baseURL, url);
+
+  if (!isNonEmptyArray(providersToUse)) {
+    log.warn('GEO BRAND PRESENCE: No web search providers configured for site id %s (%s), skipping message to mystique', siteId, baseURL);
+    return;
+  }
 
   const opptyTypes = isDaily
     ? [GEO_BRAND_PRESENCE_DAILY_OPPTY_TYPE]
@@ -535,113 +335,42 @@ export async function loadCategorizedPromptsAndSendDetection(
         calendarWeek: dateContext,
         url,
         webSearchProvider: transformWebSearchProviderForMystique(webSearchProvider),
-        configVersion: lockedConfigVersion,
+        configVersion: /* c8 ignore next */ configExists ? configVersion : null,
         ...(isDaily && { date: dateContext.date }),
       });
 
       await sqs.sendMessage(env.QUEUE_SPACECAT_TO_MYSTIQUE, message);
       const cadenceLabel = isDaily ? ' DAILY' : '';
-      log.debug('GEO BRAND PRESENCE%s: %s detection message sent to Mystique for site id %s (%s) with provider %s', cadenceLabel, opptyType, siteId, baseURL, webSearchProvider);
+      log.debug(
+        'GEO BRAND PRESENCE%s: %s detection message sent to Mystique for site id %s (%s) with provider %s',
+        cadenceLabel,
+        opptyType,
+        siteId,
+        baseURL,
+        webSearchProvider,
+      );
     },
   ));
 
   await Promise.all(detectionMessages);
 
   const cadenceLabel = isDaily ? ' DAILY' : '';
-  log.info('GEO BRAND PRESENCE%s: Step 2 complete - detection messages sent to Mystique for site id %s (%s)', cadenceLabel, siteId, baseURL);
-
-  return { status: 'completed', message: 'Detection messages sent successfully' };
-  /* c8 ignore end */
-}
-
-// ============================================================================
-// PARQUET UTILITIES
-// ============================================================================
-
-/**
- * Converts row-based data to column-based format required by hyparquet-writer.
- * Infers column types from first row values.
- */
-function objectsToColumnData(objects) {
-  /* c8 ignore start */
-  if (!objects || objects.length === 0) {
-    return [];
-  }
-
-  const keys = Object.keys(objects[0]);
-  const columnData = {};
-
-  keys.forEach((key) => {
-    const sampleValue = objects[0][key];
-    let type = 'STRING';
-
-    if (typeof sampleValue === 'number') {
-      type = Number.isInteger(sampleValue) ? 'INT32' : 'DOUBLE';
-    } else if (sampleValue instanceof Date) {
-      type = 'TIMESTAMP';
-    }
-
-    columnData[key] = {
-      data: [],
-      name: key,
-      type,
-    };
-  });
-
-  objects.forEach((obj) => {
-    keys.forEach((key) => {
-      columnData[key].data.push(obj[key]);
-    });
-  });
-
-  return Object.values(columnData);
+  const stepCompleteMsg = 'GEO BRAND PRESENCE%s: Unified step complete - detection '
+    + 'messages sent directly to Mystique (categorization will happen internally if needed) for site id %s (%s)';
+  log.info(stepCompleteMsg, cadenceLabel, siteId, baseURL);
   /* c8 ignore end */
 }
 
 /**
- * Writes categorized AI prompts to FINAL aggregates location for analytics/reporting.
- * This is where Spacecat permanently stores categorized prompts after receiving them
- * from Mystique's temp/ transfer location.
+ * Loads and parses a Parquet file from S3 into JavaScript objects.
  *
- * Creates: aggregates/${siteId}/geo-brand-presence/ai-prompts/date=${date}/data.parquet
- */
-export async function writeCategorizedPromptsToAggregates({
-  aiCategorizedPrompts,
-  bucket,
-  s3Client,
-  siteId,
-  dateContext,
-  log,
-}) {
-  /* c8 ignore start */
-  try {
-    const dateStr = dateContext.date
-      || new Date().toISOString().split('T')[0];
-
-    const s3Key = `aggregates/${siteId}/geo-brand-presence/ai-prompts/date=${dateStr}/data.parquet`;
-
-    log.info('GEO BRAND PRESENCE: Writing %d categorized AI prompts to %s', aiCategorizedPrompts.length, s3Key);
-
-    const columnData = objectsToColumnData(aiCategorizedPrompts);
-    const parquetBuffer = parquetWriteBuffer({ columnData });
-    await s3Client.send(new PutObjectCommand({
-      Bucket: bucket,
-      Key: s3Key,
-      Body: parquetBuffer,
-      ContentType: 'application/octet-stream',
-    }));
-
-    log.info('GEO BRAND PRESENCE: Successfully wrote categorized AI prompts to s3://%s/%s', bucket, s3Key);
-    return { success: true, key: s3Key };
-  } catch (error) {
-    log.error('GEO BRAND PRESENCE: Failed to write categorized AI prompts to aggregates: %s', error.message);
-    return { success: false, error: error.message };
-  }
-  /* c8 ignore end */
-}
-
-/**
- * Loads and parses parquet file from S3.
+ * @param {Object} params - The parameters object.
+ * @param {string} params.key - The S3 key of the Parquet file.
+ * @param {string} params.bucket - The S3 bucket name.
+ * @param {AWS.S3Client} params.s3Client - The AWS S3 client instance.
+ * @returns {Promise<AsyncGenerator<Object>>}
+ * - An async generator yielding objects from the Parquet file.
+ * @throws {Error} If the Parquet file cannot be read from S3.
  */
 export async function loadParquetDataFromS3({ key, bucket, s3Client }) {
   const res = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
@@ -655,13 +384,22 @@ export async function loadParquetDataFromS3({ key, bucket, s3Client }) {
   return parquetReadObjects({ file: body.buffer });
 }
 
-// ============================================================================
-// DATA TRANSFER UTILITIES
-// ============================================================================
-
 /**
- * Uploads data as JSON to S3 and returns a presigned URL (24h expiry).
- * Used to pass prompt data to Mystique via temporary JSON files.
+ * Uploads arbitrary data as a JSON file to S3 and generates a presigned URL with 24h expiry.
+ *
+ * This utility is used to pass prompt data or structured JSON to Mystique by persisting it
+ * as a temporary JSON file in S3. The returned presigned URL allows Mystique to securely
+ * retrieve the JSON content within a limited time window.
+ *
+ * @param {Object} data - The data to serialize and upload as JSON.
+ * @param {string} bucketName - The name of the S3 bucket to use.
+ * @param {Object} context - Context object. Should contain:
+ *   - {AWS.S3Client} s3Client - AWS S3 client instance.
+ *   - {Function} getPresignedUrl - Function to generate S3 presigned URLs.
+ *   - {Object} log - Logger instance.
+ *   - {boolean} isDaily - Whether this is for daily cadence (affects S3 path).
+ *   - {Object} dateContext - The date context used for the file path.
+ * @returns {Promise<string>} - A promise that resolves to a presigned S3 URL (valid for 24 hours).
  */
 export async function asPresignedJsonUrl(data, bucketName, context) {
   const {
@@ -686,13 +424,76 @@ export async function asPresignedJsonUrl(data, bucketName, context) {
   );
 }
 
-// ============================================================================
-// STEP 0: IMPORT COORDINATION
-// ============================================================================
+/**
+ * Creates a standardized message for Mystique SQS queue.
+ *
+ * @param {Object} params - The parameters for the message.
+ * @param {string} params.type - The opportunity type for the message.
+ * @param {string} params.siteId - The unique identifier for the site.
+ * @param {string} params.baseURL - The base URL for the site.
+ * @param {string} params.auditId - The audit identifier.
+ * @param {string} params.deliveryType - The delivery type for the site.
+ * @param {Object} params.calendarWeek - The calendar week info (week, year).
+ * @param {string} params.url - The target URL for detection.
+ * @param {string} params.webSearchProvider - The search provider.
+ * @param {string|null} [params.configVersion=null] - The config version, if present.
+ * @param {string|null} [params.date=null] - The date for daily cadence (YYYY-MM-DD), if present.
+ * @param {string|undefined} [params.source] - Optional source for the message.
+ * @param {string|undefined} [params.initiator] - Optional initiator for the message.
+ * @returns {Object} - The formatted message payload for Mystique queue.
+ */
+export function createMystiqueMessage({
+  type,
+  siteId,
+  baseURL,
+  auditId,
+  deliveryType,
+  calendarWeek,
+  url,
+  webSearchProvider,
+  configVersion = null,
+  date = null,
+  source = undefined,
+  initiator = undefined,
+}) {
+  const data = {
+    url,
+    configVersion,
+    config_version: configVersion,
+    web_search_provider: webSearchProvider,
+  };
+
+  if (date) {
+    data.date = date;
+  }
+
+  return {
+    type,
+    siteId,
+    url: baseURL,
+    auditId,
+    deliveryType,
+    time: new Date().toISOString(),
+    week: calendarWeek.week,
+    year: calendarWeek.year,
+    data,
+    ...(source && { source }),
+    ...(initiator && { initiator }),
+  };
+}
 
 /**
  * Coordinates with import-worker to fetch and store keyword prompts.
  * Returns import job details that trigger the actual import in import-worker.
+ *
+ * @param {Object} context - The execution context.
+ * @param {Object} context.site - The site object.
+ * @param {string|Object} context.data
+ * - The data string or object, may contain endDate, referenceDate, aiPlatform.
+ * @param {string} context.finalUrl - The final URL for the audit.
+ * @param {Object} context.log - The logger instance.
+ * @param {string} context.brandPresenceCadence - The cadence of brand presence, e.g., 'daily'.
+ * @returns {Object} The import job details to trigger import in import-worker.
  */
 export async function keywordPromptsImportStep(context) {
   const {
@@ -752,59 +553,8 @@ export async function keywordPromptsImportStep(context) {
   return result;
 }
 
-// ============================================================================
-// MESSAGE CONSTRUCTION
-// ============================================================================
-
-/**
- * Creates a standardized message for Mystique SQS queue.
- */
-export function createMystiqueMessage({
-  type,
-  siteId,
-  baseURL,
-  auditId,
-  deliveryType,
-  calendarWeek,
-  url,
-  webSearchProvider,
-  configVersion = null,
-  date = null,
-  source = undefined,
-  initiator = undefined,
-}) {
-  const data = {
-    url,
-    configVersion,
-    config_version: configVersion,
-    web_search_provider: webSearchProvider,
-  };
-
-  if (date) {
-    data.date = date;
-  }
-
-  return {
-    type,
-    siteId,
-    url: baseURL,
-    auditId,
-    deliveryType,
-    time: new Date().toISOString(),
-    week: calendarWeek.week,
-    year: calendarWeek.year,
-    data,
-    ...(source && { source }),
-    ...(initiator && { initiator }),
-  };
-}
-
-// ============================================================================
-// AUDIT REGISTRATION
-// ============================================================================
-
 export default new AuditBuilder()
   .withUrlResolver(wwwUrlResolver)
   .addStep('keywordPromptsImportStep', keywordPromptsImportStep, AUDIT_STEP_DESTINATIONS.IMPORT_WORKER)
-  .addStep('loadPromptsAndSendCategorizationStep', loadPromptsAndSendCategorization)
+  .addStep('loadPromptsAndSendDetectionStep', loadPromptsAndSendDetection)
   .build();
