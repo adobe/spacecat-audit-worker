@@ -1,3 +1,10 @@
+# [1.241.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.240.3...v1.241.0) (2025-11-17)
+
+
+### Features
+
+* update display user agents and categories ([#1589](https://github.com/adobe/spacecat-audit-worker/issues/1589)) ([440f045](https://github.com/adobe/spacecat-audit-worker/commit/440f045c9e0010876004c16b8595eeae0bd32164))
+
 ## [1.240.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.240.2...v1.240.3) (2025-11-17)
 
 
