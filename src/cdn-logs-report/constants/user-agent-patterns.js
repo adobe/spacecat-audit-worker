@@ -60,8 +60,7 @@ export function buildAgentTypeClassificationSQL() {
     { pattern: '%gptbot%', result: 'Training bots' },
     { pattern: '%oai-searchbot%', result: 'Web search crawlers' },
     { pattern: '%chatgpt-user%', result: 'Chatbots' },
-    { pattern: '%chatgpt%20atlas%', result: 'Icon fetchers' },
-    { pattern: '%chatgpt%', result: 'Image fetchers' },
+    { pattern: '%chatgpt%', result: 'Media fetchers' },
     // Perplexity
     { pattern: '%perplexitybot%', result: 'Web search crawlers' },
     { pattern: '%perplexity-user%', result: 'Chatbots' },
