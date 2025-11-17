@@ -11,8 +11,8 @@
  */
 
 import { notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { convertToOpportunityEntity } from './opportunity-data-mapper.js';
-
 /**
  * Checks if any suggestions in the array were manually modified (updatedBy !== 'system')
  * @param {Array} suggestions - Array of suggestion objects
@@ -86,7 +86,8 @@ export default async function handler(message, context) {
     opportunityId: opportunity.getId(),
     type: 'CONTENT_UPDATE',
     rank: 1,
-    status: requiresValidation ? Suggestion.STATUSES.PENDING_VALIDATION : Suggestion.STATUSES.NEW,
+    status: requiresValidation ? SuggestionModel.STATUSES.PENDING_VALIDATION
+      : SuggestionModel.STATUSES.NEW,
     data: {
       variations: suggestions,
     },

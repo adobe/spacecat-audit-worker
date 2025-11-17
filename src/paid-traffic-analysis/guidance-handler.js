@@ -11,6 +11,7 @@
  */
 import { ok, notFound } from '@adobe/spacecat-shared-http-utils';
 import { randomUUID } from 'crypto';
+import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
 
 const GUIDANCE_TYPE = 'guidance:traffic-analysis';
@@ -118,7 +119,8 @@ export default async function handler(message, context) {
 
     await Promise.all(suggestions.map((s) => Suggestion.create({
       ...s,
-      status: requiresValidation ? Suggestion.STATUSES.PENDING_VALIDATION : Suggestion.STATUSES.NEW,
+      status: requiresValidation ? SuggestionModel.STATUSES.PENDING_VALIDATION
+        : SuggestionModel.STATUSES.NEW,
     })));
   }
 
