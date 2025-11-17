@@ -1,3 +1,10 @@
+## [1.239.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.239.2...v1.239.3) (2025-11-17)
+
+
+### Bug Fixes
+
+* retry with backoff ([#1585](https://github.com/adobe/spacecat-audit-worker/issues/1585)) ([a44df57](https://github.com/adobe/spacecat-audit-worker/commit/a44df57048245466ce236d37f32e87addbe65ee4))
+
 ## [1.239.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.239.1...v1.239.2) (2025-11-17)
 
 
