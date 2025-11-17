@@ -1,3 +1,15 @@
+# [1.242.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.241.0...v1.242.0) (2025-11-17)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-utils to v1.74.0 ([#1586](https://github.com/adobe/spacecat-audit-worker/issues/1586)) ([28e0bad](https://github.com/adobe/spacecat-audit-worker/commit/28e0badbed15e4dd4ba185c6383b9f01bed9843c))
+
+
+### Features
+
+* added await for tier-client ([#1587](https://github.com/adobe/spacecat-audit-worker/issues/1587)) ([a4f87cb](https://github.com/adobe/spacecat-audit-worker/commit/a4f87cb075d44ef07c64e1cc9bbeaa596c7a9921))
+
 # [1.241.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.240.3...v1.241.0) (2025-11-17)
 
 
