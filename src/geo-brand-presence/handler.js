@@ -352,7 +352,7 @@ export async function asPresignedJsonUrl(data, bucketName, context) {
   log.info('GEO BRAND PRESENCE: Data uploaded to S3 at s3://%s/%s', bucketName, key);
   return getPresignedUrlFn(
     s3Client,
-    new GetObjectCommand({ Bucket: bucketName, Key: key }),
+    new GetObjectCommand({ Bucket: bucketName, Key: key, ResponseContentType: 'application/json' }),
     { expiresIn: 86_400 /* seconds, 24h */ },
   );
 }
