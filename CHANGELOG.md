@@ -1,3 +1,38 @@
+# [1.241.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.240.3...v1.241.0) (2025-11-17)
+
+
+### Features
+
+* update display user agents and categories ([#1589](https://github.com/adobe/spacecat-audit-worker/issues/1589)) ([440f045](https://github.com/adobe/spacecat-audit-worker/commit/440f045c9e0010876004c16b8595eeae0bd32164))
+
+## [1.240.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.240.2...v1.240.3) (2025-11-17)
+
+
+### Bug Fixes
+
+* sites-36295 ([#1561](https://github.com/adobe/spacecat-audit-worker/issues/1561)) ([402e226](https://github.com/adobe/spacecat-audit-worker/commit/402e2260b1026a9fa960cc602fd01dd704a8ed3b))
+
+## [1.240.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.240.1...v1.240.2) (2025-11-17)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @adobe/spacecat-shared-data-access to 284.0 ([#1588](https://github.com/adobe/spacecat-audit-worker/issues/1588)) ([c6f6544](https://github.com/adobe/spacecat-audit-worker/commit/c6f65446474344d468cfa184deadd505c3fcbf37))
+
+## [1.240.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.240.0...v1.240.1) (2025-11-17)
+
+
+### Bug Fixes
+
+* modifying forms logs ([#1567](https://github.com/adobe/spacecat-audit-worker/issues/1567)) ([6e14980](https://github.com/adobe/spacecat-audit-worker/commit/6e149806b52e24ba2df78c69519b79895bda0ee7))
+
+# [1.240.0](https://github.com/adobe/spacecat-audit-worker/compare/v1.239.3...v1.240.0) (2025-11-17)
+
+
+### Features
+
+* improve log messages and do not process if no data exist ([#1571](https://github.com/adobe/spacecat-audit-worker/issues/1571)) ([c85870f](https://github.com/adobe/spacecat-audit-worker/commit/c85870f3397bf9e57e48022f56a598b48eb930d9))
+
 ## [1.239.3](https://github.com/adobe/spacecat-audit-worker/compare/v1.239.2...v1.239.3) (2025-11-17)
 
 
