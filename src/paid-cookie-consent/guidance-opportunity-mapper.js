@@ -12,6 +12,7 @@
 
 import { randomUUID } from 'crypto';
 import { ScrapeClient } from '@adobe/spacecat-shared-scrape-client';
+import { Suggestion as SuggestionModel } from '@adobe/spacecat-shared-data-access';
 import { DATA_SOURCES } from '../common/constants.js';
 
 const ESTIMATED_CPC = 0.80;
@@ -132,13 +133,12 @@ export function mapToPaidOpportunity(siteId, url, audit, pageGuidance) {
 }
 
 export async function mapToPaidSuggestion(context, siteId, opportunityId, url, pageGuidance = []) {
-  const { Suggestion } = context.dataAccess;
   return {
     opportunityId,
     type: 'CONTENT_UPDATE',
     rank: 1,
-    status: context.site?.requiresValidation ? Suggestion.STATUSES.PENDING_VALIDATION
-      : Suggestion.STATUSES.NEW,
+    status: context.site?.requiresValidation ? SuggestionModel.STATUSES.PENDING_VALIDATION
+      : SuggestionModel.STATUSES.NEW,
     data: {
       recommendations: [
         {

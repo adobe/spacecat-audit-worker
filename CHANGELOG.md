@@ -1,3 +1,10 @@
+## [1.239.2](https://github.com/adobe/spacecat-audit-worker/compare/v1.239.1...v1.239.2) (2025-11-17)
+
+
+### Bug Fixes
+
+* Suggestion Model ([#1584](https://github.com/adobe/spacecat-audit-worker/issues/1584)) ([358f4b5](https://github.com/adobe/spacecat-audit-worker/commit/358f4b5dd1942379051bcfcd753b322962be0883))
+
 ## [1.239.1](https://github.com/adobe/spacecat-audit-worker/compare/v1.239.0...v1.239.1) (2025-11-17)
 
 
