@@ -39,12 +39,12 @@ describe('FAQs guidance handler', () => {
     site_id: 'site-123',
     audit_id: 'audit-123',
     url: 'https://adobe.com',
-    faqs: [
+    suggestions: [
       {
         url: 'https://www.adobe.com/products/photoshop',
         topic: 'photoshop',
         prompts: ['How to use Photoshop?', 'Is Photoshop good for beginners?'],
-        suggestions: [
+        faqs: [
           {
             isAnswerSuitable: true,
             answerSuitabilityReason: 'Answer is suitable',
@@ -210,7 +210,7 @@ describe('FAQs guidance handler', () => {
       json: sinon.stub().resolves({
         opportunity_id: 'oppty-123',
         url: 'https://adobe.com',
-        faqs: [],
+        suggestions: [],
       }),
     });
 
@@ -225,19 +225,19 @@ describe('FAQs guidance handler', () => {
     const result = await handler(message, context);
 
     expect(result.status).to.equal(204);
-    expect(log.info).to.have.been.calledWith('[FAQ] No FAQs found in the response');
+    expect(log.info).to.have.been.calledWith('[FAQ] No suggestions found in the response');
     expect(convertToOpportunityStub).not.to.have.been.called;
   });
 
   it('should return noContent when no suitable suggestions are found', async () => {
     const dataWithUnsuitableSuggestions = {
       ...mockFaqData,
-      faqs: [
+      suggestions: [
         {
           url: 'https://www.adobe.com/products/photoshop',
           topic: 'photoshop',
           prompts: ['Test question'],
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: false,
               isQuestionRelevant: false,
@@ -416,12 +416,12 @@ describe('FAQs guidance handler', () => {
   it('should filter and count only suitable and relevant suggestions', async () => {
     const mixedQualityData = {
       ...mockFaqData,
-      faqs: [
+      suggestions: [
         {
           url: 'https://www.adobe.com/products/test',
           topic: 'test',
           prompts: ['Question 1', 'Question 2'],
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -476,12 +476,12 @@ describe('FAQs guidance handler', () => {
   it('should handle FAQs with missing suggestions array', async () => {
     const faqData = {
       url: 'https://adobe.com',
-      faqs: [
+      suggestions: [
         {
           url: 'https://adobe.com/test1',
           topic: 'test1',
           prompts: ['Question 1?'],
-          suggestions: [
+          faqs: [
             {
               isAnswerSuitable: true,
               isQuestionRelevant: true,
@@ -494,7 +494,7 @@ describe('FAQs guidance handler', () => {
           url: 'https://adobe.com/test2',
           topic: 'test2',
           prompts: ['Question 2?'],
-          // No suggestions property
+          // No faqs property
         },
       ],
     };
@@ -517,7 +517,7 @@ describe('FAQs guidance handler', () => {
     expect(convertToOpportunityStub).to.have.been.calledOnce;
     const callArgs = convertToOpportunityStub.getCall(0).args;
     const guidanceObj = callArgs[5];
-    // Should only count the 1 suitable suggestion from the first FAQ
+    // Should only count the 1 suitable FAQ from the first suggestion
     expect(guidanceObj.guidance[0].insight).to.include('1 relevant FAQs identified');
   });
 
@@ -704,11 +704,11 @@ describe('FAQs guidance handler', () => {
     fetchStub.resolves({
       ok: true,
       json: sinon.stub().resolves({
-        faqs: [
+        suggestions: [
           {
             topic: 'general-topic',
             // No URL provided
-            suggestions: [
+            faqs: [
               {
                 isAnswerSuitable: true,
                 isQuestionRelevant: true,

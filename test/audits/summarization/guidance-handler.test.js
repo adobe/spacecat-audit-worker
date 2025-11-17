@@ -31,11 +31,43 @@ describe('summarization guidance handler', () => {
   let dummyAudit;
   let dummyOpportunity;
   let syncSuggestionsStub;
+  let fetchStub;
   let handler;
+
+  const mockSummarizationData = {
+    guidance: [
+      {
+        insight: 'Content analysis reveals opportunities',
+        rationale: 'Content summarization elements improve discoverability',
+        recommendation: 'Focus on creating clear, engaging summaries',
+        type: 'guidance',
+      },
+    ],
+    suggestions: [
+      {
+        pageUrl: 'https://adobe.com/page1',
+        pageSummary: {
+          title: 'Page Title 1',
+          formatted_summary: 'This is a formatted page summary',
+          heading_selector: 'h1',
+          insertion_method: 'insertAfter',
+        },
+        sectionSummaries: [
+          {
+            title: 'Section 1',
+            formatted_summary: 'Section summary 1',
+            heading_selector: 'h2.section-heading',
+            insertion_method: 'insertAfter',
+          },
+        ],
+      },
+    ],
+  };
 
   beforeEach(async function () {
     this.timeout(10000);
     syncSuggestionsStub = sinon.stub().resolves();
+    fetchStub = sinon.stub(global, 'fetch');
 
     // Mock the handler with stubbed dependencies
     const mockedHandler = await esmock('../../../src/summarization/guidance-handler.js', {
@@ -45,6 +77,13 @@ describe('summarization guidance handler', () => {
     });
 
     handler = mockedHandler.default;
+
+    // Setup default fetch response
+    fetchStub.resolves({
+      ok: true,
+      status: 200,
+      json: sinon.stub().resolves(mockSummarizationData),
+    });
     Site = {
       findById: sinon.stub(),
     };
@@ -102,21 +141,33 @@ describe('summarization guidance handler', () => {
     sinon.restore();
   });
 
+  it('should return badRequest when no presigned URL is provided', async () => {
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {},
+    };
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(400);
+    expect(log.error).to.have.been.calledWith('[Summarization] No presigned URL provided in message data');
+    expect(fetchStub).not.to.have.been.called;
+  });
+
   it('should log a warning and return if no site found', async () => {
     Site.findById.resolves(null);
     const message = {
       auditId: 'audit-id',
       siteId: 'unknown-site-id',
       data: {
-        guidance: [],
-        suggestions: [],
+        presignedUrl: 'https://s3.aws.com/summaries.json',
       },
     };
     await handler(message, context);
     expect(log.error).to.have.been.calledWith(sinon.match(/Site not found for siteId: unknown-site-id/));
-    expect(Opportunity.allBySiteId).not.to.have.been.called;
+    expect(fetchStub).not.to.have.been.called;
     expect(Opportunity.create).not.to.have.been.called;
-    expect(Suggestion.create).not.to.have.been.called;
   });
 
   it('should log a warning and return if no audit found', async () => {
@@ -125,22 +176,60 @@ describe('summarization guidance handler', () => {
       auditId: 'unknown-audit-id',
       siteId: 'site-id',
       data: {
-        guidance: [],
-        suggestions: [],
+        presignedUrl: 'https://s3.aws.com/summaries.json',
       },
     };
     await handler(message, context);
     expect(log.warn).to.have.been.calledWith(sinon.match(/No audit found for auditId: unknown-audit-id/));
-    expect(Opportunity.allBySiteId).not.to.have.been.called;
+    expect(fetchStub).not.to.have.been.called;
     expect(Opportunity.create).not.to.have.been.called;
-    expect(Suggestion.create).not.to.have.been.called;
   });
 
-  it('should return noContent when no suggestions are found', async () => {
+  it('should return badRequest when fetch fails', async () => {
+    fetchStub.resolves({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+    });
+
     const message = {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
+        presignedUrl: 'https://s3.aws.com/summaries.json',
+      },
+    };
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(400);
+    expect(log.error).to.have.been.calledWith(sinon.match(/\[Summarization\] Failed to fetch summarization data: 404 Not Found/));
+  });
+
+  it('should return badRequest when JSON parsing fails', async () => {
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().rejects(new Error('Invalid JSON')),
+    });
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        presignedUrl: 'https://s3.aws.com/summaries.json',
+      },
+    };
+
+    const result = await handler(message, context);
+
+    expect(result.status).to.equal(400);
+    expect(log.error).to.have.been.calledWith(sinon.match(/\[Summarization\] Error processing summarization guidance: Invalid JSON/));
+  });
+
+  it('should return noContent when no suggestions are found', async () => {
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
         guidance: [
           {
             insight: 'Content analysis reveals opportunities',
@@ -150,15 +239,21 @@ describe('summarization guidance handler', () => {
           },
         ],
         suggestions: [],
+      }),
+    });
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        presignedUrl: 'https://s3.aws.com/summaries.json',
       },
     };
 
     const result = await handler(message, context);
 
-    expect(log.info).to.have.been.calledWith(sinon.match(/No suggestions found for siteId: site-id/));
+    expect(log.info).to.have.been.calledWith('[Summarization] No suggestions found in the response');
     expect(result.status).to.equal(204);
-    expect(Opportunity.allBySiteId).not.to.have.been.called;
-    expect(Opportunity.create).not.to.have.been.called;
     expect(syncSuggestionsStub).not.to.have.been.called;
   });
 
@@ -171,33 +266,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        guidance: [
-          {
-            insight: 'Content analysis reveals opportunities',
-            rationale: 'Content summarization elements improve discoverability',
-            recommendation: 'Focus on creating clear, engaging summaries',
-            type: 'guidance',
-          },
-        ],
-        suggestions: [
-          {
-            pageUrl: 'https://adobe.com/page1',
-            pageSummary: {
-              title: 'Page Title 1',
-              formatted_summary: 'This is a page summary',
-              heading_selector: 'h1',
-              insertion_method: 'insertAfter',
-            },
-            sectionSummaries: [
-              {
-                title: 'Section 1',
-                formatted_summary: 'Section summary 1',
-                heading_selector: 'h2',
-                insertion_method: 'insertAfter',
-              },
-            ],
-          },
-        ],
+        presignedUrl: 'https://s3.aws.com/summaries.json',
       },
     };
     await handler(message, context);
@@ -219,33 +288,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        guidance: [
-          {
-            insight: 'Content analysis reveals opportunities',
-            rationale: 'Content summarization elements improve discoverability',
-            recommendation: 'Focus on creating clear, engaging summaries',
-            type: 'guidance',
-          },
-        ],
-        suggestions: [
-          {
-            pageUrl: 'https://adobe.com/page1',
-            pageSummary: {
-              title: 'Page Title 1',
-              formatted_summary: 'This is a page summary',
-              heading_selector: 'h1',
-              insertion_method: 'insertAfter',
-            },
-            sectionSummaries: [
-              {
-                title: 'Section 1',
-                formatted_summary: 'Section summary 1',
-                heading_selector: 'h2',
-                insertion_method: 'insertAfter',
-              },
-            ],
-          },
-        ],
+        presignedUrl: 'https://s3.aws.com/summaries.json',
       },
     };
     await handler(message, context);
@@ -266,10 +309,9 @@ describe('summarization guidance handler', () => {
     dummyOpportunity.getSuggestions.resolves([oldSuggestion, oldSuggestion]);
     Opportunity.allBySiteId.resolves([dummyOpportunity]);
     
-    const message = {
-      auditId: 'audit-id',
-      siteId: 'site-id',
-      data: {
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
         guidance: [],
         suggestions: [
           {
@@ -283,27 +325,19 @@ describe('summarization guidance handler', () => {
             sectionSummaries: [],
           },
         ],
+      }),
+    });
+
+    const message = {
+      auditId: 'audit-id',
+      siteId: 'site-id',
+      data: {
+        presignedUrl: 'https://s3.aws.com/summaries.json',
       },
     };
     await handler(message, context);
     // syncSuggestions is called once and handles outdated suggestions internally
     expect(syncSuggestionsStub).to.have.been.calledOnce;
-  });
-
-
-  it('should handle empty suggestions array', async () => {
-    const message = {
-      auditId: 'audit-id',
-      siteId: 'site-id',
-      data: {
-        guidance: [],
-        suggestions: [],
-      },
-    };
-    const result = await handler(message, context);
-    expect(log.info).to.have.been.calledWith(sinon.match(/No suggestions found for siteId: site-id/));
-    expect(result.status).to.equal(204);
-    expect(syncSuggestionsStub).not.to.have.been.called;
   });
 
   it('should create suggestion with correct data structure', async () => {
@@ -314,33 +348,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        guidance: [
-          {
-            insight: 'Content analysis reveals opportunities',
-            rationale: 'Content summarization elements improve discoverability',
-            recommendation: 'Focus on creating clear, engaging summaries',
-            type: 'guidance',
-          },
-        ],
-        suggestions: [
-          {
-            pageUrl: 'https://adobe.com/page1',
-            pageSummary: {
-              title: 'Page Title 1',
-              formatted_summary: 'This is a page summary',
-              heading_selector: 'h1',
-              insertion_method: 'insertAfter',
-            },
-            sectionSummaries: [
-              {
-                title: 'Section 1',
-                formatted_summary: 'Section summary 1',
-                heading_selector: 'h2',
-                insertion_method: 'insertAfter',
-              },
-            ],
-          },
-        ],
+        presignedUrl: 'https://s3.aws.com/summaries.json',
       },
     };
     await handler(message, context);
@@ -377,10 +385,9 @@ describe('summarization guidance handler', () => {
     // Set requiresValidation to false in context
     context.site = { requiresValidation: false };
     
-    const message = {
-      siteId: dummySite.getId(),
-      auditId: dummyAudit.auditId,
-      data: {
+    fetchStub.resolves({
+      ok: true,
+      json: sinon.stub().resolves({
         guidance: [
           {
             insight: 'Test insight',
@@ -407,6 +414,14 @@ describe('summarization guidance handler', () => {
             ],
           },
         ],
+      }),
+    });
+
+    const message = {
+      siteId: dummySite.getId(),
+      auditId: dummyAudit.auditId,
+      data: {
+        presignedUrl: 'https://s3.aws.com/summaries.json',
       },
     };
     
@@ -434,24 +449,7 @@ describe('summarization guidance handler', () => {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
       data: {
-        guidance: [
-          {
-            insight: 'Test insight',
-            rationale: 'Test rationale',
-            recommendation: 'Test recommendation',
-          },
-        ],
-        suggestions: [
-          {
-            pageUrl: 'https://example.com/page1',
-            pageSummary: {
-              title: 'Page Title 1',
-              formatted_summary: 'This is a page summary',
-              heading_selector: 'h1',
-              insertion_method: 'insertAfter',
-            },
-          },
-        ],
+        presignedUrl: 'https://s3.aws.com/summaries.json',
       },
     };
 
@@ -480,7 +478,7 @@ describe('summarization guidance handler', () => {
     // The body is a Readable stream, so we need to read it
     const bodyText = await result.text();
     expect(bodyText).to.equal('{"message":"Failed to persist summarization opportunity"}');
-    expect(log.error).to.have.been.calledWith(sinon.match(/Failed to save summarization opportunity on Mystique callback: Database connection failed/));
+    expect(log.error).to.have.been.calledWith(sinon.match(/\[Summarization\] Failed to save summarization opportunity on Mystique callback: Database connection failed/));
   });
 
   it('should call buildKey function for suggestions', async () => {
@@ -488,18 +486,7 @@ describe('summarization guidance handler', () => {
       siteId: dummySite.getId(),
       auditId: dummyAudit.auditId,
       data: {
-        guidance: [],
-        suggestions: [
-          {
-            pageUrl: 'https://example.com/page1',
-            pageSummary: {
-              title: 'Page Title 1',
-              formatted_summary: 'This is a page summary',
-              heading_selector: 'h1',
-              insertion_method: 'insertAfter',
-            },
-          },
-        ],
+        presignedUrl: 'https://s3.aws.com/summaries.json',
       },
     };
 
@@ -536,26 +523,7 @@ describe('summarization guidance handler', () => {
       auditId: 'audit-id',
       siteId: 'site-id',
       data: {
-        guidance: [],
-        suggestions: [
-          {
-            pageUrl: 'https://adobe.com/page1',
-            pageSummary: {
-              title: 'Page Title 1',
-              formatted_summary: 'This is a formatted page summary',
-              heading_selector: 'h1',
-              insertion_method: 'insertAfter',
-            },
-            sectionSummaries: [
-              {
-                title: 'Section 1',
-                formatted_summary: 'Section summary 1',
-                heading_selector: 'h2.section-heading',
-                insertion_method: 'insertAfter',
-              },
-            ],
-          },
-        ],
+        presignedUrl: 'https://s3.aws.com/summaries.json',
       },
     };
     

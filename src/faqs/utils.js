@@ -64,27 +64,27 @@ function normalizeSources(sources) {
 
 /**
  * Generates JSON FAQ suggestions with transform rules for code changes
- * Each question becomes a separate suggestion
- * @param {Array} faqs - Array of FAQ objects from Mystique
+ * Each suggestion has nested FAQs array
+ * @param {Array} suggestions - Array of suggestions from Mystique
  * @returns {Array} Array of FAQ suggestion objects with transform rules
  */
-export function getJsonFaqSuggestion(faqs) {
+export function getJsonFaqSuggestion(suggestions) {
   const suggestionValues = [];
 
-  faqs.forEach((faq) => {
-    const { url, topic, suggestions } = faq;
+  suggestions.forEach((suggestion) => {
+    const { url, topic, faqs } = suggestion;
 
-    // Filter only suitable suggestions
-    const suitableSuggestions = (suggestions || []).filter(
-      (s) => s.isAnswerSuitable && s.isQuestionRelevant,
+    // Filter only suitable FAQs
+    const suitableFaqs = (faqs || []).filter(
+      (faq) => faq.isAnswerSuitable && faq.isQuestionRelevant,
     );
 
-    if (suitableSuggestions.length === 0) {
+    if (suitableFaqs.length === 0) {
       return;
     }
 
     // Create one suggestion per FAQ question
-    suitableSuggestions.forEach((suggestion) => {
+    suitableFaqs.forEach((faq) => {
       suggestionValues.push({
         headingText: 'FAQs',
         shouldOptimize: true, // Default to true, will be updated based on analysis
@@ -95,11 +95,11 @@ export function getJsonFaqSuggestion(faqs) {
           action: 'appendChild',
         },
         item: {
-          question: suggestion.question,
-          answer: suggestion.answer,
-          sources: normalizeSources(suggestion.sources),
-          questionRelevanceReason: suggestion.questionRelevanceReason,
-          answerSuitabilityReason: suggestion.answerSuitabilityReason,
+          question: faq.question,
+          answer: faq.answer,
+          sources: normalizeSources(faq.sources),
+          questionRelevanceReason: faq.questionRelevanceReason,
+          answerSuitabilityReason: faq.answerSuitabilityReason,
         },
       });
     });
