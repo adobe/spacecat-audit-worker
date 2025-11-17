@@ -213,11 +213,14 @@ describe('LLM Error Pages Utils', () => {
     it('should build query with all options', async () => {
       await utils.buildLlmErrorPagesQuery(mockOptions);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
     });
 
     it('should build query without date range', async () => {
@@ -227,11 +230,14 @@ describe('LLM Error Pages Utils', () => {
 
       await utils.buildLlmErrorPagesQuery(optionsWithoutDates);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
     });
 
     it('should build query without LLM providers', async () => {
@@ -240,11 +246,14 @@ describe('LLM Error Pages Utils', () => {
 
       await utils.buildLlmErrorPagesQuery(optionsWithoutProviders);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND (REGEXP_LIKE(url, \'(?i)(test)\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
     });
 
     it('should build query without site filters', async () => {
@@ -253,11 +262,14 @@ describe('LLM Error Pages Utils', () => {
 
       await utils.buildLlmErrorPagesQuery(optionsWithoutFilters);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE (year = \'2024\' AND month = \'01\' AND day >= \'01\' AND day <= \'07\') AND REGEXP_LIKE(user_agent, \'(?i)ChatGPT|GPTBot|OAI-SearchBot\') AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
     });
 
     it('should handle template with only static content', async () => {
@@ -268,11 +280,14 @@ describe('LLM Error Pages Utils', () => {
 
       await utils.buildLlmErrorPagesQuery(minimalOptions);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
     });
 
     // Test for missing coverage: buildWhereClause with no conditions
@@ -288,11 +303,14 @@ describe('LLM Error Pages Utils', () => {
 
       await utils.buildLlmErrorPagesQuery(minimalOptions);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
     });
 
     it('should handle cross-month/year date range', async () => {
@@ -307,11 +325,46 @@ describe('LLM Error Pages Utils', () => {
 
       await utils.buildLlmErrorPagesQuery(crossMonthOptions);
 
-      expect(mockGetStaticContent).to.have.been.calledWith({
-        databaseName: 'test_db',
-        tableName: 'test_table',
-        whereClause: 'WHERE ((year = \'2024\' AND month = \'12\' AND day >= \'25\')\n       OR (year = \'2025\' AND month = \'01\' AND day <= \'05\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
-      }, './src/llm-error-pages/sql/llm-error-pages.sql');
+      expect(mockGetStaticContent).to.have.been.calledWith(
+        sinon.match({
+          databaseName: 'test_db',
+          tableName: 'test_table',
+          whereClause: 'WHERE ((year = \'2024\' AND month = \'12\' AND day >= \'25\')\n       OR (year = \'2025\' AND month = \'01\' AND day <= \'05\')) AND status BETWEEN 400 AND 599 AND NOT (url LIKE \'%robots.txt\' OR url LIKE \'%sitemap%\')',
+        }),
+        './src/llm-error-pages/sql/llm-error-pages.sql',
+      );
+    });
+  });
+
+  describe('buildLlmErrorPagesQuery with site patterns', () => {
+    it('injects classification SQL when site is provided', async () => {
+      const site = { getConfig: () => ({ getLlmoDataFolder: () => 'folder' }) };
+      mockGetStaticContent = sinon.stub().returns('SELECT ...');
+      const fetchStub = sinon.stub().resolves({
+        ok: true,
+        json: async () => ({
+          pagetype: { data: [{ name: 'Help', regex: '/help' }] },
+          products: { data: [{ name: 'Adobe', regex: '/adobe' }] },
+        }),
+      });
+      const mocked = await esmock('../../../src/llm-error-pages/utils.js', {
+        '@adobe/spacecat-shared-utils': {
+          getStaticContent: mockGetStaticContent,
+        },
+        global: { fetch: fetchStub },
+      });
+
+      await mocked.buildLlmErrorPagesQuery({
+        databaseName: 'db',
+        tableName: 'tbl',
+        site,
+      });
+
+      const callArg = mockGetStaticContent.firstCall.args[0];
+      expect(callArg).to.have.property('userAgentDisplay');
+      expect(callArg).to.have.property('agentTypeClassification');
+      expect(callArg).to.have.property('topicExtraction');
+      expect(callArg).to.have.property('pageCategoryClassification');
     });
   });
 

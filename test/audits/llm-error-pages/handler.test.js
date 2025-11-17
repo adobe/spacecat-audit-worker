@@ -347,17 +347,7 @@ describe('LLM Error Pages Handler', function () {
       expect(context.sqs.sendMessage).not.to.have.been.called;
     });
 
-    it('should skip Excel generation when no CDN data available', async () => {
-      mockDownloadExistingCdnSheet.resolves([]);
-
-      const result = await runAuditAndSendToMystique(context);
-
-      expect(result.auditResult.success).to.be.true;
-      expect(context.log.warn).to.have.been.calledWith(
-        sinon.match(/\[LLM-ERROR-PAGES\] No existing CDN data found/),
-      );
-      expect(mockSaveExcelReport).not.to.have.been.called;
-    });
+    // Removed: skipping Excel when CDN data is missing (handler no longer reads CDN sheet)
 
     it('should skip Mystique when SQS not configured', async () => {
       context.sqs = null;
