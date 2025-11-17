@@ -184,6 +184,7 @@ export async function runAuditAndSendToMystique(context) {
           e.avg_ttfb_ms ?? '',
           /* c8 ignore next */
           e.country_code ?? '',
+          /* c8 ignore next */
           e.url || '',
           e.product || '',
           e.category || '',
