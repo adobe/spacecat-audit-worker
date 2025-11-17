@@ -12,7 +12,7 @@
 
 import { getStaticContent } from '@adobe/spacecat-shared-utils';
 import { resolveConsolidatedBucketName, extractCustomerDomain } from '../utils/cdn-utils.js';
-import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from './constants/user-agent-patterns.js';
+import { buildUserAgentDisplaySQL, buildAgentTypeClassificationSQL } from '../common/user-agent-classification.js';
 
 // ============================================================================
 // CONSTANTS

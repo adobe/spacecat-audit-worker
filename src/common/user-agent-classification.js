@@ -10,16 +10,38 @@
  * governing permissions and limitations under the License.
  */
 
+export const PROVIDER_USER_AGENT_PATTERNS = {
+  chatgpt: '(?i)ChatGPT|GPTBot|OAI-SearchBot',
+  perplexity: '(?i)Perplexity',
+  claude: '(?i)Claude|Anthropic',
+  google: '(?i)(^Google$|Gemini-Deep-Research)',
+  copilot: '(?i)Copilot',
+  bing: '(?i)Bingbot',
+};
+
+/**
+ * User agent display name mappings for better readability in reports
+ * Each entry maps a LIKE pattern to a display name
+ */
 export const USER_AGENT_DISPLAY_PATTERNS = [
+  // ChatGPT/OpenAI
   { pattern: '%chatgpt-user%', displayName: 'ChatGPT-User' },
   { pattern: '%gptbot%', displayName: 'GPTBot' },
   { pattern: '%oai-searchbot%', displayName: 'OAI-SearchBot' },
+
+  // Perplexity
   { pattern: '%perplexitybot%', displayName: 'PerplexityBot' },
   { pattern: '%perplexity-user%', displayName: 'Perplexity-User' },
+
+  // Google
   { pattern: '%gemini-deep-research%', displayName: 'Gemini-Deep-Research' },
   { pattern: 'google', displayName: 'Google-ai-mode' },
 ];
 
+/**
+ * Builds SQL CASE statement for user agent display names
+ * @returns {string} SQL CASE statement
+ */
 export function buildUserAgentDisplaySQL() {
   const cases = USER_AGENT_DISPLAY_PATTERNS
     .map((p) => `WHEN LOWER(user_agent) LIKE '${p.pattern}' THEN '${p.displayName}'`)
