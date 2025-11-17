@@ -15,10 +15,13 @@ import secrets from '@adobe/helix-shared-secrets';
 import dataAccess from '@adobe/spacecat-shared-data-access';
 import { resolveSecretsName, sqsEventAdapter } from '@adobe/spacecat-shared-utils';
 import { internalServerError, notFound, ok } from '@adobe/spacecat-shared-http-utils';
+import { checkSiteRequiresValidation } from './utils/site-validation.js';
 
 import sqs from './support/sqs.js';
 import s3Client from './support/s3-client.js';
 import accessibility from './accessibility/handler.js';
+import accessibilityDesktop from './accessibility/handler-desktop.js';
+import accessibilityMobile from './accessibility/handler-mobile.js';
 import apex from './apex/handler.js';
 import cwv from './cwv/handler.js';
 import lhsDesktop from './lhs/handler-desktop.js';
@@ -60,11 +63,10 @@ import formAccessibilityGuidance from './forms-opportunities/guidance-handlers/g
 import detectFormDetails from './forms-opportunities/form-details-handler/detect-form-details.js';
 import mystiqueDetectedFormAccessibilityOpportunity from './forms-opportunities/oppty-handlers/accessibility-handler.js';
 import accessibilityRemediationGuidance from './accessibility/guidance-handlers/guidance-accessibility-remediation.js';
-import cdnAnalysis from './cdn-analysis/handler.js';
+import cdnAnalysis, { cdnLogsAnalysis } from './cdn-analysis/handler.js';
 import cdnLogsReport from './cdn-logs-report/handler.js';
 import analyticsReport from './analytics-report/handler.js';
-import detectPageIntent from './page-intent/handler.detect.js';
-import updatePageIntent from './page-intent/handler.update.js';
+import pageIntent from './page-intent/handler.js';
 import missingAltTextGuidance from './image-alt-text/guidance-missing-alt-text-handler.js';
 import readabilityGuidance from './readability/guidance-readability-handler.js';
 import llmoReferralTraffic from './llmo-referral-traffic/handler.js';
@@ -83,6 +85,7 @@ import productMetatags from './product-metatags/handler.js';
 import { refreshGeoBrandPresenceSheetsHandler } from './geo-brand-presence/geo-brand-presence-refresh-handler.js';
 import summarization from './summarization/handler.js';
 import summarizationGuidance from './summarization/guidance-handler.js';
+import accessibilityCodeFixHandler from './accessibility/auto-optimization-handlers/codefix-handler.js';
 import permissions from './permissions/handler.js';
 import permissionsRedundant from './permissions/handler.redundant.js';
 import faqs from './faqs/handler.js';
@@ -90,6 +93,8 @@ import faqsGuidance from './faqs/guidance-handler.js';
 
 const HANDLERS = {
   accessibility,
+  'accessibility-desktop': accessibilityDesktop,
+  'accessibility-mobile': accessibilityMobile,
   apex,
   cwv,
   'lhs-mobile': lhsMobile,
@@ -140,11 +145,11 @@ const HANDLERS = {
   'guidance:structured-data-remediation': structuredDataGuidance,
   preflight,
   'cdn-analysis': cdnAnalysis,
+  'cdn-logs-analysis': cdnLogsAnalysis,
   'cdn-logs-report': cdnLogsReport,
   'analytics-report': analyticsReport,
-  'detect:page-intent': detectPageIntent,
   'detect:form-details': detectFormDetails,
-  'page-intent': updatePageIntent,
+  'page-intent': pageIntent,
   'llmo-referral-traffic': llmoReferralTraffic,
   'llm-error-pages': llmErrorPages,
   'guidance:llm-error-pages': llmErrorPagesGuidance,
@@ -157,6 +162,7 @@ const HANDLERS = {
   prerender,
   'product-metatags': productMetatags,
   'security-vulnerabilities': vulnerabilities,
+  'codefix:form-accessibility': accessibilityCodeFixHandler,
   'security-permissions': permissions,
   'security-permissions-redundant': permissionsRedundant,
   faqs,
@@ -187,6 +193,22 @@ async function run(message, context) {
     const msg = `no such audit type: ${type}`;
     log.error(msg);
     return notFound();
+  }
+
+  // If siteId, fetch the site and check if it requires validation
+  if (siteId) {
+    try {
+      const { Site } = context.dataAccess;
+      const site = await Site.findById(siteId);
+      if (site) {
+        // Set the requiresValidation flag on the site object
+        const requiresValidation = await checkSiteRequiresValidation(site, context);
+        site.requiresValidation = requiresValidation;
+        context.site = site;
+      }
+    } catch (e) {
+      log.warn(`Failed to fetch site ${siteId}: ${e.message}`);
+    }
   }
 
   const startTime = process.hrtime();

@@ -57,7 +57,7 @@ describe('createLowConversionOpportunities handler method', () => {
     };
     dataAccessStub = {
       Opportunity: {
-        allBySiteIdAndStatus: sinon.stub().resolves([]),
+        allBySiteId: sinon.stub().resolves([]),
         create: sinon.stub(),
       },
     };
@@ -84,12 +84,13 @@ describe('createLowConversionOpportunities handler method', () => {
     formsOppty.getType = () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION;
     dataAccessStub.Opportunity.create = sinon.stub().returns(formsOppty);
     await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
-    expect(dataAccessStub.Opportunity.create).to.be.callCount(5);
+    // After applyOpportunityFilters, only top 2 opportunities by pageviews are created
+    expect(dataAccessStub.Opportunity.create).to.be.callCount(2);
     expect(dataAccessStub.Opportunity.create).to.be.calledWith(testData.opportunityData);
     // with empty guidance due to no scraping
     expect(logStub.debug).to.be.calledWith('Successfully synced Opportunity for site: site-id and high-form-views-low-conversions audit type.');
-    // asserting spacecat to mystique message
-    const [queueArg, messageArg] = context.sqs.sendMessage.getCall(4).args;
+    // asserting spacecat to mystique message for the last created opportunity
+    const [queueArg, messageArg] = context.sqs.sendMessage.getCall(1).args;
     expect(queueArg).to.equal('spacecat-to-mystique');
     expect(messageArg.data).to.deep.equal(testData.mystiqueMessageForFormDetails);
   });
@@ -146,7 +147,7 @@ describe('createLowConversionOpportunities handler method', () => {
   });
 
   it('should use existing opportunity', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
+    dataAccessStub.Opportunity.allBySiteId.resolves([formsOppty]);
     const { auditDataWithExistingOppty } = testData;
     await createLowConversionOpportunities(
       auditUrl,
@@ -160,7 +161,7 @@ describe('createLowConversionOpportunities handler method', () => {
   });
 
   it('should use existing opportunity with form details', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
+    dataAccessStub.Opportunity.allBySiteId.resolves([formsOppty]);
     const { auditDataWithExistingOppty } = testData;
     formsOppty.getData = sinon.stub().returns({
       form: 'https://www.surest.com/info/win-1',
@@ -190,7 +191,7 @@ describe('createLowConversionOpportunities handler method', () => {
   });
 
   it('should throw error if fetching opportunity fails', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.rejects(new Error('some-error'));
+    dataAccessStub.Opportunity.allBySiteId.rejects(new Error('some-error'));
     try {
       await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
     } catch (err) {
@@ -200,7 +201,7 @@ describe('createLowConversionOpportunities handler method', () => {
   });
 
   it('should throw error if creating opportunity fails', async () => {
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.returns([]);
+    dataAccessStub.Opportunity.allBySiteId.returns([]);
     dataAccessStub.Opportunity.create = sinon.stub().rejects(new Error('some-error'));
     try {
       await createLowConversionOpportunities(auditUrl, auditData, undefined, context);
@@ -230,7 +231,8 @@ describe('createLowConversionOpportunities handler method', () => {
     excludeUrls.add('https://www.surest.com/newsletter');
     excludeUrls.add('https://www.surest.com/info/win-1.form');
     await createLowConversionOpportunities(auditUrl, auditData, undefined, context, excludeUrls);
-    expect(dataAccessStub.Opportunity.create).to.be.callCount(3);
+    // After applyOpportunityFilters, only top 2 opportunities by pageviews are created
+    expect(dataAccessStub.Opportunity.create).to.be.callCount(2);
     expect(excludeUrls.has('https://www.surest.com/contact-us.mycontact')).to.be.true;
     expect(excludeUrls.has('https://www.surest.com/info/win-2')).to.be.true;
     expect(excludeUrls.has('https://www.surest.com/info/win')).to.be.false;
@@ -238,7 +240,7 @@ describe('createLowConversionOpportunities handler method', () => {
 
   it('should not process opportunities with origin ESS_OPS', async () => {
     formsOppty.getOrigin = sinon.stub().returns(ORIGINS.ESS_OPS);
-    dataAccessStub.Opportunity.allBySiteIdAndStatus.resolves([formsOppty]);
+    dataAccessStub.Opportunity.allBySiteId.resolves([formsOppty]);
     const { auditDataWithExistingOppty } = testData;
     // eslint-disable-next-line max-len
     await createLowConversionOpportunities(auditUrl, auditDataWithExistingOppty, undefined, context);

@@ -21,6 +21,7 @@ import {
   sendMessageToFormsQualityAgent,
   sendMessageToMystiqueForGuidance,
   getFormTitle,
+  applyOpportunityFilters,
 } from '../../../src/forms-opportunities/utils.js';
 import { FORM_OPPORTUNITY_TYPES } from '../../../src/forms-opportunities/constants.js';
 
@@ -686,5 +687,228 @@ describe('getFormTitle', () => {
   it('should return the default form type in case form type does not exist', () => {
     const result = getFormTitle({}, { getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION });
     expect(result).to.equal('Form has low conversions');
+  });
+});
+
+describe('applyOpportunityFilters', () => {
+  let logStub;
+
+  beforeEach(() => {
+    logStub = {
+      debug: sinon.stub(),
+      info: sinon.stub(),
+      error: sinon.stub(),
+    };
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should filter out INVALIDATED opportunity matching form and formsource', () => {
+    const filteredOpportunities = [
+      {
+        form: 'https://example.com/contact',
+        formsource: '.contact-form',
+        pageviews: 1000,
+      },
+      {
+        form: 'https://example.com/newsletter',
+        formsource: '.newsletter-form',
+        pageviews: 2000,
+      },
+      {
+        form: 'https://example.com/signup',
+        formsource: '.signup-form',
+        pageviews: 1500,
+      },
+    ];
+
+    const existingOpportunities = [
+      {
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+        getData: () => ({
+          form: 'https://example.com/contact',
+          formsource: '.contact-form',
+        }),
+        getStatus: () => 'IGNORED',
+      },
+    ];
+
+    const result = applyOpportunityFilters(
+      filteredOpportunities,
+      existingOpportunities,
+      FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+      logStub,
+      2,
+    );
+
+    // Should filter out the INVALIDATED opportunity and return top 2 by pageviews
+    expect(result).to.have.lengthOf(2);
+    expect(result[0].form).to.equal('https://example.com/newsletter');
+    expect(result[1].form).to.equal('https://example.com/signup');
+    expect(logStub.debug).to.have.been.calledWith(
+      'Filtering out opportunity for form https://example.com/contact due to IGNORED status',
+    );
+  });
+
+  it('should match opportunity by form and formsource when filtering INVALIDATED', () => {
+    const filteredOpportunities = [
+      {
+        form: 'https://example.com/form1',
+        formsource: 'source1',
+        pageviews: 1000,
+      },
+      {
+        form: 'https://example.com/form1',
+        formsource: 'source2',
+        pageviews: 1500,
+      },
+      {
+        form: 'https://example.com/form2',
+        formsource: 'source1',
+        pageviews: 2000,
+      },
+    ];
+
+    // INVALIDATED opportunity matches form1 + source1 only
+    const existingOpportunities = [
+      {
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+        getData: () => ({
+          form: 'https://example.com/form1',
+          formsource: 'source1',
+        }),
+        getStatus: () => 'IGNORED',
+      },
+    ];
+
+    const result = applyOpportunityFilters(
+      filteredOpportunities,
+      existingOpportunities,
+      FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+      logStub,
+      2,
+    );
+
+    // Should filter out form1+source1, but keep form1+source2 and form2+source1
+    expect(result).to.have.lengthOf(2);
+    expect(result[0].form).to.equal('https://example.com/form2');
+    expect(result[0].formsource).to.equal('source1');
+    expect(result[1].form).to.equal('https://example.com/form1');
+    expect(result[1].formsource).to.equal('source2');
+    expect(logStub.debug).to.have.been.calledOnce;
+  });
+
+  it('should not filter opportunity if formsource does not match', () => {
+    const filteredOpportunities = [
+      {
+        form: 'https://example.com/contact',
+        formsource: '.contact-form-v2',
+        pageviews: 1000,
+      },
+      {
+        form: 'https://example.com/newsletter',
+        formsource: '.newsletter-form',
+        pageviews: 2000,
+      },
+    ];
+
+    // INVALIDATED opportunity has same form but different formsource
+    const existingOpportunities = [
+      {
+        getType: () => FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+        getData: () => ({
+          form: 'https://example.com/contact',
+          formsource: '.contact-form-v1',
+        }),
+        getStatus: () => 'IGNORED',
+      },
+    ];
+
+    const result = applyOpportunityFilters(
+      filteredOpportunities,
+      existingOpportunities,
+      FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+      logStub,
+      2,
+    );
+
+    // Should NOT filter out because formsource doesn't match
+    expect(result).to.have.lengthOf(2);
+    expect(result[0].form).to.equal('https://example.com/newsletter');
+    expect(result[1].form).to.equal('https://example.com/contact');
+    expect(logStub.debug).to.not.have.been.called;
+  });
+
+  it('should return all opportunities when count is less than or equal to maxLimit', () => {
+    const filteredOpportunities = [
+      {
+        form: 'https://example.com/form1',
+        formsource: 'source1',
+        pageviews: 1000,
+      },
+      {
+        form: 'https://example.com/form2',
+        formsource: 'source2',
+        pageviews: 1500,
+      },
+    ];
+
+    const existingOpportunities = [];
+
+    const result = applyOpportunityFilters(
+      filteredOpportunities,
+      existingOpportunities,
+      FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+      logStub,
+      2,
+    );
+
+    // Should return all opportunities sorted by pageviews without any filtering
+    expect(result).to.have.lengthOf(2);
+    expect(result[0].pageviews).to.equal(1500);
+    expect(result[1].pageviews).to.equal(1000);
+  });
+
+  it('should deduplicate by formsource and keep highest pageviews', () => {
+    const filteredOpportunities = [
+      {
+        form: 'https://example.com/form1',
+        formsource: 'shared-source',
+        pageviews: 1000,
+      },
+      {
+        form: 'https://example.com/form2',
+        formsource: 'shared-source',
+        pageviews: 2000,
+      },
+      {
+        form: 'https://example.com/form3',
+        formsource: 'unique-source',
+        pageviews: 1500,
+      },
+      {
+        form: 'https://example.com/form4',
+        formsource: 'another-source',
+        pageviews: 1800,
+      },
+    ];
+
+    const existingOpportunities = [];
+
+    const result = applyOpportunityFilters(
+      filteredOpportunities,
+      existingOpportunities,
+      FORM_OPPORTUNITY_TYPES.LOW_CONVERSION,
+      logStub,
+      2,
+    );
+
+    // Should deduplicate by formsource, keeping form2 (highest pageviews for shared-source)
+    // Then limit to top 2 by pageviews
+    expect(result).to.have.lengthOf(2);
+    expect(result[0].form).to.equal('https://example.com/form2'); // 2000 pageviews
+    expect(result[1].form).to.equal('https://example.com/form4'); // 1800 pageviews
   });
 });

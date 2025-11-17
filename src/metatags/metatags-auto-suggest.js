@@ -79,6 +79,44 @@ export default async function metatagsAutoSuggest(allTags, context, site, option
       }
     }
   }
+  // Remove entries from updatedDetectedTags which don't have aiSuggestion for any of the tags
+  // For duplicate tags, if any one instance lacks AI suggestion, remove all instances
+  // to maintain consistency (can't have a "duplicate" with just one page)
+  const tagsToRemove = {};
+
+  for (const endpoint of Object.keys(updatedDetectedTags)) {
+    const tags = updatedDetectedTags[endpoint];
+    for (const tagName of ['title', 'description', 'h1']) {
+      if (tags[tagName] && !tags[tagName].aiSuggestion) {
+        const isDuplicate = tags[tagName].issue?.includes('Duplicate');
+        const { tagContent } = tags[tagName];
+
+        if (isDuplicate && tagContent) {
+          // Track duplicates by their content so we can remove all instances
+          tagsToRemove[tagName] ??= new Set();
+          tagsToRemove[tagName].add(tagContent);
+        } else {
+          // Non-duplicate tags can be removed individually
+          log.info(`Removing ${tagName} tag from ${endpoint} as it doesn't have aiSuggestion.`);
+          delete updatedDetectedTags[endpoint][tagName];
+        }
+      }
+    }
+  }
+
+  // Remove all instances of duplicate tags that lack AI suggestions
+  for (const tagName of ['title', 'description', 'h1']) {
+    if (tagsToRemove[tagName]) {
+      for (const endpoint of Object.keys(updatedDetectedTags)) {
+        const tags = updatedDetectedTags[endpoint];
+        if (tags[tagName] && tagsToRemove[tagName].has(tags[tagName].tagContent)) {
+          log.debug(`Removing ${tagName} tag from ${endpoint} (duplicate group without complete AI suggestions).`);
+          delete updatedDetectedTags[endpoint][tagName];
+        }
+      }
+    }
+  }
+
   log.debug('Generated AI suggestions for Meta-tags using Genvar.');
   return updatedDetectedTags;
 }

@@ -178,9 +178,9 @@ export const opportunityAndSuggestionsStep = async (context) => {
       // Get all suggestions for this opportunity
       const suggestions = await opportunity.getSuggestions();
 
-      // If there are suggestions, update their status to outdated
+      // If there are suggestions, update their status to fixed
       if (isNonEmptyArray(suggestions)) {
-        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.OUTDATED);
+        await Suggestion.bulkUpdateStatus(suggestions, SuggestionDataAccess.STATUSES.FIXED);
       }
       opportunity.setUpdatedBy('system');
       await opportunity.save();

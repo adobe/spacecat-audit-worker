@@ -12,11 +12,13 @@
 
 /* eslint-env mocha */
 import { expect, use } from 'chai';
+import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import sinonChai from 'sinon-chai';
 import esmock from 'esmock';
 
 use(sinonChai);
+use(chaiAsPromised);
 
 describe('Utils Report Uploader', () => {
   let sandbox;
@@ -205,6 +207,112 @@ describe('Utils Report Uploader', () => {
       expect(mockContext.log.debug).to.have.been.calledWith(
         '%s: Waiting 2 seconds before publishing to live...',
         'REPORT_UPLOADER',
+      );
+    });
+
+    it('should retry on 503 error and then succeed', async function retryTest() {
+      this.timeout(10000);
+
+      const buffer = Buffer.from('test data');
+      const filename = 'test.xlsx';
+      const outputLocation = 'reports';
+
+      // First call fails with 503, second call succeeds for preview
+      fetchStub.onCall(0).resolves({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: {
+          get: sandbox.stub().returns(null),
+        },
+      });
+      fetchStub.onCall(1).resolves({ ok: true, status: 200, statusText: 'OK' });
+      // Live endpoint succeeds immediately
+      fetchStub.onCall(2).resolves({ ok: true, status: 200, statusText: 'OK' });
+
+      await uploadAndPublishFile(
+        buffer,
+        filename,
+        outputLocation,
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(fetchStub).to.have.been.calledThrice;
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/preview Helix API failed.*retrying in \d+ms.*attempt 1\/5/),
+      );
+    });
+
+    it('should retry with Retry-After header', async function retryAfterTest() {
+      this.timeout(10000);
+
+      const buffer = Buffer.from('test data');
+      const filename = 'test.xlsx';
+      const outputLocation = 'reports';
+
+      const headersStub = sandbox.stub();
+      headersStub.withArgs('retry-after').returns('5');
+      headersStub.returns(null);
+
+      // First call fails with 429 and Retry-After header
+      fetchStub.onCall(0).resolves({
+        ok: false,
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: { get: headersStub },
+      });
+      fetchStub.onCall(1).resolves({ ok: true, status: 200, statusText: 'OK' });
+      // Live endpoint succeeds immediately
+      fetchStub.onCall(2).resolves({ ok: true, status: 200, statusText: 'OK' });
+
+      await uploadAndPublishFile(
+        buffer,
+        filename,
+        outputLocation,
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      expect(fetchStub).to.have.been.calledThrice;
+      expect(mockContext.log.warn).to.have.been.calledWith(
+        sinon.match(/preview Helix API failed.*retrying in 5000ms per Retry-After header/),
+      );
+    });
+
+    it('should log error with x-error header on final failure', async function finalFailureTest() {
+      this.timeout(10000);
+
+      const buffer = Buffer.from('test data');
+      const filename = 'test.xlsx';
+      const outputLocation = 'reports';
+
+      const headersStub = sandbox.stub();
+      headersStub.withArgs('x-error').returns('backend-timeout');
+      headersStub.withArgs('retry-after').returns(null);
+      headersStub.returns(null);
+
+      // All calls fail with 503
+      fetchStub.resolves({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: { get: headersStub },
+      });
+
+      await uploadAndPublishFile(
+        buffer,
+        filename,
+        outputLocation,
+        mockContext.sharepointClient,
+        mockContext.log,
+      );
+
+      // Should have 5 retry attempts + 1 final attempt = 6 calls for preview
+      expect(fetchStub.callCount).to.equal(6);
+      expect(mockContext.log.warn.callCount).to.equal(5);
+      expect(mockContext.log.error).to.have.been.calledWith(
+        sinon.match(/preview Helix API failed after retries.*x-error: backend-timeout/),
       );
     });
 
